@@ -241,6 +241,19 @@ pub enum EngineSelection {
     /// attribution); a true-over-ℤ/false-over-ℝ clause yields a `RealWitness`
     /// escalation (never a `Counterexample`); a non-relaxable item is an honest skip.
     Nlsat,
+    /// `--engine forge` (`.design/stage1-forge-tier.md` REQ-10 / AC-14 — the G1 gate
+    /// route): the PER-CLAUSE hybrid route that drives the whole forge tier end to end
+    /// on a covenant-routed `fn`. Each `ens` clause is classified by
+    /// [`crate::relax::classify_fn`]: a RELAXABLE polynomial clause routes to the
+    /// [`crate::engine::NlsatEngine`] and certifies at [`Level::L4`]; a NON-relaxable
+    /// clause routes to the Lean engine, discharged at [`Level::L3`] by the author's
+    /// `proof for f { ens#k by { … } }` block (kernel-accepted, axiom-gated, carrying
+    /// the burn receipt). The item level is the MIN over the clauses. The `witness`
+    /// block is honored (covenant-before-burn), the definition tower is pinned, and the
+    /// L3 clause is mutation-scored by re-elaboration — so the certificate populates
+    /// all four forge-tier evidence blocks. The v1 corpus never selects this route, so
+    /// its goldens stay byte-identical.
+    Forge,
 }
 
 impl Default for CheckOptions {
@@ -1013,6 +1026,16 @@ pub fn check_file_with_engine(
         return Ok(nlsat_check(base, &parsed.program));
     }
 
+    // REQ-10 / AC-14 G1 gate route (`.design/stage1-forge-tier.md`): `--engine forge`
+    // drives the whole forge tier end to end on a covenant-routed `fn` via the
+    // PER-CLAUSE hybrid route (relaxable clauses → nlsat L4, the non-relaxable clause →
+    // an author-proof Lean L3 with the burn receipt; item level = min over clauses).
+    // Returns early like the nlsat route; the v1 Verus path and the lean/auto paths are
+    // untouched, so the v1 corpus stays byte-identical.
+    if selection == EngineSelection::Forge {
+        return Ok(forge_gate_check(base, &parsed.program, &src));
+    }
+
     let lean = crate::engine::LeanEngine::new(parsed.program.clone(), lean_package_root());
 
     let mut out = Vec::with_capacity(base.len());
@@ -1519,6 +1542,496 @@ fn nlsat_realwitness_cert(
     cert.with_engine_attribution(attribution)
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// The G1 gate route (`.design/stage1-forge-tier.md` REQ-10 / AC-14): the per-clause
+// hybrid discharge that exercises the whole forge tier end to end on a covenant-routed
+// `fn`. Each `ens` clause is classified by `relax::classify_fn` (the same fragment gate
+// the nlsat route keys on): a relaxable polynomial clause is discharged by the
+// `NlsatEngine` at L4; the non-relaxable clause is discharged at L3 by the author's
+// `proof for f { ens#k by { … } }` block via the Lean engine, carrying the burn receipt.
+// The item level is the MIN over the clauses; the witness covenants the burn; the
+// definition tower is pinned; the L3 clause is mutation-scored by re-elaboration — so the
+// certificate populates all four forge-tier evidence blocks.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// The `--engine forge` G1 gate pass (`.design/stage1-forge-tier.md` REQ-10 / AC-14).
+/// For each `fn` item it builds the per-clause hybrid certificate
+/// ([`forge_gate_item_cert`]); a non-`fn` item keeps its base cert unchanged. The v1
+/// corpus never selects this route, so its goldens are byte-identical.
+fn forge_gate_check(base: Vec<Certificate>, program: &Program, src: &str) -> Vec<Certificate> {
+    let nlsat = crate::engine::NlsatEngine::new(program.clone());
+    let lean = crate::engine::LeanEngine::new(program.clone(), lean_package_root());
+    let covenant_bindings = crate::covenant_engine::witness_bindings(program);
+    let adt_deps: Vec<Item> = program
+        .items
+        .iter()
+        .filter(|i| matches!(i, Item::Struct(_) | Item::Enum(_)))
+        .cloned()
+        .collect();
+    let mut out = Vec::with_capacity(base.len());
+    for cert in base {
+        let Some(Item::Fn(f)) = crate::lean_export::find_item(program, &cert.item) else {
+            out.push(cert);
+            continue;
+        };
+        out.push(forge_gate_item_cert(
+            &nlsat,
+            &lean,
+            program,
+            src,
+            f,
+            &covenant_bindings,
+            &adt_deps,
+            cert,
+        ));
+    }
+    out
+}
+
+/// Build one `fn`'s G1 gate certificate (`.design/stage1-forge-tier.md` REQ-10 / AC-14).
+/// The order honors covenant-before-burn (R-COV-1): the covenant is gated first, then the
+/// per-clause discharge (the burn), then the meaning audit + re-elaboration mutation, then
+/// the assembled certificate. A non-certifying outcome at any gate (a refused/refuted
+/// covenant, an over-budget tower, an undecided clause, a sub-floor mutation score) lands
+/// its honest non-certified certificate.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the gate threads the two engines, the \
+    program/source, the fn, and the covenant/ADT context; each is a distinct input the \
+    per-clause hybrid needs and a wrapper struct would only obscure the data flow"
+)]
+fn forge_gate_item_cert(
+    nlsat: &crate::engine::NlsatEngine,
+    lean: &crate::engine::LeanEngine,
+    program: &Program,
+    src: &str,
+    f: &thermite_syntax::FnItem,
+    covenant_bindings: &std::collections::BTreeMap<String, thermite_syntax::WitnessBlock>,
+    adt_deps: &[Item],
+    _base: Certificate,
+) -> Certificate {
+    use crate::engine::Verdict;
+    let effects = effects_of(&f.contract.fx);
+
+    // (1) Covenant gate (covenant-before-burn, R-COV-1). A forge gate item carries a
+    // `witness` block: its author `inhabit` witnesses are executed against `req` and the
+    // fixed-seed `falsify` run rides the body → `ens`. A refused/refuted covenant
+    // short-circuits with its non-certified cert; a validated covenant authorizes the
+    // burn and yields the evidence block. A `fn` with no `witness` is not covenant-routed
+    // (the gate's centerpiece always carries one).
+    let covenant_evidence = match covenant_bindings.get(&f.name) {
+        Some(witness) => {
+            use crate::covenant_engine::{analyze_covenant, covenant_gate, CovenantGate};
+            match covenant_gate(analyze_covenant(f, witness), |_record| {}) {
+                CovenantGate::Refused { error } => {
+                    return Certificate::rejected(
+                        error.item().to_string(),
+                        effects,
+                        false,
+                        RejectReason {
+                            cause: error.cause().to_string(),
+                            detail: error.detail(),
+                        },
+                    );
+                }
+                CovenantGate::Refuted {
+                    counterexample,
+                    evidence,
+                } => {
+                    return Certificate::covenant_refuted(
+                        f.name.clone(),
+                        effects,
+                        &counterexample,
+                        evidence,
+                    );
+                }
+                CovenantGate::Burned {
+                    result: (),
+                    evidence,
+                } => Some(evidence),
+            }
+        }
+        None => None,
+    };
+
+    // (2) The definition-tower meaning audit (REQ-6c anti-Goodhart). An over-budget tower
+    // is refused at certify time (pinning the unfolded-tower hash); a within-budget tower
+    // joins the cert.
+    let tower = crate::meaning::build_tower(program, src, f);
+    if let Some(detail) = tower.over_budget_detail() {
+        return Certificate::rejected_over_budget_tower(
+            f.name.clone(),
+            effects,
+            detail,
+            tower.meaning_audit(),
+        );
+    }
+    let meaning_audit = tower.meaning_audit();
+
+    // (3) Per-clause discharge. Each `ens` clause is classified by `relax::classify_fn`
+    // (over a synthetic single-clause `fn`): a relaxable clause routes to nlsat (L4), a
+    // non-relaxable clause to the author-proof Lean discharge (L3 + burn). The item level
+    // is the min over the clauses.
+    let mut obligations = Vec::with_capacity(f.contract.ens.len());
+    let mut item_level = Level::L4;
+    let mut burn: Option<crate::burn::BurnReceipt> = None;
+    let mut l3_clause: Option<(usize, &thermite_syntax::Clause, String)> = None;
+    for (k, ens) in f.contract.ens.iter().enumerate() {
+        let synth = single_ens_fn(f, ens);
+        if crate::relax::classify_fn(&synth).is_relaxable() {
+            // Relaxable polynomial side-condition → nlsat real relaxation → L4.
+            match nlsat.discharge_relax(&synth) {
+                crate::engine::NlsatOutcome::Proved => {
+                    let attribution = crate::engine::attribution_for(nlsat);
+                    obligations.push(
+                        ObligationResult::discharged(format!(
+                            "{}::ens#{k}: relaxable polynomial side-condition discharged by the \
+                             nlsat relax route (QF_NRA-valid by the Z3 nlsat tactic; \
+                             integer-valid by the kernel-checked r_relax_sound — L4 \
+                             kernel-grounded; stage1-forge-tier.md REQ-8/REQ-10)",
+                            f.name
+                        ))
+                        .with_clause_attribution(
+                            attribution.engine.clone(),
+                            attribution.trust_profile.clone(),
+                            crate::verdict::CertVerdict::Proved,
+                        ),
+                    );
+                    item_level = item_level.min(Level::L4);
+                }
+                other => {
+                    return Certificate::rejected(
+                        f.name.clone(),
+                        effects,
+                        false,
+                        RejectReason {
+                            cause: "ForgeGateClauseUndecided".to_string(),
+                            detail: format!(
+                                "the G1 gate could not certify `{}`'s relaxable clause `ens#{k}` \
+                                 via the nlsat route (NOT certified, an honest skip): {other:?}",
+                                f.name
+                            ),
+                        },
+                    );
+                }
+            }
+        } else {
+            // Non-relaxable clause → the author `proof for f { ens#k by { … } }` Lean
+            // discharge at L3, carrying the burn receipt. The clause is proved with
+            // `result` substituted by the fn's body (the postcondition obligation as a
+            // body-grounded universal fact over the params).
+            let Some(proof_text) = forge_proof_text_for(program, &f.name, k) else {
+                return Certificate::rejected(
+                    f.name.clone(),
+                    effects,
+                    false,
+                    RejectReason {
+                        cause: "ForgeGateMissingProof".to_string(),
+                        detail: format!(
+                            "`{}`'s non-relaxable clause `ens#{k}` routes to the Lean engine but \
+                             carries no `proof for {} {{ ens#{k} by {{ … }} }}` author proof, so \
+                             the gate cannot discharge it (NOT certified)",
+                            f.name, f.name
+                        ),
+                    },
+                );
+            };
+            let Some(result_expr) = f.body.as_ref().and_then(effective_result_expr) else {
+                return Certificate::rejected(
+                    f.name.clone(),
+                    effects,
+                    false,
+                    RejectReason {
+                        cause: "ForgeGateNoBody".to_string(),
+                        detail: format!(
+                            "`{}` has no in-language body to ground its non-relaxable clause \
+                             `ens#{k}` (NOT certified)",
+                            f.name
+                        ),
+                    },
+                );
+            };
+            let subst = substitute_result_with_body(&ens.expr, &result_expr);
+            let lemma = synth_l3_lemma(f, k, subst, &proof_text);
+            match discharge_gate_l3_clause(lean, program, &lemma) {
+                Verdict::Proven(_) => {
+                    let attribution = crate::engine::EngineAttribution {
+                        engine: {
+                            use crate::engine::Engine as _;
+                            lean.name().tag().to_string()
+                        },
+                        trust_profile: crate::engine::trust_profile_interactive().items,
+                    };
+                    obligations.push(
+                        ObligationResult::discharged(format!(
+                            "{}::ens#{k}: non-relaxable clause discharged by an author-authored \
+                             frozen-battery Lean proof (kernel-accepted, sorry-free, axiom-gated; \
+                             stage1-forge-tier.md REQ-7/REQ-10)",
+                            f.name
+                        ))
+                        .with_clause_attribution(
+                            attribution.engine.clone(),
+                            attribution.trust_profile.clone(),
+                            crate::verdict::CertVerdict::Proved,
+                        ),
+                    );
+                    item_level = item_level.min(Level::L3);
+                    burn = Some(crate::burn::BurnReceipt::for_proof_text(&proof_text));
+                    l3_clause = Some((k, ens, proof_text));
+                }
+                other => {
+                    return Certificate::rejected(
+                        f.name.clone(),
+                        effects,
+                        false,
+                        RejectReason {
+                            cause: "ForgeGateClauseUndecided".to_string(),
+                            detail: format!(
+                                "the G1 gate could not discharge `{}`'s non-relaxable clause \
+                                 `ens#{k}` to a kernel-accepted Lean proof (NOT certified): \
+                                 {other:?}",
+                                f.name
+                            ),
+                        },
+                    );
+                }
+            }
+        }
+    }
+
+    // (4) Re-elaboration mutation over the L3 clause (REQ-6b anti-Goodhart): re-discharge
+    // the frozen mutant set's bodies against the author proof. A mutated body the clause
+    // catches (the proof no longer closes) is killed; one the clause still admits survives.
+    // The kill ratio gates L3 (the `WeakContract` mirror), and the score joins the cert.
+    let Some((_, l3_ens, l3_proof)) = l3_clause else {
+        // No non-relaxable clause discharged — the gate's centerpiece always carries one.
+        return Certificate::rejected(
+            f.name.clone(),
+            effects,
+            false,
+            RejectReason {
+                cause: "ForgeGateNoL3Clause".to_string(),
+                detail: format!(
+                    "`{}` carries no non-relaxable clause for the L3 burn, so it is not a G1 \
+                     gate item (NOT certified)",
+                    f.name
+                ),
+            },
+        );
+    };
+    let score = forge_reelaboration_mutation(lean, program, f, &l3_ens.expr, &l3_proof, adt_deps);
+    if !score.meets_floor(crate::mutation::MUTATION_FLOOR) {
+        return Certificate::rejected_weak_contract(
+            f.name.clone(),
+            effects,
+            score.mutants_killed_string(),
+            score.survivor.clone().unwrap_or_else(|| {
+                "the L3 clause could not be mutation-validated (no scoreable mutant)".to_string()
+            }),
+        );
+    }
+
+    // (5) Assemble. The item-level attribution records the binding (min-level) L3 Lean
+    // discharge; `engine_attribution` is oracle-excluded, so it never perturbs the v1
+    // goldens. The covenant evidence, meaning audit, burn, and mutation score join the
+    // cert — all four forge-tier evidence blocks populated (AC-14).
+    let item_attribution = crate::engine::EngineAttribution {
+        engine: {
+            use crate::engine::Engine as _;
+            lean.name().tag().to_string()
+        },
+        trust_profile: crate::engine::trust_profile_interactive().items,
+    };
+    let mut cert = Certificate::new(f.name.clone(), item_level, effects, 0, obligations)
+        .graduate_triage_clean()
+        .with_engine_attribution(item_attribution)
+        .with_meaning_audit(meaning_audit)
+        .with_mutation_score(score.mutants_killed_string(), score.survivor.clone());
+    if let Some(receipt) = burn {
+        cert = cert.with_burn(receipt);
+    }
+    if let Some(evidence) = covenant_evidence {
+        cert = cert.with_covenant_evidence(evidence);
+    }
+    cert
+}
+
+/// A synthetic single-`ens` clone of `f` (`.design/stage1-forge-tier.md` REQ-10): the
+/// same signature + `req`, but only the one `ens` clause — so `relax::classify_fn` decides
+/// THAT clause's relaxability (the gate routes per clause) and `NlsatEngine::discharge_relax`
+/// proves it in isolation.
+fn single_ens_fn(
+    f: &thermite_syntax::FnItem,
+    ens: &thermite_syntax::Clause,
+) -> thermite_syntax::FnItem {
+    let mut synth = f.clone();
+    synth.contract.ens = vec![ens.clone()];
+    synth
+}
+
+/// The author proof text discharging `fn_name`'s `ens#index` clause, from a matching
+/// `proof for fn_name { ens#index by { … } }` item (`.design/stage1-forge-tier.md` REQ-7 /
+/// REQ-10), or `None`. Deterministic over the program (R-CODE-5).
+fn forge_proof_text_for(program: &Program, fn_name: &str, index: usize) -> Option<String> {
+    for item in &program.items {
+        if let Item::Forge(thermite_syntax::ForgeItem::Proof(p)) = item {
+            if p.target == fn_name {
+                for ob in &p.obligations {
+                    if ob.clause.keyword == "ens" && ob.clause.index == Some(index as u32) {
+                        return Some(ob.proof.text.clone());
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// The effective `result` value of a (possibly mutated) body (`.design/stage1-forge-tier.md`
+/// REQ-10): the head early-return value when the body opens with an unconditional
+/// `return E` (the mutation battery's discriminator mutants), else the pure tail
+/// expression. The expression the L3 clause's `result` is grounded by.
+fn effective_result_expr(body: &thermite_syntax::Block) -> Option<thermite_syntax::Expr> {
+    if let Some(thermite_syntax::Stmt::Return(Some(e))) = body.stmts.first() {
+        return Some(e.clone());
+    }
+    body.tail.as_deref().cloned()
+}
+
+/// Substitute `result` by the body expression `body` throughout a relaxable-fragment
+/// clause expression (`.design/stage1-forge-tier.md` REQ-10): the single-segment path
+/// `result` becomes `body`; the `+`/`-`/`*`/`/`/`%`/comparison/`!`/`&&`/`||`/cast
+/// structure recurses. Any other expression form is a leaf (no `result`) or outside the
+/// arithmetic/comparison fragment a forge-tier `ens` clause uses, cloned verbatim.
+fn substitute_result_with_body(
+    expr: &thermite_syntax::Expr,
+    body: &thermite_syntax::Expr,
+) -> thermite_syntax::Expr {
+    use thermite_syntax::Expr as E;
+    match expr {
+        E::Path(segs) if segs.len() == 1 && segs[0] == "result" => body.clone(),
+        E::Binary { op, lhs, rhs } => E::Binary {
+            op: *op,
+            lhs: Box::new(substitute_result_with_body(lhs, body)),
+            rhs: Box::new(substitute_result_with_body(rhs, body)),
+        },
+        E::Unary { op, expr: inner } => E::Unary {
+            op: *op,
+            expr: Box::new(substitute_result_with_body(inner, body)),
+        },
+        E::Cast { expr: inner, ty } => E::Cast {
+            expr: Box::new(substitute_result_with_body(inner, body)),
+            ty: ty.clone(),
+        },
+        other => other.clone(),
+    }
+}
+
+/// Synthesize the lemma the L3 clause's author proof discharges (`.design/
+/// stage1-forge-tier.md` REQ-7 / REQ-10): `∀ params, req → ens_k[result := body]`, proved
+/// by the author's frozen-battery tactics. Reuses the lemma exporter
+/// ([`crate::lean_export::export_lemma`]) — the same theorem shape, the same certify-time
+/// axiom gate, the same burn receipt. The lemma name anchors the axiom-gate theorem.
+fn synth_l3_lemma(
+    f: &thermite_syntax::FnItem,
+    k: usize,
+    subst_ens: thermite_syntax::Expr,
+    proof_text: &str,
+) -> thermite_syntax::LemmaItem {
+    use thermite_syntax::{Clause, ProofBlock};
+    let span = thermite_syntax::Span::new(0, 0);
+    thermite_syntax::LemmaItem {
+        name: format!("{}__gate_ens{k}", f.name),
+        params: f.params.clone(),
+        req: f.contract.req.clone(),
+        ens: vec![Clause {
+            expr: subst_ens,
+            text: format!("{}::ens#{k} (result := body)", f.name),
+            span,
+        }],
+        proof: ProofBlock {
+            text: proof_text.to_string(),
+            holes: Vec::new(),
+            span,
+        },
+        span,
+    }
+}
+
+/// Discharge the synthesized L3-clause lemma via the Lean engine (`.design/
+/// stage1-forge-tier.md` REQ-7 / REQ-10): export the `∀ params, req → ens` theorem and run
+/// lake + the certify-time axiom gate (the same path the forge-tier `lemma` discharge
+/// uses). An export refusal is an honest `Unknown` (a skip, never a false `Proven`). The
+/// clauses reference only arithmetic (no spec fns), so the closure is empty.
+fn discharge_gate_l3_clause(
+    lean: &crate::engine::LeanEngine,
+    program: &Program,
+    lemma: &thermite_syntax::LemmaItem,
+) -> crate::engine::Verdict {
+    use crate::engine::Verdict;
+    let called = reachable_spec_fn_names_full_lemma(program, lemma);
+    match crate::lean_export::export_lemma(lemma, &called, program) {
+        Ok(exported) => lean.discharge_source(&exported.source, &lemma.name),
+        Err(refusal) => Verdict::Unknown(crate::engine::Reason::IncompleteUnknown(format!(
+            "the G1 gate L3 clause `{}` is not Lean-exportable (an honest skip): {refusal}",
+            lemma.name
+        ))),
+    }
+}
+
+/// The re-elaboration mutation score of the L3 clause (`.design/stage1-forge-tier.md`
+/// REQ-6b / REQ-10 anti-Goodhart). Reuses the FROZEN mutation operator catalogue
+/// [`crate::mutation::generate`] (the same catalogue the Verus + Lean batteries use): for
+/// each mutant, the L3 clause is re-discharged with `result` grounded by the mutant's
+/// effective body and the SAME author proof. A mutant the clause catches (the
+/// decision-procedure proof no longer closes) is KILLED; one the clause still admits
+/// SURVIVES. An un-exportable mutant is excluded from the denominator (the OQ-5 precedent).
+fn forge_reelaboration_mutation(
+    lean: &crate::engine::LeanEngine,
+    program: &Program,
+    f: &thermite_syntax::FnItem,
+    l3_ens: &thermite_syntax::Expr,
+    proof_text: &str,
+    adt_deps: &[Item],
+) -> crate::mutation::MutationScore {
+    use crate::engine::Verdict;
+    let mutants = crate::mutation::generate(f, 0, adt_deps);
+    let mut killed = 0;
+    let mut scored = 0;
+    let mut survivor = None;
+    for m in &mutants {
+        let Some(result_expr) = m.item.body.as_ref().and_then(effective_result_expr) else {
+            continue;
+        };
+        let subst = substitute_result_with_body(l3_ens, &result_expr);
+        let lemma = synth_l3_lemma(f, 0, subst, proof_text);
+        let exported = match crate::lean_export::export_lemma(&lemma, &[], program) {
+            Ok(e) => e,
+            // An un-exportable mutant is not a scoreable obligation (OQ-5) — excluded
+            // from the denominator rather than counted as killed.
+            Err(_) => continue,
+        };
+        scored += 1;
+        match lean.discharge_source(&exported.source, &lemma.name) {
+            Verdict::Proven(_) => {
+                // The mutated body still satisfies the clause → the contract did not catch
+                // this mutant → a survivor.
+                if survivor.is_none() {
+                    survivor = Some(m.desc.clone());
+                }
+            }
+            // The mutated body fails the clause → the contract caught it → killed.
+            _ => killed += 1,
+        }
+    }
+    crate::mutation::MutationScore {
+        killed,
+        scored,
+        equivalent: 0,
+        survivor,
+    }
+}
+
 /// Apply the Lean engine to one item's base Verus cert (`.design/verified/
 /// proof-backends.md` OQ-1 / REQ-4/REQ-5/REQ-7). Returns the cert the `--engine`
 /// surface emits for the item, or a `ForgeError::SoundnessAlarm` on a Proven ⊕ Refuted
@@ -1542,6 +2055,10 @@ fn lean_engine_cert(
         // it keeps the Verus base cert defensively (R-APG-1 — no panic on a future
         // wiring change).
         EngineSelection::Nlsat => Ok(verus_cert),
+        // The G1 gate route is dispatched in `check_file_with_engine` (it returns early
+        // before this per-item Lean helper runs), so this arm is never reached; it keeps
+        // the Verus base cert defensively (R-APG-1 — no panic on a future wiring change).
+        EngineSelection::Forge => Ok(verus_cert),
         EngineSelection::Auto => {
             // Verus first: a Verus `Proven` (L3, no reject) is kept — Lean is not run
             // (no cost on the common case, no spurious disagreement). Only an
@@ -1975,7 +2492,10 @@ fn program_with_mutant(base: &Program, mutant: &thermite_syntax::FnItem) -> Prog
 /// lean` (`.design/verified/proof-backends.md` OQ-1 — "non-exportable → honest
 /// Unverifiable/skip reporting"). Level::L0 with a structured reject naming the skip
 /// reason, never a false `Proven` and never a silent pass.
-fn lean_unverifiable_cert(base: &Certificate, reason: &crate::engine::Reason) -> Certificate {
+pub(crate) fn lean_unverifiable_cert(
+    base: &Certificate,
+    reason: &crate::engine::Reason,
+) -> Certificate {
     let detail = match reason {
         crate::engine::Reason::VerusTimeout(d) | crate::engine::Reason::IncompleteUnknown(d) => {
             d.clone()

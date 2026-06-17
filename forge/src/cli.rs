@@ -544,15 +544,16 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                         }
                     }
                     "--engine" => {
-                        // `--engine verus|lean|auto|nlsat` — the proof-backend engine
+                        // `--engine verus|lean|auto|nlsat|forge` — the proof-backend engine
                         // selection (`.design/verified/proof-backends.md` OQ-1, #247;
                         // `nlsat` is the Stage-1 relax route, `.design/stage1-forge-tier.md`
-                        // REQ-8 / 2f). The value is a separate token; a missing / unknown
-                        // value is a Usage error, never a silent default.
+                        // REQ-8 / 2f; `forge` is the REQ-10 / AC-14 G1 gate per-clause hybrid
+                        // route). The value is a separate token; a missing / unknown value is
+                        // a Usage error, never a silent default.
                         let value = iter.next().ok_or_else(|| {
                             ForgeError::Usage(
-                                "`--engine` requires a value (`verus`, `lean`, `auto`, or \
-                                 `nlsat`)"
+                                "`--engine` requires a value (`verus`, `lean`, `auto`, \
+                                 `nlsat`, or `forge`)"
                                     .to_string(),
                             )
                         })?;
@@ -561,10 +562,11 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                             "lean" => check::EngineSelection::Lean,
                             "auto" => check::EngineSelection::Auto,
                             "nlsat" => check::EngineSelection::Nlsat,
+                            "forge" => check::EngineSelection::Forge,
                             other => {
                                 return Err(ForgeError::Usage(format!(
                                     "unknown `--engine` value `{other}` (expected `verus`, \
-                                     `lean`, `auto`, or `nlsat`)"
+                                     `lean`, `auto`, `nlsat`, or `forge`)"
                                 )));
                             }
                         };

@@ -1,0 +1,92 @@
+{
+  "item": "isqrt_class",
+  "level": "L3",
+  "solver_time_ms": 0,
+  "contract_quality": {
+    "tautology": false,
+    "vacuous_precondition": false,
+    "mutants_killed": "7/7"
+  },
+  "effects": [
+    "pure"
+  ],
+  "slag": false,
+  "obligations": [
+    {
+      "name": "isqrt_class::ens#0: relaxable polynomial side-condition discharged by the nlsat relax route (QF_NRA-valid by the Z3 nlsat tactic; integer-valid by the kernel-checked r_relax_sound — L4 kernel-grounded; stage1-forge-tier.md REQ-8/REQ-10)",
+      "status": "discharged",
+      "engine": "nlsat",
+      "trust": [
+        "Z3 nlsat (QF_NRA real-arithmetic decision)",
+        "spine-lemma r_relax_sound (real→integer relaxation soundness, kernel-checked)",
+        "spine-lemma rencode_sound (real-encoding faithfulness, kernel-checked)"
+      ],
+      "verdict": {
+        "kind": "Proved"
+      }
+    },
+    {
+      "name": "isqrt_class::ens#1: relaxable polynomial side-condition discharged by the nlsat relax route (QF_NRA-valid by the Z3 nlsat tactic; integer-valid by the kernel-checked r_relax_sound — L4 kernel-grounded; stage1-forge-tier.md REQ-8/REQ-10)",
+      "status": "discharged",
+      "engine": "nlsat",
+      "trust": [
+        "Z3 nlsat (QF_NRA real-arithmetic decision)",
+        "spine-lemma r_relax_sound (real→integer relaxation soundness, kernel-checked)",
+        "spine-lemma rencode_sound (real-encoding faithfulness, kernel-checked)"
+      ],
+      "verdict": {
+        "kind": "Proved"
+      }
+    },
+    {
+      "name": "isqrt_class::ens#2: non-relaxable clause discharged by an author-authored frozen-battery Lean proof (kernel-accepted, sorry-free, axiom-gated; stage1-forge-tier.md REQ-7/REQ-10)",
+      "status": "discharged",
+      "engine": "lean-auto",
+      "trust": [
+        "Lean kernel",
+        "propext",
+        "Classical.choice",
+        "Quot.sound",
+        "EXP (the exporter correspondence — arm-by-arm + the drift tripwire)",
+        "interactive proof author (reviewed, not mechanized — OQ-4)"
+      ],
+      "verdict": {
+        "kind": "Proved"
+      }
+    }
+  ],
+  "cached": false,
+  "lowered_assurance": false,
+  "boundary": false,
+  "engine_attribution": {
+    "engine": "lean-auto",
+    "trust_profile": [
+      "Lean kernel",
+      "propext",
+      "Classical.choice",
+      "Quot.sound",
+      "EXP (the exporter correspondence — arm-by-arm + the drift tripwire)",
+      "interactive proof author (reviewed, not mechanized — OQ-4)"
+    ]
+  },
+  "covenant_evidence": {
+    "witness_count": 3,
+    "falsify_generated": 22,
+    "falsify_refuted": 0,
+    "seed": 6840123409045700830
+  },
+  "meaning_audit": {
+    "tower_hash": "49aa48cc32d4b47fb83a849770755ac09b5907ff6e006625fc0d649d9baa5ff2",
+    "depth": 0,
+    "definitions": 0
+  },
+  "burn": {
+    "proof_tokens": 22,
+    "cited_lemmas": [
+      "Thermite.denote",
+      "Thermite.Env.bindInt",
+      "Thermite.intVal",
+      "Thermite.arithDenote"
+    ]
+  }
+}

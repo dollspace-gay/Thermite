@@ -2,8 +2,8 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 8b4d2580b472d04fca2b14de5b6be52533a2d258 (re-pinned 2026-06-17 for stage-1 increment 3, REQ-9 lemma library: the only change to this doc's governed file (main.rs) is the two additive REQ-9 module declarations (mod accessibility, mod lemma_library); the workspace/crate structure is otherwise unchanged (REQ-S1-9). prior: ddbbb3ccea18276103fc268297c4d9190a1ee385)
-audited-content-sha256: 965d4849289a55cd413367b66fe55782fb95722e52ed568f6f7db9c8455e943d
+audited-sha: 5ae0816c042debb01c70eb9b89c775837f0c0f24 (re-pinned 2026-06-17 for stage-1 REQ-10 / AC-14, the G1 gate artifact: the only change to this doc's governed file (main.rs) is one additive test-only module declaration (`#[cfg(test)] mod seven_verdicts;`, the seven-verdict hermetic suite); the workspace/crate structure is otherwise unchanged. prior: 8b4d2580b472d04fca2b14de5b6be52533a2d258)
+audited-content-sha256: 36f7c97f4f65f9a57f00ca7941a9f6a9cdc81f67cf9976ddaa8df8b2e8889f77
 governs:
   - Cargo.toml (virtual workspace manifest)
   - rust-toolchain.toml

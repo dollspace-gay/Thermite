@@ -6817,6 +6817,57 @@ target = "forge/src/cache.rs"
 note = "AC-13 hermetic units: the dec wf accessibility re-check HITS the cache (load after store, flagged cached:true); schema-invalidated; corrupt entry is a miss"
 
 [[requirement]]
+id = "REQ-S1-10"
+title = "G1 gate artifact — the isqrt_class example, the golden cert, the seven-verdict hermetic suite"
+owner = ".design/stage1-forge-tier.md"
+status = "partial"
+scope = "forge"
+summary = "The G1 gate ARTIFACT (REQ-10 / AC-14): a real end-to-end demonstration that the forge tier holds together — out-of-cage clauses no longer degrade DOWN the ladder; each ESCALATES to the engine that grounds it, and the item certifies at the MIN over its clauses. (1) THE isqrt_class EXAMPLE (`conformance/forge/isqrt_class.th`): a SINGLE `fn isqrt_class(n, r)` keyed on the integer-square-root characterization `req r*r <= n && n < (r+1)*(r+1)` (with an `r <= 10^8` guard bounding the squared term for the executable covenant; the real relaxation is unaffected), whose three `ens` clauses sit at the three forge rungs, GROUNDED in `relax::classify_fn`: two RELAXABLE clauses that are NON-TRIVIAL nlsat-earned consequences of that characterization — `2*r <= n+1` (the LOWER squeeze, from `r*r<=n` and `(r-1)^2>=0`) and `n < 2*r*r + 2*r + 1` (the UPPER squeeze, from `n<(r+1)^2` and `r*r>=0`); NEITHER restates `req`, and the naive `r <= n` is correctly a RealWitness (false over ℝ for 0<r<1), never a false L4 — both route to the `NlsatEngine` real relaxation and, real-valid by the kernel-checked `r_relax_sound`, certify L4. One NON-relaxable clause (`result*2 + (n+r)%2 == n+r` — the `%` is not a polynomial atom) routes to the Lean engine, discharged L3 by the author `proof for isqrt_class { ens#2 by { simp […]; omega } }`. Item level = MIN = L3 (clauses L4, L4, L3). The `witness { inhabit …; falsify N; }` block makes it covenant-routed. (2) THE PER-CLAUSE HYBRID ROUTE (`--engine forge`, `check::forge_gate_check`/`forge_gate_item_cert`): classifies each `ens` per clause (a synthetic single-`ens` `fn` through `classify_fn`), discharges relaxable clauses via `NlsatEngine::discharge_relax` (L4) and the non-relaxable clause via the author-proof Lean discharge (reusing `lean_export::export_lemma` with `result` substituted by the body — L3 + burn), gates the covenant before the burn (R-COV-1), pins the definition-tower meaning audit, and mutation-scores the L3 clause by re-elaboration (reusing the FROZEN `mutation::generate` catalogue). The resulting certificate populates ALL FOUR forge-tier evidence blocks: `covenant_evidence` (from the witness), the axiom-gate record (`engine_attribution` + per-clause `engine`/`trust`), the re-elaboration `contract_quality.mutants_killed` (anti-Goodhart), and the `burn` receipt (proof tokens + cited frozen simp-lemmas). (3) THE GOLDEN CERT + ORACLE (`conformance/forge/isqrt_class.cert.json` + `forge/tests/g1_gate.rs`, verus+lake-guarded): asserts item level L3, the three clauses' engine attribution nlsat / nlsat / lean, and all four evidence blocks present + populated, pinned against the committed golden. (4) THE SEVEN-VERDICT HERMETIC SUITE (`forge/src/seven_verdicts.rs`): one named test per `verdict::CertVerdict` (Proved, Counterexample, RealWitness, CovenantRefuted, Stuck, KernelBudget, Timeout), each exercising its verdict at the production boundary so the gate's 'seven hermetic tests' claim is literally met — the RealWitness producer runs in CI (z3-gated + an UNGATED structural `classify_sat` test in engine.rs), and KernelBudget gains its e2e exercise (the `lean_unverifiable_cert` cert builder). (5) ZERO v1 REGRESSION: `--engine forge` is a new additive route; the v1 corpus selects the default Verus path, so every `conformance/**/*.cert.json` oracle subset is byte-identical (verified)."
+remaining_scope = "Gate DECLARATION only — the artifact is shipped, but the G1 gate (REQ-10) is not declared closed here: flipping the README/docs headline (\"out-of-cage no longer degrades\") is the separate R-GATE-1 step (changes at gate time, not merge time), and the thermite2 governance docs (thermite2-semantics.md / the R-rules / skill v2) are separate authoring steps. This entry covers ONLY the isqrt_class example + golden cert + the seven-verdict suite + zero-v1-regression; it does NOT mark the headline flipped."
+aliases = ["G1 gate", "G1 gate artifact", "isqrt_class example", "isqrt_class", "seven-verdict hermetic suite", "seven hermetic tests", "REQ-10", "AC-14", "--engine forge"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "conformance/forge/isqrt_class.th"
+note = "(1) the isqrt_class example: a single fn keyed on the integer-sqrt characterization (req r*r<=n && n<(r+1)^2) with two NON-TRIVIAL nlsat-earned L4 consequences (2*r<=n+1, n<2*r*r+2*r+1 — not req restatements) + one non-relaxable `%` L3 clause, a witness covenant, and the `proof for isqrt_class { ens#2 }` author proof"
+
+[[requirement.evidence]]
+kind = "file"
+target = "conformance/forge/isqrt_class.cert.json"
+note = "(3) the golden certificate: item L3, per-clause engine nlsat/nlsat/lean, all four evidence blocks (covenant_evidence, engine_attribution, mutants_killed 7/7, burn) + the meaning audit — the AC-14 oracle"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "forge_gate_check"
+note = "(2) the `--engine forge` G1 gate pass (check.rs): per-fn dispatch to the per-clause hybrid certificate builder"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "forge_gate_item_cert"
+note = "(2) the per-clause hybrid assembly: classify each ens (synthetic single-ens fn), nlsat L4 vs author-proof Lean L3 + burn, covenant-before-burn, meaning audit, re-elaboration mutation, min-level cert with all four evidence blocks"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "EngineSelection"
+note = "(2) the `EngineSelection::Forge` variant + the `--engine forge` CLI surface (cli.rs) — additive, returns early in check_file_with_engine; the v1 Verus/lean/auto/nlsat paths are unchanged"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/g1_gate.rs"
+note = "(3) AC-14 cert-oracle (verus+lake-guarded): isqrt_class certifies L3 with clauses L4/L4/L3 (engine nlsat/nlsat/lean) and all four evidence blocks present + populated, == the golden"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/src/seven_verdicts.rs"
+note = "(4) the seven-verdict hermetic suite: verdict_proved / verdict_counterexample / verdict_real_witness / verdict_covenant_refuted / verdict_stuck / verdict_kernel_budget / verdict_timeout — one named test per CertVerdict, all run under cargo test -p forge (the CI lean job)"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/src/engine.rs"
+note = "(4) the UNGATED structural RealWitness producer (classify_sat_real_only_model_is_real_witness): feeds classify_sat the √2 real countermodel directly → RealWitness, never a Counterexample — the AC-14 RealWitness-producer coverage that does not depend on z3"
+
+[[requirement]]
 id = "REQ-S1-1"
 title = "Seven-verdict certificate vocabulary"
 owner = ".design/stage1-forge-tier.md"

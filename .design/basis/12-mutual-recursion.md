@@ -2,8 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 90b8325951b0f625a693baf07776da39d0b95fbe (re-pinned 2026-06-17 after merging main into the #275 vacuity-fix branch: governed source carries #51's topology-stable doc-drift change + #275's ADT-deps/compile-error vacuity fix, both net-additive; the REQs this doc governs are unchanged.)
-audited-content-sha256: 138ca927e4a65c28e616970fc4c76988e4259c7bfedf15743108d16c7af546b7
+audited-sha: 1db3f2ba5cff4b38508036f9dd1cf47f54e5d161 (re-pinned 2026-06-17 after merging main into the G1 gate-artifact branch: governed source carries the gate's per-clause forge router + #53 arm64 sandbox + #54 content-pin docs, net-additive; the REQs this doc governs are unchanged.)
 governs: forge/src/check.rs
 governs: thermite-lower/src/lower.rs
 thesis-refs:

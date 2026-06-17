@@ -106,6 +106,40 @@ fn check(name: &str, program: &str) -> Value {
         .unwrap_or_else(|| panic!("no certificate emitted for `{name}`: {value}"))
 }
 
+/// Run `forge check <program> --json` and return the certificate for the named
+/// item. A program that declares an ADT emits a cert for the `struct`/`enum`
+/// before the `fn`, so the fn's cert is NOT the first one — these ADT probes must
+/// look the cert up by item name (`check` returns only the first cert).
+fn check_item(name: &str, program: &str, item: &str) -> Value {
+    let path = write_temp(name, program);
+    let cache_dir = unique_cache_dir();
+    let _ = std::fs::remove_dir_all(&cache_dir);
+    let out = Command::new(forge_bin())
+        .arg("check")
+        .arg(&path)
+        .arg("--json")
+        .env("FORGE_CACHE_DIR", &cache_dir)
+        .output()
+        .unwrap_or_else(|e| panic!("spawn forge: {e}"));
+    let _ = std::fs::remove_file(&path);
+    let _ = std::fs::remove_dir_all(&cache_dir);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let value: Value = serde_json::from_str(stdout.trim()).unwrap_or_else(|e| {
+        panic!(
+            "forge --json must emit one JSON document: {e}\nstdout:\n{stdout}\nstderr:\n{}",
+            String::from_utf8_lossy(&out.stderr)
+        )
+    });
+    value
+        .as_array()
+        .and_then(|a| {
+            a.iter()
+                .find(|c| c.get("item").and_then(|i| i.as_str()) == Some(item))
+        })
+        .cloned()
+        .unwrap_or_else(|| panic!("no `{item}` certificate in output for `{name}`: {value}"))
+}
+
 fn level(c: &Value) -> &str {
     c["level"].as_str().unwrap_or("<no level>")
 }
@@ -350,5 +384,116 @@ fn tautology_with_satisfiable_req_is_reported_as_tautology() {
     assert!(
         taut(&c) && !vac(&c),
         "the tautology bool is set, the vacuous bool is NOT (the req is satisfiable): {c}"
+    );
+}
+
+// ===========================================================================
+// crosslink #275 — the ADT soundness hole. Before the fix, the harness builder
+// omitted the reachable `struct`/`enum` decls, so an ADT-returning / ADT-taking
+// fn's harness referenced an undeclared type and failed to COMPILE (E0425); the
+// interpreter mapped that compile failure (`success:false, errors:0`) to the
+// clean `Failed`, so BOTH anti-Goodhart checks silently no-op'd on every ADT fn
+// (R-CODE-4 "non-verdict read as clean"). The fix weaves the reachable ADT decls
+// into the harness AND treats a `!success && errors == 0` (never-verified)
+// summary as a loud `ForgeError`, not clean. These probes pin the soundness
+// direction: a DEGENERATE ADT contract must now be CAUGHT, not silently certified.
+// Authority: `.design/forge/solver-vacuity.md` §7 steps 2-3 + AC-2/AC-3.
+// ===========================================================================
+
+/// A struct-RETURNING fn with a body-ignoring (tautological) `ens`
+/// (`result.a >= 0` holds for any `u32` field) must be DETECTED as a tautology,
+/// not silently certified. Pre-#275 the `result: Pair` binder referenced an
+/// undeclared `Pair` (E0425) → the harness never compiled → silent clean L3. The
+/// ADT-weave makes the harness compile and verus proves the tautology → reject.
+#[test]
+fn adt_returning_fn_tautology_is_detected() {
+    if !verus_present() {
+        eprintln!("SKIP: verus absent — the ADT tautology harness needs the proof.");
+        return;
+    }
+    let c = check_item(
+        "adt_taut",
+        "struct Pair { a: u32, b: u32 }\n\
+         fn mk(x: u32) -> Pair\n  req x > 0\n  ens result.a >= 0\n  fx pure\n{ Pair { a: x, b: x } }\n",
+        "mk",
+    );
+    assert_ne!(
+        level(&c),
+        "L3",
+        "a struct-returning tautology MUST NOT silently certify (the #275 hole): {c}"
+    );
+    assert_eq!(
+        cause(&c),
+        Some("SemanticTautology"),
+        "the body-ignoring `ens result.a >= 0` must be caught as SemanticTautology: {c}"
+    );
+    assert!(
+        taut(&c) && !vac(&c),
+        "the tautology bool is solver-confirmed true on the ADT-returning fn: {c}"
+    );
+}
+
+/// A struct-TAKING fn with an unsatisfiable `req` (`x > 100 && x < 10`) must be
+/// DETECTED as a vacuous precondition. Pre-#275 the `vac_check(a: Acct)` param
+/// referenced an undeclared `Acct` (E0425) → silent clean. The ADT-weave makes
+/// the `assert(false)`-under-unsat-`req` harness compile and prove → reject.
+#[test]
+fn adt_taking_fn_unsat_req_is_detected() {
+    if !verus_present() {
+        eprintln!("SKIP: verus absent — the ADT vacuity harness needs the proof.");
+        return;
+    }
+    let c = check_item(
+        "adt_vac",
+        "struct Acct { bal: u32 }\n\
+         fn f(a: Acct, x: u32) -> u32\n  req x > 100 && x < 10\n  ens result == x\n  fx pure\n{ x }\n",
+        "f",
+    );
+    assert_ne!(
+        level(&c),
+        "L3",
+        "an ADT-taking unsat-req contract MUST NOT silently certify (the #275 hole): {c}"
+    );
+    assert_eq!(
+        cause(&c),
+        Some("VacuousPrecondition"),
+        "the unsat `req x > 100 && x < 10` must be caught as VacuousPrecondition: {c}"
+    );
+    assert!(
+        vac(&c) && !taut(&c),
+        "the vacuous bool is solver-confirmed true on the ADT-taking fn: {c}"
+    );
+}
+
+/// The false-positive guard on the ADT path: a struct-returning fn with a GOOD,
+/// result-constraining `ens` (`result.v == x`) and a satisfiable `req` must still
+/// reach L3 with both `contract_quality` bools `false`. The ADT-weave must not
+/// over-constrain the arbitrary `result` binder into a spurious tautology
+/// detection (the dangerous direction — rejecting valid code). Authority:
+/// `.design/forge/solver-vacuity.md` AC-1.
+#[test]
+fn adt_returning_fn_good_contract_is_clean_l3() {
+    if !verus_present() {
+        eprintln!("SKIP: verus absent — the ADT false-positive guard needs the proof.");
+        return;
+    }
+    let c = check_item(
+        "adt_good",
+        "struct Box1 { v: u32 }\n\
+         fn wrap(x: u32) -> Box1\n  req x < 100\n  ens result.v == x\n  fx pure\n{ Box1 { v: x } }\n",
+        "wrap",
+    );
+    assert_eq!(
+        level(&c),
+        "L3",
+        "a good struct-returning contract must certify L3, not be flagged: {c}"
+    );
+    assert!(
+        !taut(&c),
+        "a result-constraining `ens result.v == x` MUST NOT be flagged tautology: {c}"
+    );
+    assert!(
+        !vac(&c),
+        "a satisfiable `req x < 100` MUST NOT be flagged vacuous: {c}"
     );
 }

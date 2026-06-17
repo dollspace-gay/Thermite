@@ -55,6 +55,9 @@ mod relax;
 mod repair;
 mod review;
 mod sandbox;
+/// The seven-verdict hermetic suite (REQ-10 / AC-14) — test-only.
+#[cfg(test)]
+mod seven_verdicts;
 mod slag;
 mod strengthen;
 mod tv_signal;

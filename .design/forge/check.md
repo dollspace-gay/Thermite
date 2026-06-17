@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 90b8325951b0f625a693baf07776da39d0b95fbe (re-pinned 2026-06-17 after merging main into the #275 vacuity-fix branch: governed source carries #51's topology-stable doc-drift change + #275's ADT-deps/compile-error vacuity fix, both net-additive; the REQs this doc governs are unchanged.)
+audited-sha: 5ae0816c042debb01c70eb9b89c775837f0c0f24 (re-pinned 2026-06-17 for stage-1 REQ-10 / AC-14, the G1 gate artifact: the governed source additionally carries the per-clause hybrid `--engine forge` route (a NEW `EngineSelection::Forge` variant returning early in `check_file_with_engine`, plus the `forge_gate_*` helpers). Net-additive: the default Verus `check_file*` pipeline + every REQ this doc governs are byte-identical/unchanged. prior: 90b8325951b0f625a693baf07776da39d0b95fbe)
 governs: forge/src/check.rs
 thesis-refs:
   - thermite-design.md §5.1

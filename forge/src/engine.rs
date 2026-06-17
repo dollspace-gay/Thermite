@@ -3200,6 +3200,40 @@ mod tests {
         }
     }
 
+    // REQ-8 / REQ-10 / AC-14 (UNGATED, structural): the RealWitness PRODUCER, exercised
+    // WITHOUT z3. Feed `classify_sat` the real countermodel z3 would return for
+    // `∀ n. n*n ≠ 2` (n ≈ √2) directly: the integrality check rounds it into the radius-2
+    // ℤⁿ box, finds NO integer falsifier of `n*n ≠ 2`, and classifies the point a
+    // `RealWitness` carrying the raw √2 — NEVER a `Counterexample`. This pins the producer
+    // logic hermetically (the AC-14 RealWitness-producer coverage that does not depend on
+    // z3 being installed); the z3 end-to-end run is `live_nlsat_n_squared_ne_two_is_real_witness`.
+    #[test]
+    fn classify_sat_real_only_model_is_real_witness() {
+        let program =
+            parse_program("fn sq(n: u64) -> u64\n  req true\n  ens n * n != 2\n  fx pure\n{ n }\n");
+        let f = fn_of(&program, "sq");
+        // The real countermodel of `n*n ≠ 2` over ℝ: n = √2 (and `result` unconstrained).
+        let mut model = BTreeMap::new();
+        model.insert("n".to_string(), "1.4142135623730951".to_string());
+        match NlsatEngine::classify_sat(f, &model) {
+            NlsatOutcome::RealWitness { point } => {
+                let n = point
+                    .assignment
+                    .iter()
+                    .find(|(v, _)| v == "n")
+                    .map(|(_, x)| x.clone())
+                    .unwrap_or_default();
+                assert!(
+                    n.starts_with("1.41"),
+                    "the raw real point carries n ≈ √2 (got {n})"
+                );
+            }
+            other => {
+                panic!("a real-only √2 countermodel must classify as RealWitness; got {other:?}")
+            }
+        }
+    }
+
     // REQ-8 (LIVE, z3-gated): a contract false over ℤ with an integer falsifier
     // (`n+1 <= n`) yields a genuine integer `Counterexample` (not a RealWitness) — the
     // integrality check finds the integer witness in the box.

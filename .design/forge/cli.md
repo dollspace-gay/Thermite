@@ -3,8 +3,8 @@
 <!--
 tier: 3-component
 status: shipped
-audited-sha: 8b4d2580b472d04fca2b14de5b6be52533a2d258 (re-pinned 2026-06-17 for stage-1 increment 3, REQ-9 lemma library: the only change to this doc's governed file (cli.rs) is the additive REQ-9 burned-lemmas section in render_review (forge review human form); the JSON/other render paths are unchanged (REQ-S1-9). prior: a728d95ca3dbd4fbbee1cb496c003f408d82f327)
-audited-content-sha256: 6b17cbb6ccd73bc533f4199cb56cb47711b6a3c45b63043674df8b0baf50960e
+audited-sha: 5ae0816c042debb01c70eb9b89c775837f0c0f24 (re-pinned 2026-06-17 for stage-1 increment REQ-10 / AC-14, the G1 gate artifact: the only change to this doc's governed file (cli.rs) is the additive `--engine forge` value in the `--engine verus|lean|auto|nlsat|forge` parse (the G1 gate per-clause hybrid route); every other `--engine` value + flag parse is unchanged. prior: 8b4d2580b472d04fca2b14de5b6be52533a2d258)
+audited-content-sha256: 5fffb8aab86e655ce6845a5932c65805c4635172f9b6a6b4a70f1548daa3b00f
 governs: forge/src/cli.rs
 thesis-refs:
   - thermite-design.md §5

@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 1db3f2ba5cff4b38508036f9dd1cf47f54e5d161 (re-pinned 2026-06-17 after merging main into the G1 gate-artifact branch: governed source carries the gate's per-clause forge router + #53 arm64 sandbox + #54 content-pin docs, net-additive; the REQs this doc governs are unchanged.)
+audited-sha: b60386516c4cd59eea596374417c62579389226f (re-pinned 2026-06-17: AC-13 #314 added a comment-only thermite2-semantics.md cross-reference to lower.rs's module header; the governed source semantics and the REQs this doc governs are unchanged.)
 governs: thermite-syntax/src/ast.rs
 governs: thermite-syntax/src/parser.rs
 governs: thermite-spec/src/validator.rs

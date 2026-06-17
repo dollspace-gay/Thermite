@@ -164,6 +164,27 @@ fn cert_for<'a>(certs: &'a [Value], item: &str) -> &'a Value {
         .unwrap_or_else(|| panic!("no cert for `{item}` in {certs:?}"))
 }
 
+/// `true` iff the `forge build --entry` runnable artifact can LINK + RUN here. The
+/// #57 runtime seccomp sandbox (`forge/src/sandbox.rs`) is x86_64-Linux ONLY (a raw
+/// `prctl` seccomp prelude with an `AUDIT_ARCH_X86_64` BPF guard), so the emitted
+/// runner does not link off Linux (`Undefined symbols: _prctl` on macOS/arm64).
+/// The build+run tests SKIP with an explicit warning on any non-Linux platform —
+/// FULL ACCEPTANCE OF THE BUILD+RUN PATH REQUIRES LINUX CI. Mirrors the
+/// `verus_present()` skip precedent (a missing capability is a logged skip, not a
+/// panic, R-CODE-4).
+fn linux_build_run_supported(test: &str) -> bool {
+    if cfg!(target_os = "linux") {
+        return true;
+    }
+    eprintln!(
+        "SKIP {test}: the #57 runtime seccomp sandbox is x86_64-Linux ONLY (the \
+         `forge build --entry` runner emits a raw `prctl` seccomp prelude that does \
+         not link off Linux). FULL ACCEPTANCE OF THE BUILD+RUN PATH REQUIRES LINUX \
+         CI; `cargo test` on this platform skips the runnable end-to-end twin."
+    );
+    false
+}
+
 /// The grounded `TMapU64U64` wrapper + the insert-then-get round-trip + the
 /// absent→None refusal, as a standalone verus program: the
 /// `.design/basis/13-map.md` Verification seed (`9 verified, 0 errors`). This is
@@ -401,6 +422,9 @@ fn ac3_map_kv_contains_key_accessor_certifies_l3() {
 /// COMPILES + RUNS (insert + get → the value)").
 #[test]
 fn ac1_map_kv_builds_and_runs_insert_get_yields_value() {
+    if !linux_build_run_supported("ac1_map_kv_builds_and_runs_insert_get_yields_value") {
+        return;
+    }
     let file = corpus("map_kv.th");
     let out = Command::new(forge_bin())
         .arg("build")

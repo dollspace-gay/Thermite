@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 543b506ef7ee64e2da0528505dae226c84761bd1 (re-pinned 2026-06-16: final source status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: 9171f7fc260242151432300c3ce7ec7bd3000d6e (re-pinned 2026-06-16: forge runtime status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: 6ec560db4b95f9af73f333c4f987d6efaa7b90dc (re-pinned 2026-06-15: `thermite-tv/src/lib.rs` now renders both contract-TV and exec-TV status summaries as stable registry owner references; no TV behavior change; RFC #17)))
+audited-sha: 4a748bc98172c98cc39fb245996ab4143bdab08d (re-pinned 2026-06-16 for stage-1 increment 2b: thermite-tv's SplitMix64 Rng is made pub so the covenant falsify can reuse it (a visibility widening, additive); the contract-TV REQs this doc governs are unchanged.)
 governs: thermite-tv/src/ref_encode.rs, thermite-tv/src/obligation.rs, forge/src/contract_tv.rs
 thesis-refs:
   - thermite-design.md §1 (trust relocated twice: code → spec → spec-intent)

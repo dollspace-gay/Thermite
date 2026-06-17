@@ -168,6 +168,26 @@ pub fn check_file(path: impl AsRef<Path>) -> Result<Vec<Certificate>, ForgeError
     check_file_with_rlimit(path, DEFAULT_RLIMIT)
 }
 
+/// Run the check pipeline on the Lean engine path (`.design/stage1-forge-tier.md` REQ-7,
+/// increment 2e): the Verus base plus the forge-tier LEMMA discharge (the forge tier's
+/// self-contained goals certify here, carrying the burn receipt on `Proven`). The
+/// convenience entry `forge fill`'s proof-hole re-check uses so a closed forge-tier goal
+/// surfaces its certifying verdict + burn receipt directly (AC-11), rather than the
+/// Verus-only default `check_file` which skips a forge-tier lemma. `source_file` is the
+/// checked path (the interactive-replay artifact location, unused for an in-`.th` lemma
+/// proof). Lean-absent → the lemma is an honest non-certified skip (never a false L3).
+pub fn check_file_lean(path: impl AsRef<Path>) -> Result<Vec<Certificate>, ForgeError> {
+    let path = path.as_ref();
+    check_file_with_engine(
+        path,
+        CheckOptions {
+            engine: EngineSelection::Lean,
+            source_file: Some(path.to_path_buf()),
+            ..CheckOptions::default()
+        },
+    )
+}
+
 /// The tunable knobs `cli` threads into the per-item L3 pipeline (the verus
 /// resource budget #11, and the mutation kill-ratio floor #12). A single struct
 /// keeps the public `check_file*` entries stable while the cli passes both levers
@@ -331,6 +351,24 @@ pub fn check_file_with_options(
     // function of the program, R-CODE-5).
     let mutual_missing_dec_fns = mutual_recursion_cycle_fns(&parsed.program);
 
+    // Stage-1 forge tier — the covenant bindings (`.design/stage1-forge-tier.md`
+    // REQ-4, increment 2b). Each entry maps a `fn` to the `witness { inhabit (…);
+    // falsify N; }` block that covenants it (a witness covenants the `fn` it follows in
+    // source order). Computed once (a pure function of the program, R-CODE-5). A `fn`
+    // ABSENT from this map is a plain v1 item (not covenant-routed) and burns
+    // unchanged; a `fn` PRESENT is forge-routed and must pass its covenant BEFORE the
+    // L3 burn (R-COV-1, covenant-before-burn). No v1 corpus item carries a `witness`
+    // block, so the map is empty on the conformance corpus — a no-op on the v1 oracle.
+    let covenant_bindings = crate::covenant_engine::witness_bindings(&parsed.program);
+    // The covenant evidence for each VALIDATED covenant, attached to the item's cert
+    // after the burn (Q-ORACLE: the evidence joins the forge-tier cert oracle). A
+    // refuted/refused covenant carries its own evidence (or none) on its short-circuit
+    // cert and is absent here.
+    let mut covenant_evidence: std::collections::BTreeMap<
+        String,
+        crate::covenant_engine::CovenantEvidence,
+    > = std::collections::BTreeMap::new();
+
     let mut certs = Vec::with_capacity(parsed.program.items.len());
     for item in &parsed.program.items {
         // C11 REQ-2 mutual-recursion missing-`dec` reject (no false L3, no crash):
@@ -385,6 +423,52 @@ pub fn check_file_with_options(
             }
         }
 
+        // Stage-1 forge-tier items (`.design/stage1-forge-tier.md` REQ-3) have no
+        // v1 certification consumer yet (covenant 2b, battery 2c, proof view 2e,
+        // library 3): they are SKIPPED here (no v1 cert), so a hole-free forge item
+        // emits no certificate. EXCEPT (AC-7): a forge item carrying any open `?pN`
+        // proof hole is incomplete and must NOT certify — it short-circuits to a
+        // non-certified `OpenHole` cert through the shared `open_proof_hole_reason`
+        // path (the proof-tier mirror of the `?N` body-hole short-circuit above),
+        // before any lowering/verus. No corpus item is forge-tier, so this is a
+        // no-op on the conformance oracle.
+        if let Item::Forge(forge) = item {
+            if let Some(detail) = crate::goal_repl::open_proof_hole_reason(forge) {
+                certs.push(Certificate::rejected(
+                    item.name().to_string(),
+                    vec!["pure".to_string()],
+                    false,
+                    RejectReason {
+                        cause: "OpenHole".to_string(),
+                        detail,
+                    },
+                ));
+                continue;
+            }
+            // Stage-1 forge tier — the frozen battery (`.design/stage1-forge-tier.md`
+            // REQ-5 / AC-9, increment 2c), the elaboration-time gate. A `lemma`/`proof`
+            // block's VERBATIM tactic content (captured by 2a) is scanned against the
+            // frozen tactic allowlist + the frozen simp set; a proof citing an unlisted
+            // tactic OR an unlisted simp lemma is REFUSED — named — never warned (the
+            // proof-tier mirror of the `thermite_spec::validate` contract cage / the
+            // covenant refusal). The refusal lands its non-certified L0 cert before any
+            // discharge. A clean proof block falls through to the inert forge-item skip
+            // (no v1 cert consumer yet — proof-view discharge is 2e). No conformance `.th`
+            // is forge-tier, so this is a no-op on the v1 oracle.
+            if let Err(violation) = crate::battery::enforce_forge_item(forge) {
+                certs.push(Certificate::rejected(
+                    violation.item().to_string(),
+                    vec!["pure".to_string()],
+                    false,
+                    RejectReason {
+                        cause: violation.cause().to_string(),
+                        detail: violation.detail(),
+                    },
+                ));
+            }
+            continue;
+        }
+
         // #6 gate: structural vacuity triage + `#[slag]` short-circuit run before
         // the L3 proof ("a function does not certify until its contract
         // certifies", §7). A `spec fn` carries no contract (ast.rs `SpecFnItem`),
@@ -432,6 +516,74 @@ pub fn check_file_with_options(
                 // the normal L3 path; the cert graduates the two §7.1
                 // `contract_quality` bools to live-`false` (REQ-6).
                 GateOutcome::ProceedToL3 => {}
+            }
+        }
+
+        // Stage-1 forge tier — the covenant engine (`.design/stage1-forge-tier.md`
+        // REQ-4, increment 2b), gating the L3 BURN. It runs AFTER the gate_fn
+        // short-circuits (`#[slag]`/`#[boundary]`/`fx diverge` certify L1 by fiat and a
+        // vacuity/weak-contract reject lands its L0 cert — none of these BURN, so the
+        // covenant, which gates the burn, does not pre-empt them: a proof-exempt slag
+        // item keeps `slag: true`/L1, slag.md REQ-2). A forge-routed `fn` (one carrying a
+        // `witness` block) that reaches HERE is on the L3 proof-search path and must pass
+        // its covenant first (R-COV-1, covenant-before-burn): author `inhabit` witnesses
+        // are EXECUTED against `req` (a witness not satisfying `req` is a loud covenant
+        // error, never dropped), and a `falsify` run rides the SplitMix64 generator over
+        // the item's executable semantics for a `req`-satisfying input the body violates
+        // `ens` on. A malformed/absent covenant is REFUSED — named — and a `falsify` hit
+        // is `CovenantRefuted` (a hard fail, never degraded); BOTH short-circuit here (the
+        // `continue`), so the L3 proof search below is never reached without a validated
+        // covenant (the closure-instrumented `covenant_engine::covenant_gate` pins the
+        // structural invariant as a unit test). A VALIDATED covenant records its evidence
+        // and falls through to the burn with the record in hand. A `fn` with no `witness`
+        // block is not covenant-routed and burns unchanged (no v1 corpus item carries one
+        // — a no-op on the v1 oracle).
+        if let Item::Fn(f) = item {
+            if let Some(witness) = covenant_bindings.get(&f.name) {
+                use crate::covenant_engine::{analyze_covenant, covenant_gate, CovenantGate};
+                let effects = effects_of(&f.contract.fx);
+                let gate = covenant_gate(analyze_covenant(f, witness), |record| {
+                    debug_assert!(
+                        record.declared,
+                        "covenant-before-burn (R-COV-1): the burn is authorized only with \
+                         a declared, validated covenant record in hand"
+                    );
+                });
+                match gate {
+                    CovenantGate::Refused { error } => {
+                        certs.push(Certificate::rejected(
+                            error.item().to_string(),
+                            effects,
+                            false,
+                            RejectReason {
+                                cause: error.cause().to_string(),
+                                detail: error.detail(),
+                            },
+                        ));
+                        continue;
+                    }
+                    CovenantGate::Refuted {
+                        counterexample,
+                        evidence,
+                    } => {
+                        certs.push(Certificate::covenant_refuted(
+                            f.name.clone(),
+                            effects,
+                            &counterexample,
+                            evidence,
+                        ));
+                        continue;
+                    }
+                    CovenantGate::Burned {
+                        result: (),
+                        evidence,
+                    } => {
+                        // The covenant validated and authorized the burn. Record its
+                        // evidence (attached to the post-burn cert below) and fall through
+                        // to the normal L3 proof search with the covenant in hand.
+                        covenant_evidence.insert(f.name.clone(), evidence);
+                    }
+                }
             }
         }
 
@@ -750,11 +902,21 @@ pub fn check_file_with_options(
     let scopes = crate::closure::classify(&parsed.program);
     let certs = certs
         .into_iter()
-        .map(|cert| match scopes.get(&cert.item) {
-            Some(scope) => cert.with_assurance_scope(scope.clone()),
-            // A cert whose item has no node keeps its `None` scope, which
-            // `oracle_subset` reads as end-to-end (the golden-stable default).
-            None => cert,
+        .map(|cert| {
+            let cert = match scopes.get(&cert.item) {
+                Some(scope) => cert.with_assurance_scope(scope.clone()),
+                // A cert whose item has no node keeps its `None` scope, which
+                // `oracle_subset` reads as end-to-end (the golden-stable default).
+                None => cert,
+            };
+            // Attach the covenant evidence to a VALIDATED forge-routed item's cert
+            // (REQ-4 / Q-ORACLE). A refuted/refused covenant short-circuited above and
+            // carries its own evidence (or none), so it is absent from this map; a v1
+            // item is absent too (no covenant), keeping its cert byte-identical.
+            match covenant_evidence.get(&cert.item) {
+                Some(evidence) => cert.with_covenant_evidence(*evidence),
+                None => cert,
+            }
         })
         .collect();
     Ok(certs)
@@ -824,6 +986,16 @@ pub fn check_file_with_engine(
                 continue;
             }
         };
+        // A forge-tier item's base cert (a `lemma`/`proof for` OpenHole / Battery* reject)
+        // is NOT a fn-contract obligation — the fn-Lean re-discharge below would mint an
+        // empty forge obligation and clobber the reject with a `LeanUnverifiable` skip
+        // (REQ-7, increment 2e). Keep the base reject untouched; a CLEAN forge `lemma`
+        // (absent from `base`, the base path skips it) is discharged by the dedicated
+        // forge-lemma pass after this loop.
+        if matches!(item, Item::Forge(_)) {
+            out.push(cert);
+            continue;
+        }
         let obligations = mint_item_obligations(&parsed.program, item);
         let new_cert = lean_engine_cert(
             &lean,
@@ -833,9 +1005,142 @@ pub fn check_file_with_engine(
             selection,
             options.mutation_floor,
         )?;
+        // REQ-6c anti-Goodhart (increment 2d): the certify-time definition-tower
+        // budget gate on the forge/Lean discharge path. A forge-tier cert (a
+        // non-default engine discharged it) whose contract unfolds a tower deeper /
+        // wider than the Q2 budget is refused here, at certify time — never in
+        // `forge audit` (its "gates nothing" invariant is shipped, #274). A
+        // within-budget forge-tier cert pins the unfolded-tower hash. The Verus
+        // default path (no engine attribution) is untouched, so the v1 goldens stay
+        // byte-identical.
+        let new_cert = gate_definition_tower(new_cert, &parsed.program, &src, item);
+        // REQ-6a anti-Goodhart (increment 2d): the certify-time arbitrary-result
+        // re-elaboration tautology gate on the forge/Lean discharge path. A forge-tier
+        // cert whose contract's `ens` still elaborates for an ARBITRARY result (the
+        // `ens` says nothing about the body) is refused here, at certify time — the L3
+        // counterpart of the Verus §7 solver-vacuity tautology check.
+        let new_cert = gate_arbitrary_result_tautology(new_cert, &lean, &obligations.contract);
         out.push(new_cert);
     }
+
+    // Stage-1 forge-tier LEMMA discharge (`.design/stage1-forge-tier.md` REQ-7, increment
+    // 2e). A `lemma` is a forge-tier item with NO Verus base cert (the base path skips a
+    // clean forge item, REQ-3) — it is the forge tier's self-contained goal, discharged
+    // ONLY by the Lean engine. So here, on the Lean path, each clean `lemma` is
+    // discharged via `export_lemma` + `discharge_source` and its cert (carrying the burn
+    // receipt on `Proven`, REQ-7 / AC-11) is appended. A holed / battery-refused lemma
+    // already carries its non-certified cert from the base path (the `OpenHole` /
+    // `Battery*` reject), so it is present in `out` and NOT re-discharged here. The
+    // default Verus path (`check_file`) never enters this function, so a clean lemma is
+    // still skipped there (the v1 oracle + the 2c default-path behavior are untouched).
+    for item in &parsed.program.items {
+        if let Item::Forge(thermite_syntax::ForgeItem::Lemma(l)) = item {
+            if !out.iter().any(|c| c.item == l.name) {
+                out.push(discharge_forge_lemma(l, &parsed.program, &lean));
+            }
+        }
+    }
     Ok(out)
+}
+
+/// The REQ-6c certify-time definition-tower budget gate (increment 2d;
+/// `.design/stage1-forge-tier.md` REQ-6 / AC-10). Applied to a freshly-produced cert
+/// on the forge/Lean discharge path:
+///
+/// - a v1 / Verus-path cert (no `engine_attribution`) is returned UNCHANGED — the
+///   gate is a forge-tier gate, so the v1 goldens stay byte-identical;
+/// - a non-`fn` item (a `spec fn` has no contract to root a tower) is returned
+///   unchanged;
+/// - a forge-tier cert whose contract tower exceeds the Q2 budget (depth 4 / 40
+///   definitions) is REFUSED — replaced with a `DefinitionTowerBudget` reject cert
+///   that still pins the unfolded-tower hash (AC-10);
+/// - a within-budget forge-tier cert keeps its verdict and gains the pinned
+///   `meaning_audit` (the unfolded-tower hash + depth + count).
+///
+/// Read-only / pure (no prover): the tower is a projection of the AST + source
+/// (`meaning::build_tower`), exactly the same artifact `forge audit --meaning` prints.
+fn gate_definition_tower(
+    cert: Certificate,
+    program: &Program,
+    src: &str,
+    item: &Item,
+) -> Certificate {
+    // The gate is forge-tier-only: a cert with no engine attribution is the v1 Verus
+    // path (or an honest skip), left byte-identical.
+    if cert.engine_attribution.is_none() {
+        return cert;
+    }
+    // Only a `fn` carries a `req`/`ens` contract that roots a meaning tower.
+    let Item::Fn(f) = item else {
+        return cert;
+    };
+    let tower = crate::meaning::build_tower(program, src, f);
+    match tower.over_budget_detail() {
+        Some(detail) => Certificate::rejected_over_budget_tower(
+            &cert.item,
+            cert.effects.clone(),
+            detail,
+            tower.meaning_audit(),
+        ),
+        None => cert.with_meaning_audit(tower.meaning_audit()),
+    }
+}
+
+/// The REQ-6a certify-time arbitrary-result re-elaboration tautology gate (increment
+/// 2d; `.design/stage1-forge-tier.md` REQ-6 / AC-10 — anti-Goodhart defense (a)).
+/// Applied to a freshly-produced cert on the forge/Lean discharge path, beside
+/// [`gate_definition_tower`]:
+///
+/// - a v1 / Verus-path cert (no `engine_attribution`) or an already-rejected /
+///   non-L3 cert is returned UNCHANGED — the gate is a forge-tier certify gate, so
+///   the v1 goldens stay byte-identical and an item that did not certify is not
+///   re-judged;
+/// - otherwise the obligation is re-elaborated with an ARBITRARY result
+///   ([`crate::engine::LeanEngine::arbitrary_result_reelaboration`]). If the `ens`
+///   still kernel-accepts for an arbitrary result, it is a body-ignoring tautology →
+///   the cert is REFUSED (`SemanticTautology`, the same `contract_quality.tautology`
+///   bool the Verus §7 gate sets). `Clean`/`Skipped` keep the cert (the gate only
+///   ever rejects a proven tautology — the safe completeness direction).
+fn gate_arbitrary_result_tautology(
+    cert: Certificate,
+    lean: &crate::engine::LeanEngine,
+    obligation: &crate::obligation::Obligation,
+) -> Certificate {
+    // Forge-tier-only, and only a still-certifying cert: a Verus-path cert (no
+    // attribution), an honest skip, or an already-rejected/non-L3 cert is left as-is.
+    if cert.engine_attribution.is_none() || cert.reject.is_some() || cert.level != Level::L3 {
+        return cert;
+    }
+    match lean.arbitrary_result_reelaboration(obligation) {
+        crate::engine::ArbitraryResultOutcome::Tautology => {
+            // The `ens` holds for an arbitrary result → a body-ignoring semantic
+            // tautology. Refuse with the SemanticTautology cause + the
+            // `contract_quality.tautology` bool (the L3 mirror of the Verus §7 gate's
+            // `rejected_vacuity`).
+            Certificate::rejected_vacuity(
+                &cert.item,
+                cert.effects.clone(),
+                crate::manifest::RejectReason {
+                    cause: "SemanticTautology".to_string(),
+                    detail: format!(
+                        "the arbitrary-result re-elaboration proved `{}`'s `ens` for an \
+                         ARBITRARY result — the contract says nothing about what the body \
+                         computes (a body-ignoring tautology), so the L3 proof does not \
+                         license a certificate (REQ-6a anti-Goodhart; the Lean counterpart \
+                         of the §7 solver-vacuity tautology check)",
+                        cert.item
+                    ),
+                },
+                true,
+                false,
+            )
+        }
+        // Clean (the ens constrains the result) or Skipped (the check could not run —
+        // export refusal / tier-(c) / lake absent): keep the cert. The gate only ever
+        // rejects a PROVEN tautology, never on an inconclusive run (R-CODE-4).
+        crate::engine::ArbitraryResultOutcome::Clean
+        | crate::engine::ArbitraryResultOutcome::Skipped(_) => cert,
+    }
 }
 
 /// The `lean/` package root for the Lean engine (`.design/verified/proof-backends.md`
@@ -1066,11 +1371,152 @@ fn lean_interactive_proven_cert(
     .with_engine_attribution(attribution)
 }
 
+/// Discharge a clean (hole-free, battery-clean) forge-tier `lemma` via the Lean engine
+/// and emit its certificate (`.design/stage1-forge-tier.md` REQ-7, increment 2e). A
+/// `lemma` is the forge tier's self-contained goal: [`crate::lean_export::export_lemma`]
+/// emits the `∀ params, req → ens` theorem proved by the author's frozen-battery tactics,
+/// and [`crate::engine::LeanEngine::discharge_source`] runs lake + the SAME certify-time
+/// axiom gate every Lean path runs. On `Proven` the lemma certifies L3 (kernel-accepted,
+/// the INTERACTIVE trust profile — the proof is author-authored), and the cert carries
+/// the BURN RECEIPT (the committed proof's lexer-token count + cited lemmas, REQ-7 /
+/// AC-11). An export refusal (out-of-fragment / incomplete registry) or a non-`Proven`
+/// verdict (lake failure / surviving `sorry` / axiom-gate refusal / Lean absent) is an
+/// HONEST non-certified L0 cert naming the cause — never a false L3, and no burn receipt
+/// (nothing was burned to a proof). A `lemma` is a proposition, not a refutable body, so
+/// a `Refuted` verdict is treated as a non-proof skip.
+fn discharge_forge_lemma(
+    l: &thermite_syntax::LemmaItem,
+    program: &Program,
+    lean: &crate::engine::LeanEngine,
+) -> Certificate {
+    use crate::engine::Verdict;
+    let effects = vec!["pure".to_string()];
+    let called = reachable_spec_fn_names_full_lemma(program, l);
+    let exported = match crate::lean_export::export_lemma(l, &called, program) {
+        Ok(e) => e,
+        Err(refusal) => {
+            return Certificate::rejected(
+                l.name.clone(),
+                effects,
+                false,
+                RejectReason {
+                    cause: "LeanExportRefusal".to_string(),
+                    detail: format!(
+                        "the forge-tier lemma `{}` is not Lean-exportable (an honest skip, \
+                         not a verdict): {refusal}",
+                        l.name
+                    ),
+                },
+            );
+        }
+    };
+    match lean.discharge_source(&exported.source, &l.name) {
+        Verdict::Proven(_) => lean_lemma_proven_cert(lean, l),
+        Verdict::Unknown(reason) => Certificate::rejected(
+            l.name.clone(),
+            effects,
+            false,
+            RejectReason {
+                cause: "LeanUnknown".to_string(),
+                detail: format!(
+                    "the forge-tier lemma `{}` did not discharge to a kernel-accepted proof \
+                     (NOT certified, no burn receipt): {reason:?}",
+                    l.name
+                ),
+            },
+        ),
+        Verdict::Refuted(_) => Certificate::rejected(
+            l.name.clone(),
+            effects,
+            false,
+            RejectReason {
+                cause: "LeanUnknown".to_string(),
+                detail: format!(
+                    "the forge-tier lemma `{}` proof did not close (a lemma is a proposition, \
+                     not a refutable body); NOT certified",
+                    l.name
+                ),
+            },
+        ),
+    }
+}
+
+/// The L3 cert a `Proven` forge-tier `lemma` produces (REQ-7, increment 2e): like
+/// [`lean_interactive_proven_cert`] (the INTERACTIVE trust profile — the proof is the
+/// author's frozen-battery tactics, a reviewed step) but built directly for the lemma
+/// (no fn base cert), and carrying the BURN RECEIPT minted from the committed proof text
+/// (the lexer-token count + cited lemmas, REQ-7 / AC-11 — oracle-excluded per Q-BURN, so
+/// it does not perturb the cert oracle).
+fn lean_lemma_proven_cert(
+    lean: &crate::engine::LeanEngine,
+    l: &thermite_syntax::LemmaItem,
+) -> Certificate {
+    use crate::engine::Engine as _;
+    let attribution = crate::engine::EngineAttribution {
+        engine: lean.name().tag().to_string(),
+        trust_profile: crate::engine::trust_profile_interactive().items,
+    };
+    Certificate::new(
+        l.name.clone(),
+        Level::L3,
+        vec!["pure".to_string()],
+        0,
+        vec![crate::manifest::ObligationResult::discharged(
+            "forge-tier lemma discharged by an author-authored frozen-battery Lean proof \
+             (kernel-accepted, sorry-free, axiom-gated; stage1-forge-tier.md REQ-7)",
+        )
+        .with_clause_attribution(
+            attribution.engine.clone(),
+            attribution.trust_profile.clone(),
+            crate::verdict::CertVerdict::Proved,
+        )],
+    )
+    .graduate_triage_clean()
+    .with_engine_attribution(attribution)
+    .with_burn(crate::burn::BurnReceipt::for_proof_text(&l.proof.text))
+}
+
 /// Borrow the Lean engine's parsed program (for the per-item + per-mutant obligation
 /// minting on the REQ-9 Lean mutation path). The engine carries the program; this is
 /// the read accessor the mutation battery needs.
 fn lean_program(lean: &crate::engine::LeanEngine) -> &Program {
     lean.program()
+}
+
+/// The SHARED mutant catalogue the L3 re-elaboration mutation battery scores
+/// (`.design/stage1-forge-tier.md` REQ-6 / AC-10, increment 2d — anti-Goodhart defense
+/// (b)). The L3 counterpart of the shipped Verus mutation gate (`mutation_score`, #12):
+/// it reuses the FROZEN mutation operator catalogue [`crate::mutation::generate`]
+/// UNCHANGED — the same operator families and the same `MUTANT_CAP` = 64 deterministic
+/// order-prefix `generate` applies internally. The catalogue is SHARED, never forked
+/// (AC-10 pins this with a test: the re-elaboration battery's mutant set IS
+/// `mutation::generate`'s, so a future fork breaks the test).
+///
+/// Only the KILL CHECK differs from the Verus gate, exactly as REQ-6b specifies: the
+/// Verus gate runs a per-mutant Verus SOLVER search; the L3 path RE-ELABORATES the
+/// mutant's obligation through the existing Lean discharge path
+/// ([`lean_mutation_score`] → [`crate::engine::LeanEngine::discharge`], which exports
+/// the obligation and runs lake) — a decidable per-mutant type-check, not a search
+/// (the substrate note: drive the existing elaborator, do not build a new one). A
+/// mutant the proof still elaborates against survived (the contract under-constrains
+/// the body); one it fails is killed. Survivors keep counting against the floor (the
+/// Budd–Angluin floor gate, [`crate::engine::LeanMutationTally::meets_floor`]).
+///
+/// Performance (the flagged REQ-6a/b risk): up to `MUTANT_CAP` = 64 re-elaborations
+/// per item. Each is ONE lake elaboration (no proof search), and the battery is a
+/// POST-proof QUALITY gate — exactly parallel to the shipped Verus `mutation_score`,
+/// which already runs up to 64 verus runs per item AFTER the L3 proof. It is NOT inside
+/// the per-clause [`crate::engine`] `KernelBudget` (Q4 30s/clause), which bounds the
+/// discharge of ONE clause's proof, not the post-proof mutation battery. So the 64
+/// re-typechecks do not exceed the per-clause budget (they are not within it); the
+/// `MUTANT_CAP` budget is the same bound the Verus gate already lives under.
+pub(crate) fn reelaboration_mutants(
+    f: &thermite_syntax::FnItem,
+    adt_deps: &[Item],
+) -> Vec<crate::mutation::Mutant> {
+    // The SHARED frozen catalogue (REQ-6b / AC-10 — not a fork). `generate` applies the
+    // `MUTANT_CAP` 64 order-prefix internally, so the returned set is already bounded.
+    crate::mutation::generate(f, 0, adt_deps)
 }
 
 /// Score the frozen mutant set of `f` against its own contract via the Lean engine
@@ -1095,8 +1541,12 @@ fn lean_mutation_score(
     let base_program = lean_program(lean);
     // The Lean-path caller threads the whole program's items as `adt_deps`
     // (REQ-11) so the F-STRUCT-ZERO family resolves any struct return — the same
-    // items the per-mutant Lean engine exports from (`program_with_mutant`).
-    for mutant in crate::mutation::generate(f, 0, &base_program.items) {
+    // items the per-mutant Lean engine exports from (`program_with_mutant`). The mutant
+    // set is the SHARED frozen catalogue via `reelaboration_mutants` (REQ-6b / AC-10:
+    // the L3 re-elaboration battery reuses `mutation::generate`, never a fork) — the
+    // per-mutant kill check below is the re-elaboration (export → lake type-check), not
+    // a Verus solver run.
+    for mutant in reelaboration_mutants(f, &base_program.items) {
         // The LeanEngine exports the item by name from its stored program (the
         // exporter re-fetches `o.item` from `self.program`), so to score a mutant we
         // must build a per-mutant engine whose program carries the mutant body in
@@ -1559,6 +2009,16 @@ fn item_subprogram(
             items.push(item.clone());
             Program { items }
         }
+        // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 sub-program/cert
+        // consumer yet (increments 2b-3); the item carries no v1 lowering output, so
+        // its sub-program is the item alone (inert — lowers to nothing), mirroring
+        // the non-fn ADT-decl path's self-contained weave.
+        Item::Forge(_) => {
+            let mut items = adt_deps.to_vec();
+            items.extend(spec_items.iter().cloned());
+            items.push(item.clone());
+            Program { items }
+        }
     }
 }
 
@@ -1809,7 +2269,11 @@ fn mint_item_obligations(program: &Program, item: &Item) -> ItemObligations {
         // the validator before a cert is assembled). Mint an empty contract
         // obligation so the function is total without a panic (R-APG-1); it is
         // never discharged.
-        Item::Struct(_) | Item::Enum(_) => (
+        // A forge-tier item (stage1-forge-tier.md REQ-3) likewise has no in-language
+        // certification obligation in v1 (no v1 consumer until increments 2b-3); mint
+        // the same empty contract obligation as the ADT-decl arm so the function stays
+        // total without a panic (R-APG-1) — it is never discharged.
+        Item::Struct(_) | Item::Enum(_) | Item::Forge(_) => (
             Obligation {
                 item: item.name().to_string(),
                 class: crate::obligation::ObligationClass::Contract,
@@ -1919,6 +2383,32 @@ fn reachable_spec_fn_names_full(program: &Program, f: &thermite_syntax::FnItem) 
     reachable_spec_fn_names_from_seed(&spec_decls, seed, program)
 }
 
+/// The full-expression-position spec-fn closure for a forge-tier `lemma`
+/// (`.design/stage1-forge-tier.md` REQ-7): the seed is the spec-fn calls in the lemma's
+/// `req ∪ ens` (a lemma has no body/dec — it is a pure proposition over its params), and
+/// the closure step walks each reached spec-fn's `body ∪ dec`. Mirrors
+/// [`reachable_spec_fn_names_full`] for the lemma's clause set, so `export_lemma`'s
+/// `R_item` is populated with exactly the spec-fns the lemma's claim denotes against.
+fn reachable_spec_fn_names_full_lemma(
+    program: &Program,
+    l: &thermite_syntax::LemmaItem,
+) -> Vec<String> {
+    let spec_decls: std::collections::BTreeMap<&str, &thermite_syntax::SpecFnItem> = program
+        .items
+        .iter()
+        .filter_map(|i| match i {
+            Item::SpecFn(s) => Some((s.name.as_str(), s)),
+            _ => None,
+        })
+        .collect();
+    let mut seed: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    collect_expr_spec_fn_calls(&l.req.expr, &spec_decls, &mut seed);
+    for ens in &l.ens {
+        collect_expr_spec_fn_calls(&ens.expr, &spec_decls, &mut seed);
+    }
+    reachable_spec_fn_names_from_seed(&spec_decls, seed, program)
+}
+
 /// The corrected closure for a checked `spec fn` (`.design/verified/
 /// proof-backends.md` REQ-1.2): the seed is the spec-fn's own `body ∪ dec`, and the
 /// closure step walks each reached spec-fn's `body ∪ dec`. Returns the reached
@@ -1984,7 +2474,7 @@ fn reachable_spec_fn_names_from_seed(
 /// Collect the in-file spec-fn names a `Block` calls, walking statements + tail
 /// (#71). Only a callee name resolving to an in-file `Item::SpecFn` (`spec_decls`)
 /// is emitted — a combinator / scheme / cross-file callee is ignored (§4.2 pure).
-fn collect_block_spec_fn_calls(
+pub(crate) fn collect_block_spec_fn_calls(
     block: &thermite_syntax::Block,
     spec_decls: &std::collections::BTreeMap<&str, &thermite_syntax::SpecFnItem>,
     out: &mut std::collections::BTreeSet<String>,
@@ -2043,7 +2533,7 @@ fn collect_stmt_spec_fn_calls(
 /// leading `Path` segment names an in-file spec fn, an `Expr::MethodCall` whose
 /// method name does, and every nested sub-expression (a call argument, a closure
 /// body, a match arm — so a spec-fn call inside a scheme step closure is found).
-fn collect_expr_spec_fn_calls(
+pub(crate) fn collect_expr_spec_fn_calls(
     expr: &thermite_syntax::Expr,
     spec_decls: &std::collections::BTreeMap<&str, &thermite_syntax::SpecFnItem>,
     out: &mut std::collections::BTreeSet<String>,
@@ -2242,7 +2732,9 @@ fn collect_item_adt_refs(
         }
         // A struct/enum decl's own field types are followed by the type-graph
         // fixed point (`collect_decl_field_adt_refs`), not here.
-        Item::Struct(_) | Item::Enum(_) => {}
+        // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 ADT-ref consumer yet
+        // (increments 2b-3); references no in-file ADT here, mirroring the ADT-decl arm.
+        Item::Struct(_) | Item::Enum(_) | Item::Forge(_) => {}
     }
 }
 
@@ -2278,7 +2770,9 @@ fn collect_decl_field_adt_refs(
                 }
             }
         }
-        Item::Fn(_) | Item::SpecFn(_) => {}
+        // Forge-tier item (stage1-forge-tier.md REQ-3): not an ADT decl → no field
+        // type graph to follow (increments 2b-3); inert, mirroring the non-decl arm.
+        Item::Fn(_) | Item::SpecFn(_) | Item::Forge(_) => {}
     }
 }
 
@@ -3056,6 +3550,10 @@ fn assemble_certificate(item: &Item, verus: &VerusResult) -> Certificate {
         // same empty-effect value as a `spec fn`). Dead-in-1a: an ADT item dies
         // at the validator before a certificate is ever assembled for it.
         Item::Struct(_) | Item::Enum(_) => vec!["pure".to_string()],
+        // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 cert consumer yet
+        // (increments 2b-3); declares no `fx` row → the same neutral `pure`
+        // projection as a `spec fn`/ADT decl, mirroring the inert ADT-decl arm.
+        Item::Forge(_) => vec!["pure".to_string()],
     };
     match &verus.outcome {
         VerusOutcome::Proved { verified } => Certificate::new(
@@ -3634,6 +4132,65 @@ fn mutant_cert_is_survivor(cert: &Certificate) -> bool {
 mod tests {
     use super::*;
     use crate::manifest::ObligationStatus;
+
+    // REQ-6 / AC-10 (increment 2d, anti-Goodhart defense (b)): the L3 re-elaboration
+    // mutation battery reuses the FROZEN mutation operator catalogue
+    // `mutation::generate` — the catalogue is SHARED, not forked. This test pins that
+    // contract: the mutant set the re-elaboration seam (`reelaboration_mutants`, the
+    // set `lean_mutation_score` re-elaborates per mutant) scores is byte-for-byte
+    // `mutation::generate`'s — same families, same order, same descriptions, same
+    // `MUTANT_CAP` bound. A future fork of the operator set into a second catalogue
+    // would break this assertion.
+    #[test]
+    fn reelaboration_mutation_shares_the_frozen_catalogue_not_forked() {
+        let src = "\
+fn to_1based(x: u32) -> u32
+  req x < 1000
+  ens result == x + 1
+  fx pure
+{ x + 1 }
+";
+        let parsed = thermite_syntax::parse(src);
+        assert!(parsed.is_clean(), "fixture must parse: {:?}", parsed.errors);
+        let f = parsed
+            .program
+            .items
+            .iter()
+            .find_map(|i| match i {
+                Item::Fn(f) if f.name == "to_1based" => Some(f.clone()),
+                _ => None,
+            })
+            .expect("fixture has fn to_1based");
+
+        // The re-elaboration battery's catalogue IS `mutation::generate` (the SHARED
+        // frozen set), not a fork.
+        let shared = reelaboration_mutants(&f, &parsed.program.items);
+        let frozen = crate::mutation::generate(&f, 0, &parsed.program.items);
+        assert!(
+            !shared.is_empty(),
+            "the fixture must produce mutants to score"
+        );
+        assert_eq!(
+            shared.len(),
+            frozen.len(),
+            "the re-elaboration catalogue is the SAME size as mutation::generate (shared, not forked)"
+        );
+        for (a, b) in shared.iter().zip(frozen.iter()) {
+            assert_eq!(
+                a.desc, b.desc,
+                "the re-elaboration battery scores the SAME mutant (same operator family, \
+                 same deterministic order) as mutation::generate — not a forked catalogue"
+            );
+        }
+        // The `MUTANT_CAP` = 64 budget is honored at the shared catalogue source (the
+        // ≤64 re-typecheck bound the REQ-6a/b perf note depends on).
+        assert!(
+            shared.len() <= crate::mutation::MUTANT_CAP,
+            "the shared catalogue is bounded by MUTANT_CAP ({} > {})",
+            shared.len(),
+            crate::mutation::MUTANT_CAP
+        );
+    }
 
     // proof-backends #204 / REQ-1.2 / #226 — the closure mirror: a spec-fn called
     // only from a `dec` measure position reaches the per-item Obligation env's

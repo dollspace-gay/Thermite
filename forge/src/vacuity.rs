@@ -479,6 +479,7 @@ mod tests {
                         tail: None,
                     }),
                     holes: Vec::new(),
+                    refinements: Vec::new(),
                     span: dummy_span(),
                 }
             }

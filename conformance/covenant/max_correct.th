@@ -1,0 +1,14 @@
+// A CORRECT forge-tier item carrying a covenant (`.design/stage1-forge-tier.md`
+// REQ-4): `maxv` returns the larger of `x`/`y`, satisfying `ens result >= x &&
+// result >= y`. The covenant validates — both author `inhabit` witnesses satisfy
+// `req`, and the fixed-seed `falsify 2000` run finds no `req`-satisfying input the
+// body violates `ens` on — so the item proceeds to the L3 burn WITH the covenant in
+// hand (covenant-before-burn), certifies L3, and carries the deterministic covenant
+// evidence block (witness count, falsify generated/refuted = 2002/0, seed).
+fn maxv(x: u64, y: u64) -> u64
+    req true
+    ens result >= x && result >= y
+    fx pure
+{ if x > y { x } else { y } }
+
+witness { inhabit (5, 5); inhabit (9, 2); falsify 2000; }

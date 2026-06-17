@@ -97,7 +97,7 @@ pub use exec_stmt_encode::{
     body_ref_state, body_ref_state_ensures, loop_ref_obligations, negate_condition, BodyRefCtx,
     LoopObligations,
 };
-pub use gen::{gen_exec_exprs, generate_clauses, ExecClause};
+pub use gen::{gen_exec_exprs, generate_clauses, ExecClause, Rng};
 pub use obligation::{
     body_equivalence_obligation, equivalence_obligation, exec_equivalence_obligation,
     loop_entry_obligation, loop_exit_obligation, loop_preservation_obligation, BodyObligationFrame,

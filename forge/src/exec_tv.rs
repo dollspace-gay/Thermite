@@ -296,6 +296,9 @@ pub fn exec_tv_file(path: &Path, seed: u64, rlimit: f64) -> Result<ExecTvReport,
             // A `spec fn` body lowers in spec context (not exec), out of scope for
             // exec-TV; a struct/enum has no exec body.
             Item::SpecFn(_) | Item::Struct(_) | Item::Enum(_) => {}
+            // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 exec-TV consumer
+            // yet (increments 2b-3); inert here, mirroring the spec/ADT no-op arm.
+            Item::Forge(_) => {}
         }
     }
     Ok(report)

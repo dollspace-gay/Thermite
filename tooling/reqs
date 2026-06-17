@@ -1,0 +1,27 @@
+#!/usr/bin/env python3
+"""Small command facade for the canonical REQ registry tool."""
+
+from __future__ import annotations
+
+import importlib.util
+import sys
+from pathlib import Path
+
+
+def load_registry_tool():
+    path = Path(__file__).with_name("req-registry.py")
+    spec = importlib.util.spec_from_file_location("thermite_req_registry", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"unable to load {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def main(argv: list[str]) -> int:
+    return load_registry_tool().main(argv)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

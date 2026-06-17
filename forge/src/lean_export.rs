@@ -1394,6 +1394,7 @@ fn emit_theorem(
     body: &Expr,
     tier: ExportTier,
     ctx: &EncodeCtx,
+    result_mode: ResultMode,
 ) -> Result<String, ExportRefusal> {
     let req_term = match req {
         Some(r) => encode_expr(r, ctx)?,
@@ -1413,18 +1414,45 @@ fn emit_theorem(
             // corollaries (`Stabilize.lean`) prove this equivalent to the §4
             // stabilized form for a specCall-free `e` (tier a) or a statically-
             // unfolded one (tier b), cited so the EXP inspector sees the bridge.
+            //
+            // The `result` binding depends on `result_mode` (REQ-6a, increment 2d):
+            // - BodyDenotation (shipped): `result` = `(Thermite.intVal 0 <body> …)`, the
+            //   body's stabilized value — the proof discharges `ens` for what the body
+            //   computes.
+            // - Arbitrary (the re-elaboration tautology harness): `result` = a fresh
+            //   `(r : Int)` theorem binder, the body DROPPED — the proof must discharge
+            //   `ens` for an ARBITRARY result. If the auto battery still closes it, the
+            //   `ens` holds regardless of the body (a body-ignoring tautology). The
+            //   Lean counterpart of `build_tautology_harness`'s arbitrary `result` param.
+            let (binder, result_value) = match result_mode {
+                ResultMode::BodyDenotation => (
+                    String::new(),
+                    format!("(Thermite.intVal 0 {body_term} {{ v with specs := R_item }})"),
+                ),
+                // A fresh `(r : Int)` binder; the body denotation is dropped (so `_body`
+                // need not be referenced — the goal is over an arbitrary result).
+                ResultMode::Arbitrary => (" (r : Int)".to_string(), "r".to_string()),
+            };
+            let mode_note = match result_mode {
+                ResultMode::BodyDenotation => "",
+                ResultMode::Arbitrary => {
+                    " ARBITRARY-RESULT re-elaboration harness (REQ-6a): `result` is a fresh \
+                     `(r : Int)`, the body dropped — if this closes, the `ens` is a \
+                     body-ignoring tautology (reject)."
+                }
+            };
             Ok(format!(
-                "/-- {thm_name}: the FUEL-FREE tier-({}) obligation (§6.1).\n    \
+                "/-- {thm_name}: the FUEL-FREE tier-({}) obligation (§6.1).{mode_note}\n    \
                  Sound via `Thermite.stabilizes_iff_intVal_zero` /\n    \
                  `Thermite.stabilizesProp_iff_denote_zero` (Stabilize.lean): for a\n    \
                  specCall-free / statically-unfolded `e`, `stabilizesProp e env ↔\n    \
                  denote 0 e env`, so the fuel-free goal is equivalent to the §4\n    \
                  stabilized form but is a SHALLOW QF goal the auto battery chews. -/\n\
-                 theorem {thm_name} (v : Thermite.Env) :\n    \
+                 theorem {thm_name} (v : Thermite.Env){binder} :\n    \
                  Thermite.denote 0 {req_term} {{ v with specs := R_item }} →\n    \
                  Thermite.denote 0 {ens_term}\n      \
                  ((({{ v with specs := R_item }} : Thermite.Env)).bindInt \"result\"\n        \
-                 (Thermite.intVal 0 {body_term} {{ v with specs := R_item }})) := by\n\
+                 {result_value}) := by\n\
                  {}",
                 tier.tag(),
                 auto_tactic_battery()
@@ -2070,6 +2098,136 @@ pub fn export_item(
     program: &Program,
     item: &Item,
 ) -> Result<ExportedObligation, ExportRefusal> {
+    export_item_with_mode(obligation, program, item, ResultMode::BodyDenotation)
+}
+
+/// How the obligation theorem binds `result` (REQ-6a, increment 2d — anti-Goodhart
+/// defense (a)). The shipped export binds `result` to the body's stabilized value;
+/// the arbitrary-result re-elaboration harness binds it to a fresh universally-
+/// quantified binder, so the goal becomes "the `ens` holds for an ARBITRARY result".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ResultMode {
+    /// The shipped binding: `result` = `(Thermite.intVal 0 <body> …)`, the body's
+    /// stabilized value. The proof must discharge `ens` for the value the body computes.
+    BodyDenotation,
+    /// The arbitrary-result re-elaboration binding (REQ-6a): `result` = a fresh
+    /// `(r : Int)` theorem binder, the body denotation DROPPED. The proof must
+    /// discharge `ens` for an ARBITRARY result — if it still elaborates, the `ens`
+    /// said nothing about what the body computes (a tautology, reject). The Lean
+    /// counterpart of `vacuity_solver.rs::build_tautology_harness`'s arbitrary
+    /// `result` proof-fn binder.
+    Arbitrary,
+}
+
+/// Build the arbitrary-result re-elaboration tautology harness for an item's
+/// obligation (REQ-6a / AC-10, increment 2d — anti-Goodhart defense (a)). The L3
+/// counterpart of `vacuity_solver.rs::build_tautology_harness`: it reuses the EXACT
+/// same exporter machinery as the real obligation (`export_item_with_mode`) — same
+/// preamble, same `R_item` registry, same byte-identical `req`/`ens` encoding, same
+/// auto-tactic battery and tier — and changes ONLY the `result` binding, from the
+/// body's stabilized value to a fresh universally-quantified `(r : Int)`. Driving the
+/// existing discharge path (no new elaborator, per the substrate note), the produced
+/// source is fed to lake exactly as a normal obligation: if it kernel-accepts, the
+/// `ens` holds for an arbitrary result, so the contract is a body-ignoring tautology
+/// (reject); if it fails, the `ens` genuinely constrains the result (clean — the safe
+/// completeness direction, mirroring the Verus harness polarity). Returns the same
+/// `ExportRefusal` skips as `export_item` (a non-pure-contract / non-auto item is an
+/// honest skip — the arbitrary-result harness is the pure-contract auto path only in
+/// increment 2d; the straight-line/while-body result-substitution is a residual).
+pub fn export_arbitrary_result_harness(
+    obligation: &Obligation,
+    program: &Program,
+    item: &Item,
+) -> Result<ExportedObligation, ExportRefusal> {
+    export_item_with_mode(obligation, program, item, ResultMode::Arbitrary)
+}
+
+/// Export a forge-tier `lemma` to a self-contained Lean file for discharge
+/// (`.design/stage1-forge-tier.md` REQ-7, increment 2e). A lemma states
+/// `∀ params, req → (ens₁ ∧ … ∧ ensₙ)` — a pure proposition over its typed params,
+/// with NO body to stabilize (unlike a fn-contract obligation). The emitted theorem
+/// reuses the EXACT fn-contract tier-(a) framing MINUS the body/result binding: the
+/// params are free vars in `v : Thermite.Env`, `req`/`ens` are encoded by the same
+/// [`encode_expr`] and denoted by `Thermite.denote 0 … { v with specs := R_item }`, so
+/// the u64 overflow semantics are modeled FAITHFULLY (a naive ℕ/ℤ encoding would be
+/// unsound — it would prove a claim false under wrapping). The proof is the author's
+/// frozen-battery `tactics` (the proof block text). The theorem name is the canonical
+/// `thermite_obligation_<lemma>` the certify-time axiom-gate probe anchors on
+/// (the same `sanitize` the fn path uses), so a lemma discharge runs the SAME axiom
+/// gate ([`crate::engine::certify_lean_axioms`]) as every other Lean path.
+///
+/// `called` is the full-expression-position spec-fn closure of `req ∪ ens` (computed by
+/// the caller with the same closure the fn path uses); `build_registry` populates
+/// `R_item` from it and hard-refuses an incomplete registry. An out-of-fragment
+/// `req`/`ens` construct is an honest [`ExportRefusal`] (a skip, never a partial file).
+pub fn export_lemma(
+    l: &thermite_syntax::LemmaItem,
+    called: &[String],
+    program: &Program,
+) -> Result<ExportedObligation, ExportRefusal> {
+    let decls = spec_decls(program);
+    let (registry_block, registry_names) = build_registry(called, &decls)?;
+    let ctx = ctx_for_params(&l.params);
+
+    // Encode req + each ens via the same machinery the fn-contract path uses. An
+    // out-of-fragment construct refuses HERE (before emitting), an honest skip.
+    let req_term = encode_expr(&l.req.expr, &ctx)?;
+    let ens_terms = l
+        .ens
+        .iter()
+        .map(|e| encode_expr(&e.expr, &ctx))
+        .collect::<Result<Vec<_>, _>>()?;
+    let ens_term = conjoin(&ens_terms);
+
+    let thm_name = format!("thermite_obligation_{}", sanitize(&l.name));
+    let tactics = l.proof.text.trim();
+    let theorem = format!(
+        "/-- {thm_name}: the forge-tier LEMMA obligation (REQ-7 / AC-11). The pure\n    \
+         proposition `∀ params, req → ens` over the typed params (free in `v`), denoted\n    \
+         against the kernel-proven spine (NO body/result — a lemma has neither); the\n    \
+         author's frozen-battery proof discharges it. -/\n\
+         theorem {thm_name} (v : Thermite.Env) :\n    \
+         Thermite.denote 0 {req_term} {{ v with specs := R_item }} →\n    \
+         Thermite.denote 0 {ens_term} {{ v with specs := R_item }} := by\n  \
+         {tactics}"
+    );
+
+    // The independent re-check (the Pin G blind-spot fix, mirroring
+    // `export_item_with_mode`): every `Expr.specCall "NAME"` in the emitted theorem
+    // must be in `dom(R_item)` (= `registry_names`), or refuse.
+    for name in emitted_spec_call_names(&theorem) {
+        if !registry_names.iter().any(|r| r == &name) {
+            return Err(ExportRefusal::IncompleteRegistry(vec![name]));
+        }
+    }
+
+    let source = format!(
+        "/- AUTO-GENERATED by `forge` (lean_export.rs) — the forge-tier LEMMA obligation\n   \
+         exporter (stage1-forge-tier.md REQ-7). Lemma: `{name}`. Instantiates the\n   \
+         kernel-proven spine (`lean/Thermite/`); do NOT edit by hand. -/\n\
+         import Thermite.Stabilize\n\n\
+         {registry_block}\n\n\
+         {theorem}\n",
+        name = l.name,
+    );
+
+    Ok(ExportedObligation {
+        source,
+        // The lemma's proof is the author's frozen-battery tactics (a reviewed step, not
+        // the auto battery), so the cert carries the INTERACTIVE trust profile; the tier
+        // here is metadata (the lemma path runs lake directly via `discharge_source`, not
+        // the tier-gated `discharge`). FuelFreeAuto marks the shallow denote goal.
+        tier: ExportTier::FuelFreeAuto,
+        registry_names,
+    })
+}
+
+fn export_item_with_mode(
+    obligation: &Obligation,
+    program: &Program,
+    item: &Item,
+    result_mode: ResultMode,
+) -> Result<ExportedObligation, ExportRefusal> {
     let decls = spec_decls(program);
 
     // The pure-contract body, req, ens, dec — sorted by item kind.
@@ -2104,6 +2262,21 @@ pub fn export_item(
             let is_pure_int_tail =
                 pure_tail_of_block(body_block).is_some() && result_is_int_sorted(&f.ret);
             if !is_pure_int_tail {
+                // The arbitrary-result harness (REQ-6a) is the pure-contract auto path
+                // only in increment 2d: a straight-line/while-body item binds `result`
+                // through `bodyDenote`/`stateOf`, whose result-substitution is a
+                // residual. An honest skip (OutOfFragment) rather than a body-denotation
+                // export — the tautology check reports "untested" for these, never a
+                // false clean (mirrors the mutation battery's untested-against-lean).
+                if result_mode == ResultMode::Arbitrary {
+                    return Err(ExportRefusal::OutOfFragment(format!(
+                        "fn `{}` is a straight-line/while-body item; the REQ-6a \
+                         arbitrary-result re-elaboration harness covers the pure-contract \
+                         auto path only in increment 2d (result-substitution on \
+                         bodyDenote/stateOf is a residual)",
+                        f.name
+                    )));
+                }
                 // The while-body dispatch (§4.2 / REQ-11, increment (v-b)): a body whose
                 // last statement before the tail is a v1 `Stmt::Loop(While)` (the
                 // `recognize_v1_loop` shape) is the (v) while-body class — route to the
@@ -2174,6 +2347,16 @@ pub fn export_item(
         Item::Struct(_) | Item::Enum(_) => {
             return Err(ExportRefusal::OutOfFragment(
                 "ADT item (no in-language certification obligation in v1)".to_string(),
+            ))
+        }
+        // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 Lean-export consumer
+        // yet (increments 2b-3). Mirrors the inert ADT-decl arm: a structured
+        // `OutOfFragment` refusal (never a panic) — no v1 certification obligation.
+        Item::Forge(_) => {
+            return Err(ExportRefusal::OutOfFragment(
+                "forge-tier item (parse-only in increment 2a; no in-language \
+                 certification obligation until increments 2b-3)"
+                    .to_string(),
             ))
         }
     };
@@ -2294,7 +2477,15 @@ pub fn export_item(
 
     // The theorem (over the per-tier exprs: unfolded for tier (b), as-is otherwise).
     let thm_name = format!("thermite_obligation_{}", sanitize(&obligation.item));
-    let theorem = emit_theorem(&thm_name, req_e.as_ref(), &ens_e, &body_e, tier, &ctx)?;
+    let theorem = emit_theorem(
+        &thm_name,
+        req_e.as_ref(),
+        &ens_e,
+        &body_e,
+        tier,
+        &ctx,
+        result_mode,
+    )?;
 
     let source = format!(
         "/- AUTO-GENERATED by `forge` (lean_export.rs) — the Thermite→Lean obligation\n   \
@@ -4226,6 +4417,54 @@ mod tests {
                 ),
             }
         }
+    }
+
+    // REQ-6a / AC-10 (increment 2d, anti-Goodhart defense (a)): the arbitrary-result
+    // re-elaboration harness reuses the EXACT exporter machinery and changes ONLY the
+    // `result` binding — a fresh `(r : Int)` theorem binder instead of the body's
+    // stabilized value. A pure, no-lake structural test (the lake elaboration leg is the
+    // live `engine::tests::live_arbitrary_result_*` tests): the harness theorem gains the
+    // `(r : Int)` binder, binds `result` to `r`, drops the `intVal 0 <body>` denotation,
+    // and keeps the byte-identical `req`/`ens`/`R_item` of the real obligation.
+    #[test]
+    fn arbitrary_result_harness_binds_result_to_a_fresh_binder() {
+        let p = parse_one("fn f(x: u32) -> u32 req x > 0 ens result == x + 1 fx pure { x + 1 }");
+        let o = fn_obl(&p, "f", vec![]);
+        let item = find_item(&p, "f").expect("fn f present");
+
+        // The real obligation binds `result` to the body's stabilized value.
+        let real = export_item(&o, &p, item).expect("real obligation exports");
+        assert!(
+            real.source.contains("Thermite.intVal 0"),
+            "the real obligation binds result to the body denotation:\n{}",
+            real.source
+        );
+
+        // The arbitrary-result harness binds `result` to a fresh `(r : Int)` instead.
+        let harness = export_arbitrary_result_harness(&o, &p, item)
+            .expect("arbitrary-result harness exports");
+        assert!(
+            harness.source.contains("(v : Thermite.Env) (r : Int)"),
+            "the harness adds a fresh `(r : Int)` theorem binder:\n{}",
+            harness.source
+        );
+        assert!(
+            harness.source.contains(".bindInt \"result\"\n        r)"),
+            "the harness binds `result` to the arbitrary `r`:\n{}",
+            harness.source
+        );
+        assert!(
+            !harness.source.contains("Thermite.intVal 0"),
+            "the harness DROPS the body denotation (result is arbitrary):\n{}",
+            harness.source
+        );
+        // The contract is byte-identical to the real obligation: same `R_item`, same
+        // `ens` term (only the result binding differs). The `ens` `result == x + 1`
+        // encodes the same way in both.
+        assert_eq!(
+            harness.registry_names, real.registry_names,
+            "the harness reuses the SAME R_item registry as the real obligation"
+        );
     }
 
     // #247 — the critic's coverage note: a binder-present non-capturing unfolding.

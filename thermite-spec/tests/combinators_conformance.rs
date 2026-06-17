@@ -278,6 +278,7 @@ fn validate_never_panics_on_deep_nesting() {
                 })),
             }),
             holes: Vec::new(),
+            refinements: Vec::new(),
             span,
         })],
     };

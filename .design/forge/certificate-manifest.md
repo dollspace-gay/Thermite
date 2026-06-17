@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 9cdd236f2b428913cc7ca9dd2fa7f08cc352d4fa (re-pinned 2026-06-15: forge manifest status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: a2db0d8a82ae573cd114387d903ab8f3093dc840 (re-audited 2026-06-12: amended — stale GREENFIELD line, oracle-comparison shape, dead parse_verus_output cite; additive-schema/engine_attribution amendment added, #262))
+audited-sha: 8978ecc950df30b58c00fe6df06f1fc5b4c56691 (re-pinned 2026-06-16 for stage-1 increment 2e, REQ-7: manifest.rs's additive oracle-EXCLUDED burn field is now CONSUMED by the forge-tier lemma discharge (Certificate::with_burn on a Proven lemma cert) — still NOT in oracle_subset per Q-BURN, so oracle_subset is UNCHANGED and the 7 golden certs stay byte-identical (sum_cert_oracle_byte_identical_after_lean_exporter + check_conformance + burn_is_oracle_excluded). Net-additive.)
 governs: forge/src/manifest.rs
 thesis-refs:
   - thermite-design.md §5.1

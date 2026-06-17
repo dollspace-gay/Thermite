@@ -57,6 +57,7 @@ fn fn_with_body(name: &str, fx: EffectRow, body: Block) -> Item {
         dec: None,
         body: Some(body),
         holes: Vec::new(),
+        refinements: Vec::new(),
         span: span(),
     })
 }

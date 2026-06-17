@@ -1,0 +1,1 @@
+lemma add_id(a: u64) req true ens a == a proof { apply Nat.le_refl; omega }

@@ -5283,7 +5283,7 @@ title = "Typed evidence validation"
 owner = "tooling/req-registry.py"
 status = "shipped"
 scope = "tooling"
-summary = "Evidence entries carry an explicit kind and target; path, symbol, issue, and blocker references are validated mechanically."
+summary = "Evidence entries carry an explicit kind and target; path, symbol, command, issue, and blocker references are validated mechanically."
 generated_to = ["status"]
 
 [[requirement.evidence]]
@@ -5300,6 +5300,16 @@ note = "path evidence must resolve"
 kind = "test"
 target = "tooling/tests/test_req_registry.py::ReqRegistryOracleTest.test_blocked_requires_issue_blocker"
 note = "future status blockers are typed"
+
+[[requirement.evidence]]
+kind = "test"
+target = "tooling/tests/test_req_registry.py::ReqRegistryOracleTest.test_command_evidence_rejects_unresolved_executable"
+note = "command evidence must parse and resolve its executable"
+
+[[requirement.evidence]]
+kind = "test"
+target = "tooling/tests/test_req_registry.py::ReqRegistryOracleTest.test_live_issue_adapter_rejects_closed_github_blocker"
+note = "optional live issue adapter catches closed blockers"
 
 [[requirement]]
 id = "REQ-REG-4"
@@ -5322,19 +5332,17 @@ note = "stale generated output is a failing condition"
 
 [[requirement.evidence]]
 kind = "command"
-target = "python3 tooling/req-registry.py --check"
+target = "tooling/reqs check"
 note = "CI-facing generated-view check"
 
 [[requirement]]
 id = "REQ-REG-5"
 title = "Legacy source-comment bridge"
 owner = "tooling/req-status.py"
-status = "partial"
+status = "shipped"
 scope = "tooling"
-summary = "The existing source-comment lint remains as a bridge while repeated `//!` REQ rows are mapped to stable registry IDs."
-remaining_scope = "Migrate the remaining legacy source-comment rows into stable registry IDs, then replace hand-maintained tables with generated regions or links."
+summary = "The existing source-comment lint remains as a compatibility bridge and now verifies that no hand-maintained legacy source REQ status rows remain."
 contributors = ["tooling/req-registry.py"]
-blockers = ["github:dollspace-gay/Thermite#17"]
 generated_to = ["status"]
 
 [[requirement.evidence]]
@@ -5351,11 +5359,9 @@ note = "legacy row lint stays green during migration"
 id = "REQ-REG-6"
 title = "Generated-region migration"
 owner = "tooling/req-registry.py"
-status = "partial"
+status = "shipped"
 scope = "tooling"
-summary = "Source comments should eventually carry stable invariants only; volatile status tables should be generated or linked from canonical status views."
-remaining_scope = "Migrate source comments doc-by-doc after each stable-ID mapping is reviewed."
-blockers = ["github:dollspace-gay/Thermite#17"]
+summary = "Hand-maintained source-comment status tables have been replaced by generated regions or links declared from the canonical registry."
 generated_to = ["status"]
 
 [[requirement.evidence]]
@@ -6672,9 +6678,11 @@ note = "bytes_eq surface/cage conformance"
 # Stage 1 — the forge tier (REQ cluster, .design/stage1-forge-tier.md).
 # The increments landed in this stage: REQ-8a (relax spine lemmas), REQ-1
 # (verdict plumbing), REQ-2 (exporter hardening), all SHIPPED; REQ-4 (covenant)
-# PARTIAL — the foundation signature/record landed, the covenant logic is 2b.
-# The remaining stage-1 clusters (REQ-3 surface syntax, REQ-5 battery, REQ-6
-# anti-Goodhart, REQ-7 goal/fill, REQ-8b relax route, REQ-9 lemma library,
+# PARTIAL — the foundation signature/record landed, the covenant logic is 2b;
+# REQ-3 (surface syntax) PARTIAL — increment 2a parsed + addressed + round-tripped
+# the forge-tier surface (parser/AST/addressing/hole-gating), its semantic
+# consumers are later increments. The remaining stage-1 clusters (REQ-5 battery,
+# REQ-6 anti-Goodhart, REQ-7 goal/fill, REQ-8b relax route, REQ-9 lemma library,
 # REQ-10 gate G1) are not started here and are intentionally not yet registered.
 # ---------------------------------------------------------------------
 
@@ -6768,28 +6776,254 @@ note = "the inspection-tier exporter-surface correspondence table"
 
 [[requirement]]
 id = "REQ-S1-4"
-title = "Covenant engine — discharge signature + record"
+title = "Covenant engine — inhabit/falsify producer + before-burn gate"
 owner = ".design/stage1-forge-tier.md"
-status = "partial"
+status = "shipped"
 scope = "forge"
-summary = "The foundation lands the CovenantRecord type and the non-optional &CovenantRecord parameter on Engine::discharge, threaded through VerusEngine, LeanEngine, and every call site (covenant-before-burn as a type-level seam, not a runtime convention), plus the CovenantRefuted Counterexample-class hard-fail arm in the degrade ladder."
-remaining_scope = "The covenant LOGIC is increment 2b: inhabit witnesses type-checked + executed against req, the falsify generator run (Q3 fixed-seed 50_000) against the executable semantics, the covenant-before-burn enforcement, and the CovenantRefuted producer. Today every program carries CovenantRecord::none() — the witness surface syntax is REQ-3, not yet present."
+summary = "The covenant engine (increment 2b) consumes the foundation's discharge-threaded CovenantRecord and the 2a-parsed witness block: a forge-routed fn's author inhabit witnesses are type-checked and EXECUTED against req (a witness not satisfying req is a loud covenant error, never dropped), and the falsify run rides the thermite-tv SplitMix64 Rng over the item's executable semantics (a deterministic in-Rust evaluator, the dual of exec_ref_value) — a req-satisfying input whose body violates ens is CovenantRefuted with the concrete counterexample, the never-degrades hard-fail treatment. Covenant-before-burn is enforced structurally (R-COV-1): covenant_gate invokes the L3 burn closure ONLY on a validated covenant (closure-instrumented), and a forge-routed item missing an author witness is refused before burn, named. The deterministic covenant evidence block (witness count, falsify generated/refuted counts, fixed seed; Q3 default falsify 50_000 when unstated) is oracle-included in the certificate (Q-ORACLE); v1 items carry no covenant, so the 7 v1 golden certs stay byte-identical."
 aliases = ["covenant engine", "covenant-before-burn", "REQ-4"]
 generated_to = ["status"]
 
 [[requirement.evidence]]
 kind = "file"
 target = "forge/src/covenant.rs"
-note = "the CovenantRecord type"
+note = "the CovenantRecord type (foundation)"
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/covenant_eval.rs"
+note = "the executable-semantics evaluator (the falsify/inhabit interpreter)"
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/covenant_engine.rs"
+note = "the producer + falsify driver + the covenant-before-burn gate"
 
 [[requirement.evidence]]
 kind = "symbol"
-target = "CovenantRecord"
+target = "analyze_covenant"
+note = "inhabit-against-req execution + the falsify run"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "covenant_gate"
+note = "the structural covenant-before-burn gate (R-COV-1)"
 
 [[requirement.evidence]]
 kind = "symbol"
 target = "CovenantRefuted"
 note = "the Counterexample-class hard-fail ladder arm (degrade.rs)"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/covenant_conformance.rs"
+note = "AC-8 cert-oracle — planted-bug CovenantRefuted, no-witness refusal, correct L3"
+
+[[requirement]]
+id = "REQ-S1-5"
+title = "Frozen tactic/simp battery — elaboration gate + Stuck hints"
+owner = ".design/stage1-forge-tier.md"
+status = "shipped"
+scope = "forge"
+summary = "The frozen forge-tier proof battery (increment 2c) consumes the 2a-captured verbatim proof blocks. The tactic allowlist (omega, simp, nlinarith, induction, decide, calc, exact, from, push_neg) and the frozen simp set (the exact simp-only lemmas the auto battery emits) ship as a single static, auditable, byte-deterministic REGISTRY DATA FILE modeled on the combinator registry, golden-pinned at conformance/battery/registry.json. A deterministic citation scanner parses the tactic heads + simp-lemma citations inside a proof block; the enforce gate is the elaboration-time cage (the thermite_spec::validate proof-tier mirror): a proof citing an unlisted tactic OR an unlisted simp lemma is REFUSED — named — never warned, landing a hard L0 reject cert (BatteryUnlistedTactic / BatteryUnlistedSimpLemma) before any discharge. Stuck verdicts carry battery hints: a Lean discharge that elaborates but leaves a residual goal is CertVerdict::Stuck with the residual goal(s) + the missing-simp-bridge heuristic (RFC-1 §8), never silently Proved and never mis-classed as the solver Timeout. No v1 corpus item is forge-tier, so the battery is a no-op on the 7 v1 golden certs (byte-identical)."
+aliases = ["frozen battery", "tactic battery", "simp battery", "Stuck hints", "REQ-5"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/battery.rs"
+note = "the frozen REGISTRY (tactic allowlist + simp set), the citation scanner, the enforce gate, the Stuck producer"
+
+[[requirement.evidence]]
+kind = "file"
+target = "conformance/battery/registry.json"
+note = "the hand-derived golden oracle the frozen battery is pinned against (AC-9 — the registry file exists)"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "enforce"
+note = "the elaboration-time gate refusing an unlisted tactic/simp lemma, named (R-BAT-1)"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "stuck_from_lake_output"
+note = "the residual-goal + missing-simp-bridge Stuck producer (RFC-1 §8)"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/battery_conformance.rs"
+note = "AC-9 binary surface — unlisted-tactic + unlisted-simp-lemma refusal named in the cert"
+
+[[requirement]]
+id = "REQ-S1-6"
+title = "Anti-Goodhart at L3 — re-elaboration + definition-tower budget"
+owner = ".design/stage1-forge-tier.md"
+status = "shipped"
+scope = "forge"
+summary = "Three anti-Goodhart defenses on the forge-tier (L3) discharge path (increment 2d), each a CERTIFY-TIME gate on the --engine lean/auto route (the Verus default path is untouched, so the 7 v1 golden certs stay byte-identical; none lives in `forge audit`, whose gates-nothing projection invariant is preserved, #274). (a) ARBITRARY-RESULT RE-ELABORATION (tautology): the L3 counterpart of vacuity_solver::build_tautology_harness. `export_arbitrary_result_harness` re-emits the obligation theorem with `result` bound to a fresh universally-quantified `(r : Int)` instead of the body's stabilized value (byte-identical req/ens/R_item otherwise — only the result binder differs), and DRIVES THE EXISTING discharge path (the same #print-axioms probe + run_lake; no new elaborator). If the `ens` still kernel-accepts for an arbitrary result it is a body-ignoring tautology → `gate_arbitrary_result_tautology` refuses (SemanticTautology + contract_quality.tautology). Polarity mirrors the Verus harness: proves → reject; elaboration failure → clean (the safe completeness gap); env/refusal → skip (never rejects). (b) RE-ELABORATION MUTATION: the L3 counterpart of the Verus mutation gate. `reelaboration_mutants` reuses the FROZEN mutation::generate operator catalogue + MUTANT_CAP 64 UNCHANGED — the catalogue is SHARED, never forked (pinned by a test) — and the per-mutant kill check is a re-elaboration through the existing Lean discharge path (a decidable type-check, not a Verus solver run); survivors count against the floor (Budd-Angluin), killed/scored reported in the certificate. The ≤64 re-typechecks are a post-proof quality gate (parallel to the shipped Verus mutation_score), NOT inside the per-clause KernelBudget. (c) DEFINITION-TOWER BUDGET (Q2 default depth 4 / 40 definitions): `meaning::build_tower` computes the contract's spec-fn meaning tower (rooted at req∪ens, cycle-guarded depth); `gate_definition_tower` refuses an over-budget tower at certify time (DefinitionTowerBudget) and pins the unfolded-tower hash (Certificate.meaning_audit, oracle-included per Q-ORACLE, None for v1). `forge audit --meaning` is the read-only companion printing the tower + hash, gating nothing."
+aliases = ["anti-Goodhart", "re-elaboration", "arbitrary-result re-elaboration", "re-elaboration mutation", "definition-tower budget", "meaning audit", "forge audit --meaning", "REQ-6"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/meaning.rs"
+note = "defense (c): the DefinitionTower model, the Q2 budget (TOWER_DEPTH_BUDGET 4 / TOWER_DEFINITION_BUDGET 40), the sha256 unfolded-tower hash, the budget verdict + render"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "gate_definition_tower"
+note = "defense (c): the certify-time tower-budget gate on the forge/Lean path (over-budget → refusal pinning the hash; within-budget → meaning_audit pinned). AC-10 tower clause"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "export_arbitrary_result_harness"
+note = "defense (a): re-emits the obligation theorem with `result` bound to a fresh (r : Int) — the Lean counterpart of build_tautology_harness, driving the existing discharge path"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "arbitrary_result_reelaboration"
+note = "defense (a): runs the arbitrary-result harness through the existing #print-axioms + run_lake path; proves → Tautology, fails → Clean, env/refusal → Skipped"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "gate_arbitrary_result_tautology"
+note = "defense (a): the certify-time tautology gate — a body-ignoring ens that re-elaborates for an arbitrary result is refused (SemanticTautology). AC-10 body-ignoring-ens clause"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "reelaboration_mutants"
+note = "defense (b): the SHARED frozen-catalogue seam (= mutation::generate + MUTANT_CAP), re-elaborated per mutant via the existing Lean discharge path; killed/scored reported in the cert"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/src/engine.rs"
+note = "AC-10 (a): live_arbitrary_result_rejects_body_ignoring_ens (Tautology) + live_arbitrary_result_clean_for_body_constraining_ens (Clean), verified against the built Lean spine"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/src/check.rs"
+note = "AC-10 (b): reelaboration_mutation_shares_the_frozen_catalogue_not_forked — the re-elaboration battery's mutant set IS mutation::generate's (shared, not forked)"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/src/meaning.rs"
+note = "AC-10 (c): over_depth_tower_is_refused + within_budget_tower_pins_a_stable_hash, and the body-ignoring-vs-constraining tower tests"
+
+[[requirement]]
+id = "REQ-S1-7"
+title = "forge goal --proof / forge fill UX + burn receipts"
+owner = ".design/stage1-forge-tier.md"
+status = "shipped"
+scope = "forge"
+summary = "The forge-tier goal/fill UX (increment 2e) + the L3 burn receipt. (1) PROOF VIEW: `forge goal --proof` (the goal-only `--proof` flag) renders a forge-routed goal — a `lemma` or a `proof for f` obligation — WITH ITS HYPOTHESES IN SCOPE: the typed parameter binders + the `req` precondition the proof may assume (`h_req`, omitted when `req` is the trivial `true`), then the `⊢ goal` (a lemma's `ens`, or a proof-for's `ens#k` resolved 0-based against `f`'s contract), then the open `?pN` holes as the `forge fill` operands. The hypothesis context is derived structurally from the contract (the same data the Lean discharge binds — params as free inputs, `req` as the assumption), so the view needs no live elaborator. (2) FILL: `fill_hole` accepts the 2a `?pN` proof-hole addresses (a `<lemma>.proof.?pN` / `<f>.proof.<clause>.?pN`), not just body `?N`: `span_of_address`→`proof_hole_span` resolves the splice target on the forge item's proof block, the tactics are spliced + re-parsed (a malformed fill is reported), and the re-check (the Lean path) re-presents the proof view + the verdict — the 2c frozen battery refuses an unlisted tactic (cite-unlisted → refused, named), an open-hole short-circuit re-presents a hole the fill introduced (the §5.1 loop). (3) DISCHARGE + BURN: a clean (hole-free, battery-clean) `lemma` is the forge tier's self-contained goal — `export_lemma` emits the `∀ params, req → ens` theorem over the kernel-proven denotation spine (the SAME `encode_expr`/`build_registry`/`R_item` framing as the fn-contract path MINUS the body/result, so u64 overflow is modeled faithfully; a naive ℕ/ℤ encoding would be unsound), proved by the author's frozen-battery tactics; `discharge_source` runs lake + the SAME certify-time `#print axioms` gate every Lean path runs. On `Proven` it certifies L3 (the interactive trust profile — the proof is author-authored) and the certificate carries the BURN RECEIPT (`burn.proof_tokens` = the project lexer's token count over the committed proof text; `burn.cited_lemmas` = the frozen simp-lemma citations; an optional `burn.authoring_tokens` absent unless the harness supplies it). Per Q-BURN the receipt is ORACLE-EXCLUDED (re-authoring a proof changes its token count without changing the claim — like solver_time_ms), so it is NOT in `Certificate::oracle_subset` and the 7 v1 golden certs stay byte-identical. The lemma discharge lives on the Lean path only (`check_file_with_engine`/`check_file_lean`); the default Verus `check_file` is untouched (a forge-tier lemma has no Verus consumer). AC-11: the merge example (`conformance/forge/merge.th`, a merge-loop progress lemma `i < n → i + 1 <= n`) renders its hypotheses under `forge goal --proof`, `forge fill merge_advance.proof.?p0 \"<tactics>\"` closes it end to end, and the resulting certificate certifies L3 with the burn receipt (token count + cited lemmas)."
+aliases = ["forge goal --proof", "forge fill", "proof view", "burn receipt", "burn.proof_tokens", "hypotheses in scope", "?pN fill", "lemma discharge", "REQ-7"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/burn.rs"
+note = "the BurnReceipt {proof_tokens (lexer-token count of the committed proof text, Eof excluded), authoring_tokens?, cited_lemmas (frozen simp citations, deduped)} + the deterministic for_proof_text computation (Q-BURN). burn_is_oracle_excluded pins the oracle exclusion"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "render_proof"
+note = "(1) the proof view: forge-routed goals (lemma / proof-for) rendered with hypotheses in scope + the ⊢ goal + the ?pN fill operands (AC-11 render clause)"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "fill_hole"
+note = "(2) accepts the ?pN proof-hole addresses (not just body ?N): splices the tactics, re-checks (battery refusal / open-hole loop), re-presents the proof view + the discharge verdict + burn"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "proof_hole_span"
+note = "(2) resolves a ?pN proof-hole address to the hole token's byte span on the forge item's proof block — the forge fill splice target"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "export_lemma"
+note = "(3) emits the forge-tier lemma's ∀ params, req → ens theorem over the denotation spine (the fn-contract framing minus body/result), proved by the author's frozen-battery tactics; the canonical thermite_obligation_<lemma> name anchors the axiom gate"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "discharge_source"
+note = "(3) runs a ready-made exported Lean lemma source through lake + the SAME certify-time #print-axioms gate the auto path runs; surviving sorry / smuggled axiom / lake failure → honest Unknown, never Proven"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "discharge_forge_lemma"
+note = "(3) the forge-tier lemma discharge → certificate: Proven → L3 (interactive trust profile) + the burn receipt (Certificate::with_burn); refusal / non-Proven → an honest non-certified L0 cert, never a false L3"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Certificate::with_burn"
+note = "the additive, oracle-EXCLUDED burn: Option<BurnReceipt> field + setter; the burn stays out of oracle_subset (Q-BURN), so the v1 goldens are byte-identical"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/merge_example.rs"
+note = "AC-11 end to end: the proof view renders the merge goal's hypotheses; forge fill closes ?p0; the re-check certifies L3 + surfaces the burn receipt; conformance/forge/merge.th certifies L3 with burn via --engine lean (live-spine, lake-guarded)"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/src/engine.rs"
+note = "live_forge_lemma_discharges_proven: the merge-flavored lemma export kernel-accepts + discharges Proven against the built spine (the canonical theorem name + no result binder asserted)"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/proof_fill.rs"
+note = "the proof view + ?pN fill loop driven over the CLI: render hypotheses, close a hole + commit tactics, battery refusal of an unlisted tactic, new-hole re-presentation, non-hole honest error"
+
+[[requirement]]
+id = "REQ-S1-3"
+title = "Forge-tier surface syntax"
+owner = ".design/stage1-forge-tier.md"
+status = "partial"
+scope = "syntax"
+summary = "thermite-syntax parses the forge-tier surface forms beside `fn` — `prop fn`, `lemma … req … ens … proof { … }`, `proof for f { ens#k by { … } }`, `witness { inhabit (…); falsify N; }`, `?pN` proof holes, refinement-type sugar `x: T{P}` (folded to req/ens in a NEW post-parse desugar pass), and the ASCII `dec lex(…)` / `dec wf <rel>` measures (Q-DECWF, no Unicode operator lexing) — into the AST (grouped under one additive `Item::Forge` variant), with semantic addressing (`f.proof.ens#k`, the `?pN` form, `witness#N`) and the hole-gating surface (an open `?pN` blocks build + certification). Proof-block tactic content is captured VERBATIM (not structurally parsed — that is the frozen battery, REQ-5). Always-on, no feature flag; gating is forge-side via holes/routing. Byte-stable: no conformance `.th` uses the new syntax, so the oracle is unchanged."
+remaining_scope = "Surface only — the SEMANTIC consumers of the parsed forms are later increments and are NOT built here: covenant inhabit/falsify execution (increment 2b, REQ-S1-4), the frozen tactic battery that parses proof-block content (2c, REQ-5), anti-Goodhart re-elaboration (2d, REQ-6), the goal/fill proof view that fills `?pN` (2e, REQ-7), the relax engine (2f, REQ-8b), and the lemma-library mechanics that consume `lemma`/`proof`/`dec wf` (3, REQ-9). The forge dispatches every `Item::Forge` through an inert arm today (no v1 cert/lowering consumer), EXCEPT the AC-7 open-`?pN` build/cert refusal which is wired."
+aliases = ["surface syntax", "forge-tier syntax", "prop fn", "lemma", "proof for", "witness", "?pN proof holes", "refinement sugar", "dec wf", "dec lex", "REQ-3"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-syntax/src/parser.rs"
+note = "forge-item productions, proof-block scanner, dec lex/wf, refinement capture"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ForgeItem"
+note = "the grouped Item::Forge AST (PropFn/Lemma/Proof/Witness)"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "desugar_refinements"
+note = "the new post-parse refinement desugar pass (x: T{P} -> req/ens)"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "parse_dec_clause"
+note = "dec lex(...) (registry-free call) + dec wf <rel> (ASCII, Q-DECWF)"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "open_proof_hole_reason"
+note = "AC-7: an open ?pN blocks build + certification (check.rs/build.rs)"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-syntax/tests/forge_items.rs"
+note = "parse + AST + address round-trip for prop fn/lemma/proof/witness/?pN"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-syntax/tests/refinement_sugar.rs"
+note = "refinement-type sugar desugar pass"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-syntax/tests/dec_forms.rs"
+note = "dec lex(...) / dec wf <rel> measure forms"
 
 [[requirement]]
 id = "REQ-TV-CONTRACT-REF-ENCODER"

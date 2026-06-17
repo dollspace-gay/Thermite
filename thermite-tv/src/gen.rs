@@ -66,20 +66,28 @@ use thermite_syntax::ast::{BinOp, Expr, IndexArg, PrimType, Type, UnaryOp};
 /// crate, no wall-clock). SplitMix64 is a small, well-distributed integer
 /// generator, enough to drive the structural choices below reproducibly. The same
 /// `seed` always produces the same stream.
-struct Rng {
+/// A self-contained SplitMix64 PRNG (R-CODE-5: deterministic, seeded, no `rand`
+/// crate, no wall-clock). Public so an out-of-crate consumer can ride the SAME
+/// generator the contract/exec TV streams ride: the forge covenant engine's `falsify`
+/// run (`.design/stage1-forge-tier.md` REQ-4, increment 2b) seeds it with the fixed
+/// `falsify` seed and draws scalar inputs from it, so a covenant's falsification
+/// evidence is reproducible against the identical bitstream the TV layer uses.
+pub struct Rng {
     state: u64,
 }
 
 impl Rng {
-    fn new(seed: u64) -> Self {
-        // Offset the seed so `seed == 0` is not a degenerate all-zero stream.
+    /// Seed the generator. The seed is offset by the SplitMix64 increment so
+    /// `seed == 0` is not a degenerate all-zero stream.
+    #[must_use]
+    pub fn new(seed: u64) -> Self {
         Rng {
             state: seed.wrapping_add(0x9E37_79B9_7F4A_7C15),
         }
     }
 
     /// The next 64-bit value (SplitMix64). Pure state advance — deterministic.
-    fn next_u64(&mut self) -> u64 {
+    pub fn next_u64(&mut self) -> u64 {
         self.state = self.state.wrapping_add(0x9E37_79B9_7F4A_7C15);
         let mut z = self.state;
         z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
@@ -89,7 +97,7 @@ impl Rng {
 
     /// A uniform value in `0..bound` (`bound >= 1`). For `bound == 0` returns 0
     /// (never a panic — R-CODE-2; the generator never passes 0).
-    fn below(&mut self, bound: usize) -> usize {
+    pub fn below(&mut self, bound: usize) -> usize {
         if bound == 0 {
             return 0;
         }

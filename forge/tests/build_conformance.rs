@@ -73,6 +73,27 @@ fn write_fixture(name: &str, body: &str) -> PathBuf {
     path
 }
 
+/// `true` iff the `forge build --entry` runnable artifact can LINK + RUN here. The
+/// #57 runtime seccomp sandbox (`forge/src/sandbox.rs`) is x86_64-Linux ONLY (a raw
+/// `prctl` seccomp prelude with an `AUDIT_ARCH_X86_64` BPF guard), so the emitted
+/// runner does not link off Linux (`Undefined symbols: _prctl` on macOS/arm64).
+/// The build+run tests SKIP with an explicit warning on any non-Linux platform —
+/// FULL ACCEPTANCE OF THE BUILD+RUN PATH REQUIRES LINUX CI. Mirrors the
+/// `verus_present()` skip precedent (a missing capability is a logged skip, not a
+/// panic, R-CODE-4).
+fn linux_build_run_supported(test: &str) -> bool {
+    if cfg!(target_os = "linux") {
+        return true;
+    }
+    eprintln!(
+        "SKIP {test}: the #57 runtime seccomp sandbox is x86_64-Linux ONLY (the \
+         `forge build --entry` runner emits a raw `prctl` seccomp prelude that does \
+         not link off Linux). FULL ACCEPTANCE OF THE BUILD+RUN PATH REQUIRES LINUX \
+         CI; `cargo test` on this platform skips the runnable end-to-end twin."
+    );
+    false
+}
+
 // ---- oracle `build_and_run` / AC-1, AC-3, AC-5 ------------------------------
 //
 // `forge build conformance/sum.th --entry sum` → rustc exit 0; running the binary
@@ -81,6 +102,9 @@ fn write_fixture(name: &str, body: &str) -> PathBuf {
 
 #[test]
 fn sum_runs() {
+    if !linux_build_run_supported("sum_runs") {
+        return;
+    }
     let sum = corpus_dir().join("sum.th");
     let (ok, stdout, stderr) =
         run_forge_build(&[sum.to_str().unwrap(), "--entry", "sum", "--json"]);
@@ -135,6 +159,9 @@ fn sum_runs() {
 
 #[test]
 fn out_places_runnable_binary() {
+    if !linux_build_run_supported("out_places_runnable_binary") {
+        return;
+    }
     let sum = corpus_dir().join("sum.th");
     // A unique user-named destination under the temp dir (the #128 scenario: a
     // `./nano`-style path, not the /tmp/..._build_out_<pid>/ path).
@@ -226,6 +253,9 @@ fn out_places_runnable_binary() {
 
 #[test]
 fn out_bad_path_is_structured_error() {
+    if !linux_build_run_supported("out_bad_path_is_structured_error") {
+        return;
+    }
     let sum = corpus_dir().join("sum.th");
     // A destination under a directory that does not exist: `std::fs::copy` fails with
     // a structured ForgeError::Io (R-CODE-4), never a panic / silent success.
@@ -296,6 +326,9 @@ fn sum_builds_as_library() {
 
 #[test]
 fn ens_violation_fires_at_runtime() {
+    if !linux_build_run_supported("ens_violation_fires_at_runtime") {
+        return;
+    }
     let prog =
         "fn bad(x: u32) -> u32\n  req x < 100\n  ens result == x\n  fx  pure\n{\n  x + 1\n}\n";
     let fixture = write_fixture("bad", prog);

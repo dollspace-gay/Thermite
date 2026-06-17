@@ -931,6 +931,10 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
             // Verus `enum` with `Box<T>` at the recursive occurrence (REQ-10).
             Item::Struct(s) => lower_struct(s, &spec_fn_param_types)?,
             Item::Enum(e) => lower_enum(e)?,
+            // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 lowering/cert
+            // consumer yet (increments 2b-3); emit nothing, mirroring the inert
+            // ADT-decl arms.
+            Item::Forge(_) => continue,
         };
         out.push('\n');
         out.push_str(&item_src);
@@ -1367,6 +1371,9 @@ fn emit_combinator_defs(program: &Program) -> Result<String, LowerError> {
             // — the neutral value for this collector is a no-op. (The item is
             // gated at the validator anyway; this arm is dead-in-1a.)
             Item::Struct(_) | Item::Enum(_) => {}
+            // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 combinator-collection
+            // consumer yet (increments 2b-3); inert here, mirroring the ADT-decl arm.
+            Item::Forge(_) => {}
         }
     }
 
@@ -4306,6 +4313,10 @@ pub(crate) fn collect_vec_elem_types(program: &Program) -> Vec<Type> {
                     }
                 }
             }
+            // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 type-reachability
+            // consumer yet (increments 2b-3); contributes no Vec element types,
+            // mirroring the inert ADT-decl arms.
+            Item::Forge(_) => {}
         }
     }
     // Cluster C5 (`.design/basis/07-strings.md` REQ-15, issue #102): the emitted
@@ -4671,6 +4682,10 @@ pub(crate) fn collect_map_kv_types(program: &Program) -> Vec<(Type, Type)> {
                     }
                 }
             }
+            // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 type-reachability
+            // consumer yet (increments 2b-3); contributes no Map (K,V) pairs,
+            // mirroring the inert ADT-decl arms.
+            Item::Forge(_) => {}
         }
     }
     pairs
@@ -5058,6 +5073,10 @@ fn program_uses_string(program: &Program) -> bool {
                     return true;
                 }
             }
+            // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 String-reachability
+            // consumer yet (increments 2b-3); reaches no String, so fall through
+            // without returning, mirroring the inert ADT-decl arms.
+            Item::Forge(_) => {}
         }
     }
     false
@@ -5710,6 +5729,9 @@ pub(crate) fn program_uses_string_search(program: &Program) -> bool {
         }
         Item::SpecFn(s) => block_uses_string_search(&s.body, &shadow),
         Item::Struct(_) | Item::Enum(_) => false,
+        // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 emission-gate consumer
+        // yet (increments 2b-3); never drives generation, mirroring the ADT-decl arm.
+        Item::Forge(_) => false,
     })
 }
 
@@ -5895,6 +5917,9 @@ fn program_uses_numfmt(program: &Program) -> bool {
         }
         Item::SpecFn(s) => block_uses_numfmt(&s.body, &shadow),
         Item::Struct(_) | Item::Enum(_) => false,
+        // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 emission-gate consumer
+        // yet (increments 2b-3); never drives generation, mirroring the ADT-decl arm.
+        Item::Forge(_) => false,
     })
 }
 
@@ -6465,6 +6490,9 @@ pub(crate) fn program_uses_parse(program: &Program) -> bool {
         }
         Item::SpecFn(s) => block_uses_parse(&s.body, &shadow),
         Item::Struct(_) | Item::Enum(_) => false,
+        // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 emission-gate consumer
+        // yet (increments 2b-3); never drives generation, mirroring the ADT-decl arm.
+        Item::Forge(_) => false,
     })
 }
 
@@ -6724,6 +6752,9 @@ pub(crate) fn program_uses_bytes_eq(program: &Program) -> bool {
         }
         Item::SpecFn(s) => block_uses_bytes_eq(&s.body, &shadow),
         Item::Struct(_) | Item::Enum(_) => false,
+        // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 emission-gate consumer
+        // yet (increments 2b-3); never drives generation, mirroring the ADT-decl arm.
+        Item::Forge(_) => false,
     })
 }
 

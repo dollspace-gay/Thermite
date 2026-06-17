@@ -714,6 +714,11 @@ impl Validator {
                 // (`.design/basis/01-adts.md`). The ADT declarations are
                 // collected separately below.
                 Item::Struct(_) | Item::Enum(_) => None,
+                // A Stage-1 forge-tier item (`.design/stage1-forge-tier.md` REQ-3)
+                // declares no `spec fn` name. A `prop fn` IS a forge-tier definition,
+                // but it is consumed by the forge increments (2b–3), not the v1 spec
+                // validator — it is not seeded as a v1 spec-fn callee here.
+                Item::Forge(_) => None,
             })
             .collect();
         // Cluster C4 strings (`.design/basis/07-strings.md` REQ-8, issue #94): seed
@@ -798,6 +803,9 @@ impl Validator {
                     }
                 }
                 Item::Fn(_) | Item::SpecFn(_) => {}
+                // A forge-tier item (`.design/stage1-forge-tier.md` REQ-3) declares
+                // no enum/struct, so it raises no variant-casing concern here.
+                Item::Forge(_) => {}
             }
         }
 
@@ -861,6 +869,11 @@ impl Validator {
                 Item::Fn(f) => Some((&f.name, f.span)),
                 Item::SpecFn(s) => Some((&s.name, s.span)),
                 Item::Struct(_) | Item::Enum(_) => None,
+                // A forge-tier item (`.design/stage1-forge-tier.md` REQ-3) does not
+                // lower into the reserved `__thermite_` namespace in v1 (its
+                // consumers are increments 2b–3), so it is not reserved-name checked
+                // here.
+                Item::Forge(_) => None,
             };
             if let Some((name, span)) = declared {
                 if name.starts_with(THERMITE_RESERVED_PREFIX) {
@@ -933,6 +946,13 @@ impl Validator {
                     }
                 }
                 Item::Enum(_) => {}
+                // A Stage-1 forge-tier item (`.design/stage1-forge-tier.md` REQ-3):
+                // its contract/proof positions (`prop fn` body, `lemma`/`proof`
+                // clauses + proof blocks, `witness` directives) are consumed by the
+                // forge increments (2b covenant, 2c battery, 2e proof view, 3
+                // library), NOT the v1 spec cage. No v1 contract walk applies here;
+                // the surface is parse/address/round-trip tested in thermite-syntax.
+                Item::Forge(_) => {}
             }
         }
     }

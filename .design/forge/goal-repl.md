@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 9171f7fc260242151432300c3ce7ec7bd3000d6e (re-pinned 2026-06-16: forge runtime status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: 488103d4382815b85141d17bc01b60917ba744e7 (re-audited 2026-06-12: amended — REQ-2 holes-render + REQ-7 increment-(iii) residue corrected, stale (future) governs markers dropped, #195 shared open_hole_reason noted, #262))
+audited-sha: 8978ecc950df30b58c00fe6df06f1fc5b4c56691 (re-pinned 2026-06-16 for stage-1 increment 2e, REQ-7: goal_repl.rs carries the forge-tier proof view (render_proof) + the ?pN proof-hole fill path (fill_hole accepts ProofHole, proof_hole_span resolves the splice target, render_proof_after_fill re-checks on the Lean path surfacing the discharge verdict + burn). Net-additive — the v1 verbs (goal/battery/edit/fill on body holes) this doc governs are unchanged; the forge-tier proof-view/fill surface is specified in .design/stage1-forge-tier.md / REQ-7 / AC-11.)
 governs: forge/src/goal_repl.rs, forge/src/cli.rs (verb dispatch), thermite-syntax/src/parser.rs (hole token)
 thesis-refs:
   - thermite-design.md §5

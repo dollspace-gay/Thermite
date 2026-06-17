@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: b1c296a51f480807abbba16b2430f45f33d8fe49 (re-pinned 2026-06-15: syntax/spec/lower crate-root scaffold status rows now render from path-qualified registry IDs; scaffold behavior unchanged; RFC #17)
+audited-sha: a520c7a3acbcbc8c2d99e8aba80c364b1f334f40 (re-pinned 2026-06-16 for stage-1 increment 2e, REQ-7: the only change to this doc's governed file is the additive `mod burn;` declaration in main.rs — net-additive, the workspace topology this doc governs is unchanged.)
 governs:
   - Cargo.toml (virtual workspace manifest)
   - rust-toolchain.toml

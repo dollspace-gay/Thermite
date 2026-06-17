@@ -25,14 +25,18 @@
 //! <!-- /generated:reqs -->
 
 mod audit;
+mod battery;
 mod body_tv;
 mod build;
+mod burn;
 mod cache;
 mod check;
 mod cli;
 mod closure;
 mod contract_tv;
 mod covenant;
+mod covenant_engine;
+mod covenant_eval;
 mod degrade;
 mod effect_wrappers;
 mod engine;
@@ -41,6 +45,7 @@ mod goal_repl;
 mod kani;
 mod lean_export;
 mod manifest;
+mod meaning;
 mod mutation;
 mod obligation;
 mod profile;

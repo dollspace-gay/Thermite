@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 5e8b29013f65e22573a6caba363f2571bcce949f (re-pinned 2026-06-15: forge check status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: a2db0d8a82ae573cd114387d903ab8f3093dc840 (re-pinned: the #269/#270 coordinated arc — the touched-file changes are exactly this doc's designed REQs / reviewed as claim-neutral)  (re-audited 2026-06-12: amended — stale GREENFIELD line, per-item Vec<Certificate> signature, dead parse_verus_output/level_from_summary cites, test-name fixes, engine-routing/hole-gate amendment, #262)  (re-pinned 2026-06-12: #274 — the lean_fragment membership report added a pub(crate) contract_obligation seam in check.rs (a re-export of mint_item_obligations(...).contract, no closure fork) + a render_audit lean-fragment section in cli.rs; claim-neutral for this doc, no REQ changes))
+audited-sha: 8978ecc950df30b58c00fe6df06f1fc5b4c56691 (re-pinned 2026-06-16 for stage-1 increment 2e, REQ-7: the only change to this doc's governed file (check.rs) is the additive forge-tier LEMMA discharge on the Lean path (discharge_forge_lemma + the check_file_with_engine forge-lemma pass + the fn-re-loop forge-item skip that PRESERVES a forge reject, REQ-S1-7); orthogonal to what this doc governs, the Verus default path is untouched, v1 behavior unchanged.)
 governs: forge/src/check.rs
 thesis-refs:
   - thermite-design.md §5.1

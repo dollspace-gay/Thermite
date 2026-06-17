@@ -44,6 +44,12 @@
   `cast → nat/int` rule: "an integer cast denotes the value as an unbounded
   `nat`/`int` (no wrap; spec arithmetic is mathematical)").
 
+  Normative home (`thermite2-semantics.md` §4 — the audit F2 corners). The div/rem
+  and cast conventions below are stated normatively in `thermite2-semantics.md`
+  §4.1 (div/rem) and §4.2 (casts); that doc is the authority a reader consults. The
+  paragraphs here apply the convention to `denote`/`refDenote` and carry the T1
+  soundness justification.
+
   The partiality convention (#176). `Div`/`Rem`/`Shl`/`Shr` are partial in the
   source (`ast.rs`: `BinOp::Rem` "requires a nonzero divisor"; the zero divisor /
   zero shift is rejected as a source precondition / L0 obligation, discharged
@@ -54,7 +60,7 @@
   and `refDenote` route the op through the same shared `arithDenote` function, so
   whatever total convention is chosen, both sides agree (the soundness theorem is
   about the encoder's operator map being faithful, not about the partial-point
-  value). The convention is stated here and held consistent across both denotations.
+  value). The convention is held consistent across both denotations.
 
   The cast/`nat` convention (#177). `as nat` is the value injected into the
   naturals: a non-negative `int` maps to itself, a negative `int` maps to `0`

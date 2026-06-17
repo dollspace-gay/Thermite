@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: b60386516c4cd59eea596374417c62579389226f (re-pinned 2026-06-17: AC-13 #314 added a comment-only thermite2-semantics.md cross-reference to lower.rs's module header; the governed source semantics and the REQs this doc governs are unchanged.)
+audited-sha: 59287187c2afcc22e1b7872f118183f1e49de263 (re-pinned 2026-06-17 after merging main into the skill-v2 branch: governed source carries the governance docs (#56) + the skill-v2 generator change, both net-additive; the REQs this doc governs are unchanged.)
 governs: thermite-syntax/src/parser.rs
 governs: thermite-syntax/src/ast.rs
 governs: thermite-lower/src/lower.rs

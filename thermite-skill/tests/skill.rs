@@ -135,6 +135,77 @@ fn surface_construct_coverage() {
     );
 }
 
+/// The Stage-1 forge-tier section (skill v2; umbrella `.design/thermite2-program.md`
+/// REQ-8 / AC-13) teaches the agent the SHIPPED forge tier. Its four mandated
+/// content areas must each be present, with expected strings derived from the
+/// shipped forge code — NOT copied from `generate.rs` (R-CHAR-3):
+///
+/// 1. the SEVEN cert-level verdicts — the closed `forge::verdict::CertVerdict::kind`
+///    set is the oracle (a new verdict there must appear here too);
+/// 2. the per-clause ROUTING — the `nlsat`/`verus`/`lean` engine names + the L4/L3
+///    attribution (`forge::engine::EngineName`, `forge::manifest::Level::L4`);
+/// 3. COVENANT authoring — the `witness { inhabit; falsify N }` covenant-before-burn
+///    surface (`forge::covenant_engine`);
+/// 4. the forge-tier VERBS + the burn receipt (`forge goal --proof`, the `?pN` proof
+///    hole, `forge::burn::BurnReceipt`).
+#[test]
+fn forge_tier_section_present() {
+    let skill = generate();
+
+    // The section heading itself.
+    assert!(
+        skill.contains("## 6. Forge tier"),
+        "skill is missing the Stage-1 forge-tier section"
+    );
+
+    // 1. The seven verdicts — the closed `CertVerdict::kind` vocabulary is the oracle.
+    for verdict in [
+        "Proved",
+        "Counterexample",
+        "RealWitness",
+        "CovenantRefuted",
+        "Stuck",
+        "KernelBudget",
+        "Timeout",
+    ] {
+        assert!(
+            skill.contains(verdict),
+            "skill is missing the `{verdict}` cert verdict"
+        );
+    }
+
+    // 2. Routing / per-clause attribution — engine names + the L4/L3 rungs.
+    for marker in ["nlsat", "verus", "lean", "L4", "L3", "relax"] {
+        assert!(
+            skill.contains(marker),
+            "skill is missing routing marker `{marker}`"
+        );
+    }
+
+    // 3. Covenant authoring — the witness/inhabit/falsify surface + before-burn.
+    for marker in ["inhabit", "falsify", "witness", "covenant"] {
+        assert!(
+            skill.contains(marker),
+            "skill is missing covenant-authoring marker `{marker}`"
+        );
+    }
+
+    // 4. Forge-tier verbs + the burn receipt.
+    for marker in [
+        "forge goal",
+        "--proof",
+        "?pN",
+        "proof for",
+        "burn receipt",
+        "prop fn",
+    ] {
+        assert!(
+            skill.contains(marker),
+            "skill is missing forge-tier verb/receipt marker `{marker}`"
+        );
+    }
+}
+
 /// AC-3 — all four ladder labels and the L0/slag clarification are present
 /// (expected strings derived from `thermite-design.md` §6).
 #[test]

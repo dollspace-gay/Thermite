@@ -6877,6 +6877,30 @@ target = "forge/src/engine.rs"
 note = "(4) the UNGATED structural RealWitness producer (classify_sat_real_only_model_is_real_witness): feeds classify_sat the √2 real countermodel directly → RealWitness, never a Counterexample — the AC-14 RealWitness-producer coverage that does not depend on z3"
 
 [[requirement]]
+id = "REQ-SKILL-V2-FORGE-TIER"
+title = "THERMITE.skill.md v2 — the agent-facing Stage-1 forge-tier section"
+owner = ".design/thermite2-program.md"
+status = "shipped"
+scope = "thermite-skill"
+summary = "The skill-v2 deliverable (umbrella thermite2-program.md REQ-8 / AC-13): the thermite-skill GENERATOR emits a new `## 6. Forge tier (Stage-1)` section so an agent reading THERMITE.skill.md at session start holds the SHIPPED forge tier in context, all under the unchanged ≤6,000-token §2.2 hard budget (CI `--check-budget`). Four content areas, each grounded in shipped forge code: (1) THE SEVEN VERDICTS — the closed `verdict::CertVerdict` set (Proved/Counterexample/RealWitness/CovenantRefuted/Stuck/KernelBudget/Timeout) with the agent action per verdict (Stuck → add the missing simp bridge from the frozen battery; CovenantRefuted → the falsify counterexample IS the bug; RealWitness → ens false over ℝ, escalated UP, add the integrality req; KernelBudget/Timeout are budget/resource events, not refutations). (2) ROUTING + PER-CLAUSE ATTRIBUTION — a relaxable polynomial clause → the nlsat engine at L4 (solver(nlsat)+spine-lemma(kernel)); an in-cage v1 contract → verus at L3; a lemma/`proof for` → the lean engine at L3; reading the per-clause engine/trust/verdict; `--engine forge|nlsat|verus|lean`. (3) COVENANT AUTHORING — the `witness { inhabit (..); falsify N; }` covenant-before-burn gate (≥1 author inhabit, each arity/type-matched + req-satisfying; falsify draws SplitMix64 inputs and a req-satisfying ens-breaker is a CovenantRefuted hit). (4) FORGE-TIER VERBS + BURN RECEIPT — `forge goal --proof`, `forge fill <f>.?pN`, `proof for`/`lemma`, and the oracle-excluded burn receipt (committed proof-token count + cited lemmas + optional authoring spend). The generator stays the source of truth (THERMITE.skill.md is regenerated, never hand-edited); the new content fits the budget by tightening curated prose + rendering the leaf inventories terse, with the Type::Unit parse-clean pin preserved. NOT in scope: the §6 metrics dashboard (REQ-7), the README headline flip (R-GATE-1), the stage-2 restratify recipe."
+remaining_scope = "Skill-v2 section ONLY. The README/docs headline flip (\"out-of-cage no longer degrades\", R-GATE-1) and the §6 metrics dashboard (REQ-7) are separate program steps, not covered by this entry."
+aliases = ["skill v2", "skill-v2", "THERMITE.skill.md v2", "forge-tier skill section", "AC-13 skill", "the seven verdicts skill section"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "render_forge_tier"
+note = "(generator) the new section-6 renderer in thermite-skill/src/generate.rs: emits the seven verdicts + routing/attribution + covenant authoring + forge-tier verbs/burn receipt, wired into generate() after render_slag()"
+
+[[requirement.evidence]]
+kind = "file"
+target = "THERMITE.skill.md"
+note = "the regenerated agent-facing artifact carrying `## 6. Forge tier (Stage-1)` (§§6.1–6.4), committed byte-identical to generate() (the committed_skill_is_fresh pin) and under the 6,000-token budget"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-skill/tests/skill.rs"
+note = "forge_tier_section_present pins the four content areas (the seven CertVerdict names as the oracle, the nlsat/verus/lean + L4/L3 routing, the witness/inhabit/falsify covenant surface, the goal --proof/?pN/proof-for/burn-receipt verbs); skill_is_under_budget holds the ≤6,000-token §2.2 gate"
 id = "REQ-S1-11"
 title = "Governance normative deliverables — thermite2-semantics.md + the goal.md R-rules"
 owner = ".design/thermite2-program.md"

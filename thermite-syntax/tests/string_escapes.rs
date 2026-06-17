@@ -100,6 +100,19 @@ fn high_byte_hex_escape_is_rejected_in_v1_byte_model() {
 }
 
 #[test]
+fn raw_high_byte_string_content_is_rejected_in_v1_byte_model() {
+    // Raw non-ASCII UTF-8 bytes would not be byte-faithful if stored in the AST as a
+    // Rust `String` and later emitted with `as_bytes()`, so v1 rejects them until
+    // string contents are represented as bytes.
+    let src = format!("\"{}\"", char::from_u32(0x00e9).unwrap());
+    let (_tokens, errors) = tokenize(&src);
+    assert!(
+        !errors.is_empty(),
+        "raw non-ASCII string content must be a structured diagnostic in v1"
+    );
+}
+
+#[test]
 fn unknown_escape_is_structured_diagnostic_not_silent_swallow() {
     // `\z` is an unknown escape: a structured diagnostic, not the v0.1
     // `other as char` swallow (which would have decoded `\z` to `z`).

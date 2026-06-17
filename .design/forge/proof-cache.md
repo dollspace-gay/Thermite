@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 1cc9d97c6c5d7eab6109561834db77f2ef4b57ab (re-pinned 2026-06-16: forge workflow status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: 488103d4382815b85141d17bc01b60917ba744e7 (re-pinned: the #269/#270 coordinated arc — the touched-file changes are exactly this doc's designed REQs / reviewed as claim-neutral)  (re-audited 2026-06-12: amended — shipped-status Summary; the #49 CHECK_SCHEMA_VERSION fifth key input (schema history 2–5), canonical-config-only caching, cached #13 rejects, and the engine-discriminated evidence-key wrapper, #262))
+audited-sha: 8b4d2580b472d04fca2b14de5b6be52533a2d258 (re-pinned 2026-06-17 for stage-1 increment 3, REQ-9 lemma library: the only change to this doc's governed file (cache.rs) is the additive REQ-9 dec wf accessibility-proof cache (AccessibilityProof + accessibility_cache_key + load/store, a separate wf- on-disk namespace, CHECK_SCHEMA_VERSION-invalidated like the per-item cache); the per-item proof cache is byte-identical (REQ-S1-9). prior: 1cc9d97c6c5d7eab6109561834db77f2ef4b57ab)
 governs: forge/src/cache.rs
 thesis-refs:
   - thermite-design.md §5.3

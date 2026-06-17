@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-sha: a728d95ca3dbd4fbbee1cb496c003f408d82f327 (re-pinned 2026-06-16 for stage-1 increment 2f, REQ-8: the only change to this doc's governed file (cli.rs) is the additive --engine nlsat value + the L4 level_str arm (REQ-S1-8); the v1 CLI verbs/behavior this doc governs are unchanged — a new opt-in --engine value.)
+audited-sha: 8b4d2580b472d04fca2b14de5b6be52533a2d258 (re-pinned 2026-06-17 for stage-1 increment 3, REQ-9 lemma library: the only change to this doc's governed file (cli.rs) is the additive REQ-9 burned-lemmas section in render_review (forge review human form); the JSON/other render paths are unchanged (REQ-S1-9). prior: a728d95ca3dbd4fbbee1cb496c003f408d82f327)
 governs: forge/src/cli.rs
 thesis-refs:
   - thermite-design.md §5

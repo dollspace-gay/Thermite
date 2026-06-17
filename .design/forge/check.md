@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: a728d95ca3dbd4fbbee1cb496c003f408d82f327 (re-pinned 2026-06-16 for stage-1 increment 2f, REQ-8: the only change to this doc's governed file (check.rs) is the additive --engine nlsat relax dispatch (EngineSelection::Nlsat + nlsat_check + the relax cert builders, REQ-S1-8); the Verus default path + v1 corpus are byte-identical.)
+audited-sha: 8b4d2580b472d04fca2b14de5b6be52533a2d258 (re-pinned 2026-06-17 for stage-1 increment 3, REQ-9 lemma library: the only change to this doc's governed file (check.rs) is the additive stage-1 increment 3 REQ-9 passes — apply_lemma_library (certified-only citation refusal + dedup-on-burn rewrite) and the dec wf accessibility write-through — both forge/Lean-path only; the default Verus path + v1 corpus are byte-identical (REQ-S1-9). prior: a728d95ca3dbd4fbbee1cb496c003f408d82f327)
 governs: forge/src/check.rs
 thesis-refs:
   - thermite-design.md §5.1

@@ -4,6 +4,7 @@
 tier: 3-component
 status: draft (v-next architecture — the obligation/engine interface; most REQs NOT-STARTED
 audited-sha: 90b8325951b0f625a693baf07776da39d0b95fbe (re-pinned 2026-06-17 after merging main into the #275 vacuity-fix branch: governed source carries #51's topology-stable doc-drift change + #275's ADT-deps/compile-error vacuity fix, both net-additive; the REQs this doc governs are unchanged.)
+audited-content-sha256: 287ec6b8d561b63678116f96db23370232ffd848284c97eacfeb9e99b7052b9f
         behind build blockers. The SHIPPED substrates this builds on are quoted-code-grounded.)
 governs: forge/src/check.rs + forge/src/degrade.rs + forge/src/manifest.rs (the discharge
          pipeline, the ladder, the certificate this interface generalizes) and

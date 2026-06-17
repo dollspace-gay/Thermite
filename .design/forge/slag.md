@@ -4,6 +4,7 @@
 tier: 3-component
 status: draft
 audited-sha: 9171f7fc260242151432300c3ce7ec7bd3000d6e (re-pinned 2026-06-16: forge runtime status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: 488103d4382815b85141d17bc01b60917ba744e7 (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262))
+audited-content-sha256: 9cf455005d0e26578f9a13062dd06d91f3e037dc91f49409f4ff080fc16c6325
 governs: forge/src/slag.rs
 thesis-refs:
   - thermite-design.md §8

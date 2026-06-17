@@ -4,6 +4,7 @@
 tier: 3-component
 status: draft
 audited-sha: a728d95ca3dbd4fbbee1cb496c003f408d82f327 (re-pinned 2026-06-16 for stage-1 increment 2f, REQ-8: the only change to this doc's governed file (repair.rs) is the additive Level::L4 arm in the certified-rung match (REQ-S1-8 — L4 is a certified rung, not a timeout to escalate); repair behavior unchanged.)
+audited-content-sha256: 65d0ff5ebe001498636b0a579eeab5aad1749f6372397e0accba6aad95ed0334
 governs: forge/src/repair.rs
 thesis-refs:
   - thermite-design.md §5.2

@@ -3,6 +3,7 @@
 tier: 3-component
 status: draft
 audited-sha: e0e930bb3abf5eb14fc740c4de6a73ba328c13eb (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
+audited-content-sha256: c227533578e1e1fef8c1159ee24b7a46f2f73ffbb8664409e15d4a17c51191cd
 governs: forge/src/session.rs  (NOT YET CREATED — greenfield; see "Route" below)
 also-hardens: forge/src/cache.rs  (the concurrency-safe primitives this contract demonstrates)
 thesis-refs:

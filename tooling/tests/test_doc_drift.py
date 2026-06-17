@@ -34,8 +34,16 @@ The oracle (the spec's expected values, not the tool's):
   O-8  (multi-file doc):  one doc governing TWO files, only one drifted
                           -> exit 1; the drifted file named, the current file
                           NOT named in a DRIFT line.
+  O-9  (merge history):   a feature branch pinned after its own file edit merges
+                          a main-side edit to the same file and keeps the feature
+                          tree -> exit 1; full-history must see the main-side
+                          intervening commit that simplified path history hides.
+  O-10 (content pin):     audited-content-sha256 matches the governed file
+                          contents -> exit 0; changing the file contents without
+                          a commit -> exit 1.
 """
 
+import hashlib
 import os
 import subprocess
 import sys
@@ -61,6 +69,26 @@ def _git(repo, *args, env=None, check=True):
             f"git {' '.join(args)} failed ({proc.returncode}): {proc.stderr}"
         )
     return proc.stdout.strip()
+
+
+def _content_digest(repo, patterns):
+    """Hand-authored mirror of the documented content-pin digest."""
+    digest = hashlib.sha256()
+    digest.update(b"doc-drift-content-v1\0")
+    for pattern in patterns:
+        digest.update(b"pattern\0")
+        digest.update(pattern.encode("utf-8", errors="surrogateescape"))
+        digest.update(b"\0")
+        p = repo / pattern
+        if not p.is_file():
+            digest.update(b"missing\0")
+            continue
+        digest.update(b"file\0")
+        digest.update(pattern.encode("utf-8", errors="surrogateescape"))
+        digest.update(b"\0")
+        digest.update(hashlib.sha256(p.read_bytes()).hexdigest().encode("ascii"))
+        digest.update(b"\0")
+    return digest.hexdigest()
 
 
 class Fixture:
@@ -102,13 +130,18 @@ class Fixture:
             )
         self.write("tooling/spec-routes.toml", "\n".join(blocks))
 
-    def write_doc(self, relpath, pin):
+    def write_doc(self, relpath, pin, content_pin=None):
         """Write a routed doc with an HTML-comment header. pin=None -> no pin."""
+        content_line = (
+            f"audited-content-sha256: {content_pin}\n"
+            if content_pin is not None
+            else ""
+        )
         pin_line = f"audited-sha: {pin}\n" if pin is not None else ""
         self.write(
             relpath,
             "# Fixture doc\n\n<!--\ntier: 3-component\nstatus: draft\n"
-            f"{pin_line}-->\n\nbody\n",
+            f"{content_line}{pin_line}-->\n\nbody\n",
         )
 
     def commit(self, relpath, content, message):
@@ -302,6 +335,70 @@ class DocDriftOracleTest(unittest.TestCase):
         self.assertIn("src/moving.rs", joined)
         # The stable file must not appear in any DRIFT line.
         self.assertNotIn("src/stable.rs", joined)
+
+    # --- O-9: full-history catches merge-hidden main-side drift -------------
+    def test_o9_merge_hidden_main_side_drift_is_reported(self):
+        fx = Fixture(self.tmp / "o9")
+        fx.write_routes([("src/widget.rs", ".design/widget.md")])
+        fx.commit("src/widget.rs", "base\n", "base widget")
+
+        _git(fx.path, "checkout", "-q", "-b", "feature", env=fx.env)
+        pin = fx.commit("src/widget.rs", "feature\n", "feature widget")
+
+        _git(fx.path, "checkout", "-q", "main", env=fx.env)
+        main_sha = fx.commit("src/widget.rs", "main\n", "main widget")
+
+        _git(fx.path, "checkout", "-q", "feature", env=fx.env)
+        _git(
+            fx.path,
+            "merge",
+            "--no-ff",
+            "-s",
+            "ours",
+            "main",
+            "-m",
+            "merge main keeping feature tree",
+            env=fx.env,
+        )
+        fx.write_doc(".design/widget.md", pin)
+
+        res = fx.run_gate()
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+        self.assertIn("DRIFT", res.stdout)
+        self.assertIn(".design/widget.md", res.stdout)
+        self.assertIn("src/widget.rs", res.stdout)
+        self.assertIn(main_sha, res.stdout)
+
+    # --- O-10: content pin is content, not git topology ---------------------
+    def test_o10_content_pin_detects_uncommitted_content_change(self):
+        fx = Fixture(self.tmp / "o10")
+        fx.write_routes([("src/widget.rs", ".design/widget.md")])
+        fx.commit("src/widget.rs", "v1\n", "widget v1")
+        pin = _content_digest(fx.path, ["src/widget.rs"])
+        fx.write_doc(".design/widget.md", None, content_pin=pin)
+
+        clean = fx.run_gate()
+        self.assertEqual(clean.returncode, 0, clean.stdout + clean.stderr)
+        self.assertIn("CURRENT", clean.stdout)
+        self.assertIn(pin, clean.stdout)
+
+        fx.write("src/widget.rs", "v2\n")
+        drifted = fx.run_gate()
+        self.assertEqual(drifted.returncode, 1, drifted.stdout + drifted.stderr)
+        self.assertIn("DRIFT", drifted.stdout)
+        self.assertIn("content-sha256", drifted.stdout)
+        self.assertIn("src/widget.rs", drifted.stdout)
+
+    def test_o10b_malformed_content_pin_is_invalid(self):
+        fx = Fixture(self.tmp / "o10b")
+        fx.write_routes([("src/widget.rs", ".design/widget.md")])
+        fx.commit("src/widget.rs", "v1\n", "widget v1")
+        fx.write_doc(".design/widget.md", fx.head(), content_pin="not-a-digest")
+
+        res = fx.run_gate()
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+        self.assertIn("INVALID-PIN", res.stdout)
+        self.assertIn("audited-content-sha256", res.stdout)
 
 
 if __name__ == "__main__":

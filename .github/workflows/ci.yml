@@ -37,9 +37,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           # Full history: the doc-drift tripwire's commit-set predicate
-          # (`git log <pin>..HEAD`) and pin validation (`merge-base
-          # --is-ancestor`) need the pinned commits present; a shallow
-          # clone would mis-class every pin as INVALID-PIN.
+          # (`git log --full-history <pin>..HEAD`) and pin validation
+          # (`merge-base --is-ancestor`) need the pinned commits present; a
+          # shallow clone would mis-class every pin as INVALID-PIN.
           fetch-depth: 0
 
       - name: Install toolchain (pinned to rust-toolchain.toml channel)

@@ -1,14 +1,15 @@
-# Doc-Drift Tripwire — pinned-SHA freshness for every routed design doc
+# Doc-Drift Tripwire — content freshness for every routed design doc
 
 <!--
 tier: 3-component
 status: draft
-governs: tooling/doc-drift.py  (UNBUILT — blocker #258) + the `audited-sha:`
-         header field this doc mandates for every routed .design doc + the
+governs: tooling/doc-drift.py + the `audited-content-sha256:` / `audited-sha:`
+         header fields this doc mandates for every routed .design doc + the
          `make doc-drift` Makefile target (and the SEQUENCED CI step — see
          REQ-10). Explicitly NOT `scripts/audit.sh`, which this component
          leaves byte-identical (decision 5).
 audited-sha: 1523b7edd09d5fe614f2950b5d9ba16ef5639f14 (re-pinned at the #258 gauntlet HEAD; governed file last touched 1523b7ed)
+audited-content-sha256: c98e931347510c2fcca397acb36199ec0a43f8d466ecba551f7ca17a0ce51467
 thesis-refs:
   - thermite-design.md §1 (trust relocated: "a skeptical third party can audit in minutes")
   - thermite-design.md §8 (#[slag]: the unverified residue is LOUD, never silent)
@@ -30,13 +31,14 @@ below is NOT-STARTED, blocked on issue #5" while `forge/src/cli.rs` is 2,778 lin
 a dozen verbs, and 21 commits have touched `cli.rs` since the doc's last-touch commit
 `1004b7a1`. This component converts that staleness from a silent failure into a loud,
 gated one — the same move `#[slag]` (§8) makes for unverified code: every routed design
-doc pins an `audited-sha:` commit, and a new gate (`tooling/doc-drift.py`, run by
-`make doc-drift` and — once the bootstrap backlog is worked off — a CI step) FAILS
-whenever any file a doc governs has been committed since the doc's pin. The gate is
-deliberately NOT part of `make audit`: doc freshness is a development-discipline
-invariant, not a link in the proof-trust chain (decision 5). Clearing the gate is a
-conscious act in a commit: re-pin (an explicit "doc still accurate" claim) or amend
-the doc and pin the amendment.
+doc pins an `audited-content-sha256:` digest over the contents of its governed file
+set (with legacy `audited-sha:` commit pins still accepted as a fallback). The gate
+(`tooling/doc-drift.py`, run by CI and by `make doc-drift`) FAILS whenever the
+governed file contents differ from the pinned digest. The gate is deliberately NOT
+part of `make audit`: doc freshness is a development-discipline invariant, not a
+link in the proof-trust chain (decision 5). Clearing the gate is a conscious act:
+re-pin content after confirming the doc remains accurate, or amend the doc and pin
+the amended claim.
 
 ## The drift this closes (grounded motivating example)
 
@@ -55,23 +57,25 @@ after the doc's last touch). Today nothing fires. After this component,
 
 ## Design decisions (resolved here, grounded below)
 
-1. **Pin granularity: ONE pin per doc** (`audited-sha:` in the doc's HTML-comment
-   header), not per-route. The doc is the claim-bearing unit; the route table is
+1. **Pin granularity: ONE content digest per doc** (`audited-content-sha256:` in
+   the doc's HTML-comment header), not per-route. The doc is the claim-bearing unit; the route table is
    many-to-many (107 routes, 48 distinct docs today — e.g.
    `.design/basis/09-option-result.md` governs 13 files, and `forge/src/check.rs`
    carries 6 governing docs), and the gate inverts routes to `doc → {files}` and
-   checks every governed file against the doc's single pin. Per-route pins would put
-   13 pins in one header and make "which pin?" ambiguous for shared docs. The
-   finer-grained per-FILE pin table in `rust-lean-correspondence.md` stays bespoke to
-   check [4] (it audits arm-by-arm per file; see OQ-1).
-2. **Drift predicate: commit-set, never commit-date.** Doc D with pin P governing
-   file set F(D) has drifted iff `git log --format=%H <P>..HEAD -- <f>` is non-empty
-   for any `f ∈ F(D)`. Date comparison is wrong under rebases; the `<P>..HEAD`
-   range is exactly "commits reachable from HEAD but not from the pin," which is the
-   question being asked. A pin that does not resolve to a commit or is not an
-   ancestor of HEAD is INVALID-PIN — a FAIL distinct from drift (it means the pin
-   itself is broken, e.g. typo'd or orphaned by history surgery).
-3. **No grandfathering.** A routed doc with no `audited-sha:` line FAILS the gate,
+   checks every governed file against the doc's single digest. Per-route pins would
+   put 13 pins in one header and make "which pin?" ambiguous for shared docs. The
+   legacy `audited-sha:` commit pin remains accepted only as a migration fallback.
+2. **Drift predicate: content hash first, full-history commit-set fallback.** Doc D
+   with governed file set F(D) has drifted iff the deterministic aggregate SHA-256
+   over F(D)'s current contents differs from `audited-content-sha256:`. If a legacy
+   commit pin P is the only pin present, D has drifted iff
+   `git log --full-history --format=%H <P>..HEAD -- <f>` is non-empty for any
+   `f ∈ F(D)`. Date comparison is wrong under rebases; `--full-history` prevents
+   Git's path-limited history simplification from making merge-parent order change
+   the fallback answer. Content hashes are preferred because the primary check is a
+   data-consistency problem, not git archaeology.
+3. **No grandfathering.** A routed doc with neither an `audited-content-sha256:`
+   line nor an `audited-sha:` line FAILS the gate,
    naming the doc. No allowlist, no warning tier. The bootstrap (REQ-5) is the
    one-time pinning commit.
 4. **Honest bootstrap: pin each doc at its OWN last-touch commit**
@@ -140,60 +144,70 @@ Substrate this component builds on (already shipped):
   stays in the audit (where this gate does not go) because its subject is a named
   residual-trust item (decision 5).
 
-New work (all UNBUILT — blocker #258):
+New work:
 
-- REQ-5 (the `audited-sha:` field + bootstrap): every doc referenced by a
+- REQ-5 (the pin fields + bootstrap): every doc referenced by a
   `[[route]].design` field carries, in its existing HTML-comment header block
-  (the `tier:`/`status:`/`governs:` block every doc already has), one line
+  (the `tier:`/`status:`/`governs:` block every doc already has), one preferred
+  content pin line:
+
+  ```
+  audited-content-sha256: <64-hex aggregate SHA-256>
+  ```
+
+  The aggregate digest is computed deterministically over the doc's sorted
+  governed `crate_pattern` set. For each pattern, the digest records the pattern,
+  then either a stable missing marker or each matched repo-relative file path plus
+  that file's SHA-256 content digest. Legacy docs may also carry:
 
   ```
   audited-sha: <40-hex full commit SHA>[ <optional free-text annotation>]
   ```
 
   meaning: "this doc's claims were verified accurate against the tree as of this
-  commit." Full 40-hex (not the 8-hex short form check [4]'s table uses) so the pin
-  can never go ambiguous as the repo grows; extraction is the first line matching
-  `^audited-sha:\s*([0-9a-f]{40})\b`. A one-time bootstrap commit adds the field to
-  all 48 routed docs at each doc's own last-touch SHA (decision 4), and files one
-  blocker per doc the first gate run reports as drifted.
+  commit." Full 40-hex (not the 8-hex short form check [4]'s table uses) so a
+  legacy commit pin can never go ambiguous as the repo grows. The tool prefers the
+  content pin whenever present.
 - REQ-6 (the gate, `tooling/doc-drift.py`): a stdlib-only python3 tool that
   (a) loads `tooling/spec-routes.toml` via `tomllib`, (b) inverts routes to
   `doc → sorted({crate_pattern})`, (c) extracts each doc's pin per REQ-5,
-  (d) validates the pin (`git rev-parse --verify <P>^{commit}` +
-  `git merge-base --is-ancestor <P> HEAD`), and (e) applies the drift predicate
-  (decision 2) per governed file — for a literal path, pathspec `<f>`; for a glob
-  pattern, pathspec `:(glob)<f>`. A routed file with no commits in `<P>..HEAD`
-  (including a file not yet committed at all — many v0.2–v0.5 routes point at
-  unbuilt files, e.g. `forge/src/session.rs`) is CURRENT, not drift: there is
-  nothing for the doc to be stale about.
-- REQ-7 (loud, named failure): each drift is reported as the doc path, its pinned
-  SHA, the governed file, and the intervening commits
-  (`git log --oneline <P>..HEAD -- <f>`) — the same three-part naming check [4]'s
-  FAIL lines use ("pinned X, current Y") extended with the commit list, so the
-  re-auditor knows exactly which diffs to review before re-pinning. Output ordering
-  is deterministic: sorted by doc path, then file path (R-CODE-5).
-- REQ-8 (missing/invalid pin = FAIL): a routed doc with no `audited-sha:` line, or
-  with a pin that fails REQ-6(d) validation, is a FAIL naming the doc and the
-  defect class (`MISSING-PIN` / `INVALID-PIN`), distinct from `DRIFT`. No
-  grandfathering (decision 3).
+  (d) for a content pin, recomputes the governed-file aggregate SHA-256 and
+  compares it directly, and (e) for a legacy commit pin, validates the pin
+  (`git rev-parse --verify <P>^{commit}` + `git merge-base --is-ancestor <P>
+  HEAD`) and applies the fallback drift predicate per governed file with
+  `git log --full-history` — for a literal path, pathspec `<f>`; for a glob
+  pattern, pathspec `:(glob)<f>`. A routed file that does not exist is represented
+  explicitly in the content digest; under the legacy fallback, a routed file with
+  no commits in `<P>..HEAD` is CURRENT.
+- REQ-7 (loud, named failure): each content drift is reported as the doc path, the
+  pinned content digest, the current content digest, and the governed file
+  patterns. Each legacy commit drift is reported as the doc path, its pinned SHA,
+  the governed file, and the intervening commits (`git log --full-history
+  --oneline <P>..HEAD -- <f>`). Output ordering is deterministic: sorted by doc
+  path, then file path / pattern (R-CODE-5).
+- REQ-8 (missing/invalid pin = FAIL): a routed doc with neither pin line, a
+  malformed `audited-content-sha256:` digest, or a legacy commit pin that fails
+  REQ-6 validation is a FAIL naming the doc and the defect class (`MISSING-PIN` /
+  `INVALID-PIN`), distinct from `DRIFT`. No grandfathering (decision 3).
 - REQ-9 (exit-code contract): `0` = every routed doc pinned and current; `1` = at
   least one DRIFT / MISSING-PIN / INVALID-PIN; `3` = the gate could not determine
   the answer (no git repo / git absent / `tomllib` absent / `spec-routes.toml`
   unreadable) — mirroring the audit's INCONCLUSIVE=3 precedent (REQ-3: "a skipped
   check is NOT a pass"). The tool never exits 0 without having checked all 48 docs.
 - REQ-10 (Makefile + CI wiring, SEQUENCED — replaces the rejected audit.sh
-  wiring): a `doc-drift` target in `Makefile` (added to the `.PHONY` line, which
-  today reads `audit audit-fast check test fmt clippy gauntlet`) that invokes
-  `python3 tooling/doc-drift.py`, printing its report. Exit-code caveat (builder
-  finding, verified empirically): GNU make collapses ANY nonzero recipe exit to
-  its own exit 2 — it never re-emits 1 or 3. So `make doc-drift` is 0 = clean /
-  2 = needs-attention; the precise 1-vs-3 class is carried by the tool's printed
-  report and by invoking `python3 tooling/doc-drift.py` directly, which remains
-  the exit-code CONTRACT (REQ-9). `scripts/audit.sh` is NOT touched — the gate is
+  wiring): `Makefile` exposes two local entry points. `make doc-drift-worktree`
+  invokes `python3 tooling/doc-drift.py` directly against the current worktree,
+  preserving the tool's precise 0/1/3 exit-code contract for scripts that need to
+  branch on drift vs environment failure. `make doc-drift` mirrors pull-request
+  CI: it synthesizes a base-first merge commit from `DOC_DRIFT_CI_BASE`
+  (default `origin/main`) and `DOC_DRIFT_CI_HEAD` (default `HEAD`) with
+  `git merge-tree --write-tree`, checks that commit out in a temporary worktree,
+  and runs the same Python gate there. GNU make still collapses any nonzero
+  recipe exit to its own exit 2; the precise class is carried by the tool's
+  printed report. `scripts/audit.sh` is NOT touched — the gate is
   development-discipline, not proof-trust (decision 5; AC-7 pins this as
-  byte-identical). `.github/workflows/ci.yml` gains the step ONLY ONCE THE
-  BOOTSTRAP BACKLOG IS CLEARED: flipping CI red on day one for 35 known-stale docs
-  (decision 4's measured 35/48) would just train people to ignore the gate.
+  byte-identical). `.github/workflows/ci.yml` runs the same gate on GitHub's PR
+  merge ref / pushed commit checkout.
 
   **The enforcement-activation sequencing, explicitly:**
   1. tool (`tooling/doc-drift.py`) + bootstrap pins (REQ-5, doc-last-touch) land;
@@ -237,29 +251,29 @@ New work (all UNBUILT — blocker #258):
 
 ## Acceptance criteria
 
-- AC-1: with a routed file committed after its doc's pin, `python3
-  tooling/doc-drift.py` exits 1 and its output names BOTH the doc path and the file
-  path and at least one intervening commit SHA. (Bootstrap-time live witness: with
-  `.design/forge/cli.md` pinned at `1004b7a1…`, the gate must report
-  `forge/src/cli.rs` drifted with 21 intervening commits at `6368550a`, headed by
-  `6368550a` itself.)
-- AC-2: with every routed doc pinned at (or after) the last-touch of all its
-  governed files, the tool exits 0 and prints one CURRENT summary line per doc
-  (48 docs at bootstrap).
-- AC-3: deleting the `audited-sha:` line from any one routed doc flips the exit to
-  1 with a `MISSING-PIN` line naming that doc.
-- AC-4: a pin that is not a 40-hex resolvable commit, or not an ancestor of HEAD,
-  flips the exit to 1 with an `INVALID-PIN` line naming the doc — textually distinct
-  from a `DRIFT` line.
+- AC-1: with a routed file's content changed after its doc's content pin, `python3
+  tooling/doc-drift.py` exits 1 and its output names the doc path, the pinned
+  digest, the current digest, and the governed pattern. The legacy fallback also
+  reports intervening commit SHAs with `--full-history`.
+- AC-2: with every routed doc content-pinned to the current governed file
+  contents, the tool exits 0 and prints one CURRENT summary line per doc.
+- AC-3: deleting both the `audited-content-sha256:` and `audited-sha:` lines from
+  any one routed doc flips the exit to 1 with a `MISSING-PIN` line naming that doc.
+- AC-4: a content pin that is not a 64-hex SHA-256 digest, a legacy commit pin that
+  is not a 40-hex resolvable commit, or a legacy commit pin that is not an ancestor
+  of HEAD flips the exit to 1 with an `INVALID-PIN` line naming the doc —
+  textually distinct from a `DRIFT` line.
 - AC-5: run outside a git repo (or with `git` shadowed off `PATH`), the tool exits
   3, never 0 and never an unhandled traceback.
 - AC-6: a route whose `crate_pattern` has never been committed (e.g.
   `forge/src/session.rs`) produces no drift for its doc (REQ-6 unbuilt-file rule).
-- AC-7: `make doc-drift` exits 0 when the tool exits 0 and nonzero otherwise
-  (GNU make collapses failing recipes to exit 2 — REQ-10 caveat; the 0/1/3
-  contract is the DIRECT invocation `python3 tooling/doc-drift.py`) and prints
-  the tool's report; `scripts/audit.sh` is UNCHANGED by this component
-  (byte-identical — the gate is outside the proof-trust chain, decision 5).
+- AC-7: `make doc-drift-worktree` exits 0 when the direct tool exits 0 and
+  nonzero otherwise (GNU make collapses failing recipes to exit 2 — REQ-10
+  caveat; the 0/1/3 contract is the DIRECT invocation
+  `python3 tooling/doc-drift.py`) and prints the tool's report. `make doc-drift`
+  evaluates a CI-style base-first merge ref in a temporary worktree. In both
+  cases `scripts/audit.sh` is UNCHANGED by this component (byte-identical — the
+  gate is outside the proof-trust chain, decision 5).
 - AC-8: two consecutive runs on an unchanged tree produce byte-identical output
   (deterministic ordering, R-CODE-5).
 
@@ -269,8 +283,9 @@ New work (all UNBUILT — blocker #258):
 (`spec-discipline.py`, `anti-pattern-gate.py`): stdlib-only python3, a
 PROJECT-CUSTOMIZATION constants block, top-of-file docstring stating the rule it
 enforces and citing this doc. Unlike the siblings it is NOT a Claude-Code hook in
-v1 (decision 5): it is invoked via `make doc-drift` (and, post-backlog, the
-sequenced CI step — REQ-10) and runnable standalone.
+v1 (decision 5): it is invoked by CI, by `make doc-drift`'s temporary merge-ref
+worktree, or directly via `make doc-drift-worktree` / `python3
+tooling/doc-drift.py`.
 
 Pipeline (one pass, no state file):
 
@@ -280,17 +295,18 @@ Pipeline (one pass, no state file):
    gate instead treats absent `tomllib` as exit-3 environment failure, because a
    CI gate that fails open is a silent pass — R-HONEST-3). Invert to
    `doc → sorted(set(crate_patterns))`.
-2. **Extract** — first `^audited-sha:\s*([0-9a-f]{40})\b` match per doc (REQ-5).
-   The field lives in the same HTML-comment header every doc already carries
-   (`tier:` / `status:` / `governs:` / `thesis-refs:` — see any routed doc;
-   grounded at the original audit: `grep -rn "audited-sha" .design/` returned
-   ZERO hits outside this doc, so the field name is unclaimed and the bootstrap
-   is a clean additive sweep).
-3. **Validate + compare** — per doc: pin validation (REQ-6(d)), then per governed
-   file the commit-set predicate `git log --format=%H <P>..HEAD -- <pathspec>`.
-   Subprocess exit statuses are always inspected; a git invocation failing for
-   environmental reasons is exit 3, never treated as "no drift" (the R-CODE-4
-   discipline applied to git instead of a solver).
+2. **Extract** — prefer first
+   `^audited-content-sha256:\s*([0-9a-f]{64})\b` match per doc; otherwise fall
+   back to first `^audited-sha:\s*([0-9a-f]{40})\b` match (REQ-5). Both fields
+   live in the same HTML-comment header every doc already carries (`tier:` /
+   `status:` / `governs:` / `thesis-refs:` — see any routed doc).
+3. **Validate + compare** — per doc: content pins compare the deterministic
+   governed-file digest directly. Legacy commit pins validate the commit
+   (REQ-6(d)), then apply the fallback commit-set predicate
+   `git log --full-history --format=%H <P>..HEAD -- <pathspec>`. Subprocess exit
+   statuses are always inspected; a git invocation failing for environmental
+   reasons is exit 3, never treated as "no drift" (the R-CODE-4 discipline
+   applied to git instead of a solver).
 4. **Report + exit** — REQ-7 lines, REQ-9 codes.
 
 **The trust boundary (why this gate lives OUTSIDE `scripts/audit.sh`):**
@@ -320,11 +336,12 @@ the code changing). Unification is OQ-1.
 
 **The re-pin workflow** (how the gate is cleared, per the §8 loudness model):
 
-- *Code changed, doc still accurate*: review `git log --oneline <P>..HEAD -- <f>`
-  (the gate prints it), confirm doc claims hold, bump `audited-sha:` to the new
-  last-touch (or HEAD) in a commit whose message states the verification — the
-  exact ceremony the two re-pin amendments in `rust-lean-correspondence.md`
-  ("VERIFIED additive-only, NOT rubber-stamped") already model.
+- *Code changed, doc still accurate*: review the governed diff, confirm doc claims
+  hold, and refresh `audited-content-sha256:` to the current governed contents.
+  For a legacy commit-pin-only doc, review
+  `git log --full-history --oneline <P>..HEAD -- <f>` (the gate prints it), then
+  either add a content pin or bump `audited-sha:` to the new last-touch / HEAD in
+  a commit whose message states the verification.
 - *Code changed, doc now wrong*: dispatch acto-doc-author to amend the doc
   (R-DOC-1: the doc adapts to the code), pinning the amendment commit's tree state.
 - The gate cannot distinguish the two (both are "pin bumped in a commit") — OQ-2.
@@ -336,17 +353,18 @@ the code changing). Unification is OQ-1.
   so this gate introduces the first one): build a throwaway git repo in `tmpdir`
   with a mini route table + two docs + governed files, then assert AC-1 (commit
   after pin → exit 1 naming both), AC-2 (exit 0), AC-3 (`MISSING-PIN`), AC-4
-  (`INVALID-PIN` on a bogus 40-hex and on a non-ancestor), AC-6 (route to an
-  uncommitted path), AC-8 (byte-identical reruns). Expected values are hand-built
-  fixture facts, never the tool's own output (R-CHAR-3).
-- **Live-tree smoke**: `python3 tooling/doc-drift.py` on the real repo at the
-  bootstrap commit — exit/report must match the independently-derived backlog
-  (the 35/48 measurement and the cli.md/cli.rs 21-commit witness in AC-1, derived
-  by raw git, not by the tool; exact sweep-time counts re-derived the same way).
-- **Makefile wiring**: `make doc-drift` is exit 0 iff the tool exits 0, and
-  nonzero (make's collapsed 2) for both the 1- and 3-cases, with the class
-  visible in the printed report (AC-7 as amended; the 3-case exercised by
-  shadowing `python3` or `git`).
+  (`INVALID-PIN` on a bogus 40-hex, on a non-ancestor, and on a malformed content
+  digest), AC-6 (route to an uncommitted path), AC-8 (byte-identical reruns), the
+  content-pin drift path, and the merge-parent-order regression where simplified
+  path history hides a main-side edit but `--full-history` reports it for legacy
+  commit pins. Expected values are hand-built fixture facts, never the tool's own
+  output (R-CHAR-3).
+- **Live-tree smoke**: `python3 tooling/doc-drift.py` on the real repo exits 0
+  when every routed doc's `audited-content-sha256:` matches its governed files.
+- **Makefile wiring**: `make doc-drift-worktree` is exit 0 iff the tool exits 0,
+  and nonzero (make's collapsed 2) for both the 1- and 3-cases, with the class
+  visible in the printed report. `make doc-drift` additionally synthesizes the
+  CI-style base-first merge worktree before invoking the same tool.
 - **Audit untouched**: `git diff <pre-component-commit> -- scripts/audit.sh` is
   empty in the component's commits (AC-7's second half); `bash scripts/audit.sh`
   output names the same six checks before and after.
@@ -374,13 +392,13 @@ cannot catch, since the index is unrouted. Named in OQ-7.)
 | REQ-2 (tomllib/glob parsing substrate) | SHIPPED | `try: import tomllib  # Python 3.11+` + `def load_routes` + `def glob_to_regex` + `def match_pattern in tooling/spec-discipline.py`. Non-test consumer: the spec-discipline hook itself (`.claude/settings.json` PreToolUse on Write\|Edit). Verification: `python3 --version` → `Python 3.13.13` (tomllib available); the hook blocks routed edits live in this harness. |
 | REQ-3 (exit-3 honest-inconclusive precedent) | SHIPPED | `scripts/audit.sh`: `pass()`/`fail()`/`skip()` helpers; `SKIPPED_GUARANTEES=()`; verdict block "INCONCLUSIVE is NOT a pass… Exit NONZERO (3, distinct from FAILED's 1) so automation cannot read a skipped-guarantee run as green (R-HONEST-3)". Non-test consumer: `make audit` (`Makefile`: `audit: @bash scripts/audit.sh`). Role here is PRECEDENT-ONLY: REQ-9 mirrors the 0/1/3 shape; nothing in this component calls into or out of `audit.sh` (decision 5). |
 | REQ-4 (check [4] precedent, stays bespoke AND stays in the audit) | SHIPPED | `scripts/audit.sh` "[4/5] CORRESPONDENCE DRIFT TRIPWIRE": `pin_sha_for()` extracts backticked hex from `.design/verified/rust-lean-correspondence.md`'s "Audited commits (PINNED…)" table; compare `cur="$(git log -1 --format=%h -- "$pf")"`; on mismatch `fail "$pf — DRIFTED: pinned $pinned, current $cur"` + `RC=1`. Non-test consumer: `make audit`. Verification: the doc's two amendment blocks record the tripwire firing and being cleared by verified re-pins (#200, #255). Its subject is a check-[6] residual-trust item — the property this gate's subjects lack (decision 5). |
-| REQ-5 (`audited-sha:` field + 48-doc bootstrap) | NOT-STARTED | open blocker #258. `grep -rn "audited-sha" .design/` → zero hits outside this doc; no routed doc carries a pin; the bootstrap pinning commit does not exist. Known sweep-time backlog: 35/48 drifted at doc-last-touch pins (measured `6368550a`, decision 4). |
-| REQ-6 (the gate `tooling/doc-drift.py`) | NOT-STARTED | open blocker #258. `ls tooling/` → `anti-pattern-gate.py  spec-discipline.py  spec-routes.toml` only; no `doc-drift.py` exists. |
-| REQ-7 (loud doc+file+commits failure report) | NOT-STARTED | open blocker #258 (no tool to carry it; report shape specified here). |
-| REQ-8 (missing/invalid pin = FAIL, no grandfathering) | NOT-STARTED | open blocker #258 (the MISSING-PIN/INVALID-PIN classes exist only in this spec). |
-| REQ-9 (exit-code contract 0/1/3) | NOT-STARTED | open blocker #258. |
-| REQ-10 (Makefile + sequenced CI wiring) | NOT-STARTED | open blocker #258. `Makefile` `.PHONY` line is `audit audit-fast check test fmt clippy gauntlet` — no `doc-drift` target; `.github/workflows/ci.yml` has no doc-drift step (steps today: checkout, toolchain, Verus install, build/test/clippy/fmt, skill budget gate). `scripts/audit.sh` is explicitly OUT OF SCOPE for this REQ (decision 5) — its current shape is not a gap. CI step is additionally gated on backlog clearance (the sequencing plan in REQ-10), so its absence at tool-landing time will be the PLANNED advisory state, not drift from this doc. |
-| REQ-11 (self-governing route entry) | NOT-STARTED | open blocker #258. `tooling/spec-routes.toml` has no `tooling/*` route (verified: all 107 `crate_pattern`s are `thermite-*`/`forge` `.rs` paths); the hook's `is_gated_path` cannot gate `.py` regardless (see REQ-11 body). |
+| REQ-5 (`audited-content-sha256:` preferred pin + legacy `audited-sha:`) | SHIPPED | Routed docs carry content pins in their HTML-comment headers, with legacy `audited-sha:` retained for provenance / fallback. The tool prefers the content pin when present. |
+| REQ-6 (the gate `tooling/doc-drift.py`) | SHIPPED | `tooling/doc-drift.py` loads `tooling/spec-routes.toml`, inverts `doc → patterns`, computes content digests, and falls back to full-history commit-set checks for legacy SHA-only docs. |
+| REQ-7 (loud doc+file/pattern failure report) | SHIPPED | Content drift reports doc path, pinned digest, current digest, and governed patterns; legacy commit drift reports doc path, governed file, and intervening full-history commits. |
+| REQ-8 (missing/invalid pin = FAIL, no grandfathering) | SHIPPED | `MISSING-PIN` fires when neither content nor commit pin exists; `INVALID-PIN` fires for malformed content digests and invalid legacy commit pins. |
+| REQ-9 (exit-code contract 0/1/3) | SHIPPED | Direct tool exits 0 for current, 1 for DRIFT/MISSING-PIN/INVALID-PIN, and 3 for environment failures. |
+| REQ-10 (Makefile + CI wiring) | SHIPPED | `Makefile` has `doc-drift-worktree` for direct worktree checks and `doc-drift` for a CI-style base-first temporary merge worktree; `.github/workflows/ci.yml` runs `python3 tooling/doc-drift.py` with full checkout history. |
+| REQ-11 (self-governing route entry) | SHIPPED | `tooling/spec-routes.toml` routes `tooling/doc-drift.py` to this doc, so the gate's own implementation is covered by the doc-drift check. The edit hook still does not gate `.py` files; that limitation remains outside this component. |
 
 ## Open questions
 

@@ -1,7 +1,10 @@
 # Thermite — convenience targets. The build/test system is Cargo; these are
 # thin entry points. `make audit` is the headline: a FULL TRUST-CHAIN
 # re-derivation a skeptic runs on their own machine (see scripts/audit.sh).
-.PHONY: audit audit-fast check test fmt clippy gauntlet doc-drift doc-drift-test req-status req-status-test req-registry req-registry-test
+.PHONY: audit audit-fast check test fmt clippy gauntlet doc-drift doc-drift-ci doc-drift-worktree doc-drift-test req-status req-status-test req-registry req-registry-test
+
+DOC_DRIFT_CI_BASE ?= origin/main
+DOC_DRIFT_CI_HEAD ?= HEAD
 
 # Re-derive the WHOLE trust chain on the skeptic's machine (SLOW — minutes):
 #   1  the universal faithfulness theorem re-verified by the local Lean kernel
@@ -46,16 +49,43 @@ clippy:
 	cargo clippy --workspace --all-targets -- -D warnings
 
 # Doc-drift tripwire (crosslink #258, .design/tooling/doc-drift-tripwire.md):
-# FAIL if any routed design doc's governed files were committed after the doc's
-# `audited-sha:` pin. The tool's own exit code is the contract (0 current /
-# 1 drift-or-bad-pin / 3 environment-inconclusive — REQ-9); run the tool
-# directly when a script must branch on 1-vs-3, because GNU make collapses any
-# nonzero recipe exit to its own code 2 (it never re-emits 1 or 3). `make
-# doc-drift` thus signals 0 = clean / nonzero = needs attention, with the
-# precise class in the tool's printed report. Deliberately NOT part of
-# `make audit` — doc freshness is a development-discipline invariant, not a link
-# in the proof-trust chain (decision 5); scripts/audit.sh stays byte-identical.
-doc-drift:
+# FAIL if any routed design doc's governed file contents differ from the doc's
+# `audited-content-sha256:` pin; legacy `audited-sha:` pins fall back to a
+# full-history commit-set check. The Python tool's own exit code is the contract
+# (0 current / 1 drift-or-bad-pin / 3 environment-inconclusive — REQ-9); run it
+# directly or via `make doc-drift-worktree` when a script must branch on 1-vs-3,
+# because GNU make collapses any nonzero recipe exit to its own code 2. `make
+# doc-drift` mirrors pull-request CI by evaluating a synthetic base-first merge
+# commit (`DOC_DRIFT_CI_BASE`, default origin/main, merged with
+# `DOC_DRIFT_CI_HEAD`, default HEAD) in a temporary worktree. Deliberately NOT
+# part of `make audit` — doc freshness is a development-discipline invariant,
+# not a link in the proof-trust chain (decision 5); scripts/audit.sh stays
+# byte-identical.
+doc-drift: doc-drift-ci
+
+doc-drift-ci:
+	@set -eu; \
+	base_ref="$(DOC_DRIFT_CI_BASE)"; \
+	head_ref="$(DOC_DRIFT_CI_HEAD)"; \
+	base_sha="$$(git rev-parse --verify "$$base_ref^{commit}")"; \
+	head_sha="$$(git rev-parse --verify "$$head_ref^{commit}")"; \
+	printf 'doc-drift: evaluating CI-style merge base=%s head=%s\n' "$$base_sha" "$$head_sha" >&2; \
+	if [ "$$base_sha" = "$$head_sha" ]; then \
+		merge_sha="$$head_sha"; \
+	else \
+		if ! tree_sha="$$(git merge-tree --write-tree --no-messages "$$base_sha" "$$head_sha")"; then \
+			printf 'doc-drift: could not synthesize CI merge tree for %s and %s\n' "$$base_ref" "$$head_ref" >&2; \
+			exit 3; \
+		fi; \
+		merge_sha="$$(git commit-tree "$$tree_sha" -p "$$base_sha" -p "$$head_sha" -m "doc-drift synthetic CI merge")"; \
+	fi; \
+	tmp_dir="$$(mktemp -d)"; \
+	cleanup() { git worktree remove -f "$$tmp_dir" >/dev/null 2>&1 || rm -rf "$$tmp_dir"; }; \
+	trap cleanup EXIT HUP INT TERM; \
+	git worktree add --detach --quiet "$$tmp_dir" "$$merge_sha"; \
+	python3 "$$tmp_dir/tooling/doc-drift.py" --root "$$tmp_dir"
+
+doc-drift-worktree:
 	@python3 tooling/doc-drift.py
 
 # The gate's own oracle fixture suite (hand-authored expected values, R-CHAR-3).

@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: fbb8118d51635220c9a3530ef4c1ed775e620436 (re-pinned 2026-06-17 for the THERMITE.skill.md v2 forge-tier section: the skill generator's §1 ergonomics PROSE (tuple destructuring, the `for` range loop, match guards, or-patterns, `if let`/`while let` desugars) was tightened to fit the §2.2 budget — wording-only; the C10 ergonomics surface + desugarings this doc governs are unchanged. prior: 1db3f2ba5cff4b38508036f9dd1cf47f54e5d161)
+audited-sha: 59287187c2afcc22e1b7872f118183f1e49de263 (re-pinned 2026-06-17 after merging main into the skill-v2 branch: governed source carries the governance docs (#56) + the skill-v2 generator change, both net-additive; the REQs this doc governs are unchanged.)
 governs: thermite-syntax/src/parser.rs
 governs: thermite-syntax/src/ast.rs
 governs: thermite-lower/src/lower.rs

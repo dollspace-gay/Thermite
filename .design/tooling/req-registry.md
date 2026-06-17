@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: f09f8ca376257cc1e2543b8ebc9fb771bffd04df (re-pinned 2026-06-17 for the skill-v2 deliverable (umbrella thermite2-program.md REQ-8 / AC-13): this doc's governed files (registry.toml, status.md) carry the additive REQ-SKILL-V2-FORGE-TIER requirement entry + the regenerated status view; the change is purely additive (one new requirement, owner .design/thermite2-program.md, status shipped, typed file/symbol/test evidence) with no edit to tooling/req-registry.py or req-status.py; reqs check is clean (442 requirements). prior: re-pinned for stage-1 REQ-10 / AC-14, the G1 gate artifact (8b4d2580b472d04fca2b14de5b6be52533a2d258))
+audited-sha: 59287187c2afcc22e1b7872f118183f1e49de263 (re-pinned 2026-06-17 after merging main into the skill-v2 branch: governed source carries the governance docs (#56) + the skill-v2 generator change, both net-additive; the REQs this doc governs are unchanged.)
 audited-content-sha256: b404152a929f0722b89be0bf81114f81caec4802f597a610c679f7621a63f906
 governs:
   - .design/reqs/registry.toml

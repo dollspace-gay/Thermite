@@ -21,8 +21,18 @@
 //! the clean same-short-name decoy. forge certifies the item at L3.
 //!
 //! Expected (authority, not forge's own output, R-CHAR-3): item `f` does not certify
-//! at L3. A proof resting on `thermite_cheat` (outside the REQ-4 allowlist) is a cheat
-//! and is never Proven. This test fails against commit 5f601a2d (forge emits L3).
+//! at ANY proven rung. A proof resting on `thermite_cheat` (outside the REQ-4
+//! allowlist) is a cheat and is never Proven. This test fails against commit 5f601a2d
+//! (forge emits L3).
+//!
+//! Ladder re-anchor (2f, RFC-1 / GH #2). This pin guards the interactive-Lean-replay
+//! path — the kernel/forge tier (the L4-shaped, kernel-grounded rung in the new
+//! ladder: `L0 < L1 < L2 < L3 < L4`, `manifest.rs::Level`). The v1-era "certifies at
+//! L3" framing is widened to its real soundness requirement: a cheat-backed proof is
+//! NEVER Proved at any PROVEN rung — neither the SOLVER rung **L3** nor the
+//! kernel-grounded rung **L4**. The assertion below checks the item certifies at
+//! neither (it must remain a non-certified L0 reject). Authority: RFC-1 / GH #2;
+//! `.design/stage1-forge-tier.md` REQ-8; `.design/verified/proof-backends.md` REQ-4/§1.
 //!
 //! Live: gated on `lake` (the interactive replay invokes `lake env lean`).
 
@@ -166,19 +176,21 @@ fn divergence_interactive_axiom_allowlist_masked_by_shortname_decoy() {
         "the replay run emitted a cert for item `f`; got JSON: {stdout}"
     );
 
-    // Authority (`.design/verified/proof-backends.md` REQ-4/§1, R-DEFER-9): the
-    // obligation's canonical statement is proven only via `axiom thermite_cheat :
-    // ∀ p : Prop, p` (maximal vacuity, outside the {propext, Classical.choice,
-    // Quot.sound} allowlist). Such a proof is a cheat and is never Proven → item `f`
-    // does not certify at L3. forge (commit 5f601a2d) emits "L3" — the divergence.
-    assert_ne!(
-        level.as_deref(),
-        Some("L3"),
-        "DIVERGENCE: forge certifies `f` at L3, but its only proof of the obligation \
-         rests on `axiom thermite_cheat : ∀ p, p` (outside the REQ-4 allowlist). The \
-         #249 axiom-report anchor is masked: `#print axioms thermite_obligation_f` \
-         resolves to a clean top-level same-short-name decoy while the cheat-backed \
-         proof lives in a namespace bound by `canonical_theorem_statement`. A cheat is \
-         NEVER Proven (R-DEFER-9)."
+    // Authority (`.design/verified/proof-backends.md` REQ-4/§1, R-DEFER-9; RFC-1 /
+    // GH #2 ladder re-anchor, 2f): the obligation's canonical statement is proven only
+    // via `axiom thermite_cheat : ∀ p : Prop, p` (maximal vacuity, outside the
+    // {propext, Classical.choice, Quot.sound} allowlist). Such a proof is a cheat and
+    // is never Proven → item `f` does not certify at ANY PROVEN rung — neither the
+    // SOLVER rung L3 nor the kernel-grounded rung L4. forge (commit 5f601a2d) emits
+    // "L3" — the divergence. (It must remain a non-certified L0 reject.)
+    assert!(
+        !matches!(level.as_deref(), Some("L3") | Some("L4")),
+        "DIVERGENCE: forge certifies `f` at a proven rung ({level:?}), but its only \
+         proof of the obligation rests on `axiom thermite_cheat : ∀ p, p` (outside the \
+         REQ-4 allowlist). The #249 axiom-report anchor is masked: `#print axioms \
+         thermite_obligation_f` resolves to a clean top-level same-short-name decoy \
+         while the cheat-backed proof lives in a namespace bound by \
+         `canonical_theorem_statement`. A cheat is NEVER Proven at L3 OR L4 \
+         (R-DEFER-9; RFC-1 / GH #2)."
     );
 }

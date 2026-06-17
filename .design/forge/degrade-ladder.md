@@ -28,6 +28,25 @@ lost"). The assurance manifest aggregates the per-fn certificates into a
 project-level view whose headline number is the **min over functions**, displayed
 on every build (§5.2, §6).
 
+**L4 and the upward forge-escalation (RFC-1 / GH #2, Stage-1 forge tier).** The
+L3→L2→L1 ladder this component governs is the DOWNWARD degrade of an
+*inconclusive* in-cage obligation. It is complemented — not replaced — by the
+Stage-1 forge tier's UPWARD escalation (authority: RFC-1 / GH #2;
+`.design/stage1-forge-tier.md` REQ-8). An **out-of-cage clause no longer degrades
+down the ladder by inspection — it escalates UP to the forge.** There the relax
+route (REQ-8) discharges a relaxable polynomial clause via a direct Z3 nlsat
+(QF_NRA) query and certifies it at the new **L4** rung, which sits ABOVE L3 on the
+ladder (`L0 < L1 < L2 < L3 < L4`, `manifest.rs::Level`). L4 is **kernel-grounded**:
+where L3 is a Verus/Z3 SOLVER proof, L4's trust profile is `solver(nlsat) +
+spine-lemma(kernel)` — the real→integer soundness bridge is the kernel-checked
+spine lemmas `r_relax_sound` + `rencode_sound` (`lean/Thermite/Relax.lean`,
+axiom-probed ⊆ {propext, Classical.choice, Quot.sound}). A clause true over ℤ but
+false over ℝ is NOT refuted by the relax route: it yields a `RealWitness` carrying
+the real point, escalated to the forge as goal metadata (never a counterexample,
+never a downward degrade). This upward route is a NEW engine route (`--engine
+nlsat`), orthogonal to the downward `degrade.rs` state machine the rest of this
+doc specifies, which is unchanged.
+
 This component COMPOSES three shipped pieces, it does not reinvent them:
 - #11's timeout-vs-counterexample-vs-success classification
   (`fn classify_verus_outcome in check.rs` → `enum VerusOutcome { Proved, Timeout,

@@ -1,0 +1,8 @@
+{
+  "uuid": "4cfe4dc3-0114-4c69-9531-ee0b056a1df6",
+  "issue_uuid": "e40fa6c9-f526-43f4-b56a-e61ba74ef516",
+  "author": "qMPX",
+  "content": "Result: §6 metrics dashboard shipped as 'forge audit --metrics' (commit bf8cb635). NEW forge/src/metrics.rs (pure projection): cage-vs-forge share by routing reason (derived from per-clause engine: verus/None->in-cage, nlsat->relaxable, lean-*->lemma), the seven CertVerdict counts, and the TV phase split (faithful/syntactic=Skipped/semantic=Divergent/timeout=Unverifiable from a contract-TV run). Gates nothing: exit code identical with/without --metrics (pinned on certifying AND failing projects). NO cert-schema change => v1 + forge goldens byte-identical. Registered REQ-FORGE-METRICS-DASHBOARD. Gauntlet GREEN: cargo test -p forge 786 passed/0 failed, clippy -D warnings, fmt --check, doc-drift 0-drift, reqs clean (443/119). git push blocked => orchestrator pushes.",
+  "created_at": "2026-06-17T23:48:27.749017Z",
+  "kind": "result"
+}

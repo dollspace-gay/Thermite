@@ -234,6 +234,13 @@ pub enum EngineSelection {
     /// `--engine auto`: Verus first; on a Verus Unknown/timeout, try Lean (the §6
     /// ordering — Verus push-button common case, Lean as the smaller-base fallback).
     Auto,
+    /// `--engine nlsat` (`.design/stage1-forge-tier.md` REQ-8 / Q-NLSAT / AC-12,
+    /// increment 2f): the relax route — the [`crate::engine::NlsatEngine`] only. A
+    /// relaxable polynomial contract is discharged by a direct Z3 nlsat (QF_NRA) query
+    /// and certifies at the kernel-grounded [`Level::L4`] (`engine: nlsat`
+    /// attribution); a true-over-ℤ/false-over-ℝ clause yields a `RealWitness`
+    /// escalation (never a `Counterexample`); a non-relaxable item is an honest skip.
+    Nlsat,
 }
 
 impl Default for CheckOptions {
@@ -974,6 +981,16 @@ pub fn check_file_with_engine(
     if !parsed.is_clean() {
         return Err(ForgeError::Parse(parsed.errors));
     }
+
+    // REQ-8 relax route (`.design/stage1-forge-tier.md` REQ-8 / Q-NLSAT / AC-12,
+    // increment 2f): the `--engine nlsat` selection routes EVERY item through the
+    // [`crate::engine::NlsatEngine`] (the relax fragment) instead of the Lean engine,
+    // and returns early. The default Verus path and the `--engine lean|auto` paths are
+    // untouched, so the v1 corpus stays byte-identical.
+    if selection == EngineSelection::Nlsat {
+        return Ok(nlsat_check(base, &parsed.program));
+    }
+
     let lean = crate::engine::LeanEngine::new(parsed.program.clone(), lean_package_root());
 
     let mut out = Vec::with_capacity(base.len());
@@ -1152,6 +1169,210 @@ fn lean_package_root() -> PathBuf {
         .join("lean")
 }
 
+/// The `--engine nlsat` relax pass (`.design/stage1-forge-tier.md` REQ-8 / Q-NLSAT /
+/// AC-12, increment 2f). For each item carrying a relaxable polynomial contract, the
+/// [`crate::engine::NlsatEngine`] discharges it via a direct Z3 nlsat (QF_NRA) query:
+///
+/// - relaxable + `unsat` (real-valid) → [`Level::L4`] kernel-grounded cert (`engine:
+///   nlsat` attribution; the trust profile is solver(nlsat) + the kernel-checked
+///   relax spine lemmas);
+/// - relaxable + `sat` with an integer falsifier → an L0 `Counterexample` cert (the
+///   integer witness);
+/// - relaxable + `sat` real-only (true over ℤ, false over ℝ) → an L0 `RealWitness`
+///   escalation cert carrying the raw real point (handed UP to the forge as goal
+///   metadata, NEVER a `Counterexample`);
+/// - not relaxable / z3 absent / `unknown` → an honest non-certified skip cert naming
+///   the reason.
+///
+/// A non-`fn` item (a `spec fn` / forge-tier item carries no relaxable contract)
+/// keeps its base cert unchanged.
+fn nlsat_check(base: Vec<Certificate>, program: &Program) -> Vec<Certificate> {
+    let engine = crate::engine::NlsatEngine::new(program.clone());
+    let mut out = Vec::with_capacity(base.len());
+    for cert in base {
+        let Some(Item::Fn(f)) = crate::lean_export::find_item(program, &cert.item) else {
+            out.push(cert);
+            continue;
+        };
+        out.push(nlsat_item_cert(&engine, f, cert));
+    }
+    out
+}
+
+/// Discharge one relaxable-candidate `fn` via the nlsat engine and build its cert
+/// (`.design/stage1-forge-tier.md` REQ-8 / AC-12). The four outcomes map to the four
+/// cert shapes (L4 proved / counterexample / real-witness escalation / honest skip).
+fn nlsat_item_cert(
+    engine: &crate::engine::NlsatEngine,
+    f: &thermite_syntax::FnItem,
+    base: Certificate,
+) -> Certificate {
+    use crate::engine::NlsatOutcome;
+    // A non-relaxable item is an honest skip naming the disqualifying construct (never
+    // a false verdict) — the relax route's fragment gate (REQ-8b).
+    if !engine.admits_relax(&base.item) {
+        let reason = match crate::relax::classify_fn(f) {
+            crate::relax::RelaxVerdict::NotRelaxable(r) => r,
+            crate::relax::RelaxVerdict::Relaxable => "out of the relax fragment".to_string(),
+        };
+        return Certificate::rejected(
+            base.item.clone(),
+            base.effects.clone(),
+            false,
+            RejectReason {
+                cause: "NotRelaxable".to_string(),
+                detail: format!(
+                    "`{}` is not in the relax fragment, so the nlsat route does not \
+                     attempt it (an honest skip, not a verdict): {reason}",
+                    base.item
+                ),
+            },
+        );
+    }
+    match engine.discharge_relax(f) {
+        NlsatOutcome::Proved => nlsat_l4_cert(engine, &base),
+        NlsatOutcome::Counterexample { integer_point } => {
+            nlsat_counterexample_cert(engine, &base, &integer_point)
+        }
+        NlsatOutcome::RealWitness { point } => nlsat_realwitness_cert(engine, &base, point),
+        NlsatOutcome::Unknown(reason) => Certificate::rejected(
+            base.item.clone(),
+            base.effects.clone(),
+            false,
+            RejectReason {
+                cause: "NlsatUnknown".to_string(),
+                detail: format!(
+                    "the nlsat relax route did not decide `{}` (z3 unknown / absent — \
+                     NOT certified, an honest skip): {reason}",
+                    base.item
+                ),
+            },
+        ),
+    }
+}
+
+/// The kernel-grounded [`Level::L4`] cert an nlsat `Proved` produces (`.design/
+/// stage1-forge-tier.md` REQ-8 / AC-12). The relaxation is QF_NRA-valid (the Z3 nlsat
+/// tactic found no real counterexample), so by the kernel-checked `r_relax_sound` the
+/// integer clause holds — the item certifies at L4 with the `engine: nlsat`
+/// attribution (the trust profile is solver(nlsat) + spine-lemma(kernel)). The
+/// per-clause verdict is [`CertVerdict::Proved`].
+fn nlsat_l4_cert(engine: &crate::engine::NlsatEngine, base: &Certificate) -> Certificate {
+    let attribution = crate::engine::attribution_for(engine);
+    Certificate::new(
+        base.item.clone(),
+        Level::L4,
+        base.effects.clone(),
+        0,
+        vec![ObligationResult::discharged(
+            "discharged by the nlsat relax route (the real relaxation is QF_NRA-valid by \
+             the Z3 nlsat tactic; integer-valid by the kernel-checked r_relax_sound — \
+             L4 kernel-grounded; stage1-forge-tier.md REQ-8)",
+        )
+        .with_clause_attribution(
+            attribution.engine.clone(),
+            attribution.trust_profile.clone(),
+            crate::verdict::CertVerdict::Proved,
+        )],
+    )
+    .graduate_triage_clean()
+    .with_engine_attribution(attribution)
+}
+
+/// The L0 `Counterexample` cert an nlsat integer falsifier produces (`.design/
+/// stage1-forge-tier.md` REQ-8 / AC-12). The real relaxation was `sat` AND an integer
+/// point in the radius-2 ℤⁿ box genuinely falsifies the integer clause — a real
+/// counterexample over ℤ. The cert is non-certified (L0) with the integer witness and
+/// the per-clause [`CertVerdict::Counterexample`].
+fn nlsat_counterexample_cert(
+    engine: &crate::engine::NlsatEngine,
+    base: &Certificate,
+    integer_point: &[(String, String)],
+) -> Certificate {
+    let attribution = crate::engine::attribution_for(engine);
+    let witness = integer_point
+        .iter()
+        .map(|(v, x)| format!("{v} = {x}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let detail = format!(
+        "nlsat found an integer counterexample to `{}`'s contract: {witness}",
+        base.item
+    );
+    let witness_obl = ObligationResult::failed(
+        format!("{}#contract", base.item),
+        None,
+        Some(detail.clone()),
+    );
+    let cert_verdict = crate::verdict::CertVerdict::Counterexample {
+        obligations: vec![witness_obl.clone()],
+    };
+    let mut cert = Certificate::rejected(
+        base.item.clone(),
+        base.effects.clone(),
+        false,
+        RejectReason {
+            cause: "Counterexample".to_string(),
+            detail,
+        },
+    );
+    cert.obligations = vec![witness_obl.with_clause_attribution(
+        attribution.engine.clone(),
+        attribution.trust_profile.clone(),
+        cert_verdict,
+    )];
+    cert.with_engine_attribution(attribution)
+}
+
+/// The L0 `RealWitness` escalation cert (`.design/stage1-forge-tier.md` REQ-8 /
+/// AC-12 — the headline relax behavior). The real relaxation was `sat` but the
+/// countermodel is real-only: true over ℤ, false over ℝ (no nearby integer falsifies
+/// it). The clause does NOT refute — it escalates UP to the forge as goal metadata,
+/// carrying the raw real point in a [`CertVerdict::RealWitness`]; it is NEVER a
+/// `Counterexample`. The cert is non-certified at the nlsat tier (L0) with the
+/// `RealWitnessEscalation` cause.
+fn nlsat_realwitness_cert(
+    engine: &crate::engine::NlsatEngine,
+    base: &Certificate,
+    point: crate::verdict::RealPoint,
+) -> Certificate {
+    let attribution = crate::engine::attribution_for(engine);
+    let pretty = point
+        .assignment
+        .iter()
+        .map(|(v, x)| format!("{v} = {x}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let detail = format!(
+        "`{}`: the contract is true over ℤ but false over ℝ — nlsat's real countermodel \
+         ({pretty}) is non-integral and no integer in the radius-2 box falsifies it. \
+         Escalated UP to the forge as goal metadata (a RealWitness), NEVER a \
+         Counterexample (stage1-forge-tier.md REQ-8 / AC-12).",
+        base.item
+    );
+    let obl = ObligationResult::failed(
+        format!("{}#contract", base.item),
+        None,
+        Some(detail.clone()),
+    )
+    .with_clause_attribution(
+        attribution.engine.clone(),
+        attribution.trust_profile.clone(),
+        crate::verdict::CertVerdict::RealWitness { point },
+    );
+    let mut cert = Certificate::rejected(
+        base.item.clone(),
+        base.effects.clone(),
+        false,
+        RejectReason {
+            cause: "RealWitnessEscalation".to_string(),
+            detail,
+        },
+    );
+    cert.obligations = vec![obl];
+    cert.with_engine_attribution(attribution)
+}
+
 /// Apply the Lean engine to one item's base Verus cert (`.design/verified/
 /// proof-backends.md` OQ-1 / REQ-4/REQ-5/REQ-7). Returns the cert the `--engine`
 /// surface emits for the item, or a `ForgeError::SoundnessAlarm` on a Proven ⊕ Refuted
@@ -1170,6 +1391,11 @@ fn lean_engine_cert(
 
     match selection {
         EngineSelection::Verus => Ok(verus_cert),
+        // The nlsat relax route is dispatched in `check_file_with_engine` (it returns
+        // early before this per-item Lean helper runs), so this arm is never reached;
+        // it keeps the Verus base cert defensively (R-APG-1 — no panic on a future
+        // wiring change).
+        EngineSelection::Nlsat => Ok(verus_cert),
         EngineSelection::Auto => {
             // Verus first: a Verus `Proven` (L3, no reject) is kept — Lean is not run
             // (no cost on the common case, no spurious disagreement). Only an

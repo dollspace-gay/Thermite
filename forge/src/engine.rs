@@ -54,8 +54,9 @@
 use crate::covenant::CovenantRecord;
 use crate::lean_export::{export_item, find_item, ExportRefusal, ExportedObligation};
 use crate::obligation::{Obligation, ObligationRole};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
-use thermite_syntax::Program;
+use thermite_syntax::{Item, Program};
 
 /// The named engine (`.design/verified/proof-backends.md` REQ-2 `name`). The
 /// evidence cache key carries this discriminator (§2(d)) so a Verus proof and a
@@ -80,6 +81,14 @@ pub enum EngineName {
                   on the LeanAuto-named instance and never constructs this name"
     )]
     LeanInteractive,
+    /// The nlsat real-relaxation engine (`.design/stage1-forge-tier.md` REQ-8 /
+    /// Q-NLSAT, increment 2f): a direct Z3 `nlsat`-tactic (QF_NRA) query over the
+    /// relax fragment. Today Z3 is reached only THROUGH Verus (a VC-gen solver call);
+    /// this is the first real-arithmetic Z3 query as its own engine. A `Proven`
+    /// nlsat discharge certifies at the kernel-grounded [`crate::manifest::Level::L4`]
+    /// — its trust profile is `solver(nlsat) + spine-lemma(kernel)` (the real→integer
+    /// soundness bridge is the kernel-checked `r_relax_sound`, `lean/Thermite/Relax.lean`).
+    Nlsat,
 }
 
 impl EngineName {
@@ -91,6 +100,7 @@ impl EngineName {
             EngineName::Verus => "verus",
             EngineName::LeanAuto => "lean-auto",
             EngineName::LeanInteractive => "lean-interactive",
+            EngineName::Nlsat => "nlsat",
         }
     }
 }
@@ -2102,6 +2112,472 @@ pub fn trust_profile_interactive() -> TrustProfile {
 }
 
 // ============================================================================
+// REQ-8 — the nlsat real-relaxation engine (`.design/stage1-forge-tier.md` REQ-8 /
+// Q-NLSAT / AC-12, increment 2f). The relax route: a relaxable polynomial contract
+// (the `relax` fragment) is handed to a direct Z3 `nlsat`-tactic (QF_NRA) query — the
+// FIRST real-arithmetic Z3 query as its own engine (today Z3 is reached only THROUGH
+// Verus). `unsat` over ℝ ⇒ (by the kernel-checked `r_relax_sound`) valid over ℤ ⇒
+// certify L4 (kernel-grounded). `sat` ⇒ the integrality check (Q8: round into the
+// radius-2 ℤⁿ box) splits a genuine integer `Counterexample` from a real-only
+// `RealWitness` (true over ℤ, false over ℝ) — the latter escalates UP to the forge,
+// never down to a `Counterexample`.
+// ============================================================================
+
+/// The outcome of an nlsat relax discharge (`.design/stage1-forge-tier.md` REQ-8 /
+/// AC-12). The richer-than-[`Verdict`] result the relax route returns: the
+/// [`RealWitness`](NlsatOutcome::RealWitness) case carries a raw REAL point the 3-arm
+/// engine `Verdict` cannot, so [`NlsatEngine::discharge_relax`] is the route's real
+/// entry point (the `Engine::discharge` trait impl maps it down for generic callers).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NlsatOutcome {
+    /// `unsat` over ℝ: no real counterexample → the relaxation `∀ x : ℝ, req → ⋀ ens`
+    /// holds → by `r_relax_sound` the integer clause holds → certify at L4.
+    Proved,
+    /// `sat` over ℝ AND an integer point in the radius-2 ℤⁿ box genuinely falsifies the
+    /// integer clause → a real integer `Counterexample`. Carries the integer witness.
+    Counterexample {
+        /// The integer falsifying point (variable → value, textual).
+        integer_point: Vec<(String, String)>,
+    },
+    /// `sat` over ℝ but NO integer point in the box falsifies → the clause is true over
+    /// ℤ, false over ℝ → a `RealWitness` escalation (never a `Counterexample`). Carries
+    /// the raw real point nlsat returned, handed to the forge as goal metadata.
+    RealWitness {
+        /// The raw real countermodel point (textual rationals/decimals).
+        point: crate::verdict::RealPoint,
+    },
+    /// z3 returned `unknown`, z3 is absent, the item is not relaxable, or the query
+    /// failed to render — an honest skip (never a false `Proved`, never a
+    /// `Counterexample`). Carries the reason.
+    Unknown(String),
+}
+
+/// The nlsat real-relaxation engine (`.design/stage1-forge-tier.md` REQ-8 / Q-NLSAT,
+/// increment 2f). Carries the parsed [`Program`] (the trait `discharge` resolves the
+/// obligation's `fn` by name to read its full contract — the `ens` clauses an
+/// [`Obligation`] does not carry). Implements the four-slot [`Engine`] interface; the
+/// relax-specific entry is [`NlsatEngine::discharge_relax`], which returns the richer
+/// [`NlsatOutcome`] (the `RealWitness` the trait `Verdict` cannot represent).
+#[derive(Debug, Clone)]
+pub struct NlsatEngine {
+    /// The parsed source program (the route resolves the `fn`'s full contract).
+    program: Program,
+}
+
+impl NlsatEngine {
+    /// Construct an nlsat engine over a parsed program (`.design/stage1-forge-tier.md`
+    /// REQ-8). Production consumer: `check::check_file_with_engine` (`--engine nlsat`).
+    #[must_use]
+    pub fn new(program: Program) -> Self {
+        NlsatEngine { program }
+    }
+
+    /// Locate the `z3` binary (`.design/stage1-forge-tier.md` REQ-8 / Q-NLSAT). Z3 is
+    /// bundled alongside the `verus` distribution and resolved on `PATH` (the same way
+    /// `check::run_verus` reaches `verus`); a bare `z3` lookup suffices in the
+    /// verus-on-PATH environment. Deterministic given the environment (R-CODE-5).
+    fn z3_binary() -> &'static str {
+        "z3"
+    }
+
+    /// Is `z3` invocable? (`.design/stage1-forge-tier.md` REQ-8.) The skip-guard for
+    /// the live nlsat tests — CI test-shards without z3 SKIP rather than fail, mirroring
+    /// the sibling `lake_present()` guard on the live Lean tests. No production caller —
+    /// [`NlsatEngine::run_z3`] handles z3-absence inline (a graceful `Unknown` skip).
+    #[allow(
+        dead_code,
+        reason = "REQ-8 live-test skip-guard: the in-crate live nlsat engine tests call it \
+                  (CI shards without z3 SKIP); run_z3 handles z3-absence inline in production"
+    )]
+    #[must_use]
+    pub fn z3_present() -> bool {
+        std::process::Command::new(Self::z3_binary())
+            .arg("--version")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    }
+
+    /// Does the nlsat fragment admit this item? (`.design/stage1-forge-tier.md` REQ-8b
+    /// / AC-12.) The narrowed-fragment admission is the `relaxable` syntactic check
+    /// ([`crate::relax::classify_fn`]) over the item's `fn`, not the static
+    /// `admits_all_classes` flag (`false` for this engine). A non-`fn` item or a
+    /// non-relaxable contract is not admitted (an honest skip, never a verdict).
+    #[must_use]
+    pub fn admits_relax(&self, item: &str) -> bool {
+        match find_item(&self.program, item) {
+            Some(Item::Fn(f)) => crate::relax::classify_fn(f).is_relaxable(),
+            _ => false,
+        }
+    }
+
+    /// Discharge a relaxable `fn`'s contract via the direct Z3 nlsat (QF_NRA) query
+    /// (`.design/stage1-forge-tier.md` REQ-8c / AC-12 — the relax route's real entry
+    /// point). Builds the negated-contract query ([`crate::relax::negated_contract_query`]),
+    /// runs the nlsat tactic, and:
+    ///
+    /// - `unsat` → [`NlsatOutcome::Proved`] (real-valid → integer-valid by `r_relax_sound`);
+    /// - `sat` → the integrality check (Q8): round the real model into the radius-2 ℤⁿ
+    ///   box and test the integer clause. An integer falsifier →
+    ///   [`NlsatOutcome::Counterexample`]; none → [`NlsatOutcome::RealWitness`] carrying
+    ///   the raw real point;
+    /// - `unknown` / z3 absent / not relaxable / render failure →
+    ///   [`NlsatOutcome::Unknown`] (an honest skip, never a false verdict).
+    #[must_use]
+    pub fn discharge_relax(&self, f: &thermite_syntax::FnItem) -> NlsatOutcome {
+        if !crate::relax::classify_fn(f).is_relaxable() {
+            return NlsatOutcome::Unknown(format!(
+                "`{}` is not in the relax fragment: {}",
+                f.name,
+                match crate::relax::classify_fn(f) {
+                    crate::relax::RelaxVerdict::NotRelaxable(r) => r,
+                    crate::relax::RelaxVerdict::Relaxable => String::new(),
+                }
+            ));
+        }
+        let query = match crate::relax::negated_contract_query(f) {
+            Some(q) => q,
+            None => {
+                return NlsatOutcome::Unknown(format!(
+                    "the relaxable contract of `{}` did not render to a QF_NRA query",
+                    f.name
+                ));
+            }
+        };
+        // pp.decimal makes z3 print real (incl. algebraic) model values as decimals so
+        // the integrality check can round them; the nlsat tactic is selected inside the
+        // query (`check-sat-using qfnra-nlsat`).
+        let input = format!("(set-option :pp.decimal true)\n{query}");
+        let (result, model) = match Self::run_z3(&input) {
+            Ok(pair) => pair,
+            Err(reason) => return NlsatOutcome::Unknown(reason),
+        };
+        match result.as_str() {
+            "unsat" => NlsatOutcome::Proved,
+            "unknown" => NlsatOutcome::Unknown(format!(
+                "z3 nlsat returned `unknown` on `{}`'s real relaxation (undecided)",
+                f.name
+            )),
+            "sat" => Self::classify_sat(f, &model),
+            other => NlsatOutcome::Unknown(format!(
+                "z3 nlsat returned an unexpected result `{other}` on `{}`",
+                f.name
+            )),
+        }
+    }
+
+    /// The integrality check (`.design/stage1-forge-tier.md` REQ-8c / Q8): given the
+    /// `sat` real model, decide whether the counterexample is a genuine integer
+    /// `Counterexample` or a real-only `RealWitness`. Rounds each variable to the
+    /// nearest integer and tests the radius-2 ℤⁿ box; an integer point that falsifies
+    /// the integer clause is a `Counterexample`, otherwise the raw real point is a
+    /// `RealWitness`.
+    fn classify_sat(f: &thermite_syntax::FnItem, model: &BTreeMap<String, String>) -> NlsatOutcome {
+        let vars = crate::relax::integer_vars(f);
+        // The raw real point (textual), for the RealWitness escalation. An unconstrained
+        // variable z3 omits is recorded as "0" (its box center).
+        let raw_point = crate::verdict::RealPoint {
+            assignment: vars
+                .iter()
+                .map(|v| {
+                    (
+                        v.clone(),
+                        model.get(v).cloned().unwrap_or_else(|| "0".to_string()),
+                    )
+                })
+                .collect(),
+        };
+        if let Some(integer_point) = Self::integrality_box_falsifier(f, &vars, model) {
+            return NlsatOutcome::Counterexample { integer_point };
+        }
+        NlsatOutcome::RealWitness { point: raw_point }
+    }
+
+    /// Search the radius-2 ℤⁿ box rounded from the real model for an integer point that
+    /// falsifies the integer clause (`.design/stage1-forge-tier.md` REQ-8c / Q8). Each
+    /// variable's box center is its rounded real value (an unconstrained / unparseable
+    /// variable centers at 0); the box is the Cartesian product of `center ± {0,1,2}`.
+    /// Returns the first integer falsifier (a genuine `Counterexample`), or `None` (the
+    /// real countermodel is real-only → `RealWitness`). The box is small (5ⁿ over the
+    /// few relax variables), well within the Q8 1s budget.
+    fn integrality_box_falsifier(
+        f: &thermite_syntax::FnItem,
+        vars: &[String],
+        model: &BTreeMap<String, String>,
+    ) -> Option<Vec<(String, String)>> {
+        let centers: Vec<i128> = vars
+            .iter()
+            .map(|v| {
+                model
+                    .get(v)
+                    .and_then(|t| Self::real_to_f64(t))
+                    .map_or(0, |x| x.round() as i128)
+            })
+            .collect();
+        // A defensive cap: relaxable fns carry a handful of variables; 5⁶ = 15625 is the
+        // ceiling we search (beyond it the box would be too large for the 1s budget — a
+        // real-only escalation rather than an unbounded search).
+        let n = vars.len();
+        if n > 6 {
+            return None;
+        }
+        let offsets: [i128; 5] = [-2, -1, 0, 1, 2];
+        let total = 5usize.pow(n as u32);
+        for idx in 0..total {
+            let mut rem = idx;
+            let mut assign: BTreeMap<String, i128> = BTreeMap::new();
+            for (vi, v) in vars.iter().enumerate() {
+                let off = offsets[rem % 5];
+                rem /= 5;
+                assign.insert(v.clone(), centers[vi].saturating_add(off));
+            }
+            if crate::relax::eval_contract_negation_over_ints(f, &assign) == Some(true) {
+                return Some(
+                    vars.iter()
+                        .map(|v| (v.clone(), assign[v].to_string()))
+                        .collect(),
+                );
+            }
+        }
+        None
+    }
+
+    /// Run z3 over the SMT-LIB2 `input` (fed on stdin), returning `(result, model)`:
+    /// the first result token (`sat`/`unsat`/`unknown`) and the raw model text. `Err`
+    /// on z3 absent / spawn failure / no result token (an honest skip reason, never a
+    /// silent success — R-CODE-4).
+    fn run_z3(input: &str) -> Result<(String, BTreeMap<String, String>), String> {
+        use std::io::Write as _;
+        use std::process::{Command, Stdio};
+        let mut child = Command::new(Self::z3_binary())
+            .arg("-smt2")
+            .arg("-in")
+            .arg("-T:10")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    "z3 is not on PATH (the nlsat relax route needs the bundled z3) — \
+                     skipping"
+                        .to_string()
+                } else {
+                    format!("could not spawn z3: {e}")
+                }
+            })?;
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin
+                .write_all(input.as_bytes())
+                .map_err(|e| format!("could not write the QF_NRA query to z3: {e}"))?;
+        }
+        let out = child
+            .wait_with_output()
+            .map_err(|e| format!("z3 did not complete: {e}"))?;
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let result = stdout
+            .split_whitespace()
+            .next()
+            .map(str::to_string)
+            .ok_or_else(|| {
+                format!(
+                    "z3 produced no result token (stderr head: {})",
+                    String::from_utf8_lossy(&out.stderr)
+                        .chars()
+                        .take(200)
+                        .collect::<String>()
+                )
+            })?;
+        let model = Self::parse_real_model(&stdout);
+        Ok((result, model))
+    }
+
+    /// Parse z3's `(get-model)` output into a `variable → raw-value-text` map
+    /// (`.design/stage1-forge-tier.md` REQ-8c). Extracts each `(define-fun NAME () Real
+    /// VALUE)` with balanced-paren value capture; the raw value text (a decimal, a
+    /// `(- d)`, or a `(/ a b)`) is kept verbatim for the `RealWitness` point and parsed
+    /// to `f64` by [`real_to_f64`](NlsatEngine::real_to_f64) for the integrality
+    /// rounding.
+    fn parse_real_model(model: &str) -> BTreeMap<String, String> {
+        let mut out = BTreeMap::new();
+        let needle = "(define-fun ";
+        let mut search = 0;
+        while let Some(rel) = model[search..].find(needle) {
+            let open = search + rel;
+            let after = open + needle.len();
+            let rest = &model[after..];
+            let name_end = rest.find(char::is_whitespace).unwrap_or(rest.len());
+            let name = rest[..name_end].trim().to_string();
+            match Self::matching_paren(model, open) {
+                Some(close) => {
+                    let inner = &model[after..close];
+                    // The declared form is `NAME () Real VALUE`; z3 prints VALUE on the
+                    // SAME or the NEXT line (multi-line models), so anchor on `) Real`
+                    // and take the remainder trimmed (a decimal `1.41?`, a `(- d)`, or a
+                    // `(/ a b)`).
+                    if let Some(rpos) = inner.find(") Real") {
+                        let value = inner[rpos + ") Real".len()..].trim().to_string();
+                        if !name.is_empty() && !value.is_empty() {
+                            out.insert(name, value);
+                        }
+                    }
+                    search = close + 1;
+                }
+                None => {
+                    search = after;
+                }
+            }
+        }
+        out
+    }
+
+    /// The index of the `)` matching the `(` at `open` in `s` (`.design/stage1-forge-
+    /// tier.md` REQ-8c, the model parser). `None` if unbalanced (a defensive skip,
+    /// never a panic — R-CODE-2).
+    fn matching_paren(s: &str, open: usize) -> Option<usize> {
+        let bytes = s.as_bytes();
+        let mut depth = 0i32;
+        for (i, &b) in bytes.iter().enumerate().skip(open) {
+            if b == b'(' {
+                depth += 1;
+            } else if b == b')' {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(i);
+                }
+            }
+        }
+        None
+    }
+
+    /// Parse a z3 real value text to `f64` for the integrality rounding (`.design/
+    /// stage1-forge-tier.md` REQ-8c). Handles a bare decimal (`1.5`, `1.4142135?` —
+    /// the trailing `?` is z3's algebraic-truncation marker), a negation `(- d)`, and a
+    /// rational `(/ a b)`. `None` on an unparseable form (the variable then centers at
+    /// 0 in the box — a conservative real-only escalation, never a false counterexample).
+    fn real_to_f64(s: &str) -> Option<f64> {
+        let s = s.trim();
+        if let Some(inner) = s.strip_prefix("(-").and_then(|x| x.strip_suffix(')')) {
+            return Self::real_to_f64(inner.trim()).map(|v| -v);
+        }
+        if let Some(inner) = s.strip_prefix("(/").and_then(|x| x.strip_suffix(')')) {
+            let mut parts = inner.split_whitespace();
+            let a = Self::real_to_f64(parts.next()?)?;
+            let b = Self::real_to_f64(parts.next()?)?;
+            if b == 0.0 {
+                return None;
+            }
+            return Some(a / b);
+        }
+        s.trim_end_matches('?').parse::<f64>().ok()
+    }
+}
+
+impl Engine for NlsatEngine {
+    fn name(&self) -> EngineName {
+        EngineName::Nlsat
+    }
+
+    fn fragment(&self) -> Fragment {
+        // The nlsat engine admits only the relax fragment — the `admits_all_classes =
+        // false` narrowed-engine seam (REQ-2(a)). The per-item admission is the
+        // `relaxable` syntactic check, run in `admits_relax` (REQ-8b); the flag marks
+        // it as a narrowed engine so the route gates on `admits_relax`.
+        Fragment {
+            admits_all_classes: false,
+        }
+    }
+
+    fn discharge(&self, o: &Obligation, covenant: &CovenantRecord) -> Verdict {
+        // REQ-4 seam: the covenant record is threaded but inert on the relax route (the
+        // covenant LOGIC is 2b; the relax route is a pure-real discharge).
+        let _ = covenant;
+        // Resolve the obligation's `fn` to read its full contract (an `Obligation` does
+        // not carry the `ens` clauses the relax encoding needs).
+        let Some(Item::Fn(f)) = find_item(&self.program, &o.item) else {
+            return Verdict::Unknown(Reason::IncompleteUnknown(format!(
+                "the nlsat engine discharges `fn` contracts; `{}` is not a relaxable fn",
+                o.item
+            )));
+        };
+        // Map the rich relax outcome down to the 3-arm engine `Verdict` (the trait's
+        // total type). `RealWitness` has no engine-`Verdict` image (it carries a real
+        // point) → `Unknown` here; `discharge_relax` is the route's real entry point
+        // that preserves it. This keeps the trait usable for the disagreement check
+        // (a `Proven` nlsat vs a `Refuted` other engine) without laundering a
+        // `RealWitness` into a `Counterexample`.
+        match self.discharge_relax(f) {
+            NlsatOutcome::Proved => Verdict::Proven(Evidence {
+                verified: 1,
+                key: self.evidence_key(o),
+            }),
+            NlsatOutcome::Counterexample { integer_point } => Verdict::Refuted(Counterexample {
+                obligations: vec![crate::manifest::ObligationResult::failed(
+                    format!("{}#contract", o.item),
+                    None,
+                    Some(format!(
+                        "nlsat found an integer counterexample: {}",
+                        integer_point
+                            .iter()
+                            .map(|(v, x)| format!("{v} = {x}"))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )),
+                )],
+            }),
+            NlsatOutcome::RealWitness { .. } => {
+                Verdict::Unknown(Reason::IncompleteUnknown(format!(
+                    "`{}` is true over ℤ but false over ℝ (a RealWitness) — escalated to the \
+                 forge via discharge_relax, not representable as a 3-arm Verdict",
+                    o.item
+                )))
+            }
+            NlsatOutcome::Unknown(detail) => Verdict::Unknown(Reason::IncompleteUnknown(detail)),
+        }
+    }
+
+    fn trust_profile(&self) -> TrustProfile {
+        // REQ-8 trust profile: solver(nlsat) + spine-lemma(kernel). The L4
+        // kernel-grounded base — the Z3 nlsat real-arithmetic decision PLUS the
+        // kernel-checked relax spine lemmas that bridge real-validity to
+        // integer-validity (`lean/Thermite/Relax.lean`, axiom-probed ⊆ {propext,
+        // Classical.choice, Quot.sound}). An auditor sees L4-via-nlsat rests on Z3's
+        // nlsat soundness + the kernel lemma, distinct from L3-via-Verus's {Z3, Verus
+        // VC-gen, lowering theorem}.
+        TrustProfile {
+            items: vec![
+                "Z3 nlsat (QF_NRA real-arithmetic decision)".to_string(),
+                "spine-lemma r_relax_sound (real→integer relaxation soundness, kernel-checked)"
+                    .to_string(),
+                "spine-lemma rencode_sound (real-encoding faithfulness, kernel-checked)"
+                    .to_string(),
+            ],
+        }
+    }
+
+    fn evidence_key(&self, o: &Obligation) -> CacheKey {
+        // REQ-2(d): the engine-discriminated key. The content side is the relaxable
+        // contract's rendered QF_NRA query (so a contract edit invalidates the key),
+        // falling back to the obligation identity when the fn is absent / unrenderable.
+        use sha2::{Digest, Sha256};
+        let content = match find_item(&self.program, &o.item) {
+            Some(Item::Fn(f)) => crate::relax::negated_contract_query(f)
+                .unwrap_or_else(|| format!("unrenderable::{}", o.item)),
+            _ => format!("absent::{}", o.item),
+        };
+        let mut h = Sha256::new();
+        h.update(b"thermite-nlsat-evidence-v1");
+        h.update(o.item.as_bytes());
+        h.update(content.as_bytes());
+        let content_address: String = h.finalize().iter().map(|b| format!("{b:02x}")).collect();
+        CacheKey {
+            engine: EngineName::Nlsat,
+            content_address,
+        }
+    }
+}
+
+// ============================================================================
 // REQ-9 — the engine-generic mutation battery, the Lean path (`.design/verified/
 // proof-backends.md` REQ-9 / §7, increment (iii), #247). When the discharging engine
 // is Lean: mutants are attempted via the same engine path; kill = `Refuted ∪
@@ -2654,6 +3130,119 @@ mod tests {
         let parsed = thermite_syntax::parse(src);
         assert!(parsed.is_clean(), "fixture must parse: {:?}", parsed.errors);
         parsed.program
+    }
+
+    // Resolve a fn fixture (asserting present + a fn). Used by the live nlsat tests.
+    fn fn_of<'a>(program: &'a Program, name: &str) -> &'a thermite_syntax::FnItem {
+        match crate::lean_export::find_item(program, name) {
+            Some(thermite_syntax::Item::Fn(f)) => f,
+            other => panic!("fixture fn `{name}` must be present and a fn, got {other:?}"),
+        }
+    }
+
+    // REQ-8 / AC-12 (LIVE, z3-gated): the isqrt characterization — `r*r<=n ∧
+    // n<(r+1)² ∧ 1<=r → r<=n` — is a real-valid universal polynomial implication, so
+    // the nlsat relax route discharges it `Proved` (unsat over ℝ → integer-valid by
+    // r_relax_sound → L4). z3-absent SKIPs (CI shards have no z3), mirroring the
+    // sibling lake-gated live tests.
+    #[test]
+    fn live_nlsat_isqrt_characterization_is_proved() {
+        if !NlsatEngine::z3_present() {
+            eprintln!("SKIP: z3 not present — the live nlsat relax route is not run.");
+            return;
+        }
+        let program = parse_program(
+            "fn isqrt_bound(n: u64, r: u64) -> u64\n  \
+             req r * r <= n && n < (r + 1) * (r + 1) && 1 <= r\n  \
+             ens r <= n\n  fx pure\n{ r }\n",
+        );
+        let engine = NlsatEngine::new(program.clone());
+        assert!(
+            engine.admits_relax("isqrt_bound"),
+            "the isqrt characterization is relaxable"
+        );
+        assert_eq!(
+            engine.discharge_relax(fn_of(&program, "isqrt_bound")),
+            NlsatOutcome::Proved,
+            "the real relaxation is QF_NRA-valid → L4 Proved"
+        );
+    }
+
+    // REQ-8 / AC-12 (LIVE, z3-gated): `∀ n. n*n ≠ 2` is true over ℤ but false over ℝ
+    // (n = √2). The relax route's integrality check finds NO integer falsifier in the
+    // radius-2 box → a `RealWitness` carrying the raw real point (√2), NEVER a
+    // `Counterexample`.
+    #[test]
+    fn live_nlsat_n_squared_ne_two_is_real_witness() {
+        if !NlsatEngine::z3_present() {
+            eprintln!("SKIP: z3 not present — the live nlsat relax route is not run.");
+            return;
+        }
+        let program =
+            parse_program("fn sq(n: u64) -> u64\n  req true\n  ens n * n != 2\n  fx pure\n{ n }\n");
+        let engine = NlsatEngine::new(program.clone());
+        match engine.discharge_relax(fn_of(&program, "sq")) {
+            NlsatOutcome::RealWitness { point } => {
+                let n = point
+                    .assignment
+                    .iter()
+                    .find(|(v, _)| v == "n")
+                    .map(|(_, x)| x.clone())
+                    .unwrap_or_default();
+                assert!(
+                    n.starts_with("1.41"),
+                    "the raw real point carries n ≈ √2 (got {n})"
+                );
+            }
+            other => {
+                panic!("`∀ n. n*n≠2` must yield RealWitness, never Counterexample; got {other:?}")
+            }
+        }
+    }
+
+    // REQ-8 (LIVE, z3-gated): a contract false over ℤ with an integer falsifier
+    // (`n+1 <= n`) yields a genuine integer `Counterexample` (not a RealWitness) — the
+    // integrality check finds the integer witness in the box.
+    #[test]
+    fn live_nlsat_integer_counterexample_is_caught() {
+        if !NlsatEngine::z3_present() {
+            eprintln!("SKIP: z3 not present — the live nlsat relax route is not run.");
+            return;
+        }
+        let program = parse_program(
+            "fn bad(n: u64) -> u64\n  req true\n  ens n + 1 <= n\n  fx pure\n{ n }\n",
+        );
+        let engine = NlsatEngine::new(program.clone());
+        match engine.discharge_relax(fn_of(&program, "bad")) {
+            NlsatOutcome::Counterexample { integer_point } => {
+                assert!(
+                    integer_point.iter().any(|(v, _)| v == "n"),
+                    "the integer counterexample names `n`"
+                );
+            }
+            other => panic!("`n+1<=n` is false over ℤ → Counterexample; got {other:?}"),
+        }
+    }
+
+    // REQ-8b (no z3 needed): a div-containing contract is NOT relaxable, so the route
+    // skips it (an honest `Unknown`, never a verdict) — the fragment gate.
+    #[test]
+    fn nlsat_div_clause_is_not_relaxable() {
+        let program = parse_program(
+            "fn d(n: u64) -> u64\n  req true\n  ens result == n / 2\n  fx pure\n{ n }\n",
+        );
+        let engine = NlsatEngine::new(program.clone());
+        assert!(
+            !engine.admits_relax("d"),
+            "a `/` clause is out of the relax fragment"
+        );
+        assert!(
+            matches!(
+                engine.discharge_relax(fn_of(&program, "d")),
+                NlsatOutcome::Unknown(_)
+            ),
+            "a non-relaxable contract is an honest skip"
+        );
     }
 
     // Build a contract obligation for a named fn (asserting it exists + is a fn, no

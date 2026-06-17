@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft (v-next architecture — the obligation/engine interface; most REQs NOT-STARTED
-audited-sha: f664b3335eb7302419187fcbc02e568dfc2a7657 (re-pinned 2026-06-16 for the 2e lake-guard test fix, claim-neutral: the only intervening change to this doc's governed source is adding the `lake_present()` skip-guard to the `live_forge_lemma_discharges_proven` test in engine.rs — a test-gating change, no production-path or REQ change.)
+audited-sha: a728d95ca3dbd4fbbee1cb496c003f408d82f327 (re-pinned 2026-06-16 for stage-1 increment 2f, REQ-8: the intervening changes to this doc's governed source (check.rs, engine.rs) are the additive nlsat relax route (EngineName::Nlsat + NlsatEngine + the --engine nlsat dispatch, REQ-S1-8); the Verus/Lean engines + the v1 discharge path this doc governs are untouched.)
         behind build blockers. The SHIPPED substrates this builds on are quoted-code-grounded.)
 governs: forge/src/check.rs + forge/src/degrade.rs + forge/src/manifest.rs (the discharge
          pipeline, the ladder, the certificate this interface generalizes) and

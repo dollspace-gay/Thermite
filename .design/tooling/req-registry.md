@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 8978ecc950df30b58c00fe6df06f1fc5b4c56691 (re-pinned 2026-06-16 for stage-1 increment 2e, REQ-7: the only change to this doc's governed files is the additive REQ-S1-7 entry in registry.toml + the regenerated status.md view — net-additive, the registry mechanics this doc governs are unchanged; req-registry.py --check is clean.)
+audited-sha: a728d95ca3dbd4fbbee1cb496c003f408d82f327 (re-pinned 2026-06-16 for stage-1 increment 2f, REQ-8: registry.toml + status.md gain the REQ-S1-8 relax-routing entry (shipped, typed evidence) + regenerated status view; req-registry.py --check clean.)
 governs:
   - .design/reqs/registry.toml
   - .design/reqs/status.md

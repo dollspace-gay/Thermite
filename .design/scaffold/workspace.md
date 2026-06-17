@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: a520c7a3acbcbc8c2d99e8aba80c364b1f334f40 (re-pinned 2026-06-16 for stage-1 increment 2e, REQ-7: the only change to this doc's governed file is the additive `mod burn;` declaration in main.rs — net-additive, the workspace topology this doc governs is unchanged.)
+audited-sha: a728d95ca3dbd4fbbee1cb496c003f408d82f327 (re-pinned 2026-06-16 for stage-1 increment 2f, REQ-8: the only change to this doc's governed file is the additive `mod relax;` declaration in main.rs (REQ-S1-8) — net-additive, the workspace topology this doc governs is unchanged.)
 governs:
   - Cargo.toml (virtual workspace manifest)
   - rust-toolchain.toml

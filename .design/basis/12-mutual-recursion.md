@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 8978ecc950df30b58c00fe6df06f1fc5b4c56691 (re-pinned 2026-06-16 for stage-1 increment 2e, REQ-7: the only change to this doc's governed file (check.rs) is the additive forge-tier LEMMA discharge on the Lean path (discharge_forge_lemma + the check_file_with_engine forge-lemma pass + the fn-re-loop forge-item skip that PRESERVES a forge reject, REQ-S1-7); orthogonal to what this doc governs, the Verus default path is untouched, v1 behavior unchanged.)
+audited-sha: a728d95ca3dbd4fbbee1cb496c003f408d82f327 (re-pinned 2026-06-16 for stage-1 increment 2f, REQ-8: the only change to this doc's governed file (check.rs) is the additive --engine nlsat relax dispatch (EngineSelection::Nlsat + nlsat_check, REQ-S1-8); orthogonal to what this doc governs, the Verus default path is untouched, v1 behavior unchanged.)
 governs: forge/src/check.rs
 governs: thermite-lower/src/lower.rs
 thesis-refs:

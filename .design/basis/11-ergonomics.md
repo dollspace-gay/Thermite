@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: f09f8ca376257cc1e2543b8ebc9fb771bffd04df (re-pinned 2026-06-17 for stage-1 REQ-10 / AC-14, the G1 gate artifact: the governed source carries the additive per-clause hybrid `--engine forge` gate route (EngineSelection::Forge + the forge_gate_* helpers in check.rs); net-additive — the REQs this doc governs are unchanged. prior: 90b8325951b0f625a693baf07776da39d0b95fbe)
+audited-sha: 1db3f2ba5cff4b38508036f9dd1cf47f54e5d161 (re-pinned 2026-06-17 after merging main into the G1 gate-artifact branch: governed source carries the gate's per-clause forge router + #53 arm64 sandbox + #54 content-pin docs, net-additive; the REQs this doc governs are unchanged.)
 governs: thermite-syntax/src/parser.rs
 governs: thermite-syntax/src/ast.rs
 governs: thermite-lower/src/lower.rs

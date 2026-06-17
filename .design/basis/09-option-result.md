@@ -3,6 +3,7 @@
 tier: 3-component
 status: draft
 audited-sha: 8b4d2580b472d04fca2b14de5b6be52533a2d258 (re-pinned 2026-06-17 for stage-1 increment 3, REQ-9 lemma library: the only change to this doc's governed files (check.rs, review.rs) is the additive stage-1 increment 3 REQ-9 lemma library mechanics (REQ-S1-9); no Option/Result lowering or semantics changed, net-additive, v1 behavior unchanged. prior: 87797224ba72e12a3734d93e3cb0300f20333bb4)
+audited-content-sha256: b0545106e3203ac642083ce1f78baeddf18e6343d4a3066bac6ee6b3b805a288
 governs: thermite-syntax/src/ast.rs
 governs: thermite-syntax/src/parser.rs
 governs: thermite-spec/src/validator.rs

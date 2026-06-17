@@ -3,6 +3,7 @@
 tier: 3-component
 status: draft
 audited-sha: 6b86f74476122cfddbdcf168d37a3561d2598054 (re-pinned 2026-06-16 for PR #46 after merging main: lower_l1's TString runtime gate now treats String-typed ADT declarations as TString users so ADT fields cannot name an unemitted runtime; main's inert Item::Forge skip is preserved; core req/ens/inv check emission is unchanged.)
+audited-content-sha256: f35dc6e292a621c5cfbbe8e3f5b5e8436e1ef91a486a02301802cdbf8b42ec9f
 governs: thermite-lower/src/l1.rs
 thesis-refs:
   - thermite-design.md §4.2

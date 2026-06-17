@@ -7,25 +7,29 @@ and spec-discipline.py guarantees they EXIST and are READ before a routed
 edit — but nothing checks their CONTENT is still true of the code. They drift
 silently. This gate converts that staleness from a silent failure into a loud,
 gated one (the same move #[slag] makes for unverified code, thermite-design.md
-§8): every routed design doc pins an `audited-sha:` commit, and this gate FAILS
-whenever any file a doc governs has been committed since the doc's pin.
+§8): every routed design doc pins an `audited-content-sha256:` digest over its
+governed files (or, for legacy docs, an `audited-sha:` commit), and this gate
+FAILS whenever those governed file contents change. Legacy commit pins use a
+full-history commit-set predicate so merge-parent order cannot hide drift.
 
 The rule, precisely (governed by .design/tooling/doc-drift-tripwire.md):
 
   1. Enumerate the routed docs: the deduplicated `design` fields of every
      [[route]] in tooling/spec-routes.toml, each inverted to its governed file
      set = the union of that doc's routes' crate_patterns (REQ-1, REQ-6b).
-  2. Extract each doc's pin: the first line matching
-     `^audited-sha:\\s*([0-9a-f]{40})\\b` in the doc's HTML-comment header
-     (REQ-5).
-  3. Validate the pin: it must resolve to a commit
+  2. Extract each doc's pin from the doc's HTML-comment header (REQ-5): prefer
+     `audited-content-sha256:` (64-hex aggregate content digest) when present;
+     otherwise use the legacy first `audited-sha:` 40-hex commit pin.
+  3. Validate a legacy commit pin: it must resolve to a commit
      (`git rev-parse --verify <P>^{commit}`) AND be an ancestor of HEAD
      (`git merge-base --is-ancestor <P> HEAD`) — else INVALID-PIN (REQ-6d, 8).
-  4. Drift predicate (commit-set, never commit-date — decision 2): a governed
-     file f has drifted iff `git log --format=%H <P>..HEAD -- <pathspec>` is
-     non-empty. Literal paths use pathspec `<f>`; glob patterns use `:(glob)<f>`
-     (REQ-6e). A file with no commits in <P>..HEAD — including a file never
-     committed at all — is CURRENT, not drift (REQ-6 unbuilt-file rule).
+  4. Drift predicate: for content pins, recompute the governed-file aggregate
+     SHA-256 and compare it to the pin. For legacy commit pins (commit-set,
+     never commit-date — decision 2), a governed file f has drifted iff
+     `git log --full-history --format=%H <P>..HEAD -- <pathspec>` is non-empty.
+     Literal paths use pathspec `<f>`; glob patterns use `:(glob)<f>` (REQ-6e).
+     A file with no commits in <P>..HEAD — including a file never committed at
+     all — is CURRENT, not drift (REQ-6 unbuilt-file rule).
   5. Report (REQ-7) deterministically sorted by doc path, then file path
      (R-CODE-5), and exit per the REQ-9 contract:
          0 = every routed doc pinned and current;
@@ -36,10 +40,11 @@ The rule, precisely (governed by .design/tooling/doc-drift-tripwire.md):
              that fails open is a silent pass, so an environment failure is
              never collapsed to "no drift" (R-HONEST-3, R-CODE-4).
 
-NOT a Claude-Code hook (decision 5): invoked via `make doc-drift` and runnable
-standalone. NOT part of `make audit` — doc freshness is a development-discipline
-invariant, not a link in the proof-trust chain. scripts/audit.sh is untouched
-by this component (AC-7).
+NOT a Claude-Code hook (decision 5): invoked directly by CI, via
+`make doc-drift`'s synthetic merge-ref worktree, or standalone. NOT part of
+`make audit` — doc freshness is a development-discipline invariant, not a link
+in the proof-trust chain. scripts/audit.sh is untouched by this component
+(AC-7).
 
 Usage:  python3 tooling/doc-drift.py [--root <repo-toplevel>]
 
@@ -57,6 +62,7 @@ PROJECT CUSTOMIZATION:
   Edit ROUTES_RELPATH, PIN_FIELD_RE below.
 """
 
+import hashlib
 import re
 import subprocess
 import sys
@@ -75,7 +81,16 @@ except ImportError:  # pragma: no cover - exercised via the env-failure path
 # Repo-relative path to the route table (the enumeration source, REQ-1).
 ROUTES_RELPATH = "tooling/spec-routes.toml"
 
-# The pin field, per REQ-5: the FIRST line matching this in a doc's header.
+# Preferred content pin: a deterministic aggregate SHA-256 over the doc's
+# governed file set. This makes drift a data-consistency check, independent of
+# merge topology.
+CONTENT_PIN_FIELD_RE = re.compile(
+    r"^audited-content-sha256:\s*([0-9a-f]{64})\b",
+    re.MULTILINE,
+)
+CONTENT_PIN_ANY_RE = re.compile(r"^audited-content-sha256:\s*(\S+)", re.MULTILINE)
+
+# Legacy commit pin, per REQ-5: the FIRST line matching this in a doc's header.
 # Full 40-hex (never the 8-hex short form) so a pin can never go ambiguous as
 # the repo grows.
 PIN_FIELD_RE = re.compile(r"^audited-sha:\s*([0-9a-f]{40})\b", re.MULTILINE)
@@ -178,11 +193,12 @@ def _intervening_commits(root, pin, pathspec):
     """
     rc, out, err = _run_git(
         root,
-        ["log", "--format=%H %s", f"{pin}..HEAD", "--", pathspec],
+        ["log", "--full-history", "--format=%H %s", f"{pin}..HEAD", "--", pathspec],
     )
     if rc != 0:
         raise EnvironmentError3(
-            f"git log {pin}..HEAD -- {pathspec} exited {rc}: {err.strip()}"
+            f"git log --full-history {pin}..HEAD -- {pathspec} exited {rc}: "
+            f"{err.strip()}"
         )
     commits = []
     for line in out.splitlines():
@@ -277,19 +293,26 @@ def load_doc_files(root):
     return {doc: sorted(files) for doc, files in doc_files.items()}
 
 
-def extract_pin(root, doc_relpath):
-    """The first REQ-5 pin in `doc_relpath`, or None if the doc has no pin.
+def extract_pins(root, doc_relpath):
+    """Pins in `doc_relpath`: (content_pin, bad_content_pin, commit_pin).
 
-    A doc that does not exist on disk has no pin (None) -> MISSING-PIN; the
-    doc is named, never a traceback.
+    A doc that does not exist on disk has no pins -> MISSING-PIN; the doc is
+    named, never a traceback. A malformed content pin is distinct from an absent
+    one so a typo cannot silently fall back to a legacy commit pin.
     """
     p = root / doc_relpath
     try:
         text = p.read_text(encoding="utf-8", errors="replace")
     except (OSError, FileNotFoundError):
-        return None
-    m = PIN_FIELD_RE.search(text)
-    return m.group(1) if m else None
+        return None, None, None
+    content_m = CONTENT_PIN_FIELD_RE.search(text)
+    bad_content_m = CONTENT_PIN_ANY_RE.search(text) if content_m is None else None
+    commit_m = PIN_FIELD_RE.search(text)
+    return (
+        content_m.group(1) if content_m else None,
+        bad_content_m.group(1) if bad_content_m else None,
+        commit_m.group(1) if commit_m else None,
+    )
 
 
 def _pathspec_for(pattern):
@@ -297,6 +320,56 @@ def _pathspec_for(pattern):
     if "*" in pattern or "?" in pattern or "[" in pattern:
         return f":(glob){pattern}"
     return pattern
+
+
+def _is_glob(pattern):
+    return "*" in pattern or "?" in pattern or "[" in pattern
+
+
+def _content_paths(root, pattern):
+    """Repo-relative file paths represented by `pattern`, sorted."""
+    if _is_glob(pattern):
+        try:
+            matches = sorted(
+                p.relative_to(root).as_posix()
+                for p in root.glob(pattern)
+                if p.is_file()
+            )
+        except (OSError, ValueError) as exc:
+            raise EnvironmentError3(
+                f"could not expand content-hash glob {pattern}: {exc}"
+            ) from exc
+        return matches
+
+    p = root / pattern
+    return [pattern] if p.is_file() else []
+
+
+def _content_digest(root, patterns):
+    """Deterministic aggregate digest for a doc's governed file set."""
+    digest = hashlib.sha256()
+    digest.update(b"doc-drift-content-v1\0")
+    for pattern in patterns:
+        digest.update(b"pattern\0")
+        digest.update(pattern.encode("utf-8", errors="surrogateescape"))
+        digest.update(b"\0")
+        paths = _content_paths(root, pattern)
+        if not paths:
+            digest.update(b"missing\0")
+            continue
+        for relpath in paths:
+            digest.update(b"file\0")
+            digest.update(relpath.encode("utf-8", errors="surrogateescape"))
+            digest.update(b"\0")
+            try:
+                data = (root / relpath).read_bytes()
+            except OSError as exc:
+                raise EnvironmentError3(
+                    f"could not read governed file for content hash {relpath}: {exc}"
+                ) from exc
+            digest.update(hashlib.sha256(data).hexdigest().encode("ascii"))
+            digest.update(b"\0")
+    return digest.hexdigest()
 
 
 # --- the check --------------------------------------------------------------
@@ -316,10 +389,35 @@ def evaluate(root):
 
     for doc in sorted(doc_files):
         files = doc_files[doc]
-        pin = extract_pin(root, doc)
+        content_pin, bad_content_pin, pin = extract_pins(root, doc)
+
+        if bad_content_pin is not None:
+            lines.append(
+                f"{INVALID_PIN}  {doc}  audited-content-sha256 "
+                f"{bad_content_pin} is not a 64-hex SHA-256 digest"
+            )
+            failed = True
+            continue
+
+        if content_pin is not None:
+            current = _content_digest(root, files)
+            if current == content_pin:
+                lines.append(f"{CURRENT}  {doc}  (content-sha256 {content_pin})")
+                continue
+            lines.append(
+                f"{DRIFT}  {doc}  content-sha256 {content_pin}  "
+                f"current {current}  governed file pattern(s):"
+            )
+            for pattern in files:
+                lines.append(f"    {pattern}")
+            failed = True
+            continue
 
         if pin is None:
-            lines.append(f"{MISSING_PIN}  {doc}  (no audited-sha: line)")
+            lines.append(
+                f"{MISSING_PIN}  {doc}  "
+                "(no audited-content-sha256: or audited-sha: line)"
+            )
             failed = True
             continue
 

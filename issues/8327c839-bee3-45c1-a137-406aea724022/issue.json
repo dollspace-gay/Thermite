@@ -6,5 +6,8 @@
   "priority": "high",
   "created_by": "rApq",
   "created_at": "2026-06-17T04:17:43.488928Z",
-  "updated_at": "2026-06-17T04:17:43.488928Z"
+  "updated_at": "2026-06-17T04:17:45.613738Z",
+  "labels": [
+    "ci"
+  ]
 }

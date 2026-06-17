@@ -172,12 +172,24 @@ fn scope_is_end_to_end(scope: &Option<AssuranceScope>) -> bool {
 }
 
 /// The assurance level (`thermite-design.md` §6). Serializes to the string form
-/// `"L0".."L3"` to match the golden cert's `"level": "L3"` (REQ-1, REQ-7).
+/// `"L0".."L4"` to match the golden cert's `"level": "L3"` (REQ-1, REQ-7).
 ///
-/// The declaration order `L0 < L1 < L2 < L3` is the ladder ordering
-/// (`.design/forge/degrade-ladder.md` REQ-6): `#[derive(PartialOrd, Ord)]` makes
-/// it the `Ord` the assurance-manifest aggregate uses for the min-over-functions
-/// project headline. The aggregate depends on this discriminant order.
+/// The declaration order `L0 < L1 < L2 < L3 < L4` is the ladder ordering
+/// (`.design/forge/degrade-ladder.md` REQ-6, reconciled to RFC-1 / GH #2 in
+/// increment 2f): `#[derive(PartialOrd, Ord)]` makes it the `Ord` the
+/// assurance-manifest aggregate uses for the min-over-functions project headline.
+/// The aggregate depends on this discriminant order.
+///
+/// L4 is the **kernel-grounded** rung the Stage-1 forge tier's relax route adds
+/// (`.design/stage1-forge-tier.md` REQ-8, RFC-1 / GH #2): where L3 is a Verus/Z3
+/// SOLVER proof, L4 is a clause whose trust profile is `solver(nlsat) +
+/// spine-lemma(kernel)` — the nlsat real-relaxation discharge, sound by the
+/// kernel-checked spine lemmas `r_relax_sound` + `rencode_sound`
+/// (`lean/Thermite/Relax.lean`). Out-of-cage clauses no longer degrade DOWN the
+/// ladder — they escalate UP to the forge, and a relax-discharged clause certifies
+/// at L4 above L3. Adding L4 is additive: the v1 conformance corpus stays at L3
+/// (the relax route is a NEW engine route reached only via `--engine nlsat`, never
+/// the default Verus path), so the v1 `oracle_subset` is byte-identical.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Level {
     /// L0 — unverified / `#[slag]` escape hatch (§6, §8).
@@ -186,8 +198,17 @@ pub enum Level {
     L1,
     /// L2 — bounded model check (Kani; issue #9) (§6).
     L2,
-    /// L3 — SMT proof: the contract holds for all inputs (§6).
+    /// L3 — SMT proof: the contract holds for all inputs (§6). The Verus/Z3 SOLVER
+    /// rung.
     L3,
+    /// L4 — KERNEL-GROUNDED proof (`.design/stage1-forge-tier.md` REQ-8, RFC-1 /
+    /// GH #2, increment 2f): the relax route's nlsat (QF_NRA) real-relaxation
+    /// discharge, whose trust profile is `solver(nlsat) + spine-lemma(kernel)` — the
+    /// real→integer soundness bridge is the kernel-checked spine lemma
+    /// `r_relax_sound` (`lean/Thermite/Relax.lean`). Above L3 on the ladder; reached
+    /// only by the new relax engine route (`--engine nlsat`), so v1 items are
+    /// unperturbed.
+    L4,
 }
 
 /// The status of a single proof obligation (REQ-5). v0.1 records discharged or
@@ -1308,13 +1329,14 @@ fn project_scope(certs: &[Certificate]) -> ProjectScope {
 }
 
 /// `true` iff a certificate represents a certified item: no reject cause and a
-/// certified assurance rung (`L3` proved, `L2` bounded, or `L1` runtime/slag).
-/// `L0` (a triage / counterexample / timeout reject, or an un-discharged proof)
-/// is not certified. Shared by the assurance aggregate (REQ-6) and `cli`'s
-/// exit-code path (so the project headline and the exit code agree on what
-/// "certifies").
+/// certified assurance rung (`L4` kernel-grounded, `L3` proved, `L2` bounded, or
+/// `L1` runtime/slag). `L0` (a triage / counterexample / timeout reject, or an
+/// un-discharged proof) is not certified. Shared by the assurance aggregate (REQ-6)
+/// and `cli`'s exit-code path (so the project headline and the exit code agree on
+/// what "certifies"). L4 (the relax route's kernel-grounded rung, 2f) certifies like
+/// any proven rung.
 pub fn cert_certifies(cert: &Certificate) -> bool {
-    cert.reject.is_none() && matches!(cert.level, Level::L3 | Level::L2 | Level::L1)
+    cert.reject.is_none() && matches!(cert.level, Level::L4 | Level::L3 | Level::L2 | Level::L1)
 }
 
 /// Map a parsed `EffectRow` to the certificate's `effects` string vector

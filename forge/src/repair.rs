@@ -207,7 +207,7 @@ pub fn classify_sub_l3(cert: &Certificate) -> Option<SubL3Status> {
     // No reject + a certified rung (L1/L2/L3) → already certifies → no-op. Repair
     // drives the L3 budget; a non-degraded certified lower rung (slag/boundary/an
     // explicit `--level l2`) is not a timeout to escalate.
-    if matches!(cert.level, Level::L1 | Level::L2 | Level::L3) {
+    if matches!(cert.level, Level::L1 | Level::L2 | Level::L3 | Level::L4) {
         return None;
     }
 

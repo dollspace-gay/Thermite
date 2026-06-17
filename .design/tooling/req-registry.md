@@ -3,8 +3,8 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: f09f8ca376257cc1e2543b8ebc9fb771bffd04df (re-pinned 2026-06-17 for stage-1 REQ-10 / AC-14, the G1 gate artifact: this doc's governed files (registry.toml, status.md) carry the additive REQ-S1-10 requirement entry + the regenerated status view, with REQ-S1-10's example restated from the isqrt-square-root characterization (non-trivial nlsat-earned L4 clauses) per the orchestrator's strengthening; req-registry.py --check is clean (441 requirements). prior: 8b4d2580b472d04fca2b14de5b6be52533a2d258)
-audited-content-sha256: 1e9e96249858f3759a7ca0e63b8c1c6ea5be149120965fc39a50c344c68cbbf1
+audited-sha: f09f8ca376257cc1e2543b8ebc9fb771bffd04df (re-pinned 2026-06-17 for the skill-v2 deliverable (umbrella thermite2-program.md REQ-8 / AC-13): this doc's governed files (registry.toml, status.md) carry the additive REQ-SKILL-V2-FORGE-TIER requirement entry + the regenerated status view; the change is purely additive (one new requirement, owner .design/thermite2-program.md, status shipped, typed file/symbol/test evidence) with no edit to tooling/req-registry.py or req-status.py; reqs check is clean (442 requirements). prior: re-pinned for stage-1 REQ-10 / AC-14, the G1 gate artifact (8b4d2580b472d04fca2b14de5b6be52533a2d258))
+audited-content-sha256: b404152a929f0722b89be0bf81114f81caec4802f597a610c679f7621a63f906
 governs:
   - .design/reqs/registry.toml
   - .design/reqs/status.md

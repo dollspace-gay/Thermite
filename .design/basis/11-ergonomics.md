@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: a728d95ca3dbd4fbbee1cb496c003f408d82f327 (re-pinned 2026-06-16 for stage-1 increment 2f, REQ-8: the only change to this doc's governed file (check.rs) is the additive --engine nlsat relax dispatch (EngineSelection::Nlsat + nlsat_check, REQ-S1-8); orthogonal to what this doc governs, the Verus default path is untouched, v1 behavior unchanged.)
+audited-sha: 87797224ba72e12a3734d93e3cb0300f20333bb4 (re-pinned 2026-06-16 after merging main #46 into 2f: governed source carries both #46's string-literal/L1-TString fixes and 2f's relax-route/L4 additions, both net-additive; the REQs this doc governs are unchanged.)
 governs: thermite-syntax/src/parser.rs
 governs: thermite-syntax/src/ast.rs
 governs: thermite-lower/src/lower.rs

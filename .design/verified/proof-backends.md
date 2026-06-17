@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft (v-next architecture — the obligation/engine interface; most REQs NOT-STARTED
-audited-sha: a728d95ca3dbd4fbbee1cb496c003f408d82f327 (re-pinned 2026-06-16 for stage-1 increment 2f, REQ-8: the intervening changes to this doc's governed source (check.rs, engine.rs) are the additive nlsat relax route (EngineName::Nlsat + NlsatEngine + the --engine nlsat dispatch, REQ-S1-8); the Verus/Lean engines + the v1 discharge path this doc governs are untouched.)
+audited-sha: ddbbb3ccea18276103fc268297c4d9190a1ee385 (re-pinned 2026-06-17: after merging main #46 into 2f, the governed source carries #46's string-literal/L1-TString fixes (a728d95c-era pin predates the merge); CI's merge-ref sees them via history-simplification ordering. Net-additive, the REQs this doc governs are unchanged.)
         behind build blockers. The SHIPPED substrates this builds on are quoted-code-grounded.)
 governs: forge/src/check.rs + forge/src/degrade.rs + forge/src/manifest.rs (the discharge
          pipeline, the ladder, the certificate this interface generalizes) and

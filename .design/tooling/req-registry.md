@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: a728d95ca3dbd4fbbee1cb496c003f408d82f327 (re-pinned 2026-06-16 for stage-1 increment 2f, REQ-8: registry.toml + status.md gain the REQ-S1-8 relax-routing entry (shipped, typed evidence) + regenerated status view; req-registry.py --check clean.)
+audited-sha: ddbbb3ccea18276103fc268297c4d9190a1ee385 (re-pinned 2026-06-17: after merging main #46 into 2f, the governed source carries #46's string-literal/L1-TString fixes (a728d95c-era pin predates the merge); CI's merge-ref sees them via history-simplification ordering. Net-additive, the REQs this doc governs are unchanged.)
 governs:
   - .design/reqs/registry.toml
   - .design/reqs/status.md

@@ -2,11 +2,12 @@
   "uuid": "8327c839-bee3-45c1-a137-406aea724022",
   "display_id": 309,
   "title": "CI: run spine-dependent forge tests in the lean job (close audit F4 — live-spine tests self-skip on test-shards)",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "rApq",
   "created_at": "2026-06-17T04:17:43.488928Z",
-  "updated_at": "2026-06-17T04:17:45.613738Z",
+  "updated_at": "2026-06-17T04:55:18.692140Z",
+  "closed_at": "2026-06-17T04:55:18.692140Z",
   "labels": [
     "ci"
   ]

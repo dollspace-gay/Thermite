@@ -1,0 +1,8 @@
+{
+  "uuid": "731fdb58-3ac6-4bee-b5dc-22b8e21092dd",
+  "issue_uuid": "e40fa6c9-f526-43f4-b56a-e61ba74ef516",
+  "author": "qMPX",
+  "content": "Plan: §6 metrics dashboard (REQ-7/AC-12). NEW module forge/src/metrics.rs — pure read-only projection: (1) cage-vs-forge share BY routing reason, (2) seven CertVerdict counts, (3) TV phase split (faithful/syntactic=Skipped/semantic=Divergent/timeout=Unverifiable). Wire via 'forge audit --metrics <file>' (mirrors --meaning). Exit code UNCHANGED (gates nothing, #274). Register REQ with typed evidence.",
+  "created_at": "2026-06-17T23:06:20.388861Z",
+  "kind": "plan"
+}

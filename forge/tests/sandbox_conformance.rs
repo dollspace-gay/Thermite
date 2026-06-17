@@ -108,22 +108,23 @@ fn write_fixture(name: &str, body: &str) -> PathBuf {
 }
 
 /// `true` iff the `forge build --entry` runnable artifact can LINK + RUN here. The
-/// #57 runtime seccomp sandbox (`forge/src/sandbox.rs`) is x86_64-Linux ONLY (a raw
-/// `prctl` seccomp prelude with an `AUDIT_ARCH_X86_64` BPF guard), so the emitted
-/// runner does not link off Linux (`Undefined symbols: _prctl` on macOS/arm64).
+/// #57 runtime seccomp sandbox (`forge/src/sandbox.rs`) is native Linux only, with
+/// generated filters for x86_64 and aarch64. The emitted runner does not link off
+/// Linux (`Undefined symbols: _prctl` on macOS).
 /// The build+run tests SKIP with an explicit warning on any non-Linux platform —
 /// FULL ACCEPTANCE OF THE BUILD+RUN PATH REQUIRES LINUX CI. Mirrors the
 /// `verus_present()` skip precedent (a missing capability is a logged skip, not a
 /// panic, R-CODE-4).
 fn linux_build_run_supported(test: &str) -> bool {
-    if cfg!(target_os = "linux") {
+    if cfg!(target_os = "linux") && (cfg!(target_arch = "x86_64") || cfg!(target_arch = "aarch64"))
+    {
         return true;
     }
     eprintln!(
-        "SKIP {test}: the #57 runtime seccomp sandbox is x86_64-Linux ONLY (the \
-         `forge build --entry` runner emits a raw `prctl` seccomp prelude that does \
-         not link off Linux). FULL ACCEPTANCE OF THE BUILD+RUN PATH REQUIRES LINUX \
-         CI; `cargo test` on this platform skips the runnable end-to-end twin."
+        "SKIP {test}: the #57 runtime seccomp sandbox supports x86_64/aarch64 Linux \
+         runners only (the `forge build --entry` runner emits a raw `prctl` seccomp \
+         prelude). FULL ACCEPTANCE OF THE BUILD+RUN PATH REQUIRES SUPPORTED LINUX CI; \
+         `cargo test` on this platform skips the runnable end-to-end twin."
     );
     false
 }
@@ -132,6 +133,14 @@ fn linux_build_run_supported(test: &str) -> bool {
 const SIGSYS: i32 = 31;
 /// A Rust panic (the `[ens]` L1 contract violation) aborts with process exit 101.
 const PANIC_EXIT: i32 = 101;
+#[cfg(target_arch = "aarch64")]
+const EXPECT_OPENAT: i64 = 56;
+#[cfg(not(target_arch = "aarch64"))]
+const EXPECT_OPENAT: i64 = 257;
+#[cfg(target_arch = "aarch64")]
+const EXPECT_IOCTL: i64 = 29;
+#[cfg(not(target_arch = "aarch64"))]
+const EXPECT_IOCTL: i64 = 16;
 
 // ---- oracle `pure_runs_clean` (AC-1) ----------------------------------------
 //
@@ -164,7 +173,7 @@ fn pure_runs_clean() {
     );
 
     // The manifest records the installed pure allowlist (REQ-5) and that it
-    // excludes openat (257): a pure filter denies file I/O.
+    // excludes the host's openat syscall: a pure filter denies file I/O.
     let v: serde_json::Value = serde_json::from_str(&stdout).expect("manifest JSON");
     assert_eq!(
         v["sandbox"]["installed"], true,
@@ -177,8 +186,8 @@ fn pure_runs_clean() {
         .map(|n| n.as_i64().unwrap())
         .collect();
     assert!(
-        !allow.contains(&257),
-        "AC-1: the pure filter excludes openat (257): {allow:?}"
+        !allow.contains(&EXPECT_OPENAT),
+        "AC-1: the pure filter excludes openat ({EXPECT_OPENAT}): {allow:?}"
     );
 
     let artifact = artifact_path_from_json(&stdout);
@@ -266,7 +275,7 @@ fn probe_allowed_when_fx_widens() {
     ]);
     assert!(ok, "the rf probe build must compile:\n{stdout}\n{stderr}");
 
-    // REQ-2/REQ-3: the read fx widens the allowlist to include openat (257).
+    // REQ-2/REQ-3: the read fx widens the allowlist to include host-native openat.
     let v: serde_json::Value = serde_json::from_str(&stdout).expect("manifest JSON");
     assert_eq!(
         v["sandbox"]["transitive_fx"],
@@ -279,8 +288,8 @@ fn probe_allowed_when_fx_widens() {
         .map(|n| n.as_i64().unwrap())
         .collect();
     assert!(
-        allow.contains(&257),
-        "AC-3: read(_) widens the allowlist to include openat (257): {allow:?}"
+        allow.contains(&EXPECT_OPENAT),
+        "AC-3: read(_) widens the allowlist to include openat ({EXPECT_OPENAT}): {allow:?}"
     );
 
     let artifact = artifact_path_from_json(&stdout);
@@ -401,12 +410,12 @@ fn no_sandbox_omits_prelude() {
     cleanup(&lib);
 }
 
-// ---- AC-6 (#106): the `fx term` grant adds ioctl:16; a non-term excludes it ----
+// ---- AC-6 (#106): the `fx term` grant adds ioctl; a non-term excludes it ----
 //
 // A `term` entry's transitive fx → the manifest-recorded seccomp allowlist includes
-// `ioctl`:16 (the termios raw-mode boundary syscall); a `pure`/`read`/`write` entry's
+// `ioctl` (the termios raw-mode boundary syscall); a `pure`/`read`/`write` entry's
 // allowlist excludes it (the grant is scoped to the `term` effect, not folded into
-// `write`). Expected from runtime-sandbox.md REQ-7 (`TERM_SYSCALLS={ioctl:16}`), a
+// `write`). Expected from runtime-sandbox.md REQ-7 (`TERM_SYSCALLS`), a
 // design constant, never forge's own output (R-CHAR-3).
 
 #[test]
@@ -434,8 +443,8 @@ fn term_grant_adds_ioctl_to_the_recorded_allowlist() {
         .map(|n| n.as_i64().unwrap())
         .collect();
     assert!(
-        allow.contains(&16),
-        "AC-6: fx term grants ioctl (16) in the recorded allowlist: {allow:?}"
+        allow.contains(&EXPECT_IOCTL),
+        "AC-6: fx term grants ioctl ({EXPECT_IOCTL}) in the recorded allowlist: {allow:?}"
     );
     let artifact = artifact_path_from_json(&stdout);
     cleanup(&artifact);
@@ -464,8 +473,8 @@ fn term_grant_adds_ioctl_to_the_recorded_allowlist() {
         .map(|n| n.as_i64().unwrap())
         .collect();
     assert!(
-        !allow2.contains(&16),
-        "AC-6: a non-term (write) entry's allowlist EXCLUDES ioctl (16) — the grant is \
+        !allow2.contains(&EXPECT_IOCTL),
+        "AC-6: a non-term (write) entry's allowlist EXCLUDES ioctl ({EXPECT_IOCTL}) — the grant is \
          scoped to the term effect, not folded into write: {allow2:?}"
     );
     let artifact2 = artifact_path_from_json(&stdout2);

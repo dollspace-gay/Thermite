@@ -80,6 +80,11 @@ fn verus_present() -> bool {
 /// `true` iff this host's kernel offers the `kill_process` seccomp action — mirrors
 /// `sandbox_conformance.rs`. When absent the sandbox case skips with a diagnostic (OQ-3).
 fn seccomp_kill_available() -> bool {
+    if !(cfg!(target_os = "linux")
+        && (cfg!(target_arch = "x86_64") || cfg!(target_arch = "aarch64")))
+    {
+        return false;
+    }
     std::fs::read_to_string("/proc/sys/kernel/seccomp/actions_avail")
         .map(|s| s.contains("kill_process"))
         .unwrap_or(false)
@@ -525,8 +530,8 @@ fn audit_enumerates_primitives_in_the_tcb() {
 
 // ---------------------------------------------------------------------------
 // AC-3 (sandbox): `forge build --entry` of a program declaring `fx time` derives the
-// #57 seccomp allowlist for that effect — including clock_gettime (syscall 228, per
-// the design doc's fx→syscall table); a `fx pure` probe attempting a denied syscall
+// #57 seccomp allowlist for that effect — including host-native clock_gettime; a
+// `fx pure` probe attempting a denied syscall
 // is SIGSYS-killed (exit 159 = 128+31). The allowlist is fx-derived and per-effect,
 // without a live os:: link (v1; OQ-4). Anchored to cases.json `sandbox`. Runs a
 // seccomp-confined binary, so skips with a diagnostic without a kill_process kernel (OQ-3).
@@ -542,9 +547,9 @@ fn sandbox_derives_fx_time_allowlist_and_kills_off_allowlist() {
     }
     let oracle = cases();
     let case = oracle["sandbox"].as_array().expect("sandbox array")[0].clone();
-    // The oracle names the syscall (clock_gettime); the design doc's fx→syscall table
-    // pins clock_gettime == 228 (the allowlist is numeric). Trace the named oracle to
-    // the doc's constant (R-CHAR-3), never to forge output.
+    // The oracle names the syscall (clock_gettime); the sandbox maps that named
+    // syscall to the host architecture's numeric ABI. Trace the named oracle to
+    // the arch constant (R-CHAR-3), never to forge output.
     let expect_syscall_name = case["expect_allowlist_contains_syscall"]
         .as_str()
         .expect("expect_allowlist_contains_syscall"); // "clock_gettime"
@@ -552,7 +557,10 @@ fn sandbox_derives_fx_time_allowlist_and_kills_off_allowlist() {
         expect_syscall_name, "clock_gettime",
         "the oracle names the Time-effect syscall"
     );
-    const CLOCK_GETTIME: i64 = 228; // .design/basis/03-effect-stdlib.md fx→syscall table
+    #[cfg(target_arch = "aarch64")]
+    const CLOCK_GETTIME: i64 = 113;
+    #[cfg(not(target_arch = "aarch64"))]
+    const CLOCK_GETTIME: i64 = 228;
 
     // A fn declaring `fx time` (pure body — v1 grounds confinement via the
     // fx-declaring-body + the foreign os:: link is v1.1, OQ-4).
@@ -589,7 +597,7 @@ fn sandbox_derives_fx_time_allowlist_and_kills_off_allowlist() {
         .iter()
         .map(|n| n.as_i64().expect("syscall number"))
         .collect();
-    // REQ-5: the Time effect widens the allowlist to include clock_gettime (228).
+    // REQ-5: the Time effect widens the allowlist to include host-native clock_gettime.
     assert!(
         allow.contains(&CLOCK_GETTIME),
         "AC-3: `fx time` derives an allowlist including clock_gettime ({CLOCK_GETTIME}): {allow:?}"

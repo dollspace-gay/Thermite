@@ -50,14 +50,14 @@
 //! The verus checks skip with a logged reason when verus is absent (the
 //! `string_format_conformance` / `editor_runs` precedent), rather than panic on a
 //! missing solver (R-CODE-4). The build + run uses `rustc`, but the `--entry`
-//! runner carries the #57 x86_64-Linux seccomp prelude (raw `prctl`), so the
+//! runner carries the #57 native-Linux seccomp prelude (raw `prctl`), so the
 //! build+run tests SKIP with an explicit warning on any non-Linux platform
 //! (`linux_build_run_supported`): FULL ACCEPTANCE OF THE BUILD+RUN PATH REQUIRES
 //! LINUX CI — `cargo test` on macOS/Windows exercises `forge check` / verus /
 //! lowering but not the runnable seccomp twin. To run the build+run path locally on
-//! Apple Silicon, use an **x86_64 Linux container** (the seccomp arch-guard expects
-//! x86_64): e.g. `docker run --platform linux/amd64` / OrbStack with an amd64
-//! machine. `tests/` is not anti-pattern-gated, so `unwrap`/`expect`/`panic!` are
+//! Apple Silicon, use a native **aarch64 Linux container** or an **x86_64 Linux
+//! container**: e.g. `docker run --platform linux/arm64` or `linux/amd64` / OrbStack.
+//! `tests/` is not anti-pattern-gated, so `unwrap`/`expect`/`panic!` are
 //! fine here (R-APG-2).
 //!
 //! R-CHAR-3: expected levels trace to `.design/basis/07-strings.md` REQ-8 (the
@@ -114,23 +114,24 @@ fn verus_present() -> bool {
 }
 
 /// `true` iff the `forge build --entry` runnable artifact can LINK + RUN on this
-/// platform. The #57 runtime effect sandbox (`forge/src/sandbox.rs`) is x86_64-Linux
-/// ONLY: `synthesize_entry_main` injects a raw `extern "C" { fn prctl }` seccomp-bpf
-/// prelude with an x86_64 BPF arch-guard, so the emitted runner does not link off
-/// Linux (`Undefined symbols: _prctl` on macOS/arm64). The build+run acceptance
+/// platform. The #57 runtime effect sandbox (`forge/src/sandbox.rs`) is native Linux
+/// only: `synthesize_entry_main` injects a raw `extern "C" { fn prctl }` seccomp-bpf
+/// prelude with x86_64/aarch64 BPF arch guards, so the emitted runner does not link
+/// off Linux (`Undefined symbols: _prctl` on macOS). The build+run acceptance
 /// tests therefore SKIP with an explicit warning on any non-Linux platform — they
 /// require LINUX CI for full acceptance. This mirrors the `verus_present()` skip
 /// precedent: a missing capability is a logged skip, not a panic (R-CODE-4). The
 /// `forge check` / verus / lower tests are platform-independent and still run.
 fn linux_build_run_supported(test: &str) -> bool {
-    if cfg!(target_os = "linux") {
+    if cfg!(target_os = "linux") && (cfg!(target_arch = "x86_64") || cfg!(target_arch = "aarch64"))
+    {
         return true;
     }
     eprintln!(
-        "SKIP {test}: the #57 runtime seccomp sandbox is x86_64-Linux ONLY (the \
-         `forge build --entry` runner emits a raw `prctl` seccomp prelude that does \
-         not link off Linux). FULL ACCEPTANCE OF THE BUILD+RUN PATH REQUIRES LINUX \
-         CI — `cargo test` on this platform cannot exercise the runnable end-to-end \
+        "SKIP {test}: the #57 runtime seccomp sandbox supports x86_64/aarch64 Linux \
+         runners only (the `forge build --entry` runner emits a raw `prctl` seccomp \
+         prelude). FULL ACCEPTANCE OF THE BUILD+RUN PATH REQUIRES SUPPORTED LINUX CI \
+         — `cargo test` on this platform cannot exercise the runnable end-to-end \
          twin and skips it (the `forge check` / verus / lowering tests still run)."
     );
     false

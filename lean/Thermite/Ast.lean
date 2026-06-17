@@ -28,14 +28,16 @@
     - casts (#177)               (`Expr::Cast { expr, ty }` to
                                   `u64`/`u32`/`usize`/`nat`/`int`, value coercions)
 
-  Partiality (#176): `Div`/`Rem`/`Shl`/`Shr` are partial in the source. A zero
-  divisor / a zero shift is rejected as a precondition (an L0 obligation discharged
-  outside the contract clause, `ast.rs` `BinOp::Rem` "partial: requires a nonzero
-  divisor"). The denotation models them with Lean's total `Int` operations under
-  the divisor-≠0 convention; because `denote` and `refDenote` use the same total
-  operation, T1 holds regardless of the guard (the guard is the source-side
+  Partiality (#176; normative home `thermite2-semantics.md` §4.1): `Div`/`Rem`/`Shl`/`Shr`
+  are partial in the source. A zero divisor / a zero shift is rejected as a precondition
+  (an L0 obligation discharged outside the contract clause, `ast.rs` `BinOp::Rem`
+  "partial: requires a nonzero divisor"). The denotation models them with Lean's total
+  `Int` operations under the divisor-≠0 convention; because `denote` and `refDenote` use
+  the same total operation, T1 holds regardless of the guard (the guard is the source-side
   precondition, not part of the binop's meaning when the precondition holds;
-  Euclidean-consistent, see `Denote.lean`).
+  Euclidean-consistent, see `Denote.lean` and `thermite2-semantics.md` §4.1). The cast
+  value coercions (#177) follow the same shape — value-preserving in spec position, the
+  no-overflow frame a source obligation (`thermite2-semantics.md` §4.2).
 
   The spec-context rewrites (#178). In contract position a slice/`String` param does
   not denote a scalar; it denotes a sequence, and the encoder rewrites the use sites:

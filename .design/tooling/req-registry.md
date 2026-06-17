@@ -4,7 +4,7 @@
 tier: 3-component
 status: draft
 audited-sha: 59287187c2afcc22e1b7872f118183f1e49de263 (re-pinned 2026-06-17 after merging main into the skill-v2 branch: governed source carries the governance docs (#56) + the skill-v2 generator change, both net-additive; the REQs this doc governs are unchanged.)
-audited-content-sha256: b404152a929f0722b89be0bf81114f81caec4802f597a610c679f7621a63f906
+audited-content-sha256: 6150b534d284965b6628db40226bcbbf6ca561e46cc477806a75f54bd66da070
 governs:
   - .design/reqs/registry.toml
   - .design/reqs/status.md

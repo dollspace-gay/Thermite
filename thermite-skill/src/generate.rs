@@ -10,8 +10,10 @@
 //!
 //! [`generate`] assembles the §10 sections — (1) surface grammar, (2) the
 //! SpecTherm combinator library, (2b) the recursion-scheme library, (3) the
-//! Forge command set, (4) the ladder semantics, (5) the slag rules — into one
-//! deterministic `String`. The SURFACE INVENTORY is DYNAMIC by two
+//! Forge command set, (4) the ladder semantics, (5) the slag rules, (6) the
+//! Stage-1 forge tier (the seven verdicts, per-clause routing, covenant authoring,
+//! and the forge-tier verbs + burn receipt; `.design/stage1-forge-tier.md`) — into
+//! one deterministic `String`. The SURFACE INVENTORY is DYNAMIC by two
 //! compiler-backed mechanisms (REQ-8): (i) **registry-driven** — section (2)
 //! iterates `thermite_spec::all()` and (2b) iterates
 //! `thermite_spec::schemes::all()`, so a new registry entry auto-appears (REQ-2,
@@ -92,12 +94,13 @@ pub fn token_count(s: &str) -> usize {
 ///
 /// The sections appear in `thermite-design.md` §10 order: (1) surface grammar,
 /// (2) the SpecTherm combinator library, (2b) the recursion-scheme library, (3)
-/// the Forge command set, (4) the ladder semantics, (5) the slag rules. Section
-/// (1)'s construct inventory is EXHAUSTIVE-MATCH-driven over the `thermite_syntax`
-/// enums (REQ-10), (2) is registry-driven from `thermite_spec::all()` (REQ-2),
-/// (2b) is registry-driven from `thermite_spec::schemes::all()` (REQ-9); the
-/// curated prose (the framing, ladder, slag, forge verb table) stays templated
-/// (REQ-11). Pure: no I/O, no env, no clock, no RNG (REQ-1 / R-CODE-5 / AC-6).
+/// the Forge command set, (4) the ladder semantics, (5) the slag rules, (6) the
+/// Stage-1 forge tier. Section (1)'s construct inventory is EXHAUSTIVE-MATCH-driven
+/// over the `thermite_syntax` enums (REQ-10), (2) is registry-driven from
+/// `thermite_spec::all()` (REQ-2), (2b) is registry-driven from
+/// `thermite_spec::schemes::all()` (REQ-9); the curated prose (the framing, ladder,
+/// slag, forge verb table, the §6 forge-tier semantics) stays templated (REQ-11).
+/// Pure: no I/O, no env, no clock, no RNG (REQ-1 / R-CODE-5 / AC-6).
 pub fn generate() -> String {
     let mut out = String::new();
     out.push_str(HEADER);
@@ -107,6 +110,7 @@ pub fn generate() -> String {
     out.push_str(&render_forge());
     out.push_str(&render_ladder());
     out.push_str(&render_slag());
+    out.push_str(&render_forge_tier());
     out
 }
 
@@ -129,17 +133,16 @@ Budget: this file must stay under 6,000 tokens (a hard CI gate, design §2.2).
 
 ## How to read this file — the 60-second workflow
 
-You write verified code. The loop: (1) write a `fn` CONTRACT-FIRST — `req`/
-`ens`/`fx`, THEN the body (§1); the contract is mandatory, no implicit defaults.
-(2) `forge check <file>` (§3) returns a PER-OBLIGATION result — each goal is
-discharged or `Failed` with a CONCRETE counterexample (e.g. `lo=3, hi=3`), never
-a bare \"verification failed\". (3) Fix the body/contract and re-check; or, if the
-body is not yet known, drop a HOLE `?0` in its place (§1) and work `forge goal`/
-`forge fill` — a holed item never certifies until every hole is filled.
+You write verified code. The loop: (1) write a `fn` CONTRACT-FIRST — `req`/`ens`/`fx`,
+THEN the body (§1); the contract is mandatory. (2) `forge check <file>` (§3) returns a
+PER-OBLIGATION result — each goal discharged or `Failed` with a CONCRETE
+counterexample (e.g. `lo=3, hi=3`), never a bare \"verification failed\". (3) Fix and
+re-check; or drop a HOLE `?0` (§1) and work `forge goal`/`forge fill` — a holed item
+never certifies.
 
-Map: §1 grammar (what you may write), §2/§2b combinators + recursion schemes (the
-ONLY way to quantify/recurse in a spec), §3 Forge verbs, §4 the assurance ladder
-(what a certificate means), §5 the `#[slag]` proof escape hatch.
+Map: §1 grammar, §2/§2b combinators + recursion schemes (the ONLY way to
+quantify/recurse), §3 Forge verbs, §4 the assurance ladder, §5 `#[slag]`, §6 the
+forge tier (verdicts, routing, covenants, proofs).
 
 ";
 
@@ -158,14 +161,35 @@ struct SkillFragment {
 }
 
 impl SkillFragment {
-    /// Render this fragment as one markdown bullet (the per-construct row of the
-    /// REQ-10 inventory): the grammar fragment + description, then a tiny example.
+    /// Render this fragment as one markdown bullet WITH its example (the per-construct
+    /// row of the REQ-10 inventory): the grammar fragment + description, then a tiny
+    /// example. Used (via [`render_inventory_complete_examples`]) for the `Type` arms
+    /// whose example is a COMPLETE, copy-pasteable item — chiefly the `fn log() -> ()
+    /// req true ens true fx pure { }` that the §10 parse-clean pin guards. Every other
+    /// inventory (items, expressions, primitive scalars, operators, patterns, effects)
+    /// renders via [`to_bullet_terse`](SkillFragment::to_bullet_terse) to stay under
+    /// the §2.2 token budget.
     fn to_bullet(&self) -> String {
         format!(
             "- `{fragment}` — {description}\n  // e.g. {example}\n",
             fragment = self.fragment,
             description = self.description,
             example = self.example,
+        )
+    }
+
+    /// Render this fragment as one markdown bullet WITHOUT its example — the
+    /// fragment + description only. The budget-tightening form (`thermite-design.md`
+    /// §2.2: the ≤ 6,000-token hard gate) for the leaf inventories whose `fragment`
+    /// already shows the surface syntax (`a + b`, `read(path)`, `[head, ..tail]`), so
+    /// a worked example adds little. The `example` field is still authored on every
+    /// arm and rendered by [`to_bullet`](SkillFragment::to_bullet) for the complete
+    /// `Type` examples, so it is not dead.
+    fn to_bullet_terse(&self) -> String {
+        format!(
+            "- `{fragment}` — {description}\n",
+            fragment = self.fragment,
+            description = self.description,
         )
     }
 }
@@ -911,13 +935,49 @@ fn effect_inventory() -> Vec<Effect> {
     ]
 }
 
-/// Render a labelled construct sub-section: a heading + one bullet per fragment.
-fn render_inventory(label: &str, fragments: &[SkillFragment]) -> String {
+/// Render a labelled construct sub-section in the TERSE form — a heading + one
+/// fragment+description bullet per construct, NO worked example
+/// ([`SkillFragment::to_bullet_terse`]). The budget-tightening renderer
+/// (`thermite-design.md` §2.2) for the leaf inventories (primitive scalars,
+/// expressions, operators, patterns, effect atoms) whose `fragment` already shows
+/// the syntax.
+fn render_inventory_terse(label: &str, fragments: &[SkillFragment]) -> String {
     let mut s = format!("\n**{label}**\n\n");
     for frag in fragments {
-        s.push_str(&frag.to_bullet());
+        s.push_str(&frag.to_bullet_terse());
     }
     s
+}
+
+/// Render a labelled inventory that keeps a fragment's worked example ONLY when the
+/// example is a COMPLETE, standalone item — a `fn`/`spec fn` with a body and no `..`
+/// placeholder ([`is_complete_example`]) — and renders every other (snippet) example
+/// terse. This is the budget-aware middle ground for the `Type` inventory: it keeps
+/// the copy-pasteable, parse-clean `fn log() -> () req true ens true fx pure { }`
+/// (the Type::Unit example the §10 parse-clean pin guards) while dropping the
+/// low-value type-snippet examples (`let n: u64 = 0;`, `-> Wrapper<usize>`, …). The
+/// `example` field is therefore still rendered for the complete arms, so it is not
+/// dead.
+fn render_inventory_complete_examples(label: &str, fragments: &[SkillFragment]) -> String {
+    let mut s = format!("\n**{label}**\n\n");
+    for frag in fragments {
+        if is_complete_example(frag.example) {
+            s.push_str(&frag.to_bullet());
+        } else {
+            s.push_str(&frag.to_bullet_terse());
+        }
+    }
+    s
+}
+
+/// Is `example` a COMPLETE, standalone item — a `fn`/`spec fn` with a body and no
+/// `..` placeholder? Mirrors the §10 parse-clean pin's `is_complete_item`
+/// (`thermite-skill/tests/divergence_unit_arm_example.rs`): only such examples are
+/// standalone-parseable programs worth a full worked bullet; signature snippets and
+/// `..`-placeholder fragments are not. Deterministic, payload-free (R-CODE-5).
+fn is_complete_example(example: &str) -> bool {
+    let e = example.trim();
+    (e.starts_with("fn ") || e.starts_with("spec fn ")) && !e.contains("..") && e.ends_with('}')
 }
 
 /// Section (1) — the surface grammar. The narrative SCAFFOLDING (the
@@ -937,19 +997,19 @@ fn render_grammar() -> String {
 ## 1. Surface grammar
 
 Every `fn` is contract-first, body-second. v0.1 has four top-level item forms —
-`fn`, `spec fn`, `struct`, and `enum` (plus the `#[slag(...)]` / `#[boundary]`
+`fn`, `spec fn`, `struct`, `enum` (plus the `#[slag(...)]` / `#[boundary]`
 attributes) — and no others (no `impl`/`trait`/`use`/`mod`/macros).
 
-A `fn` signature is followed by mandatory clauses in this exact order — absence
-of any is a parse error, never an implicit default:
+A `fn` signature is followed by mandatory clauses in this exact order (absence of any
+is a parse error, never an implicit default):
 
-- `req EXPR` — precondition (write `req true` if there is none).
-- `ens EXPR` — postcondition, one-or-more. Must mention `result` unless the
-  return type is `()`.
+- `req EXPR` — precondition (write `req true` if none).
+- `ens EXPR` — postcondition, one-or-more; must mention `result` unless the return
+  type is `()`.
 - `fx EFFECTROW` — effect row, exactly one.
 
-A `spec fn` carries exactly one `dec EXPR` (a decreases-measure), not
-`req`/`ens`/`fx`. Spec functions are total, terminating, and executable.
+A `spec fn` carries exactly one `dec EXPR` (a decreases-measure), not `req`/`ens`/`fx`;
+spec functions are total, terminating, executable.
 
 ```thermite
 fn binary_search(haystack: &[u32], needle: u32) -> Option<usize>
@@ -978,53 +1038,42 @@ fn binary_search(haystack: &[u32], needle: u32) -> Option<usize>
 
 Loops: both `loop { }` and `while EXPR { }` carry one-or-more `inv EXPR` then
 exactly one `dec EXPR`, then the body (missing `inv`/`dec` is a parse error).
-Termination is proved by default; divergence requires `fx diverge`. `break ;`
-exits and `continue ;` restarts: each `inv` must hold at every `break`/`continue`,
-and in a terminating loop a `continue` must also decrease `dec`. An `fx diverge`
-loop makes no termination claim, so `break`/`continue` are unconstrained by `dec`
-(the event-loop shape `while true { … if k == quit { break; } … }`).
+Termination is proved by default; `fx diverge` waives it. `break ;` exits,
+`continue ;` restarts; each `inv` must hold at both, and in a terminating loop a
+`continue` must decrease `dec` (an `fx diverge` loop makes no termination claim, so
+neither is `dec`-bound).
 
-Statements: `let mut? NAME : TYPE = EXPR ;`, assignment `LVALUE = EXPR ;`,
-`return EXPR? ;`, the `if`/`else` statement, the loop-control statements
-`break ;` / `continue ;` (valid only inside a `loop`/`while` body, labelless and
-value-less — no `break EXPR`), and expression-statements. A block `{ }` is
-statements plus an optional trailing tail expression (no `;`) that is the
-block's value. There is ONE member-access call syntax (postfix `.`); there is no
-UFCS. Comparisons are non-associative (`a < b < c` is an error).
+Statements: `let mut? NAME : TYPE = EXPR ;`, assignment `LVALUE = EXPR ;`, `return
+EXPR? ;`, the `if`/`else` statement, the loop-control `break ;` / `continue ;`
+(inside a `loop`/`while` body only, labelless + value-less — no `break EXPR`), and
+expression-statements. A block `{ }` is statements plus an optional tail expression
+(no `;`), its value. ONE member-access call syntax (postfix `.`, no UFCS).
+Comparisons are non-associative (`a < b < c` is an error).
 
-Holes: `?0` (a `?` followed by a digit run) is a HOLE — an open goal placeholder
-valid ONLY in exec-`fn`-body statement position (not in a spec clause, `spec fn`,
-or expression). A `fn` with any open hole is well-formed but NEVER certifies (it
-is L0 until every hole is filled). You work holes with the goal-state REPL:
-`forge goal <fn>` shows the open holes as `?N`, and `forge fill <fn>.?N <code>`
-splices code at that hole and re-checks (the fill may surface new holes).
+Holes: `?0` (a `?` + a digit run) is a body HOLE — an open-goal placeholder valid
+ONLY in exec-`fn`-body statement position (not a spec clause / `spec fn` /
+expression). A `fn` with any open hole is well-formed but NEVER certifies (L0 until
+every hole is filled). Work holes with `forge goal <fn>` + `forge fill <fn>.?N
+<code>` (§3); the proof-hole `?pN` analogue is §6.
 
-Binding / control-flow ergonomics (sugar over the proven core — one desugaring,
-always explicit):
+Binding / control-flow ergonomics (sugar over the proven core — one explicit
+desugaring each):
 
-- Tuple destructuring `let (x, y) = e;` binds each element by projection
-  (`let x = e.0; let y = e.1;`). Use `_` to drop an element; sub-patterns are
-  flat names only.
-- `for i in lo..hi inv EXPR { B }` is a bounded-range loop: you write the loop
-  `inv` (mandatory, one-or-more, like `while`); the `dec` is AUTOMATIC
-  (`hi - i`), so you write no `dec`. It desugars to
-  `let mut i = lo; while i < hi inv EXPR dec hi - i { B; i = i + 1; }`. Only an
-  exclusive integer range `lo..hi` (step +1) is admitted.
-- Match guards: `Pat if COND => EXPR`. A guard does NOT complete a match — a
-  guarded-only arm leaves its variant uncovered, so a `_`/full-variant arm is
-  still required for exhaustiveness.
-- Or-patterns: `p0 | p1 => EXPR` matches any alternative and covers their UNION
-  (`Some(_) | None` is exhaustive over an `Option`). v0.1 alternatives are
-  payload-free (they bind the same — empty — set of names).
-- `if let Pat = e { T } else { E }` desugars to `match e { Pat => T, _ => E }`
-  (the `else` is required — both branches produce a value). `while let
-  Variant(_) = e inv EXPR dec EXPR { B }` desugars to the canonical
-  `while (e is Variant) inv EXPR dec EXPR { B }` (you write `inv`/`dec` as for
-  any `while`).
+- `let (x, y) = e;` — tuple destructuring by projection (`let x = e.0; …`); `_`
+  drops an element; sub-patterns are flat names only.
+- `for i in lo..hi inv EXPR { B }` — a bounded exclusive-range loop (step +1); you
+  write the `inv` (mandatory, like `while`), the `dec` is AUTOMATIC (`hi - i`).
+- Match guards `Pat if COND => EXPR` do NOT complete a match — a guarded-only arm
+  leaves its variant uncovered, so a `_`/full-variant arm is still required.
+- Or-patterns `p0 | p1 => EXPR` match any alternative and cover their UNION
+  (`Some(_) | None` is exhaustive over `Option`); v0.1 alternatives are payload-free.
+- `if let Pat = e { T } else { E }` desugars to `match e { Pat => T, _ => E }` (the
+  `else` is required). `while let V(_) = e inv .. dec .. { B }` desugars to
+  `while (e is V) inv .. dec .. { B }`.
 
 The CONSTRUCT INVENTORY below is GENERATED by an exhaustive match over the
-toolchain's own `Item`/`Type`/`Expr`/`BinOp`/`Pattern`/`Effect` enums, so it can
-never silently fall behind the language.
+toolchain's `Item`/`Type`/`Expr`/`BinOp`/`Pattern`/`Effect` enums, so it never falls
+behind the language.
 
 ### Item forms
 ",
@@ -1032,53 +1081,52 @@ never silently fall behind the language.
     let items = item_inventory();
     let item_frags: Vec<SkillFragment> = items.iter().map(render_item_arm).collect();
     for frag in &item_frags {
-        s.push_str(&frag.to_bullet());
+        s.push_str(&frag.to_bullet_terse());
     }
 
     let types = type_inventory();
     let type_frags: Vec<SkillFragment> = types.iter().map(render_type_arm).collect();
-    s.push_str(&render_inventory("Types", &type_frags));
+    s.push_str(&render_inventory_complete_examples("Types", &type_frags));
 
     let prim_frags: Vec<SkillFragment> =
         prim_inventory().into_iter().map(render_prim_arm).collect();
-    s.push_str(&render_inventory("Primitive scalars", &prim_frags));
+    s.push_str(&render_inventory_terse("Primitive scalars", &prim_frags));
 
     let exprs = expr_inventory();
     let expr_frags: Vec<SkillFragment> = exprs.iter().map(render_expr_arm).collect();
-    s.push_str(&render_inventory("Expressions", &expr_frags));
+    s.push_str(&render_inventory_terse("Expressions", &expr_frags));
 
     let binop_frags: Vec<SkillFragment> = binop_inventory()
         .into_iter()
         .map(render_binop_arm)
         .collect();
-    s.push_str(&render_inventory("Binary operators", &binop_frags));
+    s.push_str(&render_inventory_terse("Binary operators", &binop_frags));
 
     let unaryop_frags: Vec<SkillFragment> = unaryop_inventory()
         .into_iter()
         .map(render_unaryop_arm)
         .collect();
-    s.push_str(&render_inventory(
+    s.push_str(&render_inventory_terse(
         "Unary (prefix) operators",
         &unaryop_frags,
     ));
 
     let pats = pattern_inventory();
     let pat_frags: Vec<SkillFragment> = pats.iter().map(render_pattern_arm).collect();
-    s.push_str(&render_inventory("Patterns", &pat_frags));
+    s.push_str(&render_inventory_terse("Patterns", &pat_frags));
 
     let effects = effect_inventory();
     let effect_frags: Vec<SkillFragment> = effects.iter().map(render_effect_arm).collect();
-    s.push_str(&render_inventory(
+    s.push_str(&render_inventory_terse(
         "Effect atoms (a caller's fx row subsumes every callee's)",
         &effect_frags,
     ));
 
     s.push_str(
         "\
-\nRemoved from Rust (to keep the language small and formulaic): explicit
-lifetimes, the full trait system (only built-in `Eq`/`Ord`/`Hash`/`Iter`/
-`Display`), macros, `unsafe` (replaced by `#[slag]`), UFCS, and implicit integer
-widening (all conversions explicit; arithmetic overflow is a proof obligation).
+\nRemoved from Rust: explicit lifetimes, the trait system (only built-in
+`Eq`/`Ord`/`Hash`/`Iter`/`Display`), macros, `unsafe` (→ `#[slag]`), UFCS, implicit
+widening (casts explicit; overflow is a proof obligation).
 
 ",
     );
@@ -1142,16 +1190,15 @@ fn render_combinators() -> String {
         "\
 ## 2. SpecTherm combinator library
 
-Use these to QUANTIFY in a contract. You may NOT write a raw `forall`/`exists` in
-a `req`/`ens`/`inv` — quantification is available ONLY through this fixed, closed
-library of bounded combinators (SpecTherm, a deliberately weak total language),
-each with a hand-tuned frozen SMT trigger so the proof goes through. A combinator
-joins this set only via a slow budget-gated RFC — never a user abstraction.
+Use these to QUANTIFY in a contract. You may NOT write a raw `forall`/`exists` in a
+`req`/`ens`/`inv` — quantification is ONLY through this fixed, closed library of
+bounded combinators (SpecTherm, a deliberately weak total language), each with a
+frozen SMT trigger. A combinator joins only via a slow budget-gated RFC.
 
-Flat-closure rule (§4.2): a combinator's predicate closure (`|x| ...`) is a FLAT
-predicate — comparisons, arithmetic, boolean/logical ops, field/index access, and
-calls to NAMED `spec fn`s — but it may NOT contain another combinator. Genuine
-nested quantification is a named `spec fn` (with its own `dec` measure).
+Flat-closure rule: a combinator's predicate closure (`|x| ...`) is FLAT —
+comparisons, arithmetic, boolean ops, field/index access, calls to NAMED `spec fn`s
+— but may NOT contain another combinator (genuine nesting is a named `spec fn` with
+its own `dec`).
 
 The combinators (signature, then one example each):
 
@@ -1251,13 +1298,11 @@ fn render_schemes() -> String {
         "\n\
 ## 2b. Recursion-scheme library
 
-Use these to RECURSE over a recursive ADT (a `Box`ed `enum` like a list/tree).
-You may NOT hand-write the recursion — it goes through this fixed, closed set of
-verified schemes (the structural analogue of the combinators). Each takes the
-scrutinee (and, for `fold`, a seed) then a trailing FLAT step closure — like a
-combinator's predicate closure, the step may NOT contain another scheme (genuine
-nesting is a named `spec fn`). A scheme discharges its bound by citing the
-`fold_bound` prove-once law, never a fresh induction.
+Use these to RECURSE over a recursive ADT (a `Box`ed `enum`). You may NOT hand-write
+the recursion — it goes through this fixed, closed set of verified schemes. Each
+takes the scrutinee (and, for `fold`, a seed) then a trailing FLAT step closure that
+may NOT contain another scheme (genuine nesting is a named `spec fn`). A scheme
+discharges its bound by citing the `fold_bound` prove-once law, never fresh induction.
 
 The schemes (call shape, result, then one example each):
 
@@ -1276,37 +1321,30 @@ fn render_forge() -> String {
         "\n\
 ## 3. Forge command set
 
-Forge is your interface — a goal-state REPL. Every reply inlines the source,
-returns a CONCRETE counterexample (a witness) rather than an adjective when an
-obligation fails, and DEGRADES (L3 -> L2 -> L1) rather than blocks on a solver
-timeout. Day-to-day verbs: `check` (does it verify?), `goal`/`fill` (work open
-holes), `build` (lower to a runnable binary).
+Forge is your interface — a goal-state REPL. Every reply inlines the source and
+returns a CONCRETE counterexample, not an adjective, when an obligation fails, and
+DEGRADES (L3 -> L2 -> L1) rather than blocking on a solver timeout. Day-to-day:
+`check`, `goal`/`fill` (work open holes), `build` (runnable binary).
 
 ```
 forge new <name>                   create project (manifest, lockfile, skill pin)
 forge check [item]                 run the ladder; per-obligation results +
                                    counterexamples (your primary verb)
-forge check --engine lean|auto     L3 via the Lean engine; disagreement = HALT
-forge goal <item>                  print the goal state: given / want / open
-                                   holes ?N / per-obligation status
-forge fill <fn>.?N <code>          splice code at a hole ?N + re-check; returns
-                                   the new goal state (may surface new holes)
+forge check --engine lean|auto|nlsat|forge   pick the engine (§6.2); disagree = HALT
+forge goal <item> [--proof]        goal state: given / want / open holes ?N
+                                   (--proof = the forge-tier proof view, §6.4)
+forge fill <fn>.?N <code>          splice code at hole ?N + re-check (may surface
+                                   new holes); proof holes ?pN too (§6.4)
 forge edit <addr> --replace <code> splice at any semantic address + re-check
 forge build [item] --entry <fn>    lower to Rust + rustc -> a native binary whose
                                    contract checks fire at runtime, fx-sandboxed
-forge build --target kernel <file> emit a freestanding no_std+alloc rlib (no
-                                   main, no seccomp, panic=abort); ambient-
-                                   syscall fx is REFUSED
+forge build --target kernel <file> freestanding no_std+alloc rlib (no main/seccomp,
+                                   panic=abort); ambient-syscall fx is REFUSED
 forge battery [item]               run vacuity battery + mutation scoring
 forge audit                        full slag + boundary + assurance inventory
 forge review <file> [item]         pluggable spec-intent review slot
-forge tv <file>                    translation-validate each item's CONTRACT
-                                   lowering against the independent reference
-                                   encoder (Z3 equivalence; off-corpus generator)
-forge exec-tv <file>               translation-validate exec EXPRESSION lowering
-forge body-tv <file>               translation-validate the exec BODY state
-                                   (straight-line + v1 while-loop obligations);
-                                   Faithful/Divergent/Unverifiable/Skipped
+forge tv | exec-tv | body-tv <file>   translation-validate the CONTRACT / exec
+                                   EXPRESSION / exec BODY lowering vs the reference
 forge skill                        emit the canonical THERMITE.skill.md
 forge repair [item]                background L1/L2 -> L3 upgrade loop
 ```
@@ -1327,30 +1365,30 @@ fn render_ladder() -> String {
 ## 4. Verification ladder
 
 Every function targets L3; downgrades are automatic, logged, and surfaced in the
-build manifest; upgrades are a standing background task. The certificate lists
-every function's level — this manifest IS the deliverable's trust statement.
+build manifest; upgrades are a standing background task. The certificate lists every
+function's level — this manifest IS the deliverable's trust statement.
 
-- L3 — machine proof (Verus/Z3; or Lean via `--engine`): holds for ALL inputs.
-  Not guaranteed to terminate -> solver budget + automatic downgrade.
-- L2 — bounded model check (Kani/CBMC): holds for all inputs UP TO a bound. The
-  manifest states the bound explicitly; L2 and L3 are always distinct.
-- L1 — runtime contract checks: violations are detected at the call site, in
-  every build profile (not just debug).
+- L4 — KERNEL-grounded proof: the relax route's nlsat discharge, trust `solver(nlsat)
+  + spine-lemma(kernel)` (§6.2). The top rung, above L3.
+- L3 — machine proof (Verus/Z3, or Lean via `--engine`): holds for ALL inputs. Not
+  guaranteed to terminate -> solver budget + automatic downgrade.
+- L2 — bounded model check (Kani/CBMC): holds for all inputs UP TO a bound (stated
+  explicitly in the manifest; L2 and L3 are always distinct).
+- L1 — runtime contract checks: violations detected at the call site, in every build
+  profile (not just debug).
 - L0 — `#[slag]`: nothing is proved about the body. Trusted by fiat.
 
-The Thermite -> Verus lowering behind L3 is not a trusted black box: each
-checked item is translation-validated per run (Z3 proves the lowered contract
-equivalent to an independent reference encoding, `thermite-tv`, itself proven
-denotation-faithful by a kernel-checked Lean spine). `make audit` re-derives the
-L3 claim from source on a skeptic's machine.
+The Thermite -> Verus lowering behind L3 is not a trusted black box: each checked
+item is translation-validated per run (Z3 proves the lowered contract equivalent to
+an independent reference encoding, itself proven denotation-faithful by a
+kernel-checked Lean spine). `make audit` re-derives the L3 claim on a skeptic's machine.
 
-L0 / slag clarification (§6): the level rates the BODY only. A `#[slag]` fn's
-CONTRACT is still mandatory and L1-checked at the call site, so its cert is L1
-with `slag: true` (L1 = contract checked, slag = body unproven). Slag
+L0 / slag: the level rates the BODY only. A `#[slag]` fn's CONTRACT is still
+mandatory and L1-checked at the call site, so its cert is L1 with `slag: true`. Slag
 exempts PROVING, never STATING and CHECKING. The `fx` row is enforced independent of
-level: caller/callee subsumption at compile time, plus — in a `forge build`
-binary — a seccomp sandbox that kills code exceeding its declared effects at the
-syscall boundary (slag/boundary bodies included).
+level: caller/callee subsumption at compile time, plus — in a `forge build` binary —
+a seccomp sandbox that kills code exceeding its declared effects at the syscall
+boundary.
 
 ",
     )
@@ -1373,23 +1411,108 @@ thermite burn) — the replacement for `unsafe`: harder to write, louder to read
        review = \"required\")]
 fn simd_sum(xs: &[u32]) -> u64
   req xs.len() <= u32::MAX as usize
-  ens result == spec_sum(xs)          // contract still mandatory — enforced at L1
+  ens result == spec_sum(xs)          // contract still mandatory — L1-enforced
   fx  pure
 { ... }
 ```
 
 Rules:
 
-- `reason`, `owner`, and `review` fields are mandatory and non-empty (checked).
-- The contract is STILL mandatory and L1-enforced at runtime — slag exempts you
-  from PROVING, never from STATING and CHECKING.
-- Every slag block appears in the build manifest and in `forge audit`; `grep
-  slag` is the complete inventory of fiat-trusted code.
-- CI policy hooks can cap slag count or require a second-party sign-off.
+- `reason`, `owner`, `review` are mandatory and non-empty (checked).
+- The contract is STILL mandatory and L1-enforced at runtime (slag exempts PROVING,
+  not STATING/CHECKING).
+- Every slag block appears in the build manifest and `forge audit`; `grep slag` is
+  the complete inventory of fiat-trusted code.
+- CI policy hooks can cap slag count or require second-party sign-off.
 
-The polarity inversion is the point: verification is the default and costs
-nothing; non-verification is the exotic add-on that costs more keystrokes and
-more visibility.
+The polarity inversion is the point: verification is the default and free;
+non-verification is the exotic add-on that costs more keystrokes and visibility.
+",
+    )
+}
+
+/// Section (6) — the Stage-1 forge tier. CURATED from the SHIPPED forge code
+/// (`.design/stage1-forge-tier.md`): the seven cert-level verdicts
+/// ([`forge::verdict::CertVerdict`]) + the agent action per verdict; the per-clause
+/// relax/in-cage/lemma routing ([`forge::relax::classify_fn`], the `nlsat`/`verus`/
+/// `lean` engines, the L4/L3 attribution); covenant authoring (the
+/// `witness { inhabit; falsify N }` covenant-before-burn gate,
+/// [`forge::covenant_engine`]); and the forge-tier verbs + the L3/L4 burn receipt
+/// ([`forge::burn::BurnReceipt`]). Curated prose (REQ-11), guarded by the budget +
+/// the v2 coverage test (`forge_tier_markers_present`). The seven verdict NAMES are
+/// the closed `CertVerdict` set — a new verdict there is caught by that test.
+fn render_forge_tier() -> String {
+    String::from(
+        "\
+## 6. Forge tier (Stage-1)
+
+Beyond exec contracts the forge proves PROPOSITIONS. Forge items: `prop fn` (a bool
+spec predicate), `lemma N(..) req .. ens .. { proof }`, `proof for f` (discharge one
+`ens#k` of an exec `fn`), and `witness { .. }` covenants.
+
+### 6.1 The seven verdicts
+
+`forge check` settles every clause to ONE of seven cert-level verdicts (a closed
+set; no \"Unknown\" survives into a cert). What each means, and your move:
+
+- **Proved** — holds for ALL inputs at the clause's level. Done.
+- **Counterexample** — a witnessed countermodel with concrete inputs (e.g. `lo=3,
+  hi=3`). Hard fail, never degrades — fix the body or the contract.
+- **RealWitness** — the `ens` is false over the REALS (a real point, e.g. √2) though
+  it may hold over ℤ; escalated UP to you, never downgraded to a Counterexample. Add
+  the integrality `req` so the relaxation can't reach it.
+- **CovenantRefuted** — a `falsify` input refuted the covenant: the carried
+  counterexample IS the bug. Hard fail — fix the body/contract, never weaken `falsify`.
+- **Stuck** — the proof elaborated but left a residual `⊢ goal`; it carries the goal +
+  a missing-bridge hint. Add the named simp bridge from the frozen battery and re-check.
+- **KernelBudget** — Lean's kernel/elaboration budget (heartbeats) was exhausted: a
+  budget event, NOT a refutation. Split the lemma or shrink the proof.
+- **Timeout** — the SMT solver hit its rlimit: a resource event, not a refutation.
+  Lower the goal or raise `--rlimit`.
+
+### 6.2 Routing + per-clause attribution
+
+Each clause routes by its SHAPE; the cert attributes `engine`/`trust`/`verdict` PER
+CLAUSE, so you read which machine carried it at what trust:
+
+- a RELAXABLE polynomial clause — universal over integer-scalar params, atoms from
+  only `+ - *`, comparisons, and `&&`/`||` (NO `/ % << >> & | ^`, no `as`) → the
+  **nlsat** engine (Z3 QF_NRA), at **L4** (`solver(nlsat) + spine-lemma(kernel)` —
+  the kernel-checked real→ℤ bridge).
+- an in-cage v1 contract → **verus**, at **L3** (an SMT solver proof).
+- a `lemma` / `proof for` → the **lean** engine, at **L3** (the Lean-kernel base).
+
+`--engine forge` drives this hybrid per-clause route end to end; `--engine
+nlsat|verus|lean` pins a single engine.
+
+### 6.3 Covenant authoring
+
+A `witness { inhabit (..); falsify N; }` block covenants the `fn` it immediately
+FOLLOWS in source order — the covenant-BEFORE-burn gate: a forge-routed `fn` must
+PASS its covenant before any proof is attempted (structural).
+
+- `inhabit (args)` — an author-stated witness that `req` is inhabited. At least ONE
+  is MANDATORY; each tuple's arity + types must match the params, and each must
+  SATISFY `req` (an `inhabit` that fails `req` is a loud author error, refused before
+  burn).
+- `falsify N` — draw N inputs from the deterministic SplitMix64 generator (default
+  fixed-seed `falsify 50_000`), run each body, check the contract. A `req`-satisfying
+  input whose body breaks `ens` is a **CovenantRefuted** hit, carried into the cert.
+
+A covenant that refutes — or whose `inhabit` set is missing, ill-typed, or
+`req`-violating — blocks the burn: you never prove a `fn` whose witnesses already
+break it.
+
+### 6.4 Forge-tier verbs + the burn receipt
+
+- `forge goal <f> --proof` — the PROOF VIEW of a forge-routed goal (`lemma` / `proof
+  for f`): its hypotheses in scope, the `⊢ goal`, and any open `?pN` PROOF holes.
+- `forge fill <f>.?pN <proof>` — splice proof text at a `?pN` proof hole and re-check
+  (the proof analogue of body-hole `fill`; may surface new `?pN`).
+- closing an L3/L4 goal attaches a **burn receipt** to the cert: the lexer-token
+  count of the committed proof, the lemmas it cited, and (optionally) the LLM
+  authoring spend. It records HOW MUCH proof was spent, never WHAT was proved —
+  oracle-excluded, so it never changes the verdict.
 ",
     )
 }

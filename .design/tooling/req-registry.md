@@ -3,8 +3,8 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: f09f8ca376257cc1e2543b8ebc9fb771bffd04df (re-pinned 2026-06-17 for stage-1 REQ-10 / AC-14, the G1 gate artifact: this doc's governed files (registry.toml, status.md) carry the additive REQ-S1-10 requirement entry + the regenerated status view, with REQ-S1-10's example restated from the isqrt-square-root characterization (non-trivial nlsat-earned L4 clauses) per the orchestrator's strengthening; req-registry.py --check is clean (441 requirements). prior: 8b4d2580b472d04fca2b14de5b6be52533a2d258)
-audited-content-sha256: 268e91527f83a8017af4778c9ae10f29254ff5a003e321823f1b77686165c8f8
+audited-sha: 59287187c2afcc22e1b7872f118183f1e49de263 (re-pinned 2026-06-17 after merging main into the skill-v2 branch: governed source carries the governance docs (#56) + the skill-v2 generator change, both net-additive; the REQs this doc governs are unchanged.)
+audited-content-sha256: 6150b534d284965b6628db40226bcbbf6ca561e46cc477806a75f54bd66da070
 governs:
   - .design/reqs/registry.toml
   - .design/reqs/status.md

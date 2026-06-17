@@ -699,8 +699,20 @@ pub fn check_file_with_options(
         // (OQ-2): a later hit serves the cached reject / clean cert without a verus
         // spawn (the cache-hit verus-free invariant, proof-cache.md AC-1).
         if let Item::Fn(f) = item {
+            // #275: thread the reachable `struct`/`enum` decls (the same `adt_deps`
+            // woven into this item's L3 sub-program above) into the vacuity
+            // harnesses. Without them an ADT-returning / ADT-taking fn's harness
+            // failed to compile (E0425), which the pre-#275 interpreter read as a
+            // clean pass — so both anti-Goodhart checks silently no-op'd on every
+            // ADT fn. The harness now compiles, so the verdict is real.
             if let crate::vacuity_solver::SolverVacuityVerdict::Detected { cause } =
-                crate::vacuity_solver::solver_vacuity_check(f, &spec_items, seed, rlimit)?
+                crate::vacuity_solver::solver_vacuity_check(
+                    f,
+                    &spec_items,
+                    &adt_deps,
+                    seed,
+                    rlimit,
+                )?
             {
                 let (taut, vac) = match cause {
                     crate::vacuity_solver::SolverVacuityCause::SemanticTautology => (true, false),

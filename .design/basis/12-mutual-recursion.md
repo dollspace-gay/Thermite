@@ -2,8 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 8b4d2580b472d04fca2b14de5b6be52533a2d258 (re-pinned 2026-06-17 for stage-1 increment 3, REQ-9 lemma library: the only change to this doc's governed file (check.rs) is the additive stage-1 increment 3 REQ-9 lemma library mechanics (REQ-S1-9); no mutual-recursion / dec-group logic changed, net-additive, v1 behavior unchanged. prior: ddbbb3ccea18276103fc268297c4d9190a1ee385)
-audited-content-sha256: a50c62ed9811fd2b5d86fe1bbddecf0b18139f2406c5e3ef3f8d93e57b91bd95
+audited-sha: 90b8325951b0f625a693baf07776da39d0b95fbe (re-pinned 2026-06-17 after merging main into the #275 vacuity-fix branch: governed source carries #51's topology-stable doc-drift change + #275's ADT-deps/compile-error vacuity fix, both net-additive; the REQs this doc governs are unchanged.)
 governs: forge/src/check.rs
 governs: thermite-lower/src/lower.rs
 thesis-refs:

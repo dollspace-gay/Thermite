@@ -3,8 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 8b4d2580b472d04fca2b14de5b6be52533a2d258 (re-pinned 2026-06-17 for stage-1 increment 3, REQ-9 lemma library: the only change to this doc's governed file (check.rs) is the additive stage-1 increment 3 REQ-9 passes — apply_lemma_library (certified-only citation refusal + dedup-on-burn rewrite) and the dec wf accessibility write-through — both forge/Lean-path only; the default Verus path + v1 corpus are byte-identical (REQ-S1-9). prior: a728d95ca3dbd4fbbee1cb496c003f408d82f327)
-audited-content-sha256: 87a315617e35a2382f893a41781ab88336e9b67d575b916b00833447c2fc34e5
+audited-sha: 90b8325951b0f625a693baf07776da39d0b95fbe (re-pinned 2026-06-17 after merging main into the #275 vacuity-fix branch: governed source carries #51's topology-stable doc-drift change + #275's ADT-deps/compile-error vacuity fix, both net-additive; the REQs this doc governs are unchanged.)
 governs: forge/src/check.rs
 thesis-refs:
   - thermite-design.md §5.1

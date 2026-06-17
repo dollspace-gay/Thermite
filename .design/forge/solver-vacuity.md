@@ -3,8 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 92396428567edc6940a9e2845217f5ff4c2ea3c6 (re-pinned 2026-06-16, user-authorized: the only change to this doc's governed files since the prior pin is the additive stage-1 forge-tier increment 2a — the new Item::Forge surface + inert Item::Forge match arms, verified net-additive with no substantive removal of existing v1 logic (git log <main>..HEAD = the 8 forge commits); the v1 behavior this doc governs is unchanged, and the new forge-tier surface is specified in .design/stage1-forge-tier.md / REQ-S1-3)
-audited-content-sha256: bb82900066869aa7dc0ad939cd955a1c6b82455d50fc662689b3c3d8117e7638
+audited-sha: 90b8325951b0f625a693baf07776da39d0b95fbe (re-pinned 2026-06-17 after merging main into the #275 vacuity-fix branch: governed source carries #51's topology-stable doc-drift change + #275's ADT-deps/compile-error vacuity fix, both net-additive; the REQs this doc governs are unchanged.)
 governs: forge/src/vacuity_solver.rs
 thesis-refs:
   - thermite-design.md §7
@@ -95,7 +94,15 @@ below; all NOT-STARTED, blocker #271.
   the same `requires`/`ensures` text `lower_fn` emits) so the harness's contract
   text is byte-identical to the real item's. Spec-fn dependencies the contract
   references (`spec_sum`) plus combinator defs are woven in exactly as `check.rs`'s
-  `item_subprogram` does. Source: `thermite-design.md` §7 step 2 ("is `ens`
+  `item_subprogram` does — and (the #275 fix) the reachable `struct`/`enum`
+  declarations the signature + contract reference, via the `reachable_adt_deps`
+  set `check::check_file` already computes for the L3 sub-program, so an
+  ADT-returning / ADT-taking harness (`result: Account`, `a: Shape`) compiles
+  instead of hitting `E0425` (without the decls the harness failed to elaborate
+  and its compile error was silently read as a clean verdict — the #275 hole).
+  A multi-line `ens` (a `match result { … }`) is spliced back VERBATIM, not
+  re-emitted per physical line, so it reconstructs as valid Verus. Source:
+  `thermite-design.md` §7 step 2 ("is `ens`
   provable from `req` + types **without the function body**? If yes, the contract
   says nothing about the implementation → reject with the proof as the
   explanation").
@@ -112,14 +119,21 @@ below; all NOT-STARTED, blocker #271.
   each harness is run through `run_verus`-style invocation and its verus outcome
   is interpreted as: **PROVED** (`success && errors == 0`) → the property holds
   → VACUOUS DETECTED (`tautology`/`vacuous_precondition` = `true` → reject);
-  **FAILED** (a `postcondition not satisfied` / `assertion failed`
-  counterexample) → the property does not hold → CLEAN (the check passes, the
+  **FAILED** (`!success && errors >= 1` — a `postcondition not satisfied` /
+  `assertion failed` counterexample, or an rlimit-exhaustion, each a checked-and-
+  unproved obligation) → the property does not hold → CLEAN (the check passes, the
   field is asserted `false`); **ENVIRONMENT / INTERNAL** (verus absent,
-  unparseable output, VIR error, timeout) → a handled outcome, NEVER silently
-  treated as a clean pass (R-CODE-4). A timeout on a vacuity query degrades /
-  reports (it does not assert clean); the surface form (degrade to "undetermined"
-  vs. a `ForgeError`) is OQ-3. The polarity is deliberate: verus PROVING the
-  harness is the *bad* news (the contract is degenerate). Source:
+  unparseable output, VIR error) → a handled outcome, NEVER silently treated as a
+  clean pass (R-CODE-4). The discriminator between FAILED and a NON-VERDICT is the
+  verification-error count: a `!success && errors == 0` run NEVER reached
+  verification — the harness failed to COMPILE / elaborate (an `E0425` unresolved
+  name, a parse / type error) — so it is a HARNESS-CONSTRUCTION `ForgeError`, NOT
+  the clean `Failed` (the #275 hole was reading this non-verdict as clean, which
+  silently no-op'd both checks on every ADT fn whose harness lacked its woven
+  decls; see REQ-1). A timeout on a vacuity query is reported as a verification
+  error (`errors >= 1`), so it maps to FAILED (the conservative OQ-3 polarity: an
+  inconclusive query does not reject). The polarity is deliberate: verus PROVING
+  the harness is the *bad* news (the contract is degenerate). Source:
   `thermite-design.md` §7; `goal.md` R-CODE-4.
 - **REQ-4 (the value-add over #6 — semantic detection #6 cannot reach):** a
   contract that PASSES #6's syntactic triage but IS a semantic tautology / has an
@@ -256,11 +270,13 @@ bounds-shaped contracts).
   `String`/`Vec`/slice-valued returns (the view-equality encoding `r1@ =~= r2@`
   is OQ-6). The struct path REQUIRES weaving the reachable ADT decls
   (`reachable_adt_deps`, as `check::check_file` already computes for the L3
-  sub-program) into the harness — the shipped #13 extraction weaves SpecFns ONLY,
-  and the grounded consequence is blocker **#275** (an ADT-returning harness hits
-  `E0425` and its compile error reads as a verdict); the tightness builder MUST
-  NOT inherit that gap (its AC-7 fixture is a struct return, so the AC
-  mechanically forces the weave). Source: grounded probes below; #275.
+  sub-program) into the harness. Blocker **#275** (an ADT-returning harness hit
+  `E0425` and its compile error read as a verdict) is now FIXED in the shipped #13
+  gate: REQ-1/REQ-2's extraction weaves the reachable ADT decls (not SpecFns only)
+  and REQ-3 maps the `!success && errors == 0` compile non-verdict to a
+  `ForgeError`, never a clean pass. The tightness builder inherits the working
+  weave (its AC-7 fixture is a struct return, so the AC mechanically exercises it).
+  Source: grounded probes below; #275 (resolved).
 - **REQ-12 (wiring + cost + cache — rides the existing pass):** the tightness
   query runs INSIDE the proof-cache MISS branch of `check::check_file`'s
   per-item loop, immediately after `solver_vacuity_check` returns `Clean` (so it

@@ -71,11 +71,16 @@ present-but-weak contract toward a stronger one without authoring it for the use
 
 ---
 
-## The ladder (L3 / L2 / L1 / L0)
+## The ladder (L4 / L3 / L2 / L1 / L0)
 
-**Definition.** Four assurance tiers, each a distinct established verification
-technique:
+**Definition.** Five assurance tiers ranked by *refutation quality*, each a
+distinct established verification technique:
 
+- **L4** = **kernel-grounded** discharge. For nonlinear arithmetic the *relax
+  route* proves the goal over the reals (Z3's **nlsat**, a complete decision
+  procedure for real-closed fields) and transports it to the integers through a
+  **Lean-kernel-checked** soundness lemma (`r_relax_sound`); the trust base is
+  `solver(nlsat) + spine-lemma(kernel)`, strictly above an L3 SMT-solver proof.
 - **L3** = **SMT-discharged deductive verification**, proven for *all* inputs.
   Via Verus (the Rust verifier) emitting verification conditions to **Z3**
   (the SMT solver). Total correctness over the frozen fragment.
@@ -88,9 +93,9 @@ technique:
 - **L0** = **a trusted-by-fiat annotation**, CompCert's "reduced trusted base"
   concept made per-function; the `#[slag]` escape hatch (own entry below).
 
-**Mechanism.** `enum Level { L0, L1, L2, L3 }` (`forge/src/manifest.rs`, derived
-`Ord` so `L0 < L1 < L2 < L3`). The default `forge check` path attempts L3 and
-auto-degrades on a *timeout*: `forge::degrade::run_ladder` (`forge/src/degrade.rs`)
+**Mechanism.** `enum Level { L0, L1, L2, L3, L4 }` (`forge/src/manifest.rs`,
+derived `Ord` so `L0 < L1 < L2 < L3 < L4`). The default `forge check` path
+attempts L3 and auto-degrades on a *timeout*: `forge::degrade::run_ladder` (`forge/src/degrade.rs`)
 drives `L3Verdict::Proved → certify L3`; `Timeout → attempt L2 (lower_l2 →
 run_kani) → … → L1 (lower_l1)`. The three-way verdict that drives it is
 `classify_verus_outcome → VerusOutcome { Proved, Timeout, Counterexample }`
@@ -125,7 +130,14 @@ runs, distinct from a timeout degrade (`.design/forge/degrade-ladder.md` REQ-9).
 degraded L1/L2 items back up toward L3; the proof-backend interface
 ([`.design/verified/proof-backends.md`](.design/verified/proof-backends.md))
 generalizes the ladder so an L3 can be discharged by Lean as well as Verus, with
-a smaller trusted base.
+a smaller trusted base. The downward degrade above applies to an *inconclusive
+in-cage* goal (a solver timeout); an obligation the decidable cage cannot hold at
+all now escalates **up** to the **forge** — an agent-authored proof term checked
+by the Lean 4 kernel, falsified first by a mandatory covenant — instead of the
+whole function sliding down. This forge tier and the L4 relax route are the
+Stage-1 deliverable of the Thermite 2 program ([RFC-1, GH #2](https://github.com/dollspace-gay/Thermite/issues/2)); today only the relax
+route reaches L4, and lifting the whole cage to L4 (a stratified-FOL spine
+extension) is Stage 2.
 
 ---
 
@@ -224,7 +236,7 @@ attest *intent*.
 **Mechanism.** `struct Certificate { item, level, solver_time_ms,
 contract_quality, effects, slag, obligations, suggested_move, … }`
 (`forge/src/manifest.rs`), serialized with `serde_json`. Key fields: `level`
-(`L0..L3`, the ladder rung); `effects` (the `fx` row); `contract_quality`
+(`L0..L4`, the ladder rung); `effects` (the `fx` row); `contract_quality`
 (`tautology`, `vacuous_precondition`, `mutants_killed: String` e.g. `"17/18"`,
 `survivor`), the battery scores; `obligations: Vec<ObligationResult>`, per
 proof obligation, `Discharged` or `Failed` with a `location` + a concrete
@@ -601,7 +613,8 @@ key. Verus/Z3 is engine #1 (the default); **Lean is engine #2**
 Thermite→Lean exporter (`forge/src/lean_export.rs`) and discharged either by a
 tactic battery (the auto tier) or by a replayed interactive proof.
 
-**The discipline is engine-generic.** `Unknown` degrades down the ladder; a
+**The discipline is engine-generic.** `Unknown` degrades down the ladder
+in-cage, or escalates up to the forge when the cage cannot hold the obligation; a
 witnessed `Refuted` hard-fails and never degrades — the anti-cheat is stated
 once, independent of Verus. A certificate carries per-obligation attribution
 `{engine, trust_profile}`, so "L3" names *which* engine proved the item under

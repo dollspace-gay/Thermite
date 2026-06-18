@@ -1,0 +1,10 @@
+{
+  "uuid": "f6805447-1e77-4765-8029-3086b000627a",
+  "issue_uuid": "0d60b067-6a4a-4af8-a012-999a420a086c",
+  "author": "rApq",
+  "content": "G1 declared: Stage-1 forge tier + relax routing complete (786 forge tests, 0 failed/ignored, full env). README/RATIONALE headline flipped at gate time (#59). REQ-10 checklist posted + pinned on GH #2.",
+  "created_at": "2026-06-18T19:15:54.696990Z",
+  "kind": "handoff",
+  "signed_by": "SHA256:tVRGNaCPy5N1tRtokzkbgsOCzGZujGDWQlGHFruaL9c",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgylLCWwpnQm2E2UQO23AN1e/yB6k0yzmPM7qiYPujTNYAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAG4Di791ZACBc6TjpYSm6tgdWou6+lQR6NuxAwqf0Z8vR/D3NK2y2YkEpHYg4tP9SGetazkopyqolvG/wZRqRCQ=="
+}

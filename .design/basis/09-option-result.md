@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 59287187c2afcc22e1b7872f118183f1e49de263 (re-pinned 2026-06-17 after merging main into the skill-v2 branch: governed source carries the governance docs (#56) + the skill-v2 generator change, both net-additive; the REQs this doc governs are unchanged.)
+audited-sha: ae6295f1a8d4faefe640559c01e39fd3766cfa52 (re-pinned 2026-06-17 after merging main into the §6 metrics-dashboard branch (#316): governed source carries the additive REQ-FORGE-METRICS-DASHBOARD entry + regen status view; net-additive, REQs unchanged.)
 governs: thermite-syntax/src/ast.rs
 governs: thermite-syntax/src/parser.rs
 governs: thermite-spec/src/validator.rs

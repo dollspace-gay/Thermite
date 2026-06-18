@@ -286,6 +286,7 @@ enum Command {
         file: PathBuf,
         json: bool,
         meaning: bool,
+        metrics: bool,
     },
     /// `forge repair <file> [item]` — the background L1/L2 → L3 upgrade loop
     /// (issue #18; `.design/forge/proof-repair.md` REQ-1). Re-derives the per-item
@@ -627,6 +628,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
             let mut file: Option<PathBuf> = None;
             let mut json = false;
             let mut meaning = false;
+            let mut metrics = false;
             for arg in iter {
                 match arg.as_str() {
                     "--json" => json = true,
@@ -636,6 +638,13 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                     // certify-time, in `forge check`, not here — #274 "audit gates
                     // nothing"): `forge audit --meaning` never changes the exit code.
                     "--meaning" => meaning = true,
+                    // `--metrics` (umbrella REQ-7 / AC-12): the read-only §6 metrics
+                    // dashboard companion — the cage-vs-forge share by routing reason, the
+                    // seven-verdict counts, and the TV phase split, projected from the
+                    // certificate telemetry + a contract-TV run. It GATES NOTHING (#274
+                    // "audit gates nothing"): `forge audit --metrics` never changes the
+                    // exit code, and its output is not part of the certificate oracle.
+                    "--metrics" => metrics = true,
                     flag if flag.starts_with("--") => {
                         return Err(ForgeError::Usage(format!("unknown flag `{flag}`")));
                     }
@@ -655,6 +664,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                 file,
                 json,
                 meaning,
+                metrics,
             })
         }
         "repair" => {
@@ -1189,7 +1199,8 @@ fn dispatch(args: &[String]) -> Result<ExitCode, ForgeError> {
             file,
             json,
             meaning,
-        } => run_audit(&file, json, meaning),
+            metrics,
+        } => run_audit(&file, json, meaning, metrics),
         Command::Repair { file, item, json } => run_repair(&file, item.as_deref(), json),
         Command::Review {
             file,
@@ -1404,7 +1415,12 @@ fn run_check(
 /// document or a human summary (OQ-1 — the JSON is the oracle-asserted surface).
 /// The exit code mirrors `forge check`'s project headline (REQ-5): a fully-
 /// certified project exits 0, else a verification-failure exit.
-fn run_audit(file: &Path, json: bool, meaning: bool) -> Result<ExitCode, ForgeError> {
+fn run_audit(
+    file: &Path,
+    json: bool,
+    meaning: bool,
+    metrics: bool,
+) -> Result<ExitCode, ForgeError> {
     // The same default pipeline `forge check` runs (REQ-4 — aggregation, never
     // re-derivation): `check_file` is the canonical default-config entry (the only
     // one that serves / populates the shared proof cache). The audit re-runs no
@@ -1451,6 +1467,36 @@ fn run_audit(file: &Path, json: bool, meaning: bool) -> Result<ExitCode, ForgeEr
     // document; in human mode it appends to the stdout report.
     if meaning {
         let rendered = render_meaning(&parsed.program, &src);
+        if json {
+            eprint!("{rendered}");
+        } else {
+            print!("{rendered}");
+        }
+    }
+
+    // Umbrella REQ-7 / AC-12: the `--metrics` read-only §6 dashboard companion — the
+    // cage-vs-forge share BY routing reason, the seven-verdict counts, and the TV phase
+    // split, projected from the certificate per-clause telemetry + a contract-TV run over
+    // the same file. It GATES NOTHING (#274 "audit gates nothing"): the exit code below is
+    // the manifest headline, unchanged by this print, and the dashboard is NOT part of the
+    // certificate oracle. In `--json` mode it goes to stderr so the stdout JSON stays a
+    // valid v1 document; in human mode it appends to the stdout report.
+    if metrics {
+        // The TV phase-split source: the contract-TV phase over the same file at the
+        // pinned default seed/rlimit (deterministic, R-CODE-5). A forge-tier-only file has
+        // no contract-TV clauses (the phase is inert on `Item::Forge`), and a TV error
+        // degrades to `None` — both render "not run" rather than a misleading all-zero
+        // split. A metrics failure never fails the audit (the projection gates nothing).
+        let tv = crate::contract_tv::tv_file(
+            file,
+            crate::contract_tv::TV_DEFAULT_SEED,
+            crate::contract_tv::TV_DEFAULT_RLIMIT,
+        )
+        .ok()
+        .map(|report| report.counts())
+        .filter(|c| c.faithful + c.divergent + c.skipped + c.unverifiable > 0);
+        let dashboard = crate::metrics::MetricsDashboard::from_certificates(&certs, tv.as_ref());
+        let rendered = dashboard.render();
         if json {
             eprint!("{rendered}");
         } else {

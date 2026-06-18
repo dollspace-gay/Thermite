@@ -741,6 +741,15 @@ comment_prefix = "//! "
 title = "Forge Audit Canonical Status References"
 
 [[view]]
+name = "forge-metrics-status"
+path = "forge/src/metrics.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-metrics-status"
+comment_prefix = "//! "
+title = "Forge §6 Metrics Dashboard Canonical Status References"
+
+[[view]]
 name = "forge-cache-status"
 path = "forge/src/cache.rs"
 kind = "reference_list"
@@ -11663,6 +11672,32 @@ note = "audit assembly"
 kind = "test"
 target = "forge/tests/audit_conformance.rs"
 note = "audit command conformance"
+
+[[requirement]]
+id = "REQ-FORGE-METRICS-DASHBOARD"
+title = "§6 metrics dashboard projection"
+owner = "forge/src/metrics.rs"
+status = "shipped"
+scope = "forge"
+summary = "`forge audit --metrics` projects the §6 dashboard from the certificate telemetry + a contract-TV run: the cage-vs-forge share by routing reason (derived from the per-clause engine tag), the seven-verdict counts, and the TV phase split (syntactic/semantic/timeout). A read-only projection that gates nothing (#274) — the exit code is unchanged and the output is not part of the certificate oracle."
+aliases = ["thermite2-program.md REQ-7 / AC-12 (§6 metrics dashboard)"]
+contributors = [".design/thermite2-program.md", "forge/tests/metrics_dashboard.rs"]
+generated_to = ["status", "forge-metrics-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "MetricsDashboard::from_certificates"
+note = "the dashboard projection (routing + verdict + TV split)"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "RoutingReason::from_engine"
+note = "the routing-reason projection of the per-clause engine telemetry"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/metrics_dashboard.rs"
+note = "AC-12: forge emits routing/verdict/TV telemetry and the audit prints the dashboard, gating nothing"
 
 [[requirement]]
 id = "REQ-FORGE-AUDIT-TCB"

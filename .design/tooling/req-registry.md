@@ -3,8 +3,8 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 59287187c2afcc22e1b7872f118183f1e49de263 (re-pinned 2026-06-17 after merging main into the skill-v2 branch: governed source carries the governance docs (#56) + the skill-v2 generator change, both net-additive; the REQs this doc governs are unchanged.)
-audited-content-sha256: 6150b534d284965b6628db40226bcbbf6ca561e46cc477806a75f54bd66da070
+audited-sha: f09f8ca376257cc1e2543b8ebc9fb771bffd04df (re-pinned 2026-06-17 for umbrella REQ-7 / AC-12, the §6 metrics dashboard: this doc's governed files (registry.toml, status.md) carry the additive REQ-FORGE-METRICS-DASHBOARD requirement entry + its `forge-metrics-status` view + the regenerated status view; req-registry.py --check is clean (443 requirements, 119 views). prior: stage-1 REQ-10/AC-14 G1 gate REQ-S1-10 entry)
+audited-content-sha256: 45ac74adffbc7440355d09b6cf9f62a30f86da31f3163bfd2d547ca2c27ffb4a
 governs:
   - .design/reqs/registry.toml
   - .design/reqs/status.md

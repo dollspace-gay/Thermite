@@ -48,6 +48,7 @@ mod lean_export;
 mod lemma_library;
 mod manifest;
 mod meaning;
+mod metrics;
 mod mutation;
 mod obligation;
 mod profile;

@@ -1,6 +1,6 @@
 {
   "next_display_id": 284,
-  "next_comment_id": 574,
+  "next_comment_id": 575,
   "display_id_map": {
     "028ff5aa-7f3e-4816-8acc-39aaabc20655": 272,
     "03813815-1239-466a-8275-9102e275daa7": 14,
@@ -6488,11 +6488,20 @@
       "priority": "high",
       "created_by": "Yffe",
       "created_at": "2026-06-18T22:04:47.699667222Z",
-      "updated_at": "2026-06-18T22:10:25.433495507Z",
+      "updated_at": "2026-06-18T22:16:56.723049485Z",
       "labels": [
         "bug"
       ],
       "comments": {
+        "1181fd9c-d497-49d8-8991-b8d63d7d1798": {
+          "display_id": 574,
+          "author": "Yffe",
+          "content": "Scope: two-part fix on new branch fix/audit-check4-lean-export-drift-283 (off the doc-drift branch HEAD 49ca894e). (1) Re-pin the 6 stale SHAs in rust-lean-correspondence.md + Amendment 2026-06-18 documenting the comment-only/additive-only verification. (2) Real bug: scripts/audit.sh check [4] PIN_FILE array did NOT include forge/src/lean_export.rs, so the exporter (Table 4/4B, a load-bearing reference encoder) could drift undetected despite the doc claiming it was checked. Added it to PIN_FILE; it fits the existing file-path loop (the lean/Thermite/** glob keeps its separate block). Verified pin_sha_for resolves row 72 -> 76be6272 = current. Re-running full make audit to confirm end-to-end.",
+          "created_at": "2026-06-18T22:16:56.720764761Z",
+          "kind": "plan",
+          "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+          "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAQeqEMAC/Wh5U1kNZPOxP2+Q/AK79GuG+LoedhNL0AAwKzxUaKqF4aWgZgF94rwVNbmtAFd7OT0jIiOwHMNp2CQ=="
+        },
         "322684ca-41fd-48de-bc9c-a6019fc04913": {
           "display_id": 573,
           "author": "Yffe",
@@ -9555,11 +9564,16 @@
       "agent_id": "Yffe",
       "agent_seq": 4,
       "timestamp": "2026-06-18T22:10:25.433495507Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 5,
+      "timestamp": "2026-06-18T22:16:56.723049485Z"
     }
   ],
   "watermark": {
-    "timestamp": "2026-06-18T22:10:25.433495507Z",
+    "timestamp": "2026-06-18T22:16:56.723049485Z",
     "agent_id": "Yffe",
-    "agent_seq": 4
+    "agent_seq": 5
   }
 }

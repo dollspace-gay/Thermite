@@ -1,0 +1,10 @@
+{
+  "uuid": "04c7c05b-ce4c-4a18-9089-e9a335bdd098",
+  "display_id": 319,
+  "title": "Post-G1 cleanup: #148 test-header staleness + rotating-seed --generated cron CI + umbrella AC checkbox sync",
+  "status": "open",
+  "priority": "medium",
+  "created_by": "rApq",
+  "created_at": "2026-06-18T19:27:27.067952Z",
+  "updated_at": "2026-06-18T19:27:27.067952Z"
+}

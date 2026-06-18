@@ -1,6 +1,6 @@
 {
   "next_display_id": 284,
-  "next_comment_id": 573,
+  "next_comment_id": 574,
   "display_id_map": {
     "028ff5aa-7f3e-4816-8acc-39aaabc20655": 272,
     "03813815-1239-466a-8275-9102e275daa7": 14,
@@ -6488,10 +6488,21 @@
       "priority": "high",
       "created_by": "Yffe",
       "created_at": "2026-06-18T22:04:47.699667222Z",
-      "updated_at": "2026-06-18T22:04:52.102081559Z",
+      "updated_at": "2026-06-18T22:10:25.433495507Z",
       "labels": [
         "bug"
-      ]
+      ],
+      "comments": {
+        "322684ca-41fd-48de-bc9c-a6019fc04913": {
+          "display_id": 573,
+          "author": "Yffe",
+          "content": "Verified the check [4] drift arm-by-arm (NOT rubber-stamped). All four Rust encoders (ref_encode/exec_encode/exec_stmt_encode @579d3d48/43c9a6c8/21b84c5f, combinators @c0b1d8a3) are CODE-IDENTICAL since their pins via comment-stripped diff (584/292/690/93 code lines, 0 changed) — the diff is entirely the 543b506e 'source status turnover' comment/REQ-table prose. The Lean spine (1438dc5f->033d9fb2): every MODIFIED file CODE-IDENTICAL (comment-prose), plus 7 NEW files (Relax, Exec/WhileBody, PinWhile{Composition,DecShape,Vacuity}, Spike/{SubstKit,PinBrokenLift}) — additive. lean_export.rs (3373215e->76be6272): 1123 added / 5 removed code lines; the audited emit_theorem gained result_mode but the default BodyDenotation path reproduces the Table-4 framing byte-for-byte; the rest is additive new surface (export_arbitrary_result_harness REQ-6a, export_lemma REQ-7, export_while_body #264, Item::Forge refusal). Verdict: additive-only + comment-only, no audited arm changed meaning. Re-pin warranted.",
+          "created_at": "2026-06-18T22:10:25.428088034Z",
+          "kind": "observation",
+          "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+          "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAkLN1Ph0cG/ZEOftrWc/h5aMSs8p5Yu7Mbi4r+Gzfs5F/t5v+oyZ3dKdBEF1xXJr44qdKkcHMFPy1nRbd2qoxDw=="
+        }
+      }
     },
     "ac47df99-718d-41a9-8c18-766815cbed21": {
       "uuid": "ac47df99-718d-41a9-8c18-766815cbed21",
@@ -9539,11 +9550,16 @@
       "agent_id": "Yffe",
       "agent_seq": 3,
       "timestamp": "2026-06-18T22:04:58.299373591Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 4,
+      "timestamp": "2026-06-18T22:10:25.433495507Z"
     }
   ],
   "watermark": {
-    "timestamp": "2026-06-18T22:04:58.299373591Z",
+    "timestamp": "2026-06-18T22:10:25.433495507Z",
     "agent_id": "Yffe",
-    "agent_seq": 3
+    "agent_seq": 4
   }
 }

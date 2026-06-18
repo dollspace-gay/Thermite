@@ -1,6 +1,6 @@
 {
   "next_display_id": 284,
-  "next_comment_id": 577,
+  "next_comment_id": 578,
   "display_id_map": {
     "028ff5aa-7f3e-4816-8acc-39aaabc20655": 272,
     "03813815-1239-466a-8275-9102e275daa7": 14,
@@ -6488,7 +6488,7 @@
       "priority": "high",
       "created_by": "Yffe",
       "created_at": "2026-06-18T22:04:47.699667222Z",
-      "updated_at": "2026-06-18T22:45:25.472356903Z",
+      "updated_at": "2026-06-18T22:56:12.008791178Z",
       "labels": [
         "bug"
       ],
@@ -6528,6 +6528,15 @@
           "kind": "result",
           "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
           "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABACuGOABy6mDck+rhudPfR0n+IWdnmQ8eKHnnrIOP25aWR11gE23nxMla/mTlp44/gmxjqWeVRCVkmYVZwzcLOAQ=="
+        },
+        "d758cb3a-ba6e-4f7f-9853-20e7b20b61f8": {
+          "display_id": 577,
+          "author": "Yffe",
+          "content": "doc-drift CI failure diagnosed + fixed. Root cause: my branch was based on stale main (49ca894e); origin/main had advanced to 904ee01c (#314-#319). The CI synthetic-merge surfaced the staleness as drift on the 6 remaining legacy audited-sha: docs (check.rs/lower.rs/generate.rs/engine.rs) — the legacy commit-set mechanism counts any merge/bring-forward commit as intervening (it is not merge-stable; that is exactly what the content-sha256 migration on the prior branch was addressing). main's own HEAD passes doc-drift (exit 0), confirming it is branch-shape-specific, not a regression. First tried merging main in, but that made MY merge commit the intervening one. Fix: rebased onto origin/main (linear, no merge commit) — doc-drift CI now exits 0. Also re-pinned the Lean spine 033d9fb2 -> b6038651 (#314 module-header comment touch, verified CODE-IDENTICAL on all 7 audited spine files). check [4] passes for all 6 artifacts. Running full make audit on the rebased branch.",
+          "created_at": "2026-06-18T22:56:12.006383205Z",
+          "kind": "resolution",
+          "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+          "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAMYSDpC/3O6X+bIh3YGOHczQ1lsH9f7yEOxZg878zLeenYuVyWwsQBd2ogb9jXNI6L7GsRKL4HmuJLFwL3yqJBw=="
         }
       }
     },
@@ -9602,11 +9611,16 @@
       "agent_id": "Yffe",
       "agent_seq": 8,
       "timestamp": "2026-06-18T22:45:25.472356903Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 9,
+      "timestamp": "2026-06-18T22:56:12.008791178Z"
     }
   ],
   "watermark": {
-    "timestamp": "2026-06-18T22:45:25.472356903Z",
+    "timestamp": "2026-06-18T22:56:12.008791178Z",
     "agent_id": "Yffe",
-    "agent_seq": 8
+    "agent_seq": 9
   }
 }

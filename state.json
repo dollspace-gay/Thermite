@@ -1,6 +1,6 @@
 {
   "next_display_id": 284,
-  "next_comment_id": 576,
+  "next_comment_id": 577,
   "display_id_map": {
     "028ff5aa-7f3e-4816-8acc-39aaabc20655": 272,
     "03813815-1239-466a-8275-9102e275daa7": 14,
@@ -6488,7 +6488,7 @@
       "priority": "high",
       "created_by": "Yffe",
       "created_at": "2026-06-18T22:04:47.699667222Z",
-      "updated_at": "2026-06-18T22:41:06.723220813Z",
+      "updated_at": "2026-06-18T22:45:25.472356903Z",
       "labels": [
         "bug"
       ],
@@ -6519,6 +6519,15 @@
           "kind": "result",
           "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
           "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAKKlzxMnAyHOstZzVfPQ45GkhbPHL6IFUdWw8IAp8i+oFyFU8hKkfaNYatxJjMP7RcNfcxupN9G55CGrGQX6RAQ=="
+        },
+        "ca664dfc-5dd7-4dc4-9234-9d81bee0a54c": {
+          "display_id": 576,
+          "author": "Yffe",
+          "content": "Committed to fix/audit-check4-lean-export-drift-283 as fc3058a8 (2 files, +61/-10). Not closing the issue — work is on the branch, awaiting your review/merge. The commit touches only the doc + audit.sh, so the drift-checked encoder/spine files' last-touch SHAs are unchanged and the new pins stay valid.",
+          "created_at": "2026-06-18T22:45:25.470041787Z",
+          "kind": "result",
+          "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+          "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABACuGOABy6mDck+rhudPfR0n+IWdnmQ8eKHnnrIOP25aWR11gE23nxMla/mTlp44/gmxjqWeVRCVkmYVZwzcLOAQ=="
         }
       }
     },
@@ -9588,11 +9597,16 @@
       "agent_id": "Yffe",
       "agent_seq": 7,
       "timestamp": "2026-06-18T22:41:06.723220813Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 8,
+      "timestamp": "2026-06-18T22:45:25.472356903Z"
     }
   ],
   "watermark": {
-    "timestamp": "2026-06-18T22:41:06.723220813Z",
+    "timestamp": "2026-06-18T22:45:25.472356903Z",
     "agent_id": "Yffe",
-    "agent_seq": 7
+    "agent_seq": 8
   }
 }

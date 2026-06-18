@@ -347,8 +347,8 @@ enum Command {
         /// `fx` rows. `--target kernel` + `--entry` is a usage error.
         target: BuildTarget,
     },
-    /// `forge tv <file> [--generated [N]] [--json]` — the contract-faithfulness
-    /// translation-validation deeper audit (epic #139, #144;
+    /// `forge tv <file> [--generated [N]] [--seed <u64>] [--json]` — the
+    /// contract-faithfulness translation-validation deeper audit (epic #139, #144;
     /// `.design/verified/contract-tv.md` REQ-5). A separate opt-in command, not
     /// folded into `forge check` (which stays fast): for each `req`/`ens`/loop-
     /// `inv`/`dec` clause it discharges the per-clause Z3 equivalence obligation
@@ -363,6 +363,12 @@ enum Command {
         /// `--generated [N]` — also run the off-corpus generated TV space (REQ-3).
         /// `Some(n)` requests `n` generated clauses; `None` skips the generated run.
         generated: Option<usize>,
+        /// `--seed <u64>` — the generator seed for the `--generated` space. `None`
+        /// uses the pinned [`TV_DEFAULT_SEED`] (deterministic, for the corpus gate);
+        /// a rotating value (the scheduled-CI job, `thermite2-program.md` REQ-2c)
+        /// walks a different slice of the off-corpus clause space each run, surfacing
+        /// seed-dependent lowering divergences the fixed-seed gate would never reach.
+        seed: Option<u64>,
     },
     /// `forge exec-tv <file> [--generated [N]] [--json]` — the exec-position (body)
     /// translation-validation deeper audit (epic #151, #154/#156;
@@ -872,6 +878,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
             let mut file: Option<PathBuf> = None;
             let mut json = false;
             let mut generated: Option<usize> = None;
+            let mut seed: Option<u64> = None;
             let mut iter = iter.peekable();
             while let Some(arg) = iter.next() {
                 match arg.as_str() {
@@ -889,6 +896,18 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                         };
                         generated = Some(n);
                     }
+                    "--seed" => {
+                        // `--seed <u64>` takes a mandatory numeric value (the rotating
+                        // generator seed, REQ-2c). A missing or non-numeric value is a
+                        // Usage error, never a silent default (REQ-8 flag discipline).
+                        let raw = iter.next().ok_or_else(|| {
+                            ForgeError::Usage("`--seed` requires a u64 value".to_string())
+                        })?;
+                        let parsed = raw.parse::<u64>().map_err(|_| {
+                            ForgeError::Usage(format!("`--seed` value `{raw}` is not a u64"))
+                        })?;
+                        seed = Some(parsed);
+                    }
                     flag if flag.starts_with("--") => {
                         return Err(ForgeError::Usage(format!("unknown flag `{flag}`")));
                     }
@@ -904,13 +923,15 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
             }
             let file = file.ok_or_else(|| {
                 ForgeError::Usage(
-                    "`forge tv` requires a <file> [--generated [N]] [--json]".to_string(),
+                    "`forge tv` requires a <file> [--generated [N]] [--seed <u64>] [--json]"
+                        .to_string(),
                 )
             })?;
             Ok(Command::Tv {
                 file,
                 json,
                 generated,
+                seed,
             })
         }
         "exec-tv" => {
@@ -1158,7 +1179,7 @@ fn usage_text() -> &'static str {
      | forge review <file> [item] [--json] [--reviewer <cmd>] | forge build <file> [--entry <fn>] \
      [--out <PATH>] [--target std|kernel] [--json] [--no-sandbox] [--sandbox-self-test] | forge tv \
      <file> \
-     [--generated [N]] [--json] | forge exec-tv <file> [--generated [N]] [--no-generated] \
+     [--generated [N]] [--seed <u64>] [--json] | forge exec-tv <file> [--generated [N]] [--no-generated] \
      [--json] | forge body-tv <file> [--json] | forge goal <file> [item] [--proof] | forge \
      battery <file> [item] | forge edit <file> <addr> --replace <code> | forge fill <file> \
      <hole-addr> <code>"
@@ -1227,7 +1248,8 @@ fn dispatch(args: &[String]) -> Result<ExitCode, ForgeError> {
             file,
             json,
             generated,
-        } => run_tv(&file, json, generated),
+            seed,
+        } => run_tv(&file, json, generated, seed),
         Command::ExecTv {
             file,
             json,
@@ -1705,16 +1727,21 @@ fn run_build(
 /// environment failure (file unreadable, parse failure) propagates as a
 /// `ForgeError` (the environment exit). A verus-absent run reports `unverifiable`
 /// clauses (surfaced, never a silent pass — R-CODE-4) and does not fail the exit.
-fn run_tv(file: &Path, json: bool, generated: Option<usize>) -> Result<ExitCode, ForgeError> {
+fn run_tv(
+    file: &Path,
+    json: bool,
+    generated: Option<usize>,
+    seed: Option<u64>,
+) -> Result<ExitCode, ForgeError> {
     use crate::contract_tv::{self, TV_DEFAULT_RLIMIT, TV_DEFAULT_SEED};
 
+    // `--seed` overrides the pinned default for the off-corpus generated space (the
+    // rotating-seed CI job, REQ-2c); the corpus phase stays on the deterministic
+    // pinned seed so the fixed corpus gate remains reproducible regardless.
+    let gen_seed = seed.unwrap_or(TV_DEFAULT_SEED);
     let corpus = contract_tv::tv_file(file, TV_DEFAULT_SEED, TV_DEFAULT_RLIMIT)?;
     let gen_report = match generated {
-        Some(n) => Some(contract_tv::run_generated(
-            TV_DEFAULT_SEED,
-            n,
-            TV_DEFAULT_RLIMIT,
-        )?),
+        Some(n) => Some(contract_tv::run_generated(gen_seed, n, TV_DEFAULT_RLIMIT)?),
         None => None,
     };
 
@@ -2616,6 +2643,42 @@ mod tests {
         ));
         assert!(matches!(
             parse_args(&argv(&["check", "a.th", "--rlimit", "0"])),
+            Err(ForgeError::Usage(_))
+        ));
+    }
+
+    // REQ-2c (`thermite2-program.md` AC-4): `forge tv --seed <u64>` sets the
+    // off-corpus generator seed (the rotating-seed scheduled-CI lever); the default
+    // (no flag) is `None` (→ the pinned `TV_DEFAULT_SEED`); a missing / non-numeric
+    // value is a Usage error, never a silent default (REQ-8 flag discipline).
+    #[test]
+    fn parses_tv_seed_flag() {
+        assert_eq!(
+            parse_args(&argv(&["tv", "a.th", "--generated", "10", "--seed", "42"])).ok(),
+            Some(Command::Tv {
+                file: PathBuf::from("a.th"),
+                json: false,
+                generated: Some(10),
+                seed: Some(42),
+            })
+        );
+        // Default when the flag is absent: `None` (the pinned deterministic seed).
+        assert_eq!(
+            parse_args(&argv(&["tv", "a.th"])).ok(),
+            Some(Command::Tv {
+                file: PathBuf::from("a.th"),
+                json: false,
+                generated: None,
+                seed: None,
+            })
+        );
+        // Missing value and non-numeric are Usage errors.
+        assert!(matches!(
+            parse_args(&argv(&["tv", "a.th", "--seed"])),
+            Err(ForgeError::Usage(_))
+        ));
+        assert!(matches!(
+            parse_args(&argv(&["tv", "a.th", "--seed", "nope"])),
             Err(ForgeError::Usage(_))
         ));
     }

@@ -1,0 +1,82 @@
+name: generated-tv
+
+# The rotating-seed off-corpus translation-validation job (thermite2-program.md
+# REQ-2c / AC-4). `forge tv --generated` discharges the per-clause production-vs-
+# reference equivalence obligation over a deterministically GENERATED clause space
+# — the off-corpus escape hatch that catches lowering divergences the fixed
+# conformance corpus never exercises. The main `ci` gate runs this space at the
+# pinned `TV_DEFAULT_SEED` (reproducible); this scheduled job runs it with a
+# ROTATING seed (`github.run_number`), so each run walks a different slice of the
+# clause space and a seed-dependent divergence eventually surfaces as a red build.
+# A DIVERGENT clause exits non-zero (forge's verification-failure exit) and fails
+# the job — exactly the signal we want a scheduled lowering-fidelity watchdog to
+# raise. (Unverifiable/Skipped never fail the exit — R-HONEST-3.)
+
+on:
+  schedule:
+    # Daily at 07:13 UTC (off the hour to dodge the cron stampede). Each run's
+    # github.run_number is monotonic, so the seed rotates every day.
+    - cron: '13 7 * * *'
+  # Manual trigger for on-demand runs (e.g. validating this workflow itself).
+  workflow_dispatch:
+    inputs:
+      seed:
+        description: 'Override the rotating seed (default: github.run_number)'
+        required: false
+        type: string
+      count:
+        description: 'Number of generated clauses (default: 200)'
+        required: false
+        type: string
+
+jobs:
+  generated-tv:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install toolchain (pinned to rust-toolchain.toml channel)
+        uses: dtolnay/rust-toolchain@1.95.0
+
+      - name: Rust build cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: generated-tv
+
+      - name: Cache Verus
+        uses: actions/cache@v4
+        with:
+          path: ~/verus-dist
+          key: verus-0.2026.05.24.ecee80a-x86-linux
+
+      - name: Install Verus (L3 verification gate — pinned to dev version)
+        run: |
+          set -euo pipefail
+          VERUS_VER="0.2026.05.24.ecee80a"
+          if ! find "$HOME/verus-dist" -type f -name verus 2>/dev/null | grep -q .; then
+            curl -fsSL -o /tmp/verus.zip \
+              "https://github.com/verus-lang/verus/releases/download/release/${VERUS_VER}/verus-${VERUS_VER}-x86-linux.zip"
+            mkdir -p "$HOME/verus-dist"
+            unzip -q /tmp/verus.zip -d "$HOME/verus-dist"
+          fi
+          VERUS_BIN_PATH="$(find "$HOME/verus-dist" -type f -name verus | head -1)"
+          test -n "$VERUS_BIN_PATH"
+          echo "VERUS_BIN=$VERUS_BIN_PATH" >> "$GITHUB_ENV"
+          echo "$(dirname "$VERUS_BIN_PATH")" >> "$GITHUB_PATH"
+          "$VERUS_BIN_PATH" --version
+
+      - name: Build forge
+        run: cargo build -p forge --release
+
+      - name: Rotating-seed generated translation-validation
+        # Seed rotates with the run number (or the manual override); the corpus
+        # phase rides a representative conformance file. A DIVERGENT clause fails
+        # the exit and the job — the watchdog signal.
+        run: |
+          set -euo pipefail
+          SEED="${{ github.event.inputs.seed || github.run_number }}"
+          COUNT="${{ github.event.inputs.count || '200' }}"
+          echo "::notice::generated TV — seed=$SEED count=$COUNT"
+          ./target/release/forge tv conformance/binary_search.th \
+            --generated "$COUNT" --seed "$SEED"

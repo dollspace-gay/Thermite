@@ -2,11 +2,12 @@
   "uuid": "0d60b067-6a4a-4af8-a012-999a420a086c",
   "display_id": 318,
   "title": "G1 README headline flip — five-rung ladder + upward forge escalation (R-GATE-1)",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "rApq",
   "created_at": "2026-06-18T18:54:44.371610Z",
-  "updated_at": "2026-06-18T18:54:46.914305Z",
+  "updated_at": "2026-06-18T19:16:19.117678Z",
+  "closed_at": "2026-06-18T19:16:19.117678Z",
   "labels": [
     "docs"
   ]

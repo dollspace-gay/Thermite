@@ -103,25 +103,25 @@ source of sequencing truth in the `.design/` tree.
   contains the plan's acceptance text (SPIKE-1: "zero sorries", the
   ">40 lemmas" failure signal, the conventions note deliverable; SPIKE-2:
   "hit rate measured and reported, whatever it is"). (REQ-1)
-- [ ] AC-2: `.github/workflows/ci.yml` contains a job that runs `lake build`
+- [x] AC-2: `.github/workflows/ci.yml` contains a job that runs `lake build`
   (or `lake env lean`) against `lean/lakefile.toml`, and the lean-smt
   dependency is pinned by SHA; the job is green on main before any M1 issue
   closes. (REQ-2a)
-- [ ] AC-3: `lower_inv_operand` in `thermite-lower/src/lower.rs` emits
+- [x] AC-3: `lower_inv_operand` in `thermite-lower/src/lower.rs` emits
   parenthesized casts (#148); the known-divergence ledger entry is removed
   and a regression test pins the fix. (REQ-2b)
-- [ ] AC-4: A scheduled (cron-triggered) CI workflow runs the `--generated`
+- [x] AC-4: A scheduled (cron-triggered) CI workflow runs the `--generated`
   corpus with a rotating seed and fails on any divergence. (REQ-2c)
 - [ ] AC-5: README contains the regime-split paragraph qualifying the editor
   claim. (REQ-2d)
 - [ ] AC-6: Nine stage-1 issues exist, each referencing gate G1, with
   dependency order stated; items 1–2 are closed before any of 3–7 starts
   review. (REQ-3)
-- [ ] AC-7: A hermetic test suite exercises all seven verdicts and asserts
+- [x] AC-7: A hermetic test suite exercises all seven verdicts and asserts
   the never-converts-silently property (no test path turns any non-`Proved`
   verdict into `Proved` or into another verdict without a hard failure).
   (REQ-4)
-- [ ] AC-8: G1 is encoded as a checklist in the stage-1 milestone: the
+- [x] AC-8: G1 is encoded as a checklist in the stage-1 milestone: the
   merge-class L3 certificate exists in `conformance/` with covenant
   evidence, axiom gate, re-elaboration mutation score, and burn receipt
   fields populated; the v1 corpus (`conformance/*.th` + golden
@@ -135,16 +135,16 @@ source of sequencing truth in the `.design/` tree.
 - [ ] AC-11: This doc's Q-register table matches the program plan §5
   defaults; any merged change contradicting a default is preceded by a
   register-updating comment on GH issue #2. (REQ-6)
-- [ ] AC-12: From M1, `forge` emits the routing-reason and verdict telemetry
+- [x] AC-12: From M1, `forge` emits the routing-reason and verdict telemetry
   fields the §6 dashboard needs (cage-vs-forge share by reason, verdict
   counts, TV phase split), and the audit prints them. (REQ-7)
-- [ ] AC-13: `thermite2-semantics.md` exists and module-header comments in
+- [x] AC-13: `thermite2-semantics.md` exists and module-header comments in
   `lean/Thermite/` and `thermite-lower/` point at it rather than restating
   conventions; `goal.md` contains the five R-rule candidates; the issue #2
   body carries a changelog table. (REQ-8)
 - [ ] AC-14: Every program document merged into `.design/` after this one
   states baseline `c46da3ac` or later and links this umbrella. (REQ-9)
-- [ ] AC-15: `.design/` contains a stage-1 design doc before the first
+- [x] AC-15: `.design/` contains a stage-1 design doc before the first
   stage-1 implementation issue is worked, and likewise for stages 2 and 3.
   (REQ-10)
 

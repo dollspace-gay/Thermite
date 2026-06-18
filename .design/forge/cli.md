@@ -3,8 +3,8 @@
 <!--
 tier: 3-component
 status: shipped
-audited-sha: 5ae0816c042debb01c70eb9b89c775837f0c0f24 (re-pinned 2026-06-17 for umbrella REQ-7 / AC-12, the §6 metrics dashboard: the only change to this doc's governed file (cli.rs) is the additive `--metrics` flag in the `forge audit` parse + the `run_audit` body that prints the read-only §6 dashboard companion — gates nothing, #274; every other subcommand + flag parse is unchanged. prior: stage-1 REQ-10/AC-14 G1 gate `--engine forge` value)
-audited-content-sha256: 4e133a092811889aaeca5577bf409310533f7e3950ea7f69d721967fb06927a9
+audited-sha: 5ae0816c042debb01c70eb9b89c775837f0c0f24 (re-pinned 2026-06-18 for umbrella REQ-2c / AC-4, the rotating-seed scheduled-CI watchdog: the only change to this doc's governed file (cli.rs) is the additive `--seed <u64>` flag on `forge tv` — parsed into `Command::Tv.seed`, threaded to `run_tv`→`run_generated` for the off-corpus space only (the corpus phase keeps the pinned seed); a missing/non-numeric value is a Usage error (REQ-8 flag discipline, test `parses_tv_seed_flag`). Every other subcommand + flag parse is unchanged. prior: §6 metrics dashboard `--metrics` value)
+audited-content-sha256: ff919b92b7f812e57241b6dc360741ef5a4814ab525d1c30d627aa47895df534
 governs: forge/src/cli.rs
 thesis-refs:
   - thermite-design.md §5
@@ -198,7 +198,11 @@ The verbs fall into four families, each with its own exit-code convention
    surfaced but never fail the exit (R-HONEST-3 — and verus-absent is loud,
    not a silent pass). Their `--json` documents are hand-built in
    `fn tv_report_json` / `exec_tv_report_json` / `body_tv_report_json in
-   cli.rs`.
+   cli.rs`. `forge tv --seed <u64>` overrides the off-corpus generator seed
+   (`--generated` space) — the lever the rotating-seed scheduled-CI watchdog
+   uses (`thermite2-program.md` REQ-2c, `.github/workflows/generated-tv.yml`);
+   absent, it rides the pinned deterministic `TV_DEFAULT_SEED`, and the corpus
+   phase always does, so the fixed corpus gate stays reproducible.
 3. **View/build verbs** — `review` (`run_review`: artifact emission +
    optional `--reviewer` pipe, writing `<file>.review.json` via
    `fn review_record_path`; forge never fabricates a verdict), `build`

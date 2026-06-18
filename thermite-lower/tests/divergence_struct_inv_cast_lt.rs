@@ -1,31 +1,26 @@
-//! Pinned divergence (#148): the #146 cast-`<` paren fix is incomplete on the
-//! struct type-invariant lowering path.
+//! Regression: the cast-`<` paren discipline on the struct type-invariant
+//! lowering path (blocker #148, CLOSED — this test pins the fix).
 //!
-//! Commit 167b9f4 fixed `lower_binary_operand` (the fn-contract / loop-`inv`
+//! Commit 167b9f4 first fixed `lower_binary_operand` (the fn-contract / loop-`inv`
 //! path, used by `forge tv` + `forge check`'s `requires`/`ensures`/loop
 //! `invariant`): a `Cast` left-operand of a `<`-leading op (`<`/`<=`/`<<`) is
 //! parenthesized so `x as u32 < 33` does not mis-parse as a generic-argument
 //! list (`u32<33, …>` → "expected `,`"). See `divergence_cast_paren.rs` for the
 //! #122/#146 family.
 //!
-//! But the struct type-invariant path (`lower_inv_expr` → `lower_inv_operand`,
-//! the REQ-8 `well_formed()` predicate, `.design/lower/...` struct invariants)
-//! has its own operand-parenthesizer (`lower_inv_operand`) that was not given the
-//! cast-`<` fix. So a struct invariant carrying a cast left of `<`
-//! (`} inv (x as u32) < cap`) emits the bare `x as u32 < cap` and `forge check`
-//! reports L0 with `error: expected ,` — the same #146 mis-parse, on a path the
-//! fix missed. The whole cast-`<` class must be fixed (R-DEFER-8: a convention
-//! starts somewhere; the fix is incomplete until every cast-`<` site is covered).
+//! The struct type-invariant path (`lower_inv_expr` → `lower_inv_operand`, the
+//! REQ-8 `well_formed()` predicate, `.design/lower/...` struct invariants) has its
+//! own operand-parenthesizer, which #148 extended with the SAME cast-`<` guard
+//! (`lower_inv_operand` in `thermite-lower/src/lower.rs`: a `Cast` left operand of
+//! an `is_lt_leading` parent is parenthesized — R-DEFER-8, the convention is now
+//! uniform across every emission site). So `} inv (x as u32) < cap` lowers to the
+//! parse-correct `(self.x as u32) < self.cap`, not the bare `self.x as u32 <
+//! self.cap` that Verus/Rust would read as `u32<…>`.
 //!
 //! Authority: blocker #146 / #148 (the cast-`<` paren discipline — the dual of
-//! #122). Expected: the lowering parenthesizes the cast (`(x as u32) < cap`), the
-//! same form `lower_binary_operand` now emits and `thermite_tv::ref_encode`
-//! always emits. R-CHAR-3: the paren'd form is the design's parse-correct form,
-//! not copied from the lowerer's output (the lowerer currently emits the
-//! unparenthesized form).
-//!
-//! `#[ignore]`d (blocker #148 tracks the fix; un-ignore when `lower_inv_operand`
-//! gets the cast-`<` paren — R-DEFER-3).
+//! #122). R-CHAR-3: the paren'd form below is the design's parse-correct form,
+//! asserted directly, not copied from the lowerer's output. This test runs in CI
+//! (no `#[ignore]`) and fails if the struct-inv parenthesizer ever regresses.
 
 /// A struct type-invariant with a cast left of `<` must lower with the cast
 /// parenthesized (`(x as u32) < cap`), never the mis-parsing bare form

@@ -4,7 +4,7 @@ verus! {
 pub struct TMapU64U64 { pub data: Vec<(u64, u64)> }
 impl TMapU64U64 {
     pub open spec fn spec_dom(&self) -> Set<int> {
-        Set::new(|kk: int| exists|j: int|
+        Set::new_assuming_finite(|kk: int| exists|j: int|
             0 <= j < self.data.len() && #[trigger] self.data@[j].0 as int == kk)
     }
     pub open spec fn well_formed(&self) -> bool {

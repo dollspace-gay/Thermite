@@ -4805,11 +4805,11 @@ fn emit_one_map_wrapper(key: &Type, val: &Type) -> Result<String, LowerError> {
     out.push('\n');
     writeln!(out, "pub struct {name} {{ pub data: Vec<({kty}, {vty})> }}").ok();
     writeln!(out, "impl {name} {{").ok();
-    // The key-set abstraction `spec_dom` (the spec membership view; REQ-4). A named
-    // spec fn over a `Set` comprehension with an explicit trigger (the §4.2 cage:
-    // never an anonymous nested quantifier admitted raw).
+    // The key-set abstraction `spec_dom` (the spec membership view; REQ-4). The
+    // wrapper's backing vector is finite, so current Verus' finite-set API uses
+    // `new_assuming_finite` for this bounded comprehension.
     out.push_str("    pub open spec fn spec_dom(&self) -> Set<int> {\n");
-    out.push_str("        Set::new(|kk: int| exists|j: int|\n");
+    out.push_str("        Set::new_assuming_finite(|kk: int| exists|j: int|\n");
     out.push_str(
         "            0 <= j < self.data.len() && #[trigger] self.data@[j].0 as int == kk)\n",
     );

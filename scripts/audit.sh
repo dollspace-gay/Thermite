@@ -358,11 +358,15 @@ if [ ! -f "$CORR_DOC" ]; then
   SKIPPED_GUARANTEES+=("[4] correspondence drift — NOT checked")
 else
   # The pinned (artifact -> file -> SHA) rows from the doc's "Audited commits" table.
+  # Every row whose artifact is a concrete file path goes here (the loop below reads
+  # its pinned SHA from the doc and diffs against the file's current last-touch); the
+  # `lean/Thermite/**` spine GLOB is not a real path, so it has its own block after.
   declare -a PIN_FILE=(
     "thermite-tv/src/ref_encode.rs"
     "thermite-tv/src/exec_encode.rs"
     "thermite-tv/src/exec_stmt_encode.rs"
     "thermite-spec/src/combinators.rs"
+    "forge/src/lean_export.rs"
   )
   # the doc wraps both the path and the SHA in backticks; a literal backtick in a
   # grep pattern inside $(...) would be mis-read as legacy command substitution, so

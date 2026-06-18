@@ -6484,7 +6484,10 @@
       "priority": "high",
       "created_by": "Yffe",
       "created_at": "2026-06-18T22:04:47.699667222Z",
-      "updated_at": "2026-06-18T22:04:47.699667222Z"
+      "updated_at": "2026-06-18T22:04:52.102081559Z",
+      "labels": [
+        "bug"
+      ]
     },
     "ac47df99-718d-41a9-8c18-766815cbed21": {
       "uuid": "ac47df99-718d-41a9-8c18-766815cbed21",
@@ -9522,11 +9525,16 @@
       "agent_id": "Yffe",
       "agent_seq": 1,
       "timestamp": "2026-06-18T22:04:47.699667222Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 2,
+      "timestamp": "2026-06-18T22:04:52.102081559Z"
     }
   ],
   "watermark": {
-    "timestamp": "2026-06-18T22:04:47.699667222Z",
+    "timestamp": "2026-06-18T22:04:52.102081559Z",
     "agent_id": "Yffe",
-    "agent_seq": 1
+    "agent_seq": 2
   }
 }

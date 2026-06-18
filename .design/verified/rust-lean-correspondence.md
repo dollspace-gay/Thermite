@@ -70,7 +70,7 @@ composes that with the Lean (T1) theorems. CORR is the bridge that lets the theo
 | Rust exec-body encoder | `thermite-tv/src/exec_stmt_encode.rs` | `543b506e` (#283 re-pin — CODE-IDENTICAL, see Amendment 2026-06-18; was `21b84c5f` #163, earlier `b9dc22fd` #165 — see Amendment 2026-06-10) |
 | Frozen combinator registry | `thermite-spec/src/combinators.rs` | `543b506e` (#283 re-pin — CODE-IDENTICAL, see Amendment 2026-06-18; was `c0b1d8a3` #4) |
 | Rust→Lean obligation exporter | `forge/src/lean_export.rs` | `76be6272` (#283 re-pin — additive-only forge-tier surface, see Amendment 2026-06-18; was `3373215e` #253 — Table 4 + Table 4B, the exec-body bridge added; earlier `d4871ded` #240. `scripts/audit.sh` check [4] drift-checks this exporter file's last-touch against this SHA, alongside the `lean/Thermite/**` spine SHA the exporter targets) |
-| Lean spine | `lean/Thermite/**` | `033d9fb2` (#283 re-pin — comment turnover + additive new files, see Amendment 2026-06-18; was `1438dc5f` #255, earlier `65504c18` Amendment 2026-06-11, `7c85da25` Amendment 2026-06-10) |
+| Lean spine | `lean/Thermite/**` | `b6038651` (#283 re-pin — comment turnover + additive new files + the #314 module-header touch, all CODE-IDENTICAL, see Amendment 2026-06-18; was `033d9fb2` earlier in #283, `1438dc5f` #255, `65504c18` Amendment 2026-06-11, `7c85da25` Amendment 2026-06-10) |
 
 Lean toolchain: `leanprover/lean4:v4.29.0` (downgraded from v4.30.0 by the #184 Z3-demotion probe — `lean/lakefile.toml` now `[[require]]`s Lean-SMT + Mathlib; this is OUTSIDE the `lean/Thermite/**` audited-spine scope and the entire audited spine still builds green and `sorry`-free on v4.29.0 — see `.design/verified/z3-demotion.md` and Amendment 2026-06-10).
 Verified `sorry`-free by inspection: every `sorry` token in the tree is inside a comment, never in
@@ -157,7 +157,11 @@ corresponding table section and requires re-audit (see "Drift" below).**
 >   emphasis-caps lowercasing pass (`STRUCTURAL`→`structural`, `EXACT`→`verbatim`, etc.). Every `enum`/
 >   `struct`/`static REGISTRY`/match-arm/`format!` audited in Tables 1/2/3/1E/1H is byte-for-byte
 >   unchanged. The arm tables stand verbatim.
-> - **The Lean spine `1438dc5f` → `033d9fb2` is comment-only on every modified file, plus 7 NEW files.**
+> - **The Lean spine `1438dc5f` → `b6038651` is comment-only on every modified file, plus 7 NEW files.**
+>   (`033d9fb2` was the post-#53-merge last-touch; merging current `origin/main` 904ee01c into this branch
+>   added the #314 commit `b6038651` "point module headers at thermite2-semantics.md", a module-header
+>   doc-comment touch to `Ast.lean`/`Denote.lean`/`Relax.lean` — VERIFIED CODE-IDENTICAL by the same
+>   comment-stripped diff, so the spine pin advances `033d9fb2 → b6038651` with no arm-table impact.)
 >   `git diff --name-status` shows 7 ADDED — `Exec/WhileBody.lean` + `PinWhile{Composition,DecShape,
 >   Vacuity}.lean` (the #264 while-body work), `Relax.lean` (the relax-route lemmas `r_relax_sound`/
 >   `rencode_sound`, now probed axiom-clean by audit check [1]), and `Spike/{SubstKit,PinBrokenLift}.lean`
@@ -185,7 +189,7 @@ corresponding table section and requires re-audit (see "Drift" below).**
 > path reproduces the Table-4 framing byte-for-byte; `export_lemma`/`export_arbitrary_result_harness`/
 > `export_while_body`/`Item::Forge` are new exporter surface). Zero audited arm changed meaning.
 > Re-pinned the encoders/combinators `→ 543b506e`, the exporter `3373215e → 76be6272`, the spine
-> `1438dc5f → 033d9fb2`. The full deep audit (`make audit`) re-runs green after the re-pin.**
+> `1438dc5f → b6038651`. The full deep audit (`make audit`) re-runs green after the re-pin.**
 
 
 ## Requirements
@@ -676,7 +680,7 @@ on any tier that targets Verus text).
   stays under its own authority. As of the #163 loop-TV arc, the Rust loop arm `loop_ref_obligations`
   (`thermite-tv/src/exec_stmt_encode.rs` @ `543b506e`) produces the three per-run reference pieces, and
   the Lean side proves the partial-correctness `while_rule` + its TV meta-theorem `tv_meta_loop`
-  (`lean/Thermite/Exec/Loop.lean` @ `033d9fb2`; the file is CODE-IDENTICAL across the 2026-06-11 and 2026-06-18 re-pins). The correspondence between the three Rust obligations
+  (`lean/Thermite/Exec/Loop.lean` @ `b6038651`; the file is CODE-IDENTICAL across the 2026-06-11 and 2026-06-18 re-pins). The correspondence between the three Rust obligations
   and the Lean `while_rule`/`tv_meta_loop` premises was fidelity-audited in the #163 ACToR arc (the
   loop-TV critic verified the Lean premises match the Rust obligations) and lives under the authority of
   **`.design/verified/loop-tv.md`** — named here as a cross-reference, deliberately NOT silently
@@ -792,7 +796,7 @@ two sides are not arm-for-arm identical.
 ## Verification
 
 This doc is the audit artifact; its "verification" is the groundedness of every row (AC-2) and the
-existence of the cited Lean theorems. The Lean spine builds clean and `sorry`-free at `033d9fb2` (the
+existence of the cited Lean theorems. The Lean spine builds clean and `sorry`-free at `b6038651` (the
 audited spine files CODE-IDENTICAL since `1438dc5f`; see Amendment 2026-06-18):
 
 - `lake build` (Lean `v4.29.0` since the #184 probe; the audited spine builds core-only-equivalent) — the spine compiles; `#print axioms lowering_faithful`
@@ -814,5 +818,5 @@ audited spine files CODE-IDENTICAL since `1438dc5f`; see Amendment 2026-06-18):
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-1 (the arm-by-arm correspondence map) | SHIPPED | This doc IS the deliverable. Every arm of `ref_contract_pred`/`exec_ref_value`/`body_ref_state` and the 8 combinator `verus_l3` forms is EITHER a row in Tables 1–3 OR an explicitly-listed out-of-Lean-scope residual (the `ref_encode.rs::encode` dispatch is enumerated exhaustively in Table 1H — its `Expr::Field`/`Expr::TupleProj` arms are residual D6, no Lean counterpart). Each row quotes the actual Rust arm (`thermite-tv/src/{ref_encode,exec_encode,exec_stmt_encode}.rs` + `thermite-spec/src/combinators.rs` @ `543b506e`) beside the actual Lean arm (`lean/Thermite/{RefEncode,Denote,Exec}.lean` + `Exec/Stmt.lean` @ `033d9fb2`; re-pinned 2026-06-18, the quoted arms CODE-IDENTICAL across the comment-only + additive range — see Amendment 2026-06-18), the Verus-meaning bridge, and the pinning Lean theorem + negative lemma. Bridge assumptions A1–A3 enumerated; residuals + discrepancies D1–D6 recorded honestly. Closes the `thermite-semantics.md` REQ-6 correspondence residual at the audit-by-inspection tier. |
+| REQ-1 (the arm-by-arm correspondence map) | SHIPPED | This doc IS the deliverable. Every arm of `ref_contract_pred`/`exec_ref_value`/`body_ref_state` and the 8 combinator `verus_l3` forms is EITHER a row in Tables 1–3 OR an explicitly-listed out-of-Lean-scope residual (the `ref_encode.rs::encode` dispatch is enumerated exhaustively in Table 1H — its `Expr::Field`/`Expr::TupleProj` arms are residual D6, no Lean counterpart). Each row quotes the actual Rust arm (`thermite-tv/src/{ref_encode,exec_encode,exec_stmt_encode}.rs` + `thermite-spec/src/combinators.rs` @ `543b506e`) beside the actual Lean arm (`lean/Thermite/{RefEncode,Denote,Exec}.lean` + `Exec/Stmt.lean` @ `b6038651`; re-pinned 2026-06-18, the quoted arms CODE-IDENTICAL across the comment-only + additive range — see Amendment 2026-06-18), the Verus-meaning bridge, and the pinning Lean theorem + negative lemma. Bridge assumptions A1–A3 enumerated; residuals + discrepancies D1–D6 recorded honestly. Closes the `thermite-semantics.md` REQ-6 correspondence residual at the audit-by-inspection tier. |
 | REQ-2 (the extraction bridge — Lean→Rust extraction or a Rust-side proof) | NOT-STARTED | open prereq blocker #185 (this doc's blocker tracks both tiers; the inspection tier is REQ-1 SHIPPED, the extraction tier stays open). Gap: there is no Lean→Rust extraction tooling for this encoder shape — the encoders are hand-written Rust producing Verus STRINGS, not Lean-extracted code, so the inspection (this doc) is the accepted interim per `thermite-semantics.md` REQ-6 / the reduced-trusted-base table item #3. The named stronger closure (extraction or a Rust-side proof making the Rust encoder equal the Lean model by construction) is future work; until then A2/A3 stay inspection-trusted and a CI drift-guard (recommended above) is the cheap interim hardening. |

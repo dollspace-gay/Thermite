@@ -1,5 +1,5 @@
 {
-  "next_display_id": 283,
+  "next_display_id": 284,
   "next_comment_id": 573,
   "display_id_map": {
     "028ff5aa-7f3e-4816-8acc-39aaabc20655": 272,
@@ -192,6 +192,7 @@
     "a6d24a4c-33b4-4797-87cf-1fb632f81ba9": 248,
     "aa2350ef-8584-4aa6-a2e7-7cd346143490": 133,
     "aa73d01c-0443-44fc-8064-3436eb0dfc34": 7,
+    "ab3a8077-91d6-40cc-aa50-645058ff6d58": 283,
     "ac47df99-718d-41a9-8c18-766815cbed21": 250,
     "ae5a88fb-eaa0-4035-b202-df9fbea43f37": 74,
     "aeb0185e-bb52-460b-a9c1-c3fce4cd5826": 193,
@@ -6475,6 +6476,16 @@
         }
       }
     },
+    "ab3a8077-91d6-40cc-aa50-645058ff6d58": {
+      "uuid": "ab3a8077-91d6-40cc-aa50-645058ff6d58",
+      "display_id": 283,
+      "title": "audit check [4] drift: re-pin Rust<->Lean correspondence SHAs after #53 merge",
+      "status": "open",
+      "priority": "high",
+      "created_by": "Yffe",
+      "created_at": "2026-06-18T22:04:47.699667222Z",
+      "updated_at": "2026-06-18T22:04:47.699667222Z"
+    },
     "ac47df99-718d-41a9-8c18-766815cbed21": {
       "uuid": "ac47df99-718d-41a9-8c18-766815cbed21",
       "display_id": 250,
@@ -9506,11 +9517,16 @@
       "agent_id": "Yffe",
       "agent_seq": 650,
       "timestamp": "2026-06-12T20:12:08.089047828Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 1,
+      "timestamp": "2026-06-18T22:04:47.699667222Z"
     }
   ],
   "watermark": {
-    "timestamp": "2026-06-12T20:12:08.089047828Z",
+    "timestamp": "2026-06-18T22:04:47.699667222Z",
     "agent_id": "Yffe",
-    "agent_seq": 650
+    "agent_seq": 1
   }
 }

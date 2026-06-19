@@ -1,0 +1,8 @@
+{
+  "uuid": "e5bc7d55-147c-4315-bae8-da07c5259f96",
+  "issue_uuid": "15306582-a4e5-4525-abfa-003aca1cc3ea",
+  "author": "tAA5",
+  "content": "Result: REQ-0 implemented. Lexer: reserved Forall/Exists keywords. AST: Quant{Forall,Exists} enum + Expr::Quantifier{quant,var,sort,domain,body}. Parser: parse_quantifier recognized as a primary; 'in' contextual; no_dot flag (mirrors no_struct_literal) resolves the domain/body '.' vs postfix-field '.' ambiguity, re-enabled in parens/brackets. 19 downstream exhaustive Expr matches given arms (traversals recurse domain+body; lower/l1 emitters + lean_export refuse honestly via Unsupported/OutOfFragment — emission is REQ-5/REQ-8; tv/relax/covenant descriptors; skill gets a surface-fragment entry). combinators.rs untouched. New tests/quantifiers_parse.rs: 15 green (parse, round-trip text, greedy-body, paren-bound, nesting, indexed domain, paren-dot re-enable, registry-unchanged pins for forall_in/sorted/forall_below, 4 malformed-binder error pins). Gauntlet: clippy -D clean, fmt clean, doc-drift 0-drift, req-status/req-registry clean. The 9 forge engine::tests + divergence_249 failures were ENVIRONMENTAL (Lean spine unbuilt / verus not on PATH) — all pass after lake build Thermite.Stabilize+Exec.Stmt+Exec.WhileBody and VERUS_BIN on PATH.",
+  "created_at": "2026-06-19T21:19:33.889723Z",
+  "kind": "result"
+}

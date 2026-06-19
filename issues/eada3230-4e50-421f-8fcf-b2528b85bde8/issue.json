@@ -8,11 +8,12 @@
   "parent_uuid": "f0e27352-cca1-41d6-9914-7f6dcf4b6c88",
   "created_by": "rApq",
   "created_at": "2026-06-19T19:40:17.970360Z",
-  "updated_at": "2026-06-19T19:42:04.047433Z",
+  "updated_at": "2026-06-19T19:42:06.277174Z",
   "labels": [
     "forge"
   ],
   "blockers": [
-    "1edb5880-1ae7-4ff0-9d9e-04b6b6513dcf"
+    "1edb5880-1ae7-4ff0-9d9e-04b6b6513dcf",
+    "0f440ce0-8262-481a-b6e9-62fa62e45933"
   ]
 }

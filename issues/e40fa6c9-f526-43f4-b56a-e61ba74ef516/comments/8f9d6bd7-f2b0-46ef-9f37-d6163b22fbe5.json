@@ -1,0 +1,10 @@
+{
+  "uuid": "8f9d6bd7-f2b0-46ef-9f37-d6163b22fbe5",
+  "issue_uuid": "e40fa6c9-f526-43f4-b56a-e61ba74ef516",
+  "author": "rApq",
+  "content": "Stale-open: shipped via PR #58 (merged 2026-06-17). forge audit --metrics §6 dashboard on main; REQ-7/AC-12 satisfied (routing reason derived from per-clause engine field). Closing post-G1.",
+  "created_at": "2026-06-19T18:36:33.104687Z",
+  "kind": "note",
+  "signed_by": "SHA256:tVRGNaCPy5N1tRtokzkbgsOCzGZujGDWQlGHFruaL9c",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgylLCWwpnQm2E2UQO23AN1e/yB6k0yzmPM7qiYPujTNYAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAWv7dM7hGlBoSR18dluwkGW3pFHwVmCFgjbshlyEbnXurg9WQAMV+QyJkuUpRuEyP5csBJT2/vtYlt9FzZsbICw=="
+}

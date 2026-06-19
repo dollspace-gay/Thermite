@@ -1,0 +1,12 @@
+{
+  "uuid": "73cdc76d-a74c-427f-a80c-89a3a6fac37b",
+  "display_id": 332,
+  "title": "Stage-2 REQ-10: the pin battery, complete (eight stage-2 pins)",
+  "description": "All eight stage-2 pins from metatheory §9 exist + green: PinStratCapture, PinStratFlip, PinStratSelfLoop, PinNNFPolarity, PinRestratDropSide, PinRelaxRefute (landed with stage-1 relax if not already), PinFiniteEscape, PinCombDeriv — in the repo Pin*.lean style; each cited from the theorem it guards in the correspondence/battery doc. AC-10. Trailing completeness check. Doc: .design/stage2-stratified-cage.md REQ-10. Gate: G2.",
+  "status": "open",
+  "priority": "medium",
+  "parent_uuid": "f0e27352-cca1-41d6-9914-7f6dcf4b6c88",
+  "created_by": "rApq",
+  "created_at": "2026-06-19T19:41:31.672058Z",
+  "updated_at": "2026-06-19T19:41:31.672058Z"
+}

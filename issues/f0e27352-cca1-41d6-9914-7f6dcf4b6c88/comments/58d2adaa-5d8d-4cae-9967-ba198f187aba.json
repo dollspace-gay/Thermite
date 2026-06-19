@@ -1,0 +1,10 @@
+{
+  "uuid": "58d2adaa-5d8d-4cae-9967-ba198f187aba",
+  "issue_uuid": "f0e27352-cca1-41d6-9914-7f6dcf4b6c88",
+  "author": "rApq",
+  "content": "Design re-pass PR: https://github.com/dollspace-gay/Thermite/pull/63 (branch feature/stage2-design-repass-320 @ cab309c4). Once merged, the Stage-2 tree (#322 REQ-0 ready first) is cleared to kickoff.",
+  "created_at": "2026-06-19T20:22:49.031149Z",
+  "kind": "note",
+  "signed_by": "SHA256:tVRGNaCPy5N1tRtokzkbgsOCzGZujGDWQlGHFruaL9c",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgylLCWwpnQm2E2UQO23AN1e/yB6k0yzmPM7qiYPujTNYAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAH+3RRRlQZ+bwm2mwUNDeqg3VFLG9ztUAmpW+SrblAoGUknI4VxxocpDS4bXER4sxgo7Qvtgn/JArN32hAX1XBQ=="
+}

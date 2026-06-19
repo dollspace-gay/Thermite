@@ -1,23 +1,24 @@
-# Feature: Stage 2 — the stratified cage + the Strat spine extension (SPIKE INPUTS RESOLVED · gated on G1)
+# Feature: Stage 2 — the stratified cage + the Strat spine extension (RE-PASS COMPLETE · kickoff-ready)
 
-> **STATUS: spike inputs resolved (M0 re-pass, 2026-06-13) — still gated
-> on Gate G1; do not kickoff yet.**
-> The two M0-spike-keyed `<!-- OPEN -->` blocks (Q-KIT, Q-TV2) are now
-> resolved against the merged SPIKE-1/SPIKE-2 results and folded into the
-> REQs below; the spike rows of the input table record the outcomes. Two
-> *non-spike* input dependencies remain open — Gate G1 (stage 1 complete)
-> and stage-1 routing telemetry — so validation still flags this
-> not-kickoff-ready. When stage 1 lands, re-ground the architecture and
-> the (R2) index grammar against G1 + the routing dashboard (`/design
-> --continue stage2-stratified-cage`), re-validate, and only then
-> `crosslink kickoff`.
+> **STATUS: re-pass complete (G1 re-pass, 2026-06-19) — all four input
+> dependencies resolved; kickoff-ready.**
+> The two M0-spike-keyed `<!-- OPEN -->` blocks (Q-KIT, Q-TV2) resolved at
+> the M0 re-pass (2026-06-13). The two remaining *non-spike* dependencies —
+> Gate G1 (stage 1 complete) and stage-1 routing telemetry — both landed on
+> main and are resolved by this re-pass (see the input table). The
+> architecture and the (R2) index grammar are re-grounded against G1
+> reality, the baseline is advanced to `904ee01c`, and the confirmed
+> raw-quantifier surface-grammar gap is sized as the new foundation
+> increment **REQ-0**. The Stage-2 issue tree may now open targeting gate
+> G2 (REQ-0 → REQ-1 → … in the order below); proceed to `crosslink
+> kickoff`.
 
 | input dependency | what it decides here | status |
 |---|---|---|
 | SPIKE-1 conventions note (`.design/strat/substkit-conventions.md`, REQ-4) | Q-KIT: binder representation + the SubstKit lemma statements `Strat/Syntax.lean` inherits verbatim | **✓ RESOLVED** — plain de Bruijn confirmed; 11-lemma toy (≤ 40); no Mathlib/`Fintype` (hand-rolled finiteness witness); no fallback F-A. |
 | SPIKE-2 hit-rate number (`.design/m0-spikes.md` REQ-7) | Q-TV2: whether the semantic TV phase ships as a thin fallback or gets its own design issue first | **✓ RESOLVED** — 40/40 = 100% (corpus+generated, n = 40, ≥ 90% bar) → semantic TV ships as thin fallback (F-C step 1). |
-| Gate G1 (stage 1 complete, `.design/stage1-forge-tier.md` REQ-10) | The seven-verdict enum, schema-v2 certificates, exporter front door, and covenant machinery this stage consumes | **OPEN** — stage 1 not yet built. |
-| Stage-1 routing telemetry (program plan §6 dashboard) | Whether (R2)'s narrow index grammar needs S₂.1 widening pressure noted before build | **OPEN** — re-ground at G1. |
+| Gate G1 (stage 1 complete, `.design/stage1-forge-tier.md` REQ-10) | The seven-verdict enum, schema-v2 certificates, exporter front door, and covenant machinery this stage consumes | **✓ RESOLVED** (G1 reached 2026-06-18, main@`904ee01c`) — all consumed machinery shipped: the seven-verdict `CertVerdict` (`RealWitness`/`CovenantRefuted`/`KernelBudget`, `forge/src/verdict.rs`+`check.rs`), schema-v2 per-clause `engine`/`trust` attribution (`forge/src/manifest.rs:253`), the exporter axiom-gate front door (`certify_lean_axioms`, `forge/src/lean_export.rs`), and the covenant engine (`forge/src/covenant_engine.rs`,`covenant_eval.rs`). |
+| Stage-1 routing telemetry (program plan §6 dashboard) | Whether (R2)'s narrow index grammar needs S₂.1 widening pressure noted before build | **✓ RESOLVED** — `forge audit --metrics` ships (`forge/src/metrics.rs`, `RoutingReason::{InCage,Relaxable,Lemma}` derived from the per-clause `engine`). No S₂.1 widening pressure is observable pre-build (the cage's stratified routing does not exist until this stage), so the (R2) **narrow index grammar holds for S₂.0**; any widening stays post-G2/telemetry-driven (Out of Scope, below). |
 
 ## Summary
 
@@ -33,14 +34,31 @@ doc excludes it. Gate G2 is the certificate `trust:` flip from
 `ref_encode(strat, UNPROVEN)` to the proven form, gated on audit checks
 [1′][4′][8][9] green in one run. The spec of record for the mathematics
 is the metatheory sketch in GH issue #2; this doc caches its adaptation
-to the tree and will be re-grounded at re-pass time. Umbrella:
-`.design/thermite2-program.md` (REQ-10).
+to the tree, re-grounded against G1 reality at the re-pass (2026-06-19).
+Umbrella: `.design/thermite2-program.md` (REQ-10).
 
 ## Requirements
 
 Increment order follows metatheory §10.2; each lands green in the repo's
-issue discipline.
+issue discipline. REQ-0 is sequenced **first** as a hard prerequisite —
+the re-pass (2026-06-19) confirmed stage 1 added forge constructs only,
+not raw quantifiers, so the surface grammar must exist before either the
+Lean syntax (REQ-1) or the Rust classifier (REQ-4) can be built or tested.
 
+- REQ-0 (**surface quantifiers — the foundation increment**): raw
+  `forall`/`exists` binder productions in `thermite-syntax`. Grounded by
+  the re-pass: `thermite-syntax` parses no raw quantifiers today —
+  `forall_in`/`forall_below`/`forall_from`/`sorted` are registry-free
+  combinator identifiers lowered as ordinary `Expr::Call` nodes
+  (`thermite-syntax/src/parser.rs:1428` "no special parse; the plain
+  path"). REQ-0 adds the binder grammar at `parse_expr_bp` level
+  (`forall (x : S) in <dom>. φ` / `exists …` over a named sorted carrier,
+  the index-grammar surface (R2) admits), the matching `Expr` AST node(s),
+  and parser pins for the binder/scope corner cases. The combinator
+  registry (`thermite-spec/src/combinators.rs`) is untouched as surface
+  syntax. This increment **blocks REQ-1 and REQ-4** — it is the one work
+  item the program plan's stage split left implicit, now made explicit per
+  the re-pass.
 - REQ-1 (**syntax + denote + the load-bearing pin**): `Strat/Syntax.lean`
   (Frm/Tm/Atom, de Bruijn, lift/subst — inheriting the SPIKE-1
   conventions verbatim), `Strat/Carrier.lean` (a `CarrierAssign` bundling
@@ -73,8 +91,10 @@ issue discipline.
   (`idxGrammar` per (R2), `finCarrier` per (R1), `admitted`, the
   declarative `Frag`, and T3-C `classifier_correct`). Fragment versioned
   as S₂.0 — widenings are new grammar + citations + pins, never silent.
-- REQ-4 (**classifier, ops half — M2b, ships before the encoder**): the
-  Rust classifier in `thermite-spec` (mirroring NNF + graph + grammar
+- REQ-4 (**classifier, ops half — M2b, ships before the encoder**):
+  **consumes REQ-0's surface quantifier grammar** (the classifier cannot
+  see formulas until raw `forall`/`exists` parse). The Rust classifier in
+  `thermite-spec` (mirroring NNF + graph + grammar
   checks beside the existing validator), rejection reasons from the
   frozen vocabulary (`infinite-carrier`, `seq-quantifier`, the named
   cycle), and the **differential battery**: the SplitMix64 generator
@@ -144,6 +164,10 @@ issue discipline.
 
 ## Acceptance Criteria
 
+- [ ] AC-0: `thermite-syntax` parses raw `forall (x : S) in <dom>. φ` and
+  `exists …` into the new binder AST node(s); a round-trip/parse test and
+  the binder/scope parser pins are green; the combinator registry is
+  unchanged. REQ-1 and REQ-4 build against this surface. (REQ-0)
 - [ ] AC-1: `lake build` green with `Strat/Syntax,Carrier,Denote` and
   `PinFiniteEscape`; zero `sorry` under `lean/Thermite/Strat/`; no
   Mathlib import on the Denote path. (REQ-1)
@@ -183,8 +207,8 @@ issue discipline.
 
 The mathematics, module boundaries, and loc estimates are the metatheory
 sketch's (§10.1: ~5.5k loc Lean across 15 `Strat/` modules; ~4–6k loc
-Rust). What this doc adds is tree placement, recorded now and
-re-verified at re-pass time:
+Rust). What this doc adds is tree placement, verified against the tree at
+the G1 re-pass (2026-06-19, main@`904ee01c`):
 
 - **Lean**: `lean/Thermite/Strat/` as a sibling namespace to the v1
   spine; `QFree` atoms defer to the existing `Denote.lean` machinery, so
@@ -193,14 +217,14 @@ re-verified at re-pass time:
   (`whileBodyDenote`/`while_compose`, #264/#265) is untouched by Strat —
   loop obligations stay v1-shaped in stage 2.
 - **Rust classifier**: lives in `thermite-spec` beside the existing
-  registry-free validator; the parser (`thermite-syntax`) already parses
-  raw `forall`/`exists` only if stage-1 REQ-3 added them — *correction
-  recorded for re-pass*: raw quantifier parsing is NOT in stage 1's
-  surface-syntax list (it added forge constructs only), so stage 2's
-  Rust work includes the quantifier surface grammar
-  (`parse_expr_bp`-level binder productions) before the classifier can
-  see formulas. This is the one work item the program plan's stage
-  split leaves implicit; the re-pass should size it.
+  registry-free validator. *Re-pass finding (2026-06-19, confirmed in
+  code):* raw quantifier parsing is NOT in stage 1's surface syntax — it
+  added forge constructs only, and `forall_in`/`sorted` remain
+  registry-free combinator identifiers (`thermite-syntax/src/parser.rs:1428`).
+  The quantifier surface grammar (`parse_expr_bp`-level binder
+  productions) is therefore sized as the foundation increment **REQ-0**,
+  sequenced first and blocking both REQ-1 and REQ-4 — the one work item
+  the program plan's stage split left implicit, now explicit.
 - **TV**: the SPIKE-2 normalizer (`thermite-tv/src/normalize.rs`)
   graduates from experimental to load-bearing, gaining the
   `nnf_sound`/`prenex_sound` lemma citations; the stratified reference
@@ -223,10 +247,11 @@ preserves the verdict/covenant/ladder architecture.
 
 ## Open Questions
 
-*(Both M0-spike-keyed questions are now resolved — see the dated
-`<!-- RESOLVED -->` records below, folded into the REQs above. No spike-keyed
-question remains; the doc's residual gating is the two non-spike inputs
-in the table — G1 and stage-1 routing telemetry.)*
+*(All input dependencies are resolved as of the G1 re-pass (2026-06-19):
+the two M0-spike-keyed questions resolved at the M0 re-pass — see the dated
+`<!-- RESOLVED -->` records below, folded into the REQs above — and the two
+non-spike inputs (G1, stage-1 routing telemetry) resolved in the input
+table at the top. No open question remains; the doc is kickoff-ready.)*
 
 <!-- RESOLVED: Q-KIT (M0 re-pass 2026-06-13) -->
 ### Q-KIT: Binder representation — plain de Bruijn, confirmed.
@@ -280,8 +305,8 @@ normalizer.
 
 ---
 
-*Stage-2 spec (spike inputs resolved, M0 re-pass 2026-06-13; still gated
-on G1 — re-ground the architecture and the (R2) grammar at stage-1
-completion before kickoff) · child of `.design/thermite2-program.md`
+*Stage-2 spec (re-pass complete, G1 re-pass 2026-06-19 — all four input
+dependencies resolved, architecture and (R2) grammar re-grounded against
+G1 reality, kickoff-ready) · child of `.design/thermite2-program.md`
 (REQ-10) · spec of record: the stage-2 metatheory sketch, GH issue #2 ·
-gate: G2 · baseline `dollspace-gay/Thermite @ c46da3ac` (re-ground at G1).*
+gate: G2 · baseline `dollspace-gay/Thermite @ 904ee01c`.*

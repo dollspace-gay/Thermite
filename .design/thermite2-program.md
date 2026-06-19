@@ -88,9 +88,10 @@ source of sequencing truth in the `.design/` tree.
   stage 2 (the S₂ spine + classifier), stage 3 (`@bv` + reconstruction);
   this umbrella links them as they land. Child docs:
   `.design/m0-spikes.md` (M0, final), `.design/stage1-forge-tier.md`
-  (stage 1, final), `.design/stage2-stratified-cage.md` (PROVISIONAL —
-  reasoning cache pending SPIKE-1/SPIKE-2/G1 inputs; re-run the design
-  pass before kickoff), `.design/stage3-bv-reconstruction.md`
+  (stage 1, final), `.design/stage2-stratified-cage.md` (FINAL — G1
+  re-pass 2026-06-19 resolved all four input dependencies, re-baselined to
+  `904ee01c`, sized the REQ-0 surface-quantifier foundation increment;
+  kickoff-ready), `.design/stage3-bv-reconstruction.md`
   (PROVISIONAL — pending G2-era telemetry and reconstruction
   assessment; re-run the design pass before kickoff). A provisional doc
   does NOT satisfy this REQ's "own design pass" condition — the re-pass
@@ -112,8 +113,10 @@ source of sequencing truth in the `.design/` tree.
   and a regression test pins the fix. (REQ-2b)
 - [x] AC-4: A scheduled (cron-triggered) CI workflow runs the `--generated`
   corpus with a rotating seed and fails on any divergence. (REQ-2c)
-- [ ] AC-5: README contains the regime-split paragraph qualifying the editor
-  claim. (REQ-2d)
+- [x] AC-5: README contains the regime-split paragraph qualifying the editor
+  claim. (REQ-2d) — the editor claim is scoped to "editing logic, line
+  navigation, and cursor math are proven correct for every input (L3)" with
+  the syscall boundary as L1, and the ladder table names each regime.
 - [ ] AC-6: Nine stage-1 issues exist, each referencing gate G1, with
   dependency order stated; items 1–2 are closed before any of 3–7 starts
   review. (REQ-3)
@@ -142,8 +145,11 @@ source of sequencing truth in the `.design/` tree.
   `lean/Thermite/` and `thermite-lower/` point at it rather than restating
   conventions; `goal.md` contains the five R-rule candidates; the issue #2
   body carries a changelog table. (REQ-8)
-- [ ] AC-14: Every program document merged into `.design/` after this one
-  states baseline `c46da3ac` or later and links this umbrella. (REQ-9)
+- [x] AC-14: Every program document merged into `.design/` after this one
+  states baseline `c46da3ac` or later and links this umbrella. (REQ-9) —
+  `thermite2-semantics.md`, `.design/stage1-forge-tier.md`, and
+  `.design/m0-spikes.md` each cite baseline `c46da3ac` (or later) and link
+  `.design/thermite2-program.md`.
 - [x] AC-15: `.design/` contains a stage-1 design doc before the first
   stage-1 implementation issue is worked, and likewise for stages 2 and 3.
   (REQ-10)

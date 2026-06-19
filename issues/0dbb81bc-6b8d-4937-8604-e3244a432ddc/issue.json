@@ -2,11 +2,12 @@
   "uuid": "0dbb81bc-6b8d-4937-8604-e3244a432ddc",
   "display_id": 320,
   "title": "Stage-2 /design re-pass: resolve G1 + routing-telemetry OPEN blocks, re-baseline to 904ee01c, add REQ-0 surface quantifiers, flip stage2 doc to kickoff-ready",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "rApq",
   "created_at": "2026-06-19T19:36:26.640349Z",
-  "updated_at": "2026-06-19T19:36:28.952151Z",
+  "updated_at": "2026-06-19T19:42:55.040786Z",
+  "closed_at": "2026-06-19T19:42:55.040786Z",
   "labels": [
     "forge"
   ]

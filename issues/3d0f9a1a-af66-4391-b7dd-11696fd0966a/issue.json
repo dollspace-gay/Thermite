@@ -1,0 +1,12 @@
+{
+  "uuid": "3d0f9a1a-af66-4391-b7dd-11696fd0966a",
+  "display_id": 328,
+  "title": "Stage-2 REQ-6: combinator demotion (Strat/CombDeriv + PinCombDeriv)",
+  "description": "Strat/CombDeriv.lean — the eight comb_deriv_* lemmas proving each v1 combinator denotation equals its raw-quantifier expansion (closing the v1 embedding) + PinCombDeriv refuting an off-by-one expansion. SPIKE-2 census: two of eight have NO layer-1 raw-quantifier spelling — count_where (recursive nat fold) and permutation_of (multiset equality) — so their comb_deriv_* demote to those definitional forms and their stratified TV routes through the semantic phase (REQ-8), not the syntactic normalizer. Combinator registry untouched as surface syntax. AC-6 (all eight proven; v1 conformance corpus certifies unchanged). Doc: .design/stage2-stratified-cage.md REQ-6. Gate: G2.",
+  "status": "open",
+  "priority": "medium",
+  "parent_uuid": "f0e27352-cca1-41d6-9914-7f6dcf4b6c88",
+  "created_by": "rApq",
+  "created_at": "2026-06-19T19:40:26.350936Z",
+  "updated_at": "2026-06-19T19:40:26.350936Z"
+}

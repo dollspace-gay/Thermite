@@ -1,0 +1,10 @@
+{
+  "uuid": "d5114fda-1cd8-4b61-a0da-516d34bd688c",
+  "issue_uuid": "e9dbcfce-8ec9-4181-b32a-055a6fd2436d",
+  "author": "rApq",
+  "content": "GOAL was to fix the CommentAdded hub-cache parse error (cosmetic: truncates reverse-index reads of agent event logs; writes always fine). \n\nATTEMPT: backed up .crosslink + the 0.8.0 binary, then cargo install --path /Users/maxine/code/forecast/crosslink/crosslink (-> v0.9.0-beta.1, source HEAD 7854152b). New binary DID fix reads.\n\nBLOCKER: v0.9 treats the live v2 hub (crosslink/hub) as legacy READ-ONLY and refuses mutations until 'migrate hub-v3'. But the remote already hosts a STALE v3 hub frozen at the 2026-06-12 migration snapshot (283 issues, max #283) — missing ALL work since: stage-1 increments after 6/12, G1, post-G1, and the entire Stage-2 tree (#320-#334). The v2 crosslink/hub (tip 1ab286e2) is the TRUE complete source of truth (334 issues). Adopting v3 = silent loss of ~50 issues of visibility.\n\nRESOLUTION: rolled the binary back to 0.8.0 (restored from backup), restored the v2 .crosslink cache from backup. Verified all Stage-2 work intact (#320-#333, DAG, umbrella). Back to the known-good state that ran all week. The cosmetic read bug returns (documented).\n\nDEFERRED (separate deliberate task): a PROPER v3 migration must migrate from the CURRENT v2 tip, not the June-12 snapshot. Requires clearing/superseding the stale remote v3 refs (crosslink/agents/*, crosslink/checkpoint, crosslink/meta) then a fresh 'migrate hub-v3' from 1ab286e2, ideally coordinated so no v2-binary writes race it. NOT a quick fix; do when ready to also finalize (--finalize --yes-delete-v2) in one coordinated pass. Backup retained at scratchpad/crosslink-backup-20260619.",
+  "created_at": "2026-06-19T20:32:07.366691Z",
+  "kind": "note",
+  "signed_by": "SHA256:tVRGNaCPy5N1tRtokzkbgsOCzGZujGDWQlGHFruaL9c",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgylLCWwpnQm2E2UQO23AN1e/yB6k0yzmPM7qiYPujTNYAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABACww+DPKfUgnyfcCxQIT0rzpkXPzm4WHFQ50YhK/SyBR2DNdw77ROBJLA4H1hhbkK24t1ZTGi+VTNE4qCA7qHBg=="
+}

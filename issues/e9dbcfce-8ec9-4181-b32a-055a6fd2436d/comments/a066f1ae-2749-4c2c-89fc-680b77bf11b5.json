@@ -1,0 +1,10 @@
+{
+  "uuid": "a066f1ae-2749-4c2c-89fc-680b77bf11b5",
+  "issue_uuid": "e9dbcfce-8ec9-4181-b32a-055a6fd2436d",
+  "author": "rApq",
+  "content": "Filed upstream crosslink bug: forecast-bio/crosslink#653 — 'migrate hub-v3 silently adopts a stale remote v3 hub, hiding issues a v2-only binary kept writing (no divergence warning)'. Covers the adopt-side divergence guard, a real re-migrate path, honest staleness output, and --finalize hardening.",
+  "created_at": "2026-06-19T20:44:51.717261Z",
+  "kind": "note",
+  "signed_by": "SHA256:tVRGNaCPy5N1tRtokzkbgsOCzGZujGDWQlGHFruaL9c",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgylLCWwpnQm2E2UQO23AN1e/yB6k0yzmPM7qiYPujTNYAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAq1Ak2dgu8Py1TfOkYnI10wf9SNcGHX6j1WM71RafQqvCbyr44NBiU20qHhcmf9qsJTdvmuCGXjIE+nAd1ChOBA=="
+}

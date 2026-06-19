@@ -6,5 +6,8 @@
   "priority": "medium",
   "created_by": "rApq",
   "created_at": "2026-06-19T20:31:59.830934Z",
-  "updated_at": "2026-06-19T20:31:59.830934Z"
+  "updated_at": "2026-06-19T20:32:01.949227Z",
+  "labels": [
+    "tooling"
+  ]
 }

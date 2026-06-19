@@ -2,11 +2,12 @@
   "uuid": "81b0b879-2b11-4443-aed8-c2b95741f494",
   "display_id": 333,
   "title": "Fix the /design skill: frontmatter 'ls' of nonexistent arch files exits nonzero and fails skill load in this repo",
-  "status": "open",
+  "status": "closed",
   "priority": "medium",
   "created_by": "rApq",
   "created_at": "2026-06-19T20:21:14.393723Z",
-  "updated_at": "2026-06-19T20:21:16.509048Z",
+  "updated_at": "2026-06-19T20:22:18.490819Z",
+  "closed_at": "2026-06-19T20:22:18.490819Z",
   "labels": [
     "tooling"
   ]

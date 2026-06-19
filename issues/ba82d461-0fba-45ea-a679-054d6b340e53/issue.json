@@ -2,11 +2,12 @@
   "uuid": "ba82d461-0fba-45ea-a679-054d6b340e53",
   "display_id": 304,
   "title": "Stage 1 forge tier 2c — frozen tactic/simp battery (REQ-5)",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "tE8X",
   "created_at": "2026-06-16T18:46:01.129515Z",
-  "updated_at": "2026-06-16T18:46:03.866913Z",
+  "updated_at": "2026-06-19T18:36:26.327949Z",
+  "closed_at": "2026-06-19T18:36:26.327949Z",
   "labels": [
     "forge"
   ]

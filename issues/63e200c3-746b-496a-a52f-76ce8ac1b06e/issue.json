@@ -1,0 +1,12 @@
+{
+  "uuid": "63e200c3-746b-496a-a52f-76ce8ac1b06e",
+  "display_id": 331,
+  "title": "Stage-2 REQ-9: audit integration — the G2 gate ([1'][4'][8][9])",
+  "description": "make audit grows: [1'] axiom probe extended to strat_ref_sound, strat_lowering_faithful, classifier_correct, restrat_conservative (allowed axioms unchanged); [4'] doc-drift rows for the three new mirrored Rust files via the shipped tripwire gate; [8] the differential battery (fixed seed + rotating-seed scheduled job); [9] stratified TV sweep reporting the syntactic/semantic/timeout split. G2 = all four green in a single run, gating the trust flip; the trust flip is mechanically blocked while any of the four is red. AC-9. Doc: .design/stage2-stratified-cage.md REQ-9. Gate: G2 (this IS the gate).",
+  "status": "open",
+  "priority": "high",
+  "parent_uuid": "f0e27352-cca1-41d6-9914-7f6dcf4b6c88",
+  "created_by": "rApq",
+  "created_at": "2026-06-19T19:41:23.495451Z",
+  "updated_at": "2026-06-19T19:41:23.495451Z"
+}

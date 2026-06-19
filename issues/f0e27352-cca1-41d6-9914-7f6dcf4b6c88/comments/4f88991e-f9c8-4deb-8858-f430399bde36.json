@@ -1,0 +1,10 @@
+{
+  "uuid": "4f88991e-f9c8-4deb-8858-f430399bde36",
+  "issue_uuid": "f0e27352-cca1-41d6-9914-7f6dcf4b6c88",
+  "author": "rApq",
+  "content": "Infra note: local crosslink upgrade to v0.9.0-beta.1 was attempted + ROLLED BACK to 0.8.0. Reason: v0.9 treats the live v2 hub as read-only and would adopt a STALE v3 hub (frozen at the 2026-06-12 migration snapshot, missing ~#284-#334 incl. all of G1 + this Stage-2 tree). v2 crosslink/hub (tip 1ab286e2) is the true complete source of truth. Rolled back binary + restored v2 cache from backup; all Stage-2 issues verified intact. Proper v3 migration (from CURRENT v2, not the June-12 snapshot) is a separate deliberate task.",
+  "created_at": "2026-06-19T20:31:28.942995Z",
+  "kind": "note",
+  "signed_by": "SHA256:tVRGNaCPy5N1tRtokzkbgsOCzGZujGDWQlGHFruaL9c",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgylLCWwpnQm2E2UQO23AN1e/yB6k0yzmPM7qiYPujTNYAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA0wGuUUpMTaAHpwDeeTzEvGfmsgXxe7U9+g5a4j4Q39+ySL6BVhQIqkBPS5W7/GD2FwjNfcza9HQgbqCZA2wRBQ=="
+}

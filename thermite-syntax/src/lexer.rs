@@ -112,6 +112,19 @@ pub enum TokKind {
     Struct,
     Enum,
     Is,
+    /// The universal-quantifier binder head `forall` (`.design/stage2-stratified-cage.md`
+    /// REQ-0): the raw binder production `forall (x : S) in <dom>. φ` the (R2) index
+    /// grammar admits. A RESERVED keyword (the closed set, REQ-2) so the binder is
+    /// recognized unambiguously at expression head. The registry-free combinator
+    /// identifiers `forall_in`/`forall_below`/`forall_from` are DISTINCT words (they
+    /// still lex to [`TokKind::Ident`]); only the bare `forall` is reserved, leaving
+    /// the combinator registry untouched.
+    Forall,
+    /// The existential-quantifier binder head `exists` (`.design/stage2-stratified-cage.md`
+    /// REQ-0): the dual of [`TokKind::Forall`], same binder grammar. Reserved for the
+    /// same reason; the `exists_in` combinator ident is a distinct word and stays
+    /// [`TokKind::Ident`].
+    Exists,
 
     // Literals / names.
     Ident(String),
@@ -220,6 +233,8 @@ fn keyword_kind(word: &str) -> Option<TokKind> {
         "struct" => TokKind::Struct,
         "enum" => TokKind::Enum,
         "is" => TokKind::Is,
+        "forall" => TokKind::Forall,
+        "exists" => TokKind::Exists,
         "true" => TokKind::Bool(true),
         "false" => TokKind::Bool(false),
         _ => return None,

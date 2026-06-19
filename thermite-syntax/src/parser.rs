@@ -355,6 +355,17 @@ struct Parser<'a> {
     /// context). Saved/restored around each head so nested call/index/paren
     /// args re-enable struct literals.
     no_struct_literal: bool,
+    /// When true, a postfix `.` is treated as a TERMINATOR rather than a
+    /// field/method access — set only while parsing a quantifier's `<dom>`
+    /// (`.design/stage2-stratified-cage.md` REQ-0). The binder grammar
+    /// `forall (x : S) in <dom>. φ` separates the domain from the body with a `.`,
+    /// which collides with the postfix field-access `.` (`xs.len()`). Suppressing
+    /// the postfix `.` at the top level of the domain makes the first `.` after the
+    /// domain unambiguously the body separator. A nested call/index/paren-group
+    /// re-enables the postfix `.` via `with_struct_literal` (so `(a.b)` / `xs[a.b]`
+    /// inside a domain still read their dots), mirroring the `no_struct_literal`
+    /// re-enabling convention exactly.
+    no_dot: bool,
     /// Current loop-nesting depth (parser.md REQ-10, #93). Incremented in
     /// `parse_loop_inner` around the loop body parse, decremented after. A
     /// `break;`/`continue;` parsed at depth 0 (outside any `loop`/`while` body)
@@ -389,6 +400,7 @@ impl<'a> Parser<'a> {
             errors: lex_errors,
             recursion_depth: 0,
             no_struct_literal: false,
+            no_dot: false,
             loop_depth: 0,
             fn_body_depth: 0,
             pending_holes: Vec::new(),
@@ -419,9 +431,29 @@ impl<'a> Parser<'a> {
         inner: impl FnOnce(&mut Self) -> PResult<T>,
     ) -> PResult<T> {
         let saved = self.no_struct_literal;
+        // The same bracketed sub-contexts that re-enable struct literals also
+        // re-enable the postfix `.` inside a quantifier `<dom>` (REQ-0): a
+        // parenthesised `(a.b)` or an index `xs[a.b]` reads its dots normally even
+        // when the enclosing domain suppresses the top-level body-separator `.`.
+        let saved_dot = self.no_dot;
         self.no_struct_literal = false;
+        self.no_dot = false;
         let result = inner(self);
         self.no_struct_literal = saved;
+        self.no_dot = saved_dot;
+        result
+    }
+
+    /// Run `inner` with the postfix `.` suppressed as a terminator — used only for
+    /// a quantifier's `<dom>`, so the `.` separating the domain from the body is
+    /// unambiguous (`.design/stage2-stratified-cage.md` REQ-0). Bracketed
+    /// sub-expressions inside the domain re-enable the postfix `.` via
+    /// `with_struct_literal`, so `(a.b)` / `xs[a.b]` domains still parse.
+    fn with_no_dot<T>(&mut self, inner: impl FnOnce(&mut Self) -> PResult<T>) -> PResult<T> {
+        let saved = self.no_dot;
+        self.no_dot = true;
+        let result = inner(self);
+        self.no_dot = saved;
         result
     }
 
@@ -2443,6 +2475,10 @@ impl<'a> Parser<'a> {
         let mut expr = self.parse_primary()?;
         loop {
             match self.peek() {
+                // A postfix `.` is suppressed (treated as a terminator) while
+                // parsing a quantifier's `<dom>` so the domain/body separator `.`
+                // is unambiguous (REQ-0). Brackets re-enable it (`with_struct_literal`).
+                TokKind::Dot if self.no_dot => break,
                 TokKind::Dot => {
                     self.bump();
                     // A numeric projection `e.0`/`e.1`/…
@@ -2548,6 +2584,57 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Parse a raw quantified formula `forall (x : S) in <dom>. φ` / `exists (x :
+    /// S) in <dom>. φ` (`.design/stage2-stratified-cage.md` REQ-0): the surface
+    /// binder production over a named sorted carrier the (R2) index grammar admits.
+    /// The keyword (`forall`/`exists`) is at the cursor.
+    ///
+    /// Grammar: `QUANT '(' IDENT ':' IDENT ')' 'in' <dom> '.' <expr>`. `in` is a
+    /// CONTEXTUAL identifier (mirroring the C10 `for … in` loop precedent,
+    /// `parse_for`), NOT a reserved keyword. The `<dom>` is parsed with the postfix
+    /// `.` suppressed (`with_no_dot`) so the `.` introducing the body is
+    /// unambiguous; the body is a full greedy `parse_expr` (lowest precedence). The
+    /// parser builds the node unconditionally — well-sortedness of `S`/`<dom>` and
+    /// fragment admission are the stratified classifier's job (REQ-4), not the
+    /// parser's (registry-free, parse-only, like the `forall_in` combinator path).
+    fn parse_quantifier(&mut self) -> PResult<Expr> {
+        let quant = match self.peek() {
+            TokKind::Forall => Quant::Forall,
+            TokKind::Exists => Quant::Exists,
+            // `parse_primary` only dispatches here on `Forall`/`Exists`.
+            _ => return Err(self.unexpected("`forall` or `exists`")),
+        };
+        self.bump(); // consume the quantifier keyword
+        self.consume(&TokKind::LParen, "`(` to open the quantifier binder")?;
+        let var = self.take_ident("a bound variable name")?;
+        self.consume(
+            &TokKind::Colon,
+            "`:` between the bound variable and its sort",
+        )?;
+        let sort = self.take_ident("a sort name")?;
+        self.consume(&TokKind::RParen, "`)` to close the quantifier binder")?;
+        // `in` — a contextual identifier (the for-loop precedent), not a keyword.
+        let in_kw = self.take_ident("`in` after the quantifier binder")?;
+        if in_kw != "in" {
+            return Err(self.unexpected("`in` after the quantifier binder"));
+        }
+        // The domain ranges to the body-separating `.`; suppress the postfix `.`
+        // so that separator is unambiguous (bracketed sub-exprs re-enable it).
+        let domain = self.with_no_dot(Self::parse_expr)?;
+        self.consume(
+            &TokKind::Dot,
+            "`.` separating the quantifier domain from its body",
+        )?;
+        let body = self.parse_expr()?;
+        Ok(Expr::Quantifier {
+            quant,
+            var,
+            sort,
+            domain: Box::new(domain),
+            body: Box::new(body),
+        })
+    }
+
     fn parse_primary(&mut self) -> PResult<Expr> {
         match self.peek().clone() {
             TokKind::Int { value, raw } => {
@@ -2575,6 +2662,11 @@ impl<'a> Parser<'a> {
             TokKind::Pipe | TokKind::OrOr => self.parse_closure(),
             TokKind::Match => self.parse_match(),
             TokKind::If => self.parse_if_expr(),
+            // A raw quantified formula `forall (x : S) in <dom>. φ` / `exists …`
+            // (`.design/stage2-stratified-cage.md` REQ-0). Recognized as a primary
+            // (like `if`/`match`) so a quantifier may appear in any operand position;
+            // its body extends greedily to the right (lowest precedence).
+            TokKind::Forall | TokKind::Exists => self.parse_quantifier(),
             TokKind::LParen => {
                 self.bump();
                 // A parenthesised group re-enables struct literals (REQ-2):
@@ -3155,6 +3247,8 @@ fn token_text(kind: &TokKind) -> &'static str {
         TokKind::Struct => "struct",
         TokKind::Enum => "enum",
         TokKind::Is => "is",
+        TokKind::Forall => "forall",
+        TokKind::Exists => "exists",
         TokKind::HashBracket => "#[",
         TokKind::Hash => "#",
         TokKind::Arrow => "->",

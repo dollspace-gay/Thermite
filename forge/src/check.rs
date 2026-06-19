@@ -3515,6 +3515,12 @@ pub(crate) fn collect_expr_spec_fn_calls(
             }
         }
         Expr::TupleProj { receiver, .. } => collect_expr_spec_fn_calls(receiver, spec_decls, out),
+        // A raw quantified formula (`.design/stage2-stratified-cage.md` REQ-0): a
+        // spec-fn call can appear in the domain or the body.
+        Expr::Quantifier { domain, body, .. } => {
+            collect_expr_spec_fn_calls(domain, spec_decls, out);
+            collect_expr_spec_fn_calls(body, spec_decls, out);
+        }
         // A string literal is a leaf (`.design/basis/07-strings.md` REQ-1): no
         // sub-expression, so it calls no spec fn — the no-op leaf arm.
         Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) | Expr::StrLit(_) => {}
@@ -3838,6 +3844,12 @@ fn collect_expr_adt_refs(
             }
         }
         Expr::TupleProj { receiver, .. } => collect_expr_adt_refs(receiver, adt_decls, out),
+        // A raw quantified formula (`.design/stage2-stratified-cage.md` REQ-0): an
+        // ADT reference can appear in the domain or the body.
+        Expr::Quantifier { domain, body, .. } => {
+            collect_expr_adt_refs(domain, adt_decls, out);
+            collect_expr_adt_refs(body, adt_decls, out);
+        }
         // A string literal is a leaf (`.design/basis/07-strings.md` REQ-1): no
         // sub-expression, no path — it references no ADT (the no-op leaf arm).
         Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::StrLit(_) => {}

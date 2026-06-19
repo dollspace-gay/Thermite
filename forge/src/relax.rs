@@ -243,6 +243,9 @@ fn expr_kind(e: &Expr) -> &'static str {
         Expr::StrLit(_) => "string literal",
         Expr::Tuple(_) => "tuple",
         Expr::TupleProj { .. } => "tuple projection",
+        // A raw quantifier (`.design/stage2-stratified-cage.md` REQ-0): a kind label
+        // for the relax classifier; stratified relax routing is stage-2 (REQ-8).
+        Expr::Quantifier { .. } => "quantifier",
     }
 }
 

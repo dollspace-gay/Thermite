@@ -579,6 +579,12 @@ fn collect_combinators_in_expr(expr: &Expr, span: Span, acc: &mut Vec<(String, S
             }
         }
         Expr::TupleProj { receiver, .. } => collect_combinators_in_expr(receiver, span, acc),
+        // A raw quantified formula (`.design/stage2-stratified-cage.md` REQ-0): a
+        // registry-free combinator can appear in the domain or the body.
+        Expr::Quantifier { domain, body, .. } => {
+            collect_combinators_in_expr(domain, span, acc);
+            collect_combinators_in_expr(body, span, acc);
+        }
         // A string literal is a leaf (`.design/basis/07-strings.md` REQ-1): no
         // sub-expressions, so it references no combinator — the no-op leaf arm
         // alongside `IntLit`/`BoolLit`.
@@ -1008,6 +1014,24 @@ fn rename_params_in_expr(expr: &Expr, renames: &[(String, String)]) -> Expr {
             receiver: rec(receiver),
             index: *index,
         },
+        // A raw quantified formula (`.design/stage2-stratified-cage.md` REQ-0):
+        // rename params in the domain and body, preserving the binder head
+        // (`quant`/`var`/`sort`). Like the `Closure` arm above, this is a structural
+        // param rename, not a capture-avoiding substitution — v0.1 rename is the
+        // fn-param alpha pass, and the bound variable's own name is left intact.
+        Expr::Quantifier {
+            quant,
+            var,
+            sort,
+            domain,
+            body,
+        } => Expr::Quantifier {
+            quant: *quant,
+            var: var.clone(),
+            sort: sort.clone(),
+            domain: rec(domain),
+            body: rec(body),
+        },
     }
 }
 
@@ -1063,6 +1087,11 @@ fn expr_references_ident(expr: &Expr, ident: &str) -> bool {
         // ident can be referenced in any tuple element or projection receiver.
         Expr::Tuple(elems) => any(elems),
         Expr::TupleProj { receiver, .. } => expr_references_ident(receiver, ident),
+        // A raw quantified formula (`.design/stage2-stratified-cage.md` REQ-0): the
+        // ident can be referenced in the domain or the body.
+        Expr::Quantifier { domain, body, .. } => {
+            expr_references_ident(domain, ident) || expr_references_ident(body, ident)
+        }
     }
 }
 
@@ -1695,6 +1724,17 @@ pub(crate) fn lower_expr_exec(
             let r = lower_expr_exec(receiver, d, span, variants)?;
             Ok(format!("{r}.{index}"))
         }
+        // A raw quantifier `forall`/`exists` (`.design/stage2-stratified-cage.md`
+        // REQ-0) is a SPEC-only formula — it has no executable meaning, so it never
+        // belongs in an L1 exec-body position. (Even its spec lowering is deferred to
+        // REQ-8.) Refuse honestly with the established "outside the v0.1 mapping"
+        // error rather than emit anything. No corpus places a quantifier in exec
+        // position, so this path is unreachable for the existing goldens.
+        Expr::Quantifier { .. } => Err(LowerError::Unsupported {
+            what: "a raw quantifier (`forall`/`exists`) in executable position (spec-only)"
+                .to_string(),
+            span,
+        }),
     }
 }
 
@@ -2177,6 +2217,11 @@ fn expr_has_str_lit_l1(expr: &Expr) -> bool {
         // receiver — descend into both (the full-tree walk).
         Expr::Tuple(elems) => elems.iter().any(expr_has_str_lit_l1),
         Expr::TupleProj { receiver, .. } => expr_has_str_lit_l1(receiver),
+        // A raw quantified formula (`.design/stage2-stratified-cage.md` REQ-0): a
+        // string literal can hide in the domain or the body.
+        Expr::Quantifier { domain, body, .. } => {
+            expr_has_str_lit_l1(domain) || expr_has_str_lit_l1(body)
+        }
     }
 }
 
@@ -2905,5 +2950,10 @@ fn expr_has_to_string(expr: &Expr) -> bool {
         // `to_string` call could sit in any tuple element or projection receiver.
         Expr::Tuple(elems) => elems.iter().any(expr_has_to_string),
         Expr::TupleProj { receiver, .. } => expr_has_to_string(receiver),
+        // A raw quantified formula (`.design/stage2-stratified-cage.md` REQ-0): a
+        // `.to_string()` call can hide in the domain or the body.
+        Expr::Quantifier { domain, body, .. } => {
+            expr_has_to_string(domain) || expr_has_to_string(body)
+        }
     }
 }

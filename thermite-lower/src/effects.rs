@@ -656,6 +656,29 @@ fn check_expr<'a>(
         // a literal into an owned `String` carries `fx alloc`, but that is keyed at
         // the lowering/constructing site in `lower.rs`, not at this effect walk —
         // the bare literal node has no callee to subsume.)
+        // A raw quantified formula (`.design/stage2-stratified-cage.md` REQ-0): its
+        // effects are the union of the domain's and body's, so an effect-bearing
+        // call inside either is still subsumption-checked. The binder itself is pure.
+        Expr::Quantifier { domain, body, .. } => {
+            check_expr(
+                domain,
+                caller_fx,
+                caller_name,
+                caller_span,
+                resolve,
+                d,
+                errors,
+            );
+            check_expr(
+                body,
+                caller_fx,
+                caller_name,
+                caller_span,
+                resolve,
+                d,
+                errors,
+            );
+        }
         Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) | Expr::StrLit(_) => {}
     }
 }

@@ -759,6 +759,17 @@ pub enum UnaryOp {
     Not,
 }
 
+/// A quantifier binder head (`.design/stage2-stratified-cage.md` REQ-0): the `forall`
+/// or `exists` of a raw quantified formula. The two surface keywords [`crate::lexer::TokKind::Forall`]
+/// / [`crate::lexer::TokKind::Exists`] map to these; the stratified classifier (REQ-1/REQ-4)
+/// keys on the kind. Distinct from the registry-free `forall_in`/`exists_in` COMBINATOR
+/// calls, which remain ordinary [`Expr::Call`] nodes (the combinator registry is untouched).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Quant {
+    Forall,
+    Exists,
+}
+
 /// An index argument: `a[i]`, `a[..i]`, `a[i..]`, `a[i..j]` (ast.md REQ-6).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IndexArg {
@@ -894,6 +905,29 @@ pub enum Expr {
     TupleProj {
         receiver: Box<Expr>,
         index: usize,
+    },
+    /// A raw quantified formula `forall (x : S) in <dom>. φ` / `exists (x : S) in
+    /// <dom>. φ` (`.design/stage2-stratified-cage.md` REQ-0): the surface binder
+    /// production the (R2) index grammar admits, over a named sorted carrier. `quant`
+    /// is the binder kind; `var` is the bound variable `x`; `sort` names its carrier
+    /// sort `S`; `domain` is the `<dom>` expression it ranges over (parsed after the
+    /// contextual `in`, e.g. a slice/carrier); `body` is the quantified formula φ.
+    ///
+    /// This is the FOUNDATION increment blocking REQ-1 (the Lean `Strat/Syntax` denote
+    /// path) and REQ-4 (the Rust classifier): until raw `forall`/`exists` parse, the
+    /// classifier cannot see a quantified formula. It is deliberately DISTINCT from the
+    /// registry-free `forall_in`/`forall_below`/`forall_from`/`sorted` COMBINATOR calls
+    /// — those stay ordinary [`Expr::Call`] nodes and the combinator registry
+    /// (`thermite-spec/src/combinators.rs`) is untouched as surface syntax. Surface +
+    /// parse only here; the binder denotation/lowering land in the later Strat
+    /// increments (REQ-1/REQ-8). The `body` is greedy (lowest precedence): `forall …. a
+    /// && b` reads the whole `a && b` as the body; parenthesize to bound it.
+    Quantifier {
+        quant: Quant,
+        var: Ident,
+        sort: Ident,
+        domain: Box<Expr>,
+        body: Box<Expr>,
     },
 }
 

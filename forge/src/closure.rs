@@ -459,6 +459,12 @@ fn walk_expr(expr: &Expr, in_file: &BTreeSet<&str>, out: &mut Vec<String>) {
             }
         }
         Expr::TupleProj { receiver, .. } => walk_expr(receiver, in_file, out),
+        // A raw quantified formula (`.design/stage2-stratified-cage.md` REQ-0): a
+        // call out-edge can appear in the domain or the body.
+        Expr::Quantifier { domain, body, .. } => {
+            walk_expr(domain, in_file, out);
+            walk_expr(body, in_file, out);
+        }
         // Leaves: no nested call to find. A string literal
         // (`.design/basis/07-strings.md` REQ-1) is a leaf with no sub-expression and
         // no callee, so it contributes no out-edge.

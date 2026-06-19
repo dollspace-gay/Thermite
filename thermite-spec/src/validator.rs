@@ -1138,6 +1138,14 @@ impl Validator {
                 }
             }
             Expr::TupleProj { receiver, .. } => self.scan_expr_for_loops(receiver, span),
+            // A raw quantified formula (`.design/stage2-stratified-cage.md` REQ-0):
+            // descend into the domain and body for nested loops / ADT well-formedness,
+            // like any other compound expression. The stratified fragment/sort checks
+            // are the classifier's job (REQ-4), not this exec-body walk.
+            Expr::Quantifier { domain, body, .. } => {
+                self.scan_expr_for_loops(domain, span);
+                self.scan_expr_for_loops(body, span);
+            }
             // Leaves — no nested loop / ADT node possible. A string literal
             // (`.design/basis/07-strings.md` REQ-1) is a value-carrying leaf, like
             // an int/bool literal — no sub-expression to descend.
@@ -1356,6 +1364,20 @@ impl Validator {
                 }
             }
             Expr::TupleProj { receiver, .. } => self.walk_expr(receiver, span),
+            // A raw quantified formula `forall (x : S) in <dom>. φ`
+            // (`.design/stage2-stratified-cage.md` REQ-0): surface + parse exists
+            // now, but STRATIFIED ADMISSION (the sort-graph/fragment classifier) is
+            // REQ-4, a separate pass added beside this validator. This walker is the
+            // v1 cage; it neither certifies nor models the binder yet. To stay
+            // non-breaking for the foundation increment we recurse the domain and
+            // body — so any forbidden nested content still surfaces (REQ-5,
+            // depth-guarded) — and otherwise leave the binder structurally accepted
+            // for the REQ-4 classifier to admit or reject. No corpus uses raw
+            // quantifiers, so the existing cage behavior is unchanged.
+            Expr::Quantifier { domain, body, .. } => {
+                self.walk_expr(domain, span);
+                self.walk_expr(body, span);
+            }
         }
     }
 
@@ -1952,6 +1974,12 @@ fn expr_calls_name(expr: &Expr, name: &str) -> bool {
         // descends into both.
         Expr::Tuple(elems) => elems.iter().any(|e| expr_calls_name(e, name)),
         Expr::TupleProj { receiver, .. } => expr_calls_name(receiver, name),
+        // A raw quantified formula (`.design/stage2-stratified-cage.md` REQ-0): a
+        // (recursive) call can live in either the domain or the body, so the
+        // self-call detection (REQ-2) descends into both.
+        Expr::Quantifier { domain, body, .. } => {
+            expr_calls_name(domain, name) || expr_calls_name(body, name)
+        }
         Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) | Expr::StrLit(_) => false,
     }
 }

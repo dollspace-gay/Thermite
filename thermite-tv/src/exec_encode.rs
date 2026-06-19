@@ -392,6 +392,10 @@ fn node_kind(e: &Expr) -> String {
         Expr::StrLit(_) => "string literal".to_string(),
         Expr::Tuple(_) => "tuple".to_string(),
         Expr::TupleProj { .. } => "tuple projection".to_string(),
+        // A raw quantifier `forall`/`exists` (`.design/stage2-stratified-cage.md`
+        // REQ-0) is a spec-only formula with no exec encoding; this descriptor keeps
+        // the exec node-kind report exhaustive.
+        Expr::Quantifier { .. } => "quantifier (spec-only)".to_string(),
     }
 }
 

@@ -456,6 +456,15 @@ fn render_expr_arm(expr: &Expr) -> SkillFragment {
             description: "a tuple projection (the one tuple access; reads in exec and ens)",
             example: "ens result.0 == b && result.1 == a",
         },
+        // Stage-2 (`.design/stage2-stratified-cage.md` REQ-0): the raw quantifier
+        // binder over a named sorted carrier. Distinct from the `forall_in`/`sorted`
+        // COMBINATOR free calls (those are `Expr::Call`); the body extends greedily
+        // (parenthesize to bound it). `in` is contextual (not a reserved word).
+        Expr::Quantifier { .. } => SkillFragment {
+            fragment: "forall (x : S) in DOM. BODY | exists (x : S) in DOM. BODY",
+            description: "a raw quantifier over a named sorted carrier (the body is greedy)",
+            example: "forall (i : Idx) in haystack. haystack[i] != needle",
+        },
     }
 }
 

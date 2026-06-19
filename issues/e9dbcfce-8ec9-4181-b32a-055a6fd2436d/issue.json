@@ -2,11 +2,12 @@
   "uuid": "e9dbcfce-8ec9-4181-b32a-055a6fd2436d",
   "display_id": 334,
   "title": "crosslink v0.9.0-beta.1 upgrade ATTEMPTED + ROLLED BACK; proper v3 hub migration deferred",
-  "status": "open",
+  "status": "closed",
   "priority": "medium",
   "created_by": "rApq",
   "created_at": "2026-06-19T20:31:59.830934Z",
-  "updated_at": "2026-06-19T20:32:01.949227Z",
+  "updated_at": "2026-06-19T20:32:10.217388Z",
+  "closed_at": "2026-06-19T20:32:10.217388Z",
   "labels": [
     "tooling"
   ]

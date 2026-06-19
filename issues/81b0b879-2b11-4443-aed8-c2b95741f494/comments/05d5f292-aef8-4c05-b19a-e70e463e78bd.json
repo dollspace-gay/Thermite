@@ -1,0 +1,10 @@
+{
+  "uuid": "05d5f292-aef8-4c05-b19a-e70e463e78bd",
+  "issue_uuid": "81b0b879-2b11-4443-aed8-c2b95741f494",
+  "author": "rApq",
+  "content": "Fixed .claude/commands/design.md lines 11-12: appended '|| true' so the frontmatter ls commands exit 0 when arch files (CLAUDE.md/ARCHITECTURE.md/ADR.md) or .design/*.md are absent. Verified rc=0 for both, output preserved. File is git-ignored (local skill config) so no commit — fix is live locally.",
+  "created_at": "2026-06-19T20:22:16.377436Z",
+  "kind": "note",
+  "signed_by": "SHA256:tVRGNaCPy5N1tRtokzkbgsOCzGZujGDWQlGHFruaL9c",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgylLCWwpnQm2E2UQO23AN1e/yB6k0yzmPM7qiYPujTNYAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAs2T7Dn67SbNwN3+vS7a8Sh36M055c6RhGb3ENmI2Kc7QZny6oxcf2J+cx8nK5xWztMUddN2sTMEiB8Pl0pWeDA=="
+}

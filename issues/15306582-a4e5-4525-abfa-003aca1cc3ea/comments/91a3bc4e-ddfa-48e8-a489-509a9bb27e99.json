@@ -1,0 +1,8 @@
+{
+  "uuid": "91a3bc4e-ddfa-48e8-a489-509a9bb27e99",
+  "issue_uuid": "15306582-a4e5-4525-abfa-003aca1cc3ea",
+  "author": "tAA5",
+  "content": "Plan: REQ-0 surface quantifiers (parse-only foundation). (1) Lexer: add reserved keywords Forall/Exists (no bare forall/exists idents in corpus; forall_in/forall_below/forall_from/sorted are distinct strings, stay Ident, registry untouched). (2) AST: enum Quant{Forall,Exists} + Expr::Quantifier{quant,var,sort,domain,body}. (3) Parser: recognize forall/exists in parse_primary like if/match; parse 'forall (x : S) in <dom>. body'; 'in' is a contextual ident (for-loop precedent). Resolve domain/body '.' vs postfix-field '.' with a no_dot flag mirroring no_struct_literal, re-enabled inside parens/brackets/calls; body via parse_expr. (4) Downstream exhaustive Expr matches get arms: recurse for traversal/clone; honest unsupported error for lower; describe as quantifier for tv. (5) Tests: thermite-syntax/tests/quantifiers_parse.rs round-trip/parse + binder/scope pins. combinators.rs untouched.",
+  "created_at": "2026-06-19T20:53:16.886119Z",
+  "kind": "plan"
+}

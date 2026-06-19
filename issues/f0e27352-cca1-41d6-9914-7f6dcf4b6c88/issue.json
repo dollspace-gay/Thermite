@@ -1,0 +1,11 @@
+{
+  "uuid": "f0e27352-cca1-41d6-9914-7f6dcf4b6c88",
+  "display_id": 321,
+  "title": "Stage 2 — stratified cage + Strat spine extension (umbrella → Gate G2)",
+  "description": "Umbrella for the Stage-2 implementation tree (RFC-1 program, GH issue #2). Design doc: .design/stage2-stratified-cage.md (FINAL/kickoff-ready, G1 re-pass 2026-06-19, baseline 904ee01c). Spec of record: stage-2 metatheory sketch (issue #2). Gate G2 = the certificate trust: flip from ref_encode(strat, UNPROVEN) to the proven form, gated on audit checks [1'][4'][8][9] green in one run. Child increments REQ-0..REQ-10 follow metatheory §10.2 order; see the blocked-by DAG. Builds lean/Thermite/Strat/ (~5.5k loc) + the Rust classifier/encoder/TV (~4-6k loc).",
+  "status": "open",
+  "priority": "high",
+  "created_by": "rApq",
+  "created_at": "2026-06-19T19:38:46.759137Z",
+  "updated_at": "2026-06-19T19:38:46.759137Z"
+}

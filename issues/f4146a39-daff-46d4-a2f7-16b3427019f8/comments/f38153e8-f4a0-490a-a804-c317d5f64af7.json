@@ -1,0 +1,8 @@
+{
+  "uuid": "f38153e8-f4a0-490a-a804-c317d5f64af7",
+  "issue_uuid": "f4146a39-daff-46d4-a2f7-16b3427019f8",
+  "author": "1rnl",
+  "content": "Decision: the classifier operates on its OWN sorted surface syntax (faithful to metatheory GH#2 §1.2) defined in Strat/Nnf.lean, NOT REQ-1's Frm. REQ-1 shipped a minimal SEMANTIC spine (single carrier, unsorted all/ex, Tm.var only, qf opaque); the admission traps (nested-read self-loop, cast cycle) are properties of the sort+term structure (Read/Cast/sorted binders) REQ-1's Frm cannot express. REQ-1's Frm stays the semantic/encoder spine; the encoder (REQ-5) bridges them.",
+  "created_at": "2026-06-20T19:17:01.386338Z",
+  "kind": "decision"
+}

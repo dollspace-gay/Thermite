@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft (v-next architecture — the obligation/engine interface; most REQs NOT-STARTED
-audited-sha: b9704022d93ff153e345699cbc444645ca284fcc (re-pinned 2026-06-19 for #322 surface-quantifier foundation: governed source gains net-additive raw forall/exists handling — the new Expr::Quantifier AST node + honest-refusal match arms; the REQs this doc governs are unchanged.)
+audited-sha: 60fd029e65c83b38f81a7e03ad8911318455064b (re-pinned 2026-06-19 for #322 surface-quantifier foundation: governed source gains net-additive raw forall/exists handling — the new Expr::Quantifier AST node + honest-refusal match arms; the REQs this doc governs are unchanged.)
         behind build blockers. The SHIPPED substrates this builds on are quoted-code-grounded.)
 governs: forge/src/check.rs + forge/src/degrade.rs + forge/src/manifest.rs (the discharge
          pipeline, the ladder, the certificate this interface generalizes) and

@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: b9704022d93ff153e345699cbc444645ca284fcc (re-pinned 2026-06-19 for #322 surface-quantifier foundation: governed source gains net-additive raw forall/exists handling — the new Expr::Quantifier AST node + honest-refusal match arms; the REQs this doc governs are unchanged.)
+audited-sha: 60fd029e65c83b38f81a7e03ad8911318455064b (re-pinned 2026-06-19 for #322 surface-quantifier foundation: governed source gains net-additive raw forall/exists handling — the new Expr::Quantifier AST node + honest-refusal match arms; the REQs this doc governs are unchanged.)
 governs: forge/src/check.rs
 thesis-refs:
   - thermite-design.md §5.1

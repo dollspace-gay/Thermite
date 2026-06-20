@@ -1,0 +1,8 @@
+{
+  "uuid": "ca57c719-5a2f-4097-93bf-9d52f1bd5765",
+  "issue_uuid": "98869f16-c10c-4afa-825d-086980ca7cd3",
+  "author": "MwpM",
+  "content": "Observation (doc-drift): python3 tooling/doc-drift.py and make doc-drift each report exit 1 with 6 INVALID-PIN rows (09-option-result, 11-ergonomics, 12-mutual-recursion, forge/check, lower/boundary-composition, verified/proof-backends), all pinning b9704022 'not an ancestor of HEAD'. b9704022 is the REQ-0 FEATURE-branch tip (5i5F-WGLY...fb40); HEAD=60fd029e is its SQUASH-merge (#322)(#64), so the branch re-pin commit is not in history. This is the #322 28-doc re-pin ripple, PRE-EXISTING and unrelated to REQ-1: my diff touches only lean/Thermite/Strat/* (new), lean/Thermite/PinFiniteEscape.lean (new), lean/Thermite/Spike/* (deleted), scripts/lean-axiom-probe.sh — NONE governed by any spec-routes.toml route, so REQ-1 introduces 0 new drift. Per the shepherd-repin-gate convention the 6 stale pins are the orchestrator's to re-pin before merge; agent skips.",
+  "created_at": "2026-06-20T01:46:03.337083Z",
+  "kind": "observation"
+}

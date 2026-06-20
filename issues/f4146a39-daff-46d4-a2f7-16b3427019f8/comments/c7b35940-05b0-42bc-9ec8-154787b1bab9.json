@@ -1,0 +1,8 @@
+{
+  "uuid": "c7b35940-05b0-42bc-9ec8-154787b1bab9",
+  "issue_uuid": "f4146a39-daff-46d4-a2f7-16b3427019f8",
+  "author": "1rnl",
+  "content": "Result: REQ-3 complete. 3 new core-Lean-only modules under lean/Thermite/Strat/: Nnf.lean (sorted Sort2/Tm/Atom/Frm + structural denotation + nnf/prenex with nnf_sound[unconditional]/prenex_sound[dom!=[]]); Graph.lean (sortGraph E1 union E2 on NNF + Roy-Warshall acyclic + acyclic_iff_no_cycle via structural vertex-peel induction, NO pigeonhole/Mathlib + sortGraph_complete=Wf); Fragment.lean (finCarrier R1 + idxGrammar R2 + admitted + declarative Frag + T3-C classifier_correct). AC-3 met: classifier_correct axiom-clean (#print axioms = {propext,Quot.sound}); the four §3.2 micro-examples decide-checked (kernel, not native_decide): ex_selfLoop_rejected, ex_castCycle_rejected(+idxGrammar_ok), ex_kvCycle_rejected, ex_sortedness_admitted. Zero sorry under Strat/. Wired Strat.Fragment+classifier_correct into lean-axiom-probe.sh; REQ-S2-3 registered (reqs --check clean, 445); doc-drift clean (re-pinned req-registry.md). NOTE: lake cannot materialize Mathlib in this fresh worktree (untracked-files checkout conflict, see memory fresh-worktree-lean-mathlib-materialize); verified via direct lean compilation + axiom probe (same lean binary, core-only modules); CI runs the real lake-based probe.",
+  "created_at": "2026-06-20T19:17:18.875383Z",
+  "kind": "result"
+}

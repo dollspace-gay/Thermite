@@ -29,7 +29,7 @@
 -/
 import Thermite.Strat.Nnf
 
-namespace Thermite.Strat
+namespace Thermite.Strat.Cls
 
 /-! ## Graphs over sorts -/
 
@@ -273,4 +273,4 @@ theorem sortGraph_complete (φ : Frm) : Wf (sortGraph φ) := by
   · exact List.mem_flatMap.mpr ⟨p, hp, by simp⟩
   · exact List.mem_flatMap.mpr ⟨p, hp, by simp⟩
 
-end Thermite.Strat
+end Thermite.Strat.Cls

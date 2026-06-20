@@ -24,7 +24,7 @@
 -/
 import Thermite.Strat.Graph
 
-namespace Thermite.Strat
+namespace Thermite.Strat.Cls
 
 /-! ## (R1) finite carriers — binder sorts only
 
@@ -183,4 +183,4 @@ def ex_sortedness : Frm :=
 
 theorem ex_sortedness_admitted : admitted ex_sortedness = true := by decide
 
-end Thermite.Strat
+end Thermite.Strat.Cls

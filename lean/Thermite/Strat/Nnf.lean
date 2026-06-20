@@ -44,7 +44,7 @@
 import Thermite.Ast
 import Thermite.Strat.Carrier
 
-namespace Thermite.Strat
+namespace Thermite.Strat.Cls
 
 /-! ## Sorts (metatheory §1.1) -/
 
@@ -547,4 +547,4 @@ theorem prenex_sound (q : Atom → Bool) (dom : List Tm) (hdom : dom ≠ []) :
       simp only [prenex, fdenote]
       apply congrArg (List.any dom); funext v; exact prenex_sound q dom hdom φ (cons v ρ)
 
-end Thermite.Strat
+end Thermite.Strat.Cls

@@ -64,7 +64,7 @@ THEOREMS=(
   "Thermite.Exec.while_rule"
   "Thermite.Relax.r_relax_sound"
   "Thermite.Relax.rencode_sound"
-  "Thermite.Strat.classifier_correct"
+  "Thermite.Strat.Cls.classifier_correct"
 )
 ALLOWED="propext Classical.choice Quot.sound"
 

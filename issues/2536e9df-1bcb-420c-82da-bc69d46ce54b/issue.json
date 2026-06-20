@@ -6,5 +6,8 @@
   "priority": "high",
   "created_by": "rApq",
   "created_at": "2026-06-20T19:44:35.671774Z",
-  "updated_at": "2026-06-20T19:44:35.671774Z"
+  "updated_at": "2026-06-20T19:44:38.136821Z",
+  "labels": [
+    "forge"
+  ]
 }

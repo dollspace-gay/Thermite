@@ -1,0 +1,8 @@
+{
+  "uuid": "0ca7ae39-3b6b-42ab-8395-f15943f5b736",
+  "issue_uuid": "98869f16-c10c-4afa-825d-086980ca7cd3",
+  "author": "MwpM",
+  "content": "Plan: REQ-1 Strat spine foundation, inheriting SPIKE-1 conventions verbatim (.design/strat/substkit-conventions.md). (1) Strat/Syntax.lean: Tm(var), Atom(eq carrier-term | qf v1-Expr), Frm(atom/neg/conj/disj/all/ex), de Bruijn lift/subst with cutoff bump under all/ex. (2) Strat/Carrier.lean: CarrierAssign = opaque sort + hand-rolled finiteness (enum + complete + deq DecidableEq as DATA), NO Mathlib Fintype. (3) Strat/Denote.lean: sdenote Bool via List.all/any folds, parametric in a QFree oracle (Thermite.Expr->Bool); canonical oracle defers to v1 Thermite.denote (consumed not re-proven, Mathlib-free); sdenote_all_iff/sdenote_ex_iff upgrade folds to genuine forall/exists via complete. (4) PinFiniteEscape: incomplete-enum carrier where the fold lies about the forall, pinning R1. Delete Spike/. AC-1: lake build green, zero sorry under Strat/, no Mathlib on Denote path.",
+  "created_at": "2026-06-20T01:37:08.124440Z",
+  "kind": "plan"
+}

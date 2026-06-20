@@ -91,13 +91,30 @@ Lean syntax (REQ-1) or the Rust classifier (REQ-4) can be built or tested.
   (`idxGrammar` per (R2), `finCarrier` per (R1), `admitted`, the
   declarative `Frag`, and T3-C `classifier_correct`). Fragment versioned
   as S₂.0 — widenings are new grammar + citations + pins, never silent.
+  **IMPLEMENTATION NOTE (binding, as shipped #325 — supersedes the
+  single-syntax reading of REQ-1):** the classifier operates on its **own
+  sort-typed surface syntax** — `Sort₂` (mach/seq/opaque) + a rich
+  `Tm`/`Atom`/`Frm` carrying sorts on binders and the array-property term
+  vocabulary (`Read`/`Len`/`Cast`/`IdxOp`/spec-fns) — because the admission
+  traps (`a[a[i]]`, the cast cycle) are properties of that sort/term
+  structure that REQ-1's deliberately *minimal* semantic-spine `Frm`
+  (single carrier, unsorted `all`/`ex`, `Tm.var` only) cannot express.
+  These live in the **`Thermite.Strat.Cls` namespace** (NOT `Thermite.Strat`
+  — that collision was the #68 axiom-probe failure). So Stage 2 carries
+  **two formula languages**: REQ-1's minimal `Thermite.Strat.Frm` (the
+  semantic/SubstKit/encoder spine) and REQ-3's `Thermite.Strat.Cls.Frm`
+  (the classifier surface). Downstream REQs must target the right one.
 - REQ-4 (**classifier, ops half — M2b, ships before the encoder**):
   **consumes REQ-0's surface quantifier grammar** (the classifier cannot
   see formulas until raw `forall`/`exists` parse). The Rust classifier in
   `thermite-spec` (mirroring NNF + graph + grammar
   checks beside the existing validator), rejection reasons from the
   frozen vocabulary (`infinite-carrier`, `seq-quantifier`, the named
-  cycle), and the **differential battery**: the SplitMix64 generator
+  cycle), and the **differential battery**: the SplitMix64 generator.
+  **NOTE (per #325):** the Rust classifier mirrors REQ-3's **sort-typed
+  `Thermite.Strat.Cls` syntax** (`Sort₂` + the array-property term
+  vocabulary), NOT REQ-1's minimal spine `Frm` — it must reproduce the same
+  `admitted` over the same sorted structure. The SplitMix64 generator
   (`thermite-tv/src/gen.rs`) extended with well-sorted binder
   productions (Q5 default: corpus-mimicking + uniform-random arms);
   every generated formula run through both the Rust classifier and
@@ -109,6 +126,15 @@ Lean syntax (REQ-1) or the Rust classifier (REQ-4) can be built or tested.
   `Strat/TokDenote.lean`, `Strat/Soundness.lean` (T1-S
   `strat_ref_sound` + `strat_ref_wf`), with `PinStratCapture` and
   `PinStratFlip` landing in the same increment.
+  **NOTE (per #325 — REQ-5 IS THE BRIDGE):** the two-syntax split (REQ-3
+  note) makes REQ-5 the increment that reconciles the classifier surface
+  (`Thermite.Strat.Cls.Frm`) with the semantic spine
+  (`Thermite.Strat.Frm` + `sdenote`): the encoder/soundness track is where
+  an admitted (`Cls.Frm`) formula gets connected to a sound denotation. Size
+  this reconciliation explicitly — it was deferred here by design, not
+  forgotten. (REQ-3's `nnf_sound`/`prenex_sound` are proved against a
+  *structural* denotation that erases sorts, which is **stronger** than any
+  single per-sort model, so it composes with the eventual `sdenote`.)
 - REQ-6 (**combinator demotion**): `Strat/CombDeriv.lean` — the eight
   `comb_deriv_*` lemmas proving each v1 combinator's denotation equals
   its raw-quantifier expansion (closing the v1 embedding), plus

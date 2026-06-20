@@ -1,0 +1,10 @@
+{
+  "uuid": "7de7de9e-e7f0-4a29-82c8-8ed44b793b0d",
+  "issue_uuid": "98869f16-c10c-4afa-825d-086980ca7cd3",
+  "author": "rApq",
+  "content": "Shipped: PR #66 squash-merged to main. AC-1 met (lake build green, zero sorry under Strat/, no Mathlib on Denote path). Strat/{Syntax,Carrier,Denote} + PinFiniteEscape; M0 Spike/ retired; REQ-S2-1 registered. CI all green (lean 15m25s). Doc-drift fork from #322's pre-squash commit-pin was hotfixed on main by PR #65; flowed through cleanly. Unblocks #324, #325. FOLLOW-UP folded into REQ-2 (#324): fix stale comment Syntax.lean:13 referencing deleted Spike/SubstKit.lean.",
+  "created_at": "2026-06-20T15:20:58.734404Z",
+  "kind": "note",
+  "signed_by": "SHA256:tVRGNaCPy5N1tRtokzkbgsOCzGZujGDWQlGHFruaL9c",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgylLCWwpnQm2E2UQO23AN1e/yB6k0yzmPM7qiYPujTNYAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAnZ/JUhgq1AwgJB4S36X9qur8IeNpaV/T6ovd6DlGp0e8RV16N3wKMhAoGZx8SkisJvqgYVFevX5Nzts6dykIDQ=="
+}

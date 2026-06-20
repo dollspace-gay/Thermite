@@ -4,7 +4,7 @@
 tier: 3-component
 status: draft
 audited-sha: f09f8ca376257cc1e2543b8ebc9fb771bffd04df (content-sha256 re-pinned 2026-06-20 for stage-2 REQ-2 / AC-2, the SubstKit binder kit: this doc's governed files (registry.toml, status.md) carry the additive REQ-S2-2 requirement entry + the regenerated status view; req-registry.py --check is clean (445 requirements, 119 views). The legacy commit pin stays at the f09f8ca3 stable-main ancestor; only the active content-sha256 digest moves. prior: 2026-06-19 stage-2 REQ-1 / AC-1 Strat spine foundation REQ-S2-1 entry; 2026-06-17 umbrella REQ-7 / AC-12 §6 metrics dashboard REQ-FORGE-METRICS-DASHBOARD entry; before that stage-1 REQ-10/AC-14 G1 gate REQ-S1-10 entry)
-audited-content-sha256: 85cdaf96c240e05e7e0247cd95b20f84c02e2f50b52899ad9f60da6cefae1ca4
+audited-content-sha256: af5c5d43f56184108a6e82195e03cc29576dfbde854b45e54b43345c0c24ea86
 governs:
   - .design/reqs/registry.toml
   - .design/reqs/status.md

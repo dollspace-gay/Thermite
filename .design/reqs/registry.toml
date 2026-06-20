@@ -6967,6 +6967,57 @@ target = "bash scripts/lean-axiom-probe.sh"
 note = "AC-2 (ci): Thermite.Strat.SubstKit + Thermite.PinBrokenLift added as CI build targets, so a sorry or broken proof in the kit (or the pin) fails the Lean gate; lake build green, the spine theorems stay axiom-clean"
 
 [[requirement]]
+id = "REQ-S2-3"
+title = "Stage-2 classifier kernel half — Strat/{Nnf,Graph,Fragment}.lean + T3-C classifier_correct"
+owner = ".design/stage2-stratified-cage.md"
+status = "shipped"
+scope = "verified"
+summary = "The admission-classifier KERNEL half (stage2-stratified-cage.md REQ-3 / AC-3; child of thermite2-program.md REQ-10; gate G2; spec of record the stage-2 metatheory sketch GH#2 §1-§3,§5). Builds on the REQ-1 Strat spine (#323, merged 35d5a9f2). KEY MODELING DECISION: the metatheory §1.2 Frm (SORTED binders + the array-property term vocabulary Read/Len/Cast/IdxOp/spec-fns) is RICHER than REQ-1's minimal SEMANTIC spine (single carrier, unsorted all/ex, Tm.var only, qf opaque) — the admission traps a[a[i]]/cast-cycle are properties of that sort/term structure REQ-1's Frm cannot express. So the classifier operates on its OWN sorted surface syntax (faithful to §1.2), defined in Strat/Nnf.lean; REQ-1's minimal Frm stays the semantic/encoder spine and the encoder (REQ-5) bridges them. (1) Strat/Nnf.lean: Sort2 (mach/seq/opaque) + rich Tm/Atom/Frm with sorted binders; a STRUCTURAL denotation fdenote (sorts erased: a finite List of closed terms as the value domain, a closing substitution Nat->Tm, atoms read by an oracle Atom->Bool — stronger than a single fixed model and reusing REQ-1's cons) + the de Bruijn lift/closing-subst cancellation; nnf/nnfNeg (NNF, eliminating imp, pushing neg to atoms so every binder's polarity is syntactic) with nnf_sound (UNCONDITIONAL denotation-preservation); prenex/mergeConj/mergeDisj (quantifier pull, fsize-terminating) with prenex_sound (the standard non-empty-carrier side condition dom != []). (2) Strat/Graph.lean: sortGraph (E1 alternation: edge S->T for an ex-T binder under a forall-S; E2 function-flow: edge S->T for a function occurrence whose S-position arg has a universally bound var — Read usize->elem, Cast from->to, Len SeqS->usize inert, app1 arg->res), computed on NNF; acyclic via the Roy-Warshall transitive-closure recursion reach (allowed=nodes), the declarative cycle TC/Chain, and the soundness theorem acyclic_iff_no_cycle (a clean STRUCTURAL Warshall vertex-peel induction — NO pigeonhole/Nodup, which keeps it Mathlib-free), plus sortGraph_complete (the node set is closed for the edges = Wf, the property acyclic consumes; the Skolemisation-closure the sketch describes IS the E2 edges, computed directly). (3) Strat/Fragment.lean: finCarrier (R1, no seq binder), idxGrammar (R2 BMS index grammar: no bound index var under mul or a width-changing cast — the deliberate cast redundancy with the graph), admitted = finCarrier && idxGrammar && acyclic(sortGraph(nnf)), the declarative Frag (R1/R2 syntactic + R3 stated declaratively as not HasCycle), and T3-C classifier_correct : forall phi, admitted phi = true <-> Frag phi (substance = acyclic_iff_no_cycle). Fragment versioned S2.0 (the narrow R2; every widening is new grammar+pins, never silent). AC-3 met: classifier_correct axiom-clean (#print axioms = {propext, Quot.sound} subset of allowed); the four §3.2 worked micro-examples are decide-checked (NOT native_decide, which would inject Lean.ofReduceBool) test theorems with expected outcomes — ex_selfLoop_rejected (a[a[i]] E2 self-loop), ex_castCycle_rejected (E2 usize->u64->usize, + ex_castCycle_idxGrammar_ok showing R2 alone passes so the graph is the sole rejector), ex_kvCycle_rejected (E1 Key<->Value), ex_sortedness_admitted (E2 usize->u32 only); zero sorry under lean/Thermite/Strat/; core-Lean-only (no Mathlib import on the classifier path). Strat.Fragment + classifier_correct wired into scripts/lean-axiom-probe.sh (build target + axiom gate). The Rust ops-half classifier + differential battery (REQ-4), encoder/T1-S (REQ-5), and the rest of the stage-2 tree are SEPARATE downstream requirements."
+remaining_scope = "Kernel (Lean) half ONLY. The Rust classifier mirroring admitted in thermite-spec + the SplitMix64 differential battery (REQ-4 / AC-4, #326), and the [1'] axiom-probe extension to the OTHER stratified soundness theorems (strat_ref_sound/strat_lowering_faithful/restrat_conservative; REQ-9 / #331), are separate requirements."
+aliases = ["Stage-2 REQ-3", "REQ-3 classifier kernel", "classifier kernel half", "Strat/Nnf.lean", "Strat/Graph.lean", "Strat/Fragment.lean", "nnf_sound", "prenex_sound", "sortGraph", "acyclic_iff_no_cycle", "sortGraph_complete", "admitted", "Frag", "classifier_correct", "T3-C", "AC-3", "github:dollspace-gay/Thermite#325"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "lean/Thermite/Strat/Nnf.lean"
+note = "(1) the classifier surface syntax (Sort2 + rich Tm/Atom/Frm with sorted binders, faithful to metatheory §1.2) + the structural denotation fdenote + nnf/prenex with nnf_sound (unconditional) / prenex_sound (dom != [])"
+
+[[requirement.evidence]]
+kind = "file"
+target = "lean/Thermite/Strat/Graph.lean"
+note = "(2) sortGraph (E1 alternation + E2 function-flow, on NNF) + the Roy-Warshall acyclic check + acyclic_iff_no_cycle (structural vertex-peel induction, no pigeonhole, Mathlib-free) + sortGraph_complete (Wf: node set closed for edges)"
+
+[[requirement.evidence]]
+kind = "file"
+target = "lean/Thermite/Strat/Fragment.lean"
+note = "(3) finCarrier (R1) + idxGrammar (R2) + admitted + the declarative Frag + the four §3.2 decide-checked micro-examples"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "classifier_correct"
+note = "T3-C (AC-3): admitted phi = true <-> Frag phi, axiom-clean (#print axioms = {propext, Quot.sound}); substance is acyclic_iff_no_cycle consuming sortGraph_complete"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "acyclic_iff_no_cycle"
+note = "the graph-theoretic soundness theorem: the Roy-Warshall DFS acyclic coincides with the absence of a transitive-closure (TC/Chain) cycle, by structural Warshall induction — the core-Lean-only realisation of the sketch's acyclic-vs-Path lemma"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "nnf_sound"
+note = "the load-bearing NNF denotation-preservation lemma (§3.1 'NNF is load-bearing: ¬∀ = ∃¬'), unconditional; with nnfNeg_sound the mutual pair"
+
+[[requirement.evidence]]
+kind = "test"
+target = "lean/Thermite/Strat/Fragment.lean"
+note = "AC-3 examples: ex_selfLoop_rejected / ex_castCycle_rejected (+ ex_castCycle_idxGrammar_ok) / ex_kvCycle_rejected / ex_sortedness_admitted — decide-checked (kernel, not native_decide) with the expected admit/reject outcomes"
+
+[[requirement.evidence]]
+kind = "command"
+target = "bash scripts/lean-axiom-probe.sh"
+note = "AC-3 (ci): Thermite.Strat.Fragment added as a build target (transitively pulls Nnf/Graph) so a sorry/broken proof under Strat/ fails the gate; Thermite.Strat.Cls.classifier_correct added to the axiom-gated THEOREMS list so its axioms must stay subset of {propext, Classical.choice, Quot.sound}"
+
+[[requirement]]
 id = "REQ-SKILL-V2-FORGE-TIER"
 title = "THERMITE.skill.md v2 — the agent-facing Stage-1 forge-tier section"
 owner = ".design/thermite2-program.md"

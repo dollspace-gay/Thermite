@@ -54,9 +54,17 @@ IMPORTS=(
   # is the fixed universal-pillar set and must not be perturbed by stage-2 targets.
   "Thermite.Strat.SubstKit"
   "Thermite.PinBrokenLift"
+  # Stage-2 REQ-3 (#325): the classifier kernel half. `Strat.Fragment` transitively
+  # pulls `Strat.Nnf`/`Strat.Graph` (the NNF/prenex normaliser + the sort graph), all
+  # Mathlib-free, so a `sorry` or broken proof under them fails the CI Lean job
+  # (AC-3: "lake build green; zero sorry under lean/Thermite/Strat/"). Unlike the
+  # REQ-1 spine, this increment DOES carry a stratified soundness theorem
+  # (`classifier_correct`, T3-C, in namespace `Thermite.Strat.Cls`), gated below.
+  "Thermite.Strat.Fragment"
 )
 # The five load-bearing universal-theorem pillars + the two relax-route spine lemmas
-# (REQ-8a). Keep this list in lock-step with the prose in `scripts/audit.sh` check [1].
+# (REQ-8a) + the stage-2 classifier coincidence theorem T3-C (REQ-3, AC-3). Keep this
+# list in lock-step with the prose in `scripts/audit.sh` check [1].
 THEOREMS=(
   "Thermite.lowering_faithful"
   "Thermite.ref_sound"
@@ -65,6 +73,7 @@ THEOREMS=(
   "Thermite.Exec.while_rule"
   "Thermite.Relax.r_relax_sound"
   "Thermite.Relax.rencode_sound"
+  "Thermite.Strat.Cls.classifier_correct"
 )
 ALLOWED="propext Classical.choice Quot.sound"
 

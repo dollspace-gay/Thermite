@@ -1,0 +1,8 @@
+{
+  "uuid": "2d53a83d-a96b-4125-b12b-3e9f92da6ec4",
+  "issue_uuid": "1edb5880-1ae7-4ff0-9d9e-04b6b6513dcf",
+  "author": "D8jE",
+  "content": "Result: REQ-2 SubstKit shipped @ 87360ed8. Strat/SubstKit.lean (18 binder lemmas) + PinBrokenLift.lean. lake build green (8/8). Load-bearing sdenote_push_lift/sdenote_subst axiom-clean [propext, Quot.sound] (note §4 measurement reproduced). zero sorry under Strat/; no Mathlib on path. scripts/lean-axiom-probe.sh gate green (both new targets built, all theorems axiom-clean). REQ-S2-2 registered (reqs check clean, 445). doc-drift + make doc-drift clean (re-pinned req-registry.md content-sha256). Stale Syntax.lean:13 Spike ref fixed. Incidental: cleaned the fresh worktree's mathlib dep package (left mid-checkout on master) -> pinned rev 8a178386 so lake could materialize the manifest (lean/.lake/ is gitignored).",
+  "created_at": "2026-06-20T19:06:43.782483Z",
+  "kind": "result"
+}

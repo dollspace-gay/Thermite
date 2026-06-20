@@ -6877,6 +6877,56 @@ target = "forge/src/engine.rs"
 note = "(4) the UNGATED structural RealWitness producer (classify_sat_real_only_model_is_real_witness): feeds classify_sat the √2 real countermodel directly → RealWitness, never a Counterexample — the AC-14 RealWitness-producer coverage that does not depend on z3"
 
 [[requirement]]
+id = "REQ-S2-1"
+title = "Stage-2 Strat spine foundation — Strat/{Syntax,Carrier,Denote}.lean + PinFiniteEscape"
+owner = ".design/stage2-stratified-cage.md"
+status = "shipped"
+scope = "verified"
+summary = "The stratified-FOL spine foundation (stage2-stratified-cage.md REQ-1 / AC-1; child of thermite2-program.md REQ-10; gate G2), built against the REQ-0 surface quantifiers (Expr::Quantifier, #322) and inheriting the SPIKE-1 de Bruijn conventions VERBATIM from the surviving note .design/strat/substkit-conventions.md (the retired Spike/{SubstKit,PinBrokenLift}.lean are deleted in this same change). (1) Strat/Syntax.lean: the de Bruijn term / atom / formula language. Tm (var); Atom (eq of two carrier-sort terms | qf embedding a v1 quantifier-free Thermite.Expr); Frm (atom/neg/conj/disj/all/ex). lift/subst with the SPIKE-1 §1/§3 leaf rules verbatim — bumpIdx, liftTm, substTm, and the cutoff bumping c->c+1 under all/ex (the off-by-one the SubstKit micro-pin REQ-2 refutes). The STRATIFICATION: carrier-sort variables live ONLY in the eq atoms (de Bruijn Tm); qf atoms are closed w.r.t. the binders, so lift/subst pass them through unchanged. (2) Strat/Carrier.lean: CarrierAssign bundles one opaque sort C with a HAND-ROLLED finiteness witness — deq (DecidableEq carried as DATA, SPIKE-1 §6 carry-as-data), enum (List C), complete (forall x, x in enum) — NO Mathlib Fintype; plus the de Bruijn environment algebra Env/cons/insert. complete is the (R1) load-bearing datum. (3) Strat/Denote.lean: sdenote is Bool-valued via List.all (all) / List.any (ex) folds over the enumeration, parametric in a QFree oracle so it stays computable; sdenote_all_iff / sdenote_ex_iff upgrade the folds to genuine forall/exists by CONSUMING complete; the v1 deferral is concrete — canonicalQOracle reads the embedded Expr's truth straight off the v1 Thermite.denote (consumed, not re-proven), with canonicalQOracle_iff / sdenote_qf_canonical the bridges. No Mathlib on the denote path (imports only Strat.Syntax/Carrier + the Mathlib-free Thermite.Denote). (4) PinFiniteEscape: the (R1) pin — an INCOMPLETE enumeration fold reports true while the genuine forall is false (finiteEscape_pinned / incompleteEnum_escapes), exhibiting the soundness escape that dropping complete would permit, then tied back to sdenote on the genuine carrier via sdenote_all_iff_instance. AC-1 met: lake build green with Strat/{Syntax,Carrier,Denote} + PinFiniteEscape (wired into scripts/lean-axiom-probe.sh as CI build targets); zero sorry under lean/Thermite/Strat/; no Mathlib import on the Denote path; the load-bearing lemmas are axiom-clean (subset of propext/Classical.choice/Quot.sound). The SubstKit ~25-lemma binder kit (REQ-2), the NNF/graph/fragment classifier (REQ-3+), the encoder + T1-S (REQ-5), and the rest of the stage-2 tree are SEPARATE downstream requirements, not remaining scope of this foundation."
+aliases = ["Stage-2 REQ-1", "REQ-1 Strat spine foundation", "Strat spine foundation", "Strat/Syntax.lean", "Strat/Carrier.lean", "Strat/Denote.lean", "CarrierAssign", "sdenote", "sdenote_all_iff", "PinFiniteEscape", "AC-1", "github:dollspace-gay/Thermite#323"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "lean/Thermite/Strat/Syntax.lean"
+note = "(1) the de Bruijn Tm/Atom/Frm language + lift/subst inheriting the SPIKE-1 §1/§3 conventions verbatim (cutoff bumps under all/ex); the stratification keeps carrier vars in eq atoms only"
+
+[[requirement.evidence]]
+kind = "file"
+target = "lean/Thermite/Strat/Carrier.lean"
+note = "(2) CarrierAssign — the hand-rolled finiteness witness (deq+enum+complete as DATA, no Mathlib Fintype) + the Env/cons/insert de Bruijn environment algebra"
+
+[[requirement.evidence]]
+kind = "file"
+target = "lean/Thermite/Strat/Denote.lean"
+note = "(3) sdenote (Bool via List.all/any folds, QFree-oracle-parametric) + the v1 deferral; no Mathlib on the import path"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "sdenote_all_iff"
+note = "(3) the (R1) upgrade: the all fold = true iff the genuine forall, CONSUMING CarrierAssign.complete — the sole semantic consumer of the finiteness witness"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "CarrierAssign"
+note = "(2) the opaque-sort bundle with the hand-rolled finiteness witness (deq/enum/complete carried as data), the SPIKE-1 §6 verdict's production input — no Mathlib Fintype"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "canonicalQOracle"
+note = "(3) the v1 deferral at QFree atoms: the oracle reads the embedded Expr's truth off Thermite.denote (consumed, not re-proven); sdenote_qf_canonical is the bridge"
+
+[[requirement.evidence]]
+kind = "test"
+target = "lean/Thermite/PinFiniteEscape.lean"
+note = "(4) the (R1) pin battery: finiteEscape_pinned / incompleteEnum_escapes (an incomplete-enum fold lies about the forall) + sdenote_all_iff_instance — decide-checked on a concrete 2-element carrier"
+
+[[requirement.evidence]]
+kind = "command"
+target = "bash scripts/lean-axiom-probe.sh"
+note = "AC-1 (ci): the CI Lean job builds Thermite.Strat.Denote + Thermite.PinFiniteEscape (added as build targets), so a sorry or broken proof under Strat/ fails the gate; the probe also confirms the spine theorems stay axiom-clean"
+
+[[requirement]]
 id = "REQ-SKILL-V2-FORGE-TIER"
 title = "THERMITE.skill.md v2 — the agent-facing Stage-1 forge-tier section"
 owner = ".design/thermite2-program.md"

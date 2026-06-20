@@ -36,6 +36,15 @@ IMPORTS=(
   "Thermite.Exec.Stmt"
   "Thermite.Exec.Loop"
   "Thermite.Relax"
+  # Stage-2 REQ-1 (#323): the Strat spine foundation, added as BUILD targets so a
+  # `sorry` or a broken proof under `lean/Thermite/Strat/` (or `PinFiniteEscape`)
+  # fails the CI Lean job (AC-1: "lake build green with Strat/Syntax,Carrier,Denote
+  # + PinFiniteEscape"). `Strat.Denote` transitively pulls `Strat.Syntax`/
+  # `Strat.Carrier`; both are Mathlib-free. These are BUILD targets only — the
+  # axiom-gated THEOREMS list below is extended to the stratified soundness
+  # theorems by REQ-9 ([1′]), not here (there is no Strat soundness theorem yet).
+  "Thermite.Strat.Denote"
+  "Thermite.PinFiniteEscape"
 )
 # The five load-bearing universal-theorem pillars + the two relax-route spine lemmas
 # (REQ-8a). Keep this list in lock-step with the prose in `scripts/audit.sh` check [1].

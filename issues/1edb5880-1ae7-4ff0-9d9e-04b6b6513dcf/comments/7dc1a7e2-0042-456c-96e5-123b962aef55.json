@@ -1,0 +1,8 @@
+{
+  "uuid": "7dc1a7e2-0042-456c-96e5-123b962aef55",
+  "issue_uuid": "1edb5880-1ae7-4ff0-9d9e-04b6b6513dcf",
+  "author": "D8jE",
+  "content": "Plan: SubstKit.lean ports the SPIKE-1 toy 11-lemma proof to the REAL richer Strat spine (Frm atom/neg/conj/disj/all/ex; Atom eq/qf; oracle-threaded sdenote). Kit: env-algebra (all_congr/any_congr/insert_apply/insert_bumpIdx/cons_insert) + term (tdenote_liftTm/substTm, substTm_liftTm) + atom (adenote_lift/substAtom, substAtom_liftAtom) + load-bearing sdenote_push_lift/sdenote_subst (note section 4 shapes verbatim, q fixed context) + substFrm_liftFrm + corollaries sdenote_lift0/subst0/substFrm_liftFrm (freshness). beq pair + sdenote_all/ex_iff shipped REQ-1. Cite note hash 9acf3685. Micro-pin lean/Thermite/PinBrokenLift.lean refutes off-by-one cutoff via decide. Wire both into scripts/lean-axiom-probe.sh. Fix stale Spike ref at Syntax.lean:13. Also fixed dangling hub-cache signingkey (removed VxM8 worktree) -> repointed to D8jE.",
+  "created_at": "2026-06-20T16:53:34.760324Z",
+  "kind": "plan"
+}

@@ -1,0 +1,10 @@
+{
+  "uuid": "f8ae0551-6e42-4bf5-bf44-1d5c34442d8e",
+  "issue_uuid": "15306582-a4e5-4525-abfa-003aca1cc3ea",
+  "author": "rApq",
+  "content": "Shipped: PR #64 squash-merged to main @ 60fd029e. AC-0 met (Expr::Quantifier + forall/exists parsing, 15 tests, registry untouched, emission honestly refused pending REQ-5/8). Orchestrator re-pinned 28 drifting docs (414e0d41) — the agent had skipped doc-drift re-pin. CI green (lean + 4 shards). Unblocks REQ-1 (#323).",
+  "created_at": "2026-06-20T01:21:17.041605Z",
+  "kind": "note",
+  "signed_by": "SHA256:tVRGNaCPy5N1tRtokzkbgsOCzGZujGDWQlGHFruaL9c",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgylLCWwpnQm2E2UQO23AN1e/yB6k0yzmPM7qiYPujTNYAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAeMfGq5bl4NpKvZIJKw9zeJtZ3CCGWz95P06OESWKm2UmoJ6bH8JRhTZ8oKcP6N3SeW72p9oybX76RHIoVz+mBQ=="
+}

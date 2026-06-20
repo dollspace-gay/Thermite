@@ -45,12 +45,21 @@ IMPORTS=(
   # theorems by REQ-9 ([1′]), not here (there is no Strat soundness theorem yet).
   "Thermite.Strat.Denote"
   "Thermite.PinFiniteEscape"
+  # Stage-2 REQ-2 (#324): the SubstKit binder kit + its broken-lift micro-pin, added
+  # as BUILD targets so a `sorry` or a broken proof in `Strat/SubstKit.lean` (or the
+  # pin) fails the CI Lean job (AC-2). `Strat.SubstKit` transitively pulls
+  # `Strat.Denote`; `PinBrokenLift` pulls `Strat.SubstKit`. Both Mathlib-free. The
+  # SubstKit's two load-bearing lemmas are axiom-probed IN-FILE (`#print axioms`,
+  # per the SPIKE-1 conventions note §4) — NOT added to the THEOREM list below, which
+  # is the fixed universal-pillar set and must not be perturbed by stage-2 targets.
+  "Thermite.Strat.SubstKit"
+  "Thermite.PinBrokenLift"
   # Stage-2 REQ-3 (#325): the classifier kernel half. `Strat.Fragment` transitively
   # pulls `Strat.Nnf`/`Strat.Graph` (the NNF/prenex normaliser + the sort graph), all
   # Mathlib-free, so a `sorry` or broken proof under them fails the CI Lean job
   # (AC-3: "lake build green; zero sorry under lean/Thermite/Strat/"). Unlike the
   # REQ-1 spine, this increment DOES carry a stratified soundness theorem
-  # (`classifier_correct`, T3-C), so its axiom list is gated below (AC-3 "axiom-clean").
+  # (`classifier_correct`, T3-C, in namespace `Thermite.Strat.Cls`), gated below.
   "Thermite.Strat.Fragment"
 )
 # The five load-bearing universal-theorem pillars + the two relax-route spine lemmas

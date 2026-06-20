@@ -45,6 +45,15 @@ IMPORTS=(
   # theorems by REQ-9 ([1′]), not here (there is no Strat soundness theorem yet).
   "Thermite.Strat.Denote"
   "Thermite.PinFiniteEscape"
+  # Stage-2 REQ-2 (#324): the SubstKit binder kit + its broken-lift micro-pin, added
+  # as BUILD targets so a `sorry` or a broken proof in `Strat/SubstKit.lean` (or the
+  # pin) fails the CI Lean job (AC-2). `Strat.SubstKit` transitively pulls
+  # `Strat.Denote`; `PinBrokenLift` pulls `Strat.SubstKit`. Both Mathlib-free. The
+  # SubstKit's two load-bearing lemmas are axiom-probed IN-FILE (`#print axioms`,
+  # per the SPIKE-1 conventions note §4) — NOT added to the THEOREM list below, which
+  # is the fixed universal-pillar set and must not be perturbed by stage-2 targets.
+  "Thermite.Strat.SubstKit"
+  "Thermite.PinBrokenLift"
 )
 # The five load-bearing universal-theorem pillars + the two relax-route spine lemmas
 # (REQ-8a). Keep this list in lock-step with the prose in `scripts/audit.sh` check [1].

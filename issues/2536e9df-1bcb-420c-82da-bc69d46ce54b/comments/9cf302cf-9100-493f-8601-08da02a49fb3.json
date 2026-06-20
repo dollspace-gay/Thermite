@@ -1,0 +1,10 @@
+{
+  "uuid": "9cf302cf-9100-493f-8601-08da02a49fb3",
+  "issue_uuid": "2536e9df-1bcb-420c-82da-bc69d46ce54b",
+  "author": "rApq",
+  "content": "Done: classifier namespaced under Thermite.Strat.Cls, main merged into #68 (additive conflicts resolved), two-syntax design-doc handoff written. Shipped with #68 @ 80e59203. CI green (lean 15m28s); axiom probe 9 PASS/0 FAIL.",
+  "created_at": "2026-06-20T23:26:50.926683Z",
+  "kind": "note",
+  "signed_by": "SHA256:tVRGNaCPy5N1tRtokzkbgsOCzGZujGDWQlGHFruaL9c",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgylLCWwpnQm2E2UQO23AN1e/yB6k0yzmPM7qiYPujTNYAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAWDP2gJ7ywfQs2StX9ZfCMWvIvTMQFwi8ecBgP8veJGwO7hDgQIR+4ttdy/390BZWJTKjuDZyDgdzeZmBn57wCA=="
+}

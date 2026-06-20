@@ -9,9 +9,11 @@
   quantifiers (`Expr::Quantifier`, merged at 60fd029e).
 
   The de Bruijn conventions are inherited VERBATIM from the SPIKE-1 deliverable
-  — the surviving conventions note `.design/strat/substkit-conventions.md`
-  (proven end to end on the toy `lean/Thermite/Spike/SubstKit.lean`, which this
-  increment retires). The statement shapes below are the note's §1–§3:
+  — the surviving conventions note `.design/strat/substkit-conventions.md` (which
+  records the toy's end-to-end proof; the `Spike/` toy itself was retired in this
+  REQ-1 change, and its lemmas are realised on this spine by the SubstKit binder
+  kit `Strat/SubstKit.lean`, REQ-2). The statement shapes below are the note's
+  §1–§3:
 
   * `bumpIdx` / `liftTm` / `substTm` are the note's §1 leaf rules verbatim.
   * de Bruijn index 0 = the most-recently-bound (innermost) variable (§2).

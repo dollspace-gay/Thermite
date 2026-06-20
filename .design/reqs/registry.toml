@@ -6927,6 +6927,46 @@ target = "bash scripts/lean-axiom-probe.sh"
 note = "AC-1 (ci): the CI Lean job builds Thermite.Strat.Denote + Thermite.PinFiniteEscape (added as build targets), so a sorry or broken proof under Strat/ fails the gate; the probe also confirms the spine theorems stay axiom-clean"
 
 [[requirement]]
+id = "REQ-S2-2"
+title = "Stage-2 SubstKit binder kit — Strat/SubstKit.lean + PinBrokenLift"
+owner = ".design/stage2-stratified-cage.md"
+status = "shipped"
+scope = "verified"
+summary = "The de Bruijn binder kit (stage2-stratified-cage.md REQ-2 / AC-2; child of thermite2-program.md REQ-10; gate G2), built on REQ-1's Strat/{Syntax,Carrier,Denote}.lean (#323, merged @ 35d5a9f2). The lemma list is FIXED from the SPIKE-1 conventions note .design/strat/substkit-conventions.md (sha256 9acf36855e824ddeb022ad61cc601a4dbb6f217b47a99894bf8027f64bd35ba5, cited in the file header): the two load-bearing lemmas and their term companions inherit the note's §4 statement shapes VERBATIM — formula as the induction target, cutoff/index/value/env quantified AFTER it, with the QFree oracle q threaded as fixed context before the formula. (1) Strat/SubstKit.lean carries the binder lemmas the toy proved (REQ-1 pre-shipped four of the note's 11 pieces — CarrierAssign.beq_self/beq_eq_true in Carrier.lean, sdenote_all_iff/sdenote_ex_iff in Denote.lean): env-algebra (all_congr, any_congr, insert_apply, insert_bumpIdx, cons_insert — the note §2/§3 cons/insert commutation inherited); term level (tdenote_liftTm, tdenote_substTm — note §4 verbatim; substTm_liftTm the syntactic inverse); atom level (adenote_liftAtom, adenote_substAtom, substAtom_liftAtom — factoring the eq/qf stratification split the richer spine adds over the toy); the two LOAD-BEARING lemmas sdenote_push_lift (weakening is denotation-invariant) and sdenote_subst (the substitution lemma); the syntactic formula inverse substFrm_liftFrm; and the binder-introduction corollaries sdenote_lift0 (c=0 weakening) / sdenote_subst0 (j=0 instantiation/β) / sdenote_substFrm_liftFrm (semantic freshness, the substance of REQ-5's fresh-name discipline). Decidability on the bundled carrier sort is routed as DATA via CarrierAssign.beq (note §6 carry-as-data), NOT a [DecidableEq] instance. (2) PinBrokenLift (the flat Pin*.lean placement REQ-1 used for PinFiniteEscape): liftBadFrm leaves the cutoff UNCHANGED under all/ex (the off-by-one neighbour); brokenLift_breaks_push_lift refutes sdenote_push_lift for it via decide on a concrete 2-element carrier, with correctLift_satisfies_push_lift confirming the divergence is solely the off-by-one. AC-2 met: lake build green; the two load-bearing lemmas are axiom-clean (in-file #print axioms = [propext, Quot.sound], the note §4 measurement reproduced — NOT added to the fixed make-audit THEOREM list); zero sorry under lean/Thermite/Strat/; no Mathlib import on the path (SubstKit imports only Strat.Denote). Also fixed the stale Syntax.lean:13 comment referencing the deleted Spike/SubstKit.lean, and wired Thermite.Strat.SubstKit + Thermite.PinBrokenLift into scripts/lean-axiom-probe.sh as CI build targets. The NNF/graph/fragment classifier (REQ-3+), the encoder + T1-S (REQ-5), and the rest of the stage-2 tree are SEPARATE downstream requirements, not remaining scope of this kit."
+aliases = ["Stage-2 REQ-2", "REQ-2 SubstKit", "SubstKit", "the SubstKit binder kit", "Strat/SubstKit.lean", "sdenote_push_lift", "sdenote_subst", "substFrm_liftFrm", "PinBrokenLift", "liftBadFrm", "AC-2", "github:dollspace-gay/Thermite#324"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "lean/Thermite/Strat/SubstKit.lean"
+note = "the ~25-lemma binder kit: the load-bearing sdenote_push_lift/sdenote_subst (note §4 shapes verbatim, q as fixed context) + term/atom/env companions + the syntactic lift/subst inverse + the binder-introduction corollaries; comment cites the note sha256 9acf3685; in-file #print axioms = [propext, Quot.sound]"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "sdenote_push_lift"
+note = "load-bearing lemma A: weakening is denotation-invariant — sdenote q (liftFrm c φ) (insert c v ρ) = sdenote q φ ρ; note §4 verbatim shape, axiom-clean"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "sdenote_subst"
+note = "load-bearing lemma B: the substitution lemma — sdenote q (substFrm j s φ) ρ = sdenote q φ (insert j (tdenote s ρ) ρ); note §4 verbatim shape, axiom-clean"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "substFrm_liftFrm"
+note = "the syntactic lift/subst inverse (substTm_liftTm → substAtom_liftAtom → substFrm_liftFrm): substituting at the cutoff a formula was lifted past is the identity — the de Bruijn statement of freshness underwriting REQ-5's fresh-name discipline"
+
+[[requirement.evidence]]
+kind = "test"
+target = "lean/Thermite/PinBrokenLift.lean"
+note = "the broken-lift micro-pin: liftBadFrm omits the cutoff bump under all/ex; brokenLift_breaks_push_lift refutes sdenote_push_lift for it (decide, 2-element carrier); correctLift_satisfies_push_lift pins the divergence to the off-by-one alone"
+
+[[requirement.evidence]]
+kind = "command"
+target = "bash scripts/lean-axiom-probe.sh"
+note = "AC-2 (ci): Thermite.Strat.SubstKit + Thermite.PinBrokenLift added as CI build targets, so a sorry or broken proof in the kit (or the pin) fails the Lean gate; lake build green, the spine theorems stay axiom-clean"
+
+[[requirement]]
 id = "REQ-SKILL-V2-FORGE-TIER"
 title = "THERMITE.skill.md v2 — the agent-facing Stage-1 forge-tier section"
 owner = ".design/thermite2-program.md"

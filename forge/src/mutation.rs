@@ -886,6 +886,12 @@ impl MutantSink {
                 }
             }
             Expr::TupleProj { receiver, .. } => self.scan_expr(receiver, ctr),
+            // A raw quantified formula (`.design/stage2-stratified-cage.md` REQ-0): a
+            // mutation site can live in the domain or the body — descend into both.
+            Expr::Quantifier { domain, body, .. } => {
+                self.scan_expr(domain, ctr);
+                self.scan_expr(body, ctr);
+            }
             // A string literal (`.design/basis/07-strings.md` REQ-1) is a leaf and
             // is not an off-by-one target (it is text, not a numeric literal) — it
             // defines no new mutation site and has no sub-expression to descend
@@ -1185,6 +1191,23 @@ impl Applier<'_> {
             Expr::TupleProj { receiver, index } => Expr::TupleProj {
                 receiver: Box::new(self.apply_expr(receiver)),
                 index: *index,
+            },
+            // A raw quantified formula (`.design/stage2-stratified-cage.md` REQ-0):
+            // rebuild the binder faithfully, recursing into the domain and body so a
+            // mutation site in either is applied; the binder head (`quant`/`var`/
+            // `sort`) is identity-preserved.
+            Expr::Quantifier {
+                quant,
+                var,
+                sort,
+                domain,
+                body,
+            } => Expr::Quantifier {
+                quant: *quant,
+                var: var.clone(),
+                sort: sort.clone(),
+                domain: Box::new(self.apply_expr(domain)),
+                body: Box::new(self.apply_expr(body)),
             },
             Expr::BoolLit(b) => Expr::BoolLit(*b),
             Expr::Path(p) => Expr::Path(p.clone()),

@@ -485,6 +485,12 @@ fn expr_shape(expr: &Expr) -> String {
         Expr::StrLit(_) => "string literal".to_string(),
         Expr::Tuple(_) => "tuple expression".to_string(),
         Expr::TupleProj { index, .. } => format!("tuple projection .{index}"),
+        // A raw quantifier (`.design/stage2-stratified-cage.md` REQ-0): a shape label;
+        // covenant evaluation of stratified binders is stage-2 (REQ-8).
+        Expr::Quantifier { quant, .. } => match quant {
+            thermite_syntax::Quant::Forall => "forall quantifier".to_string(),
+            thermite_syntax::Quant::Exists => "exists quantifier".to_string(),
+        },
     }
 }
 

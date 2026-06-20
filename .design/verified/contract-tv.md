@@ -4,7 +4,7 @@
 tier: 3-component
 status: draft
 audited-sha: 4a748bc98172c98cc39fb245996ab4143bdab08d (re-pinned 2026-06-16 for stage-1 increment 2b: thermite-tv's SplitMix64 Rng is made pub so the covenant falsify can reuse it (a visibility widening, additive); the contract-TV REQs this doc governs are unchanged.)
-audited-content-sha256: e83d45113d86446236c97c6598c9fd020a9af14da9d9aac9d61581a0226ceeb3
+audited-content-sha256: 3894d2078d92981e70882f80bf31eb63b43eb3d5cb1084ed41cda5b523404146
 governs: thermite-tv/src/ref_encode.rs, thermite-tv/src/obligation.rs, forge/src/contract_tv.rs
 thesis-refs:
   - thermite-design.md §1 (trust relocated twice: code → spec → spec-intent)

@@ -3,7 +3,7 @@
 tier: 3-component
 status: draft
 audited-sha: 5ae0816c042debb01c70eb9b89c775837f0c0f24 (re-pinned 2026-06-17 for umbrella REQ-7 / AC-12, the §6 metrics dashboard: the only change to this doc's governed file (main.rs) is one additive module declaration (`mod metrics;`, the new §6 dashboard projection); the workspace/crate structure is otherwise unchanged. prior: stage-1 REQ-10/AC-14 G1 gate seven-verdict test module)
-audited-content-sha256: 1a58829d2107a1be932b85ccb14c1392b9e597987a18b5a2c7c068ce10bed3b4
+audited-content-sha256: 84bfe82ea82020b3101c719056069804b06e321cfcbd0240bbe668a3f52c8867
 governs:
   - Cargo.toml (virtual workspace manifest)
   - rust-toolchain.toml

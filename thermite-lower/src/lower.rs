@@ -1501,6 +1501,13 @@ fn collect_combinators_in_expr(expr: &Expr, span: Span, acc: &mut Vec<(String, S
             }
         }
         Expr::TupleProj { receiver, .. } => collect_combinators_in_expr(receiver, span, acc),
+        // A raw quantified formula (`.design/stage2-stratified-cage.md` REQ-0): a
+        // registry-free combinator (`forall_in`, etc.) can appear in either the
+        // domain or the body of a raw binder — descend into both so none is dropped.
+        Expr::Quantifier { domain, body, .. } => {
+            collect_combinators_in_expr(domain, span, acc);
+            collect_combinators_in_expr(body, span, acc);
+        }
         // A string literal (`.design/basis/07-strings.md` REQ-1) references no
         // combinator — a value-carrying leaf, like an int/bool literal.
         Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) | Expr::StrLit(_) => {}
@@ -1780,6 +1787,12 @@ fn each_subexpr(
             }
         }
         Expr::TupleProj { receiver, .. } => f(receiver)?,
+        // A raw quantified formula (`.design/stage2-stratified-cage.md` REQ-0): its
+        // immediate sub-expressions are the domain and the body.
+        Expr::Quantifier { domain, body, .. } => {
+            f(domain)?;
+            f(body)?;
+        }
         // A string literal (`.design/basis/07-strings.md` REQ-1) is a value-
         // carrying leaf with no sub-expression — like an int/bool literal.
         Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) | Expr::StrLit(_) => {}
@@ -3575,6 +3588,11 @@ fn expr_has_deref_call_arg(expr: &Expr) -> bool {
         // projection's receiver; the full-tree walk descends into both.
         Expr::Tuple(elems) => elems.iter().any(expr_has_deref_call_arg),
         Expr::TupleProj { receiver, .. } => expr_has_deref_call_arg(receiver),
+        // A raw quantified formula (`.design/stage2-stratified-cage.md` REQ-0): a
+        // deref `*t` call-arg can hide in either the domain or the body.
+        Expr::Quantifier { domain, body, .. } => {
+            expr_has_deref_call_arg(domain) || expr_has_deref_call_arg(body)
+        }
         Expr::IntLit { .. }
         | Expr::BoolLit(_)
         | Expr::Path(_)
@@ -7643,6 +7661,20 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
             let r = lower_expr(receiver, ctx, d, span)?;
             Ok(format!("{r}.{index}"))
         }
+        // A raw quantified formula `forall (x : S) in <dom>. φ` / `exists …`
+        // (`.design/stage2-stratified-cage.md` REQ-0). The surface binder PARSES
+        // now (the foundation increment), but its Verus emission (a stratified
+        // `forall|…|`/`exists|…|` with the fresh-name + trigger discipline) is
+        // REQ-8 ("production quantifier emission in thermite-lower"), gated on the
+        // stage-2 metatheory. Until then the lowerer refuses honestly rather than
+        // emit an unproven encoding — `LowerError::Unsupported` is the established
+        // "outside the v0.1 mapping" path. No corpus uses raw quantifiers, so no
+        // existing golden is affected.
+        Expr::Quantifier { .. } => Err(LowerError::Unsupported {
+            what: "a raw quantifier (`forall`/`exists`) — stratified emission is stage-2 (REQ-8)"
+                .to_string(),
+            span,
+        }),
     }
 }
 
@@ -8506,6 +8538,13 @@ fn collect_block_local_muls(block: &Block, muls: &mut Vec<Expr>) {
                     }
                 }
             }
+            // A raw quantified formula (`.design/stage2-stratified-cage.md` REQ-0):
+            // a multiplication needing an overflow obligation can hide in either the
+            // domain or the body — descend into both.
+            Expr::Quantifier { domain, body, .. } => {
+                walk_expr(domain, muls);
+                walk_expr(body, muls);
+            }
             // A closure body is a spec predicate (no exec overflow obligation);
             // literals/paths/strings carry no nested product. No-op.
             Expr::Closure { .. }
@@ -9028,6 +9067,11 @@ fn expr_mentions(expr: &Expr, name: &str) -> bool {
         // can be mentioned in any tuple element or under a projection's receiver.
         Expr::Tuple(elems) => elems.iter().any(|e| expr_mentions(e, name)),
         Expr::TupleProj { receiver, .. } => expr_mentions(receiver, name),
+        // A raw quantified formula (`.design/stage2-stratified-cage.md` REQ-0): the
+        // name can be mentioned in either the domain or the body.
+        Expr::Quantifier { domain, body, .. } => {
+            expr_mentions(domain, name) || expr_mentions(body, name)
+        }
     }
 }
 

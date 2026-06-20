@@ -277,6 +277,11 @@ fn expr_mentions_result(expr: &Expr, depth: usize) -> bool {
         // result-bearing (not false-rejected as vacuous).
         Expr::Tuple(elems) => elems.iter().any(|e| expr_mentions_result(e, d)),
         Expr::TupleProj { receiver, .. } => expr_mentions_result(receiver, d),
+        // A raw quantified formula (`.design/stage2-stratified-cage.md` REQ-0):
+        // `result` can be mentioned in the domain or the body.
+        Expr::Quantifier { domain, body, .. } => {
+            expr_mentions_result(domain, d) || expr_mentions_result(body, d)
+        }
     }
 }
 

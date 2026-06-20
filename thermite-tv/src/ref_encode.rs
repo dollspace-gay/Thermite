@@ -1037,5 +1037,9 @@ fn node_kind(e: &Expr) -> String {
         Expr::StrLit(_) => "string literal".to_string(),
         Expr::Tuple(_) => "tuple".to_string(),
         Expr::TupleProj { .. } => "tuple projection".to_string(),
+        // A raw quantified formula `forall`/`exists` (`.design/stage2-stratified-cage.md`
+        // REQ-0): the stratified reference encoder for raw binders is stage-2 (REQ-8);
+        // this descriptor exists so the node-kind report stays exhaustive.
+        Expr::Quantifier { .. } => "quantifier".to_string(),
     }
 }

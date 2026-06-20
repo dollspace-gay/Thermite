@@ -336,6 +336,16 @@ fn encode_expr(e: &Expr, ctx: &EncodeCtx) -> Result<String, ExportRefusal> {
         Expr::Closure { .. } => Err(ExportRefusal::OutOfFragment(
             "bare closure (S_C closures appear ONLY as a combinator predicate)".to_string(),
         )),
+        // A raw quantifier `forall`/`exists` (`.design/stage2-stratified-cage.md`
+        // REQ-0): the v1 contract fragment `S_C` (the `Ast.lean` mirror this exporter
+        // targets) has NO raw binder constructor — stratified Lean encoding is REQ-5
+        // (`Strat/RefEncode.lean`), a separate namespace. Refuse honestly so no
+        // unproven binder is ever exported to the v1 spine and the Rust↔Lean
+        // correspondence stays pinned.
+        Expr::Quantifier { .. } => Err(ExportRefusal::OutOfFragment(
+            "raw quantifier (`forall`/`exists`) — S_C has no binder; stratified encoding is stage-2 (REQ-5)"
+                .to_string(),
+        )),
     }
 }
 

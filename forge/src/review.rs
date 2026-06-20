@@ -561,6 +561,12 @@ fn collect_callee_names(expr: &Expr, out: &mut std::collections::BTreeSet<String
             }
         }
         Expr::TupleProj { receiver, .. } => collect_callee_names(receiver, out),
+        // A raw quantified formula (`.design/stage2-stratified-cage.md` REQ-0): a
+        // callee name can appear in the domain or the body.
+        Expr::Quantifier { domain, body, .. } => {
+            collect_callee_names(domain, out);
+            collect_callee_names(body, out);
+        }
         // A string literal (`.design/basis/07-strings.md` REQ-1) is a leaf: no
         // sub-expression, no callee path — it references no spec fn (the no-op
         // leaf arm alongside `IntLit`/`BoolLit`).

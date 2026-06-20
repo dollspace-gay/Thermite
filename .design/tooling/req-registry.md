@@ -3,8 +3,8 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: f09f8ca376257cc1e2543b8ebc9fb771bffd04df (re-pinned 2026-06-17 for umbrella REQ-7 / AC-12, the §6 metrics dashboard: this doc's governed files (registry.toml, status.md) carry the additive REQ-FORGE-METRICS-DASHBOARD requirement entry + its `forge-metrics-status` view + the regenerated status view; req-registry.py --check is clean (443 requirements, 119 views). prior: stage-1 REQ-10/AC-14 G1 gate REQ-S1-10 entry)
-audited-content-sha256: 45ac74adffbc7440355d09b6cf9f62a30f86da31f3163bfd2d547ca2c27ffb4a
+audited-sha: f09f8ca376257cc1e2543b8ebc9fb771bffd04df (re-pinned 2026-06-19 for stage-2 REQ-1 / AC-1, the Strat spine foundation: this doc's governed files (registry.toml, status.md) carry the additive REQ-S2-1 requirement entry + the regenerated status view; req-registry.py --check is clean (444 requirements, 119 views). prior: 2026-06-17 umbrella REQ-7 / AC-12 §6 metrics dashboard REQ-FORGE-METRICS-DASHBOARD entry; before that stage-1 REQ-10/AC-14 G1 gate REQ-S1-10 entry)
+audited-content-sha256: 5030958e1b86a7f8e718484a79df95cfa1687962196043dfb26f20dd60d5be0f
 governs:
   - .design/reqs/registry.toml
   - .design/reqs/status.md

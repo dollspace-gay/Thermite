@@ -1,0 +1,10 @@
+{
+  "uuid": "47019909-50a9-4ccd-a35f-76f7ab40f18a",
+  "issue_uuid": "1edb5880-1ae7-4ff0-9d9e-04b6b6513dcf",
+  "author": "rApq",
+  "content": "Shipped: PR #67 squash-merged to main. AC-2 met — SubstKit.lean (sdenote_push_lift/sdenote_subst axiom-clean, zero sorry, SPIKE-1 conventions cited) + PinBrokenLift.lean broken-lift micro-pin + the folded-in Syntax.lean:13 stale-comment fix; REQ-S2-2 registered; doc-drift clean. CI all green (lean 15m38s). Unblocks REQ-5 (#327, with #326).",
+  "created_at": "2026-06-20T19:35:46.606317Z",
+  "kind": "note",
+  "signed_by": "SHA256:tVRGNaCPy5N1tRtokzkbgsOCzGZujGDWQlGHFruaL9c",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgylLCWwpnQm2E2UQO23AN1e/yB6k0yzmPM7qiYPujTNYAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAw5EJD9iqyfhoCphh4E1bfMYcdiThcErgvrU+Hye0IWCAUaO3TISofofYRVbsV8ELnYFx60DkH4nbQvfR1aEpDA=="
+}

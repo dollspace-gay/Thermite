@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: ae6295f1a8d4faefe640559c01e39fd3766cfa52 (re-pinned 2026-06-17 after merging main into the §6 metrics-dashboard branch (#316): governed source carries the additive REQ-FORGE-METRICS-DASHBOARD entry + regen status view; net-additive, REQs unchanged.)
+audited-sha: b9704022d93ff153e345699cbc444645ca284fcc (re-pinned 2026-06-19 for #322 surface-quantifier foundation: governed source gains net-additive raw forall/exists handling — the new Expr::Quantifier AST node + honest-refusal match arms; the REQs this doc governs are unchanged.)
 governs: thermite-syntax/src/ast.rs
 governs: thermite-syntax/src/parser.rs
 governs: thermite-spec/src/validator.rs

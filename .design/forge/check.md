@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 1db3f2ba5cff4b38508036f9dd1cf47f54e5d161 (re-pinned 2026-06-17 after merging main into the G1 gate-artifact branch: governed source carries the gate's per-clause forge router + #53 arm64 sandbox + #54 content-pin docs, net-additive; the REQs this doc governs are unchanged.)
+audited-sha: b9704022d93ff153e345699cbc444645ca284fcc (re-pinned 2026-06-19 for #322 surface-quantifier foundation: governed source gains net-additive raw forall/exists handling — the new Expr::Quantifier AST node + honest-refusal match arms; the REQs this doc governs are unchanged.)
 governs: forge/src/check.rs
 thesis-refs:
   - thermite-design.md §5.1

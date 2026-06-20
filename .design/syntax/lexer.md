@@ -3,7 +3,7 @@
 tier: 3-component
 status: draft
 audited-sha: 6b86f74476122cfddbdcf168d37a3561d2598054 (re-pinned 2026-06-16 for PR #46 after merging main: lex_string now rejects raw non-ASCII bytes with a structured SyntaxError while string contents remain Rust-String-backed; ASCII escapes and token classification are unchanged.)
-audited-content-sha256: 775d2e6cfdf564412cdbb55a5fa75f5fc6fd7acbf8b3bdc6e6b28a2ef271cd5a
+audited-content-sha256: ba559aaabe5239900afd87a688db2413e457a91eef2dca870dff01aa62f1e05c
 governs: thermite-syntax/src/lexer.rs
 thesis-refs:
   - thermite-design.md §4.3

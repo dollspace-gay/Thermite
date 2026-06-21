@@ -1,0 +1,10 @@
+{
+  "uuid": "7ef6d324-441f-46c2-a158-b85b87ba96c0",
+  "issue_uuid": "63e200c3-746b-496a-a52f-76ce8ac1b06e",
+  "author": "rApq",
+  "content": "Shipped: PR #77 squash-merged. AC-9 met — make audit runs [1'][4'][8][9] in one run and GATES the trust flip (forge g2-gate). [1'] all 4 stratified theorems axiom-clean (restrat_conservative added); [4'] doc-drift on mirrored Rust files; [8] differential battery (Rust==Lean Cls.admitted, zero disagreements); [9] two-phase TV sweep (zero divergent). The flip is a TESTED code path (the_flip_is_a_tested_code_path: any check red -> flip withheld to UNPROVEN). Trust HONESTLY scoped: solver(z3)+ref_encode(strat): structure proven (T1-S) + qfree grounded to v1 (T2-S) + rel/array by z3-theory (solver base; kernel-grounding rel = stage 3). ci.yml reconciled onto the #76 split. REQ-S2-9 registered. Unblocks REQ-10 (#332, the last increment).",
+  "created_at": "2026-06-21T21:42:35.869329Z",
+  "kind": "note",
+  "signed_by": "SHA256:tVRGNaCPy5N1tRtokzkbgsOCzGZujGDWQlGHFruaL9c",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgylLCWwpnQm2E2UQO23AN1e/yB6k0yzmPM7qiYPujTNYAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAGnl6qReqHxvtNhoTtPlhUZ07ALjlEgly4nJZDdpGBDM2z6ncAR8XaawULUu6qu0t0UGKFpxCEddflIeat9FQAg=="
+}

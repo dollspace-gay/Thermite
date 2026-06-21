@@ -1,0 +1,8 @@
+{
+  "uuid": "0dedb934-b2ad-4e44-97f4-48e268f5ba24",
+  "issue_uuid": "eada3230-4e50-421f-8fcf-b2528b85bde8",
+  "author": "3pvO",
+  "content": "Plan: REQ-5 encoder + T1-S. BRIDGE DECISION (option B, documented): a translation Cls.Frm -> spine Strat.Frm (option A) is ILL-DEFINED — the minimal spine Tm is var-only and cannot hold the array-property vocabulary (Read/Len/Cast/IdxOp) admitted formulas require, so no formula-level translation exists. The encoder therefore targets Cls.Frm directly; T1-S proves soundness against REQ-3's structural denotation fdenote (design-stated as STRONGER than any single per-sort model, so it subsumes the spine sdenote as one instance). No forked syntax (reuses Cls.Frm/Cls.Tm), no sorry. Files: Strat/TokDenote.lean (named-binder token surface Tok + tokDenote over named env), Strat/RefEncode.lean (sencode: de Bruijn->levels fresh-name discipline + trigger-free flag), Strat/Soundness.lean (Agree invariant; strat_ref_sound; strat_ref_wf). Pins PinStratCapture (name-reuse capture), PinStratFlip (all<->ex swap), decide-checked at 2-element domain. Probe: add Strat.Soundness build target + strat_ref_sound to THEOREMS.",
+  "created_at": "2026-06-21T01:36:34.734650Z",
+  "kind": "plan"
+}

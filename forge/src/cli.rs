@@ -140,6 +140,14 @@ pub enum ForgeError {
     /// A usage error: missing/unknown verb, missing positional, bad flag, or a
     /// `forge new` target that already exists.
     Usage(String),
+    /// The stratified-classifier differential battery's Lean half failed for an
+    /// ENVIRONMENT reason — `lake env lean` could not be spawned, the Lean driver
+    /// exited non-zero, or its verdict-line count did not match the formula count
+    /// (`.design/stage2-stratified-cage.md` REQ-4). Distinct from a real verdict
+    /// DISAGREEMENT (which is a reported outcome surfaced as a verification-failure
+    /// `ExitCode`, like a divergent TV clause — not a `ForgeError`). Surfaced, never
+    /// swallowed (R-CODE-4).
+    StratDifferential { detail: String },
     /// A soundness alarm (`.design/verified/proof-backends.md` REQ-5, #247): two
     /// engines disagreed on the same certification obligation — one returned `Proven`
     /// and another a witnessed `Refuted` (a counterexample). This is a hard halt, not
@@ -229,6 +237,12 @@ impl fmt::Display for ForgeError {
             }
             ForgeError::Usage(msg) => write!(f, "usage error: {msg}"),
             ForgeError::SoundnessAlarm(d) => write!(f, "SOUNDNESS ALARM: {d}"),
+            ForgeError::StratDifferential { detail } => {
+                write!(
+                    f,
+                    "stratified classifier differential harness error: {detail}"
+                )
+            }
         }
     }
 }
@@ -389,6 +403,22 @@ enum Command {
         /// (REQ-3, the primary one). `Some(n)` runs `n` generated exprs; `None` (via
         /// `--no-generated`) runs only the corpus body-expr check.
         generated: Option<usize>,
+    },
+    /// `forge strat-tv [--generated N] [--seed <u64>] [--json]` — the stratified-cage
+    /// classifier differential battery (`.design/stage2-stratified-cage.md` REQ-4 /
+    /// AC-4; audit check [8]). Generates `N` well-sorted formulas and holds the Rust
+    /// admission classifier (`thermite_spec::classifier`) byte-equal to the Lean kernel
+    /// `Thermite.Strat.Cls.admitted` (via `lake env lean --run`); any verdict
+    /// disagreement is a verification-failure exit, and the unknown-on-admitted tripwire
+    /// escalates as classifier-suspect. lake-absent is an honest skip (exit 0).
+    StratTv {
+        json: bool,
+        /// `--generated [N]` — the formula count (default [`crate::strat_tv::STRAT_TV_DEFAULT_N`]).
+        generated: usize,
+        /// `--seed <u64>` — the generator seed. `None` uses the pinned
+        /// [`crate::strat_tv::STRAT_TV_DEFAULT_SEED`] (the reproducible fixed-seed gate);
+        /// a rotating value walks a different slice of the clause space each run.
+        seed: Option<u64>,
     },
     /// `forge body-tv <file> [--json]` — the exec-body (statement / state-refinement)
     /// translation-validation deeper audit (epic #169, blocker #162;
@@ -987,6 +1017,51 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                 generated,
             })
         }
+        "strat-tv" => {
+            // `forge strat-tv [--generated [N]] [--seed <u64>] [--json]`
+            // (`.design/stage2-stratified-cage.md` REQ-4 / AC-4). No file positional —
+            // the clause source is the deterministic generator, not a corpus program.
+            let mut json = false;
+            let mut generated = crate::strat_tv::STRAT_TV_DEFAULT_N;
+            let mut seed: Option<u64> = None;
+            let mut iter = iter.peekable();
+            while let Some(arg) = iter.next() {
+                match arg.as_str() {
+                    "--json" => json = true,
+                    "--generated" => {
+                        // An optional numeric token after `--generated` sets N; else the
+                        // default. A non-numeric next token is a separate arg.
+                        if let Some(parsed) = iter.peek().and_then(|t| t.parse::<usize>().ok()) {
+                            iter.next();
+                            generated = parsed;
+                        }
+                    }
+                    "--seed" => {
+                        let raw = iter.next().ok_or_else(|| {
+                            ForgeError::Usage("`--seed` requires a u64 value".to_string())
+                        })?;
+                        let parsed = raw.parse::<u64>().map_err(|_| {
+                            ForgeError::Usage(format!("`--seed` value `{raw}` is not a u64"))
+                        })?;
+                        seed = Some(parsed);
+                    }
+                    flag if flag.starts_with("--") => {
+                        return Err(ForgeError::Usage(format!("unknown flag `{flag}`")));
+                    }
+                    positional => {
+                        return Err(ForgeError::Usage(format!(
+                            "`forge strat-tv` takes no positional argument; unexpected \
+                             `{positional}`"
+                        )));
+                    }
+                }
+            }
+            Ok(Command::StratTv {
+                json,
+                generated,
+                seed,
+            })
+        }
         "body-tv" => {
             // `forge body-tv <file> [--json]` (#162; `.design/verified/exec-stmt-tv.md`
             // REQ-5 + `.design/verified/loop-tv.md` REQ-5). The first positional is the
@@ -1255,6 +1330,11 @@ fn dispatch(args: &[String]) -> Result<ExitCode, ForgeError> {
             json,
             generated,
         } => run_exec_tv(&file, json, generated),
+        Command::StratTv {
+            json,
+            generated,
+            seed,
+        } => run_strat_tv(json, generated, seed),
         Command::BodyTv { file, json } => run_body_tv(&file, json),
         Command::Goal { file, item, proof } => run_goal(&file, item.as_deref(), proof),
         Command::Battery { file, item } => run_battery(&file, item.as_deref()),
@@ -1777,6 +1857,75 @@ fn run_tv(
         Ok(ExitCode::SUCCESS)
     } else {
         Ok(ExitCode::from(EXIT_VERIFICATION_FAILURE))
+    }
+}
+
+/// Run `forge strat-tv`: the stratified-cage classifier differential battery
+/// (`.design/stage2-stratified-cage.md` REQ-4 / AC-4; audit check [8]). Generates `n`
+/// well-sorted formulas from `seed` and holds the Rust admission classifier
+/// (`thermite_spec::classifier`) byte-equal to the Lean kernel
+/// `Thermite.Strat.Cls.admitted` (run via `lake env lean --run`).
+///
+/// Exit code: zero disagreements AND zero tripwire → exit 0; any verdict disagreement,
+/// or an unknown-on-admitted tripwire (classifier-suspect, escalated), is a
+/// verification-failure exit (the hard CI failure check [8] raises). lake-absent is an
+/// honest skip (exit 0 — the differential was not run, never a false pass). A harness
+/// failure (Lean driver exited non-zero, line desync) propagates as a `ForgeError`
+/// (environment exit).
+fn run_strat_tv(json: bool, generated: usize, seed: Option<u64>) -> Result<ExitCode, ForgeError> {
+    use crate::strat_tv::{self, STRAT_TV_DEFAULT_SEED};
+
+    let gen_seed = seed.unwrap_or(STRAT_TV_DEFAULT_SEED);
+    match strat_tv::run_generated(gen_seed, generated)? {
+        strat_tv::StratTvOutcome::Skipped(reason) => {
+            if json {
+                println!(
+                    "{{\"skipped\": true, \"reason\": {}}}",
+                    serde_json::Value::String(reason)
+                );
+            } else {
+                println!("strat-TV (classifier differential): SKIPPED — {reason}");
+            }
+            // An honest not-run (lake absent) is not a failure (R-HONEST-3).
+            Ok(ExitCode::SUCCESS)
+        }
+        strat_tv::StratTvOutcome::Ran(report) => {
+            if json {
+                let doc = serde_json::json!({
+                    "seed": gen_seed,
+                    "checked": report.checked,
+                    "agreements": report.agreements,
+                    "rust_admitted": report.rust_admitted,
+                    "disagreements": report.disagreements.iter().map(|d| serde_json::json!({
+                        "index": d.index,
+                        "rust_admitted": d.rust_admitted,
+                        "lean": d.lean,
+                        "wire": d.wire,
+                    })).collect::<Vec<_>>(),
+                    "tripwire_unknown_on_admitted": report.tripwire_unknown_on_admitted,
+                    "passed": report.passed(),
+                });
+                let rendered = serde_json::to_string_pretty(&doc).map_err(|e| {
+                    ForgeError::StratDifferential {
+                        detail: format!("failed to serialize the strat-TV report JSON: {e}"),
+                    }
+                })?;
+                println!("{rendered}");
+            } else {
+                print!(
+                    "{}",
+                    strat_tv::render_report(
+                        &report,
+                        &format!("strat-TV (classifier differential, seed={gen_seed})")
+                    )
+                );
+            }
+            if report.passed() {
+                Ok(ExitCode::SUCCESS)
+            } else {
+                Ok(ExitCode::from(EXIT_VERIFICATION_FAILURE))
+            }
+        }
     }
 }
 

@@ -2,8 +2,8 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 5ae0816c042debb01c70eb9b89c775837f0c0f24 (re-pinned 2026-06-17 for umbrella REQ-7 / AC-12, the §6 metrics dashboard: the only change to this doc's governed file (main.rs) is one additive module declaration (`mod metrics;`, the new §6 dashboard projection); the workspace/crate structure is otherwise unchanged. prior: stage-1 REQ-10/AC-14 G1 gate seven-verdict test module)
-audited-content-sha256: 84bfe82ea82020b3101c719056069804b06e321cfcbd0240bbe668a3f52c8867
+audited-sha: 5ae0816c042debb01c70eb9b89c775837f0c0f24 (content-sha256 re-pinned 2026-06-20 for stage-2 REQ-4 / AC-4 (#326), the classifier ops half: the changes to this doc's governed lib roots are additive — `pub mod classifier;` + the classifier re-exports in thermite-spec/src/lib.rs (the new Rust admission classifier), and `mod strat_tv;` in forge/src/main.rs (the differential battery module); the workspace/crate structure is otherwise unchanged. The legacy commit pin stays at the 5ae0816c stable-main ancestor; only the active content-sha256 digest moves. prior: 2026-06-17 umbrella REQ-7 / AC-12 §6 metrics dashboard `mod metrics;`; stage-1 REQ-10/AC-14 G1 gate seven-verdict test module)
+audited-content-sha256: 637b666dfb2ccebf326fa59fc9a29b3c1c42f10784abd0eada0946bb4ed087ff
 governs:
   - Cargo.toml (virtual workspace manifest)
   - rust-toolchain.toml

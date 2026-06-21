@@ -7018,6 +7018,52 @@ target = "bash scripts/lean-axiom-probe.sh"
 note = "AC-3 (ci): Thermite.Strat.Fragment added as a build target (transitively pulls Nnf/Graph) so a sorry/broken proof under Strat/ fails the gate; Thermite.Strat.Cls.classifier_correct added to the axiom-gated THEOREMS list so its axioms must stay subset of {propext, Classical.choice, Quot.sound}"
 
 [[requirement]]
+id = "REQ-S2-4"
+title = "Stage-2 classifier ops half (Rust) + the differential battery — thermite-spec classifier + forge strat-tv"
+owner = ".design/stage2-stratified-cage.md"
+status = "shipped"
+scope = "verified"
+summary = "The admission-classifier OPS half + the M2b differential battery (stage2-stratified-cage.md REQ-4 / AC-4; child of thermite2-program.md REQ-10; gate G2; spec of record the stage-2 metatheory sketch GH#2 §1-§3,§5). Mirrors the REQ-3 Lean KERNEL classifier (#325, merged 80e59203) in Rust, beside thermite-spec's existing validator, over the SORT-TYPED Thermite.Strat.Cls surface (Sort2 mach/seq/opaque + the Read/Len/Cast/IdxOp/Mul/spec-fn term vocabulary + sorted binders) — NOT REQ-1's minimal semantic-spine Frm. (1) thermite-spec/src/classifier.rs: a line-for-line transliteration of the Lean defs — Sort2/Mach/Tm/Rel/Atom/Frm, fin_sort/fin_carrier (R1), same_width/has_bound_var/idx_ok_tm/idx_grammar_at (R2 BMS index grammar), nnf/nnf_neg, edges_tm/edges_atom/edges_frm + sort_graph (E1 alternation ∪ E2 function-flow, on NNF), and admitted = fin_carrier && idx_grammar && acyclic(sort_graph(nnf)). The ONE intentional divergence: acyclic is a polynomial transitive-closure (Graph::acyclic) computing the SAME boolean as the Lean exponential Roy-Warshall reach (they agree by acyclic_iff_no_cycle), so the differential is fast. classify returns Verdict {Admitted | Rejected(RejectReason) | Unknown}; the FROZEN rejection vocabulary RejectReason = SeqQuantifier (R1, the only non-finite Sort2) | IndexGrammar (R2) | SortGraphCycle{cycle} (R3, the named cycle). The four §3.2 micro-examples (a[a[i]] self-loop, the width-preserving cast cycle, the kv alternation cycle, sortedness) are unit-tested to the SAME admit/reject outcomes the Lean Fragment.lean decide-checks. A shared compact S-expression WIRE format (to_wire/parse_frm) round-trips every Frm. (2) thermite-tv/src/gen.rs: gen_strat_formulas(seed,n) extends the SplitMix64 generator with well-sorted binder productions — the Q5 default two arms (a corpus-mimicking arm spanning every admit/reject class + a uniform-random bounded recursive-descent arm), every var an in-scope de Bruijn index carrying its binder sort; deterministic (same seed -> same stream), covering every verdict class. (3) lean/Thermite/Strat/Cls/Wire.lean: the Lean half — a partial recursive-descent parser from the wire format back to the kernel Cls.Frm + a root main that runs the KERNEL Cls.admitted (the exact REQ-3 admitted, not a re-impl) on each stdin line, printing one verdict line; an IO tool (no theorem), wired into scripts/lean-axiom-probe.sh as a build target (so a compile break fails the Lean CI job and its dep Strat.Fragment is built). (4) forge/src/strat_tv.rs + the forge strat-tv subcommand: the differential harness — generate N formulas, classify each with BOTH the Rust classifier AND lake env lean --run on the Lean admitted (wire on stdin), compare verdict-for-verdict. A DISAGREEMENT (Rust admit != Lean admit, both definite) is a verification-failure exit (the hard CI failure audit check [8] raises, NOT a ForgeError). The unknown-on-admitted TRIPWIRE (a formula the Rust classifier could not vouch for — Verdict::Unknown, or a Lean parse-error — while the kernel admitted it) is the classifier-suspect signal: counted, logged, escalated (also fails the gate), never silently retried; structurally 0 since classify is total. lake-absent is an honest Skipped (exit 0, never a false pass). AC-4 met: forge/tests/strat_differential.rs (lake-gated, runs live in the lean CI job via cargo nextest run -p forge) asserts the Rust verdict == Lean admitted on N=200 generated formulas with ZERO disagreements + ZERO tripwire, at the pinned seed and a rotated seed; locally verified across 5 seeds (600 formulas) with zero disagreements and a ~50/50 admit/reject balance. cargo test/clippy -D warnings/fmt clean; lake build green."
+remaining_scope = "The Rust ops-half classifier + the differential battery ONLY. The encoder + T1-S (REQ-5 / #327, the bridge between the Cls classifier surface and the REQ-1 semantic spine), the audit-script [8]/[1'] integration (REQ-9 / #331 — this increment ships the runnable battery + the lake-gated forge test that runs in the lean CI job, NOT the scripts/audit.sh check-[8] wiring), and the rest of the stage-2 tree are SEPARATE downstream requirements."
+aliases = ["Stage-2 REQ-4", "REQ-4 classifier ops half", "classifier ops half", "the Rust classifier", "thermite-spec/src/classifier.rs", "forge/src/strat_tv.rs", "lean/Thermite/Strat/Cls/Wire.lean", "gen_strat_formulas", "forge strat-tv", "the differential battery", "M2b", "AC-4", "github:dollspace-gay/Thermite#326"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-spec/src/classifier.rs"
+note = "(1) the Rust admission classifier mirroring Lean Cls.admitted: Sort2/Mach/Tm/Rel/Atom/Frm + fin_carrier (R1) + idx_grammar (R2) + nnf + sort_graph (E1∪E2) + Graph::acyclic (polynomial, result-identical to the Lean Roy-Warshall reach) + classify/admitted + the frozen RejectReason vocabulary + the wire to_wire/parse_frm; the four §3.2 micro-examples unit-tested to the Lean outcomes"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "thermite_spec::classifier::admitted"
+note = "the bare boolean mirror of Lean Thermite.Strat.Cls.admitted — the value the differential battery holds byte-equal to lake env lean --run on the kernel admitted"
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-tv/src/gen.rs"
+note = "(2) gen_strat_formulas — the SplitMix64 generator extended with well-sorted binder productions (Q5: corpus-mimicking + uniform-random arms), deterministic, covering every verdict class (admit + each frozen rejection reason)"
+
+[[requirement.evidence]]
+kind = "file"
+target = "lean/Thermite/Strat/Cls/Wire.lean"
+note = "(3) the Lean half: a wire-format recursive-descent parser to the kernel Cls.Frm + a root main running the kernel Cls.admitted per stdin line; an IO tool, a scripts/lean-axiom-probe.sh build target"
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/strat_tv.rs"
+note = "(4) the differential harness: gen -> classify (Rust) -> lake env lean --run (kernel) -> compare; disagreement = verification-failure exit, the unknown-on-admitted tripwire (classifier-suspect, escalated), lake-absent = honest Skipped; the forge strat-tv subcommand drives it"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/strat_differential.rs"
+note = "AC-4 (ci): the lake-gated live battery — Rust verdict == Lean admitted on N=200 generated formulas with zero disagreements + zero tripwire, at the pinned seed and a rotated seed; runs in the lean CI job (cargo nextest run -p forge with the spine built)"
+
+[[requirement.evidence]]
+kind = "command"
+target = "cargo run -p forge -- strat-tv --generated 200"
+note = "the runnable differential driver (the rotating-seed / audit check [8] entry point; add --seed <u64> to rotate): zero disagreements AND zero tripwire -> exit 0; a disagreement or a tripwire -> verification-failure exit; lake-absent -> honest skip (exit 0)"
+
+[[requirement]]
 id = "REQ-SKILL-V2-FORGE-TIER"
 title = "THERMITE.skill.md v2 — the agent-facing Stage-1 forge-tier section"
 owner = ".design/thermite2-program.md"

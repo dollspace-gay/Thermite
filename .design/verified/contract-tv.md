@@ -3,8 +3,8 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 4a748bc98172c98cc39fb245996ab4143bdab08d (re-pinned 2026-06-16 for stage-1 increment 2b: thermite-tv's SplitMix64 Rng is made pub so the covenant falsify can reuse it (a visibility widening, additive); the contract-TV REQs this doc governs are unchanged.)
-audited-content-sha256: 3894d2078d92981e70882f80bf31eb63b43eb3d5cb1084ed41cda5b523404146
+audited-sha: 4a748bc98172c98cc39fb245996ab4143bdab08d (content-sha256 re-pinned 2026-06-20 for stage-2 REQ-4 / AC-4 (#326), the classifier differential battery: the change to this doc's governed file (thermite-tv/src/gen.rs) is the additive `gen_strat_formulas` generator (the well-sorted stratified-cage binder productions for the classifier differential, plus its `strat_to_wire`/`strat_rust_admitted` helpers) — a NEW generator beside the contract/exec ones; the contract-TV REQs this doc governs are unchanged. The legacy commit pin stays at the 4a748bc9 stable-main ancestor; only the active content-sha256 digest moves. prior: 2026-06-16 stage-1 increment 2b SplitMix64 `Rng` made pub.)
+audited-content-sha256: 8f1186a568bd89ca6dc160080fb505a2faf4a72debbc27602baa8401e89157f2
 governs: thermite-tv/src/ref_encode.rs, thermite-tv/src/obligation.rs, forge/src/contract_tv.rs
 thesis-refs:
   - thermite-design.md §1 (trust relocated twice: code → spec → spec-intent)

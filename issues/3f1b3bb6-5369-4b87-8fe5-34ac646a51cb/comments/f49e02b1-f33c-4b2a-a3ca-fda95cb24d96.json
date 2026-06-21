@@ -1,0 +1,8 @@
+{
+  "uuid": "f49e02b1-f33c-4b2a-a3ca-fda95cb24d96",
+  "issue_uuid": "3f1b3bb6-5369-4b87-8fe5-34ac646a51cb",
+  "author": "ZkTL",
+  "content": "Decision: atom-grounding closes for qfree atoms, stays model-relative for rel atoms (the honest SMT-theory boundary). T2-S strat_lowering_faithful = T1-S specialized to any oracle grounding qfree to v1 (strat_ref_sound_sentence, free over forall q), PLUS the qfree-reflects-v1 conjunct (the NEW content over REQ-5): the encoded SMT surface of a qfree atom denotes EXACTLY decide(Thermite.denote 0 e venv) in the req-frame. groundQ mirrors the spine canonicalQOracle/sdenote_qf_canonical seam on the Cls atom set; SFnTvWitness.canonical proves the theorem INHABITED (grounds by rfl), so it is not vacuous. Chose qfree-grounded/rel-model-relative over a full Cls.Tm->v1 evaluator because the latter would be a FABRICATED correspondence: a closed Cls.rel term cannot be evaluated to a v1 value (see Observation below). This is exactly an SMT translation-validation posture (array theory is the solver's) and exactly the parametricity T1-S already certifies — no sorry, no new axiom, no silently-weakened theorem. strat_lowering_faithful axiom-clean: [propext, Classical.choice, Quot.sound].",
+  "created_at": "2026-06-21T17:29:57.984219Z",
+  "kind": "decision"
+}

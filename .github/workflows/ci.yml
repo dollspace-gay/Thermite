@@ -262,14 +262,18 @@ jobs:
         working-directory: lean
         run: lake exe cache get
 
-      - name: Build the spine modules forge's --engine lean discharge imports
+      - name: Build the spine modules forge's live Lean drivers need
         working-directory: lean
-        # forge's lean export imports `Thermite.Stabilize` / `Exec.Stmt` / `Exec.WhileBody`
-        # (NOT the root `Thermite`, which pulls the cvc5-FFI `SmtDemo`). Without these
-        # oleans on the search path the `--engine lean` auto-discharge fails with "unknown
-        # module prefix 'Thermite'" — which `engine_lean_attaches_smaller_trust_base_live`
-        # correctly catches. Incremental on a warm `.lake` cache.
-        run: lake build Thermite.Stabilize Thermite.Exec.Stmt Thermite.Exec.WhileBody
+        # forge's `--engine lean` export imports `Thermite.Stabilize` / `Exec.Stmt` /
+        # `Exec.WhileBody` (NOT the root `Thermite`, which pulls the cvc5-FFI `SmtDemo`);
+        # the REQ-4 differential battery runs `lake env lean --run Thermite/Strat/Cls/Wire.lean`,
+        # which needs `Thermite.Strat.Cls.Wire` built (it pulls Fragment/Graph/Nnf
+        # transitively). The old monolithic job got the Strat oleans for free from the
+        # axiom-probe's `lake build`; this split moved the probe to `lean-probe`, so the
+        # forge job must build Wire itself. Without these the live tests fail with
+        # "unknown module prefix 'Thermite'" / "spine may not be built". Incremental on a
+        # warm `.lake` cache.
+        run: lake build Thermite.Stabilize Thermite.Exec.Stmt Thermite.Exec.WhileBody Thermite.Strat.Cls.Wire
 
       - name: Install Rust toolchain (pinned)
         uses: dtolnay/rust-toolchain@1.95.0

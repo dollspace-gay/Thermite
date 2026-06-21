@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 60fd029e65c83b38f81a7e03ad8911318455064b (re-pinned 2026-06-19 for #322 surface-quantifier foundation: governed source gains net-additive raw forall/exists handling — the new Expr::Quantifier AST node + honest-refusal match arms; the REQs this doc governs are unchanged.)
+audited-sha: 0abe5ce11c15f3d96d1c7211ad17858a9f1a1fd0 (re-pinned 2026-06-21 for #330 REQ-8: thermite-lower/src/lower.rs gains net-additive stratified quantifier emission; the v1 behavior this doc governs is unchanged. NOTE: branch-tip pin — needs post-merge re-pin to the squash commit, per the #322->#65 pattern.)
 governs: forge/src/check.rs
 governs: thermite-lower/src/lower.rs
 thesis-refs:

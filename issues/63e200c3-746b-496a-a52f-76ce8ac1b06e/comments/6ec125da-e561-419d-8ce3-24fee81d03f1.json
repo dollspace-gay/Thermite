@@ -1,0 +1,8 @@
+{
+  "uuid": "6ec125da-e561-419d-8ce3-24fee81d03f1",
+  "issue_uuid": "63e200c3-746b-496a-a52f-76ce8ac1b06e",
+  "author": "xVlV",
+  "content": "Result: REQ-9 G2 gate SHIPPED (commits b4081d12 feat + 9839466b chore). make audit PASSED with the new [G2] section all green in ONE run: [1'] axiom probe (4 stratified theorems axiom-clean), [4'] doc-drift (new strat-rust-lean-correspondence.md content-pinned, governs classifier/strat_ref_encode/strat_two_phase via 3 spec-routes), [8] forge strat-tv (200/200 agree, 0 tripwire), [9] forge strat-faithful-tv (all certified). THE MECHANICAL BLOCK (AC-9): thermite-tv g2_flip_permitted(declared,&checks)=declared && all_green + the gate_blocks_the_flip_when_any_one_check_is_red toggle test (each of the four red -> flip withheld -> UNPROVEN); forge g2-gate exits NONZERO when declared && any red. G2 reached: G2_FLIPPED=true (gated), REF_ENCODE_PROVEN honestly scoped (structure T1-S + qfree->v1 T2-S + rel by z3-theory; kernel-grounding rel = stage 3). Also re-pinned the PRE-EXISTING v1 rust-lean-correspondence check-[4] drift (#322-#330 touched ref_encode/exec_encode/lean_export/lean spine; verified additive-only -> 60fd029e/80c88ea1, stable ancestors). Gauntlet: lake build + axiom-probe rc=0; cargo test green (env-gated live tests pass with spine+verus); clippy -D warnings; fmt; python3 tooling/doc-drift.py rc=0; tooling/reqs check clean. NOTE: git push is blocked for the agent (project policy) — push + draft PR + CI is the driver's step; origin/main has diverged so the orchestrator's shepherd re-pin gate applies at merge.",
+  "created_at": "2026-06-21T21:17:36.874922Z",
+  "kind": "note"
+}

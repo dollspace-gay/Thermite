@@ -4,7 +4,7 @@
 tier: 3-component
 status: shipped
 audited-sha: 5ae0816c042debb01c70eb9b89c775837f0c0f24 (content-sha256 re-pinned 2026-06-20 for stage-2 REQ-4 / AC-4 (#326), the classifier differential battery: the change to this doc's governed file (cli.rs) is the additive `forge strat-tv [--generated N] [--seed <u64>] [--json]` subcommand (`Command::StratTv` → `run_strat_tv`) plus the new `ForgeError::StratDifferential` harness-error variant; every other subcommand + flag parse is unchanged. The legacy commit pin stays at the 5ae0816c stable-main ancestor; only the active content-sha256 digest moves. prior: 2026-06-18 umbrella REQ-2c / AC-4 rotating-seed `--seed` flag on `forge tv`; §6 metrics dashboard `--metrics` value)
-audited-content-sha256: 05126b8e86e1246b5f550835bed1b09ca5c592534b3d2eb59483a90733c6e041
+audited-content-sha256: a9e28217692173248d43ec36b099376872d4be84d1637a39aa98caacb6207249
 governs: forge/src/cli.rs
 thesis-refs:
   - thermite-design.md §5

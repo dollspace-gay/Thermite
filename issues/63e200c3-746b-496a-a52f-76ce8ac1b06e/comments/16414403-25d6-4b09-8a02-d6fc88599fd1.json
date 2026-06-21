@@ -1,0 +1,8 @@
+{
+  "uuid": "16414403-25d6-4b09-8a02-d6fc88599fd1",
+  "issue_uuid": "63e200c3-746b-496a-a52f-76ce8ac1b06e",
+  "author": "xVlV",
+  "content": "Plan recorded: REQ-9 G2 gate. [1'] already green (probe lists all 4 strat theorems, rc=0). [8]/[9] have CLI entry points (forge strat-tv / strat-faithful-tv), not yet in audit.sh. Only G2_FLIPPED consumer is the audit-surface sweep -> gate is audit-time. Building: G2Checks+g2_flip_permitted gate in strat_two_phase.rs (tested: toggle each red->withheld); forge g2-gate subcommand; audit.sh grows [1'][4'][8][9]+[G2]; new strat-rust-lean-correspondence.md governing classifier/strat_ref_encode/strat_two_phase via doc-drift content-pin ([4']); rotating-seed strat-tv in generated-tv.yml; honest proven label; register REQ-S2-9.",
+  "created_at": "2026-06-21T20:11:15.302341Z",
+  "kind": "note"
+}

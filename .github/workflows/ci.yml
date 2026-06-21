@@ -250,9 +250,26 @@ jobs:
         # which pulls the cvc5-FFI `SmtDemo`). Without these oleans on the search path the
         # `--engine lean` auto-discharge fails with "unknown module prefix 'Thermite'" —
         # which `engine_lean_attaches_smaller_trust_base_live` correctly catches.
-        run: lake build Thermite.Stabilize Thermite.Exec.Stmt Thermite.Exec.WhileBody
+        # `Thermite.Strat.Cls.Wire` (REQ-4) is the `lake env lean --run` driver the
+        # stratified classifier differential battery (check [8]) speaks to; build its
+        # oleans here so the fixed-seed `forge strat-tv` gate below runs the Lean side.
+        run: lake build Thermite.Stabilize Thermite.Exec.Stmt Thermite.Exec.WhileBody Thermite.Strat.Cls.Wire
 
       - name: forge tests WITH the spine (the lake-gated live tests run here, not skipped)
         # lake is on PATH (elan), the spine modules forge imports are built, Verus is
         # installed: the live `lake_present()`/spine-dependent tests take their RUN branch.
         run: cargo nextest run -p forge
+
+      - name: Stage-2 G2 gate — fixed-seed differential + two-phase sweep ([8] / [9])
+        # The reproducible per-PR half of REQ-9 checks [8]/[9] (`.design/stage2-stratified-cage.md`
+        # REQ-9 / AC-9): the classifier differential battery (Rust classifier ≡ Lean
+        # `Thermite.Strat.Cls.admitted` over generated formulae, the Lean side via
+        # `lake env lean --run`) and the stratified two-phase TV sweep, both at the pinned
+        # default seed. The rotating-seed half is the scheduled `generated-tv` job. A
+        # classifier disagreement / tripwire ([8]) or a divergence / withheld clause ([9])
+        # is a verification-failure exit and fails the job. lake is on PATH here, so
+        # `strat-tv` takes its RUN branch (not the honest lake-absent SKIP).
+        run: |
+          set -euo pipefail
+          cargo run -q -p forge -- strat-tv
+          cargo run -q -p forge -- strat-faithful-tv

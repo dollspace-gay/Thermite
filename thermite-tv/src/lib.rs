@@ -113,7 +113,8 @@ pub use obligation::{
 pub use ref_encode::{ref_contract_pred, RefCtx, RefEncodeError};
 pub use strat_ref_encode::strat_ref_encode;
 pub use strat_two_phase::{
-    classify_pair, run_two_phase, semantic_obligation, strat_trust_profile,
-    strat_trust_profile_current, ClauseRoute, PhaseSplit, SemanticOutcome, StratClause, TvPhase,
-    TvVerdict, TwoPhaseReport, G2_FLIPPED, REF_ENCODE_PROVEN, REF_ENCODE_UNPROVEN,
+    classify_pair, g2_flip_permitted, run_two_phase, semantic_obligation, strat_trust_profile,
+    strat_trust_profile_current, strat_trust_profile_gated, ClauseRoute, G2Checks, PhaseSplit,
+    SemanticOutcome, StratClause, TvPhase, TvVerdict, TwoPhaseReport, G2_FLIPPED,
+    REF_ENCODE_PROVEN, REF_ENCODE_UNPROVEN, SOLVER_Z3,
 };

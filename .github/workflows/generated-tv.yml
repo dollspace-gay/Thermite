@@ -66,6 +66,34 @@ jobs:
           echo "$(dirname "$VERUS_BIN_PATH")" >> "$GITHUB_PATH"
           "$VERUS_BIN_PATH" --version
 
+      - name: Install elan (Lean toolchain manager)
+        # The stratified classifier differential battery (REQ-9 check [8]) holds the Rust
+        # classifier byte-equal to the Lean kernel `admitted` via `lake env lean --run`, so
+        # the rotating-seed strat-TV needs lake. (The contract-TV step above does not.)
+        run: |
+          set -euo pipefail
+          curl -fsSL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -o /tmp/elan-init.sh
+          bash /tmp/elan-init.sh -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: Cache Lean build (.lake)
+        uses: actions/cache@v4
+        with:
+          path: |
+            lean/.lake/packages
+            lean/.lake/build
+          key: lean-${{ hashFiles('lean/lake-manifest.json', 'lean/lean-toolchain') }}
+          restore-keys: |
+            lean-
+
+      - name: Fetch prebuilt Mathlib cache (oleans)
+        working-directory: lean
+        run: lake exe cache get
+
+      - name: Build the stratified Wire module (the strat-TV Lean driver)
+        working-directory: lean
+        run: lake build Thermite.Strat.Cls.Wire
+
       - name: Build forge
         run: cargo build -p forge --release
 
@@ -80,3 +108,19 @@ jobs:
           echo "::notice::generated TV — seed=$SEED count=$COUNT"
           ./target/release/forge tv conformance/binary_search.th \
             --generated "$COUNT" --seed "$SEED"
+
+      - name: Rotating-seed stratified classifier differential + two-phase sweep ([8] / [9])
+        # REQ-9 check [8]'s rotating-seed half: each scheduled run walks a different slice
+        # of the well-sorted formula space, holding the Rust admission classifier
+        # byte-equal to the Lean kernel `Thermite.Strat.Cls.admitted` (`forge strat-tv`),
+        # plus the two-phase TV sweep over a rotating stratified clause stream
+        # (`forge strat-faithful-tv`). A classifier disagreement / unknown-on-admitted
+        # tripwire, or a divergence / withheld clause, exits non-zero and fails the job —
+        # the seed-dependent admission/lowering-fidelity watchdog (REQ-4 / REQ-8 / AC-9).
+        run: |
+          set -euo pipefail
+          SEED="${{ github.event.inputs.seed || github.run_number }}"
+          COUNT="${{ github.event.inputs.count || '200' }}"
+          echo "::notice::strat-TV — seed=$SEED count=$COUNT"
+          ./target/release/forge strat-tv --generated "$COUNT" --seed "$SEED"
+          ./target/release/forge strat-faithful-tv --generated "$COUNT" --seed "$SEED"

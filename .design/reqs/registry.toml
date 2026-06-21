@@ -16026,3 +16026,59 @@ note = "pins the production quantifier emission: forall/exists lower to the boun
 kind = "command"
 target = "bash scripts/lean-axiom-probe.sh"
 note = "AC-8 (ci): builds Thermite.Strat.Faithfulness and axiom-gates Thermite.Strat.strat_lowering_faithful (subset of {propext, Classical.choice, Quot.sound}); green — a sorry or disallowed axiom under the faithfulness path fails the Lean CI job"
+
+[[requirement]]
+id = "REQ-S2-9"
+title = "Stage-2 audit integration — the G2 gate: make audit grows [1'][4'][8][9] + the forge g2-gate mechanical block on the certificate trust flip"
+owner = ".design/stage2-stratified-cage.md"
+status = "shipped"
+scope = "verified"
+summary = "THE G2 GATE increment (stage2-stratified-cage.md REQ-9 / AC-9; child of thermite2-program.md REQ-10; gate G2; spec of record the stage-2 metatheory sketch GH#2). Builds on REQ-1..REQ-8 (#323/#324/#325/#326/#327/#328/#329/#330, all merged @ 80c88ea1); unblocks REQ-10 (#332). make audit grows four stage-2 checks that must ALL be green in ONE run, gating REQ-8's certificate trust flip (G2_FLIPPED). (1) [1'] the axiom probe (scripts/lean-axiom-probe.sh) gates the FOUR stratified soundness theorems strat_ref_sound (T1-S) / strat_lowering_faithful (T2-S) / classifier_correct (T3-C) / restrat_conservative (T4-R) — already in THEOREMS by REQ-5/8/3/7 (allowed axioms unchanged {propext, Classical.choice, Quot.sound}); scripts/audit.sh check [1] surfaces the stratified pillars + sets the [G2] sub-verdict S2_AXIOM. (2) [4'] doc-drift over the THREE new mirrored Rust files: .design/verified/strat-rust-lean-correspondence.md (the stratified arm-by-arm correspondence, content-sha256 pinned) governs thermite-spec/src/classifier.rs + thermite-tv/src/strat_ref_encode.rs + thermite-tv/src/strat_two_phase.rs via three new tooling/spec-routes.toml routes, so tooling/doc-drift.py (the shipped tripwire) now covers the mirrors (before #331 they were unrouted — no freshness gate). (3) [8] the classifier differential battery (forge strat-tv, fixed seed) wired into scripts/audit.sh + the rotating-seed scheduled job (.github/workflows/generated-tv.yml gains elan + mathlib cache + the Wire build + a rotating-seed forge strat-tv/strat-faithful-tv step). (4) [9] the stratified two-phase TV sweep (forge strat-faithful-tv) wired into scripts/audit.sh reporting the syntactic/semantic/timeout phase split. THE GATE AS A TESTED CODE PATH (the AC-9 crux): thermite-tv/src/strat_two_phase.rs gains G2Checks{axiom_probe,doc_drift,differential,two_phase_tv} + g2_flip_permitted(declared,&checks)=declared && all_green + strat_trust_profile_gated — the proven (HONESTLY SCOPED) flip is permitted iff G2 is declared AND every gating check is green; ANY red check downgrades the label back to the conservative UNPROVEN form (a flipped certificate can never out-run the audit that justifies it). The toggle tests drive each of the four red in turn and assert the flip is withheld (gate_blocks_the_flip_when_any_one_check_is_red). forge g2-gate is the make-audit enforcer: it combines the four verdicts through g2_flip_permitted, prints the effective trust, and EXITS NONZERO when G2 is declared while any check is red (the live mechanical block). G2 is REACHED: G2_FLIPPED flipped false->true (REQ-8's one-line change, now enabled), and REF_ENCODE_PROVEN is HONESTLY SCOPED per REQ-5 option B / #330-#331: structure proven (T1-S) + qfree atoms grounded to v1 Thermite.denote (T2-S) + rel/array discharged by Z3's theory (solver base) — kernel-grounding rel is stage-3 reconstruction; the label does NOT over-claim. scripts/audit.sh grows the [G2] section (the four sub-checks + the forge g2-gate enforcer; tool-absent SKIP is INCONCLUSIVE not green, R-HONEST-3) and the .github/workflows/ci.yml lean job runs the fixed-seed strat-tv/strat-faithful-tv where lake exists. cargo test (gate toggle + flip-block tests) / clippy -D warnings / fmt / doc-drift (re-pinned) / tooling/reqs check all clean. No stubs/sorries."
+remaining_scope = "Closed: the make-audit G2 gate ([1'][4'][8][9] green in one run + the forge g2-gate mechanical block), the doc-drift route over the three mirrored files, the rotating-seed scheduled differential, and the gated honestly-scoped trust flip. The rel/array-atom semantics stays MODEL-RELATIVE by design (the SMT array theory is the solver's; kernel-grounding it in Lean is stage-3 reconstruction, out of scope — the proven label scopes to exactly what is attested). REQ-10 (the complete pin battery) is the separate downstream requirement (#332)."
+aliases = ["Stage-2 REQ-9", "REQ-9 audit integration", "G2 gate", "the G2 gate", "make audit", "g2-gate", "forge g2-gate", "G2Checks", "g2_flip_permitted", "strat_trust_profile_gated", "[1']", "[4']", "[8]", "[9]", "strat-rust-lean-correspondence", "doc-drift route", "rotating-seed", "AC-9", "github:dollspace-gay/Thermite#331"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-tv/src/strat_two_phase.rs"
+note = "the G2 gate (REQ-9/AC-9): G2Checks{axiom_probe,doc_drift,differential,two_phase_tv} + all_green/red + g2_flip_permitted(declared,&checks) + strat_trust_profile_gated; G2_FLIPPED flipped true (G2 reached, gated); REF_ENCODE_PROVEN honestly scoped (structure+qfree-to-v1+rel-by-z3-theory, kernel-grounding rel = stage 3); the toggle tests drive each of the four red and assert the flip is withheld"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "thermite_tv::strat_two_phase::g2_flip_permitted"
+note = "THE TESTED CODE PATH: the flip is permitted iff declared AND every gating check green; any red check withholds it (the AC-9 mechanical block), exercised by gate_blocks_the_flip_when_any_one_check_is_red (toggle each of [1'][4'][8][9] red -> flip withheld -> UNPROVEN label)"
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/cli.rs"
+note = "forge g2-gate --axiom-probe/--doc-drift/--differential/--two-phase: the make-audit enforcer that combines the four verdicts through g2_flip_permitted, prints the effective (gated) trust, and EXITS NONZERO when G2 is declared while any check is red — the live mechanical block"
+
+[[requirement.evidence]]
+kind = "file"
+target = ".design/verified/strat-rust-lean-correspondence.md"
+note = "[4'] the stratified arm-by-arm Rust<->Lean correspondence doc (content-sha256 pinned) governing the three mirrored Rust files (classifier.rs / strat_ref_encode.rs / strat_two_phase.rs) <-> the kernel-proven Strat models; the doc-drift route that gates the flip"
+
+[[requirement.evidence]]
+kind = "file"
+target = "tooling/spec-routes.toml"
+note = "[4'] three new routes mapping the mirrored Rust files to the stratified correspondence doc, so tooling/doc-drift.py (the shipped tripwire) covers them (before #331 the strat files were unrouted — no freshness gate)"
+
+[[requirement.evidence]]
+kind = "file"
+target = "scripts/audit.sh"
+note = "the [G2] section: runs [1'] (axiom probe, shared with check [1]) / [4'] (doc-drift over the strat correspondence doc) / [8] (forge strat-tv) / [9] (forge strat-faithful-tv) and the forge g2-gate enforcer; all four green in one run flips, any red blocks, a tool-absent SKIP is INCONCLUSIVE (R-HONEST-3)"
+
+[[requirement.evidence]]
+kind = "file"
+target = ".github/workflows/generated-tv.yml"
+note = "[8] the rotating-seed scheduled differential: elan + mathlib cache + Thermite.Strat.Cls.Wire build + a rotating-seed (github.run_number) forge strat-tv + strat-faithful-tv step — the seed-dependent admission/lowering-fidelity watchdog"
+
+[[requirement.evidence]]
+kind = "command"
+target = "bash scripts/lean-axiom-probe.sh"
+note = "[1'] the axiom probe gates the four stratified soundness theorems strat_ref_sound/strat_lowering_faithful/classifier_correct/restrat_conservative (allowed axioms unchanged {propext, Classical.choice, Quot.sound}); rc=0"
+
+[[requirement.evidence]]
+kind = "command"
+target = "make audit"
+note = "AC-9: one deep-audit run shows [1'][4'][8][9] all green and the [G2] gate flips; toggling any check red exercises forge g2-gate's nonzero-exit mechanical block (the trust flip withheld)"

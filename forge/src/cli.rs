@@ -436,6 +436,25 @@ enum Command {
         /// [`crate::strat_faithful::STRAT_FAITHFUL_DEFAULT_SEED`].
         seed: Option<u64>,
     },
+    /// `forge g2-gate --axiom-probe <0|1> --doc-drift <0|1> --differential <0|1>
+    /// --two-phase <0|1> [--json]` — THE G2 GATE (`.design/stage2-stratified-cage.md`
+    /// REQ-9 / AC-9). The runtime enforcer `make audit` drives after running the four
+    /// stage-2 checks: it combines their green/red outcomes through
+    /// [`thermite_tv::strat_two_phase::g2_flip_permitted`], prints the EFFECTIVE trust
+    /// profile (the proven scoped form iff the declaration `G2_FLIPPED` is on AND all four
+    /// green, else the conservative `UNPROVEN` form), and EXITS NONZERO when G2 is declared
+    /// while any of the four is red — the mechanical block of the trust flip.
+    G2Gate {
+        json: bool,
+        /// `[1′]` the Lean axiom probe verdict (green = passed).
+        axiom_probe: bool,
+        /// `[4′]` the doc-drift tripwire verdict.
+        doc_drift: bool,
+        /// `[8]` the classifier differential battery verdict.
+        differential: bool,
+        /// `[9]` the stratified two-phase TV sweep verdict.
+        two_phase: bool,
+    },
     /// `forge body-tv <file> [--json]` — the exec-body (statement / state-refinement)
     /// translation-validation deeper audit (epic #169, blocker #162;
     /// `.design/verified/exec-stmt-tv.md` REQ-5 + `.design/verified/loop-tv.md`
@@ -1130,6 +1149,67 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                 seed,
             })
         }
+        "g2-gate" => {
+            // `forge g2-gate --axiom-probe <0|1> --doc-drift <0|1> --differential <0|1>
+            // --two-phase <0|1> [--json]` (`.design/stage2-stratified-cage.md` REQ-9 /
+            // AC-9). Each of the four flags takes a 0/1 (or pass/fail / true/false)
+            // verdict; all four are REQUIRED — the gate cannot honestly evaluate a check it
+            // was not told about (a missing verdict is a usage error, never an optimistic
+            // green).
+            let mut json = false;
+            let mut axiom_probe: Option<bool> = None;
+            let mut doc_drift: Option<bool> = None;
+            let mut differential: Option<bool> = None;
+            let mut two_phase: Option<bool> = None;
+            let mut iter = iter.peekable();
+            let parse_verdict = |flag: &str, raw: Option<&String>| -> Result<bool, ForgeError> {
+                let raw = raw.ok_or_else(|| {
+                    ForgeError::Usage(format!("`{flag}` requires a 0|1 (pass|fail) verdict"))
+                })?;
+                match raw.as_str() {
+                    "1" | "pass" | "green" | "true" | "ok" => Ok(true),
+                    "0" | "fail" | "red" | "false" => Ok(false),
+                    other => Err(ForgeError::Usage(format!(
+                        "`{flag}` verdict `{other}` is not 0|1 (pass|fail / green|red)"
+                    ))),
+                }
+            };
+            while let Some(arg) = iter.next() {
+                match arg.as_str() {
+                    "--json" => json = true,
+                    "--axiom-probe" => {
+                        axiom_probe = Some(parse_verdict("--axiom-probe", iter.next())?)
+                    }
+                    "--doc-drift" => doc_drift = Some(parse_verdict("--doc-drift", iter.next())?),
+                    "--differential" => {
+                        differential = Some(parse_verdict("--differential", iter.next())?)
+                    }
+                    "--two-phase" => two_phase = Some(parse_verdict("--two-phase", iter.next())?),
+                    flag if flag.starts_with("--") => {
+                        return Err(ForgeError::Usage(format!("unknown flag `{flag}`")));
+                    }
+                    positional => {
+                        return Err(ForgeError::Usage(format!(
+                            "`forge g2-gate` takes no positional argument; unexpected \
+                             `{positional}`"
+                        )));
+                    }
+                }
+            }
+            let missing = |name: &str| {
+                ForgeError::Usage(format!(
+                    "`forge g2-gate` requires the `{name}` verdict (all four of \
+                     --axiom-probe/--doc-drift/--differential/--two-phase are required)"
+                ))
+            };
+            Ok(Command::G2Gate {
+                json,
+                axiom_probe: axiom_probe.ok_or_else(|| missing("--axiom-probe"))?,
+                doc_drift: doc_drift.ok_or_else(|| missing("--doc-drift"))?,
+                differential: differential.ok_or_else(|| missing("--differential"))?,
+                two_phase: two_phase.ok_or_else(|| missing("--two-phase"))?,
+            })
+        }
         "body-tv" => {
             // `forge body-tv <file> [--json]` (#162; `.design/verified/exec-stmt-tv.md`
             // REQ-5 + `.design/verified/loop-tv.md` REQ-5). The first positional is the
@@ -1435,6 +1515,13 @@ fn dispatch(args: &[String]) -> Result<ExitCode, ForgeError> {
             generated,
             seed,
         } => run_strat_faithful_tv(json, generated, seed),
+        Command::G2Gate {
+            json,
+            axiom_probe,
+            doc_drift,
+            differential,
+            two_phase,
+        } => run_g2_gate(json, axiom_probe, doc_drift, differential, two_phase),
         Command::BodyTv { file, json } => run_body_tv(&file, json),
         Command::Goal { file, item, proof } => run_goal(&file, item.as_deref(), proof),
         Command::Battery { file, item } => run_battery(&file, item.as_deref()),
@@ -2174,6 +2261,95 @@ fn run_strat_faithful_tv(
         Ok(ExitCode::SUCCESS)
     } else {
         Ok(ExitCode::from(EXIT_VERIFICATION_FAILURE))
+    }
+}
+
+/// Run `forge g2-gate`: THE G2 GATE (`.design/stage2-stratified-cage.md` REQ-9 / AC-9).
+///
+/// `make audit` runs the four stage-2 checks ([1′] axiom probe, [4′] doc-drift, [8] the
+/// classifier differential battery, [9] the two-phase TV sweep) and passes their green/red
+/// verdicts here. This subcommand combines them with the compiled-in G2 DECLARATION
+/// (`thermite_tv::strat_two_phase::G2_FLIPPED`) through
+/// [`thermite_tv::strat_two_phase::g2_flip_permitted`] and:
+///   * prints the EFFECTIVE trust profile (the proven scoped form iff declared AND all four
+///     green, else the conservative `UNPROVEN` form), and
+///   * EXITS NONZERO iff G2 is DECLARED while any of the four is RED — the mechanical block.
+///     A flipped certificate can never out-run the audit that justifies it (a red check
+///     fails the audit and withholds the flip). A consistent pre-G2 state (undeclared) is
+///     exit 0 — green checks alone do not over-claim.
+fn run_g2_gate(
+    json: bool,
+    axiom_probe: bool,
+    doc_drift: bool,
+    differential: bool,
+    two_phase: bool,
+) -> Result<ExitCode, ForgeError> {
+    use thermite_tv::strat_two_phase::{
+        g2_flip_permitted, strat_trust_profile_gated, G2Checks, G2_FLIPPED,
+    };
+
+    let checks = G2Checks {
+        axiom_probe,
+        doc_drift,
+        differential,
+        two_phase_tv: two_phase,
+    };
+    let declared = G2_FLIPPED;
+    let permitted = g2_flip_permitted(declared, &checks);
+    let profile = strat_trust_profile_gated(declared, &checks);
+    let red = checks.red();
+    // The mechanical block: G2 declared but a gating check is red ⇒ the flip would
+    // over-claim ⇒ FAIL the audit (and withhold the flip). An undeclared gate is always
+    // consistent (the conservative form is honest), even with red checks.
+    let blocked = declared && !checks.all_green();
+
+    if json {
+        let doc = serde_json::json!({
+            "g2_declared": declared,
+            "checks": {
+                "axiom_probe": axiom_probe,
+                "doc_drift": doc_drift,
+                "differential": differential,
+                "two_phase_tv": two_phase,
+            },
+            "all_green": checks.all_green(),
+            "red": red,
+            "flip_permitted": permitted,
+            "trust_profile": profile,
+            "blocked": blocked,
+        });
+        let rendered =
+            serde_json::to_string_pretty(&doc).map_err(|e| ForgeError::StratDifferential {
+                detail: format!("failed to serialize the g2-gate report JSON: {e}"),
+            })?;
+        println!("{rendered}");
+    } else {
+        println!("=== G2 gate (REQ-9 / AC-9) ===");
+        let mark = |b: bool| if b { "green" } else { "RED" };
+        println!("  [1'] axiom-probe          : {}", mark(axiom_probe));
+        println!("  [4'] doc-drift            : {}", mark(doc_drift));
+        println!("  [8]  differential-battery : {}", mark(differential));
+        println!("  [9]  two-phase-TV         : {}", mark(two_phase));
+        println!("  G2 declared (G2_FLIPPED)  : {declared}");
+        println!("  trust flip permitted      : {permitted}");
+        println!("  effective trust           : [{}]", profile.join(", "));
+        if blocked {
+            println!(
+                "  BLOCKED — G2 is declared but {} red: the trust flip is mechanically \
+                 withheld (the certificate would over-claim).",
+                red.join(", ")
+            );
+        } else if permitted {
+            println!("  G2 — all four green: the proven (scoped) trust flip is in effect.");
+        } else {
+            println!("  pre-G2 — the conservative UNPROVEN form is in effect (no over-claim).");
+        }
+    }
+
+    if blocked {
+        Ok(ExitCode::from(EXIT_VERIFICATION_FAILURE))
+    } else {
+        Ok(ExitCode::SUCCESS)
     }
 }
 

@@ -1,0 +1,8 @@
+{
+  "uuid": "591d791a-dee8-400d-8d3f-4f3925bd05df",
+  "issue_uuid": "3f1b3bb6-5369-4b87-8fe5-34ac646a51cb",
+  "author": "ZkTL",
+  "content": "Result: REQ-8 COMPLETE. (1) lean/Thermite/Strat/Faithfulness.lean — T2-S strat_lowering_faithful + SFnTvWitness; atom-grounding closes for qfree (real v1 Thermite.denote), rel stays model-relative (honest SMT boundary). Axiom-clean [propext, Classical.choice, Quot.sound]; lean-axiom-probe green for all 11 THEOREMS incl. strat_lowering_faithful. (2) thermite-lower production quantifier emission (trigger-free index-grammar MBQI surface). (3) thermite-tv strat_ref_encode (independent reference encoder). (4) thermite-tv strat_two_phase: two-phase TV (syntactic->semantic finite-bound fallback; count_where/permutation_of direct-semantic; Timeout WITHHOLDS) + the G2_FLIPPED trust gate (UNPROVEN pre-G2 / proven post-G2, one-line flip, gate-toggle test). (5) forge strat-faithful-tv orchestrator. AC-8 met: strat_two_phase_corpus.rs runs the two-phase TV over the 40 SPIKE-2 corpus fixtures (all syntactic) + generated clauses with the phase split; the trust string reads UNPROVEN before G2 / proven after, toggle-tested. REQ-S2-8 registered; doc-drift re-pinned (content-sha256, 10 docs); cargo test (thermite-tv 60, thermite-lower all, forge strat_faithful 5) + clippy -D warnings + fmt clean. Committed @ 0abe5ce1. AC-9 (make audit [1prime][4prime][8][9] G2 gate) + the real Z3 semantic discharge are REQ-9 (#331). NOTE: git push blocked by policy — orchestrator pushes.",
+  "created_at": "2026-06-21T17:34:39.042015Z",
+  "kind": "result"
+}

@@ -420,6 +420,22 @@ enum Command {
         /// a rotating value walks a different slice of the clause space each run.
         seed: Option<u64>,
     },
+    /// `forge strat-faithful-tv [--generated N] [--seed <u64>] [--json]` — the stratified
+    /// two-phase faithfulness sweep (`.design/stage2-stratified-cage.md` REQ-8 / AC-8;
+    /// audit check [9]). Validates the production lowering against the independent
+    /// stratified reference encoder through the syntactic normalizer (phase 1) and the
+    /// thin semantic fallback (phase 2), reporting the syntactic/semantic/timeout phase
+    /// split and the per-clause `trust:` profile under the G2 gate. A timeout WITHHOLDS
+    /// (never a false pass); a divergence is a verification-failure exit.
+    StratFaithfulTv {
+        json: bool,
+        /// `--generated [N]` — the clause count (default
+        /// [`crate::strat_faithful::STRAT_FAITHFUL_DEFAULT_N`]).
+        generated: usize,
+        /// `--seed <u64>` — the generator seed. `None` uses the pinned
+        /// [`crate::strat_faithful::STRAT_FAITHFUL_DEFAULT_SEED`].
+        seed: Option<u64>,
+    },
     /// `forge body-tv <file> [--json]` — the exec-body (statement / state-refinement)
     /// translation-validation deeper audit (epic #169, blocker #162;
     /// `.design/verified/exec-stmt-tv.md` REQ-5 + `.design/verified/loop-tv.md`
@@ -1070,6 +1086,50 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                 seed,
             })
         }
+        "strat-faithful-tv" => {
+            // `forge strat-faithful-tv [--generated [N]] [--seed <u64>] [--json]`
+            // (`.design/stage2-stratified-cage.md` REQ-8 / AC-8). The two-phase TV sweep
+            // over generated stratified clauses, reporting the phase split + the trust
+            // profile under the G2 gate. Same arg shape as `strat-tv` (no positional).
+            let mut json = false;
+            let mut generated = crate::strat_faithful::STRAT_FAITHFUL_DEFAULT_N;
+            let mut seed: Option<u64> = None;
+            let mut iter = iter.peekable();
+            while let Some(arg) = iter.next() {
+                match arg.as_str() {
+                    "--json" => json = true,
+                    "--generated" => {
+                        if let Some(parsed) = iter.peek().and_then(|t| t.parse::<usize>().ok()) {
+                            iter.next();
+                            generated = parsed;
+                        }
+                    }
+                    "--seed" => {
+                        let raw = iter.next().ok_or_else(|| {
+                            ForgeError::Usage("`--seed` requires a u64 value".to_string())
+                        })?;
+                        let parsed = raw.parse::<u64>().map_err(|_| {
+                            ForgeError::Usage(format!("`--seed` value `{raw}` is not a u64"))
+                        })?;
+                        seed = Some(parsed);
+                    }
+                    flag if flag.starts_with("--") => {
+                        return Err(ForgeError::Usage(format!("unknown flag `{flag}`")));
+                    }
+                    positional => {
+                        return Err(ForgeError::Usage(format!(
+                            "`forge strat-faithful-tv` takes no positional argument; unexpected \
+                             `{positional}`"
+                        )));
+                    }
+                }
+            }
+            Ok(Command::StratFaithfulTv {
+                json,
+                generated,
+                seed,
+            })
+        }
         "body-tv" => {
             // `forge body-tv <file> [--json]` (#162; `.design/verified/exec-stmt-tv.md`
             // REQ-5 + `.design/verified/loop-tv.md` REQ-5). The first positional is the
@@ -1370,6 +1430,11 @@ fn dispatch(args: &[String]) -> Result<ExitCode, ForgeError> {
             generated,
             seed,
         } => run_strat_tv(json, generated, seed),
+        Command::StratFaithfulTv {
+            json,
+            generated,
+            seed,
+        } => run_strat_faithful_tv(json, generated, seed),
         Command::BodyTv { file, json } => run_body_tv(&file, json),
         Command::Goal { file, item, proof } => run_goal(&file, item.as_deref(), proof),
         Command::Battery { file, item } => run_battery(&file, item.as_deref()),
@@ -2058,6 +2123,57 @@ fn run_strat_tv(json: bool, generated: usize, seed: Option<u64>) -> Result<ExitC
                 Ok(ExitCode::from(EXIT_VERIFICATION_FAILURE))
             }
         }
+    }
+}
+
+/// Run `forge strat-faithful-tv`: the stratified two-phase faithfulness sweep
+/// (`.design/stage2-stratified-cage.md` REQ-8 / AC-8; audit check [9]). Validates the
+/// production lowering against the independent stratified reference encoder through the
+/// syntactic normalizer (phase 1) + the thin semantic fallback (phase 2), reporting the
+/// phase split and the per-clause `trust:` profile under the G2 gate.
+///
+/// Exit code: every clause certified (no divergence, none withheld) → exit 0; a
+/// divergence OR a withheld (timeout) clause is a verification-failure exit (a withheld
+/// clause is honestly NOT a pass — the semantic phase reached no verdict).
+fn run_strat_faithful_tv(
+    json: bool,
+    generated: usize,
+    seed: Option<u64>,
+) -> Result<ExitCode, ForgeError> {
+    use crate::strat_faithful::{self, STRAT_FAITHFUL_DEFAULT_SEED};
+
+    let gen_seed = seed.unwrap_or(STRAT_FAITHFUL_DEFAULT_SEED);
+    let report = strat_faithful::run_generated(gen_seed, generated);
+    if json {
+        let doc = serde_json::json!({
+            "seed": gen_seed,
+            "syntactic": report.split.syntactic,
+            "semantic": report.split.semantic,
+            "timeout_withheld": report.split.timeout_withheld,
+            "divergent": report.split.divergent,
+            "total": report.split.total(),
+            "g2_flipped": report.g2_flipped,
+            "trust_profile": report.trust_profile,
+            "passed": report.passed(),
+        });
+        let rendered =
+            serde_json::to_string_pretty(&doc).map_err(|e| ForgeError::StratDifferential {
+                detail: format!("failed to serialize the strat-faithful-TV report JSON: {e}"),
+            })?;
+        println!("{rendered}");
+    } else {
+        print!(
+            "{}",
+            strat_faithful::render_report(
+                &report,
+                &format!("strat-faithful-TV (two-phase, seed={gen_seed})")
+            )
+        );
+    }
+    if report.passed() {
+        Ok(ExitCode::SUCCESS)
+    } else {
+        Ok(ExitCode::from(EXIT_VERIFICATION_FAILURE))
     }
 }
 

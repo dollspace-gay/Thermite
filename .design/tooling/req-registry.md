@@ -3,8 +3,8 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: f09f8ca376257cc1e2543b8ebc9fb771bffd04df (content-sha256 re-pinned 2026-06-20 for stage-2 REQ-6 / AC-6 (#328), the combinator demotion: this doc's governed files (registry.toml, status.md) carry the additive REQ-S2-6 requirement entry + the regenerated status view; req-registry.py --check is clean (449 requirements, 119 views). The legacy commit pin stays at the f09f8ca3 stable-main ancestor; only the active content-sha256 digest moves. prior: 2026-06-20 stage-2 REQ-4 / AC-4 classifier ops half + differential battery REQ-S2-4 entry; 2026-06-20 stage-2 REQ-2 / AC-2 SubstKit REQ-S2-2 entry; 2026-06-19 stage-2 REQ-1 / AC-1 Strat spine foundation REQ-S2-1 entry; 2026-06-17 umbrella REQ-7 / AC-12 §6 metrics dashboard REQ-FORGE-METRICS-DASHBOARD entry; before that stage-1 REQ-10/AC-14 G1 gate REQ-S1-10 entry)
-audited-content-sha256: 468613cd28a92fba089437da11e933f4bb1dfcd183215d1ceb9b456351c114b0
+audited-sha: f09f8ca376257cc1e2543b8ebc9fb771bffd04df (content-sha256 re-pinned 2026-06-21 for stage-2 REQ-8 / AC-8 (#330), faithfulness + two-phase TV + the trust flip: this doc's governed files (registry.toml, status.md) carry the additive REQ-S2-8 requirement entry + the regenerated status view; req-registry.py --check is clean (451 requirements, 119 views). The legacy commit pin stays at the f09f8ca3 stable-main ancestor; only the active content-sha256 digest moves. prior: 2026-06-20 stage-2 REQ-6 / AC-6 combinator demotion REQ-S2-6 entry; 2026-06-20 stage-2 REQ-4 / AC-4 classifier ops half + differential battery REQ-S2-4 entry; 2026-06-20 stage-2 REQ-2 / AC-2 SubstKit REQ-S2-2 entry; 2026-06-19 stage-2 REQ-1 / AC-1 Strat spine foundation REQ-S2-1 entry; 2026-06-17 umbrella REQ-7 / AC-12 §6 metrics dashboard REQ-FORGE-METRICS-DASHBOARD entry; before that stage-1 REQ-10/AC-14 G1 gate REQ-S1-10 entry)
+audited-content-sha256: 07fd66005b892c5f182f0e9d2d8d5c934f6a0940fcabd1e2f3e35acbb8694cdf
 governs:
   - .design/reqs/registry.toml
   - .design/reqs/status.md

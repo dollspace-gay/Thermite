@@ -101,11 +101,21 @@ IMPORTS=(
   # pin (decide-checked, no theorem in the gated list).
   "Thermite.Strat.Restratify"
   "Thermite.PinRestratDropSide"
+  # Stage-2 REQ-8 (#330): faithfulness + the atom-grounding. `Thermite.Strat.Faithfulness`
+  # carries T2-S (`strat_lowering_faithful`) + the `SFnTvWitness` grounding (it imports
+  # `Strat.Soundness` + the v1 `Thermite.Denote` seam; deliberately NOT the spine
+  # `Strat.Denote`, which would re-introduce the #68 two-syntax probe collision the `.Cls`
+  # split fixed). A `sorry` or broken proof fails the CI Lean job (AC-8). `strat_lowering_faithful`
+  # (T2-S, the source-meaning grounding that lifts cage L4 above structural-only) is added to
+  # the axiom-gated THEOREMS list below (the REQ-9 [1′] extension brought forward for AC-8, as
+  # REQ-5 did for `strat_ref_sound`); the `qfree_iff` corollary is axiom-probed IN-FILE.
+  "Thermite.Strat.Faithfulness"
 )
 # The five load-bearing universal-theorem pillars + the two relax-route spine lemmas
 # (REQ-8a) + the stage-2 classifier coincidence theorem T3-C (REQ-3, AC-3) + the
 # stage-2 stratified encoder soundness T1-S (REQ-5, AC-5) + the stage-2 restratification
-# conservativity T4-R (REQ-7, AC-7). Keep this list in lock-step with the prose in
+# conservativity T4-R (REQ-7, AC-7) + the stage-2 lowering faithfulness / atom-grounding
+# T2-S (REQ-8, AC-8). Keep this list in lock-step with the prose in
 # `scripts/audit.sh` check [1].
 THEOREMS=(
   "Thermite.lowering_faithful"
@@ -118,6 +128,7 @@ THEOREMS=(
   "Thermite.Strat.Cls.classifier_correct"
   "Thermite.Strat.strat_ref_sound"
   "Thermite.Strat.Cls.restrat_conservative"
+  "Thermite.Strat.strat_lowering_faithful"
 )
 ALLOWED="propext Classical.choice Quot.sound"
 

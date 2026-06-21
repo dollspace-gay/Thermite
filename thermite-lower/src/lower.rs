@@ -188,7 +188,7 @@ use std::fmt::Write as _;
 
 use thermite_syntax::ast::{
     BinOp, Block, Clause, EnumItem, Expr, FnItem, IndexArg, Item, MatchArm, Param, Pattern,
-    PrimType, Program, SlicePat, SpecFnItem, Stmt, Type, UnaryOp, VariantDef, VariantShape,
+    PrimType, Program, Quant, SlicePat, SpecFnItem, Stmt, Type, UnaryOp, VariantDef, VariantShape,
 };
 use thermite_syntax::lexer::Span;
 
@@ -7661,20 +7661,42 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
             let r = lower_expr(receiver, ctx, d, span)?;
             Ok(format!("{r}.{index}"))
         }
-        // A raw quantified formula `forall (x : S) in <dom>. φ` / `exists …`
-        // (`.design/stage2-stratified-cage.md` REQ-0). The surface binder PARSES
-        // now (the foundation increment), but its Verus emission (a stratified
-        // `forall|…|`/`exists|…|` with the fresh-name + trigger discipline) is
-        // REQ-8 ("production quantifier emission in thermite-lower"), gated on the
-        // stage-2 metatheory. Until then the lowerer refuses honestly rather than
-        // emit an unproven encoding — `LowerError::Unsupported` is the established
-        // "outside the v0.1 mapping" path. No corpus uses raw quantifiers, so no
-        // existing golden is affected.
-        Expr::Quantifier { .. } => Err(LowerError::Unsupported {
-            what: "a raw quantifier (`forall`/`exists`) — stratified emission is stage-2 (REQ-8)"
-                .to_string(),
-            span,
-        }),
+        // A raw quantified formula `forall (x : S) in <dom>. φ` / `exists (x : S) in
+        // <dom>. φ` (`.design/stage2-stratified-cage.md` REQ-0/REQ-8). This is the
+        // PRODUCTION quantifier emission REQ-8 owns ("production quantifier emission in
+        // thermite-lower (the real Rust lowering of stratified clauses to the SMT
+        // surface)"). The faithfulness of this emission against the independent
+        // stratified reference encoder (`thermite_tv::strat_ref_encode`) is the
+        // two-phase TV's job (REQ-8); soundness of the encoded surface is the kernel
+        // T1-S/T2-S (`lean/Thermite/Strat/{Soundness,Faithfulness}.lean`).
+        //
+        // The emission is the (R2) index-grammar surface the classifier admits: the
+        // binder is a spec `int` index ranging over the domain's index set, with the
+        // membership guard `0 <= x < <dom>.len()` (the Verus bounded-quantifier idiom
+        // the combinator expansions also use, `Ast.lean` `forall_in(s,p) = ∀ i, 0 ≤ i
+        // < s.len() → p(s[i])`). `forall` guards with `==>`, `exists` with `&&` (the
+        // standard bounded forms). It is TRIGGER-FREE (the MBQI surface T1-S's
+        // `strat_ref_wf` certifies: no `#[trigger]` pattern restricting instantiation)
+        // — matching `Strat/RefEncode.lean`'s `sencode`, which sets every quantifier
+        // `triggerFree := true`. The body lowers in the same ctx with `x` in scope.
+        Expr::Quantifier {
+            quant,
+            var,
+            domain,
+            body,
+            ..
+        } => {
+            let dom = lower_expr(domain, ctx, d, span)?;
+            let bod = lower_expr(body, ctx, d, span)?;
+            // The binder is a spec `int` index (Verus spec quantifier vars are `int`);
+            // the sort annotation `S` is the carrier the classifier reads, not a Verus
+            // binder type here (the index grammar quantifies over `dom`'s indices).
+            let guard = format!("0 <= {var} < {dom}.len()");
+            Ok(match quant {
+                Quant::Forall => format!("forall|{var}: int| {guard} ==> ({bod})"),
+                Quant::Exists => format!("exists|{var}: int| {guard} && ({bod})"),
+            })
+        }
     }
 }
 

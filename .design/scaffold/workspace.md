@@ -3,7 +3,7 @@
 tier: 3-component
 status: draft
 audited-sha: 5ae0816c042debb01c70eb9b89c775837f0c0f24 (content-sha256 re-pinned 2026-06-20 for stage-2 REQ-4 / AC-4 (#326), the classifier ops half: the changes to this doc's governed lib roots are additive — `pub mod classifier;` + the classifier re-exports in thermite-spec/src/lib.rs (the new Rust admission classifier), and `mod strat_tv;` in forge/src/main.rs (the differential battery module); the workspace/crate structure is otherwise unchanged. The legacy commit pin stays at the 5ae0816c stable-main ancestor; only the active content-sha256 digest moves. prior: 2026-06-17 umbrella REQ-7 / AC-12 §6 metrics dashboard `mod metrics;`; stage-1 REQ-10/AC-14 G1 gate seven-verdict test module)
-audited-content-sha256: 8b5541a7de10846be5ca1edadaaabb4d4bc3c8ebaa76a8bca3afa81b45050a2c
+audited-content-sha256: cb569778f51b32ee34f37b61a49d5698367501f5dd9f2180ac33491e8883eb70
 governs:
   - Cargo.toml (virtual workspace manifest)
   - rust-toolchain.toml

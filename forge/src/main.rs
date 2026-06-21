@@ -60,6 +60,7 @@ mod sandbox;
 #[cfg(test)]
 mod seven_verdicts;
 mod slag;
+mod strat_faithful;
 mod strat_tv;
 mod strengthen;
 mod tv_signal;

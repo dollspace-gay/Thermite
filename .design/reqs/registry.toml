@@ -15970,3 +15970,59 @@ note = "AC-7: forge edit --restratify performs the kv rewrite end to end (origin
 kind = "command"
 target = "bash scripts/lean-axiom-probe.sh"
 note = "AC-7 (ci): builds Thermite.Strat.Restratify + Thermite.PinRestratDropSide and axiom-gates Thermite.Strat.Cls.restrat_conservative (subset of {propext, Classical.choice, Quot.sound}); green — a sorry or disallowed axiom under the restratify path fails the Lean CI job"
+
+[[requirement]]
+id = "REQ-S2-8"
+title = "Stage-2 faithfulness + two-phase TV + the trust flip — Strat/Faithfulness.lean (T2-S, atom-grounding) + production quantifier emission + stratified ref encoder + two-phase TV + the gated trust flip"
+owner = ".design/stage2-stratified-cage.md"
+status = "shipped"
+scope = "verified"
+summary = "The SOUNDNESS-CRUX increment: faithfulness + the atom-grounding + the two-phase stratified TV + the certificate trust flip (stage2-stratified-cage.md REQ-8 / AC-8; child of thermite2-program.md REQ-10; gate G2; spec of record the stage-2 metatheory sketch GH#2 §8.2). Builds on REQ-1..REQ-7 (#323/#324/#325/#326/#327/#328/#329, all merged @ 2917535b); unblocks REQ-9 (#331). CLOSES the atom-grounding obligation REQ-5 option B (#327) deferred here. (1) lean/Thermite/Strat/Faithfulness.lean: T2-S strat_lowering_faithful + the SFnTvWitness with explicit req-frame conditioning. REQ-5's T1-S proved only the STRUCTURAL skeleton parametric in an uninterpreted atom oracle q : Atom -> Bool; REQ-8 GROUNDS it. groundQ venv relModel : Cls.Atom -> Bool mirrors the spine adenote/canonicalQOracle seam (the v1 deferral REQ-1 proved sound, sdenote_qf_canonical): a qfree e atom defers to decide (Thermite.denote 0 e venv) — the REAL v1 source meaning — while a rel atom defers to the solver's relModel (the SMT array/integer theory). THE HONEST BOUNDARY (surfaced as a decision on #330, NOT papered over): rel atoms stay MODEL-RELATIVE because a closed Cls.rel term cannot be evaluated to a v1 value — Cls.Tm.lit carries NO value (Nnf.lean 'value irrelevant here') and the structural dom : List Tm is sort-erased; the array theory is the solver's, exactly an SMT translation-validation posture, exactly the parametricity T1-S already certifies. So T2-S = T1-S specialized to ANY oracle that grounds qfree to v1 (strat_ref_sound_sentence, free), PLUS the qfree-reflects-v1 conjunct (the new content: the encoded SMT surface of a qfree atom denotes EXACTLY the v1 Thermite.denote truth in the req-frame). SFnTvWitness bundles the req-frame (venv) + the oracle q + the non-empty carrier dom + the grounding hypothesis (grounds : forall e, q (qfree e) = decide (denote 0 e venv)); SFnTvWitness.canonical (built by groundQ_qfree's rfl) proves the theorem INHABITED (not vacuous). strat_lowering_faithful_qfree_iff is the <-> corollary, the Cls analogue of sdenote_qf_canonical. Imports Strat.Soundness + the v1 Thermite.Denote — deliberately NOT the spine Strat.Denote, which would re-introduce the #68 two-syntax probe collision the .Cls split fixed; the v1 deferral seam is reproduced on the Cls atom set directly. (2) thermite-lower production quantifier emission (lower.rs Expr::Quantifier): the pre-REQ-8 honest refusal (LowerError::Unsupported) is replaced by the real (R2) index-grammar emission — forall|x: int| 0 <= x < <dom>.len() ==> (<body>) / exists|x: int| ... && (...), TRIGGER-FREE (the MBQI surface T1-S strat_ref_wf certifies, matching sencode's triggerFree:=true). (3) thermite-tv/src/strat_ref_encode.rs: the INDEPENDENT stratified reference encoder (classifier::Frm -> normalize::Formula), the Rust analogue of RefEncode.lean sencode (de Bruijn LEVEL naming encName d i = d-1-i, no capture); depends on thermite-spec only (never thermite-lower — the TV honesty boundary). (4) thermite-tv/src/strat_two_phase.rs: the two-phase TV per §8.2 — phase 1 SYNTACTIC (the SPIKE-2 normalizer carrying nnf_sound/prenex_sound, the dominant path: SPIKE-2 measured 40/40=100% syntactic) -> phase 2 SEMANTIC (the negation-unfriendly quantified-equivalence Z3 query with finite-bound assertions, the thin rarely-hit fallback); count_where/permutation_of (no raw-quantifier spelling, REQ-6) route ClauseRoute::DirectSemantic; an honest Timeout WITHHOLDS the certificate (TvVerdict::Withheld, never a false pass); run_two_phase reports the syntactic/semantic/timeout/divergent PhaseSplit. (5) THE TRUST FLIP: G2_FLIPPED (the one-line gate, false during rollout) + strat_trust_profile(g2_proven) — pre-G2 a certified stratified clause reads trust: solver(z3) + ref_encode(strat, UNPROVEN — stage 2 in progress); the proven form ref_encode(strat) is the single-line G2_FLIPPED edit, gated on REQ-9's [1'][4'][8][9] audit (the flip must NOT trigger on REQ-5 structural soundness alone — it attests 'proven over source meaning', REQ-8's atom-grounding). (6) forge/src/strat_faithful.rs + forge strat-faithful-tv: the forge orchestrator — run the two-phase TV over generated clauses, report the phase split + the per-clause trust profile under the gate; a divergence or withhold is a verification-failure exit. AC-8 met: thermite-tv/tests/strat_two_phase_corpus.rs runs the two-phase TV over the stratified corpus (40 SPIKE-2 fixtures, all syntactic) + generated clauses reporting the phase split; the trust string reads the UNPROVEN form before G2 and the proven form after, exercised by the gate-toggle tests (trust_profile_reads_unproven_before_g2_and_proven_after, the_flip_is_a_tested_code_path); thermite-lower/tests/strat_quantifier_lower.rs pins the production emission. strat_lowering_faithful proven axiom-clean (in-file + lean-axiom-probe THEOREMS: [propext, Classical.choice, Quot.sound]; Classical via the decide over the Prop-valued v1 denote), zero sorry under lean/Thermite/Strat/, core-Lean path (no Mathlib). Thermite.Strat.Faithfulness wired into scripts/lean-axiom-probe.sh as a CI build target + Thermite.Strat.strat_lowering_faithful added to the axiom-gated THEOREMS (the REQ-9 [1'] extension brought forward for AC-8, as REQ-5/REQ-7 did). cargo test/clippy -D warnings/fmt clean. The audit/[1'][4'][8][9] G2 gate + the real Z3 discharge of the semantic phase (REQ-9 / #331) is the SEPARATE downstream requirement."
+remaining_scope = "The faithfulness/atom-grounding (T2-S), the production quantifier emission, the stratified reference encoder, the two-phase TV (syntactic + semantic + timeout-withhold), and the gated trust flip (one-line G2_FLIPPED + the toggle test) ONLY. The make-audit G2 gate ([1'][4'][8][9] green blocking the flip), the real Z3 discharge of the rarely-hit semantic phase, and the scheduled rotating-seed job (REQ-9 / #331) are a separate requirement. The rel-atom semantics stays model-relative by design (the SMT array theory is the solver's; closing it in Lean is out of scope and would be a fabricated correspondence)."
+aliases = ["Stage-2 REQ-8", "REQ-8 faithfulness", "faithfulness", "two-phase TV", "trust flip", "atom-grounding", "T2-S", "Strat/Faithfulness.lean", "Faithfulness", "strat_lowering_faithful", "SFnTvWitness", "groundQ", "strat_ref_encode", "strat_two_phase", "ClauseRoute", "PhaseSplit", "G2_FLIPPED", "ref_encode(strat)", "forge strat-faithful-tv", "AC-8", "github:dollspace-gay/Thermite#330"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "lean/Thermite/Strat/Faithfulness.lean"
+note = "T2-S strat_lowering_faithful + SFnTvWitness (req-frame conditioning): groundQ grounds qfree atoms to the real v1 Thermite.denote (the spine canonicalQOracle/sdenote_qf_canonical seam on the Cls atom set), rel atoms model-relative (the SMT theory, the honest boundary); SFnTvWitness.canonical proves it inhabited; strat_lowering_faithful_qfree_iff the <-> corollary"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Thermite.Strat.strat_lowering_faithful"
+note = "T2-S faithfulness / atom-grounding: the encoded SMT surface denotes the source skeleton with qfree atoms grounded to real v1 truth in the req-frame (lifting cage L4 above structural-only); axiom-gated in scripts/lean-axiom-probe.sh (subset of {propext, Classical.choice, Quot.sound})"
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-lower/src/lower.rs"
+note = "production quantifier emission: Expr::Quantifier lowers to the (R2) index-grammar MBQI surface forall|x: int| 0 <= x < dom.len() ==> (body) / exists ... && (...), trigger-free (the surface strat_ref_wf certifies), replacing the pre-REQ-8 LowerError::Unsupported refusal"
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-tv/src/strat_ref_encode.rs"
+note = "the independent stratified reference encoder classifier::Frm -> normalize::Formula (the Rust analogue of RefEncode.lean sencode, de Bruijn LEVEL naming, no capture); depends on thermite-spec only — never thermite-lower (the TV independence/honesty boundary)"
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-tv/src/strat_two_phase.rs"
+note = "the two-phase TV (§8.2): phase 1 syntactic normalizer -> phase 2 finite-bound semantic Z3 fallback; count_where/permutation_of route DirectSemantic; Timeout WITHHOLDS the certificate (never a false pass); the trust flip G2_FLIPPED + strat_trust_profile (UNPROVEN pre-G2, proven post-G2 behind the one-line gate)"
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-tv/tests/strat_two_phase_corpus.rs"
+note = "AC-8: the two-phase TV runs over the stratified corpus (40 SPIKE-2 fixtures, all syntactic) + generated clauses reporting the phase split; the recursive-combinator (direct-semantic), withheld, and divergent buckets are exercised"
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/strat_faithful.rs"
+note = "the forge orchestrator + forge strat-faithful-tv: runs the two-phase TV over generated clauses, reports the phase split + the per-clause trust profile under the gate; the gate-toggle tests exercise the flip (UNPROVEN before G2, proven after) — a divergence/withhold is a verification-failure exit"
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-lower/tests/strat_quantifier_lower.rs"
+note = "pins the production quantifier emission: forall/exists lower to the bounded-int index-grammar MBQI surface (trigger-free), replacing the pre-REQ-8 refusal"
+
+[[requirement.evidence]]
+kind = "command"
+target = "bash scripts/lean-axiom-probe.sh"
+note = "AC-8 (ci): builds Thermite.Strat.Faithfulness and axiom-gates Thermite.Strat.strat_lowering_faithful (subset of {propext, Classical.choice, Quot.sound}); green — a sorry or disallowed axiom under the faithfulness path fails the Lean CI job"

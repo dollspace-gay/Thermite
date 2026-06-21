@@ -126,15 +126,22 @@ Lean syntax (REQ-1) or the Rust classifier (REQ-4) can be built or tested.
   `Strat/TokDenote.lean`, `Strat/Soundness.lean` (T1-S
   `strat_ref_sound` + `strat_ref_wf`), with `PinStratCapture` and
   `PinStratFlip` landing in the same increment.
-  **NOTE (per #325 — REQ-5 IS THE BRIDGE):** the two-syntax split (REQ-3
-  note) makes REQ-5 the increment that reconciles the classifier surface
-  (`Thermite.Strat.Cls.Frm`) with the semantic spine
-  (`Thermite.Strat.Frm` + `sdenote`): the encoder/soundness track is where
-  an admitted (`Cls.Frm`) formula gets connected to a sound denotation. Size
-  this reconciliation explicitly — it was deferred here by design, not
-  forgotten. (REQ-3's `nnf_sound`/`prenex_sound` are proved against a
-  *structural* denotation that erases sorts, which is **stronger** than any
-  single per-sort model, so it composes with the eventual `sdenote`.)
+  **RESOLVED (shipped #327, merged @ `52ace098`) — the bridge is option B,
+  the STRUCTURAL layer only.** The two-syntax split (REQ-3 note) made REQ-5
+  the would-be bridge between the classifier surface
+  (`Thermite.Strat.Cls.Frm`) and the spine (`Thermite.Strat.Frm` +
+  `sdenote`). A *translation* `Cls.Frm → Strat.Frm` (option A) is
+  **ill-defined** — the minimal spine `Tm` is `var`-only and cannot hold the
+  `Read`/`Len`/`Cast`/`IdxOp` vocabulary; an admitted `∀i. a[i] ≤ a[j]` has
+  no spine image. So the encoder targets `Cls.Frm` **directly** and T1-S
+  (`strat_ref_sound`) proves soundness against REQ-3's structural `fdenote`
+  — which reads atoms via an **uninterpreted oracle `q : Atom→Bool`** and is
+  ∀-quantified over all `(q, dom)`, hence stronger than any single per-sort
+  model and subsuming the concrete `sdenote` as one instance. **CONSEQUENCE:
+  REQ-5 proves only the quantifier/boolean SKELETON; atom-grounding (`q :=`
+  real semantics) is deferred to REQ-8 (see its INHERITED OBLIGATION note)
+  and the G2 flip gates on it (REQ-9).** The spine `sdenote` is therefore the
+  grounding *instance*, not the encoder's anchor.
 - REQ-6 (**combinator demotion**): `Strat/CombDeriv.lean` — the eight
   `comb_deriv_*` lemmas proving each v1 combinator's denotation equals
   its raw-quantifier expansion (closing the v1 embedding), plus
@@ -172,6 +179,20 @@ Lean syntax (REQ-1) or the Rust classifier (REQ-4) can be built or tested.
   clauses carry `trust: solver(z3) + ref_encode(strat, UNPROVEN — stage
   2 in progress)`; the flip to the proven form is a one-line change
   gated on G2 and is itself a tested code path.
+  **INHERITED OBLIGATION from REQ-5 (option B — #327): REQ-8 owns the
+  ATOM-GROUNDING.** REQ-5's T1-S (`strat_ref_sound`) proved only the
+  *structural* layer — the encoder transcribes the quantifier+boolean
+  skeleton faithfully, **parametric in an uninterpreted atom oracle
+  `q : Atom→Bool`** (`fdenote` reads atoms via `q`; sorts erased over an
+  abstract `dom`). Atoms are NOT interpreted there. So T2-S
+  (`strat_lowering_faithful`) + the two-phase TV here MUST instantiate `q`
+  to the **real v1/program atom semantics** (`qfree → Thermite.denote`;
+  `Read`/`Cast`/`Len`/`rel →` their theory) and validate the production
+  lowering against the reference encoder *at the atom level*. Until that
+  loop is closed, **cage L4 is structural-only**. The spine `sdenote`
+  (REQ-1, "QFree atoms defer to the v1 denotation") is the natural concrete
+  `q` to specialize the structural result to — the spine is the grounding
+  instance, not a dead track.
 - REQ-9 (**audit integration — the G2 gate**): `make audit` grows
   [1′] (axiom probe extended to `strat_ref_sound`,
   `strat_lowering_faithful`, `classifier_correct`,
@@ -181,6 +202,14 @@ Lean syntax (REQ-1) or the Rust classifier (REQ-4) can be built or tested.
   scheduled job), [9] (stratified TV sweep reporting the
   syntactic/semantic/timeout split). G2 = all four green in a single
   run, gating the trust flip.
+  **G2 GATE CONSTRAINT (from REQ-5 option B — #327): the `trust:` flip must
+  NOT trigger on REQ-5's structural soundness alone.** REQ-5 proves the
+  skeleton transcription parametric in an atom oracle `q`; the
+  atom-grounding (`q :=` real semantics) is REQ-8's obligation. Gate the
+  flip on REQ-8 having closed that loop — otherwise the flipped L4
+  certificate **over-claims** (attests "structurally encoded", not "proven
+  over source meaning"). The `trust:` label must honestly scope to what is
+  actually proven at flip time.
 - REQ-10 (**the pin battery, complete**): all eight stage-2 pins from
   metatheory §9 exist (`PinStratCapture`, `PinStratFlip`,
   `PinStratSelfLoop`, `PinNNFPolarity`, `PinRestratDropSide`,

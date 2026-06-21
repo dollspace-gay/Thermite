@@ -3,12 +3,13 @@
   "display_id": 327,
   "title": "Stage-2 REQ-5: encoder + T1-S (Strat/RefEncode + Soundness)",
   "description": "Strat/RefEncode.lean (sencode, trigger-free MBQI surface, fresh-name discipline), Strat/TokDenote.lean, Strat/Soundness.lean (T1-S strat_ref_sound + strat_ref_wf), with PinStratCapture and PinStratFlip landing in the same increment. AC-5. Doc: .design/stage2-stratified-cage.md REQ-5. Gate: G2.",
-  "status": "open",
+  "status": "closed",
   "priority": "medium",
   "parent_uuid": "f0e27352-cca1-41d6-9914-7f6dcf4b6c88",
   "created_by": "rApq",
   "created_at": "2026-06-19T19:40:17.970360Z",
-  "updated_at": "2026-06-19T19:42:06.277174Z",
+  "updated_at": "2026-06-21T02:33:14.806022Z",
+  "closed_at": "2026-06-21T02:33:14.806022Z",
   "labels": [
     "forge"
   ],

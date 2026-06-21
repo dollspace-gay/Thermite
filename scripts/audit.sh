@@ -22,6 +22,12 @@
 #      MISMATCH => the inspection-tier audit predates the current code => FAIL.
 #   5  THIRD-PARTY PROVER RE-CHECK                 — the emitted golden proof
 #      re-verifies under Verus/Z3 with `forge` excluded (the legacy (D) check).
+#   G2 STAGE-2 STRATIFIED CAGE — THE G2 GATE             — the four stage-2 checks
+#      [1′] (axiom probe extended to the four stratified soundness theorems) / [4′]
+#      (doc-drift over the three mirrored Rust files) / [8] (the classifier differential
+#      battery) / [9] (the two-phase TV sweep), combined by `forge g2-gate`: the tested
+#      code path that mechanically WITHHOLDS the stratified certificate trust flip unless
+#      all four are green in THIS run (REQ-9 / AC-9).
 #   6  THE VERDICT + THE RESIDUAL-TRUST STATEMENT  — what you are STILL trusting,
 #      everything else having been re-derived here just now.
 #
@@ -68,6 +74,12 @@ VERUS="$(find_verus || true)"
 RC=0
 # A SKIP of a guarantee-bearing check is a degraded verdict, not a pass.
 SKIPPED_GUARANTEES=()
+# Stage-2 G2-gate sub-check verdicts (green|red|skip) — set by the deep-path checks below
+# and combined by the [G2] gate section (REQ-9 / AC-9).
+S2_AXIOM=skip   # [1′] the stratified axiom probe (shares check [1]'s Lean build)
+S2_DRIFT=skip   # [4′] the stratified doc-drift tripwire
+S2_DIFF=skip    # [8]  the classifier differential battery
+S2_TVSWEEP=skip # [9]  the stratified two-phase TV sweep
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -196,6 +208,10 @@ else
     note "WHILE-RULE (while_rule), and the two relax-route spine lemmas (r_relax_sound /"
     note "rencode_sound) were re-verified by YOUR Lean kernel just now."
     note "Trust does NOT include our claim of having proven them — you re-checked it."
+    note "STAGE 2 ([1′]): the probe ALSO gated the four stratified soundness theorems"
+    note "(strat_ref_sound, strat_lowering_faithful, classifier_correct, restrat_conservative)"
+    note "— all axiom-clean — so the G2-gate check [1′] is GREEN (see the [G2] section)."
+    S2_AXIOM=green
   else
     probe_rc=$?
     if [ "$probe_rc" -eq 2 ]; then
@@ -204,6 +220,7 @@ else
     else
       fail "a probed theorem carries a DISALLOWED axiom (see the FAIL line above)."
     fi
+    S2_AXIOM=red
     RC=1
   fi
 fi
@@ -227,7 +244,11 @@ else
   parse_num() { printf '%s' "$1" | grep -oiE "[0-9]+ $2" | head -1 | grep -oE "[0-9]+" || printf '0'; }
   TOT_PROG=0; TOT_OK=0; ADMITTED=0; TOT_CHECKED=0; TOT_FAITHFUL=0
   TOT_DIV=0; TOT_SKIP=0; TOT_UNV=0
-  declare -A SKIP_REASONS=()
+  # The skip-reason dedup uses an associative array (bash 4+). The macOS default bash 3.2
+  # lacks it; the dedup list is purely informational (TOT_SKIP carries the count), so guard
+  # it rather than crash under `set -u` there — the corpus TV verdict is unaffected.
+  HAVE_ASSOC=0
+  if [ "${BASH_VERSINFO:-0}" -ge 4 ]; then HAVE_ASSOC=1; declare -A SKIP_REASONS=(); fi
   for f in conformance/*.th; do
     TOT_PROG=$((TOT_PROG+1))
     name="$(basename "$f")"
@@ -260,7 +281,7 @@ else
       TOT_UNV=$((TOT_UNV + ${uv:-0}))
       prog_div=$((prog_div + ${dv:-0}))
       # collect a short skip reason if present
-      if [ "${sk:-0}" -gt 0 ]; then
+      if [ "${sk:-0}" -gt 0 ] && [ "$HAVE_ASSOC" -eq 1 ]; then
         reason="$(printf '%s' "$out" | grep -iE 'skipped' | grep -oiE 'OUTSIDE the v1 frozen subset|loop is OUTSIDE|unsupported exec construct|no body|non-scalar' | head -1)"
         [ -n "$reason" ] && SKIP_REASONS["$reason"]=1
       fi
@@ -276,7 +297,7 @@ else
   echo
   note "corpus totals: $TOT_PROG programs ($ADMITTED admitted by forge), $TOT_CHECKED obligations checked live by Z3"
   note "               $TOT_FAITHFUL faithful, $TOT_DIV divergent, $TOT_SKIP skipped, $TOT_UNV unverifiable"
-  if [ "${#SKIP_REASONS[@]}" -gt 0 ]; then
+  if [ "$HAVE_ASSOC" -eq 1 ] && [ "${#SKIP_REASONS[@]}" -gt 0 ]; then
     note "skip reasons (out-of-frozen-subset, counted not failed):"
     for k in "${!SKIP_REASONS[@]}"; do note "  - $k"; done
   fi
@@ -440,6 +461,106 @@ else
     pass "third-party Verus re-verified the proof (0 errors) — forge excluded"
   else
     fail "third-party Verus did NOT verify the emitted proof"; RC=1
+  fi
+fi
+echo
+
+# -----------------------------------------------------------------------------
+# CHECK G2 — STAGE-2 STRATIFIED CAGE: the four-check G2 gate (REQ-9 / AC-9).
+# -----------------------------------------------------------------------------
+# The certificate `trust:` flip for stratified clauses (ref_encode(strat, UNPROVEN) →
+# the proven, honestly-scoped form) is GATED on four checks being green in THIS one run:
+#   [1′] the axiom probe extended to the four stratified soundness theorems (shares the
+#        Lean build of check [1] above) ;
+#   [4′] the doc-drift tripwire over the three mirrored Rust files (the stratified
+#        classifier / encoder / two-phase TV), .design/verified/strat-rust-lean-correspondence.md ;
+#   [8]  the classifier differential battery (`forge strat-tv`) — the Rust classifier held
+#        byte-equal to the Lean kernel `admitted` over generated formulae ;
+#   [9]  the stratified two-phase TV sweep (`forge strat-faithful-tv`) — syntactic /
+#        semantic / timeout phase split, every clause certified.
+# The gate itself (`forge g2-gate`) is the TESTED CODE PATH: with G2 declared, ANY red
+# check makes it exit non-zero — the flip is mechanically withheld (a flipped certificate
+# can never out-run the audit that justifies it). A tool-absent SKIP is INCONCLUSIVE, not
+# a green (R-HONEST-3).
+bold "[G2] STAGE-2 STRATIFIED CAGE — the four-check G2 gate (REQ-9 / AC-9)"
+
+# [4′] doc-drift tripwire over the three mirrored Rust files.
+note "[4′] doc-drift: the three mirrored Rust files (classifier / strat_ref_encode /"
+note "     strat_two_phase) are content-pinned + current under the stratified correspondence doc."
+if ! command -v python3 >/dev/null 2>&1; then
+  skip "[4′] python3 not found — the doc-drift tripwire was not run."
+  S2_DRIFT=skip
+elif python3 "$ROOT/tooling/doc-drift.py" >"$TMP/docdrift.out" 2>&1 \
+     && grep -q "CURRENT  .design/verified/strat-rust-lean-correspondence.md" "$TMP/docdrift.out"; then
+  pass "[4′] doc-drift GREEN — the stratified correspondence doc is current (no mirror drift)"
+  S2_DRIFT=green
+else
+  fail "[4′] doc-drift RED — a routed design doc drifted (see below) or the stratified doc is stale"
+  grep -E "^DRIFT|^MISSING-PIN|^INVALID-PIN" "$TMP/docdrift.out" | sed 's/^/      /' | head -8
+  S2_DRIFT=red
+  RC=1
+fi
+
+# [8] the classifier differential battery (needs lake for the Lean side; honest SKIP absent).
+note "[8] differential battery (\`forge strat-tv\`): the Rust admission classifier held"
+note "    byte-equal to the Lean kernel \`Thermite.Strat.Cls.admitted\` over generated formulae."
+if [ -z "${LAKE:-}" ]; then
+  skip "[8] elan/lake not found — the classifier differential (Lean side) was not run."
+  S2_DIFF=skip
+else
+  if "$FORGE" strat-tv >"$TMP/strattv.out" 2>&1; then
+    if grep -qiE "SKIPPED" "$TMP/strattv.out"; then
+      skip "[8] strat-TV reported SKIPPED (lake env unavailable for the Lean run)."
+      S2_DIFF=skip
+    else
+      grep -iE "checked|agreement|disagreement|tripwire" "$TMP/strattv.out" | sed 's/^/      /' | head -4
+      pass "[8] differential battery GREEN — zero classifier disagreements, zero tripwire"
+      S2_DIFF=green
+    fi
+  else
+    fail "[8] differential battery RED — a classifier disagreement or an unknown-on-admitted tripwire"
+    tail -8 "$TMP/strattv.out" | sed 's/^/      /'
+    S2_DIFF=red
+    RC=1
+  fi
+fi
+
+# [9] the stratified two-phase TV sweep (pure Rust — always runs).
+note "[9] two-phase TV sweep (\`forge strat-faithful-tv\`): syntactic / semantic / timeout"
+note "    phase split; every stratified clause certified (no divergence, none withheld)."
+if "$FORGE" strat-faithful-tv >"$TMP/stratsweep.out" 2>&1; then
+  grep -iE "clauses:|PASS" "$TMP/stratsweep.out" | sed 's/^/      /' | head -3
+  pass "[9] two-phase TV sweep GREEN — every stratified clause certified"
+  S2_TVSWEEP=green
+else
+  fail "[9] two-phase TV sweep RED — a divergence or a withheld (timeout) clause"
+  tail -8 "$TMP/stratsweep.out" | sed 's/^/      /'
+  S2_TVSWEEP=red
+  RC=1
+fi
+
+# The gate itself — the TESTED CODE PATH that mechanically blocks the flip. A tool-absent
+# SKIP on any of the four means the gate cannot be evaluated this run (INCONCLUSIVE); a RED
+# means the gate is exercised live and FAILS (the mechanical block). All-green flips.
+note "[G2] gate (\`forge g2-gate\`): combine [1′][4′][8][9] through g2_flip_permitted —"
+note "     the proven (honestly-scoped) flip is permitted iff G2 is declared AND all four green."
+if [ "$S2_AXIOM" = skip ] || [ "$S2_DRIFT" = skip ] || [ "$S2_DIFF" = skip ] || [ "$S2_TVSWEEP" = skip ]; then
+  skip "[G2] gate INCONCLUSIVE — a gating check SKIPPED (tool absent): \
+[1′]=$S2_AXIOM [4′]=$S2_DRIFT [8]=$S2_DIFF [9]=$S2_TVSWEEP"
+  note "CONSEQUENCE: the G2 trust flip was NOT re-derived this run (it stays conservative)."
+  SKIPPED_GUARANTEES+=("[G2] stratified trust flip — gate not fully evaluated ([1′]=$S2_AXIOM [4′]=$S2_DRIFT [8]=$S2_DIFF [9]=$S2_TVSWEEP)")
+else
+  v() { [ "$1" = green ] && echo 1 || echo 0; }
+  if "$FORGE" g2-gate \
+       --axiom-probe "$(v "$S2_AXIOM")" --doc-drift "$(v "$S2_DRIFT")" \
+       --differential "$(v "$S2_DIFF")" --two-phase "$(v "$S2_TVSWEEP")" \
+       >"$TMP/g2gate.out" 2>&1; then
+    grep -iE "effective trust|trust flip permitted|G2 — all four green" "$TMP/g2gate.out" | sed 's/^/      /'
+    pass "[G2] the four checks are GREEN in one run — the stratified trust flip is IN EFFECT (G2 reached)"
+  else
+    grep -iE "BLOCKED|effective trust" "$TMP/g2gate.out" | sed 's/^/      /'
+    fail "[G2] the gate BLOCKED the flip — G2 is declared but a gating check is red (the mechanical block)"
+    RC=1
   fi
 fi
 echo

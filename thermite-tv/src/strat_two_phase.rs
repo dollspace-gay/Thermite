@@ -288,23 +288,39 @@ pub fn render_report(report: &TwoPhaseReport, header: &str) -> String {
 // The trust flip (the G2 gate)
 // ===========================================================================
 
-/// THE G2 GATE (the one-line flip). While `false`, stratified clauses carry the honest
-/// rollout trust profile (`ref_encode(strat, UNPROVEN — stage 2 in progress)`); flipping
-/// it to `true` — a single-line edit — switches to the proven form (`ref_encode(strat)`).
+/// THE G2 DECLARATION (REQ-8's one-line flip, now enabled by REQ-9). This is the
+/// compiled-in intent — "the four stratified soundness theorems are in the spine and the
+/// G2 trust flip is ENABLED" — flipped to `true` at G2 (REQ-9), the increment that built
+/// the audit gate and saw [1′][4′][8][9] green in one `make audit` run.
 ///
-/// The flip is gated on G2 (REQ-9): it must NOT be set while `make audit`'s [1′][4′][8][9]
-/// are not all green, because the proven form attests "proven over source meaning" — the
-/// atom-grounding REQ-8 closes (`lean/Thermite/Strat/Faithfulness.lean` T2-S
-/// `strat_lowering_faithful`), not REQ-5's structural soundness alone. It stays `false`
-/// until that gate is mechanically satisfied (REQ-9).
-pub const G2_FLIPPED: bool = false;
+/// CRUCIALLY, the declaration alone does NOT emit the proven label: the EFFECTIVE per-clause
+/// flip is [`g2_flip_permitted`]`(G2_FLIPPED, &checks)` — the declaration AND every gating
+/// audit check green. A red check downgrades the label back to the conservative rollout
+/// form regardless of this constant (the AC-9 mechanical block: a flipped certificate can
+/// never out-run the audit that justifies it). `forge g2-gate` is the runtime enforcer —
+/// it FAILS `make audit` if `G2_FLIPPED` is set while any of the four is red.
+///
+/// The proven label is honestly SCOPED (REQ-9 / REQ-5 option B): structure proven (T1-S),
+/// qfree atoms grounded to the v1 `Thermite.denote` (T2-S), and rel/array atoms discharged
+/// by Z3's theory (the solver base) — kernel-grounding the rel atoms is stage-3
+/// reconstruction. See [`REF_ENCODE_PROVEN`].
+pub const G2_FLIPPED: bool = true;
 
 /// The conservative (pre-G2) reference-encoder trust string: honest that the reference
 /// encoder is sound (T1-S/T2-S) but the end-to-end flip is gated on G2.
 pub const REF_ENCODE_UNPROVEN: &str = "ref_encode(strat, UNPROVEN — stage 2 in progress)";
 
-/// The proven (post-G2) reference-encoder trust string.
-pub const REF_ENCODE_PROVEN: &str = "ref_encode(strat)";
+/// The proven (post-G2) reference-encoder trust string — HONESTLY SCOPED (REQ-9 / REQ-5
+/// option B / #330–#331). The flip attests exactly: the quantifier/boolean STRUCTURE is
+/// proven faithful (T1-S `strat_ref_sound`), `qfree` atoms are grounded to the v1
+/// `Thermite.denote` (T2-S `strat_lowering_faithful`), and `rel`/array atoms are discharged
+/// by Z3's theory (the solver base — model-relative, the honest L4 boundary). It does NOT
+/// claim kernel-grounding of the rel/array atoms; that is stage-3 reconstruction. The
+/// string starts with `ref_encode(strat)` (the recognizable proven prefix) and carries the
+/// scope inline so a reader of the certificate sees the boundary, not an over-claim.
+pub const REF_ENCODE_PROVEN: &str =
+    "ref_encode(strat): structure proven (T1-S), qfree grounded to v1 (T2-S), \
+     rel/array by z3-theory (solver base; kernel-grounding rel = stage 3)";
 
 /// The solver component of every stratified clause's trust profile (the Z3 discharge of
 /// the per-clause obligation, unchanged across the flip).
@@ -332,6 +348,94 @@ pub fn strat_trust_profile(g2_proven: bool) -> Vec<String> {
 #[must_use]
 pub fn strat_trust_profile_current() -> Vec<String> {
     strat_trust_profile(G2_FLIPPED)
+}
+
+// ===========================================================================
+// The G2 gate — the four-check audit gate that mechanically blocks the flip
+// (stage-2 REQ-9 / AC-9)
+// ===========================================================================
+
+/// The four `make audit` checks that gate the G2 trust flip (REQ-9 / AC-9). Each field is
+/// the green (`true`) / red (`false`) outcome of one audit sub-check; the flip is permitted
+/// only when EVERY one is green. The field names mirror the design-doc check labels
+/// ([1′][4′][8][9], `.design/stage2-stratified-cage.md` REQ-9).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct G2Checks {
+    /// `[1′]` — the Lean axiom probe (`scripts/lean-axiom-probe.sh`): the four stratified
+    /// soundness theorems (`strat_ref_sound`, `strat_lowering_faithful`,
+    /// `classifier_correct`, `restrat_conservative`) elaborate with axioms ⊆ {propext,
+    /// Classical.choice, Quot.sound}.
+    pub axiom_probe: bool,
+    /// `[4′]` — the doc-drift tripwire (`tooling/doc-drift.py`): the three new mirrored Rust
+    /// files (`classifier.rs` / `strat_ref_encode.rs` / `strat_two_phase.rs`) are
+    /// content-pinned and current under `.design/verified/strat-rust-lean-correspondence.md`.
+    pub doc_drift: bool,
+    /// `[8]` — the classifier differential battery (`forge strat-tv`): the Rust classifier
+    /// agrees with the Lean kernel `Thermite.Strat.Cls.admitted` on every generated formula,
+    /// zero unknown-on-admitted tripwire.
+    pub differential: bool,
+    /// `[9]` — the stratified two-phase TV sweep (`forge strat-faithful-tv`): every
+    /// stratified clause certified (no divergence, none withheld).
+    pub two_phase_tv: bool,
+}
+
+impl G2Checks {
+    /// All four green — the necessary condition for the trust flip (AC-9).
+    #[must_use]
+    pub fn all_green(&self) -> bool {
+        self.axiom_probe && self.doc_drift && self.differential && self.two_phase_tv
+    }
+
+    /// The labels of the RED checks (for the audit report / the withhold reason). Empty iff
+    /// [`all_green`](Self::all_green). Deterministically ordered [1′][4′][8][9].
+    #[must_use]
+    pub fn red(&self) -> Vec<&'static str> {
+        let mut out = Vec::new();
+        if !self.axiom_probe {
+            out.push("[1'] axiom-probe");
+        }
+        if !self.doc_drift {
+            out.push("[4'] doc-drift");
+        }
+        if !self.differential {
+            out.push("[8] differential-battery");
+        }
+        if !self.two_phase_tv {
+            out.push("[9] two-phase-TV");
+        }
+        out
+    }
+
+    /// The all-green constructor (a passing `make audit` run).
+    #[must_use]
+    pub fn all_passing() -> Self {
+        Self {
+            axiom_probe: true,
+            doc_drift: true,
+            differential: true,
+            two_phase_tv: true,
+        }
+    }
+}
+
+/// THE G2 GATE (AC-9). The trust flip is PERMITTED iff G2 is DECLARED (`declared`, the
+/// compiled-in [`G2_FLIPPED`]) AND every gating audit check is green
+/// ([`G2Checks::all_green`]). This is the mechanical block: any red check withholds the
+/// flip regardless of the declaration, so a flipped certificate can never out-run the audit
+/// that justifies it. This is the tested code path — the toggle tests below drive each of
+/// the four red and assert the flip is withheld.
+#[must_use]
+pub fn g2_flip_permitted(declared: bool, checks: &G2Checks) -> bool {
+    declared && checks.all_green()
+}
+
+/// The effective stratified trust profile UNDER the G2 gate: the proven (honestly scoped)
+/// form iff [`g2_flip_permitted`], else the conservative `UNPROVEN` rollout form. The
+/// production / audit-surface emitter routes through HERE so a red check automatically
+/// downgrades the label (never an over-claim — REQ-9 / REQ-5 option B).
+#[must_use]
+pub fn strat_trust_profile_gated(declared: bool, checks: &G2Checks) -> Vec<String> {
+    strat_trust_profile(g2_flip_permitted(declared, checks))
 }
 
 #[cfg(test)]
@@ -500,15 +604,94 @@ mod tests {
     }
 
     #[test]
-    fn compiled_gate_is_conservative_pre_g2() {
-        // The compiled-in gate is unflipped during the rollout window: today's emitted
-        // profile reads UNPROVEN. (Flipping `G2_FLIPPED` — the one-line change — switches
-        // this to the proven form; that flip is gated on REQ-9's G2 audit.) The
-        // current-gate profile equals the explicit-`false` profile, i.e. the gate is
-        // closed; if `G2_FLIPPED` were flipped this would read the proven form and the
-        // UNPROVEN check below would fail.
-        assert_eq!(strat_trust_profile_current(), strat_trust_profile(false));
+    fn compiled_declaration_is_flipped_at_g2() {
+        // REQ-9 reached G2: `G2_FLIPPED` is now the DECLARATION (`true`). The
+        // declaration-level profile reads the proven (honestly scoped) form — but this is
+        // the DECLARATION only; the per-clause emit still routes through the gate
+        // ([`g2_flip_permitted`]), which a red check downgrades (see the toggle tests).
+        // REQ-9 flips the G2 declaration on (checked at compile time).
+        const _: () = assert!(G2_FLIPPED);
+        assert_eq!(strat_trust_profile_current(), strat_trust_profile(true));
         assert!(strat_trust_profile_current()
+            .iter()
+            .all(|s| !s.contains("UNPROVEN")));
+        assert!(strat_trust_profile_current()
+            .iter()
+            .any(|s| s.starts_with("ref_encode(strat)")));
+    }
+
+    // ---- the G2 gate (AC-9: the four-check mechanical block) ----
+
+    #[test]
+    fn gate_permits_the_flip_only_when_all_four_green() {
+        let all = G2Checks::all_passing();
+        assert!(all.all_green());
+        assert!(all.red().is_empty());
+        // Declared + all green ⇒ the flip is permitted ⇒ the proven (scoped) profile.
+        assert!(g2_flip_permitted(true, &all));
+        let profile = strat_trust_profile_gated(true, &all);
+        assert!(profile.iter().all(|s| !s.contains("UNPROVEN")));
+        assert!(profile.iter().any(|s| s.starts_with("ref_encode(strat)")));
+    }
+
+    #[test]
+    fn gate_blocks_the_flip_when_any_one_check_is_red() {
+        // AC-9: toggle EACH of the four red in turn (the others green) and assert the flip
+        // is mechanically withheld — the proven label is never emitted while a check is red,
+        // even though the declaration is on.
+        let labels = [
+            "[1'] axiom-probe",
+            "[4'] doc-drift",
+            "[8] differential-battery",
+            "[9] two-phase-TV",
+        ];
+        for (idx, label) in labels.iter().enumerate() {
+            let mut checks = G2Checks::all_passing();
+            match idx {
+                0 => checks.axiom_probe = false,
+                1 => checks.doc_drift = false,
+                2 => checks.differential = false,
+                _ => checks.two_phase_tv = false,
+            }
+            assert!(!checks.all_green(), "{label} should be red");
+            assert_eq!(checks.red(), vec![*label], "exactly {label} is red");
+            // The flip is WITHHELD even with the declaration on (`true`).
+            assert!(
+                !g2_flip_permitted(true, &checks),
+                "the flip must be blocked while {label} is red"
+            );
+            let profile = strat_trust_profile_gated(true, &checks);
+            assert!(
+                profile.iter().any(|s| s.contains("UNPROVEN")),
+                "a red {label} downgrades the label to UNPROVEN: {profile:?}"
+            );
+            // The solver component is unchanged across the withhold.
+            assert!(profile.iter().any(|s| s == SOLVER_Z3));
+        }
+    }
+
+    #[test]
+    fn gate_blocks_the_flip_when_all_four_red() {
+        let none = G2Checks {
+            axiom_probe: false,
+            doc_drift: false,
+            differential: false,
+            two_phase_tv: false,
+        };
+        assert_eq!(none.red().len(), 4);
+        assert!(!g2_flip_permitted(true, &none));
+        assert!(strat_trust_profile_gated(true, &none)
+            .iter()
+            .any(|s| s.contains("UNPROVEN")));
+    }
+
+    #[test]
+    fn gate_withholds_when_undeclared_even_if_all_green() {
+        // The declaration is the necessary precondition too: an UNdeclared gate
+        // (`declared = false`) never flips, regardless of the checks. (Symmetric honesty:
+        // green checks alone do not declare G2.)
+        assert!(!g2_flip_permitted(false, &G2Checks::all_passing()));
+        assert!(strat_trust_profile_gated(false, &G2Checks::all_passing())
             .iter()
             .any(|s| s.contains("UNPROVEN")));
     }

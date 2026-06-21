@@ -949,3 +949,31 @@ crate_pattern = "tooling/req-status.py"
 design = ".design/tooling/req-registry.md"
 reference = []
 conformance_ops = []
+
+# ---------------------------------------------------------------------
+# Stage-2 stratified cage — the three Rust mirrors of the kernel-proven
+# Lean Strat models (crosslink #331, REQ-9 [4′]). Governed by the
+# stratified Rust↔Lean correspondence doc, content-pinned and drift-gated
+# (tooling/doc-drift.py) as one of the four make-audit checks that gate the
+# G2 trust flip (.design/stage2-stratified-cage.md REQ-9 / AC-9). These
+# routes make the doc-drift tripwire COVER the three mirrors; before #331
+# the strat files were unrouted (no freshness gate).
+# ---------------------------------------------------------------------
+
+[[route]]
+crate_pattern = "thermite-spec/src/classifier.rs"
+design = ".design/verified/strat-rust-lean-correspondence.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "thermite-tv/src/strat_ref_encode.rs"
+design = ".design/verified/strat-rust-lean-correspondence.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "thermite-tv/src/strat_two_phase.rs"
+design = ".design/verified/strat-rust-lean-correspondence.md"
+reference = []
+conformance_ops = []

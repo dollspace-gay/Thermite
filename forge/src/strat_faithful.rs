@@ -24,8 +24,8 @@
 //! surfaced as withheld for the solver pass to adjudicate.
 
 use thermite_tv::strat_two_phase::{
-    run_two_phase, strat_trust_profile, ClauseRoute, PhaseSplit, SemanticOutcome, StratClause,
-    TvVerdict, G2_FLIPPED,
+    run_two_phase, strat_trust_profile_gated, ClauseRoute, G2Checks, PhaseSplit, SemanticOutcome,
+    StratClause, TvVerdict, G2_FLIPPED,
 };
 use thermite_tv::{gen, strat_ref_encode};
 
@@ -87,12 +87,24 @@ pub fn run_generated(seed: u64, n: usize) -> StratFaithfulReport {
     // (honest — never a false pass). REQ-9 replaces this with the finite-bound Z3 query.
     let report = run_two_phase(&clauses, |_obligation| SemanticOutcome::Timeout);
 
+    // The sweep vouches for audit check [9] DIRECTLY (its own two-phase verdict); the other
+    // three gating checks ([1′][4′][8]) are the G2 DECLARATION's responsibility (`G2_FLIPPED`
+    // is only set because `make audit` saw them green — `forge g2-gate` mechanically enforces
+    // it). So the emitted `trust:` profile routes through the gate with [9] = this sweep's
+    // pass, downgrading to the conservative `UNPROVEN` form automatically if a clause diverged
+    // or was withheld (never an over-claim; REQ-9 / REQ-5 option B).
+    let checks = G2Checks {
+        axiom_probe: true,
+        doc_drift: true,
+        differential: true,
+        two_phase_tv: report.split.all_certified(),
+    };
     let any_certified = report
         .verdicts
         .iter()
         .any(|(_, v)| matches!(v, TvVerdict::Certified(_)));
     let trust_profile = if any_certified {
-        strat_trust_profile(G2_FLIPPED)
+        strat_trust_profile_gated(G2_FLIPPED, &checks)
     } else {
         Vec::new()
     };
@@ -153,30 +165,39 @@ mod tests {
     }
 
     #[test]
-    fn the_trust_profile_is_the_unproven_form_before_g2() {
-        // The compiled-in gate is closed (pre-G2) during the rollout window: the emitted
-        // profile reads the honest UNPROVEN reference-encoder string. (Flipping
-        // `G2_FLIPPED` — the one-line change — switches this; gated on REQ-9's audit. If
-        // it were flipped, the UNPROVEN check below would fail and the `pre-G2` render
-        // header would read `G2-PROVEN`.)
+    fn the_trust_profile_is_the_proven_scoped_form_at_g2() {
+        // REQ-9 reached G2: a PASSING sweep vouches for check [9], and the declaration
+        // (`G2_FLIPPED`) carries [1′][4′][8], so the gated profile reads the proven
+        // (honestly scoped) reference-encoder string — no UNPROVEN. The mechanical block (a
+        // red check downgrading the label) is covered by the gate-toggle tests in
+        // `thermite_tv::strat_two_phase` (AC-9).
         let r = run_generated(STRAT_FAITHFUL_DEFAULT_SEED, 8);
+        assert!(r.passed());
         assert!(
-            r.trust_profile.iter().any(|s| s.contains("UNPROVEN")),
-            "pre-G2 trust reads UNPROVEN: {:?}",
+            r.trust_profile.iter().all(|s| !s.contains("UNPROVEN")),
+            "a passing G2 sweep reads the proven scoped form: {:?}",
             r.trust_profile
         );
-        assert!(render_report(&r, "t").contains("pre-G2"));
+        assert!(r
+            .trust_profile
+            .iter()
+            .any(|s| s.starts_with("ref_encode(strat)")));
+        assert!(render_report(&r, "t").contains("G2-PROVEN"));
     }
 
     #[test]
     fn the_flip_is_a_tested_code_path() {
-        // The flip's two sides are both exercised here (the gate-toggle), independent of
-        // the compiled-in constant: pre-G2 reads UNPROVEN, post-G2 reads the proven form.
-        let before = strat_trust_profile(false);
-        let after = strat_trust_profile(true);
+        // The flip's two sides are both exercised through the gate (the AC-9 mechanical
+        // block): all-green permits the proven (scoped) form; any red check withholds it
+        // back to the UNPROVEN rollout form.
+        let green = G2Checks::all_passing();
+        let mut red = green;
+        red.differential = false;
+        let after = strat_trust_profile_gated(true, &green);
+        let before = strat_trust_profile_gated(true, &red);
         assert!(before.iter().any(|s| s.contains("UNPROVEN")));
         assert!(after.iter().all(|s| !s.contains("UNPROVEN")));
-        assert!(after.iter().any(|s| s == "ref_encode(strat)"));
+        assert!(after.iter().any(|s| s.starts_with("ref_encode(strat)")));
         assert_ne!(before, after);
     }
 

@@ -315,3 +315,22 @@ jobs:
       # the spine-gated live tests are distributed across shards and every one runs.
       - name: forge tests WITH the spine, shard ${{ matrix.shard }}/4 (lake-gated live tests run here)
         run: cargo nextest run -p forge --partition count:${{ matrix.shard }}/4
+
+      - name: Stage-2 G2 gate — fixed-seed differential + two-phase sweep ([8] / [9])
+        # The reproducible per-PR half of REQ-9 checks [8]/[9] (`.design/stage2-stratified-cage.md`
+        # REQ-9 / AC-9): the classifier differential battery (Rust classifier ≡ Lean
+        # `Thermite.Strat.Cls.admitted` over generated formulae, the Lean side via
+        # `lake env lean --run`) and the stratified two-phase TV sweep, both at the pinned
+        # default seed. The rotating-seed half is the scheduled `generated-tv` job. A
+        # classifier disagreement / tripwire ([8]) or a divergence / withheld clause ([9])
+        # is a verification-failure exit and fails the job. lake is on PATH here, so
+        # `strat-tv` takes its RUN branch (not the honest lake-absent SKIP).
+        #
+        # This is a single whole-corpus gate, NOT a partitioned test, so run it ONCE
+        # (shard 1) — its env (lake + the spine incl Strat.Cls.Wire + Rust + Verus) is
+        # present in every lean-spine-forge shard; gating on shard 1 avoids running it 4×.
+        if: ${{ matrix.shard == 1 }}
+        run: |
+          set -euo pipefail
+          cargo run -q -p forge -- strat-tv
+          cargo run -q -p forge -- strat-faithful-tv

@@ -65,12 +65,12 @@ composes that with the Lean (T1) theorems. CORR is the bridge that lets the theo
 
 | Artifact | File | Pinned commit |
 |---|---|---|
-| Rust contract encoder | `thermite-tv/src/ref_encode.rs` | `543b506e` (#283 re-pin — comment/REQ-status turnover, CODE-IDENTICAL, see Amendment 2026-06-18; was `579d3d48` #150) |
-| Rust exec-expr encoder | `thermite-tv/src/exec_encode.rs` | `543b506e` (#283 re-pin — CODE-IDENTICAL, see Amendment 2026-06-18; was `43c9a6c8` #152) |
+| Rust contract encoder | `thermite-tv/src/ref_encode.rs` | `60fd029e` (#331 re-pin — REQ-0 (#322) added ONE honest out-of-`S_C` `Expr::Quantifier => "quantifier"` `node_kind` label; no audited arm changed, see Amendment 2026-06-21; was `543b506e` #283, `579d3d48` #150) |
+| Rust exec-expr encoder | `thermite-tv/src/exec_encode.rs` | `60fd029e` (#331 re-pin — REQ-0 (#322) added ONE honest out-of-`S_C` `Expr::Quantifier => "quantifier (spec-only)"` `node_kind` label; no audited arm changed, see Amendment 2026-06-21; was `543b506e` #283, `43c9a6c8` #152) |
 | Rust exec-body encoder | `thermite-tv/src/exec_stmt_encode.rs` | `543b506e` (#283 re-pin — CODE-IDENTICAL, see Amendment 2026-06-18; was `21b84c5f` #163, earlier `b9dc22fd` #165 — see Amendment 2026-06-10) |
 | Frozen combinator registry | `thermite-spec/src/combinators.rs` | `543b506e` (#283 re-pin — CODE-IDENTICAL, see Amendment 2026-06-18; was `c0b1d8a3` #4) |
-| Rust→Lean obligation exporter | `forge/src/lean_export.rs` | `76be6272` (#283 re-pin — additive-only forge-tier surface, see Amendment 2026-06-18; was `3373215e` #253 — Table 4 + Table 4B, the exec-body bridge added; earlier `d4871ded` #240. `scripts/audit.sh` check [4] drift-checks this exporter file's last-touch against this SHA, alongside the `lean/Thermite/**` spine SHA the exporter targets) |
-| Lean spine | `lean/Thermite/**` | `b6038651` (#283 re-pin — comment turnover + additive new files + the #314 module-header touch, all CODE-IDENTICAL, see Amendment 2026-06-18; was `033d9fb2` earlier in #283, `1438dc5f` #255, `65504c18` Amendment 2026-06-11, `7c85da25` Amendment 2026-06-10) |
+| Rust→Lean obligation exporter | `forge/src/lean_export.rs` | `60fd029e` (#331 re-pin — REQ-0 (#322) added ONE honest out-of-fragment `Expr::Quantifier => Err(ExportRefusal::OutOfFragment(...))` refusal arm; no audited Table-4/4B arm changed, see Amendment 2026-06-21; was `76be6272` #283, `3373215e` #253, `d4871ded` #240. `scripts/audit.sh` check [4] drift-checks this exporter file's last-touch against this SHA, alongside the `lean/Thermite/**` spine SHA the exporter targets) |
+| Lean spine | `lean/Thermite/**` | `80c88ea1` (#331 re-pin — REQ-1..REQ-8 (#323–#330) added the new `Strat/` spine + `Pin*` files and retired the `Spike/` scaffolding; every audited v1 spine arm CODE-IDENTICAL, see Amendment 2026-06-21; was `b6038651` #283, `1438dc5f` #255, `65504c18` Amendment 2026-06-11, `7c85da25` Amendment 2026-06-10) |
 
 Lean toolchain: `leanprover/lean4:v4.29.0` (downgraded from v4.30.0 by the #184 Z3-demotion probe — `lean/lakefile.toml` now `[[require]]`s Lean-SMT + Mathlib; this is OUTSIDE the `lean/Thermite/**` audited-spine scope and the entire audited spine still builds green and `sorry`-free on v4.29.0 — see `.design/verified/z3-demotion.md` and Amendment 2026-06-10).
 Verified `sorry`-free by inspection: every `sorry` token in the tree is inside a comment, never in
@@ -190,6 +190,40 @@ corresponding table section and requires re-audit (see "Drift" below).**
 > `export_while_body`/`Item::Forge` are new exporter surface). Zero audited arm changed meaning.
 > Re-pinned the encoders/combinators `→ 543b506e`, the exporter `3373215e → 76be6272`, the spine
 > `1438dc5f → b6038651`. The full deep audit (`make audit`) re-runs green after the re-pin.**
+
+> **Amendment 2026-06-21 (re-pin, crosslink #331 — stage-2 REQ-9) — VERIFIED additive-only, NO re-audit
+> of the arm tables needed.** The deep-audit drift tripwire (`scripts/audit.sh` check [4]) fired on the
+> branch tip (HEAD `48817df5`): four pinned SHAs were stale after the stage-2 REQ-0..REQ-8 merge arc
+> (#322–#330). The drift was VERIFIED additive-only by a comment-stripped code-level diff before
+> re-pinning, NOT rubber-stamped:
+> - **`thermite-tv/src/ref_encode.rs` `543b506e` → `60fd029e`** and **`exec_encode.rs` `543b506e` →
+>   `60fd029e`** — REQ-0 (#322, raw surface quantifiers) added EXACTLY ONE line to each: a new
+>   `Expr::Quantifier { .. } => "quantifier"` / `"quantifier (spec-only)"` arm in the `node_kind`
+>   diagnostic-label helper (the honest out-of-`S_C` name for the new quantifier AST node). `node_kind`
+>   is NOT an audited correspondence arm (it only labels the `Err(Unsupported(node_kind(other)))`
+>   catch-all, Table 1H's faithful out-of-`S_C` boundary); every audited `binop_str`/`encode_*`/`format!`
+>   arm in Tables 1/1B–1H/2 is byte-for-byte unchanged.
+> - **`forge/src/lean_export.rs` `76be6272` → `60fd029e`** — REQ-0 (#322) added EXACTLY ONE arm: a new
+>   `Expr::Quantifier { .. } => Err(ExportRefusal::OutOfFragment("raw quantifier … stratified encoding is
+>   stage-2 (REQ-5)"))` honest refusal. No audited Table-4/4B arm changed; the new arm is the faithful
+>   out-of-fragment boundary (the stratified encoding is the separate REQ-5/REQ-8 stage-2 surface, NOT
+>   the v1 exporter audited here).
+> - **`lean/Thermite/**` `b6038651` → `80c88ea1`** — REQ-1..REQ-8 (#323–#330) ADDED the new `Strat/`
+>   spine (`Syntax`/`Carrier`/`Denote`/`SubstKit`/`Nnf`/`Graph`/`Fragment`/`Cls/*`/`RefEncode`/
+>   `TokDenote`/`Soundness`/`CombDeriv`/`Restratify`/`Faithfulness`) + the stage-2 `Pin*` files, and
+>   DELETED the two retired `Spike/{SubstKit,PinBrokenLift}.lean` scaffolding files (superseded by REQ-2's
+>   real `Strat/SubstKit.lean`). `git diff --name-status` shows the ONLY non-additions are those two
+>   `Spike/` deletions — neither is an audited v1 spine arm (the Spike scaffolding was always outside
+>   Tables 1–4). Every audited v1 spine file (`RefEncode`/`Denote`/`Ast`/`Exec`/`Exec/Stmt`/`Soundness`/
+>   `Faithfulness`) is CODE-IDENTICAL across the range; the cited (T1) theorems + every negative lemma
+>   stand re-audit-free.
+>
+> Verification verdict: **additive-only — REQ-0's three new out-of-`S_C`/out-of-fragment quantifier arms
+> (one `node_kind` label each in the two encoders, one honest `ExportRefusal` in the exporter) + the new
+> `Strat/` spine and `Pin*` files + the `Spike/` retirement; zero audited arm changed meaning. Re-pinned
+> the two contract/exec encoders + the exporter `→ 60fd029e`, the spine `→ 80c88ea1`. The deep audit
+> (`make audit`) check [4] re-runs green after the re-pin; the stage-2 stratified mirrors are tracked
+> separately in `.design/verified/strat-rust-lean-correspondence.md` (REQ-9 [4′], content-pinned).**
 
 
 ## Requirements

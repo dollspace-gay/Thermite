@@ -3,12 +3,13 @@
   "display_id": 329,
   "title": "Stage-2 REQ-7: restratify (Strat/Restratify + forge edit --restratify + R-SIDE-1)",
   "description": "Strat/Restratify.lean (T4-R restrat_conservative + restrat_admits + restrat_complete + side_admitted), forge edit --restratify wiring (the rewrite emits the Side(phi', phi) obligation in-cage; certification of phi' without a discharged Side never counts for phi — R-SIDE-1), and PinRestratDropSide exhibiting the mis-certification dropping Side would permit. AC-7. Doc: .design/stage2-stratified-cage.md REQ-7. Gate: G2.",
-  "status": "open",
+  "status": "closed",
   "priority": "medium",
   "parent_uuid": "f0e27352-cca1-41d6-9914-7f6dcf4b6c88",
   "created_by": "rApq",
   "created_at": "2026-06-19T19:41:08.502124Z",
-  "updated_at": "2026-06-19T19:42:10.451399Z",
+  "updated_at": "2026-06-21T07:57:11.557003Z",
+  "closed_at": "2026-06-21T07:57:11.557003Z",
   "labels": [
     "forge"
   ],

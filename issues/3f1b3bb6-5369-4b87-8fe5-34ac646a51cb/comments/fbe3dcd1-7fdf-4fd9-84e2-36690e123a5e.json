@@ -1,0 +1,8 @@
+{
+  "uuid": "fbe3dcd1-7fdf-4fd9-84e2-36690e123a5e",
+  "issue_uuid": "3f1b3bb6-5369-4b87-8fe5-34ac646a51cb",
+  "author": "ZkTL",
+  "content": "Found: the rel-atom grounding gap is REAL but NON-FATAL. Cls.Tm.lit carries NO value (Nnf.lean:78 'a machine literal (value irrelevant here)') and the structural fdenote ranges binders over a sort-erased dom : List Tm, so a closed Cls.rel atom has no values to evaluate against a real v1/array model — grounding rel to 'real theory' in Lean is impossible WITHOUT fabricating a correspondence. This is precisely the kind of gap the CRITICAL DISCIPLINE says to surface, not paper over. It is non-fatal because (a) qfree atoms — the v1-Expr-embedding leaves — DO ground to real v1 denote, and (b) rel atoms' meaning IS the SMT array theory (the solver's model), correctly captured by leaving q's rel behaviour free (T1-S holds for every such q). So cage L4 is 'proven over source meaning' for the qfree-atom content and 'sound in every model' for the rel content — the honest, achievable closure. Documented in Faithfulness.lean header + the registry remaining_scope.",
+  "created_at": "2026-06-21T17:30:00.088021Z",
+  "kind": "observation"
+}

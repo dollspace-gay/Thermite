@@ -467,6 +467,14 @@ enum Command {
         addr: String,
         replace: String,
     },
+    /// `forge edit --restratify [--json]` — the restratification rewrite, end to end
+    /// (`.design/stage2-stratified-cage.md` REQ-7 / AC-7). Runs the §6 kv-alternation
+    /// worked example through `restrat`: shows the original φ REJECTED (the `Key ⇄ Value`
+    /// cycle), the rewritten φ' = `A ∧ p` ADMITTED, the `Side(φ', φ) = p ⇒ B` obligation
+    /// ADMITTED, discharges `Side` in-cage, and certifies φ. R-SIDE-1: certification is
+    /// WITHHELD when `Side` is undischarged (a tested code path, mirroring the Lean
+    /// `restrat_conservative` / `PinRestratDropSide`).
+    Restratify { json: bool },
     /// `forge fill <file> <hole-addr> <code>` — fill a body hole `?N` (#193
     /// increment (iii); `.design/forge/goal-repl.md` REQ-6). A specialization of
     /// `edit` whose address names a `?N` hole (`<fn>.?N`): splices the `<code>`
@@ -1136,12 +1144,24 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
             // file then the semantic address) + the required `--replace <code>`
             // flag (the replacement source text, a separate token). A missing
             // positional / a missing `--replace` value is a Usage error.
+            // `--restratify` switches `edit` into the REQ-7 restratification demo
+            // (`forge edit --restratify [--json]`): no file/addr/--replace, the §6
+            // kv-example is built in. Detected first so the positional requirements below
+            // do not apply.
             let mut file: Option<PathBuf> = None;
             let mut addr: Option<String> = None;
             let mut replace: Option<String> = None;
+            let mut restratify = false;
+            let mut saw_json = false;
             let mut iter = iter.peekable();
             while let Some(arg) = iter.next() {
                 match arg.as_str() {
+                    "--restratify" => {
+                        restratify = true;
+                    }
+                    "--json" => {
+                        saw_json = true;
+                    }
                     "--replace" => {
                         let value = iter.next().ok_or_else(|| {
                             ForgeError::Usage(
@@ -1168,6 +1188,20 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                         }
                     }
                 }
+            }
+            // The restratify demo takes no positionals / `--replace` (REQ-7 / AC-7).
+            if restratify {
+                if file.is_some() || addr.is_some() || replace.is_some() {
+                    return Err(ForgeError::Usage(
+                        "`forge edit --restratify` takes no <file>/<addr>/--replace (the §6 \
+                         kv-example is built in)"
+                            .to_string(),
+                    ));
+                }
+                return Ok(Command::Restratify { json: saw_json });
+            }
+            if saw_json {
+                return Err(ForgeError::Usage("unknown flag `--json`".to_string()));
             }
             let file = file.ok_or_else(|| {
                 ForgeError::Usage(
@@ -1256,7 +1290,8 @@ fn usage_text() -> &'static str {
      <file> \
      [--generated [N]] [--seed <u64>] [--json] | forge exec-tv <file> [--generated [N]] [--no-generated] \
      [--json] | forge body-tv <file> [--json] | forge goal <file> [item] [--proof] | forge \
-     battery <file> [item] | forge edit <file> <addr> --replace <code> | forge fill <file> \
+     battery <file> [item] | forge edit <file> <addr> --replace <code> | forge edit \
+     --restratify [--json] | forge fill <file> \
      <hole-addr> <code>"
 }
 
@@ -1344,6 +1379,7 @@ fn dispatch(args: &[String]) -> Result<ExitCode, ForgeError> {
             replace,
         } => run_edit(&file, &addr, &replace),
         Command::Fill { file, addr, code } => run_fill(&file, &addr, &code),
+        Command::Restratify { json } => run_restratify(json),
     }
 }
 
@@ -1409,6 +1445,102 @@ fn run_fill(file: &Path, addr: &str, code: &str) -> Result<ExitCode, ForgeError>
     let rendered = goal_repl::fill_hole(file, addr, code)?;
     print!("{rendered}");
     Ok(ExitCode::SUCCESS)
+}
+
+/// Run `forge edit --restratify`: the restratification rewrite, end to end
+/// (`.design/stage2-stratified-cage.md` REQ-7 / AC-7). Drives the §6 kv-alternation
+/// worked example through `thermite_spec::restratify`: the original φ is REJECTED (the
+/// `Key ⇄ Value` cycle), `restrat` excises the cycle-closing conjunct into a fresh
+/// opaque abstraction `p`, yielding the ADMITTED φ' = `A ∧ p` and the ADMITTED side
+/// obligation `Side(φ', φ) = p ⇒ B`; the demo DISCHARGES `Side` in-cage and certifies φ.
+///
+/// R-SIDE-1: a φ'-only certificate never counts for φ — `certify(.., false)` WITHHELDs.
+/// The CLI runs the discharged (certified) path; the withheld path is the
+/// `restratify_withholds_undischarged_side` test below + the thermite-spec unit test +
+/// the Lean `PinRestratDropSide`.
+///
+/// Exit code: a successful certified rewrite is SUCCESS; a (theoretically impossible for
+/// the built-in example) withheld certification is a verification-failure exit.
+fn run_restratify(json: bool) -> Result<ExitCode, ForgeError> {
+    use thermite_spec::classifier::{classify, to_wire, Verdict};
+    use thermite_spec::restratify::{certify, kv_example, Certification};
+
+    let phi = kv_example();
+    let orig_verdict = classify(&phi);
+    // Discharge `Side` in-cage (it is admitted — see below), certifying φ.
+    let cert = certify(&phi, true);
+    // Cross-check the withheld path so the rendered report can attest R-SIDE-1 honestly.
+    let withheld = certify(&phi, false);
+
+    let result = match &cert {
+        Certification::Certified(r) => r,
+        Certification::Withheld(reason, _) => {
+            // The built-in kv example always certifies when Side is discharged; a withheld
+            // verdict here is a real regression, surfaced (never a silent pass).
+            return Err(ForgeError::StratDifferential {
+                detail: format!(
+                    "forge edit --restratify: the kv example failed to certify with Side \
+                     discharged ({reason:?}) — restratify regression"
+                ),
+            });
+        }
+    };
+    let phi_prime_verdict = classify(&result.rewritten);
+    let side_verdict = classify(&result.side);
+
+    if json {
+        let verdict_str = |v: &Verdict| match v {
+            Verdict::Admitted => "admitted".to_string(),
+            Verdict::Rejected(r) => format!("rejected:{}", r.tag()),
+            Verdict::Unknown(_) => "unknown".to_string(),
+        };
+        let doc = serde_json::json!({
+            "example": "kv-alternation (§6)",
+            "original": { "wire": to_wire(&phi), "verdict": verdict_str(&orig_verdict) },
+            "rewritten": { "wire": to_wire(&result.rewritten), "verdict": verdict_str(&phi_prime_verdict) },
+            "side": { "wire": to_wire(&result.side), "verdict": verdict_str(&side_verdict) },
+            "side_discharged": true,
+            "certified": cert.is_certified(),
+            "withheld_when_side_undischarged": !withheld.is_certified(),
+        });
+        let rendered =
+            serde_json::to_string_pretty(&doc).map_err(|e| ForgeError::StratDifferential {
+                detail: format!("failed to serialize the restratify report JSON: {e}"),
+            })?;
+        println!("{rendered}");
+    } else {
+        let verdict_line = |v: &Verdict| match v {
+            Verdict::Admitted => "ADMITTED (in-cage)".to_string(),
+            Verdict::Rejected(r) => format!("REJECTED — {r}"),
+            Verdict::Unknown(_) => "UNKNOWN".to_string(),
+        };
+        println!("restratify (REQ-7, §6 kv-alternation worked example)");
+        println!();
+        println!("  φ  = (∀k:Key. ∃v:Value. v = k) ∧ (∀v:Value. ∃k:Key. k = v)");
+        println!("       └─────────── A ───────────┘   └─────────── B ───────────┘");
+        println!("    {}", verdict_line(&orig_verdict));
+        println!();
+        println!("  restrat excises the cycle-closing conjunct B into a fresh opaque");
+        println!("  abstraction p (a qfree leaf — no sorts, no graph edges):");
+        println!();
+        println!("  φ' = A ∧ p          {}", verdict_line(&phi_prime_verdict));
+        println!("  Side(φ', φ) = p ⇒ B  {}", verdict_line(&side_verdict));
+        println!();
+        println!(
+            "  Side discharged in-cage ⇒ φ CERTIFIED: {}",
+            cert.is_certified()
+        );
+        println!(
+            "  R-SIDE-1: with Side UNDISCHARGED, certification is WITHHELD: {}",
+            !withheld.is_certified()
+        );
+    }
+
+    if cert.is_certified() {
+        Ok(ExitCode::SUCCESS)
+    } else {
+        Ok(ExitCode::from(EXIT_VERIFICATION_FAILURE))
+    }
 }
 
 /// Run `forge check`: drive the pipeline, render every certificate, and map the
@@ -2750,6 +2882,31 @@ mod tests {
                 engine: check::EngineSelection::Verus,
             })
         );
+    }
+
+    // Stage-2 REQ-7 (`.design/stage2-stratified-cage.md` REQ-7 / AC-7): `forge edit
+    // --restratify [--json]` dispatches to the restratify demo (no positionals); `--json`
+    // parses in either order; a stray positional / a non-restratify `--json` is a Usage
+    // error (the latter preserving the original `edit` flag discipline).
+    #[test]
+    fn parses_edit_restratify() {
+        assert_eq!(
+            parse_args(&argv(&["edit", "--restratify"])).ok(),
+            Some(Command::Restratify { json: false })
+        );
+        assert_eq!(
+            parse_args(&argv(&["edit", "--restratify", "--json"])).ok(),
+            Some(Command::Restratify { json: true })
+        );
+        // `--json` before `--restratify` still parses (order-robust).
+        assert_eq!(
+            parse_args(&argv(&["edit", "--json", "--restratify"])).ok(),
+            Some(Command::Restratify { json: true })
+        );
+        // A stray positional is a Usage error.
+        assert!(parse_args(&argv(&["edit", "--restratify", "f.th"])).is_err());
+        // `--json` WITHOUT `--restratify` stays an unknown flag for plain `edit`.
+        assert!(parse_args(&argv(&["edit", "f.th", "x", "--replace", "c", "--json"])).is_err());
     }
 
     // #11 (`.design/forge/solver-profiles.md` REQ-5): `--rlimit <FLOAT>` parses

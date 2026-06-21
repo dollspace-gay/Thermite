@@ -89,11 +89,24 @@ IMPORTS=(
   # off-by-one neighbour pin (decide-checked, no theorem in the gated list).
   "Thermite.Strat.CombDeriv"
   "Thermite.PinCombDeriv"
+  # Stage-2 REQ-7 (#329): restratify. `Thermite.Strat.Restratify` carries the rewrite
+  # `restrat` + the side obligation `Side` + the four T4-R theorems
+  # (`restrat_conservative`/`restrat_admits`/`restrat_complete`/`side_admitted`), all
+  # Mathlib-free (it imports only `Strat.Fragment`), so a `sorry` or broken proof fails
+  # the CI Lean job (AC-7). `restrat_conservative` (T4-R, the R-SIDE-1 certificate
+  # bridge) is added to the axiom-gated THEOREMS list below (the REQ-9 [1′] extension
+  # brought forward for AC-7, as REQ-5 did for `strat_ref_sound`); the three other T4-R
+  # theorems (`decide`-checked admissibility / witness-oracle completeness) are BUILD
+  # targets, axiom-probed IN-FILE. `PinRestratDropSide` is the drop-Side mis-certification
+  # pin (decide-checked, no theorem in the gated list).
+  "Thermite.Strat.Restratify"
+  "Thermite.PinRestratDropSide"
 )
 # The five load-bearing universal-theorem pillars + the two relax-route spine lemmas
 # (REQ-8a) + the stage-2 classifier coincidence theorem T3-C (REQ-3, AC-3) + the
-# stage-2 stratified encoder soundness T1-S (REQ-5, AC-5). Keep this list in lock-step
-# with the prose in `scripts/audit.sh` check [1].
+# stage-2 stratified encoder soundness T1-S (REQ-5, AC-5) + the stage-2 restratification
+# conservativity T4-R (REQ-7, AC-7). Keep this list in lock-step with the prose in
+# `scripts/audit.sh` check [1].
 THEOREMS=(
   "Thermite.lowering_faithful"
   "Thermite.ref_sound"
@@ -104,6 +117,7 @@ THEOREMS=(
   "Thermite.Relax.rencode_sound"
   "Thermite.Strat.Cls.classifier_correct"
   "Thermite.Strat.strat_ref_sound"
+  "Thermite.Strat.Cls.restrat_conservative"
 )
 ALLOWED="propext Classical.choice Quot.sound"
 

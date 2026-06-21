@@ -56,10 +56,12 @@
 
 pub mod classifier;
 pub mod combinators;
+pub mod restratify;
 pub mod schemes;
 pub mod validator;
 
 pub use classifier::{admitted, classify, parse_frm, to_wire, Frm, RejectReason, Sort2, Verdict};
 pub use combinators::{all, lookup, ArgKind, CombinatorSig, ResultKind};
+pub use restratify::{certify, restratify, Certification, RestratResult, WithheldReason};
 pub use schemes::{SchemeResult, SchemeSig, StepShape};
 pub use validator::{validate, SpecError};

@@ -1,0 +1,10 @@
+{
+  "uuid": "826e0991-ccf1-4121-84a6-e81d0da6b809",
+  "issue_uuid": "0f440ce0-8262-481a-b6e9-62fa62e45933",
+  "author": "rApq",
+  "content": "Shipped: PR #69 squash-merged to main. AC-4 met — Rust classifier (thermite-spec/src/classifier.rs) mirroring Lean Thermite.Strat.Cls.admitted + frozen rejection vocabulary; gen.rs binder productions; the Rust<->Lean differential battery (strat_tv.rs/strat_differential.rs/Cls/Wire.lean, audit check [8]) + counted unknown-on-admitted tripwire. CI green (lean 15m21s incl battery). Agent re-pinned ripple docs itself (commit-pins at stable ancestor). REQ-S2-4 registered. Unblocks REQ-5 (#327).",
+  "created_at": "2026-06-21T01:07:12.140684Z",
+  "kind": "note",
+  "signed_by": "SHA256:tVRGNaCPy5N1tRtokzkbgsOCzGZujGDWQlGHFruaL9c",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgylLCWwpnQm2E2UQO23AN1e/yB6k0yzmPM7qiYPujTNYAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABANMxvzA7tjF+YtqaFeAFIAAlby8A5fEWGbqSkUXlVne3pea9E9BRai2LhYXKg0pKxIaw55D0aj/9X61ha+8HQCQ=="
+}

@@ -69,10 +69,21 @@ IMPORTS=(
   # carries no theorem (it is an IO tool with a `partial` parser), so it is NOT added to
   # the axiom-gated THEOREM list below.
   "Thermite.Strat.Cls.Wire"
+  # Stage-2 REQ-5 (#327): the encoder + T1-S. `Thermite.Strat.Soundness` transitively
+  # pulls `Strat.RefEncode`/`Strat.TokDenote` (the `sencode` trigger-free MBQI token
+  # surface + `tokDenote`), all Mathlib-free, so a `sorry` or broken proof under them
+  # fails the CI Lean job (AC-5). `strat_ref_sound` (T1-S) is added to the axiom-gated
+  # THEOREMS list below (the REQ-9 [1′] extension brought forward, since AC-5 requires
+  # the stratified encoder soundness be axiom-clean). The two broken-encoder pins are
+  # BUILD targets (decide-checked, no theorem in the gated list).
+  "Thermite.Strat.Soundness"
+  "Thermite.PinStratFlip"
+  "Thermite.PinStratCapture"
 )
 # The five load-bearing universal-theorem pillars + the two relax-route spine lemmas
-# (REQ-8a) + the stage-2 classifier coincidence theorem T3-C (REQ-3, AC-3). Keep this
-# list in lock-step with the prose in `scripts/audit.sh` check [1].
+# (REQ-8a) + the stage-2 classifier coincidence theorem T3-C (REQ-3, AC-3) + the
+# stage-2 stratified encoder soundness T1-S (REQ-5, AC-5). Keep this list in lock-step
+# with the prose in `scripts/audit.sh` check [1].
 THEOREMS=(
   "Thermite.lowering_faithful"
   "Thermite.ref_sound"
@@ -82,6 +93,7 @@ THEOREMS=(
   "Thermite.Relax.r_relax_sound"
   "Thermite.Relax.rencode_sound"
   "Thermite.Strat.Cls.classifier_correct"
+  "Thermite.Strat.strat_ref_sound"
 )
 ALLOWED="propext Classical.choice Quot.sound"
 

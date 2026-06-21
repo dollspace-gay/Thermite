@@ -7064,6 +7064,57 @@ target = "cargo run -p forge -- strat-tv --generated 200"
 note = "the runnable differential driver (the rotating-seed / audit check [8] entry point; add --seed <u64> to rotate): zero disagreements AND zero tripwire -> exit 0; a disagreement or a tripwire -> verification-failure exit; lake-absent -> honest skip (exit 0)"
 
 [[requirement]]
+id = "REQ-S2-5"
+title = "Stage-2 encoder + T1-S — Strat/{RefEncode,TokDenote,Soundness}.lean + PinStratCapture/PinStratFlip"
+owner = ".design/stage2-stratified-cage.md"
+status = "shipped"
+scope = "verified"
+summary = "The stratified reference encoder + T1-S soundness (stage2-stratified-cage.md REQ-5 / AC-5; child of thermite2-program.md REQ-10; gate G2; spec of record the stage-2 metatheory sketch GH#2). Builds on REQ-1..REQ-4 (#323/#324/#325/#326, merged @ 94c2683c). REQ-5 IS THE BRIDGE: the two-syntax split (REQ-3) leaves the classifier surface Cls.Frm and the semantic spine Strat.Frm un-reconciled; this increment connects an admitted Cls.Frm to a sound denotation. BRIDGE DECISION (documented in Strat/TokDenote.lean header + surfaced on #327): option A (a translation Cls.Frm -> spine Strat.Frm + correspondence) is ILL-DEFINED — the minimal spine Tm is var-only (it cannot hold the Read/Len/Cast/IdxOp array-property vocabulary) and Atom.eq equates only vars while Atom.qf is carrier-closed, so an admitted formula like forall i. a[i] <= a[j] has NO image in the spine; there is no total meaning-preserving translation. So the encoder takes option B: encode Cls.Frm DIRECTLY against REQ-3's STRUCTURAL denotation fdenote (binders over a finite List Tm domain, atoms via an oracle q : Atom -> Bool), which the design records is STRONGER than any single per-sort model (it holds for every (q, dom)), so encoder soundness against fdenote subsumes soundness under any concrete per-sort sdenote. No forked syntax (reuses Cls.Frm/Cls.Tm/Cls.substAtom), no sorry. (1) Strat/TokDenote.lean: the trigger-free MBQI token surface Tok — the SMT image of an admitted Cls.Frm with NAMED binders (a Nat name + a triggerFree flag per quantifier) in place of de Bruijn indices; upd (the named-environment update); tokDenote (Bool-valued, computable; binders fold dom re-binding the binder NAME, atoms read by the SAME oracle q as fdenote). (2) Strat/RefEncode.lean: encName (the de Bruijn LEVEL d-1-i a body index denotes at depth d — the fresh-name discipline), encTm/encAtom (relabel variable references index->level), sencodeAt/sencode (name each binder by its level, flag triggerFree=true), wfTm/wfAtom/wfFrm (the de Bruijn well-scopedness the bridge relies on — a top-level admitted clause is a wfFrm 0 sentence), tokWf (the encoder-output discipline: binder names strictly increase down each path -> pairwise distinct -> no capture, AND every quantifier trigger-free). (3) Strat/Soundness.lean: Agree (the named<->de Bruijn agreement invariant sigma (encName d i) = rho i for i<d), Agree_upd (maintained across a binder: cons lines up with upd at the fresh name d), encTm_subst/encAtom_subst (a relabelled term/atom read under sigma equals the original read under rho), T1-S strat_ref_sound (tokDenote q dom (sencodeAt d phi) sigma = fdenote q dom phi rho for every (q,dom) given Agree d + wfFrm d) + strat_ref_sound_sentence (the usable closed-sentence corollary at d=0, Agree 0 vacuous), strat_ref_wf (tokWf 0 (sencode phi) — the fresh-name + MBQI discipline). (4) PinStratFlip + PinStratCapture (flat lean/Thermite/Pin*.lean placement, as REQ-1/2): sencodeFlipAt swaps all<->ex and flip_breaks_soundness refutes it (witness exists x. x=c0 true, flipped to forall x. x=c0 false) via decide on a 2-element domain; sencodeCap reuses name 0 for every binder and capture_breaks_soundness refutes it (witness forall x. exists y. x=c0 — the outer x is captured by the inner binder, collapsing to forall x. exists y. y=c0) via decide; each pin also exhibits correct_sound_on_phi* showing the REAL sencode agrees on the same witness via the proven strat_ref_sound (the divergence is solely the broken step). AC-5 met: strat_ref_sound (T1-S) and strat_ref_wf proven, axiom-clean (in-file #print axioms = [propext, Quot.sound] subset of allowed; Quot.sound via funext under the binder folds), zero sorry under lean/Thermite/Strat/, core-Lean-only (no Mathlib on the path); PinStratCapture + PinStratFlip refute the broken-encoder neighbours at small carriers (decide, never native_decide). Thermite.Strat.Soundness + the two pins wired into scripts/lean-axiom-probe.sh as CI build targets, and Thermite.Strat.strat_ref_sound added to the axiom-gated THEOREMS list (the REQ-9 [1'] extension brought forward for AC-5); the probe stays green. The combinator demotion (REQ-6 / #328), restratify (REQ-7 / #329), faithfulness + two-phase TV + the trust flip (REQ-8 / #330), and the audit/[1'][4'][8][9] G2 gate (REQ-9 / #331) are SEPARATE downstream requirements."
+remaining_scope = "The encoder + T1-S soundness + the two broken-encoder pins ONLY. The combinator demotion (REQ-6 / #328), restratify (REQ-7 / #329), faithfulness + two-phase TV + the trust flip (REQ-8 / #330), and the audit-script G2 gate integration ([1'] extension of the OTHER stratified theorems strat_lowering_faithful/restrat_conservative + [4'][8][9]; REQ-9 / #331) are separate requirements."
+aliases = ["Stage-2 REQ-5", "REQ-5 encoder", "the encoder + T1-S", "REQ-5 IS THE BRIDGE", "Strat/RefEncode.lean", "Strat/TokDenote.lean", "Strat/Soundness.lean", "sencode", "tokDenote", "strat_ref_sound", "strat_ref_wf", "T1-S", "PinStratCapture", "PinStratFlip", "the trigger-free MBQI surface", "AC-5", "github:dollspace-gay/Thermite#327"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "lean/Thermite/Strat/TokDenote.lean"
+note = "(1) the trigger-free MBQI token surface Tok (named binders + triggerFree flag) + upd + tokDenote (binders re-bind the binder NAME so capture is load-bearing; atoms read by the same oracle q as fdenote); the file header documents the two-syntax bridge decision (option B over the ill-defined option A)"
+
+[[requirement.evidence]]
+kind = "file"
+target = "lean/Thermite/Strat/RefEncode.lean"
+note = "(2) sencode: encName (index->level fresh-name discipline), encTm/encAtom, sencodeAt/sencode (each binder named by its level + trigger-free), wfTm/wfAtom/wfFrm (source well-scopedness), tokWf (the encoder-output discipline: strictly-increasing path names + trigger-free)"
+
+[[requirement.evidence]]
+kind = "file"
+target = "lean/Thermite/Strat/Soundness.lean"
+note = "(3) Agree + Agree_upd + encTm_subst/encAtom_subst, T1-S strat_ref_sound (+ the closed-sentence corollary) and strat_ref_wf; in-file #print axioms confirms both axiom-clean"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Thermite.Strat.strat_ref_sound"
+note = "T1-S: tokDenote q dom (sencodeAt d phi) sigma = fdenote q dom phi rho for every model (q,dom) under Agree d + wfFrm d — the encoder preserves the structural denotation (axiom-gated in scripts/lean-axiom-probe.sh)"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Thermite.Strat.strat_ref_wf"
+note = "the encoder output obeys the fresh-name + MBQI discipline: tokWf 0 (sencode phi) — binder names strictly increase down every path (no capture) and every quantifier is trigger-free"
+
+[[requirement.evidence]]
+kind = "file"
+target = "lean/Thermite/PinStratFlip.lean"
+note = "the quantifier-flip pin: sencodeFlipAt swaps all<->ex; flip_breaks_soundness refutes encoder soundness via decide on a 2-element domain; correct_sound_on_phiFlip shows the real sencode agrees via strat_ref_sound"
+
+[[requirement.evidence]]
+kind = "file"
+target = "lean/Thermite/PinStratCapture.lean"
+note = "the variable-capture pin: sencodeCap reuses name 0 for every binder; capture_breaks_soundness refutes encoder soundness via decide (the outer var is captured by the inner binder); correct_sound_on_phiCap shows the real sencode agrees via strat_ref_sound"
+
+[[requirement.evidence]]
+kind = "command"
+target = "bash scripts/lean-axiom-probe.sh"
+note = "AC-5 (ci): builds Thermite.Strat.Soundness + the two pins and axiom-gates Thermite.Strat.strat_ref_sound (subset of {propext, Classical.choice, Quot.sound}); green — a sorry or disallowed axiom under the encoder/soundness path fails the Lean CI job"
+
+[[requirement]]
 id = "REQ-SKILL-V2-FORGE-TIER"
 title = "THERMITE.skill.md v2 — the agent-facing Stage-1 forge-tier section"
 owner = ".design/thermite2-program.md"

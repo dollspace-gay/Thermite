@@ -1,0 +1,8 @@
+{
+  "uuid": "670e5deb-ca29-4891-af7a-d11ad572a7ba",
+  "issue_uuid": "3d0f9a1a-af66-4391-b7dd-11696fd0966a",
+  "author": "2IAW",
+  "content": "Result: REQ-6 combinator demotion SHIPPED @ 327a61b8. lean/Thermite/Strat/CombDeriv.lean — eight comb_deriv_* lemmas (six bounded combinators -> raw-quantifier Cls.Frm expansions over structural fdenote, each = the bounded forall/exists characterization over dom; count_where/permutation_of -> definitional aggregate forms countWhereCls/permEqCls per the SPIKE-2 census). q stays abstract (atom-grounding is REQ-8's, per REQ-5 option B). All eight axiom-clean ({propext,Quot.sound}), zero sorry, core-Lean-only. PinCombDeriv: off-by-one (le vs lt) refuted by decide. REQ-S2-6 registered (reqs check clean, 449 reqs); req-registry.md content-sha256 re-pinned. Verified: lean-axiom-probe green (incl. the eight + the 8 universal pillars), cargo test --workspace (all 50 groups ok, 0 failed), clippy -D warnings, fmt, doc-drift.py + make doc-drift rc=0. v1 conformance goldens byte-identical (registry surface untouched). AC-6 met. NOTE: git push blocked by worktree policy — orchestrator pushes.",
+  "created_at": "2026-06-21T05:44:01.260580Z",
+  "kind": "result"
+}

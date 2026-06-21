@@ -983,6 +983,387 @@ fn gen_exec_index_as(rng: &mut Rng, ty: ExecTy, _depth: usize, scope: &mut ExecS
     }
 }
 
+// ===========================================================================
+// gen_strat_formulas — the stratified-cage classifier differential generator
+// (`.design/stage2-stratified-cage.md` REQ-4 / AC-4, the M2b differential battery).
+// ===========================================================================
+
+use thermite_spec::classifier::{self, Atom, Frm, Mach, Rel, Sort2, Tm};
+
+/// The binder-nesting cap on a generated stratified formula. Two reasons (R-CODE-2):
+/// it bounds the recursion so generation always terminates, and — load-bearing for the
+/// differential battery — it bounds the sort-graph edge count, hence the SIZE of the
+/// Roy–Warshall `reach` the Lean `admitted` runs (`Strat/Graph.lean`'s `reach` is
+/// exponential in the node count; the Rust mirror is polynomial). Three binders keep the
+/// node set tiny so `lake env lean --run` on each formula stays fast.
+const STRAT_MAX_BINDERS: usize = 3;
+/// The term-tree depth cap (keeps a generated `read`/`cast`/`mul` chain small, so the
+/// edge set — and the formula — stays compact).
+const STRAT_MAX_TM_DEPTH: usize = 2;
+/// The hard formula-tree depth cap. Beyond it `gen_frm` forces an atom, so the
+/// propositional recursion (`neg`/`conj`/`disj`/`imp`) always bottoms out and generation
+/// terminates (R-CODE-2) — distinct from the binder cap, which only stops NEW binders.
+const STRAT_MAX_FRM_DEPTH: usize = 5;
+
+/// The relation operators a generated atom draws from (the full `Cls.Rel`).
+const STRAT_RELS: &[Rel] = &[Rel::Eq, Rel::Ne, Rel::Lt, Rel::Le, Rel::Gt, Rel::Ge];
+
+/// Generate `n` well-sorted stratified-cage formulas deterministically from `seed`
+/// (REQ-4 / AC-4 — the differential battery's clause source). Each is a
+/// `thermite_spec::classifier::Frm` over the sort-typed `Cls` surface, run through BOTH
+/// the Rust classifier (`thermite_spec::classifier::admitted`) and `lake env lean --run`
+/// on the Lean `Thermite.Strat.Cls.admitted`; any verdict disagreement is a hard CI
+/// failure.
+///
+/// The stream is the **Q5** mix the design fixes: a **corpus-mimicking** arm (the real
+/// array-property shapes — sortedness, bounds, nested reads, the cast/kv cycles, the
+/// (R2) traps, a `seq` binder) deliberately spanning every admit/reject class, and a
+/// **uniform-random** arm (bounded recursive descent over the full grammar). Both arms
+/// are well-sorted: a generated `var` is always an in-scope de Bruijn index carrying the
+/// sort recorded at its binder. Seeded + deterministic (R-CODE-5): the same `(seed, n)`
+/// always yields the same `Vec<Frm>` (asserted in `tests`).
+#[must_use]
+pub fn gen_strat_formulas(seed: u64, n: usize) -> Vec<Frm> {
+    let mut rng = Rng::new(seed);
+    let mut out = Vec::with_capacity(n);
+    for _ in 0..n {
+        // ~half corpus-mimicking (the labeled admit/reject shapes), ~half uniform —
+        // the Q5 two-arm default. The corpus arm guarantees every verdict class is
+        // exercised every run; the uniform arm walks the wider grammar.
+        if rng.below(2) == 0 {
+            out.push(gen_strat_corpus(&mut rng));
+        } else {
+            let mut g = StratCtx::new();
+            out.push(g.gen_frm(&mut rng, 0));
+        }
+    }
+    out
+}
+
+/// usize — the index sort.
+fn s_usize() -> Sort2 {
+    Sort2::usize_s()
+}
+
+/// A `SeqS s` literal (a closed array parameter — contributes no edges itself).
+fn seq_lit(elem: Sort2) -> Tm {
+    Tm::Lit(Sort2::Seq(Box::new(elem)))
+}
+
+/// A finite carrier sort drawn for a binder (machine or opaque — never `seq`).
+fn pick_fin_sort(rng: &mut Rng) -> Sort2 {
+    match rng.below(5) {
+        0 => s_usize(),
+        1 => Sort2::Mach(Mach::U32),
+        2 => Sort2::Mach(Mach::U64),
+        3 => Sort2::Opaque(0),
+        _ => Sort2::Opaque(1),
+    }
+}
+
+/// The corpus-mimicking arm: a hand-shaped array-property formula, one per call, chosen
+/// uniformly across the admit/reject classes so a single run covers them all. The
+/// element sorts / relations are randomized for diversity, but the SHAPE pins the
+/// expected verdict class (named in each arm).
+fn gen_strat_corpus(rng: &mut Rng) -> Frm {
+    let op = pick_rel(rng);
+    match rng.below(9) {
+        // (0) Sortedness `∀ i j : usize. i ≤ j ⇒ a[i] ≤ a[j]` — ADMIT (E2 `usize → elem`).
+        0 => {
+            let elem = pick_fin_sort(rng);
+            let i = Tm::Var(s_usize(), 1);
+            let j = Tm::Var(s_usize(), 0);
+            let hyp = Frm::Atom(Atom::Rel(Rel::Le, i.clone(), j.clone()));
+            let concl = Frm::Atom(Atom::Rel(
+                Rel::Le,
+                Tm::Read(elem.clone(), Box::new(seq_lit(elem.clone())), Box::new(i)),
+                Tm::Read(elem.clone(), Box::new(seq_lit(elem)), Box::new(j)),
+            ));
+            Frm::All(
+                s_usize(),
+                Box::new(Frm::All(
+                    s_usize(),
+                    Box::new(Frm::Imp(Box::new(hyp), Box::new(concl))),
+                )),
+            )
+        }
+        // (1) Bounds `∀ i : usize. a[i] <op> a[i]` — ADMIT (single E2 edge, acyclic).
+        1 => {
+            let elem = pick_fin_sort(rng);
+            let rd = Tm::Read(
+                elem.clone(),
+                Box::new(seq_lit(elem)),
+                Box::new(Tm::Var(s_usize(), 0)),
+            );
+            Frm::All(
+                s_usize(),
+                Box::new(Frm::Atom(Atom::Rel(op, rd.clone(), rd))),
+            )
+        }
+        // (2) Length `∀ i : usize. i <op> a.len()` — ADMIT (a `Len` over a closed seq is
+        //     inert; no univ var in the len arg, so no edge).
+        2 => {
+            let elem = pick_fin_sort(rng);
+            let len = Tm::Len(Box::new(seq_lit(elem)));
+            Frm::All(
+                s_usize(),
+                Box::new(Frm::Atom(Atom::Rel(op, Tm::Var(s_usize(), 0), len))),
+            )
+        }
+        // (3) A declared spec fn `∀ i : usize. f(i) <op> f(i)` — ADMIT (E2 `usize → res`,
+        //     acyclic when `res ≠ usize`).
+        3 => {
+            let res = Sort2::Mach(Mach::U64);
+            let app = Tm::App1(
+                s_usize(),
+                res.clone(),
+                rng.below(4) as u32,
+                Box::new(Tm::Var(s_usize(), 0)),
+            );
+            Frm::All(
+                s_usize(),
+                Box::new(Frm::Atom(Atom::Rel(op, app.clone(), app))),
+            )
+        }
+        // (4) Nested read `a[a[i]]` (`a : SeqS usize`) — REJECT (E2 self-loop usize→usize).
+        4 => {
+            let inner = Tm::Read(
+                s_usize(),
+                Box::new(seq_lit(s_usize())),
+                Box::new(Tm::Var(s_usize(), 0)),
+            );
+            let outer = Tm::Read(s_usize(), Box::new(seq_lit(s_usize())), Box::new(inner));
+            Frm::All(
+                s_usize(),
+                Box::new(Frm::Atom(Atom::Rel(op, outer.clone(), outer))),
+            )
+        }
+        // (5) Cast cycle `b[(a[i] as usize)]` (`a, b : SeqS u64`) — REJECT (usize→u64→usize;
+        //     the cast is width-preserving so (R2) passes, the graph cycle rejects).
+        5 => {
+            let u64s = Sort2::Mach(Mach::U64);
+            let ai = Tm::Read(
+                u64s.clone(),
+                Box::new(seq_lit(u64s.clone())),
+                Box::new(Tm::Var(s_usize(), 0)),
+            );
+            let cast_ai = Tm::Cast(s_usize(), Box::new(ai));
+            let outer = Tm::Read(u64s.clone(), Box::new(seq_lit(u64s)), Box::new(cast_ai));
+            Frm::All(
+                s_usize(),
+                Box::new(Frm::Atom(Atom::Rel(op, outer.clone(), outer))),
+            )
+        }
+        // (6) kv alternation `(∀k. ∃v. …) ∧ (∀v. ∃k. …)` — REJECT (E1 Key⇄Value cycle).
+        6 => {
+            let key = Sort2::Opaque(0);
+            let val = Sort2::Opaque(1);
+            let body1 = Frm::Atom(Atom::Rel(
+                op,
+                Tm::Var(val.clone(), 0),
+                Tm::Var(key.clone(), 1),
+            ));
+            let body2 = Frm::Atom(Atom::Rel(
+                op,
+                Tm::Var(key.clone(), 0),
+                Tm::Var(val.clone(), 1),
+            ));
+            Frm::Conj(
+                Box::new(Frm::All(
+                    key.clone(),
+                    Box::new(Frm::Ex(val.clone(), Box::new(body1))),
+                )),
+                Box::new(Frm::All(val, Box::new(Frm::Ex(key, Box::new(body2))))),
+            )
+        }
+        // (7) An (R2) trap — `mul` or a width-changing `cast` over a bound index var.
+        //     REJECT (`index-grammar`).
+        7 => {
+            let elem = Sort2::Mach(Mach::U32);
+            let idx = if rng.below(2) == 0 {
+                // `i * i` — a non-linear index.
+                Tm::Mul(
+                    Box::new(Tm::Var(s_usize(), 0)),
+                    Box::new(Tm::Var(s_usize(), 0)),
+                )
+            } else {
+                // `(i as u32)` — a width-changing cast (usize=64 → u32=32) under a bound var.
+                Tm::Cast(Sort2::Mach(Mach::U32), Box::new(Tm::Var(s_usize(), 0)))
+            };
+            let rd = Tm::Read(elem.clone(), Box::new(seq_lit(elem)), Box::new(idx));
+            Frm::All(
+                s_usize(),
+                Box::new(Frm::Atom(Atom::Rel(op, rd.clone(), rd))),
+            )
+        }
+        // (8) A `seq` binder `∀ x : SeqS u32. (qfree)` — REJECT (`seq-quantifier`, (R1)).
+        _ => Frm::All(
+            Sort2::Seq(Box::new(Sort2::Mach(Mach::U32))),
+            Box::new(Frm::Atom(Atom::QFree)),
+        ),
+    }
+}
+
+fn pick_rel(rng: &mut Rng) -> Rel {
+    STRAT_RELS[rng.below(STRAT_RELS.len())]
+}
+
+/// The uniform-random arm's generation state: the binder context (innermost sort first),
+/// so a generated `var` is always a valid in-scope de Bruijn reference carrying its
+/// binder's sort (well-sortedness).
+struct StratCtx {
+    /// The sorts of the enclosing binders, innermost (de Bruijn 0) first.
+    binders: Vec<Sort2>,
+}
+
+impl StratCtx {
+    fn new() -> Self {
+        StratCtx {
+            binders: Vec::new(),
+        }
+    }
+
+    /// A uniform-random well-sorted formula at recursion `depth`. Bottoms out at an atom
+    /// once the binder cap or a depth budget is hit, so generation always terminates.
+    fn gen_frm(&mut self, rng: &mut Rng, depth: usize) -> Frm {
+        // Hard depth floor: beyond the cap, force an atom so every recursive path
+        // (propositional AND binder) terminates.
+        if depth >= STRAT_MAX_FRM_DEPTH {
+            return Frm::Atom(self.gen_atom(rng));
+        }
+        // At/near the binder cap, only propositional structure + atoms (no new binders),
+        // so the edge count (hence the Lean `reach` size) stays bounded.
+        let can_bind = self.binders.len() < STRAT_MAX_BINDERS && depth < STRAT_MAX_BINDERS;
+        let choice = if can_bind { rng.below(7) } else { rng.below(4) };
+        match choice {
+            0 => Frm::Atom(self.gen_atom(rng)),
+            1 => Frm::Neg(Box::new(self.gen_frm(rng, depth + 1))),
+            2 => {
+                let p = self.gen_frm(rng, depth + 1);
+                Frm::Conj(Box::new(p), Box::new(self.gen_frm(rng, depth + 1)))
+            }
+            3 => {
+                let p = self.gen_frm(rng, depth + 1);
+                Frm::Disj(Box::new(p), Box::new(self.gen_frm(rng, depth + 1)))
+            }
+            4 => {
+                let p = self.gen_frm(rng, depth + 1);
+                Frm::Imp(Box::new(p), Box::new(self.gen_frm(rng, depth + 1)))
+            }
+            // A universal/existential binder. ~1 in 8 binders is over a `seq` sort (the
+            // (R1) `seq-quantifier` trap) so the uniform arm also exercises it.
+            n => {
+                let sort = if rng.below(8) == 0 {
+                    Sort2::Seq(Box::new(pick_fin_sort(rng)))
+                } else {
+                    pick_fin_sort(rng)
+                };
+                self.binders.insert(0, sort.clone());
+                let body = self.gen_frm(rng, depth + 1);
+                self.binders.remove(0);
+                if n == 5 {
+                    Frm::All(sort, Box::new(body))
+                } else {
+                    Frm::Ex(sort, Box::new(body))
+                }
+            }
+        }
+    }
+
+    /// A uniform-random atom — a relation between two terms, or (rarely) the opaque
+    /// `qfree` leaf.
+    fn gen_atom(&mut self, rng: &mut Rng) -> Atom {
+        if rng.below(8) == 0 {
+            Atom::QFree
+        } else {
+            let op = pick_rel(rng);
+            let t = self.gen_tm(rng, 0);
+            let u = self.gen_tm(rng, 0);
+            Atom::Rel(op, t, u)
+        }
+    }
+
+    /// A uniform-random well-sorted term at `depth`. Leaves (var/lit) at the cap; the
+    /// recursive forms (read/len/cast/idxOp/mul/app1) below it. A generated `var` is an
+    /// in-scope binder index (so the formula is well-formed and the term can carry a
+    /// universally bound variable that drives the E2 edges).
+    fn gen_tm(&mut self, rng: &mut Rng, depth: usize) -> Tm {
+        let leaf = depth >= STRAT_MAX_TM_DEPTH || self.binders.is_empty();
+        let choice = if leaf { rng.below(2) } else { rng.below(8) };
+        match choice {
+            // A bound variable (or a lit if no binder is in scope).
+            0 => self.gen_var_or_lit(rng),
+            // A literal of a finite or seq sort.
+            1 => {
+                if rng.below(2) == 0 {
+                    Tm::Lit(pick_fin_sort(rng))
+                } else {
+                    Tm::Lit(Sort2::Seq(Box::new(pick_fin_sort(rng))))
+                }
+            }
+            // `read elem sq ix` — the index term often references a bound var (→ E2 edge).
+            2 => {
+                let elem = pick_fin_sort(rng);
+                let sq = Tm::Lit(Sort2::Seq(Box::new(elem.clone())));
+                let ix = self.gen_tm(rng, depth + 1);
+                Tm::Read(elem, Box::new(sq), Box::new(ix))
+            }
+            // `len sq`.
+            3 => Tm::Len(Box::new(Tm::Lit(Sort2::Seq(Box::new(pick_fin_sort(rng)))))),
+            // `cast to t` — a width-preserving or width-changing cast (both classes).
+            4 => {
+                let to = pick_fin_sort(rng);
+                Tm::Cast(to, Box::new(self.gen_tm(rng, depth + 1)))
+            }
+            // `idxOp t k` — a literal offset (inert to (R2)).
+            5 => {
+                let t = self.gen_tm(rng, depth + 1);
+                Tm::IdxOp(Box::new(t), (rng.below(7) as i64) - 3)
+            }
+            // `mul t u` — the non-linear op (an (R2) trap when an operand is a bound var).
+            6 => {
+                let t = self.gen_tm(rng, depth + 1);
+                let u = self.gen_tm(rng, depth + 1);
+                Tm::Mul(Box::new(t), Box::new(u))
+            }
+            // `app1 arg res f a` — a declared unary spec fn (E2 edge `arg → res`).
+            _ => {
+                let arg = pick_fin_sort(rng);
+                let res = pick_fin_sort(rng);
+                let a = self.gen_tm(rng, depth + 1);
+                Tm::App1(arg, res, rng.below(4) as u32, Box::new(a))
+            }
+        }
+    }
+
+    /// An in-scope bound variable (a random binder level, carrying that binder's sort),
+    /// or a literal when no binder is in scope.
+    fn gen_var_or_lit(&mut self, rng: &mut Rng) -> Tm {
+        if self.binders.is_empty() {
+            Tm::Lit(pick_fin_sort(rng))
+        } else {
+            let i = rng.below(self.binders.len());
+            Tm::Var(self.binders[i].clone(), i as u32)
+        }
+    }
+}
+
+/// Re-export the classifier verdict comparison the differential battery uses, so a
+/// consumer can label a generated formula's expected Rust verdict without re-importing
+/// the classifier (the battery already depends on `thermite_spec`). Pure (R-CODE-5).
+#[must_use]
+pub fn strat_rust_admitted(phi: &Frm) -> bool {
+    classifier::admitted(phi)
+}
+
+/// The wire encoding of a generated formula (the line the differential battery feeds to
+/// `lake env lean --run`); a thin re-export of `thermite_spec::classifier::to_wire` so
+/// the generator and the battery share one serializer.
+#[must_use]
+pub fn strat_to_wire(phi: &Frm) -> String {
+    classifier::to_wire(phi)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1273,5 +1654,68 @@ mod tests {
             }
             _ => {}
         }
+    }
+
+    // ---- gen_strat_formulas (REQ-4, the classifier differential generator) ----
+
+    use thermite_spec::classifier::{self, RejectReason, Verdict};
+
+    /// REQ-4 / AC-4: the stratified generator is deterministic (R-CODE-5) — the same
+    /// `(seed, n)` yields the identical formula stream; a different seed diverges.
+    #[test]
+    fn strat_deterministic_and_seed_sensitive() {
+        let a = gen_strat_formulas(42, 80);
+        let b = gen_strat_formulas(42, 80);
+        assert_eq!(
+            a, b,
+            "same seed must reproduce the identical stratified stream"
+        );
+        let c = gen_strat_formulas(43, 80);
+        assert_ne!(a, c, "a different seed must produce a different stream");
+        assert_eq!(a.len(), 80);
+    }
+
+    /// REQ-4 / AC-4: every generated formula round-trips through the shared wire format
+    /// (the line fed to `lake env lean --run`), and the verdict is stable across the
+    /// round-trip — the Rust side of the differential contract.
+    #[test]
+    fn strat_formulas_wire_round_trip() {
+        for phi in gen_strat_formulas(7, 200) {
+            let wire = strat_to_wire(&phi);
+            let back = classifier::parse_frm(&wire)
+                .unwrap_or_else(|e| panic!("wire `{wire}` must re-parse: {e}"));
+            assert_eq!(back, phi, "wire round-trip must be identity");
+            assert_eq!(
+                strat_rust_admitted(&back),
+                strat_rust_admitted(&phi),
+                "verdict must be stable across the wire round-trip"
+            );
+        }
+    }
+
+    /// REQ-4 / AC-4: the stream is diverse and exercises EVERY verdict class — admit,
+    /// and each frozen rejection reason (`seq-quantifier`, `index-grammar`, the named
+    /// cycle). If any class were missing the differential battery would be vacuous for
+    /// it, so this is the "report the construct coverage" honesty check.
+    #[test]
+    fn strat_covers_every_verdict_class() {
+        let formulas = gen_strat_formulas(11, 400);
+        let mut admitted = 0;
+        let mut seq_q = 0;
+        let mut idx_g = 0;
+        let mut cycle = 0;
+        for phi in &formulas {
+            match classifier::classify(phi) {
+                Verdict::Admitted => admitted += 1,
+                Verdict::Rejected(RejectReason::SeqQuantifier { .. }) => seq_q += 1,
+                Verdict::Rejected(RejectReason::IndexGrammar) => idx_g += 1,
+                Verdict::Rejected(RejectReason::SortGraphCycle { .. }) => cycle += 1,
+                Verdict::Unknown(_) => panic!("classify is total — never Unknown"),
+            }
+        }
+        assert!(admitted >= 5, "admitted: {admitted}");
+        assert!(seq_q >= 1, "seq-quantifier rejections: {seq_q}");
+        assert!(idx_g >= 1, "index-grammar rejections: {idx_g}");
+        assert!(cycle >= 1, "sort-graph-cycle rejections: {cycle}");
     }
 }

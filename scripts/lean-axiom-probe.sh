@@ -61,6 +61,14 @@ IMPORTS=(
   # REQ-1 spine, this increment DOES carry a stratified soundness theorem
   # (`classifier_correct`, T3-C, in namespace `Thermite.Strat.Cls`), gated below.
   "Thermite.Strat.Fragment"
+  # Stage-2 REQ-4 (#326): the classifier differential battery's Lean entry point
+  # (`Thermite.Strat.Cls.Wire` — the wire parser + `main` `lake env lean --run` drives).
+  # A BUILD target so (a) a compile break in the wire parser fails the CI Lean job, and
+  # (b) its dependency `Thermite.Strat.Fragment` is built, so `forge strat-tv` /
+  # `forge/tests/strat_differential.rs` can `lake env lean --run` it in the same job. It
+  # carries no theorem (it is an IO tool with a `partial` parser), so it is NOT added to
+  # the axiom-gated THEOREM list below.
+  "Thermite.Strat.Cls.Wire"
 )
 # The five load-bearing universal-theorem pillars + the two relax-route spine lemmas
 # (REQ-8a) + the stage-2 classifier coincidence theorem T3-C (REQ-3, AC-3). Keep this

@@ -54,10 +54,12 @@
 //! | REQ-SPEC-VALIDATOR-REJECT | shipped | `thermite-spec/src/validator.rs` | Validator reject cases |  |
 //! <!-- /generated:reqs -->
 
+pub mod classifier;
 pub mod combinators;
 pub mod schemes;
 pub mod validator;
 
+pub use classifier::{admitted, classify, parse_frm, to_wire, Frm, RejectReason, Sort2, Verdict};
 pub use combinators::{all, lookup, ArgKind, CombinatorSig, ResultKind};
 pub use schemes::{SchemeResult, SchemeSig, StepShape};
 pub use validator::{validate, SpecError};

@@ -1,0 +1,10 @@
+{
+  "uuid": "dcc52d8d-6189-4d60-8ca6-1097a6e8b847",
+  "display_id": 340,
+  "title": "CI speedup: split the monolithic lean job into lean-probe + sharded lean-spine-forge (options 2+3, zero coverage loss); comment option 1",
+  "status": "open",
+  "priority": "medium",
+  "created_by": "rApq",
+  "created_at": "2026-06-21T18:22:37.347238Z",
+  "updated_at": "2026-06-21T18:22:37.347238Z"
+}

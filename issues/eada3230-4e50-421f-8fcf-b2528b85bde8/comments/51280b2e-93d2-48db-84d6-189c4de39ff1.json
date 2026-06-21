@@ -1,0 +1,8 @@
+{
+  "uuid": "51280b2e-93d2-48db-84d6-189c4de39ff1",
+  "issue_uuid": "eada3230-4e50-421f-8fcf-b2528b85bde8",
+  "author": "3pvO",
+  "content": "Decision: chose bridge option B (encode Cls.Frm directly against the structural denotation fdenote) over option A (translate Cls.Frm -> spine Strat.Frm). Reason: option A is ILL-DEFINED — the minimal spine Tm is var-only and cannot represent the Read/Len/Cast/IdxOp array-property vocabulary, and Atom.qf is carrier-closed, so an admitted formula like 'forall i. a[i] <= a[j]' has no image in the spine; there is no total meaning-preserving translation. fdenote (REQ-3) is design-stated stronger than any single per-sort model (holds for every (q,dom)), so encoder soundness against it subsumes any concrete per-sort sdenote. No forked syntax, no sorry.",
+  "created_at": "2026-06-21T01:50:58.818571Z",
+  "kind": "decision"
+}

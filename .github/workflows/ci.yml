@@ -158,12 +158,30 @@ jobs:
 
   # The Lean spine + axiom probe (trust-audit finding F4: until now `lake build` and the
   # `#print axioms` gate ran only in a local `make audit`, so a commit breaking the Lean
-  # build or a relax-spine lemma acquiring a disallowed axiom would go unseen in CI). This
-  # job runs the SAME shared probe (scripts/lean-axiom-probe.sh) check [1] runs, so local
-  # and CI cannot drift. lean-smt is pinned to a SHA in lean/lakefile.toml, so the build
-  # is reproducible. Mathlib oleans are fetched from the cloud cache (`lake exe cache
-  # get`); the probe builds only the spine modules it imports, not the cvc5-FFI SmtDemo.
-  lean:
+  # build or a relax-spine lemma acquiring a disallowed axiom would go unseen in CI).
+  # SPLIT into two parallel jobs (#340, CI speedup options 2+3 — zero coverage loss):
+  #   lean-probe       — `lake build` the spine subset + the `#print axioms` gate
+  #                      (scripts/lean-axiom-probe.sh, the same check [1] `make audit`
+  #                      runs, so local and CI cannot drift).
+  #   lean-spine-forge — the spine-GATED forge tests (the lake-gated live L3/L4
+  #                      discharges that self-skip in the `test` shards because those run
+  #                      WITHOUT the spine). Sharded 4 ways like `test`, so the slow Verus
+  #                      discharges run in parallel. EVERY forge test still runs (the union
+  #                      of the 4 shards = the whole `-p forge` suite); no filtering, no
+  #                      coverage loss.
+  # Each job restores the shared lean-${{ hashFiles(...) }} `.lake` cache independently
+  # (no `needs:` between them → they run concurrently; on a warm cache the per-job
+  # `lake build` is incremental). lean-smt is SHA-pinned; Mathlib oleans come from the
+  # cloud cache (`lake exe cache get`).
+  #
+  # OPTION 1 (future, deliberately NOT done here): trim lean-spine-forge to ONLY the
+  # spine-gated tests (dropping the redundancy with the `test` shards on non-spine forge
+  # tests). Deferred because a name-PATTERN filter risks SILENT coverage drift — a
+  # spine-gated test the pattern misses would run in NEITHER place (skipped in `test`,
+  # excluded here). Doing it safely needs the spine-gated tests TAGGED as a stable nextest
+  # test-group (a test-code change) so the selector can't drift. Until then we run the
+  # full `-p forge` (sharded) — redundant on non-spine tests, but provably complete.
+  lean-probe:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -201,13 +219,62 @@ jobs:
       - name: Lean spine build + axiom probe (lake build + #print axioms gate)
         run: bash scripts/lean-axiom-probe.sh
 
-      # Audit F4 (#309): the `test` shards above run WITHOUT the Lean spine, so every
-      # `lake`-gated live test (the end-to-end L3/L4 forge discharges, the seven-verdict
-      # live cases, the merge-class G1 cert) self-skips there and was only verified
-      # locally. This job is the one place the spine + lake exist, so it also installs
-      # Rust + Verus and runs the forge suite HERE, where those tests actually execute —
-      # the `lake_present()` guards take the RUN branch. (Redundant with the shards for
-      # the non-spine forge tests; can be filtered/sharded later — #309.)
+  # The spine-GATED forge tests (Audit F4 / #309). The `test` shards run WITHOUT the Lean
+  # spine, so every `lake`-gated live test (the end-to-end L3/L4 forge discharges, the
+  # seven-verdict live cases, the merge-class G1 cert) self-skips there. Here the spine +
+  # lake + Verus exist, so those tests take their RUN branch. Sharded 4 ways (matching the
+  # `test` job) so the slow Verus discharges run in parallel; the union of the 4 shards is
+  # the whole `-p forge` suite — nothing is filtered out (zero coverage loss). Restores the
+  # same `.lake` cache as lean-probe; no `needs:` so it runs concurrently.
+  lean-spine-forge:
+    runs-on: ubuntu-latest
+    strategy:
+      # Surface every shard's failures, not just the first.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # forge's audit/doc-drift conformance tests read git history
+          fetch-depth: 0
+
+      - name: Install elan (Lean toolchain manager)
+        run: |
+          set -euo pipefail
+          curl -fsSL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -o /tmp/elan-init.sh
+          bash /tmp/elan-init.sh -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: Cache Lean build (.lake)
+        uses: actions/cache@v4
+        with:
+          path: |
+            lean/.lake/packages
+            lean/.lake/build
+          # Same key as lean-probe — both restore the shared spine build.
+          key: lean-${{ hashFiles('lean/lake-manifest.json', 'lean/lean-toolchain') }}
+          restore-keys: |
+            lean-
+
+      - name: Fetch prebuilt Mathlib cache (oleans)
+        working-directory: lean
+        run: lake exe cache get
+
+      - name: Build the spine modules forge's live Lean drivers need
+        working-directory: lean
+        # forge's `--engine lean` export imports `Thermite.Stabilize` / `Exec.Stmt` /
+        # `Exec.WhileBody` (NOT the root `Thermite`, which pulls the cvc5-FFI `SmtDemo`);
+        # the REQ-4 differential battery runs `lake env lean --run Thermite/Strat/Cls/Wire.lean`,
+        # which needs `Thermite.Strat.Cls.Wire` built (it pulls Fragment/Graph/Nnf
+        # transitively). The old monolithic job got the Strat oleans for free from the
+        # axiom-probe's `lake build`; this split moved the probe to `lean-probe`, so the
+        # forge job must build Wire itself. Without these the live tests fail with
+        # "unknown module prefix 'Thermite'" / "spine may not be built". Incremental on a
+        # warm `.lake` cache.
+        run: lake build Thermite.Stabilize Thermite.Exec.Stmt Thermite.Exec.WhileBody Thermite.Strat.Cls.Wire
+
       - name: Install Rust toolchain (pinned)
         uses: dtolnay/rust-toolchain@1.95.0
 
@@ -243,22 +310,11 @@ jobs:
           echo "$(dirname "$VERUS_BIN_PATH")" >> "$GITHUB_PATH"
           "$VERUS_BIN_PATH" --version
 
-      - name: Build the spine modules forge's --engine lean discharge imports
-        working-directory: lean
-        # The axiom probe builds only its own subset; forge's lean export imports
-        # `Thermite.Stabilize` / `Exec.Stmt` / `Exec.WhileBody` (NOT the root `Thermite`,
-        # which pulls the cvc5-FFI `SmtDemo`). Without these oleans on the search path the
-        # `--engine lean` auto-discharge fails with "unknown module prefix 'Thermite'" —
-        # which `engine_lean_attaches_smaller_trust_base_live` correctly catches.
-        # `Thermite.Strat.Cls.Wire` (REQ-4) is the `lake env lean --run` driver the
-        # stratified classifier differential battery (check [8]) speaks to; build its
-        # oleans here so the fixed-seed `forge strat-tv` gate below runs the Lean side.
-        run: lake build Thermite.Stabilize Thermite.Exec.Stmt Thermite.Exec.WhileBody Thermite.Strat.Cls.Wire
-
-      - name: forge tests WITH the spine (the lake-gated live tests run here, not skipped)
-        # lake is on PATH (elan), the spine modules forge imports are built, Verus is
-        # installed: the live `lake_present()`/spine-dependent tests take their RUN branch.
-        run: cargo nextest run -p forge
+      # Shard the forge suite WITH the spine present: nextest assigns each test to one
+      # partition deterministically, so shards 1..4 union to the full `-p forge` suite —
+      # the spine-gated live tests are distributed across shards and every one runs.
+      - name: forge tests WITH the spine, shard ${{ matrix.shard }}/4 (lake-gated live tests run here)
+        run: cargo nextest run -p forge --partition count:${{ matrix.shard }}/4
 
       - name: Stage-2 G2 gate — fixed-seed differential + two-phase sweep ([8] / [9])
         # The reproducible per-PR half of REQ-9 checks [8]/[9] (`.design/stage2-stratified-cage.md`
@@ -269,6 +325,11 @@ jobs:
         # classifier disagreement / tripwire ([8]) or a divergence / withheld clause ([9])
         # is a verification-failure exit and fails the job. lake is on PATH here, so
         # `strat-tv` takes its RUN branch (not the honest lake-absent SKIP).
+        #
+        # This is a single whole-corpus gate, NOT a partitioned test, so run it ONCE
+        # (shard 1) — its env (lake + the spine incl Strat.Cls.Wire + Rust + Verus) is
+        # present in every lean-spine-forge shard; gating on shard 1 avoids running it 4×.
+        if: ${{ matrix.shard == 1 }}
         run: |
           set -euo pipefail
           cargo run -q -p forge -- strat-tv

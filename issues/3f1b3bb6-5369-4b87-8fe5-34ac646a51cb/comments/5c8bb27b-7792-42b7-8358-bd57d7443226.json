@@ -1,0 +1,10 @@
+{
+  "uuid": "5c8bb27b-7792-42b7-8358-bd57d7443226",
+  "issue_uuid": "3f1b3bb6-5369-4b87-8fe5-34ac646a51cb",
+  "author": "rApq",
+  "content": "INHERITED OBLIGATION from REQ-5 (#327 bridge, option B): REQ-5 proved only the STRUCTURAL/skeleton soundness layer (T1-S strat_ref_sound — encoder transcribes the quantifier+boolean skeleton, PARAMETRIC in an atom oracle q : Atom->Bool; atoms NOT interpreted, sorts erased over an abstract dom; see Strat/Soundness.lean + fdenote in Strat/Nnf.lean). REQ-8 OWNS ATOM-GROUNDING: T2-S strat_lowering_faithful + two-phase TV must instantiate q to REAL v1/program semantics (qfree -> Thermite.denote; Read/Cast/Len/rel -> their theory) and validate the production lowering vs the reference encoder at the atom level. Until closed, cage L4 is structural-only. The spine sdenote (REQ-1) is the natural concrete q. REQ-9's G2 trust: flip MUST gate on this. Operate on Thermite.Strat.Cls.Frm (two-syntax arch, design-doc REQ-3/4/5 notes).",
+  "created_at": "2026-06-21T02:34:49.802408Z",
+  "kind": "note",
+  "signed_by": "SHA256:tVRGNaCPy5N1tRtokzkbgsOCzGZujGDWQlGHFruaL9c",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgylLCWwpnQm2E2UQO23AN1e/yB6k0yzmPM7qiYPujTNYAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAax/vpcbZjTgV5qHbKGT75H6apLLNRDEwKXzs+Fc5lj5C/ea7YfAD+3jD2rRXDtT2kXPLswao4Zjklm1OW7jNAw=="
+}

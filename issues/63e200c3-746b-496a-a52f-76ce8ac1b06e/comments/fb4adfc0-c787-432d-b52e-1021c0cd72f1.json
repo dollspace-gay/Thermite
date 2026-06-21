@@ -1,0 +1,10 @@
+{
+  "uuid": "fb4adfc0-c787-432d-b52e-1021c0cd72f1",
+  "issue_uuid": "63e200c3-746b-496a-a52f-76ce8ac1b06e",
+  "author": "rApq",
+  "content": "G2 GATE CONSTRAINT from REQ-5 option B (#327): the trust: flip (ref_encode(strat, UNPROVEN) -> proven) must NOT flip on REQ-5's structural soundness alone. REQ-5 proves the encoder transcribes the quantifier/boolean skeleton (parametric in an atom oracle q); the ATOM-GROUNDING (q := real v1/program semantics) is REQ-8's obligation (#330). Gate the flip on REQ-8's faithfulness/TV closing that loop — otherwise the L4 certificate attests 'structurally encoded' rather than 'proven over source meaning'. Make the trust: label honestly scope to whatever is actually proven at flip time.",
+  "created_at": "2026-06-21T02:34:08.935929Z",
+  "kind": "note",
+  "signed_by": "SHA256:tVRGNaCPy5N1tRtokzkbgsOCzGZujGDWQlGHFruaL9c",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgylLCWwpnQm2E2UQO23AN1e/yB6k0yzmPM7qiYPujTNYAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAzJbtEDZX7lnUE1Tl+7nyw6RmhXgZeSXn0Pr6kAWdK0eWFFRmDrPoXKZcxK9LWjFtxl6d3KX3+wggu1fAuFyJAQ=="
+}

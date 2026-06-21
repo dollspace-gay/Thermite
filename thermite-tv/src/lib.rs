@@ -91,6 +91,12 @@ pub mod gen;
 pub mod normalize;
 pub mod obligation;
 pub mod ref_encode;
+// Stage-2 REQ-8 (`.design/stage2-stratified-cage.md` REQ-8 / AC-8): the stratified
+// reference encoder + the two-phase TV (syntactic normalizer + thin semantic fallback)
+// + the trust flip. Unlike `normalize` (the SPIKE-2 leaf), these ARE load-bearing TV
+// pipeline modules (consumed by `forge`'s stratified faithfulness sweep).
+pub mod strat_ref_encode;
+pub mod strat_two_phase;
 
 pub use exec_encode::{exec_ref_value, ExecRefCtx};
 pub use exec_stmt_encode::{
@@ -105,3 +111,9 @@ pub use obligation::{
     ObligationFrame, ParamDecl,
 };
 pub use ref_encode::{ref_contract_pred, RefCtx, RefEncodeError};
+pub use strat_ref_encode::strat_ref_encode;
+pub use strat_two_phase::{
+    classify_pair, run_two_phase, semantic_obligation, strat_trust_profile,
+    strat_trust_profile_current, ClauseRoute, PhaseSplit, SemanticOutcome, StratClause, TvPhase,
+    TvVerdict, TwoPhaseReport, G2_FLIPPED, REF_ENCODE_PROVEN, REF_ENCODE_UNPROVEN,
+};

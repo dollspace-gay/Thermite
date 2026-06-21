@@ -3,8 +3,8 @@
 <!--
 tier: 3-component
 status: shipped
-audited-sha: 5ae0816c042debb01c70eb9b89c775837f0c0f24 (content-sha256 re-pinned 2026-06-20 for stage-2 REQ-4 / AC-4 (#326), the classifier differential battery: the change to this doc's governed file (cli.rs) is the additive `forge strat-tv [--generated N] [--seed <u64>] [--json]` subcommand (`Command::StratTv` → `run_strat_tv`) plus the new `ForgeError::StratDifferential` harness-error variant; every other subcommand + flag parse is unchanged. The legacy commit pin stays at the 5ae0816c stable-main ancestor; only the active content-sha256 digest moves. prior: 2026-06-18 umbrella REQ-2c / AC-4 rotating-seed `--seed` flag on `forge tv`; §6 metrics dashboard `--metrics` value)
-audited-content-sha256: a9e28217692173248d43ec36b099376872d4be84d1637a39aa98caacb6207249
+audited-sha: 5ae0816c042debb01c70eb9b89c775837f0c0f24 (content-sha256 re-pinned 2026-06-21 for stage-2 REQ-8 / AC-8 (#330), faithfulness + two-phase TV + the trust flip: the change to this doc's governed file (cli.rs) is the additive `forge strat-faithful-tv [--generated N] [--seed <u64>] [--json]` subcommand (`Command::StratFaithfulTv` → `run_strat_faithful_tv`, the two-phase TV sweep reporting the phase split + the gated trust profile); every other subcommand + flag parse is unchanged. The legacy commit pin stays at the 5ae0816c stable-main ancestor; only the active content-sha256 digest moves. prior: 2026-06-20 stage-2 REQ-4 / AC-4 (#326) `forge strat-tv` + `ForgeError::StratDifferential`; 2026-06-18 umbrella REQ-2c / AC-4 rotating-seed `--seed` flag on `forge tv`; §6 metrics dashboard `--metrics` value)
+audited-content-sha256: 3e246f55cacdffb4e9a26edac0331d94b948f1e8f47d0d1c19c048f7b2d88aa2
 governs: forge/src/cli.rs
 thesis-refs:
   - thermite-design.md §5

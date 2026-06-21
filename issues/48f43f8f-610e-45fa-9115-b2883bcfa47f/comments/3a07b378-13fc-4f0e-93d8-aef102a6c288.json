@@ -1,0 +1,8 @@
+{
+  "uuid": "3a07b378-13fc-4f0e-93d8-aef102a6c288",
+  "issue_uuid": "48f43f8f-610e-45fa-9115-b2883bcfa47f",
+  "author": "HauF",
+  "content": "Plan: REQ-7 restratify via opaque-abstraction rewrite. Strat/Restratify.lean: replace a cycle-closing conjunct B with a fresh qfree leaf p (no sort edges, breaks the E1 cycle, admissible phi-prime); Side := (p imp B) carries only B edge, admissible. T4-R: restrat_conservative (phi-prime AND Side imp phi, Bool tautology = R-SIDE-1 modus ponens), restrat_admits (decide), side_admitted (decide), restrat_complete (witness oracle q(p)=B). PinRestratDropSide: dropping Side mis-certifies. Rust: thermite-spec restratify.rs kv rewrite + certify withholds unless Side discharged; forge edit --restratify wiring + withheld test. Wire into lean-axiom-probe.sh, register REQ-S2-7, doc-drift re-pin.",
+  "created_at": "2026-06-21T06:58:17.384994Z",
+  "kind": "plan"
+}

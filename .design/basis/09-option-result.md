@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 0abe5ce11c15f3d96d1c7211ad17858a9f1a1fd0 (re-pinned 2026-06-21 for #330 REQ-8: thermite-lower/src/lower.rs gains net-additive stratified quantifier emission; the v1 behavior this doc governs is unchanged. NOTE: branch-tip pin — needs post-merge re-pin to the squash commit, per the #322->#65 pattern.)
+audited-sha: 80c88ea12c0a7fdd9a4f662e6c0e6c20c32ba385 (re-pinned 2026-06-21 for #330 REQ-8: thermite-lower/src/lower.rs gains net-additive stratified quantifier emission; the v1 behavior this doc governs is unchanged. NOTE: branch-tip pin — needs post-merge re-pin to the squash commit, per the #322->#65 pattern.)
 governs: thermite-syntax/src/ast.rs
 governs: thermite-syntax/src/parser.rs
 governs: thermite-spec/src/validator.rs

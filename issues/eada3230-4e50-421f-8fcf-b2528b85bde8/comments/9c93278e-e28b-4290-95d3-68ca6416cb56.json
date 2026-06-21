@@ -1,0 +1,8 @@
+{
+  "uuid": "9c93278e-e28b-4290-95d3-68ca6416cb56",
+  "issue_uuid": "eada3230-4e50-421f-8fcf-b2528b85bde8",
+  "author": "3pvO",
+  "content": "Result: AC-5 met. Strat/{TokDenote,RefEncode,Soundness}.lean + PinStratFlip + PinStratCapture shipped @ 99ea373a. T1-S strat_ref_sound + strat_ref_wf proven, axiom-clean ([propext, Quot.sound] subset of allowed; in-file #print axioms + CI probe), zero sorry under lean/Thermite/Strat/, core-Lean-only (no Mathlib). Both pins refute the broken neighbours via decide on a 2-element domain (flip: all<->ex; capture: name-reuse), each contrasted with the real sencode agreeing via strat_ref_sound. lean-axiom-probe.sh green with Thermite.Strat.strat_ref_sound added to THEOREMS; doc-drift clean (py + make, rc=0); reqs check clean (REQ-S2-5 registered, 448 reqs).",
+  "created_at": "2026-06-21T01:51:01.066465Z",
+  "kind": "result"
+}

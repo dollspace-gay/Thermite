@@ -1,0 +1,10 @@
+{
+  "uuid": "7d3777c7-1249-465e-b942-5ec5108d844c",
+  "issue_uuid": "eada3230-4e50-421f-8fcf-b2528b85bde8",
+  "author": "rApq",
+  "content": "Shipped: PR #70 squash-merged to main. AC-5 met — encoder sencode + TokDenote + Strat/Soundness.lean (T1-S strat_ref_sound + strat_ref_wf, axiom-clean, in the CI axiom probe) + PinStratCapture/PinStratFlip. BRIDGE = option B (documented decision): translation Cls.Frm->spine Strat.Frm is ill-defined (minimal spine Tm is var-only), so the encoder targets Cls.Frm directly and proves soundness vs REQ-3's structural fdenote (universal over (q,dom) oracles => subsumes the concrete sdenote). CONSEQUENCE for downstream: REQ-5 proves the STRUCTURAL/skeleton layer; atom-grounding (instantiating the oracle q to real v1/program semantics) is DEFERRED to REQ-8 (faithfulness T2-S + two-phase TV) and the G2 trust: flip (REQ-9) must gate on it. CI green (lean 15m45s, probe 10 PASS). REQ-S2-5 registered. Unblocks REQ-6 (#328) + REQ-7 (#329).",
+  "created_at": "2026-06-21T02:33:12.556788Z",
+  "kind": "note",
+  "signed_by": "SHA256:tVRGNaCPy5N1tRtokzkbgsOCzGZujGDWQlGHFruaL9c",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgylLCWwpnQm2E2UQO23AN1e/yB6k0yzmPM7qiYPujTNYAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAG3+PvkmrFmUPa1SHQZZmJmJ5vzRGxMxD+QQZfeD6gDHcFc6aJFzzyD2VABI+vALpMdKU93mI2AfyT1S7WtwNCQ=="
+}

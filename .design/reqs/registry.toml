@@ -7115,6 +7115,42 @@ target = "bash scripts/lean-axiom-probe.sh"
 note = "AC-5 (ci): builds Thermite.Strat.Soundness + the two pins and axiom-gates Thermite.Strat.strat_ref_sound (subset of {propext, Classical.choice, Quot.sound}); green — a sorry or disallowed axiom under the encoder/soundness path fails the Lean CI job"
 
 [[requirement]]
+id = "REQ-S2-6"
+title = "Stage-2 combinator demotion — Strat/CombDeriv.lean (eight comb_deriv_*) + PinCombDeriv"
+owner = ".design/stage2-stratified-cage.md"
+status = "shipped"
+scope = "verified"
+summary = "The combinator demotion (stage2-stratified-cage.md REQ-6 / AC-6; child of thermite2-program.md REQ-10; gate G2; spec of record the stage-2 metatheory sketch GH#2 §4). Builds on REQ-1..REQ-5 (#323/#324/#325/#326/#327, merged @ 52ace098). Closes the v1 SpecTherm combinator set into the stratified fragment: each of the eight frozen registry combinators (thermite-spec/src/combinators.rs, UNTOUCHED as surface syntax) gets a comb_deriv_* lemma proving its denotation EQUALS its raw-quantifier expansion (the six bounded ones) or its definitional aggregate form (the two SPIKE-2 census combinators). THE TWO-SYNTAX TARGET (binding, per REQ-3/4/5): the raw-quantifier target is the CLASSIFIER surface Thermite.Strat.Cls.Frm (sort-typed Sort2 + Read/Len/Cast/IdxOp/app1 + sorted binders), NOT REQ-1's minimal spine Frm; each expansion is denoted by REQ-3's STRUCTURAL fdenote (q : Atom -> Bool over a finite dom : List Tm), so the demotion is proven at the structural layer, parametric in the atom oracle q. THE REQ-8 BOUNDARY (REQ-5 option B, #327): q stays ABSTRACT — grounding q to the real v1 atom semantics (Read/Len/Cast/rel -> Thermite.denote) is REQ-8's INHERITED OBLIGATION; REQ-6 proves the SKELETON correspondence (each combinator HAS the claimed raw-quantifier spelling in the classifier surface and its fdenote IS exactly the intended bounded quantifier — mirroring Thermite/Denote.lean's bounded-quantifier denote, which mirrors the frozen verus_l3), the spine sdenote being the eventual concrete q instance the for-all-q result specializes to. (1) Strat/CombDeriv.lean: the shared Cls vocabulary of an expansion (boolS, seqA/seqB closed slice literals, idx0/idx1 de Bruijn index binders, nLit, boundLo/boundHi index bounds, predApp the declared unary spec-fn predicate application, readA/readB element reads); the six raw-quantifier Cls.Frm expansions forallInExp/existsInExp/sortedExp/forallBelowExp/forallFromExp/disjointExp (bound shapes mirroring the frozen verus_l3 EXACTLY, incl. the strict upper bound i < s.len()); the six demotion lemmas comb_deriv_forall_in/exists_in/sorted/forall_below/forall_from/disjoint, each fdenote q dom (expand) rho = true <-> the bounded forall/exists characterization over dom (proven via List.all_eq_true/List.any_eq_true + the imp/conj Bool unfolding + the closing-substitution computation). The two SPIKE-2 census combinators (count_where, permutation_of — NO layer-1 raw-quantifier spelling) demote to DEFINITIONAL aggregate forms over the carrier multiset: countWhereCls (the recursive count, mirroring Denote.lean's countWhereVal/countWhereVal_cons) with comb_deriv_count_where = the filter-length closed form (+ countWhereCls_cons the verus_l3 head-tail step), and permEqCls (the decidable per-element count check, core List.count not Mathlib Multiset) with comb_deriv_permutation_of <-> the multiset-equality characterization forall x, a.count x = b.count x (the [1,1,2]/[1,2,2] multiset-vs-set teeth); their stratified TV routes through the REQ-8 semantic phase, not the syntactic normalizer. (2) PinCombDeriv (flat lean/Thermite/Pin*.lean placement, as REQ-1/2/5): forallInExpWrong uses the OFF-BY-ONE upper bound i <= s.len() (.rel .le where .rel .lt is meant); offbyone_breaks_demotion refutes it via decide on a 2-element domain (the boundary index c1 = len, predicate-false, counts as in-bounds under <= -> the wrong expansion is false where the faithful one is vacuously true), with faithful_matches_bounded_forall (via comb_deriv_forall_in) confirming the divergence is solely the off-by-one. AC-6 met: all eight comb_deriv_* lemmas proven, axiom-clean (in-file #print axioms = subset of {propext, Classical.choice, Quot.sound}; Quot.sound via funext under the binder folds / List recursors), zero sorry under lean/Thermite/Strat/, core-Lean-only (CombDeriv imports only Strat.Nnf; no Mathlib); PinCombDeriv refutes the off-by-one neighbour (decide, never native_decide); the v1 conformance corpus certifies UNCHANGED (byte-identical goldens — the registry surface + lowering are untouched, the demotion is mechanized in Lean). Thermite.Strat.CombDeriv + Thermite.PinCombDeriv wired into scripts/lean-axiom-probe.sh as CI build targets (the eight lemmas axiom-probed IN-FILE, the REQ-2 SubstKit convention, NOT added to the fixed universal-pillar THEOREMS list). The restratify (REQ-7 / #329), faithfulness + two-phase TV + the trust flip (REQ-8 / #330), and the audit/[1'][4'][8][9] G2 gate (REQ-9 / #331) are SEPARATE downstream requirements."
+remaining_scope = "The eight comb_deriv_* demotion lemmas + the off-by-one pin ONLY. The atom-grounding of the oracle q to the real v1 semantics (the structural-vs-grounded boundary inherited from REQ-5 option B), the two-phase stratified TV that routes count_where/permutation_of through the semantic phase (REQ-8 / #330), restratify (REQ-7 / #329), and the audit-script G2 gate ([1'][4'][8][9]; REQ-9 / #331) are separate requirements."
+aliases = ["Stage-2 REQ-6", "REQ-6 combinator demotion", "combinator demotion", "comb_deriv", "comb_deriv_*", "Strat/CombDeriv.lean", "CombDeriv", "PinCombDeriv", "the eight comb_deriv lemmas", "countWhereCls", "permEqCls", "raw-quantifier expansion", "AC-6", "github:dollspace-gay/Thermite#328"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "lean/Thermite/Strat/CombDeriv.lean"
+note = "the eight comb_deriv_* lemmas: the six bounded combinators' raw-quantifier Cls.Frm expansions (forallInExp/existsInExp/sortedExp/forallBelowExp/forallFromExp/disjointExp) over the structural fdenote, each demoted to its bounded forall/exists characterization over dom (parametric in the atom oracle q; atom-grounding is REQ-8); the two SPIKE-2 census combinators (countWhereCls/permEqCls) demoted to their definitional aggregate forms; in-file #print axioms confirms all eight axiom-clean"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Thermite.Strat.Cls.comb_deriv_forall_in"
+note = "the representative bounded demotion: fdenote q dom (forallInExp elem f) rho = true <-> forall v in dom, (0<=v < len bounds) -> p(s[v]) — the Cls.Frm raw-quantifier skeleton denotes EXACTLY the bounded forall the v1 forall_in does (Thermite/Denote.lean), the index ranging over the finite carrier instead of forall i:Int with explicit bounds"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Thermite.Strat.Cls.comb_deriv_permutation_of"
+note = "the census definitional demotion: permEqCls a b = true <-> forall x, a.count x = b.count x — permutation_of has no layer-1 raw-quantifier spelling, so it demotes to the per-element count characterization of multiset equality (core List.count, the multiset-vs-set teeth), routed through the REQ-8 semantic phase"
+
+[[requirement.evidence]]
+kind = "file"
+target = "lean/Thermite/PinCombDeriv.lean"
+note = "the off-by-one pin: forallInExpWrong uses i <= s.len() where i < s.len() is meant; offbyone_breaks_demotion refutes it via decide on a 2-element domain (boundary index = len); faithful_matches_bounded_forall shows the faithful expansion matches comb_deriv_forall_in (the divergence is solely the off-by-one)"
+
+[[requirement.evidence]]
+kind = "command"
+target = "bash scripts/lean-axiom-probe.sh"
+note = "AC-6 (ci): builds Thermite.Strat.CombDeriv + Thermite.PinCombDeriv (the eight comb_deriv_* lemmas axiom-probed in-file, subset of {propext, Classical.choice, Quot.sound}); green — a sorry or disallowed axiom under the demotion path fails the Lean CI job"
+
+[[requirement]]
 id = "REQ-SKILL-V2-FORGE-TIER"
 title = "THERMITE.skill.md v2 — the agent-facing Stage-1 forge-tier section"
 owner = ".design/thermite2-program.md"

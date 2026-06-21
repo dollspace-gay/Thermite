@@ -79,6 +79,16 @@ IMPORTS=(
   "Thermite.Strat.Soundness"
   "Thermite.PinStratFlip"
   "Thermite.PinStratCapture"
+  # Stage-2 REQ-6 (#328): combinator demotion. `Thermite.Strat.CombDeriv` carries
+  # the eight `comb_deriv_*` lemmas (the six bounded combinators' raw-quantifier
+  # expansions over the structural `fdenote`, plus the two SPIKE-2 census
+  # combinators' definitional aggregate forms), all Mathlib-free, so a `sorry` or
+  # broken proof fails the CI Lean job (AC-6). The eight lemmas are axiom-probed
+  # IN-FILE (`#print axioms`, the same convention REQ-2's SubstKit uses) — NOT
+  # added to the fixed universal-pillar THEOREMS list below. `PinCombDeriv` is the
+  # off-by-one neighbour pin (decide-checked, no theorem in the gated list).
+  "Thermite.Strat.CombDeriv"
+  "Thermite.PinCombDeriv"
 )
 # The five load-bearing universal-theorem pillars + the two relax-route spine lemmas
 # (REQ-8a) + the stage-2 classifier coincidence theorem T3-C (REQ-3, AC-3) + the

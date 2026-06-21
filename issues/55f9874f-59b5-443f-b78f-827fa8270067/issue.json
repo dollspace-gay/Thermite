@@ -2,11 +2,12 @@
   "uuid": "55f9874f-59b5-443f-b78f-827fa8270067",
   "display_id": 338,
   "title": "Doc the REQ-5 option-B consequence: REQ-5=structural soundness, REQ-8 owes atom-grounding, REQ-9/G2 flip gates on it",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "rApq",
   "created_at": "2026-06-21T02:36:02.876058Z",
-  "updated_at": "2026-06-21T02:36:04.672865Z",
+  "updated_at": "2026-06-21T05:02:22.967798Z",
+  "closed_at": "2026-06-21T05:02:22.967798Z",
   "labels": [
     "forge"
   ]

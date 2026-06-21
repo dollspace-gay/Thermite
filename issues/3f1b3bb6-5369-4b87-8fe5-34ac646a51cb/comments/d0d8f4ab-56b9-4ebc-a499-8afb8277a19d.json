@@ -1,0 +1,8 @@
+{
+  "uuid": "d0d8f4ab-56b9-4ebc-a499-8afb8277a19d",
+  "issue_uuid": "3f1b3bb6-5369-4b87-8fe5-34ac646a51cb",
+  "author": "ZkTL",
+  "content": "Plan: REQ-8 atom-grounding + two-phase TV + trust flip (mirrors REQ-5 option-B discipline). (A) Strat/Faithfulness.lean: grounding oracle for Cls.Atom mirroring spine adenote/canonicalQOracle — qfree e -> canonicalQOracle venv e (= v1 Thermite.denote, proven seam sdenote_qf_canonical); rel atoms model-relative (Cls.Tm.lit carries NO value, Nnf.lean:78 — the SMT array theory is the solver's model, not Lean-groundable; the honest boundary). T2-S strat_lowering_faithful = T1-S specialized to any oracle grounding to v1 on qfree, PLUS qfree-reflects-v1 conjunct; SFnTvWitness packages (venv, grounding hyp, req-frame wfFrm+Agree+dom!=[]). (B) thermite-lower production quantifier emission. (C) thermite-tv stratified ref encoder + two-phase TV (syntactic=SPIKE-2 normalizer; semantic=Z3 finite-bound fallback; count_where/permutation_of direct-to-semantic; Timeout WITHHOLDS). (D) trust flip one-line gated + toggle test. (E) audit [1prime][4prime][8][9], probe += strat_lowering_faithful, doc-drift re-pin, reqs register, 8 pins. Will post Decision on the qfree-grounded/rel-model-relative split before finalizing.",
+  "created_at": "2026-06-21T08:03:07.886921Z",
+  "kind": "plan"
+}

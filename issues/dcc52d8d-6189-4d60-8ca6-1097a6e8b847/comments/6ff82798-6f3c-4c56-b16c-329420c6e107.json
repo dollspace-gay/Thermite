@@ -1,0 +1,10 @@
+{
+  "uuid": "6ff82798-6f3c-4c56-b16c-329420c6e107",
+  "issue_uuid": "dcc52d8d-6189-4d60-8ca6-1097a6e8b847",
+  "author": "rApq",
+  "content": "Shipped: PR #76 squash-merged. lean job split into lean-probe (1m32s) + lean-spine-forge sharded 4x (max shard 7m52s); lean stage wall-clock ~15-16min -> ~8min. Zero coverage loss (shards union = full -p forge; probe runs full axiom gate). Fixed mid-PR: lean-spine-forge must build Thermite.Strat.Cls.Wire for the REQ-4 differential battery. Option 1 (trim to spine-gated-only) documented as a future step needing a nextest test-group tag.",
+  "created_at": "2026-06-21T18:57:58.760258Z",
+  "kind": "note",
+  "signed_by": "SHA256:tVRGNaCPy5N1tRtokzkbgsOCzGZujGDWQlGHFruaL9c",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgylLCWwpnQm2E2UQO23AN1e/yB6k0yzmPM7qiYPujTNYAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA78dEcwgX5txSI3EEaxfVytp5a28v4LvnPBHU6+vyK1i8wan0MobMA3+d+jc2akqpq5A9HWNOy++9QYjbvM8CCg=="
+}

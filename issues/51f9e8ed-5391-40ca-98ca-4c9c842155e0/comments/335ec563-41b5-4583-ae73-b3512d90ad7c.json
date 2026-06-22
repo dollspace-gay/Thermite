@@ -1,0 +1,10 @@
+{
+  "uuid": "335ec563-41b5-4583-ae73-b3512d90ad7c",
+  "issue_uuid": "51f9e8ed-5391-40ca-98ca-4c9c842155e0",
+  "author": "rApq",
+  "content": "Delivered via PR #86 (squash-merged): bv_shadow lock-1 field (additive, oracle-included, greppable in cert/review/audit), AC-4. Orchestrator fix: bv audit/review is now a per-item overlay (ordinary fns keep L3, not downgraded to L0) + regression test. CI green.",
+  "created_at": "2026-06-22T21:41:04.016178Z",
+  "kind": "result",
+  "signed_by": "SHA256:tVRGNaCPy5N1tRtokzkbgsOCzGZujGDWQlGHFruaL9c",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgylLCWwpnQm2E2UQO23AN1e/yB6k0yzmPM7qiYPujTNYAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAoE7BNMMDAt3oat6Pf7ju0YgoSMSWSlWtYwIYZodMkQxaiT+8BFJItmuHyEu5dT2vtoRcncz16Qh+NFFtGt0NDA=="
+}

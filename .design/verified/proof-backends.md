@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft (v-next architecture — the obligation/engine interface; most REQs NOT-STARTED
-audited-sha: 20ba2d7658d057f83019e957d125f1e4b33d5027 (re-pinned 2026-06-21 for #343 Stage-3 REQ-1: governed source gains net-additive `bv: None` field-inits threading the new optional Clause.bv tag; the REQs this doc governs are unchanged.)
+audited-sha: 5581b65f69e481ac74c2d2d107eda121e761f3aa (re-pinned 2026-06-21 for #343 Stage-3 REQ-1: governed source gains net-additive `bv: None` field-inits threading the new optional Clause.bv tag; the REQs this doc governs are unchanged.)
         behind build blockers. The SHIPPED substrates this builds on are quoted-code-grounded.)
 governs: forge/src/check.rs + forge/src/degrade.rs + forge/src/manifest.rs (the discharge
          pipeline, the ladder, the certificate this interface generalizes) and

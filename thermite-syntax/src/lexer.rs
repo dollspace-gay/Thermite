@@ -186,6 +186,14 @@ pub enum TokKind {
     Amp,
     Pipe,
     Bang,
+    /// The clause-mode tag introducer `@` (`.design/stage3-bv-reconstruction.md`
+    /// REQ-1): the head of a clause-level annotation `ens@bvN` / `inv@bvN` /
+    /// `@bvN(nowrap)`. The lexer always produces this token; whether the parser
+    /// will *accept* it is the build-flag gate (the shadow-flag plumbing, REQ-1's
+    /// structural lock R-BV-1), enforced in the parser, not here. Before stage 3 a
+    /// `@` was a stray character; no valid pre-stage-3 program contains one, so
+    /// promoting it to a token is backward compatible.
+    At,
 
     /// A structural HOLE — either a body hole `?N` (`.design/forge/goal-repl.md`
     /// REQ-4, #193) or a PROOF hole `?pN` (`.design/stage1-forge-tier.md` REQ-3,
@@ -350,7 +358,7 @@ pub fn tokenize(src: &str) -> (Vec<Token>, Vec<SyntaxError>) {
             });
             i += len;
         } else {
-            // Unrecognized character (e.g. a stray `@`): diagnostic, continue.
+            // Unrecognized character (e.g. a stray `~`): diagnostic, continue.
             let ch_len = utf8_char_len(c);
             errors.push(SyntaxError::stray_char(
                 src[i..(i + ch_len).min(n)].to_string(),
@@ -886,6 +894,7 @@ fn lex_punct(bytes: &[u8], i: usize) -> Option<(TokKind, usize)> {
         b'&' => TokKind::Amp,
         b'|' => TokKind::Pipe,
         b'!' => TokKind::Bang,
+        b'@' => TokKind::At, // clause-mode tag introducer (stage-3 REQ-1)
         _ => return None,
     };
     Some((one, 1))

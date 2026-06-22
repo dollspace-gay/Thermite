@@ -9839,11 +9839,13 @@ mod exec_body_tests {
                 expr: Expr::BoolLit(true),
                 text: "true".to_string(),
                 span: zero_span(),
+                bv: None,
             }],
             dec: Clause {
                 expr: int(0),
                 text: "0".to_string(),
                 span: zero_span(),
+                bv: None,
             },
             body: Block {
                 stmts: vec![],

@@ -30,6 +30,7 @@ fn true_clause() -> Clause {
         expr: Expr::BoolLit(true),
         text: "true".to_string(),
         span: span(),
+        bv: None,
     }
 }
 

@@ -256,6 +256,7 @@ fn validate_never_panics_on_deep_nesting() {
         expr: e,
         text: String::new(),
         span,
+        bv: None,
     };
     let program = Program {
         items: vec![Item::Fn(FnItem {

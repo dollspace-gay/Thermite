@@ -94,6 +94,18 @@ jobs:
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+      # Stage-3 REQ-1 / AC-1: the @bv tag's build-flag gate (the structural lock
+      # R-BV-1). The default `cargo nextest run --workspace` (in the `test` job)
+      # already exercises the NEGATIVE half — the tag is a parse error without the
+      # `bv_shadow` plumbing. Here we additionally (a) clippy and (b) test the
+      # POSITIVE half: with `--features bv_shadow`, all four widths + `nowrap`
+      # parse with the AST tag recovered. Both halves of AC-1 thus run in one CI
+      # run. (`.design/stage3-bv-reconstruction.md` REQ-1.)
+      - name: bv_shadow build-flag gate (stage-3 REQ-1 / AC-1)
+        run: |
+          cargo clippy -p thermite-syntax --all-targets --features bv_shadow -- -D warnings
+          cargo test -p thermite-syntax --features bv_shadow --test bv_tag_parse
+
       # nextest does not run doctests; run them here so coverage matches the
       # previous `cargo test --workspace`.
       - name: cargo test --doc

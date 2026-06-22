@@ -65,6 +65,9 @@ pub fn desugar_refinements(program: &mut Program) {
 fn conjoin(a: Clause, b: Clause) -> Clause {
     let text = format!("({}) && ({})", a.text, b.text);
     let span = a.span.to(b.span);
+    // Preserve a `@bv` tag if either side carried one (a refinement predicate
+    // never does, so in practice this keeps the original clause's tag, REQ-1).
+    let bv = a.bv.or(b.bv);
     Clause {
         expr: Expr::Binary {
             op: BinOp::And,
@@ -73,5 +76,6 @@ fn conjoin(a: Clause, b: Clause) -> Clause {
         },
         text,
         span,
+        bv,
     }
 }

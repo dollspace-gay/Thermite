@@ -1,0 +1,8 @@
+{
+  "uuid": "24064883-23f9-42f9-be77-fe5e04083ed0",
+  "issue_uuid": "1b649f96-dc72-4474-b18e-4ab6e546dcf5",
+  "author": "6JMz",
+  "content": "PR opened: https://github.com/dollspace-gay/Thermite/pull/81 (3 commits: feat + bv_shadow→bv rename + 21-doc drift re-pin). doc-drift exit 0 locally; awaiting CI.",
+  "created_at": "2026-06-22T03:54:06.920022Z",
+  "kind": "note"
+}

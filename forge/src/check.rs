@@ -258,7 +258,9 @@ pub enum EngineSelection {
     /// stage-3): the PER-CLAUSE bit-vector route (the RFC's `mix64` shape). Each `ens`
     /// clause is dispatched by its `@bvN` tag: a TAGGED clause lowers to fixed-width
     /// QF_BV and is decided by the [`crate::bitvector::BitVectorEngine`] (a `Proved`
-    /// certifies at the SOLVER rung [`Level::L3`]; a falsified clause yields a bit-level
+    /// certifies at the caged rung [`Level::L4`] — decidable with complete bit-pattern
+    /// countermodels (RFC-1 §2/§4), solver-trusted (Z3 QF_BV) until REQ-7/8 kernel-
+    /// grounds it; a falsified clause yields a bit-level
     /// `Counterexample` with the bit pattern; an over-budget 64-bit multiplier yields a
     /// `Timeout` under the dedicated budget profile, never `unknown`). An UNTAGGED
     /// clause lowers as before — routed to the [`crate::engine::NlsatEngine`] when it is
@@ -1668,7 +1670,8 @@ fn ground_result_in_clause(
 /// `@bv` tag: a TAGGED clause → the [`crate::bitvector::BitVectorEngine`] (QF_BV at the
 /// tag width); an UNTAGGED clause → the [`crate::engine::NlsatEngine`] when it is a
 /// relaxable polynomial (the unbounded side), else an honest skip. A `Proved` tagged
-/// clause certifies at the SOLVER rung [`Level::L3`], an nlsat `Proved` at [`Level::L4`];
+/// clause certifies at the caged rung [`Level::L4`] (decidable, complete bit-pattern
+/// countermodels; solver-trusted Z3 QF_BV), as does an nlsat `Proved`;
 /// the item level is the MIN. The FIRST non-certifying clause (a bit-level
 /// counterexample, an over-budget multiplier timeout, an undecided/unsupported clause)
 /// short-circuits to its honest non-certified cert.
@@ -1698,7 +1701,12 @@ fn bv_fn_cert(
             match bv.discharge_bv(&vars, Some(req), &clause_expr, tag.width) {
                 BvOutcome::Proved => {
                     obligations.push(bv_proved_obl(&f.name, k, tag, &bv_attr));
-                    item_level = item_level.min(Level::L3);
+                    // A `@bv` clause is decidable QF_BV with COMPLETE bit-pattern
+                    // countermodels — the L4 (caged) refutation quality, RFC-1 §2/§4.
+                    // The rung is the refutation quality; the SOLVER trust base
+                    // (`solver Z3 QF_BV`) is recorded separately in the attribution and
+                    // kernel-grounded by REQ-7/8 (same rung, smaller trust).
+                    item_level = item_level.min(Level::L4);
                     item_attr.get_or_insert_with(|| bv_attr.clone());
                 }
                 BvOutcome::Counterexample { bits } => {
@@ -1776,7 +1784,8 @@ fn bv_fn_cert(
 /// A lemma carries no `result` and no body: each `@bv`-tagged `ens` clause is a closed
 /// QF_BV query over the parameters under the lemma's `req`. A non-tagged lemma clause is
 /// an honest skip (this route lowers only the bit-vector clauses). The lemma certifies
-/// at [`Level::L3`] (the solver rung); a counterexample / timeout short-circuits.
+/// at [`Level::L4`] (the caged rung — decidable, complete bit-pattern countermodels;
+/// solver-trusted Z3 QF_BV); a counterexample / timeout short-circuits.
 fn bv_lemma_cert(
     bv: &crate::bitvector::BitVectorEngine,
     l: &thermite_syntax::LemmaItem,
@@ -1820,7 +1829,7 @@ fn bv_lemma_cert(
         }
     }
 
-    Certificate::new(l.name.clone(), Level::L3, effects, 0, obligations)
+    Certificate::new(l.name.clone(), Level::L4, effects, 0, obligations)
         .graduate_triage_clean()
         .with_engine_attribution(bv_attr)
 }
@@ -1837,8 +1846,9 @@ fn bv_proved_obl(
 ) -> ObligationResult {
     ObligationResult::discharged(format!(
         "{item}::ens#{k}: discharged by the bit-vector route over {} (fixed-width \
-         wraparound machine semantics; QF_BV-valid by Verus `by(bit_vector)` — L3 \
-         solver rung; stage3-bv-reconstruction.md REQ-2)",
+         wraparound machine semantics; QF_BV-decidable with complete bit-pattern \
+         countermodels — L4 caged rung, solver-trusted (Z3 QF_BV); \
+         stage3-bv-reconstruction.md REQ-2)",
         bv_semantics_label(tag)
     ))
     .with_clause_attribution(

@@ -6,15 +6,18 @@
 //   * `ens@bv64  a + b == b + a`          — wraparound-add COMMUTATIVITY. Interpreted
 //                                           over fixed-width (2's-complement) machine
 //                                           semantics, discharged by the bit-vector route
-//                                           (`EngineName::BitVector`, QF_BV via Verus
-//                                           `by(bit_vector)`) at the SOLVER rung **L3**.
+//                                           (`EngineName::BitVector`, QF_BV via Z3
+//                                           directly — the procedure `by(bit_vector)`
+//                                           invokes) at the caged rung **L4** (decidable,
+//                                           complete bit-pattern countermodels;
+//                                           solver-trusted Z3 QF_BV).
 //                                           No `var * var` multiplication, so the default
 //                                           budget profile (a cheap bit-blast).
 //
 //   * `ens@bv64  a ^ b ^ b == a`          — xor SELF-INVERSE (the one-time-pad identity):
 //                                           xoring twice by the same mask is the identity.
 //                                           A genuine machine-semantics fact, decided by
-//                                           the bit-vector route at **L3**.
+//                                           the bit-vector route at **L4**.
 //
 //   * `ens       a * 0 == 0`              — the UNBOUNDED zero-fixpoint (multiplicative
 //                                           zero). NOT `@bv`-tagged, so it lowers as before
@@ -22,7 +25,8 @@
 //                                           stage-1 nlsat relax route at the kernel-grounded
 //                                           **L4** (`engine: nlsat`).
 //
-// The item certifies at the MIN over the clauses — **L3** (L3, L3, L4). One function, two
+// The item certifies at the MIN over the clauses — **L4** (L4, L4, L4); all three are the
+// caged rung (two @bv64 decidable QF_BV + one nlsat real-relaxation). One function, two
 // mechanisms (`bitvector` ×2, `nlsat` ×1), each clause's certificate naming its engine and
 // its semantics (fixed-width wraparound vs unbounded). `forge check --engine bv` (with the
 // `bv` shadow-flag plumbing compiled in) drives the per-clause route; z3 (bundled with
@@ -39,7 +43,7 @@ fn mix64(a: u64, b: u64) -> u64
 // block"). Rotate-left-by-1 — `(x << 1) | (x >> 63)` — is a bijection on 64-bit words, so
 // distinct inputs rotate to distinct outputs. A `lemma` carries no `result` and no body;
 // the single `@bv64` clause is a closed QF_BV query over the parameters under `req x != y`,
-// decided directly by the bit-vector route at **L3** with NO author proof effort — the
+// decided directly by the bit-vector route at **L4** with NO author proof effort — the
 // `proof { }` block is empty (the lemma grammar requires the keyword; the QF_BV solver,
 // not the author, discharges it).
 // (`<<`/`>>`/`|` all bind tighter than `!=`, so the rotate inequality needs no outer

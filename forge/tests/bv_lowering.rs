@@ -80,10 +80,13 @@ fn cert<'a>(certs: &'a [Value], item: &str) -> &'a Value {
         .unwrap_or_else(|| panic!("no certificate for `{item}` in {certs:?}"))
 }
 
-/// AC-2: the `mix64` example certifies at L3 with three clauses on two mechanisms — two
-/// `@bv64` clauses via `EngineName::BitVector` and one unbounded clause via nlsat — each
-/// clause's certificate naming its engine and semantics; the injectivity lemma discharges
-/// at `@bv64` with no author proof (an empty `proof { }`).
+/// AC-2: the `mix64` example certifies at L4 with three clauses on two mechanisms — two
+/// `@bv64` clauses via `EngineName::BitVector` (decidable QF_BV, complete bit-pattern
+/// countermodels) and one unbounded clause via nlsat — each clause's certificate naming
+/// its engine and semantics; the injectivity lemma discharges at `@bv64` with no author
+/// proof (an empty `proof { }`). Both mechanisms certify at the caged rung L4, so the
+/// item (the MIN over its clauses) is L4; the `@bv` clauses' SOLVER trust base is
+/// recorded in the per-clause attribution (kernel-grounded by REQ-7/8, same rung).
 #[test]
 fn mix64_certifies_with_two_bitvector_clauses_and_one_unbounded() {
     if !verus_present() {
@@ -96,12 +99,12 @@ fn mix64_certifies_with_two_bitvector_clauses_and_one_unbounded() {
     let (code, certs) = run_bv("mix64.th");
     assert_eq!(code, Some(0), "the mix64 example must certify (exit 0)");
 
-    // (1) The fn `mix64` — L3 (the MIN over L3, L3, L4), three per-clause obligations.
+    // (1) The fn `mix64` — L4 (the MIN over L4, L4, L4), three per-clause obligations.
     let m = cert(&certs, "mix64");
     assert_eq!(
         m["level"],
-        Value::from("L3"),
-        "item level is the min over clauses"
+        Value::from("L4"),
+        "item level is the min over clauses (two @bv64 + one nlsat, all caged L4)"
     );
     assert!(
         m.get("reject").is_none() || m["reject"].is_null(),
@@ -149,12 +152,12 @@ fn mix64_certifies_with_two_bitvector_clauses_and_one_unbounded() {
         "the unbounded clause names its unbounded semantics"
     );
 
-    // (2) The injectivity lemma — L3 via the bit-vector engine, no author proof.
+    // (2) The injectivity lemma — L4 via the bit-vector engine, no author proof.
     let l = cert(&certs, "rotl1_injective");
     assert_eq!(
         l["level"],
-        Value::from("L3"),
-        "the @bv64 lemma certifies at L3"
+        Value::from("L4"),
+        "the @bv64 lemma certifies at the caged rung L4 (decidable QF_BV)"
     );
     let lobls = l["obligations"].as_array().expect("lemma obligations");
     assert_eq!(

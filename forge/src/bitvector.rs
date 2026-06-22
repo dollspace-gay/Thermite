@@ -35,10 +35,13 @@
 //!   represent — a budget `Timeout` is distinct from an undecided `Unknown`) is the
 //!   route's real entry point, mapped down for the generic trait caller.
 //!
-//! A `@bv` clause certifies at the SOLVER rung [`crate::manifest::Level::L3`]: its
-//! trust base is the QF_BV decision procedure. Kernel-grounding the bit-vector
-//! discharge (proof reconstruction) is REQ-7/REQ-8, a strictly later increment; this
-//! module is the lowering only.
+//! A `@bv` clause certifies at the caged rung [`crate::manifest::Level::L4`]: it is
+//! decidable QF_BV with complete bit-pattern countermodels — the L4 refutation quality
+//! (RFC-1 §2/§4), never degraded. Rung and trust base are orthogonal: the rung records
+//! refutation quality, while the trust base (the QF_BV decision procedure, SOLVER) is
+//! recorded separately in the attribution. Kernel-grounding the bit-vector discharge
+//! (proof reconstruction) is REQ-7/REQ-8, which shrinks that trust base at the SAME
+//! rung; this module is the lowering only.
 
 use std::collections::BTreeMap;
 
@@ -54,7 +57,8 @@ use thermite_syntax::{BinOp, BvWidth, Expr, UnaryOp};
 pub enum BvOutcome {
     /// `unsat` over QF_BV: the clause holds for every `N`-bit assignment satisfying
     /// the precondition → the clause is machine-valid at width `N` → certify at the
-    /// solver rung (L3).
+    /// caged rung (L4): decidable, complete bit-pattern countermodels; the SOLVER trust
+    /// base (Z3 QF_BV) is recorded separately in the attribution.
     Proved,
     /// `sat` over QF_BV: a concrete `N`-bit assignment falsifies the clause — a
     /// bit-level countermodel. Carries the witnessing bit pattern per variable

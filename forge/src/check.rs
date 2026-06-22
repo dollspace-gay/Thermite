@@ -1598,9 +1598,7 @@ fn bv_check(base: Vec<Certificate>, program: &Program) -> Vec<Certificate> {
     let mut out = Vec::with_capacity(base.len());
     for cert in base {
         match crate::lean_export::find_item(program, &cert.item) {
-            Some(Item::Fn(f)) if fn_has_bv_tag(f) => {
-                out.push(bv_fn_cert(&bv, &nlsat, f, &cert))
-            }
+            Some(Item::Fn(f)) if fn_has_bv_tag(f) => out.push(bv_fn_cert(&bv, &nlsat, f, &cert)),
             _ => out.push(cert),
         }
     }

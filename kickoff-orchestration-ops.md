@@ -4,8 +4,9 @@ tags: ["process", "operations", "doc-drift", "kickoff", "design-doc"]
 sources: []
 contributors: ["rApq"]
 created: 2026-06-18
-updated: 2026-06-18
+updated: 2026-06-22
 ---
+
 
 
 ## Design Specification
@@ -22,11 +23,17 @@ updated: 2026-06-18
 
 ### merge-on-green pattern
 
-After pushing a branch, arm a Monitor that polls `gh pr checks <N>` and emits one
-line per check, exiting when the run completes. CI jobs: `checks` (fmt + clippy +
-doctests + doc-drift + reqs gates), `test (1-4)` shards, `lean` (spine build +
-axiom probe + the forge suite WITH the spine — the only place lake-gated live
-tests actually run; see audit F4 / #309).
+### merge-on-green pattern
+
+After pushing a branch, arm a Monitor (or a background poll-until-done loop) that
+polls `gh pr checks <N>` and emits one line per check, exiting when the run
+completes. CI jobs (post-#76 split): `checks` (fmt + clippy + doctests + doc-drift
++ reqs gates), `test (1-4)` shards, `lean-probe` (spine build + axiom probe), and
+`lean-spine-forge (1-4)` — the forge suite WITH the spine, sharded via
+`cargo nextest --partition count:N/4`, the only place lake-gated live tests
+actually run (see audit F4 / #309). The split cut the lean wall-clock ~16min → ~8min
+with zero coverage loss; shard 1 of `lean-spine-forge` also runs the G2 audit-gate
+step (`forge strat-tv` / `strat-faithful-tv`).
 
 ### doc-drift: two pin kinds — re-pin both after merging main
 

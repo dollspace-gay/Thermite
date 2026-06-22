@@ -1,0 +1,10 @@
+{
+  "uuid": "1872b922-dd08-43d3-a6ba-fc7e6889f0f6",
+  "issue_uuid": "4e1e886c-254a-4a9f-bf03-0c399c95866b",
+  "author": "rApq",
+  "content": "REQ-3 (#345) SHIPPED → main @d04ac118 (PR #86): bv_shadow lock-1 field. Orchestrator fixed a faithfulness bug the user flagged — audit/review auto-route now a per-item overlay (ordinary fns stay L3). Unblocks REQ-4 (#346, bv mutation). 3/9 stage-3 increments done.",
+  "created_at": "2026-06-22T21:41:22.864302Z",
+  "kind": "note",
+  "signed_by": "SHA256:tVRGNaCPy5N1tRtokzkbgsOCzGZujGDWQlGHFruaL9c",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgylLCWwpnQm2E2UQO23AN1e/yB6k0yzmPM7qiYPujTNYAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAIk/4ASNTnkvG4p1UkUAn6jowkTMw+y8HBJx7rkAoo1jtXsxuZhZfNcl5csH2KWWm8gKPUYfn2lRVRkn9acGKDw=="
+}

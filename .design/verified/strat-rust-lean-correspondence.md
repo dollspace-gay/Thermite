@@ -123,6 +123,37 @@ equivalence check vacuous).
 | `strat_trust_profile` / `REF_ENCODE_{PROVEN,UNPROVEN}` (`:336`/`:321`/`:311`) | the trust label — proven form HONESTLY SCOPED to T1-S structure + T2-S qfree-grounding + Z3-theory rel | `strat_lowering_faithful` (T2-S) |
 | `G2Checks` / `g2_flip_permitted` / `strat_trust_profile_gated` (`:363`/`:428`/`:437`) | THE G2 GATE — the flip is permitted iff declared AND all four checks green; the AC-9 mechanical block (toggle-each-red tests) | REQ-9 / AC-9 |
 
+## The stage-2 pin battery (AC-10 — the eight refutation pins)
+
+Each correspondence claim above rests on a kernel-proven Lean theorem. The **pin battery**
+is the adversarial complement: for every load-bearing theorem, an in-tree
+`lean/Thermite/Pin*.lean` file exhibits the BROKEN NEIGHBOUR — the smallest plausible
+mis-implementation — and `decide`-checks (or, for the relax island, kernel-proves) that it
+DIVERGES from the proven definition on a concrete witness. A pin is the executable
+statement of *why the theorem's hypotheses are necessary*: drop the discipline the theorem
+names and this witness flips. All eight are BUILD targets in `scripts/lean-axiom-probe.sh`,
+so a `sorry` or a broken `decide` in any of them fails the Lean CI job; each is axiom-clean
+(⊆ {propext, Classical.choice, Quot.sound}; no `native_decide`).
+
+The metatheory §9 battery, **cited from the theorem each pin guards**:
+
+| Pin (`lean/Thermite/…`) | Theorem it guards (the proven anchor) | The broken neighbour the pin refutes |
+|---|---|---|
+| `PinFiniteEscape.lean` | `Strat/Denote.lean` `sdenote_all_iff` (the (R1) completeness datum behind every `sdenote` `∀`; the spine grounding instance of `strat_ref_sound`) | a `List.all` fold over an INCOMPLETE enumeration reports `true` where the genuine `∀` is `false` — the soundness escape dropping the carrier `complete` witness would permit |
+| `PinStratCapture.lean` | `Strat/Soundness.lean` `Thermite.Strat.strat_ref_sound` (T1-S) | an encoder that REUSES the de Bruijn name `0` for every binder, so an inner binder captures an outer variable (`∀x.∃y. x=c0` collapses to `…y=c0`) |
+| `PinStratFlip.lean` | `Strat/Soundness.lean` `Thermite.Strat.strat_ref_sound` (T1-S) | an encoder that SWAPS the quantifier kinds (`all↔ex`), flipping the truth of `∃x. x=c0` |
+| `PinStratSelfLoop.lean` | `Strat/Fragment.lean` `Thermite.Strat.Cls.classifier_correct` (T3-C) — the acyclicity arm | a classifier that STRIPS reflexive edges before `acyclic`, so it admits the `a[a[i]]` self-loop (`ex_selfLoop`) the real `admitted` rejects |
+| `PinNNFPolarity.lean` | `Strat/Fragment.lean` `Thermite.Strat.Cls.classifier_correct` (T3-C) on `nnf` (`Nnf.lean` `nnf_sound`) | a classifier that builds the sort graph PRE-NNF, so a `(¬∃k.∀v…) ∧ (¬∃v.∀k…)` whose NNF flips into a `Key ⇄ Value` cycle is wrongly admitted |
+| `PinRestratDropSide.lean` | `Strat/Restratify.lean` `Thermite.Strat.Cls.restrat_conservative` (T4-R) | a restratify that CERTIFIES the original φ from the rewrite φ' while DROPPING the `Side(φ',φ)` obligation (R-SIDE-1) — attesting a false φ |
+| `PinRelaxRefute.lean` | `Relax.lean` `Thermite.Relax.r_relax_sound` (T5-X, stage-1) | the illegitimate CONVERSE — reading a failed real relaxation (`x²−x` at `x=1/2`) as an integer counterexample, where the integer clause is in fact valid (the `RealWitness` escalation) |
+| `PinCombDeriv.lean` | `Strat/CombDeriv.lean` the eight `comb_deriv_*` demotion lemmas | an off-by-one expansion (`i ≤ len` for `i < len`) that lets the boundary index into range, diverging from the faithful `forall_in` |
+
+The five soundness anchors (`strat_ref_sound`, `classifier_correct`, `restrat_conservative`,
+`r_relax_sound`, plus the spine-grounding `strat_lowering_faithful` of Table 3) are the SAME
+theorems the axiom probe [1′] gates; the battery is their negative-space witness set. Adding a
+ninth admission trap is a NEW pin + a new row here, never a silent widening (the §3.2 / S₂.0
+conservatism the classifier tables already record).
+
 ## Residuals (the honest scope — what this inspection does NOT cover)
 
 - **Kernel-grounding of `rel`/array atoms.** T2-S grounds `qfree` atoms to the v1

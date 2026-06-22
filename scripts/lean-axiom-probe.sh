@@ -110,6 +110,19 @@ IMPORTS=(
   # the axiom-gated THEOREMS list below (the REQ-9 [1′] extension brought forward for AC-8, as
   # REQ-5 did for `strat_ref_sound`); the `qfree_iff` corollary is axiom-probed IN-FILE.
   "Thermite.Strat.Faithfulness"
+  # Stage-2 REQ-10 (#332): the pin battery, complete (AC-10, gate G2). The three pins
+  # that did not land in a prior increment, added as BUILD targets so a `sorry` or a
+  # broken `decide`/proof in any of them fails the CI Lean job. `PinStratSelfLoop` and
+  # `PinNNFPolarity` pull `Strat.Fragment` (the classifier kernel — they refute graph
+  # neighbours of `admitted`/`classifier_correct`); `PinRelaxRefute` pulls `Relax` (the
+  # Mathlib island — it refutes the converse of `r_relax_sound`). All decide/kernel-checked
+  # with no theorem added to the gated THEOREMS list below (they are negative pins, like the
+  # five pins already present: PinFiniteEscape, PinStratFlip/Capture, PinCombDeriv,
+  # PinRestratDropSide). The eight-pin battery is cited theorem-by-theorem in
+  # `.design/verified/strat-rust-lean-correspondence.md` ("The stage-2 pin battery").
+  "Thermite.PinStratSelfLoop"
+  "Thermite.PinNNFPolarity"
+  "Thermite.PinRelaxRefute"
 )
 # The five load-bearing universal-theorem pillars + the two relax-route spine lemmas
 # (REQ-8a) + the stage-2 classifier coincidence theorem T3-C (REQ-3, AC-3) + the

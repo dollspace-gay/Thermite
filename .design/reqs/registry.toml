@@ -16082,3 +16082,44 @@ note = "[1'] the axiom probe gates the four stratified soundness theorems strat_
 kind = "command"
 target = "make audit"
 note = "AC-9: one deep-audit run shows [1'][4'][8][9] all green and the [G2] gate flips; toggling any check red exercises forge g2-gate's nonzero-exit mechanical block (the trust flip withheld)"
+
+[[requirement]]
+id = "REQ-S2-10"
+title = "Stage-2 pin battery, complete (AC-10, gate G2): all eight metatheory §9 pins present + green + cited from the theorem each guards"
+owner = ".design/stage2-stratified-cage.md"
+status = "shipped"
+scope = "verified"
+summary = "THE LAST STAGE-2 INCREMENT (stage2-stratified-cage.md REQ-10 / AC-10; child of thermite2-program.md REQ-10; gate G2 — this completes Stage 2). Builds on REQ-1..REQ-9 (#323..#331, all merged @ 88d37f41). AUDIT + COMPLETE the eight-pin metatheory §9 battery in the established lean/Thermite/Pin*.lean style (small concrete carrier + decide-checked / kernel-proven theorems; decide, never native_decide; core-Lean-only except the relax island). FIVE pins already landed in prior increments and were AUDITED present/green/cited: PinFiniteEscape (REQ-1, guards Strat/Denote.lean sdenote_all_iff — the (R1) completeness datum), PinStratCapture + PinStratFlip (REQ-5, guard Thermite.Strat.strat_ref_sound T1-S — fresh-name discipline + quantifier-kind fidelity), PinCombDeriv (REQ-6, guards the eight Strat/CombDeriv.lean comb_deriv_* demotion lemmas — the off-by-one i<=len vs i<len), PinRestratDropSide (REQ-7, guards Thermite.Strat.Cls.restrat_conservative T4-R — the dropped Side obligation, R-SIDE-1). THREE pins were MISSING and added here: (1) PinStratSelfLoop (lean/Thermite/PinStratSelfLoop.lean) — guards Thermite.Strat.Cls.classifier_correct (T3-C) acyclicity arm; broken neighbour stripSelf removes reflexive edges before acyclic, so it ADMITS the a[a[i]] self-loop (Strat/Fragment.lean ex_selfLoop, usize->usize self-edge) the real admitted rejects; decide-checked. (2) PinNNFPolarity (lean/Thermite/PinNNFPolarity.lean) — guards classifier_correct (T3-C) on nnf (Nnf.lean nnf_sound); broken neighbour builds the sort graph PRE-NNF, so (NOT EX k.ALL v.phi1) AND (NOT EX v.ALL k.phi2) — whose NNF flips both blocks into a Key<->Value E1 alternation cycle — is wrongly admitted (raw graph empty -> acyclic); decide-checked. (3) PinRelaxRefute (lean/Thermite/PinRelaxRefute.lean) — guards Thermite.Relax.r_relax_sound (T5-X, stage-1); refutes the ILLEGITIMATE CONVERSE: e(x)=x*x+(-1)*x = x(x-1) is >=0 for every integer (consecutive-integer product) but <0 at x=1/2 over R, so a failed real relaxation does NOT imply an integer counterexample — exactly the RealWitness escalation r_relax_sound's one-wayness mandates (don't emit a Counterexample). Mathlib-importing island like Relax.lean (imports Mathlib.Tactic.Ring + NormNum); kernel-proven, no native_decide. WIRING: all three new pins added as BUILD targets in scripts/lean-axiom-probe.sh IMPORTS (a sorry/broken decide fails the Lean CI job); each pin theorem axiom-clean (PinStratSelfLoop/PinNNFPolarity = {propext}; PinRelaxRefute subset of {propext, Classical.choice, Quot.sound}). CITATION: .design/verified/strat-rust-lean-correspondence.md gains the 'The stage-2 pin battery (AC-10)' section — an eight-row table citing each pin FROM the theorem it guards (the proven anchor) + the broken neighbour it refutes; the five soundness anchors are the same theorems the axiom probe [1'] gates, so the battery is their negative-space witness set. SELF-VERIFY all green: cd lean && lake build (zero sorry under lean/Thermite/); bash scripts/lean-axiom-probe.sh rc=0; cargo test; clippy -D; fmt; python3 tooling/doc-drift.py + make doc-drift rc=0 (the correspondence doc's content-sha256 pin is over the governed Rust files, unaffected by the prose edit — no re-pin needed); tooling/reqs check clean. No stubs/sorries."
+remaining_scope = "Closed: the complete eight-pin battery (five audited present/green/cited from prior increments + three added — PinStratSelfLoop, PinNNFPolarity, PinRelaxRefute), each wired as a Lean CI build target and cited from the theorem it guards in the stratified correspondence doc. Gate G2 / Stage 2 complete. A ninth admission trap or soundness neighbour would be a NEW pin + a new battery row (never a silent widening — the S2.0 conservatism the classifier tables record); kernel-grounding rel/array atoms (a stronger PinRelaxRefute-style pin over the SMT array theory) is stage-3 reconstruction, out of scope."
+aliases = ["Stage-2 REQ-10", "REQ-10 pin battery", "the pin battery", "pin battery", "PinStratSelfLoop", "PinNNFPolarity", "PinRelaxRefute", "AC-10", "metatheory §9 pins", "the eight-pin battery", "github:dollspace-gay/Thermite#332"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "lean/Thermite/PinStratSelfLoop.lean"
+note = "PinStratSelfLoop — guards classifier_correct (T3-C) acyclicity: stripSelf (the broken neighbour) drops reflexive edges before acyclic, so admittedNoSelf ADMITS ex_selfLoop (a[a[i]], the usize->usize self-edge) while real admitted rejects it; selfLoop_counterexample + stripSelf_breaks_admission, decide-checked, axioms = {propext}"
+
+[[requirement.evidence]]
+kind = "file"
+target = "lean/Thermite/PinNNFPolarity.lean"
+note = "PinNNFPolarity — guards classifier_correct (T3-C) on nnf (nnf_sound): admittedPreNnf (the broken neighbour) builds the sort graph PRE-NNF, so phiHiddenCycle ((NOT EX k.ALL v..) AND (NOT EX v.ALL k..)) whose NNF flips into a Key<->Value cycle is wrongly admitted; nnfPolarity_counterexample + preNnf_breaks_admission, decide-checked, axioms = {propext}"
+
+[[requirement.evidence]]
+kind = "file"
+target = "lean/Thermite/PinRelaxRefute.lean"
+note = "PinRelaxRefute — guards Thermite.Relax.r_relax_sound (T5-X): refutes the converse — ePoly = x(x-1) is >=0 over all ints (int_clause_holds) but <0 at x=1/2 over R (real_relax_fails), so a failed relaxation is NOT an integer counterexample (the RealWitness escalation); relax_converse_unsound, kernel-proven, Mathlib island, axioms subset of {propext, Classical.choice, Quot.sound}"
+
+[[requirement.evidence]]
+kind = "file"
+target = ".design/verified/strat-rust-lean-correspondence.md"
+note = "AC-10 citation: the 'The stage-2 pin battery (AC-10)' section — an eight-row table citing each of the eight pins FROM the theorem it guards (sdenote_all_iff / strat_ref_sound / classifier_correct / restrat_conservative / r_relax_sound / comb_deriv_*) + the broken neighbour it refutes"
+
+[[requirement.evidence]]
+kind = "file"
+target = "scripts/lean-axiom-probe.sh"
+note = "the three new pins (PinStratSelfLoop/PinNNFPolarity/PinRelaxRefute) added as BUILD targets in IMPORTS (alongside the five already present), so a sorry or broken decide in any of the eight battery pins fails the Lean CI job"
+
+[[requirement.evidence]]
+kind = "command"
+target = "bash scripts/lean-axiom-probe.sh"
+note = "AC-10 (ci): builds all eight battery pins (zero sorry under lean/Thermite/) and the spine; rc=0 — a sorry/disallowed axiom in any pin or gated theorem fails the Lean CI job"

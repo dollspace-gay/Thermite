@@ -7,8 +7,11 @@
   "priority": "medium",
   "created_by": "rApq",
   "created_at": "2026-06-22T16:13:09.418997Z",
-  "updated_at": "2026-06-22T16:13:11.522545Z",
+  "updated_at": "2026-06-22T16:13:25.438138Z",
   "labels": [
     "forge"
+  ],
+  "related": [
+    "2b6560cc-d1ca-4baa-9f41-1481e8c7e0c3"
   ]
 }

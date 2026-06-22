@@ -1,0 +1,8 @@
+{
+  "uuid": "90d7232c-05c8-4e14-a872-37b5a1de7cfd",
+  "issue_uuid": "2b6560cc-d1ca-4baa-9f41-1481e8c7e0c3",
+  "author": "BYXv",
+  "content": "Committed b1bbccd3: Stage-3 REQ-2 — lower tagged @bv clauses through QF_BV (EngineName::BitVector + --engine bv route, 64-bit multiplier budget profile, bit-pattern Counterexample). Files: 10 changed, 1742 insertions(+). cargo clippy -Dwarnings + fmt clean (default + --features bv); pure unit tests pass; live AC-2/AC-3 tests z3/verus-gated (SKIP locally, CI gate). v1 conformance oracle byte-identical.",
+  "created_at": "2026-06-22T05:44:48.213023Z",
+  "kind": "result"
+}

@@ -1,0 +1,8 @@
+{
+  "uuid": "d8c21fb0-b0a2-43f3-b504-5d1b176fe436",
+  "issue_uuid": "51f9e8ed-5391-40ca-98ca-4c9c842155e0",
+  "author": "BbPF",
+  "content": "Plan: REQ-3 lock 1 shadow flag. manifest.rs adds BvShadow {flagged, semantics, nowrap_obligation, note} (RFC §9) as additive serde-default Option field on ObligationResult + with_bv_shadow builder + oracle_subset inclusion (Q-ORACLE precedent). check.rs attaches it to every tagged-clause obligation (proved/counterexample/timeout/skip), untagged clauses unchanged. review.rs and audit.rs gain an additive bv_shadows listing (burned_lemmas/lean_fragment precedent); cli.rs renders both. nowrap_obligation stays None until REQ-5. Tests: serde round-trip, oracle inclusion, grep-completeness, review/audit listing.",
+  "created_at": "2026-06-22T17:48:50.236296Z",
+  "kind": "plan"
+}

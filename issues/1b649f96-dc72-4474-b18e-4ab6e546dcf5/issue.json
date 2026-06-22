@@ -3,12 +3,13 @@
   "display_id": 343,
   "title": "Stage-3 REQ-1: the @bv tag, parse-gated (thermite-syntax foundation)",
   "description": "The language's FIRST clause-level annotation. thermite-syntax parses ens@bvN / inv@bvN / @bvN(nowrap) for N∈{8,16,32,64}, and lemma items accept it, ONLY when the bv plumbing is compiled in. Clause (src/ast.rs:596, today {expr,text,span}) grows bv: Option<BvTag> where BvTag{width:BvWidth, nowrap:bool}; parse_contract (src/parser.rs:1376, the req→ens→fx ordered dispatch) grows a tag step guarded by cfg!(feature=\"bv\"); thermite-syntax/Cargo.toml gains its first [features] entry (bv). Stage-1/2 added clause CONTENT as expression-level constructs (Expr::Quantifier, parser.rs:2600) — the tag is genuinely new mechanism. AC-1: build with bv off rejects ens@bv64 with a structured parse error (build-flag test compiles the crate twice); build with bv on parses all 4 widths + nowrap with AST round-trip over Clause.bv. This is R-BV-1, the G3 structural lock. Doc: .design/stage3-bv-reconstruction.md REQ-1. Gate: G3.",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "parent_uuid": "4e1e886c-254a-4a9f-bf03-0c399c95866b",
   "created_by": "rApq",
   "created_at": "2026-06-22T03:09:55.886058Z",
-  "updated_at": "2026-06-22T03:09:57.965265Z",
+  "updated_at": "2026-06-22T04:14:10.873788Z",
+  "closed_at": "2026-06-22T04:14:10.873788Z",
   "labels": [
     "forge"
   ]

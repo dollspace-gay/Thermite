@@ -1,0 +1,11 @@
+// A PLANTED non-injective shift (`.design/stage3-bv-reconstruction.md` REQ-2 / AC-3 —
+// "a planted non-injective rotate dies as `Counterexample` with the bit pattern"). Unlike
+// the genuine rotate (`rotl1_injective` in `mix64.th`, which RE-INSERTS the shifted-out
+// bit), a bare left-shift-by-1 DISCARDS the top bit, so it is NOT injective: any two
+// 64-bit words differing only in bit 63 collide after `<< 1`. The bit-vector route finds
+// the witnessing assignment and reports a bit-level `Counterexample` carrying the bit
+// pattern (e.g. `x = 0b1000…0000, y = 0b0000…0000`, both mapping to `0`).
+lemma shl1_injective_BROKEN(x: u64, y: u64)
+    req x != y
+    ens@bv64 x << 1 != y << 1
+    proof { }

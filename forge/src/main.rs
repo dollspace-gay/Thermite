@@ -27,6 +27,7 @@
 mod accessibility;
 mod audit;
 mod battery;
+mod bitvector;
 mod body_tv;
 mod build;
 mod burn;

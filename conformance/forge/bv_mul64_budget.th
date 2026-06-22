@@ -1,0 +1,13 @@
+// The 64-bit multiplier COST CLIFF (`.design/stage3-bv-reconstruction.md` REQ-2 / AC-3 —
+// "an over-budget 64-bit multiplier query yields `Timeout` under the dedicated bv budget
+// profile, never `unknown` and never a silent downgrade"). The clause asserts that the
+// product of two non-trivial bounded factors never equals a fixed 61-bit Mersenne prime
+// (2^61 − 1) — a VALIDITY that requires proving the prime has no factors in range, i.e.
+// the full 64×64 bit-blast: the known QF_BV cost cliff. Because the clause carries a
+// `var * var` multiplication at width 64, the route selects the dedicated `bv64-multiplier`
+// budget profile; the over-budget query is reported as `Timeout` under that named profile,
+// NEVER a bare `unknown`.
+lemma mul64_no_factor(a: u64, b: u64)
+    req a > 1 && a < 4294967296 && b > 1 && b < 4294967296
+    ens@bv64 a * b != 2305843009213693951
+    proof { }

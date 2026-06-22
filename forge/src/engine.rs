@@ -89,6 +89,16 @@ pub enum EngineName {
     /// — its trust profile is `solver(nlsat) + spine-lemma(kernel)` (the real→integer
     /// soundness bridge is the kernel-checked `r_relax_sound`, `lean/Thermite/Relax.lean`).
     Nlsat,
+    /// The QF_BV bit-vector engine (`.design/stage3-bv-reconstruction.md` REQ-2,
+    /// stage-3): an `@bvN`-tagged clause lowered to fixed-width wraparound (machine)
+    /// semantics and decided by Verus's `by(bit_vector)` mode — mechanically a QF_BV
+    /// solver query, reached directly (the [`Nlsat`](EngineName::Nlsat) precedent for
+    /// QF_NRA). It joins the stage-1 `Nlsat` route so a mixed-mechanism function (the
+    /// RFC's `mix64` shape) attributes each clause per engine. A `Proven` bit-vector
+    /// discharge certifies at the SOLVER rung [`crate::manifest::Level::L3`]: its trust
+    /// base is the QF_BV decision procedure (kernel-grounding it is REQ-7/REQ-8, a
+    /// later increment). The implementation is [`crate::bitvector::BitVectorEngine`].
+    BitVector,
 }
 
 impl EngineName {
@@ -101,7 +111,25 @@ impl EngineName {
             EngineName::LeanAuto => "lean-auto",
             EngineName::LeanInteractive => "lean-interactive",
             EngineName::Nlsat => "nlsat",
+            EngineName::BitVector => "bitvector",
         }
+    }
+}
+
+/// The named trust base a [`EngineName::BitVector`] discharge adds on a `Proven`
+/// (`.design/stage3-bv-reconstruction.md` REQ-2). The QF_BV decision procedure is the
+/// whole solver base — a single named item — at the SOLVER rung (L3). It is strictly
+/// smaller than the Verus base (no VC-gen, no lowering theorem): the clause is a
+/// direct, ground QF_BV query. Kernel-grounding it (proof reconstruction) is REQ-7/8;
+/// until then the bit-vector discharge is solver-trusted, named here for the auditor.
+#[must_use]
+pub fn bv_trust_profile() -> TrustProfile {
+    TrustProfile {
+        items: vec![
+            "Z3 QF_BV (fixed-width bit-vector decision; the procedure Verus `by(bit_vector)` \
+             invokes)"
+                .to_string(),
+        ],
     }
 }
 

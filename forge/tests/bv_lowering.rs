@@ -217,3 +217,176 @@ fn over_budget_multiplier_is_timeout_under_named_profile_never_unknown() {
         );
     }
 }
+
+/// Run a forge subcommand over a conformance example, returning `(exit, parsed JSON)`.
+fn run_forge_json(subcommand: &str, example: &str) -> (Option<i32>, Value) {
+    let th = repo_root().join("conformance/forge").join(example);
+    let out = Command::new(forge_bin())
+        .arg(subcommand)
+        .arg(&th)
+        .arg("--json")
+        .output()
+        .unwrap_or_else(|e| panic!("spawn forge {subcommand}: {e}"));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let value: Value = serde_json::from_str(stdout.trim()).unwrap_or_else(|e| {
+        panic!(
+            "forge {subcommand} --json must emit one JSON document: {e}\nstdout:\n{stdout}\nstderr:\n{}",
+            String::from_utf8_lossy(&out.stderr)
+        )
+    });
+    (out.status.code(), value)
+}
+
+/// Count the obligations carrying a `bv_shadow` block across a cert array (AC-4 — the
+/// grep-completeness count: `grep bv_shadow` ≡ the tagged clauses).
+fn shadowed_clause_count(certs: &[Value]) -> usize {
+    certs
+        .iter()
+        .flat_map(|c| c["obligations"].as_array().cloned().unwrap_or_default())
+        .filter(|o| o.get("bv_shadow").is_some())
+        .count()
+}
+
+/// AC-4 (Lock 1 — the shadow flag): every `@bv`-tagged clause's certificate carries
+/// `bv_shadow` (the RFC §9 shape) and NOTHING untagged does — `grep bv_shadow` over the
+/// certs ≡ exactly the tagged clauses. `mix64` has two `@bv64` clauses + one unbounded
+/// clause, plus the injectivity lemma's `@bv64` clause: three tagged clauses carry the
+/// flag, the unbounded clause does not. `nowrap_obligation` is the reserved (REQ-5) slot,
+/// absent for a bare `@bv64`.
+#[test]
+fn every_bv_tagged_clause_carries_the_shadow_flag_and_nothing_else() {
+    if !verus_present() {
+        eprintln!("SKIP: verus (z3) absent — the bit-vector route is not run.");
+        return;
+    }
+    let (code, certs) = run_bv("mix64.th");
+    assert_eq!(code, Some(0), "mix64 certifies");
+
+    let m = cert(&certs, "mix64");
+    let obls = m["obligations"].as_array().expect("obligations array");
+    // The two `@bv64` clauses carry the shadow flag naming the wraparound semantics.
+    for k in [0usize, 1] {
+        let s = &obls[k]["bv_shadow"];
+        assert_eq!(
+            s["flagged"],
+            Value::Bool(true),
+            "ens#{k} is flagged as a machine-semantics fork"
+        );
+        let semantics = s["semantics"].as_str().unwrap_or("");
+        assert!(
+            semantics.contains("bv64") && semantics.contains("wraparound"),
+            "ens#{k} names its fixed-width wraparound semantics: {s}"
+        );
+        assert!(s.get("note").is_some(), "ens#{k} carries the §9 note");
+        assert!(
+            s.get("nowrap_obligation").is_none(),
+            "the reserved nowrap_obligation slot (REQ-5) is omitted for a bare @bv64: {s}"
+        );
+    }
+    // The untagged (unbounded) clause carries NO shadow flag — grep finds nothing else.
+    assert!(
+        obls[2].get("bv_shadow").is_none(),
+        "the untagged unbounded clause has no shadow flag: {}",
+        obls[2]
+    );
+
+    // The injectivity lemma's `@bv64` clause carries it too.
+    let l = cert(&certs, "rotl1_injective");
+    let ls = &l["obligations"][0]["bv_shadow"];
+    assert_eq!(
+        ls["flagged"],
+        Value::Bool(true),
+        "the lemma clause is flagged"
+    );
+    assert!(
+        ls["semantics"].as_str().unwrap_or("").contains("bv64"),
+        "the lemma clause names its bv64 semantics: {ls}"
+    );
+
+    // Grep-completeness over the WHOLE cert collection: exactly the three tagged clauses
+    // (mix64::ens#0, mix64::ens#1, rotl1_injective::ens#0) carry bv_shadow.
+    assert_eq!(
+        shadowed_clause_count(&certs),
+        3,
+        "exactly the three @bv-tagged clauses carry bv_shadow (and nothing else)"
+    );
+}
+
+/// AC-4: a refuted `@bv` clause STILL carries the shadow flag — a counterexample is a
+/// machine-semantics fact, so the fork stays greppable even on a hard fail.
+#[test]
+fn a_refuted_bv_clause_still_carries_the_shadow_flag() {
+    if !verus_present() {
+        eprintln!("SKIP: verus (z3) absent — the bit-vector route is not run.");
+        return;
+    }
+    let (_code, certs) = run_bv("bv_shl_not_injective.th");
+    let c = cert(&certs, "shl1_injective_BROKEN");
+    let s = &c["obligations"][0]["bv_shadow"];
+    assert_eq!(
+        s["flagged"],
+        Value::Bool(true),
+        "the refuted clause is still flagged as a machine-semantics fork: {c}"
+    );
+    assert!(s["semantics"].as_str().unwrap_or("").contains("bv64"));
+}
+
+/// AC-4: `forge audit` lists the bv shadows — auditing a bit-vector project routes
+/// through the bv engine, so the manifest's additive `bv_shadows` section enumerates
+/// every tagged clause (the way the TCB enumerates `#[slag]` blocks).
+#[test]
+fn forge_audit_lists_the_bv_shadows() {
+    if !verus_present() {
+        eprintln!("SKIP: verus (z3) absent — forge audit's bv route is not run.");
+        return;
+    }
+    let (_code, manifest) = run_forge_json("audit", "mix64.th");
+    let shadows = manifest["bv_shadows"]
+        .as_array()
+        .expect("the audit manifest carries a bv_shadows section");
+    assert_eq!(
+        shadows.len(),
+        3,
+        "the audit lists all three @bv-tagged clauses: {manifest}"
+    );
+    assert!(
+        shadows
+            .iter()
+            .all(|s| s["shadow"]["flagged"] == Value::Bool(true)),
+        "every listed shadow is flagged"
+    );
+    assert!(
+        shadows.iter().any(|s| s["item"] == "mix64"),
+        "the mix64 fn's tagged clauses are listed"
+    );
+    assert!(
+        shadows.iter().any(|s| s["item"] == "rotl1_injective"),
+        "the lemma's tagged clause is listed"
+    );
+}
+
+/// AC-4: `forge review` lists the bv shadows — the spec-intent review artifact's additive
+/// `bv_shadows` section surfaces every tagged clause's machine-semantics fork for the
+/// reviewer.
+#[test]
+fn forge_review_lists_the_bv_shadows() {
+    if !verus_present() {
+        eprintln!("SKIP: verus (z3) absent — forge review's bv route is not run.");
+        return;
+    }
+    let (_code, artifact) = run_forge_json("review", "mix64.th");
+    let shadows = artifact["bv_shadows"]
+        .as_array()
+        .expect("the review artifact carries a bv_shadows section");
+    assert_eq!(
+        shadows.len(),
+        3,
+        "the review lists all three @bv-tagged clauses: {artifact}"
+    );
+    assert!(
+        shadows
+            .iter()
+            .all(|s| s["shadow"]["flagged"] == Value::Bool(true)),
+        "every reviewed shadow is flagged"
+    );
+}

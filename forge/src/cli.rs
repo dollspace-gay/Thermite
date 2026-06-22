@@ -1808,16 +1808,9 @@ fn run_audit(
     meaning: bool,
     metrics: bool,
 ) -> Result<ExitCode, ForgeError> {
-    // The same default pipeline `forge check` runs (REQ-4 — aggregation, never
-    // re-derivation): `check_file` is the canonical default-config entry (the only
-    // one that serves / populates the shared proof cache). The audit re-runs no
-    // verus, re-scores no mutants — it projects the cert collection this returns.
-    let certs = check::check_file(file)?;
-
     // Parse the file once for the boundary contracts' enforced req/ens/fx (the
-    // §9 per-function contracts the TCB enumerates). A pure read of the parsed AST
-    // — `check_file` already validated it parses clean, so this is re-parse of a
-    // known-good file (deterministic, R-CODE-5), never a re-verification.
+    // §9 per-function contracts the TCB enumerates) AND to decide the route below.
+    // A pure read of the parsed AST (deterministic, R-CODE-5), never a verification.
     let src = std::fs::read_to_string(file).map_err(|e| ForgeError::Io {
         path: file.display().to_string(),
         source: e,
@@ -1826,6 +1819,24 @@ fn run_audit(
     if !parsed.is_clean() {
         return Err(ForgeError::Parse(parsed.errors));
     }
+
+    // The cert collection the audit projects (REQ-4 — aggregation, never re-derivation).
+    // A bit-vector project (any `@bv`-tagged clause, stage-3 REQ-3 / AC-4) routes through
+    // the bv engine so the per-clause shadow flags surface in the audit's `bv_shadows`
+    // section — auditing a machine-semantics clause via the unbounded Verus path would be
+    // wrong. Every tag-free project (the whole v1 corpus) keeps the default `check_file`
+    // pipeline byte-identical (the canonical default-config entry that serves the cache).
+    let certs = if check::program_has_bv_tag(&parsed.program) {
+        check::check_file_with_engine(
+            file,
+            check::CheckOptions {
+                engine: check::EngineSelection::Bv,
+                ..Default::default()
+            },
+        )?
+    } else {
+        check::check_file(file)?
+    };
 
     // The toolchain identity (the irreducible §9 TCB residue): the verus version
     // (the same deterministic sourcing the proof cache uses) + the compile-time
@@ -2734,6 +2745,22 @@ fn render_review(artifact: &ReviewArtifact) -> String {
             ));
         }
     }
+    // Lock 1 — the bv shadow flags (`.design/stage3-bv-reconstruction.md` REQ-3 / AC-4):
+    // every `@bv`-tagged clause's machine-semantics fork, line-oriented and greppable
+    // (the "`grep slag` is the complete inventory" discipline). Omitted when empty.
+    if !artifact.bv_shadows.is_empty() {
+        out.push_str("\nbv shadows (machine-semantics forks — RFC §9 lock 1, the shadow flag):\n");
+        for s in &artifact.bv_shadows {
+            let nowrap = match &s.shadow.nowrap_obligation {
+                Some(v) => format!(" nowrap_obligation={v}"),
+                None => String::new(),
+            };
+            out.push_str(&format!(
+                "  bv_shadow: {} [{}] flagged={} semantics={}{nowrap} — {}\n",
+                s.item, s.clause, s.shadow.flagged, s.shadow.semantics, s.shadow.note
+            ));
+        }
+    }
     out
 }
 
@@ -2960,6 +2987,26 @@ fn render_audit(manifest: &AuditManifest) -> String {
             ));
         }
     }
+
+    // Lock 1 — the bv shadow flags (`.design/stage3-bv-reconstruction.md` REQ-3 / AC-4):
+    // every `@bv`-tagged clause's machine-semantics fork, listed the way the TCB lists
+    // `#[slag]` blocks (a line-oriented, greppable inventory). Always emitted so the
+    // "(none)" line is itself an auditable statement; informational — it gates nothing.
+    out.push_str("bv shadows (machine-semantics forks — RFC §9 lock 1):\n");
+    if manifest.bv_shadows.is_empty() {
+        out.push_str("  bv_shadow: (none) — no @bv-tagged (machine-semantics) clauses\n");
+    } else {
+        for s in &manifest.bv_shadows {
+            let nowrap = match &s.shadow.nowrap_obligation {
+                Some(v) => format!(" nowrap_obligation={v}"),
+                None => String::new(),
+            };
+            out.push_str(&format!(
+                "  bv_shadow: {} [{}] flagged={} semantics={}{nowrap}\n",
+                s.item, s.clause, s.shadow.flagged, s.shadow.semantics
+            ));
+        }
+    }
     out
 }
 
@@ -3009,8 +3056,17 @@ fn render_human(cert: &Certificate) -> String {
     // item / level / effects / slag — the fields the cert-oracle compares — are
     // rendered first, then the non-deterministic `solver_time_ms` labelled as
     // such so a reader does not mistake it for an oracle field.
-    let (item, level, effects, slag, boundary, _scope_end_to_end, _covenant_evidence, _meaning) =
-        cert.oracle_subset();
+    let (
+        item,
+        level,
+        effects,
+        slag,
+        boundary,
+        _scope_end_to_end,
+        _covenant_evidence,
+        _meaning,
+        _bv_shadows,
+    ) = cert.oracle_subset();
     let mut out = String::new();
     out.push_str(&format!("item: {item}\n"));
     out.push_str(&format!("level: {}\n", level_str(level)));

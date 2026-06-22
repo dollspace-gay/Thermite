@@ -4,8 +4,9 @@ tags: ["design-doc"]
 sources: []
 contributors: ["rApq"]
 created: 2026-06-15
-updated: 2026-06-15
+updated: 2026-06-22
 ---
+
 
 
 # Feature: Thermite 2 program (RFC-1) — umbrella
@@ -280,3 +281,12 @@ referencing it.
 
 *Program umbrella · companion to GH issue #2 (RFC-1 + metatheory sketch +
 program plan + Appendix A) · baseline `dollspace-gay/Thermite @ c46da3ac`.*
+
+
+---
+
+## Program status (updated 2026-06-22)
+
+- **Gate G1 — REACHED** (2026-06-18): Stage 1, the forge tier (L3 Lean kernel) + relax routing (L4 via nlsat). Declared on `main`.
+- **Gate G2 — REACHED** (2026-06-22): Stage 2, the stratified-FOL cage, complete on `main @ 8547e2b9`. All 11 increments REQ-0..REQ-10 (issues #322–#332, umbrella #321) shipped. `make audit` [1′][4′][8][9] gates the honestly-scoped L4 trust flip (encoder structure T1-S + qfree→v1 T2-S kernel-proven; rel/array solver-model-relative). 8-pin kernel-`decide` regression battery; soundness theorems axiom-clean. See the `stage2-stratified-cage` page for the full mechanics.
+- **Gate G3 — NEXT**: Stage 3 (`@bv` clause mode + reconstruction) kernel-grounds the solver-trusted rel/array atoms that G2 left model-relative. Design re-pass pending. See the `stage3-bv-reconstruction` page.

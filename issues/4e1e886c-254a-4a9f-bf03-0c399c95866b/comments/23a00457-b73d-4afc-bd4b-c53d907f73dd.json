@@ -1,0 +1,10 @@
+{
+  "uuid": "23a00457-b73d-4afc-bd4b-c53d907f73dd",
+  "issue_uuid": "4e1e886c-254a-4a9f-bf03-0c399c95866b",
+  "author": "rApq",
+  "content": "REQ-1 (#343) SHIPPED → main @5581b65f (PR #81), squash re-pin @76a47650 (PR #82). The @bv tag parses gated behind cargo feature 'bv' (non-default, R-BV-1); BvWidth/BvTag/Clause.bv added; 12 AC-1 tests (3 neg + 9 pos). Orchestrator fix: agent's feature name bv_shadow→bv (freed for REQ-3 cert field). doc-drift: 21-doc bv:None ripple re-pinned. REQ-2 (#344) now unblocked. TODO before #344 kickoff: land the resolved stage3 design doc on main (currently PROVISIONAL there) + remove stray .kickoff-session.",
+  "created_at": "2026-06-22T04:16:40.372125Z",
+  "kind": "note",
+  "signed_by": "SHA256:tVRGNaCPy5N1tRtokzkbgsOCzGZujGDWQlGHFruaL9c",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgylLCWwpnQm2E2UQO23AN1e/yB6k0yzmPM7qiYPujTNYAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA75YwvBZ3idhPnTGETwTJ32ORRy+lH8ctEQ/pGograwtyzM2wpatAwk9jY5DPgvK0RTwZB3YUqkIh7Al3CsUsAA=="
+}

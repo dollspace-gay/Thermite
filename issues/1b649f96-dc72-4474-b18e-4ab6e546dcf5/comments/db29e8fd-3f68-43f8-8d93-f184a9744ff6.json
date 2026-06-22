@@ -1,0 +1,8 @@
+{
+  "uuid": "db29e8fd-3f68-43f8-8d93-f184a9744ff6",
+  "issue_uuid": "1b649f96-dc72-4474-b18e-4ab6e546dcf5",
+  "author": "6JMz",
+  "content": "Committed f587e270: feat(syntax): the @bv clause tag, parse-gated behind the shadow-flag plumbing | Files: 20 files changed, 514 insertions(+), 11 deletions(-)",
+  "created_at": "2026-06-22T03:35:01.773870Z",
+  "kind": "result"
+}

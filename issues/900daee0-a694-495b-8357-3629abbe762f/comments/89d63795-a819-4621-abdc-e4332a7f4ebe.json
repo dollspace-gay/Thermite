@@ -1,0 +1,10 @@
+{
+  "uuid": "89d63795-a819-4621-abdc-e4332a7f4ebe",
+  "issue_uuid": "900daee0-a694-495b-8357-3629abbe762f",
+  "author": "rApq",
+  "content": "Done: curated CHANGELOG.md merged to main @2d6c708e (PR #79), organized by stage gate (v0.1 -> G1 -> G2 -> Stage 3). Replaces the auto-dumped issue-body noise. NOTE: future 'crosslink issue close' should pass --no-changelog to avoid re-appending issue bodies.",
+  "created_at": "2026-06-22T02:02:51.644651Z",
+  "kind": "note",
+  "signed_by": "SHA256:tVRGNaCPy5N1tRtokzkbgsOCzGZujGDWQlGHFruaL9c",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgylLCWwpnQm2E2UQO23AN1e/yB6k0yzmPM7qiYPujTNYAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA6RDhySkNnqo/iFnSpcM9Naw1pMGlpJwVaZrMlMiH3YMtKf619UOPHzvRKCrdiIPU+aZOjF2dlSgSx+Elq1hLAA=="
+}

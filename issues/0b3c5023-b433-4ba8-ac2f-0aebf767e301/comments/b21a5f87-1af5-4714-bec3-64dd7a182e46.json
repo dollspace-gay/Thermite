@@ -1,0 +1,10 @@
+{
+  "uuid": "b21a5f87-1af5-4714-bec3-64dd7a182e46",
+  "issue_uuid": "0b3c5023-b433-4ba8-ac2f-0aebf767e301",
+  "author": "rApq",
+  "content": "Recovered hub after the kickoff-worktree signing-key breakage (unset stale user.signingkey in .hub-cache; deleted duplicate #353). session work blocked by the Yffe events.log CommentAdded parse error; using the .active-issue sentinel as the work marker. Proceeding with the doc-landing + .kickoff-session removal.",
+  "created_at": "2026-06-22T04:58:21.678018Z",
+  "kind": "note",
+  "signed_by": "SHA256:tVRGNaCPy5N1tRtokzkbgsOCzGZujGDWQlGHFruaL9c",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgylLCWwpnQm2E2UQO23AN1e/yB6k0yzmPM7qiYPujTNYAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAqTMyO+piuUGI77YereAfmZ70WVdbHogH4a/ZBKGiE/3APiQ6QBkNxAaRv0kv18JBPPmLkseY/K6YB6oTP/y7Bg=="
+}

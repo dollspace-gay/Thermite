@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 08611b05f378733afc7685d5e6bbd41a02e185ac (re-pinned 2026-06-22 for #344 Stage-3 REQ-2: governed source gains the @bv bit-vector route (EngineName::BitVector, bitvector.rs) + the @bv L4 rung flip in check.rs; net-additive, governed REQs unchanged.)
+audited-content-sha256: a94d42d87aaabafb6a6bcbaf155cbc5e711ada1e4995558087dceb1251d0d88c (migrated from legacy audited-sha commit pin to a squash-stable content digest; doc-drift-tripwire.md REQ-2 — content pin is primary, commit pin is a migration fallback)
 governs: forge/src/check.rs
 thesis-refs:
   - thermite-design.md §5.1

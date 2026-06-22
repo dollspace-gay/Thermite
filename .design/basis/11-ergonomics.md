@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 5581b65f69e481ac74c2d2d107eda121e761f3aa (re-pinned 2026-06-21 for #343 Stage-3 REQ-1: governed source gains net-additive `bv: None` field-inits threading the new optional Clause.bv tag; the REQs this doc governs are unchanged.)
+audited-sha: 08611b05f378733afc7685d5e6bbd41a02e185ac (re-pinned 2026-06-22 for #344 Stage-3 REQ-2: governed source gains the @bv bit-vector route (EngineName::BitVector, bitvector.rs) + the @bv L4 rung flip in check.rs; net-additive, governed REQs unchanged.)
 governs: thermite-syntax/src/parser.rs
 governs: thermite-syntax/src/ast.rs
 governs: thermite-lower/src/lower.rs

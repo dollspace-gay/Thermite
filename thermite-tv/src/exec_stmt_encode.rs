@@ -1147,11 +1147,13 @@ mod tests {
                 expr: Expr::BoolLit(true),
                 text: "true".to_string(),
                 span,
+                bv: None,
             }],
             dec: Clause {
                 expr: int(0),
                 text: "0".to_string(),
                 span,
+                bv: None,
             },
             body: Block {
                 stmts: vec![],

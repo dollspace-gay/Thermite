@@ -88,6 +88,7 @@ fn clause(expr: Expr) -> Clause {
         expr,
         text: String::new(),
         span: Span { start: 0, len: 0 },
+        bv: None,
     }
 }
 

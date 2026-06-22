@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 80c88ea12c0a7fdd9a4f662e6c0e6c20c32ba385 (re-pinned 2026-06-21 for #330 REQ-8: thermite-lower/src/lower.rs gains net-additive stratified quantifier emission; the v1 behavior this doc governs is unchanged. NOTE: branch-tip pin — needs post-merge re-pin to the squash commit, per the #322->#65 pattern.)
+audited-sha: 20ba2d7658d057f83019e957d125f1e4b33d5027 (re-pinned 2026-06-21 for #343 Stage-3 REQ-1: governed source gains net-additive `bv: None` field-inits threading the new optional Clause.bv tag; the REQs this doc governs are unchanged.)
 governs: thermite-syntax/src/ast.rs
 governs: thermite-syntax/src/parser.rs
 governs: thermite-spec/src/validator.rs

@@ -589,14 +589,73 @@ pub struct Contract {
     pub fx: EffectRow,
 }
 
+/// The fixed bit-width of a `@bv` machine-semantics clause tag
+/// (`.design/stage3-bv-reconstruction.md` REQ-1). Exactly the four widths the
+/// RFC commits to (RFC-1 §4); any other `bvN` spelling is a parse error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BvWidth {
+    W8,
+    W16,
+    W32,
+    W64,
+}
+
+impl BvWidth {
+    /// The width in bits (`8`/`16`/`32`/`64`).
+    pub fn bits(self) -> u32 {
+        match self {
+            BvWidth::W8 => 8,
+            BvWidth::W16 => 16,
+            BvWidth::W32 => 32,
+            BvWidth::W64 => 64,
+        }
+    }
+
+    /// The canonical surface spelling (`bv8`/`bv16`/`bv32`/`bv64`).
+    pub fn spelling(self) -> &'static str {
+        match self {
+            BvWidth::W8 => "bv8",
+            BvWidth::W16 => "bv16",
+            BvWidth::W32 => "bv32",
+            BvWidth::W64 => "bv64",
+        }
+    }
+}
+
+/// A `@bvN` / `@bvN(nowrap)` machine-semantics clause tag — the first
+/// clause-level annotation in `thermite-syntax` (`.design/stage3-bv-reconstruction.md`
+/// REQ-1). It marks a clause for interpretation over fixed-width wraparound
+/// (`by(bit_vector)`, QF_BV) semantics. `nowrap` additionally requests the
+/// no-overflow side obligation (REQ-5). The tag parses ONLY when the shadow-flag
+/// plumbing is compiled in (the `bv` cargo feature, REQ-1's structural
+/// lock R-BV-1); lowering + the three locks are REQ-2..REQ-5.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BvTag {
+    pub width: BvWidth,
+    /// `true` for the `@bvN(nowrap)` spelling — a no-overflow side obligation is
+    /// requested (REQ-5). `false` for the bare `@bvN`.
+    pub nowrap: bool,
+    /// The source span of the whole tag, from `@` through the closing `)` (or the
+    /// width token when no `(nowrap)` follows).
+    pub span: Span,
+}
+
 /// A clause carrying its parsed expression AND the verbatim source text it was
 /// built from. The `text` is the oracle string `address.rs` resolves an
 /// `inv`/`dec` address to (semantic-addressing.md AC-1/AC-2).
+///
+/// `bv` carries an optional `@bvN` machine-semantics tag
+/// (`.design/stage3-bv-reconstruction.md` REQ-1). It is `None` for every v1/v2
+/// clause and for every clause when the `bv` plumbing is not compiled in
+/// (the tag cannot parse there); `Some` only on an `ens`/`inv`/`req`/lemma clause
+/// that carried the tag in a `bv` build. The tag sits OUTSIDE `text`, so
+/// the addressing oracle string is unchanged by it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Clause {
     pub expr: Expr,
     pub text: String,
     pub span: Span,
+    pub bv: Option<BvTag>,
 }
 
 /// An effect row (ast.md REQ-7; §4.1). The corpus uses only `pure`.

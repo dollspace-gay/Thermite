@@ -475,6 +475,7 @@ mod tests {
                     expr: thermite_syntax::Expr::BoolLit(true),
                     text: String::new(),
                     span: thermite_syntax::Span::new(0, 0),
+                    bv: None,
                 },
                 ens: Vec::new(),
                 fx: thermite_syntax::EffectRow::Pure,

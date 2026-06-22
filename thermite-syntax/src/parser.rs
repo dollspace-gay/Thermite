@@ -158,6 +158,20 @@ pub enum SyntaxError {
     /// holes `?pN`; a body hole `?N` there is the mirror error of
     /// `ProofHoleOutsideProofBlock` (`number` is the verbatim hole number written).
     BodyHoleInProofBlock { number: u32, span: Span },
+    /// A `@bv` machine-semantics clause tag appeared in a build WITHOUT the
+    /// shadow-flag plumbing compiled in (`.design/stage3-bv-reconstruction.md`
+    /// REQ-1, AC-1). This is the structural lock (R-BV-1): the feature cannot
+    /// exist without its visibility machinery, so a build that lacks the
+    /// `bv` cargo feature treats the tag as a parse error rather than
+    /// silently accepting (and then under-tracking) wraparound semantics. The span
+    /// points at the `@`.
+    BvTagWithoutShadowPlumbing { span: Span },
+    /// A `@bv` tag whose width is not one of the four committed widths
+    /// `bv8`/`bv16`/`bv32`/`bv64` (`.design/stage3-bv-reconstruction.md` REQ-1).
+    /// `found` is the verbatim token that followed `@` (e.g. `bv7`, `bv`, `foo`).
+    /// Only reachable in a `bv` build (else `BvTagWithoutShadowPlumbing`
+    /// fires first).
+    BvWidthInvalid { found: String, span: Span },
 }
 
 /// The maximum recursive-descent nesting depth the parser will follow before
@@ -210,7 +224,9 @@ impl SyntaxError {
             | SyntaxError::BreakContinueOutsideLoop { span, .. }
             | SyntaxError::HoleOutsideFnBody { span, .. }
             | SyntaxError::ProofHoleOutsideProofBlock { span, .. }
-            | SyntaxError::BodyHoleInProofBlock { span, .. } => *span,
+            | SyntaxError::BodyHoleInProofBlock { span, .. }
+            | SyntaxError::BvTagWithoutShadowPlumbing { span }
+            | SyntaxError::BvWidthInvalid { span, .. } => *span,
         }
     }
 }
@@ -276,6 +292,19 @@ impl std::fmt::Display for SyntaxError {
                 f,
                 "body hole `?{number}` inside a proof block at byte {} (a proof block \
                  admits only proof holes `?pN`)",
+                span.start
+            ),
+            SyntaxError::BvTagWithoutShadowPlumbing { span } => write!(
+                f,
+                "the `@bv` machine-semantics clause tag at byte {} requires the \
+                 shadow-flag plumbing, which is not compiled into this build (build \
+                 `thermite-syntax` with the `bv` feature to enable it)",
+                span.start
+            ),
+            SyntaxError::BvWidthInvalid { found, span } => write!(
+                f,
+                "`@{found}` at byte {} is not a valid `@bv` width (expected one of \
+                 `bv8`/`bv16`/`bv32`/`bv64`)",
                 span.start
             ),
         }
@@ -1368,7 +1397,14 @@ impl<'a> Parser<'a> {
         self.consume(&TokKind::RBrace, "`}` to close the refinement predicate")?;
         let span = start.to(end);
         let text = self.span_text(span);
-        Ok(Clause { expr, text, span })
+        // A refinement-sugar predicate carries no `@bv` tag (REQ-1's tag attaches
+        // to `ens`/`inv`/`req`/lemma clauses through `parse_clause`).
+        Ok(Clause {
+            expr,
+            text,
+            span,
+            bv: None,
+        })
     }
 
     /// Parse the mandatory contract `req` then `ens`+ then `fx`, in that exact
@@ -1432,6 +1468,10 @@ impl<'a> Parser<'a> {
     /// the expression for addressing (`Clause.text`).
     fn parse_clause(&mut self, keyword: &TokKind) -> PResult<Clause> {
         self.consume(keyword, "a clause keyword")?;
+        // An optional `@bvN` machine-semantics tag sits between the keyword and the
+        // clause expression (`ens@bv64 P`). It is parsed BEFORE `start` so the
+        // clause `text` (the addressing oracle string) stays the expression only.
+        let bv = self.parse_bv_tag()?;
         let start = self.peek_span();
         // A clause expression is a no-struct-literal head: a clause is followed
         // by another clause keyword or a block `{` (a loop body, a spec-fn body),
@@ -1443,7 +1483,96 @@ impl<'a> Parser<'a> {
         let end = self.prev_span();
         let span = start.to(end);
         let text = self.span_text(span);
-        Ok(Clause { expr, text, span })
+        Ok(Clause {
+            expr,
+            text,
+            span,
+            bv,
+        })
+    }
+
+    /// Parse an optional `@bvN` / `@bvN(nowrap)` machine-semantics clause tag
+    /// (`.design/stage3-bv-reconstruction.md` REQ-1), the first clause-level
+    /// annotation in `thermite-syntax`. Returns `Ok(None)` when no `@` follows the
+    /// clause keyword (every v1/v2 clause). When a `@` IS present, the tag parses
+    /// only if the shadow-flag plumbing is compiled in (the `bv` cargo
+    /// feature) — this is the build-flag gate, REQ-1's structural lock R-BV-1:
+    ///
+    /// - WITHOUT the feature, the `@`-handling code path below is `#[cfg]`-removed,
+    ///   so the tag is a structured parse error (`BvTagWithoutShadowPlumbing`) and
+    ///   the feature genuinely cannot exist in the build (AC-1's negative half).
+    /// - WITH the feature, `@bvN` for N ∈ {8, 16, 32, 64} parses, plus the optional
+    ///   `(nowrap)` modifier (`@bvN(nowrap)`, REQ-5's surface). A bad width
+    ///   (`@bv7`, `@bv`) is `BvWidthInvalid`; a malformed modifier is the generic
+    ///   unexpected-token error.
+    ///
+    /// The tag is accepted on every clause that flows through `parse_clause`
+    /// (`ens`/`inv`/`req` and the lemma's `req`/`ens`), so `lemma` items accept it
+    /// under the same gate (REQ-1). `dec`/`fx` use their own parsers and carry no
+    /// tag.
+    fn parse_bv_tag(&mut self) -> PResult<Option<BvTag>> {
+        if !self.check(&TokKind::At) {
+            return Ok(None);
+        }
+        let at_span = self.peek_span();
+        #[cfg(not(feature = "bv"))]
+        {
+            // The shadow-flag plumbing is absent: the tag cannot parse (R-BV-1).
+            Err(SyntaxError::BvTagWithoutShadowPlumbing { span: at_span })
+        }
+        #[cfg(feature = "bv")]
+        {
+            self.bump(); // consume `@`
+            let width = self.parse_bv_width()?;
+            // An optional `(nowrap)` modifier (REQ-5's surface form).
+            let mut nowrap = false;
+            let mut end = self.prev_span();
+            if self.eat(&TokKind::LParen) {
+                let marker = self.take_ident("`nowrap`")?;
+                if marker != "nowrap" {
+                    return Err(SyntaxError::Unexpected {
+                        expected: "`nowrap`".to_string(),
+                        found: format!("identifier `{marker}`"),
+                        span: self.prev_span(),
+                    });
+                }
+                self.consume(&TokKind::RParen, "`)` to close `(nowrap)`")?;
+                nowrap = true;
+                end = self.prev_span();
+            }
+            Ok(Some(BvTag {
+                width,
+                nowrap,
+                span: at_span.to(end),
+            }))
+        }
+    }
+
+    /// Parse the `bvN` width token of a `@bv` tag (`.design/stage3-bv-reconstruction.md`
+    /// REQ-1). The `bvN` spelling lexes as a single identifier (`bv64`), so this
+    /// matches the whole ident against the four committed widths; anything else is
+    /// `BvWidthInvalid`. Only compiled in a `bv` build.
+    #[cfg(feature = "bv")]
+    fn parse_bv_width(&mut self) -> PResult<BvWidth> {
+        let span = self.peek_span();
+        let ident = match self.peek().clone() {
+            TokKind::Ident(w) => w,
+            other => {
+                return Err(SyntaxError::BvWidthInvalid {
+                    found: token_text(&other).to_string(),
+                    span,
+                });
+            }
+        };
+        let width = match ident.as_str() {
+            "bv8" => BvWidth::W8,
+            "bv16" => BvWidth::W16,
+            "bv32" => BvWidth::W32,
+            "bv64" => BvWidth::W64,
+            _ => return Err(SyntaxError::BvWidthInvalid { found: ident, span }),
+        };
+        self.bump(); // consume the width ident
+        Ok(width)
     }
 
     /// Parse a `dec <measure>` clause, supporting the forge-tier measure forms
@@ -1476,7 +1605,12 @@ impl<'a> Parser<'a> {
                 callee: Box::new(Expr::Path(vec!["wf".to_string()])),
                 args: vec![rel],
             };
-            return Ok(Clause { expr, text, span });
+            return Ok(Clause {
+                expr,
+                text,
+                span,
+                bv: None,
+            });
         }
         // `dec <expr>` (incl. `dec lex(...)` as an ordinary call) — the same
         // no-struct-literal head as `parse_clause` (a trailing `{` is the body).
@@ -1484,7 +1618,13 @@ impl<'a> Parser<'a> {
         let end = self.prev_span();
         let span = start.to(end);
         let text = self.span_text(span);
-        Ok(Clause { expr, text, span })
+        // A `dec` measure carries no `@bv` tag.
+        Ok(Clause {
+            expr,
+            text,
+            span,
+            bv: None,
+        })
     }
 
     /// True if the token `n` ahead of the cursor can begin an expression — used to
@@ -1870,6 +2010,7 @@ impl<'a> Parser<'a> {
             expr: dec_expr,
             text: "hi - i".to_string(),
             span: start,
+            bv: None,
         };
         // The loop condition `i < hi`.
         let cond = Expr::Binary {
@@ -3285,6 +3426,7 @@ fn token_text(kind: &TokKind) -> &'static str {
         TokKind::Amp => "&",
         TokKind::Pipe => "|",
         TokKind::Bang => "!",
+        TokKind::At => "@",
         TokKind::Ident(_)
         | TokKind::Int { .. }
         | TokKind::Bool(_)

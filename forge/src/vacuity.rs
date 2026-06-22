@@ -513,6 +513,7 @@ mod tests {
             expr: Expr::BoolLit(true),
             text: String::new(),
             span: dummy_span(),
+            bv: None,
         }
     }
 

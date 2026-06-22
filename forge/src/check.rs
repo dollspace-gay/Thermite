@@ -1948,6 +1948,7 @@ fn synth_l3_lemma(
             expr: subst_ens,
             text: format!("{}::ens#{k} (result := body)", f.name),
             span,
+            bv: None,
         }],
         proof: ProofBlock {
             text: proof_text.to_string(),

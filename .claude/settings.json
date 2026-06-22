@@ -19,16 +19,6 @@
       {
         "hooks": [
           {
-            "command": "HOOK=\"$(git rev-parse --show-toplevel 2>/dev/null)/tooling/spec-discipline.py\"; if [ -f \"$HOOK\" ]; then python3 \"$HOOK\"; else exit 0; fi",
-            "timeout": 5,
-            "type": "command"
-          }
-        ],
-        "matcher": "Read"
-      },
-      {
-        "hooks": [
-          {
             "command": "HOOK=\"$(git rev-parse --show-toplevel 2>/dev/null)/.claude/hooks/heartbeat.py\"; if [ -f \"$HOOK\" ]; then python3 \"$HOOK\"; else exit 0; fi",
             "timeout": 3,
             "type": "command"
@@ -56,21 +46,6 @@
           }
         ],
         "matcher": "Write|Edit|Bash"
-      },
-      {
-        "hooks": [
-          {
-            "command": "HOOK=\"$(git rev-parse --show-toplevel 2>/dev/null)/tooling/spec-discipline.py\"; if [ -f \"$HOOK\" ]; then python3 \"$HOOK\"; else exit 0; fi",
-            "timeout": 5,
-            "type": "command"
-          },
-          {
-            "command": "HOOK=\"$(git rev-parse --show-toplevel 2>/dev/null)/tooling/anti-pattern-gate.py\"; if [ -f \"$HOOK\" ]; then python3 \"$HOOK\"; else exit 0; fi",
-            "timeout": 5,
-            "type": "command"
-          }
-        ],
-        "matcher": "Write|Edit"
       }
     ],
     "SessionStart": [

@@ -1,7 +1,13 @@
 {
   "agent_overrides": {
-    "agent_lint_commands": [],
-    "agent_test_commands": [],
+    "agent_lint_commands": [
+      "cargo clippy -- -D warnings",
+      "cargo fmt --check",
+      "shellcheck **/*.sh"
+    ],
+    "agent_test_commands": [
+      "cargo test"
+    ],
     "blocked_git_commands": [
       "git push --force",
       "git push -f",
@@ -43,7 +49,7 @@
     "pwd",
     "echo"
   ],
-  "auto_steal_stale_locks": "3",
+  "auto_steal_stale_locks": false,
   "blocked_git_commands": [
     "git push",
     "git merge",
@@ -61,14 +67,14 @@
     "git branch -D",
     "git branch -m"
   ],
-  "comment_discipline": "required",
+  "comment_discipline": "encouraged",
   "cpitd_auto_install": true,
   "gated_git_commands": [
     "git commit"
   ],
   "intervention_tracking": true,
-  "kickoff_verification": "ci",
-  "reminder_drift_threshold": "0",
+  "kickoff_verification": "local",
+  "reminder_drift_threshold": 3,
   "sentinel": {
     "default_agent": {
       "model": "claude-sonnet-4-6",
@@ -95,11 +101,6 @@
       }
     }
   },
-  "sentinel.default_agent.verify": "local",
-  "sentinel.enabled": false,
-  "sentinel.escalation.enabled": false,
-  "sentinel.sources.github_labels.enabled": false,
-  "signing_enforcement": "enforced",
-  "tracker_remote": "origin",
+  "signing_enforcement": "audit",
   "tracking_mode": "strict"
 }

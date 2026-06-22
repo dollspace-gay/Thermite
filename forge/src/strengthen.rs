@@ -120,6 +120,7 @@ fn result_equals(rhs: Expr) -> Clause {
         },
         text: rendered,
         span: synth_span(),
+        bv: None,
     }
 }
 

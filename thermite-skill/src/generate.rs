@@ -747,6 +747,7 @@ fn item_inventory() -> Vec<Item> {
         expr: Expr::BoolLit(true),
         text: String::new(),
         span,
+        bv: None,
     };
     let empty_block = || Block {
         stmts: Vec::new(),

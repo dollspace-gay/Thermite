@@ -3,12 +3,13 @@
   "display_id": 344,
   "title": "Stage-3 REQ-2: lowering — EngineName::BitVector + by(bit_vector) + multiplier budget",
   "description": "Tagged clauses lower through Verus by(bit_vector) (QF_BV) via a new EngineName::BitVector alongside stage-1's Nlsat (forge/src/engine.rs); untagged clauses on the same item lower as before — one function carries wraparound + unbounded clauses side by side, each labeled (the RFC mix64 shape: two @bv64 clauses + one unbounded zero-fixpoint clause). Attribution rides with_clause_attribution (forge/src/manifest.rs:306). Verdicts ride stage-1 plumbing: bit-level Counterexample with the bit pattern attached; QF_BV 64-bit multiplication gets a DEDICATED budget profile reported as Timeout/KernelBudget, never unknown, never a silent downgrade. AC-2: mix64 certifies with 3 clauses on 3 mechanisms, each cert naming engine+semantics; the injectivity lemma discharges at @bv64 with no proof block. AC-3: a planted non-injective rotate dies as Counterexample with the bit pattern; an over-budget 64-bit multiplier yields Timeout under the bv budget profile. Doc: REQ-2. Gate: G3.",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "parent_uuid": "4e1e886c-254a-4a9f-bf03-0c399c95866b",
   "created_by": "rApq",
   "created_at": "2026-06-22T03:10:00.622305Z",
-  "updated_at": "2026-06-22T03:10:47.184949Z",
+  "updated_at": "2026-06-22T16:29:34.415684Z",
+  "closed_at": "2026-06-22T16:29:34.415684Z",
   "labels": [
     "forge"
   ],

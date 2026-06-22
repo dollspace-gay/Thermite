@@ -7,5 +7,8 @@
   "priority": "medium",
   "created_by": "rApq",
   "created_at": "2026-06-22T16:13:09.418997Z",
-  "updated_at": "2026-06-22T16:13:09.418997Z"
+  "updated_at": "2026-06-22T16:13:11.522545Z",
+  "labels": [
+    "forge"
+  ]
 }

@@ -1,0 +1,10 @@
+{
+  "uuid": "a15ccf34-5a0d-4430-9bae-ffb815b7c7ac",
+  "issue_uuid": "2b6560cc-d1ca-4baa-9f41-1481e8c7e0c3",
+  "author": "rApq",
+  "content": "Delivered via PR #84 (squash-merged): @bv QF_BV lowering (EngineName::BitVector, direct Z3), per-clause mix64 attribution, 64-bit multiplier budget profile, bit-pattern Counterexample, certifying at L4. AC-2/AC-3 green. Follow-up #354 for general cage L3→L4.",
+  "created_at": "2026-06-22T16:29:32.211288Z",
+  "kind": "result",
+  "signed_by": "SHA256:tVRGNaCPy5N1tRtokzkbgsOCzGZujGDWQlGHFruaL9c",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgylLCWwpnQm2E2UQO23AN1e/yB6k0yzmPM7qiYPujTNYAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAiZDQ3z4/aLro5p6TbJ7EABZN/GfpVZ4eKVnMXOSQiZTbcp/0TKihUE6cvY+C5ENp4Ev0Zw94hKFF6xocSwPdAw=="
+}

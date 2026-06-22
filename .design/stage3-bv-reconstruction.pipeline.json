@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "design_doc": ".design/stage3-bv-reconstruction.md",
-  "doc_hash": "sha256:e1db58e0c6e036236ea51b348cf7de0371bf273c111351acce5aff9f637ca7f6",
+  "doc_hash": "sha256:38d888f2c555c2cdec6f93d8907284236473b70f9c6932c5b93baa02cc8b8d3b",
   "stage": "designed",
   "plans": [],
   "runs": []

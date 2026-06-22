@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 08611b05f378733afc7685d5e6bbd41a02e185ac (re-pinned 2026-06-22 for #344 Stage-3 REQ-2: governed source gains the @bv bit-vector route (EngineName::BitVector, bitvector.rs) + the @bv L4 rung flip in check.rs; net-additive, governed REQs unchanged.)
+audited-content-sha256: d4e73f3358cb5f56e616beb9c12c4b143cec56423cdc32e37ba8180c5c433f25 (migrated from legacy audited-sha commit pin to a squash-stable content digest; doc-drift-tripwire.md REQ-2 — content pin is primary, commit pin is a migration fallback)
 governs: thermite-syntax/src/ast.rs
 governs: thermite-syntax/src/parser.rs
 governs: thermite-spec/src/validator.rs

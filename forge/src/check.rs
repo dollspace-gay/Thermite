@@ -1582,17 +1582,23 @@ fn nlsat_realwitness_cert(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// The `--engine bv` per-clause bit-vector pass (`.design/stage3-bv-reconstruction.md`
-/// REQ-2). Each `fn` item is rebuilt by [`bv_fn_cert`] (its `ens` clauses dispatched by
-/// their `@bv` tag); each `@bv`-tagged `lemma` is discharged directly by the bit-vector
-/// engine ([`bv_lemma_cert`]). A non-`fn`, non-bv-lemma item keeps its base cert. The
-/// v1 corpus carries no `@bv` tag, so its goldens are byte-identical.
+/// REQ-2). Only a `@bv`-TAGGED `fn` is rebuilt by [`bv_fn_cert`] (its `ens` clauses
+/// dispatched by their `@bv` tag); each `@bv`-tagged `lemma` is discharged directly by
+/// the bit-vector engine ([`bv_lemma_cert`]). An UNTAGGED `fn` — and any non-`fn`,
+/// non-bv-lemma item — keeps its base cert UNCHANGED: the bit-vector route is a per-item
+/// overlay, never a wholesale re-route. This matters because the route is auto-selected
+/// by `forge audit`/`forge review` whenever a program contains *any* `@bv` tag (REQ-3 /
+/// AC-4); routing an ordinary Verus-provable `fn` through the bv route would reject its
+/// non-`@bv`, non-relaxable clauses (`BvUntaggedUnsupported`) and silently DOWNGRADE a
+/// genuine L3 function to L0 in the audit — a faithfulness bug. The v1 corpus carries no
+/// `@bv` tag, so its goldens are byte-identical.
 fn bv_check(base: Vec<Certificate>, program: &Program) -> Vec<Certificate> {
     let bv = crate::bitvector::BitVectorEngine::new();
     let nlsat = crate::engine::NlsatEngine::new(program.clone());
     let mut out = Vec::with_capacity(base.len());
     for cert in base {
         match crate::lean_export::find_item(program, &cert.item) {
-            Some(Item::Fn(f)) => out.push(bv_fn_cert(&bv, &nlsat, f, &cert)),
+            Some(Item::Fn(f)) if fn_has_bv_tag(f) => out.push(bv_fn_cert(&bv, &nlsat, f, &cert)),
             _ => out.push(cert),
         }
     }
@@ -1624,6 +1630,28 @@ fn bv_attribution() -> crate::engine::EngineAttribution {
 /// proof block.
 fn lemma_has_bv_tag(l: &thermite_syntax::LemmaItem) -> bool {
     l.ens.iter().any(|c| c.bv.is_some())
+}
+
+/// Does the program carry ANY `@bv`-tagged clause (`.design/stage3-bv-reconstruction.md`
+/// REQ-3 / AC-4)? `true` iff some `fn`'s `ens` or some `lemma`'s `ens` is `@bv`-tagged.
+/// `forge audit` / `forge review` consult this to route a bit-vector project through the
+/// bv engine (so the shadow flags surface), while a tag-free program — every v1 / non-bv
+/// project — keeps the default Verus pipeline byte-identical. A tag only exists when the
+/// `bv` cargo feature is compiled in (REQ-1's parse gate), so a feature-off build always
+/// reads `false` here.
+pub fn program_has_bv_tag(program: &Program) -> bool {
+    program.items.iter().any(|item| match item {
+        Item::Fn(f) => fn_has_bv_tag(f),
+        Item::Forge(thermite_syntax::ForgeItem::Lemma(l)) => lemma_has_bv_tag(l),
+        _ => false,
+    })
+}
+
+/// Does this `fn` carry at least one `@bv`-tagged `ens` clause? Only such a `fn` is
+/// re-derived by the bit-vector route (`bv_check`); an untagged `fn` keeps its base
+/// Verus cert so the auto-routed `forge audit`/`review` never downgrades it.
+fn fn_has_bv_tag(f: &thermite_syntax::FnItem) -> bool {
+    f.contract.ens.iter().any(|c| c.bv.is_some())
 }
 
 /// Does `e` reference the `result` keyword (`.design/stage3-bv-reconstruction.md`
@@ -1696,7 +1724,7 @@ fn bv_fn_cert(
         if let Some(tag) = &ens.bv {
             let clause_expr = match ground_result_in_clause(f, &ens.expr) {
                 Ok(e) => e,
-                Err(reason) => return bv_skip_cert(&f.name, &effects, slag, k, &reason),
+                Err(reason) => return bv_skip_cert(&f.name, &effects, slag, k, tag, &reason),
             };
             match bv.discharge_bv(&vars, Some(req), &clause_expr, tag.width) {
                 BvOutcome::Proved => {
@@ -1720,7 +1748,7 @@ fn bv_fn_cert(
                     );
                 }
                 BvOutcome::Unknown(reason) => {
-                    return bv_skip_cert(&f.name, &effects, slag, k, &reason);
+                    return bv_skip_cert(&f.name, &effects, slag, k, tag, &reason);
                 }
             }
         } else {
@@ -1824,7 +1852,7 @@ fn bv_lemma_cert(
                 );
             }
             BvOutcome::Unknown(reason) => {
-                return bv_skip_cert(&l.name, &effects, false, k, &reason);
+                return bv_skip_cert(&l.name, &effects, false, k, tag, &reason);
             }
         }
     }
@@ -1856,6 +1884,8 @@ fn bv_proved_obl(
         attr.trust_profile.clone(),
         crate::verdict::CertVerdict::Proved,
     )
+    // Lock 1 (REQ-3 / AC-4): the shadow flag rides every tagged clause's obligation.
+    .with_bv_shadow(bv_shadow_for(tag))
 }
 
 /// The per-clause [`ObligationResult`] an untagged (unbounded) nlsat `Proved` records on
@@ -1891,6 +1921,28 @@ fn bv_semantics_label(tag: &thermite_syntax::BvTag) -> String {
     }
 }
 
+/// Build Lock 1 — the bv shadow flag (`.design/stage3-bv-reconstruction.md` REQ-3 /
+/// AC-4, the RFC §9 shape) — for a tagged clause's obligation from its tag. `flagged`
+/// is always true (it IS a tagged clause), `semantics` is the fixed-width label, and
+/// `note` names the fork + lock. `nowrap_obligation` is the RESERVED slot REQ-5 fills
+/// for the `@bvN(nowrap)` spelling (the `ContractQuality` forward-declaration
+/// precedent): `None` here even for a `nowrap` tag, because this increment ships the
+/// flag, not the side obligation. Pure (R-CODE-5).
+fn bv_shadow_for(tag: &thermite_syntax::BvTag) -> crate::manifest::BvShadow {
+    let semantics = bv_semantics_label(tag);
+    crate::manifest::BvShadow {
+        flagged: true,
+        semantics: semantics.clone(),
+        // REQ-5 (`@bvN(nowrap)` side obligation) fills this; until then it is the
+        // schema-reserved slot, `None` for both the bare and the `nowrap` spelling.
+        nowrap_obligation: None,
+        note: format!(
+            "machine-semantics fork: this clause is interpreted over fixed-width {semantics} \
+             (RFC §9 lock 1 — the shadow flag; stage3-bv-reconstruction.md REQ-3)"
+        ),
+    }
+}
+
 /// The bit-level `Counterexample` cert a falsified `@bv` clause produces (`.design/
 /// stage3-bv-reconstruction.md` REQ-2 / AC-3): a non-certified cert whose diagnostic
 /// carries the witnessing **bit pattern** per variable, with the per-clause
@@ -1916,7 +1968,10 @@ fn bv_counterexample_cert(
         bv_semantics_label(tag)
     );
     let witness_obl =
-        ObligationResult::failed(format!("{item}#ens#{k}"), None, Some(detail.clone()));
+        ObligationResult::failed(format!("{item}#ens#{k}"), None, Some(detail.clone()))
+            // Lock 1 (REQ-3 / AC-4): a refuted tagged clause still carries the shadow flag —
+            // a counterexample is a machine-semantics fact, so the fork must stay visible.
+            .with_bv_shadow(bv_shadow_for(tag));
     let cert_verdict = crate::verdict::CertVerdict::Counterexample {
         obligations: vec![witness_obl.clone()],
     };
@@ -1970,7 +2025,10 @@ fn bv_timeout_cert(
             crate::verdict::CertVerdict::Timeout {
                 detail: format!("budget profile `{profile}`: {detail}"),
             },
-        );
+        )
+        // Lock 1 (REQ-3 / AC-4): the shadow flag rides the timeout obligation too — the
+        // multiplier cliff is a machine-semantics fact, so the fork stays greppable.
+        .with_bv_shadow(bv_shadow_for(tag));
     let mut cert = Certificate::rejected(
         item.to_string(),
         effects.to_vec(),
@@ -1986,20 +2044,38 @@ fn bv_timeout_cert(
 
 /// The honest-skip cert a non-rendering / Z3-absent `@bv` clause produces (`.design/
 /// stage3-bv-reconstruction.md` REQ-2): non-certified, naming the reason — never a false
-/// verdict (the nlsat-route `NlsatUnknown` precedent).
-fn bv_skip_cert(item: &str, effects: &[String], slag: bool, k: usize, reason: &str) -> Certificate {
-    Certificate::rejected(
+/// verdict (the nlsat-route `NlsatUnknown` precedent). It still carries Lock 1 — the
+/// shadow flag (REQ-3 / AC-4): a skipped clause is STILL a `@bv`-tagged clause, so the
+/// machine-semantics fork must stay greppable even when the route could not decide it.
+/// The skip obligation records no engine/trust/verdict (nothing was discharged), only
+/// the failure diagnostic and the shadow flag.
+fn bv_skip_cert(
+    item: &str,
+    effects: &[String],
+    slag: bool,
+    k: usize,
+    tag: &thermite_syntax::BvTag,
+    reason: &str,
+) -> Certificate {
+    let detail = format!(
+        "the bit-vector route did not decide `{item}`'s clause `ens#{k}` (Z3 absent / \
+         outside the QF_BV fragment — NOT certified, an honest skip): {reason}"
+    );
+    let mut cert = Certificate::rejected(
         item.to_string(),
         effects.to_vec(),
         slag,
         RejectReason {
             cause: "BvUnknown".to_string(),
-            detail: format!(
-                "the bit-vector route did not decide `{item}`'s clause `ens#{k}` (Z3 absent / \
-                 outside the QF_BV fragment — NOT certified, an honest skip): {reason}"
-            ),
+            detail: detail.clone(),
         },
-    )
+    );
+    cert.obligations =
+        vec![
+            ObligationResult::failed(format!("{item}#ens#{k}"), None, Some(detail))
+                .with_bv_shadow(bv_shadow_for(tag)),
+        ];
+    cert
 }
 
 // The G1 gate route (`.design/stage1-forge-tier.md` REQ-10 / AC-14): the per-clause

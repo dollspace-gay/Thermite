@@ -87,6 +87,53 @@ pub struct AuditManifest {
     /// nothing — it changes no exit code and alters no verdict (REQ-10).
     #[serde(default)]
     pub lean_fragment: LeanFragment,
+    /// The `@bv`-tagged clauses' SHADOW FLAGS (`.design/stage3-bv-reconstruction.md`
+    /// REQ-3 / AC-4 — Lock 1): one row per machine-semantics clause aggregated across the
+    /// cert collection, so the audit lists the project's semantic forks the same way the
+    /// `tcb` lists `#[slag]` blocks. A pure projection of each obligation's `bv_shadow`.
+    /// `#[serde(default, skip_serializing_if = "Vec::is_empty")]` so a pre-amendment v1
+    /// document (no `bv_shadows` key, no `@bv` tag) deserializes and re-serializes
+    /// BYTE-IDENTICALLY (`manifest_version` stays `"v1"`; the additive `lean_fragment`
+    /// discipline). The section gates nothing — informational, like `lean_fragment`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bv_shadows: Vec<BvShadowRow>,
+}
+
+/// One `@bv`-tagged clause's shadow-flag row in the audit manifest
+/// (`.design/stage3-bv-reconstruction.md` REQ-3 / AC-4 — Lock 1). A pure projection of an
+/// obligation's [`crate::manifest::BvShadow`]: the owning item, the per-clause obligation
+/// name, and the shadow block. Never recomputed — read verbatim from the cert (REQ-4).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BvShadowRow {
+    /// The owning item (the `fn` / `lemma` whose clause carries the tag).
+    pub item: String,
+    /// The per-clause obligation name.
+    pub clause: String,
+    /// The shadow flag block (`flagged` / `semantics` / `nowrap_obligation` / `note`,
+    /// RFC §9), read verbatim from the obligation.
+    pub shadow: crate::manifest::BvShadow,
+}
+
+impl BvShadowRow {
+    /// Aggregate every `@bv`-tagged clause's shadow flag across a cert collection
+    /// (REQ-3 / AC-4) — one row per obligation that carries a `bv_shadow`, in cert /
+    /// obligation source order. A pure projection (no recompute); the v1 / untagged
+    /// corpus has none, so the section is empty (and omitted).
+    fn from_certificates(certs: &[Certificate]) -> Vec<Self> {
+        let mut rows = Vec::new();
+        for cert in certs {
+            for obl in &cert.obligations {
+                if let Some(shadow) = &obl.bv_shadow {
+                    rows.push(BvShadowRow {
+                        item: cert.item.clone(),
+                        clause: obl.name.clone(),
+                        shadow: shadow.clone(),
+                    });
+                }
+            }
+        }
+        rows
+    }
 }
 
 /// The `manifest_version` serde default (REQ-1): a v1 document that omits the tag
@@ -555,12 +602,16 @@ impl AuditManifest {
         // The #274 informational membership section (REQ-7): one dry-run
         // `export_item` probe per cert, in source order (REQ-8, pure — no lake/fs).
         let lean_fragment = LeanFragment::from_certificates(certs, program);
+        // Lock 1 (stage-3 REQ-3 / AC-4): the project's `@bv` shadow flags, one row per
+        // tagged clause — a pure projection of the certs' obligations.
+        let bv_shadows = BvShadowRow::from_certificates(certs);
         AuditManifest {
             manifest_version: MANIFEST_VERSION.to_string(),
             functions,
             project_assurance,
             tcb,
             lean_fragment,
+            bv_shadows,
         }
     }
 }

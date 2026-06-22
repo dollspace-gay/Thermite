@@ -1,0 +1,27 @@
+// bv_mixed_audit.th — a project that mixes a `@bv` machine-semantics function with an
+// ordinary unbounded Verus-provable function (stage-3 REQ-3 / AC-4 regression).
+//
+// `forge audit` / `forge review` auto-route a program through the bit-vector engine
+// whenever ANY clause is `@bv`-tagged (so the `bv_shadows` section surfaces). The route
+// MUST be a per-item overlay: only the `@bv`-tagged `fn` is re-derived by the bv engine;
+// an ordinary `fn` keeps its base Verus certificate. Otherwise the ordinary function's
+// non-`@bv`, non-relaxable clause is rejected by the bv route and the audit silently
+// DOWNGRADES a genuine L3 function to L0 — the faithfulness bug this fixture pins.
+//
+//   * `wrap_add` — one `@bv64` clause. Decided by the bit-vector route at L4 (caged), its
+//                  clause flagged in `bv_shadows`.
+//   * `plain_add` — an ordinary linear contract, NO `@bv` tag. Verus proves it at L3, and
+//                   the audit must report L3 (NOT L0) even though the project contains
+//                   `@bv` elsewhere.
+
+fn wrap_add(a: u64, b: u64) -> u64
+    req true
+    ens@bv64 a + b == b + a
+    fx pure
+{ a + b }
+
+fn plain_add(a: u64, b: u64) -> u64
+    req a < 100 && b < 100
+    ens result >= a
+    fx pure
+{ a + b }

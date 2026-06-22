@@ -271,6 +271,47 @@ pub struct ObligationResult {
     /// so the golden oracle is unperturbed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verdict: Option<crate::verdict::CertVerdict>,
+    /// (Schema v2, REQ-3 / AC-4 — `.design/stage3-bv-reconstruction.md`) Lock 1, the
+    /// SHADOW FLAG (RFC §9 shape): present on every `@bv`-tagged clause's obligation,
+    /// absent on every untagged / v1 clause. The machine-semantics fork is then
+    /// impossible to hide — `grep bv_shadow` over the certificates ≡ exactly the set of
+    /// tagged clauses, the same "`grep slag` is the complete inventory" discipline the
+    /// `#[slag]` block follows. Additive, `#[serde(default, skip_serializing_if =
+    /// "Option::is_none")]` (the `engine`/`trust`/`verdict` precedent), so the v1 golden
+    /// certs — which omit it — deserialize unchanged and re-serialize byte-identically.
+    /// Oracle-INCLUDED via [`Certificate::oracle_subset`] (Q-ORACLE: deterministic +
+    /// verdict-relevant → included), unlike the provenance-only `engine`/`trust`: a
+    /// semantic fork changes what the clause MEANS, so the oracle pins it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bv_shadow: Option<BvShadow>,
+}
+
+/// Lock 1, the bv SHADOW FLAG (`.design/stage3-bv-reconstruction.md` REQ-3 / AC-4 — the
+/// RFC §9 shape). Every `@bv`-tagged clause's certificate carries this block, so a
+/// fixed-width machine-semantics clause is loud and greppable at every layer `#[slag]`
+/// is (the certificate JSON, `forge review`, `forge audit`). The first of the three
+/// locks that ship inside gate G3 with the `@bv` feature itself.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BvShadow {
+    /// Always `true` for a tagged clause — the flag that says "this clause is
+    /// interpreted over a fixed-width machine-semantics fork, not the default unbounded
+    /// integers". The grep anchor: a present `bv_shadow` (with `flagged: true`) marks a
+    /// tagged clause.
+    pub flagged: bool,
+    /// The fixed-width semantics the clause was interpreted over, e.g.
+    /// `"bv64 (wraparound)"` / `"bv32 (nowrap)"` (the `check::bv_semantics_label`
+    /// shape) — the named fork, so a reader sees WHICH machine semantics this clause
+    /// committed to.
+    pub semantics: String,
+    /// The `@bvN(nowrap)` no-overflow side obligation's verdict (REQ-5 / AC-6). `None`
+    /// for a bare `@bvN` (no side obligation requested), and a RESERVED slot until REQ-5
+    /// fills it for the `nowrap` spelling — the schema-reserves-the-slot,
+    /// producer-fills-the-value forward-declaration precedent ([`ContractQuality`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nowrap_obligation: Option<String>,
+    /// A human note naming the fork + the lock (the auditor's one-line "why this block
+    /// is here"). Deterministic (R-CODE-5).
+    pub note: String,
 }
 
 impl ObligationResult {
@@ -286,6 +327,7 @@ impl ObligationResult {
             engine: None,
             trust: Vec::new(),
             verdict: None,
+            bv_shadow: None,
         }
     }
 
@@ -304,6 +346,7 @@ impl ObligationResult {
             engine: None,
             trust: Vec::new(),
             verdict: None,
+            bv_shadow: None,
         }
     }
 
@@ -321,6 +364,17 @@ impl ObligationResult {
         self.engine = Some(engine.into());
         self.trust = trust;
         self.verdict = Some(verdict);
+        self
+    }
+
+    /// Attach Lock 1, the bv shadow flag (REQ-3 / AC-4) — the RFC §9 visibility lock
+    /// every `@bv`-tagged clause's obligation carries. Orthogonal to
+    /// [`ObligationResult::with_clause_attribution`] (engine/trust/verdict are
+    /// provenance; the shadow flag is the semantic-fork marker), so the two compose on a
+    /// single tagged-clause obligation.
+    #[must_use]
+    pub fn with_bv_shadow(mut self, shadow: BvShadow) -> Self {
+        self.bv_shadow = Some(shadow);
         self
     }
 }
@@ -1164,12 +1218,23 @@ impl Certificate {
     /// authoring spend without changing what was proven, so it is oracle-excluded like
     /// `solver_time_ms` — a forge-tier cert and the same cert with its `burn` stripped
     /// compare oracle-equal.
+    ///
+    /// `bv_shadows` is the Lock 1 shadow flag (stage-3 REQ-3 / AC-4, Q-ORACLE:
+    /// deterministic + verdict-relevant → included): the PRESENT `bv_shadow` blocks, in
+    /// obligation source order. It is FILTERED to the tagged clauses (not one slot per
+    /// obligation) so a v1 / untagged cert — whatever its obligation count, including a
+    /// hand-authored golden with no `obligations` key — contributes an EMPTY vec and stays
+    /// oracle-byte-identical (the obligation count was never an oracle field and must not
+    /// become one). A tagged clause's machine-semantics fork is then oracle-visible (a
+    /// semantic fork CHANGES what the clause means — it cannot drift silently, unlike the
+    /// provenance-only `engine`/`trust`, which stay oracle-excluded).
     #[allow(
         clippy::type_complexity,
         reason = "the oracle subset is deliberately a flat positional tuple of the \
                   verdict-relevant fields (item/level/effects/slag/boundary/end_to_end/\
-                  covenant/meaning) — a named struct would obscure that this IS the exact \
-                  comparison surface the cert oracle compares; the tuple is the contract."
+                  covenant/meaning/bv_shadows) — a named struct would obscure that this IS \
+                  the exact comparison surface the cert oracle compares; the tuple is the \
+                  contract."
     )]
     pub fn oracle_subset(
         &self,
@@ -1182,6 +1247,7 @@ impl Certificate {
         bool,
         Option<crate::covenant_engine::CovenantEvidence>,
         Option<crate::meaning::MeaningAudit>,
+        Vec<BvShadow>,
     ) {
         (
             &self.item,
@@ -1192,6 +1258,10 @@ impl Certificate {
             scope_is_end_to_end(&self.assurance_scope),
             self.covenant_evidence,
             self.meaning_audit.clone(),
+            self.obligations
+                .iter()
+                .filter_map(|o| o.bv_shadow.clone())
+                .collect(),
         )
     }
 }
@@ -1544,6 +1614,101 @@ mod tests {
                 && ft_json.contains("\"verdict\"")
                 && ft_json.contains("Proved"),
             "a populated forge-tier clause must serialize the per-clause block: {ft_json}"
+        );
+    }
+
+    // Stage-3 REQ-3 / AC-4 (Lock 1, the shadow flag): the `bv_shadow` field is additive —
+    // a v1 / untagged clause omits it (byte-identical goldens), a tagged clause serializes
+    // the RFC §9 block, and `nowrap_obligation` is the reserved (None → omitted) slot.
+    #[test]
+    fn bv_shadow_is_additive_and_serializes_the_rfc9_shape() {
+        // A v1-shape clause (no shadow) must NOT serialize a `bv_shadow` key — so the v1
+        // goldens stay byte-identical (the `engine`/`trust`/`verdict` discipline).
+        let v1 = Certificate::new(
+            "sum",
+            Level::L3,
+            vec!["pure".to_string()],
+            0,
+            vec![ObligationResult::discharged("sum_check::sum")],
+        );
+        assert!(
+            !serialize(&v1).contains("bv_shadow"),
+            "a clause with no shadow flag must omit `bv_shadow` (skip_serializing_if)"
+        );
+
+        // A tagged clause serializes the RFC §9 block; `nowrap_obligation` is the reserved
+        // slot (None → omitted, never a placeholder — the `suggested_move` precedent).
+        let tagged = Certificate::new(
+            "mix64",
+            Level::L4,
+            vec!["pure".to_string()],
+            0,
+            vec![
+                ObligationResult::discharged("mix64::ens#0").with_bv_shadow(BvShadow {
+                    flagged: true,
+                    semantics: "bv64 (wraparound)".to_string(),
+                    nowrap_obligation: None,
+                    note: "machine-semantics fork".to_string(),
+                }),
+            ],
+        );
+        let json = serialize(&tagged);
+        let v: serde_json::Value = serde_json::from_str(&json).expect("parse");
+        let shadow = &v["obligations"][0]["bv_shadow"];
+        assert_eq!(shadow["flagged"], serde_json::Value::Bool(true));
+        assert_eq!(
+            shadow["semantics"],
+            serde_json::Value::from("bv64 (wraparound)")
+        );
+        assert!(shadow.get("note").is_some(), "the §9 note is present");
+        assert!(
+            shadow.get("nowrap_obligation").is_none(),
+            "the reserved `nowrap_obligation` slot (None) is omitted, not a placeholder \
+             (REQ-5 fills it): {json}"
+        );
+        // Round-trips: deserialize → re-serialize is byte-stable.
+        let back: Certificate = serde_json::from_str(&json).expect("round-trip");
+        assert_eq!(serialize(&back), json, "the shadow block round-trips");
+    }
+
+    // Stage-3 REQ-3 / AC-4: the shadow flag is ORACLE-INCLUDED (Q-ORACLE: deterministic +
+    // verdict-relevant → included) — two certs differing ONLY in an obligation's
+    // `bv_shadow` compare oracle-UNEQUAL, unlike the provenance-only engine/trust (which
+    // are oracle-excluded). A semantic fork cannot drift silently.
+    #[test]
+    fn bv_shadow_is_oracle_included() {
+        let bare = Certificate::new(
+            "mix64",
+            Level::L4,
+            vec!["pure".to_string()],
+            0,
+            vec![ObligationResult::discharged("mix64::ens#0")],
+        );
+        let mut shadowed = bare.clone();
+        shadowed.obligations[0] =
+            ObligationResult::discharged("mix64::ens#0").with_bv_shadow(BvShadow {
+                flagged: true,
+                semantics: "bv64 (wraparound)".to_string(),
+                nowrap_obligation: None,
+                note: "machine-semantics fork".to_string(),
+            });
+        assert!(
+            !oracle_eq(&bare, &shadowed),
+            "the oracle must DISTINGUISH a tagged clause from an untagged one (the fork is \
+             verdict-relevant — REQ-3 / AC-4)"
+        );
+        // But engine/trust attribution differences alone stay oracle-EXCLUDED (provenance).
+        let mut attributed = bare.clone();
+        attributed.obligations[0] = ObligationResult::discharged("mix64::ens#0")
+            .with_clause_attribution(
+                "bitvector",
+                vec!["solver Z3 QF_BV".to_string()],
+                crate::verdict::CertVerdict::Proved,
+            );
+        assert!(
+            oracle_eq(&bare, &attributed),
+            "engine/trust attribution is provenance — oracle-excluded (the existing \
+             discipline; only the shadow flag joins the oracle)"
         );
     }
 

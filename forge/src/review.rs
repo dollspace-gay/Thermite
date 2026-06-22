@@ -240,6 +240,32 @@ pub struct ReviewArtifact {
     /// only, mirroring the cert layer's additive discipline).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub burned_lemmas: Vec<BurnedLemma>,
+    /// The `@bv`-tagged clauses' SHADOW FLAGS (`.design/stage3-bv-reconstruction.md`
+    /// REQ-3 / AC-4 — Lock 1): every machine-semantics clause surfaced for review, so a
+    /// reviewer sees the project's semantic forks alongside the contracts. One entry per
+    /// tagged clause (read from each obligation's `bv_shadow`), in cert/obligation order.
+    /// Omitted (empty) on the default Verus path / the v1 corpus (no `@bv` tag), and
+    /// `#[serde(default, skip_serializing_if)]` so a v1 review artifact serializes
+    /// BYTE-IDENTICALLY (the additive `burned_lemmas` discipline). `grep bv_shadow` over
+    /// `forge review --json` ≡ the project's tagged clauses (AC-4).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bv_shadows: Vec<BvShadowClause>,
+}
+
+/// One `@bv`-tagged clause's shadow flag in the review artifact
+/// (`.design/stage3-bv-reconstruction.md` REQ-3 / AC-4 — Lock 1). A pure projection of an
+/// obligation's [`crate::manifest::BvShadow`]: the owning item, the per-clause obligation
+/// name, and the shadow block (flag + semantics + reserved `nowrap_obligation` + note).
+/// Never fabricated — read verbatim from the cert (R-CODE-5).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BvShadowClause {
+    /// The owning item (the `fn` / `lemma` whose clause carries the tag).
+    pub item: String,
+    /// The per-clause obligation name (e.g. `mix64::ens#0: …` / `mix64#ens#0`).
+    pub clause: String,
+    /// The shadow flag block — `flagged` / `semantics` / `nowrap_obligation` / `note`
+    /// (RFC §9), read verbatim from the obligation.
+    pub shadow: crate::manifest::BvShadow,
 }
 
 /// One burned forge-tier lemma in the review artifact (`.design/stage1-forge-tier.md` REQ-9,
@@ -309,13 +335,9 @@ pub fn review_file(
 ) -> Result<ReviewArtifact, ForgeError> {
     let path = path.as_ref();
 
-    // The same default pipeline `forge check`/`forge audit` run (the battery
-    // verdict; REQ-2). `review` re-runs no verus — it projects this collection.
-    let certs = check::check_file(path)?;
-
-    // Parse the file once for the contract surface (REQ-1). `check_file` already
-    // validated it parses clean, so this is a re-parse of a known-good file
-    // (deterministic, R-CODE-5), never a re-verification — the `audit` precedent.
+    // Parse the file once for the contract surface (REQ-1) AND to decide the route
+    // below. A re-parse of a file `check_file` re-validates (deterministic, R-CODE-5),
+    // never a re-verification — the `audit` precedent.
     let src = std::fs::read_to_string(path).map_err(|e| ForgeError::Io {
         path: path.display().to_string(),
         source: e,
@@ -324,6 +346,23 @@ pub fn review_file(
     if !parsed.is_clean() {
         return Err(ForgeError::Parse(parsed.errors));
     }
+
+    // The battery cert collection `review` projects (REQ-2 — re-runs no verus). A
+    // bit-vector project (any `@bv`-tagged clause, stage-3 REQ-3 / AC-4) routes through
+    // the bv engine so the per-clause shadow flags surface in the artifact's `bv_shadows`
+    // section; every tag-free project (the whole v1 corpus) keeps the default `check_file`
+    // pipeline byte-identical (the same collection `forge check`/`forge audit` project).
+    let certs = if check::program_has_bv_tag(&parsed.program) {
+        check::check_file_with_engine(
+            path,
+            check::CheckOptions {
+                engine: check::EngineSelection::Bv,
+                ..Default::default()
+            },
+        )?
+    } else {
+        check::check_file(path)?
+    };
 
     Ok(project_artifact(&certs, &parsed.program, item_filter))
 }
@@ -360,11 +399,27 @@ fn project_artifact(
     let mut intent_reviewable = Vec::new();
     let mut battery_failing = Vec::new();
     let mut burned_lemmas = Vec::new();
+    let mut bv_shadows = Vec::new();
 
     for cert in certs {
         if let Some(filter) = item_filter {
             if cert.item != filter {
                 continue;
+            }
+        }
+        // Lock 1 (`.design/stage3-bv-reconstruction.md` REQ-3 / AC-4): surface every
+        // `@bv`-tagged clause's shadow flag, read verbatim from its obligations. This is
+        // ORTHOGONAL to the battery partition below (a tagged clause surfaces whether its
+        // item certifies, fails, or is a lemma), so it runs over every cert before the
+        // partition's `continue`s — the machine-semantics fork stays visible regardless of
+        // verdict.
+        for obl in &cert.obligations {
+            if let Some(shadow) = &obl.bv_shadow {
+                bv_shadows.push(BvShadowClause {
+                    item: cert.item.clone(),
+                    clause: obl.name.clone(),
+                    shadow: shadow.clone(),
+                });
             }
         }
         // A BURNED forge-tier lemma surfaces like any certified item (REQ-9, increment 3):
@@ -412,6 +467,7 @@ fn project_artifact(
         intent_reviewable,
         battery_failing,
         burned_lemmas,
+        bv_shadows,
     }
 }
 

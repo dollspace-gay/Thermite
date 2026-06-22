@@ -4,8 +4,9 @@ tags: ["design-doc"]
 sources: []
 contributors: ["rApq"]
 created: 2026-06-15
-updated: 2026-06-15
+updated: 2026-06-22
 ---
+
 
 
 
@@ -102,3 +103,20 @@ preserves the verdict/covenant/ladder architecture.
 - Sequence-sort quantifiers, nested sequences, unbounded-int binders — fragment v2.1+ / non-goals; forge-routed with named reasons.
 - `@bv`, reconstruction — stage 3.
 - Any (R2) widening past S₂.0 — telemetry-driven, post-G2, its own RFC delta. --- *Stage-2 spec (PROVISIONAL — reasoning cache; re-run /design before kickoff) · child of `.design/thermite2-program.md` (REQ-10) · spec of record: the stage-2 metatheory sketch, GH issue #2 · gate: G2 · baseline `dollspace-gay/Thermite @ c46da3ac` (re-ground at re-pass).*
+
+
+---
+
+## Status update — SHIPPED, Gate G2 reached (2026-06-22)
+
+Stage 2 is **complete**. All 11 increments REQ-0..REQ-10 shipped and merged to `main`; the final increment (REQ-10, the pin battery) landed as PR #78 squash-merge @ `8547e2b9`. Umbrella #321 and all children #322–#332 closed.
+
+**All acceptance criteria met (AC-1..AC-10).** Note the increment numbering shifted by one vs. this provisional doc: a REQ-0 (surface quantifiers in thermite-syntax) was prepended at re-pass, so the shipped tree is REQ-0..REQ-10 (11 issues #322–#332) rather than REQ-1..REQ-10.
+
+**Gate G2 mechanics (as shipped):** `make audit` runs [1′][4′][8][9] green in one pass; `G2Checks.g2_flip_permitted` (`forge g2-gate`) mechanically blocks the certificate trust flip if any check is red. `G2_FLIPPED=true` is now in effect, **honestly scoped**: effective L4 trust = `[solver(z3), ref_encode(strat): structure proven (T1-S), qfree grounded to v1 (T2-S), rel/array by z3-theory (solver base; kernel-grounding rel = stage 3)]`. So the encoder skeleton (T1-S `strat_ref_sound`) and qfree→v1 grounding (T2-S `strat_lowering_faithful`) are kernel-proven; rel/array atoms remain solver-model-relative.
+
+**Architecture note (supersedes the single-syntax framing above):** Stage 2 carries TWO formula languages — `Thermite.Strat.Frm` (minimal semantic spine, REQ-1) and `Thermite.Strat.Cls.Frm` (rich sort-typed classifier surface, REQ-3). They are deliberately NOT unified (a total meaning-preserving translation is ill-defined; that was REQ-5 option A, rejected). REQ-5 bridges them via the encoder (option B: encode `Cls.Frm` directly, prove T1-S against structural `fdenote`). The `.Cls` namespace fixed the #68 axiom-probe `Atom.ctorElim` collision.
+
+**CI:** the monolithic `lean` job was split (#76) into `lean-probe` + sharded `lean-spine-forge` (matrix 1–4), ~16min → ~8min, zero coverage loss.
+
+**Next:** Stage 3 (`@bv` + reconstruction) kernel-grounds the solver-trusted rel/array atoms → Gate G3.

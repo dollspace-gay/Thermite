@@ -1,0 +1,8 @@
+{
+  "uuid": "146d1d0e-23f2-444d-bf2c-f67c001e8396",
+  "issue_uuid": "1b649f96-dc72-4474-b18e-4ab6e546dcf5",
+  "author": "6JMz",
+  "content": "Result: Stage-3 REQ-1 / AC-1 complete in thermite-syntax. Mechanism: non-default cargo feature 'bv_shadow' gates the parser path; #[cfg]-removed when absent so the tag is structurally unparseable (R-BV-1). Added: TokKind::At (lexer); BvWidth/BvTag + Clause.bv: Option<BvTag> (ast); parse_bv_tag/parse_bv_width in parse_clause covering ens/inv/req+lemma uniformly; SyntaxError::BvTagWithoutShadowPlumbing (feature off) + BvWidthInvalid (bad width). Tag sits outside Clause.text so the addressing oracle is unchanged. Tests (tests/bv_tag_parse.rs): negative half (3 tests, default build) + positive half (9 tests, --features bv_shadow): 4 widths + nowrap + inv + lemma + coexist + 3 error cases. CI: new build-flag step runs clippy+test with --features bv_shadow (positive half); default nextest covers negative half. All touched crates green (bv:None threaded through ~14 cross-crate Clause literals). clippy -D warnings + fmt clean both configs. Full forge L3 suite green with verus+lake+spine (divergence_249 env false-alarm confirmed passing).",
+  "created_at": "2026-06-22T03:34:31.894488Z",
+  "kind": "result"
+}

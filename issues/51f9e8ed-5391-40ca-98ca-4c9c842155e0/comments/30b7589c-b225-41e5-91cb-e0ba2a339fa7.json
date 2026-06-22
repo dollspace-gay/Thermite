@@ -1,0 +1,8 @@
+{
+  "uuid": "30b7589c-b225-41e5-91cb-e0ba2a339fa7",
+  "issue_uuid": "51f9e8ed-5391-40ca-98ca-4c9c842155e0",
+  "author": "BbPF",
+  "content": "Committed: Stage-3 REQ-3: lock 1 — the bv shadow flag (#345) | Files: 6 files changed, 597 insertions(+), 33 deletions(-) | commit 0924e913",
+  "created_at": "2026-06-22T18:06:04.679690Z",
+  "kind": "result"
+}

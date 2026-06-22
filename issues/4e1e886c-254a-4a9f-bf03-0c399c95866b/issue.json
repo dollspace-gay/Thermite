@@ -1,0 +1,11 @@
+{
+  "uuid": "4e1e886c-254a-4a9f-bf03-0c399c95866b",
+  "display_id": 342,
+  "title": "Stage 3 — @bv clause mode + reconstruction by default (umbrella → Gate G3)",
+  "description": "Umbrella for the Stage-3 implementation tree (RFC-1 program, GH issue #2), the program's LAST gate. Design doc: .design/stage3-bv-reconstruction.md (KICKOFF-READY, re-pass 2026-06-21, baseline main@2d6c708e). Two halves converging on QF_BV: (1) the @bv machine-semantics clause tag (RFC §4) over Verus by(bit_vector), shipped only with its three locks (shadow flag, bv-semantics mutation, nowrap side obligation) + the parse-gate structural lock; (2) SMT proof reconstruction default-on — build the automated Rust→Lean obligation exporter (closes SmtDemo.lean's Tier-3 hand-translation gap) and migrate per-clause trust: from solver(z3) to kernel-checked for QF_LIA + QF_BV. Gate G3 = the three locks demonstrably wired before the tag parses in any release build + reconstruction default-on behind a fragment-support check with the trust migration visible in certs; README/RATIONALE claims flip at gate time only (R-GATE-1). Decision record (re-pass): D-BVSCOPE→full tag+3 locks (the density-telemetry input is circular; REQ-6 density is the post-ship F-F tripwire); D-RECON→build the exporter, QF_LIA+QF_BV (ecosystem is mature — lean-smt pinned @7d1d8239, cvc5 supports QF_BV; the gap was the exporter). Honest residual: the EPR-stratified rel/array atoms G2 left z3-model-relative are migrated WHERE the reconstruction path supports them and otherwise named in the audit (F-J is free). Children REQ-1..REQ-9 follow the doc order; see the blocked-by DAG. Touches thermite-syntax (first clause-level annotation), forge/src/{engine,manifest,mutation,audit,review,meaning}.rs, lean/Thermite/ (exporter + reconstruction).",
+  "status": "open",
+  "priority": "high",
+  "created_by": "rApq",
+  "created_at": "2026-06-22T03:09:05.847979Z",
+  "updated_at": "2026-06-22T03:09:05.847979Z"
+}

@@ -1,0 +1,12 @@
+{
+  "uuid": "7382e6a6-d7ce-4125-9e47-8611d1eeeb51",
+  "display_id": 347,
+  "title": "Stage-3 REQ-5: lock 3 — nowrap side obligation",
+  "description": "@bvN(nowrap) additionally emits a no-overflow side obligation discharged in-cage; its certificate's bv_shadow.nowrap_obligation records the obligation's verdict. For when machine width is the domain but wrap is not the intent. AC-6: a @bv64(nowrap) clause whose body can overflow fails its side obligation with a concrete overflowing input; the verdict is recorded in bv_shadow.nowrap_obligation. Doc: REQ-5. Gate: G3.",
+  "status": "open",
+  "priority": "medium",
+  "parent_uuid": "4e1e886c-254a-4a9f-bf03-0c399c95866b",
+  "created_by": "rApq",
+  "created_at": "2026-06-22T03:10:14.329105Z",
+  "updated_at": "2026-06-22T03:10:14.329105Z"
+}

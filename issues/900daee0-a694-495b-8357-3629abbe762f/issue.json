@@ -2,11 +2,12 @@
   "uuid": "900daee0-a694-495b-8357-3629abbe762f",
   "display_id": 341,
   "title": "Synthesize a curated CHANGELOG.md reflecting the RFC-1 trajectory (G1+G2), replacing the auto-dumped issue-body noise",
-  "status": "open",
+  "status": "closed",
   "priority": "medium",
   "created_by": "rApq",
   "created_at": "2026-06-22T01:59:38.069985Z",
-  "updated_at": "2026-06-22T01:59:40.276528Z",
+  "updated_at": "2026-06-22T02:02:53.923891Z",
+  "closed_at": "2026-06-22T02:02:53.923891Z",
   "labels": [
     "docs"
   ]

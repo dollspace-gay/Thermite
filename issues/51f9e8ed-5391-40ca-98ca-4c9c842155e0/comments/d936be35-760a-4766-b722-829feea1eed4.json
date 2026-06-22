@@ -1,0 +1,8 @@
+{
+  "uuid": "d936be35-760a-4766-b722-829feea1eed4",
+  "issue_uuid": "51f9e8ed-5391-40ca-98ca-4c9c842155e0",
+  "author": "BbPF",
+  "content": "Result: REQ-3 lock 1 shipped. BvShadow{flagged,semantics,nowrap_obligation,note} additive on ObligationResult (v1 goldens byte-identical via skip_serializing_if); attached to every @bv-tagged obligation (proved/counterexample/timeout/skip), untagged clauses unchanged. oracle_subset includes the FILTERED present-shadows vec (Q-ORACLE) — filtered so untagged certs contribute [] regardless of obligation count (fixed a golden_deterministic_subset_round_trips regression where the count had leaked into the oracle). forge audit/review auto-route @bv programs through the bv engine (new program_has_bv_tag) so the additive bv_shadows section surfaces; cli renders both. nowrap_obligation reserved (None) until REQ-5. Tests: 7 bv_lowering (grep-completeness, refuted-still-flagged, audit+review listing) + 2 manifest unit (serde round-trip, oracle inclusion); audit_conformance+concurrency green. clippy/fmt clean. Pre-existing environmental: 9 engine::tests + lean-integration fail (corrupt lean/.lake/packages/smt HEAD), unrelated.",
+  "created_at": "2026-06-22T18:05:32.326791Z",
+  "kind": "result"
+}

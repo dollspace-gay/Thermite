@@ -1,0 +1,12 @@
+{
+  "uuid": "9a2b9c07-5e3c-481e-a787-1da7d044db8a",
+  "display_id": 349,
+  "title": "Stage-3 REQ-7: the Rust→Lean obligation exporter (QF_LIA + QF_BV)",
+  "description": "Build the automated exporter that turns a per-clause obligation into the smt-dischargeable Lean goal (P_production) ⟺ (P_reference) — the step SmtDemo.lean's Tier-3 PoC does by hand (lean/Thermite/SmtDemo.lean, 'the hand-translation step is the gap an automated Rust→Lean exporter would close'). Covers the QF_LIA scalar fragment (comparisons + connectives over int, the PoC's proven shape) and the QF_BV fragment (the bit-vector clauses REQ-2 produces). Output is fed to the lean-smt smt tactic (pinned @7d1d8239, lean/lakefile.toml); the resulting theorem's #print axioms must stay within {propext, Classical.choice, Quot.sound} for the fragment to count as reconstruction-supported. This is the single largest new component — agent may sub-structure QF_LIA vs QF_BV internally. AC-8: the exporter emits a (P_prod)⟺(P_ref) Lean goal for a QF_LIA scalar clause AND a QF_BV @bv clause; each is discharged by smt and #print axioms ⊆ the standard set (no Smt-internal oracle, no ofReduceBool). Doc: REQ-7. Gate: G3.",
+  "status": "open",
+  "priority": "high",
+  "parent_uuid": "4e1e886c-254a-4a9f-bf03-0c399c95866b",
+  "created_by": "rApq",
+  "created_at": "2026-06-22T03:10:23.767760Z",
+  "updated_at": "2026-06-22T03:10:23.767760Z"
+}

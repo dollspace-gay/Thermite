@@ -1,0 +1,8 @@
+{
+  "uuid": "f497c7f7-4191-4304-9285-d0703145f518",
+  "issue_uuid": "1b649f96-dc72-4474-b18e-4ab6e546dcf5",
+  "author": "6JMz",
+  "content": "Plan: Stage-3 REQ-1 @bv tag, parse-gated (thermite-syntax only). Mechanism = cargo feature 'bv_shadow' (non-default) = compiled-in shadow-flag plumbing; the parser path accepting the tag is #[cfg(feature)]-gated, so a build without it structurally cannot parse the tag (G3 lock, R-BV-1). Files: lexer.rs (lex '@' -> TokKind::At + token_text), ast.rs (BvWidth + BvTag + Clause.bv: Option<BvTag>), parser.rs (parse_bv_tag in parse_clause; off=>SyntaxError::BvTagWithoutShadowPlumbing, bad width=>BvWidthInvalid), cross-crate Clause{} literals get bv:None, new test bv_tag_parse.rs (cfg(not)=parse-error, cfg=4 widths+nowrap round-trip), CI --features bv_shadow run. AC-1.",
+  "created_at": "2026-06-22T03:17:51.769690Z",
+  "kind": "plan"
+}

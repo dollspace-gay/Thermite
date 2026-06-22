@@ -1,0 +1,8 @@
+{
+  "uuid": "e2928339-8f0f-4996-a13b-2cdaa5b6a1ba",
+  "issue_uuid": "3c708a70-c1e9-4161-8219-a76ab7ae3de2",
+  "author": "0lzM",
+  "content": "REQ-4 lock 2 — bv-semantics mutation (AC-5). Add bv_mutation_score() in forge/src/check.rs reusing the FROZEN mutation::generate catalogue UNCHANGED (only the kill check swaps): for each mutant, ground each result-referencing @bv ens clause with the mutant effective body and re-discharge via BitVectorEngine::discharge_bv AT THE TAG WIDTH (wrap-aware). classify_mutant(proved) reused: Counterexample=killed, Proved=survived, Timeout/Unknown dropped (OQ-5). Only result-referencing @bv clauses are discriminators (mix64 a+b==b+a is body-invariant = None, so AC-2 unaffected). Wire into bv_fn_cert success path via with_mutation_score (NOT gated; gating would regress mix64). Thread adt_deps bv_check->bv_fn_cert. Fixture bv_wrap_mutation.th: fn succ_ge(x:u64)->u64 req true ens@bv64 result>=x {x+0}. The off-by-one 0->1 mutant grounds to x+1>=x: Z-valid (survives unbounded/nlsat) but BV64-false at x=MAX (killed at width). Tests: in-crate engine contrast + e2e bv_lowering.rs.",
+  "created_at": "2026-06-22T23:52:46.400513Z",
+  "kind": "plan"
+}

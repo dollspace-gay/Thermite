@@ -1582,17 +1582,25 @@ fn nlsat_realwitness_cert(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// The `--engine bv` per-clause bit-vector pass (`.design/stage3-bv-reconstruction.md`
-/// REQ-2). Each `fn` item is rebuilt by [`bv_fn_cert`] (its `ens` clauses dispatched by
-/// their `@bv` tag); each `@bv`-tagged `lemma` is discharged directly by the bit-vector
-/// engine ([`bv_lemma_cert`]). A non-`fn`, non-bv-lemma item keeps its base cert. The
-/// v1 corpus carries no `@bv` tag, so its goldens are byte-identical.
+/// REQ-2). Only a `@bv`-TAGGED `fn` is rebuilt by [`bv_fn_cert`] (its `ens` clauses
+/// dispatched by their `@bv` tag); each `@bv`-tagged `lemma` is discharged directly by
+/// the bit-vector engine ([`bv_lemma_cert`]). An UNTAGGED `fn` — and any non-`fn`,
+/// non-bv-lemma item — keeps its base cert UNCHANGED: the bit-vector route is a per-item
+/// overlay, never a wholesale re-route. This matters because the route is auto-selected
+/// by `forge audit`/`forge review` whenever a program contains *any* `@bv` tag (REQ-3 /
+/// AC-4); routing an ordinary Verus-provable `fn` through the bv route would reject its
+/// non-`@bv`, non-relaxable clauses (`BvUntaggedUnsupported`) and silently DOWNGRADE a
+/// genuine L3 function to L0 in the audit — a faithfulness bug. The v1 corpus carries no
+/// `@bv` tag, so its goldens are byte-identical.
 fn bv_check(base: Vec<Certificate>, program: &Program) -> Vec<Certificate> {
     let bv = crate::bitvector::BitVectorEngine::new();
     let nlsat = crate::engine::NlsatEngine::new(program.clone());
     let mut out = Vec::with_capacity(base.len());
     for cert in base {
         match crate::lean_export::find_item(program, &cert.item) {
-            Some(Item::Fn(f)) => out.push(bv_fn_cert(&bv, &nlsat, f, &cert)),
+            Some(Item::Fn(f)) if fn_has_bv_tag(f) => {
+                out.push(bv_fn_cert(&bv, &nlsat, f, &cert))
+            }
             _ => out.push(cert),
         }
     }
@@ -1635,10 +1643,17 @@ fn lemma_has_bv_tag(l: &thermite_syntax::LemmaItem) -> bool {
 /// reads `false` here.
 pub fn program_has_bv_tag(program: &Program) -> bool {
     program.items.iter().any(|item| match item {
-        Item::Fn(f) => f.contract.ens.iter().any(|c| c.bv.is_some()),
+        Item::Fn(f) => fn_has_bv_tag(f),
         Item::Forge(thermite_syntax::ForgeItem::Lemma(l)) => lemma_has_bv_tag(l),
         _ => false,
     })
+}
+
+/// Does this `fn` carry at least one `@bv`-tagged `ens` clause? Only such a `fn` is
+/// re-derived by the bit-vector route (`bv_check`); an untagged `fn` keeps its base
+/// Verus cert so the auto-routed `forge audit`/`review` never downgrades it.
+fn fn_has_bv_tag(f: &thermite_syntax::FnItem) -> bool {
+    f.contract.ens.iter().any(|c| c.bv.is_some())
 }
 
 /// Does `e` reference the `result` keyword (`.design/stage3-bv-reconstruction.md`

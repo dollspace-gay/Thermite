@@ -365,6 +365,51 @@ fn forge_audit_lists_the_bv_shadows() {
     );
 }
 
+/// REQ-3 / AC-4 regression: the auto-routed bv engine (`forge audit`/`review`) is a
+/// PER-ITEM overlay, never a wholesale re-route. An ordinary Verus-provable `fn` that
+/// merely shares a program with a `@bv` `fn` keeps its true L3 cert — it is NOT downgraded
+/// to L0. (Before the `bv_check` fix, every `fn` was routed through the bv route, whose
+/// untagged-clause branch rejects a non-`@bv`, non-relaxable clause — silently downgrading
+/// `plain_add` from L3 to L0 in the audit.)
+#[test]
+fn audit_of_a_mixed_bv_program_keeps_ordinary_fns_at_their_verus_level() {
+    if !verus_present() {
+        eprintln!("SKIP: verus (z3) absent — the bit-vector route is not run.");
+        return;
+    }
+    let (_code, manifest) = run_forge_json("audit", "bv_mixed_audit.th");
+    let funcs = manifest["functions"]
+        .as_array()
+        .expect("the audit manifest carries a functions section");
+    let level_of = |name: &str| -> String {
+        funcs
+            .iter()
+            .find(|r| r["name"] == name)
+            .unwrap_or_else(|| panic!("function `{name}` is in the audit: {manifest}"))["level"]
+            .as_str()
+            .unwrap_or("")
+            .to_string()
+    };
+    // The `@bv` fn certifies at the caged rung L4 via the bit-vector route.
+    assert_eq!(level_of("wrap_add"), "L4", "the @bv fn is L4: {manifest}");
+    // The ordinary fn KEEPS its Verus L3 — the auto-route must not touch it.
+    assert_eq!(
+        level_of("plain_add"),
+        "L3",
+        "an ordinary Verus-provable fn sharing the file with a @bv fn stays L3, not L0: {manifest}"
+    );
+    // The shadow surface still works — exactly the one tagged clause is listed.
+    let shadows = manifest["bv_shadows"]
+        .as_array()
+        .expect("bv_shadows section present");
+    assert_eq!(
+        shadows.len(),
+        1,
+        "exactly the wrap_add @bv clause is shadowed (plain_add contributes none): {manifest}"
+    );
+    assert_eq!(shadows[0]["item"], "wrap_add");
+}
+
 /// AC-4: `forge review` lists the bv shadows — the spec-intent review artifact's additive
 /// `bv_shadows` section surfaces every tagged clause's machine-semantics fork for the
 /// reviewer.

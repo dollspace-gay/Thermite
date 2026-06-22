@@ -1,0 +1,11 @@
+{
+  "uuid": "acba2efb-3dae-4548-a395-6f34465189f1",
+  "display_id": 354,
+  "title": "Decouple ladder rung from trust base; promote the decidable stratified cage to L4",
+  "description": "Follow-up from Stage-3 REQ-2 (#344). REQ-2 established that ladder RUNG (refutation quality) and TRUST BASE (what's trusted) are orthogonal axes: @bv now certifies at L4 (decidable, complete bit-pattern countermodels) with trust 'solver Z3 QF_BV' recorded separately, per RFC-1 §2/§4. But the general Verus/Z3 stratified cage still certifies at L3 in code (check.rs: VerusOutcome::Proved -> Level::L3), a legacy coupling where L4 was treated as 'kernel-grounded only' (nlsat's r_relax_sound). Per the RFC ladder the WHOLE decidable cage (stratified-FOL admission + linear arith) is L4 — decidable, complete countermodels, never degraded — regardless of solver-vs-kernel trust. Scope: promote decidable cage clauses to L4 with trust recorded per clause; reconcile with the G2 audit/gate (verify no 'L4 => kernel lemma' invariant remains); update manifest.rs Level docs + conformance goldens. Transient state until then: @bv is L4 while decidable stratified-cage clauses still show L3 (an inconsistency this issue resolves). Ref: RFC gh #2 §2 ladder table; .design/stage3-bv-reconstruction.md; manifest.rs Level enum.",
+  "status": "open",
+  "priority": "medium",
+  "created_by": "rApq",
+  "created_at": "2026-06-22T16:13:09.418997Z",
+  "updated_at": "2026-06-22T16:13:09.418997Z"
+}

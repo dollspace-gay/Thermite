@@ -1,0 +1,10 @@
+{
+  "uuid": "8b3e954d-ac1b-47df-b2ee-c8cff44549ff",
+  "issue_uuid": "73cdc76d-a74c-427f-a80c-89a3a6fac37b",
+  "author": "rApq",
+  "content": "Shipped: PR #78 squash-merged to main @8547e2b9. The 8-pin battery (AC-10) complete; make audit [G2] green on the merged tree (CI lean-spine-forge shard-1). Gate G2 reached — Stage 2 complete.",
+  "created_at": "2026-06-22T01:29:52.287909Z",
+  "kind": "note",
+  "signed_by": "SHA256:tVRGNaCPy5N1tRtokzkbgsOCzGZujGDWQlGHFruaL9c",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgylLCWwpnQm2E2UQO23AN1e/yB6k0yzmPM7qiYPujTNYAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABADvvPieX3N8q4kadosScVdfDz01G95PopCJ/R05Psu7zPM1PgrNhTE44TL8zE0D8RJqhBgLDzC7xooARKc3B8CQ=="
+}

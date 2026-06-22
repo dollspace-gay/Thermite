@@ -1,0 +1,10 @@
+{
+  "uuid": "9636d72d-b88d-4983-bd56-cc13a733d990",
+  "issue_uuid": "1b649f96-dc72-4474-b18e-4ab6e546dcf5",
+  "author": "rApq",
+  "content": "[orchestrator review] Implementation is complete and correct (R-BV-1 gating sound: non-default feature → default build rejects the tag; 3 negative + 9 positive tests green; workspace builds with bv:None threaded). ONE fix applied: the agent named the cargo feature `bv_shadow`, conflating REQ-1's parse-gate with REQ-3's `bv_shadow` certificate field. Renamed feature → `bv` per spec (commit 20ba2d76), freeing `bv_shadow` for REQ-3. Mechanical rename across Cargo.toml/parser.rs/ast.rs/tests/ci.yml; SyntaxError::BvTagWithoutShadowPlumbing variant + 'shadow-flag plumbing' prose unchanged. fmt+clippy(-D warnings) clean both configs. Branch feature/5i5F-0Ixw-... ready for shepherd (doc-drift re-pin + PR). Note for REQ-2..9 agents: the parse-gate feature is `bv`; `bv_shadow` is the cert field.",
+  "created_at": "2026-06-22T03:46:30.526641Z",
+  "kind": "note",
+  "signed_by": "SHA256:tVRGNaCPy5N1tRtokzkbgsOCzGZujGDWQlGHFruaL9c",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgylLCWwpnQm2E2UQO23AN1e/yB6k0yzmPM7qiYPujTNYAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAxsfCld1Nxkwc1KDmzASv0t+n1mjBjFiZLb7ly7u28zlccYqnbLWLwTm5qwu5JpTHB4iFntgo3MVxlWwl+8mdDg=="
+}

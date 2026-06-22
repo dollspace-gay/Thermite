@@ -4,7 +4,7 @@
 tier: 3-component
 status: draft
 audited-sha: 92396428567edc6940a9e2845217f5ff4c2ea3c6 (re-pinned 2026-06-16, user-authorized: the only change to this doc's governed files since the prior pin is the additive stage-1 forge-tier increment 2a — the new Item::Forge surface + inert Item::Forge match arms, verified net-additive with no substantive removal of existing v1 logic (git log <main>..HEAD = the 8 forge commits); the v1 behavior this doc governs is unchanged, and the new forge-tier surface is specified in .design/stage1-forge-tier.md / REQ-S1-3)
-audited-content-sha256: 84205383a3e59561217a6b48a4d302aaaa1b2382a9f12fe2db3fa6bb48840965
+audited-content-sha256: 3442b3f427149be52992f952e1b3904e7f3b22c55b8ae8ac44bb3803fb8d7ccc
 governs: forge/src/vacuity.rs
 thesis-refs:
   - thermite-design.md §7

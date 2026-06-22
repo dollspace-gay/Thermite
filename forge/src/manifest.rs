@@ -180,16 +180,24 @@ fn scope_is_end_to_end(scope: &Option<AssuranceScope>) -> bool {
 /// assurance-manifest aggregate uses for the min-over-functions project headline.
 /// The aggregate depends on this discriminant order.
 ///
-/// L4 is the **kernel-grounded** rung the Stage-1 forge tier's relax route adds
-/// (`.design/stage1-forge-tier.md` REQ-8, RFC-1 / GH #2): where L3 is a Verus/Z3
-/// SOLVER proof, L4 is a clause whose trust profile is `solver(nlsat) +
-/// spine-lemma(kernel)` — the nlsat real-relaxation discharge, sound by the
-/// kernel-checked spine lemmas `r_relax_sound` + `rencode_sound`
-/// (`lean/Thermite/Relax.lean`). Out-of-cage clauses no longer degrade DOWN the
-/// ladder — they escalate UP to the forge, and a relax-discharged clause certifies
-/// at L4 above L3. Adding L4 is additive: the v1 conformance corpus stays at L3
-/// (the relax route is a NEW engine route reached only via `--engine nlsat`, never
-/// the default Verus path), so the v1 `oracle_subset` is byte-identical.
+/// L4 is the **caged** rung — RFC-1 §2: a clause decidable by an admission test,
+/// push-button, *every failure a concrete countermodel* (finite structure, integer
+/// point, or bit pattern), never degraded. RUNG and TRUST BASE are orthogonal axes:
+/// the rung records refutation quality; what is trusted is recorded separately per
+/// clause in the engine attribution. Two L4 routes exist today, same rung, different
+/// trust bases:
+///
+/// - the **nlsat real-relaxation** discharge (Stage-1 REQ-8, `--engine nlsat`):
+///   trust `solver(nlsat) + spine-lemma(kernel)`, the ℝ→ℤ bridge sound by the
+///   kernel-checked `r_relax_sound` + `rencode_sound` (`lean/Thermite/Relax.lean`);
+/// - the **`@bv` machine-width** discharge (Stage-3 REQ-2, `--engine bv`): trust
+///   `solver(Z3 QF_BV)`, kernel-grounded by REQ-7/8 reconstruction at the SAME rung.
+///
+/// (The general Verus/Z3 cage still certifies at L3 in code pending its own promotion
+/// — a follow-up; the RFC ladder eventually places the whole decidable cage at L4.)
+/// Adding L4 is additive: the v1 conformance corpus stays at L3 (the L4 routes are NEW
+/// engine routes reached only via `--engine nlsat`/`--engine bv`, never the default
+/// Verus path), so the v1 `oracle_subset` is byte-identical.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Level {
     /// L0 — unverified / `#[slag]` escape hatch (§6, §8).
@@ -201,12 +209,13 @@ pub enum Level {
     /// L3 — SMT proof: the contract holds for all inputs (§6). The Verus/Z3 SOLVER
     /// rung.
     L3,
-    /// L4 — KERNEL-GROUNDED proof (`.design/stage1-forge-tier.md` REQ-8, RFC-1 /
-    /// GH #2, increment 2f): the relax route's nlsat (QF_NRA) real-relaxation
-    /// discharge, whose trust profile is `solver(nlsat) + spine-lemma(kernel)` — the
-    /// real→integer soundness bridge is the kernel-checked spine lemma
-    /// `r_relax_sound` (`lean/Thermite/Relax.lean`). Above L3 on the ladder; reached
-    /// only by the new relax engine route (`--engine nlsat`), so v1 items are
+    /// L4 — CAGED (RFC-1 §2): decidable, push-button, every failure a concrete
+    /// countermodel; never degraded. The rung is refutation quality; the trust base is
+    /// recorded separately per clause. Two routes today (same rung, different trust):
+    /// nlsat real-relaxation (`--engine nlsat`, trust `solver(nlsat) +
+    /// spine-lemma(kernel)`, `r_relax_sound`); and `@bv` machine-width (`--engine bv`,
+    /// trust `solver(Z3 QF_BV)`, kernel-grounded by REQ-7/8 at the same rung). Above L3
+    /// on the ladder; reached only by these new engine routes, so v1 items are
     /// unperturbed.
     L4,
 }

@@ -32,6 +32,16 @@ serde_json = "1"
 # REQ-1).
 sha2 = "0.10"
 
+# Stage-3 REQ-2 (`.design/stage3-bv-reconstruction.md`): the `@bv` shadow-flag
+# plumbing. Enabling forge's `bv` feature turns on `thermite-syntax/bv` so the
+# parser accepts `ens@bvN` / `@bvN(nowrap)` tags (REQ-1's structural lock), making the
+# `--engine bv` bit-vector route reachable end to end. NON-DEFAULT and loud: a release
+# build without it cannot parse the tag (gate G3, R-BV-1). The route code is always
+# compiled (it reads the always-present `Clause.bv: Option<BvTag>`), so only the parse
+# gate is feature-conditional.
+[features]
+bv = ["thermite-syntax/bv"]
+
 # epic #60 (self-verification, REQ-7/REQ-8): the Verus-verified soundness-critical
 # core. A DEV-dependency only — the in-module `verus_anchor` tests in `degrade.rs`
 # (the ladder anti-cheat decision) and `sandbox.rs` (the seccomp allowlist

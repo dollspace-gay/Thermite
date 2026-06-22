@@ -633,7 +633,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                         let value = iter.next().ok_or_else(|| {
                             ForgeError::Usage(
                                 "`--engine` requires a value (`verus`, `lean`, `auto`, \
-                                 `nlsat`, or `forge`)"
+                                 `nlsat`, `forge`, or `bv`)"
                                     .to_string(),
                             )
                         })?;
@@ -643,10 +643,11 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                             "auto" => check::EngineSelection::Auto,
                             "nlsat" => check::EngineSelection::Nlsat,
                             "forge" => check::EngineSelection::Forge,
+                            "bv" => check::EngineSelection::Bv,
                             other => {
                                 return Err(ForgeError::Usage(format!(
                                     "unknown `--engine` value `{other}` (expected `verus`, \
-                                     `lean`, `auto`, `nlsat`, or `forge`)"
+                                     `lean`, `auto`, `nlsat`, `forge`, or `bv`)"
                                 )));
                             }
                         };

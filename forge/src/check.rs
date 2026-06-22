@@ -254,6 +254,23 @@ pub enum EngineSelection {
     /// all four forge-tier evidence blocks. The v1 corpus never selects this route, so
     /// its goldens stay byte-identical.
     Forge,
+    /// `--engine bv` (`.design/stage3-bv-reconstruction.md` REQ-2 / AC-2 / AC-3 —
+    /// stage-3): the PER-CLAUSE bit-vector route (the RFC's `mix64` shape). Each `ens`
+    /// clause is dispatched by its `@bvN` tag: a TAGGED clause lowers to fixed-width
+    /// QF_BV and is decided by the [`crate::bitvector::BitVectorEngine`] (a `Proved`
+    /// certifies at the caged rung [`Level::L4`] — decidable with complete bit-pattern
+    /// countermodels (RFC-1 §2/§4), solver-trusted (Z3 QF_BV) until REQ-7/8 kernel-
+    /// grounds it; a falsified clause yields a bit-level
+    /// `Counterexample` with the bit pattern; an over-budget 64-bit multiplier yields a
+    /// `Timeout` under the dedicated budget profile, never `unknown`). An UNTAGGED
+    /// clause lowers as before — routed to the [`crate::engine::NlsatEngine`] when it is
+    /// a relaxable polynomial (the unbounded side, certifying at [`Level::L4`]), else an
+    /// honest skip. One function thus carries wraparound and unbounded clauses side by
+    /// side, each labeled with its engine and semantics; the item level is the MIN over
+    /// the clauses. A `@bv`-tagged `lemma` is discharged directly by the bit-vector
+    /// engine with no author proof block. The v1 corpus carries no `@bv` tag, so its
+    /// goldens stay byte-identical.
+    Bv,
 }
 
 impl Default for CheckOptions {
@@ -1036,6 +1053,16 @@ pub fn check_file_with_engine(
         return Ok(forge_gate_check(base, &parsed.program, &src));
     }
 
+    // Stage-3 REQ-2 (`.design/stage3-bv-reconstruction.md` REQ-2 / AC-2 / AC-3): the
+    // `--engine bv` PER-CLAUSE bit-vector route (the `mix64` shape). `@bv`-tagged
+    // clauses lower to fixed-width QF_BV via the BitVectorEngine; untagged clauses
+    // lower as before (relaxable → nlsat L4, else honest skip). Returns early like the
+    // nlsat/forge routes; the v1 Verus path and the lean/auto paths are untouched, so
+    // the v1 corpus (which carries no `@bv` tag) stays byte-identical.
+    if selection == EngineSelection::Bv {
+        return Ok(bv_check(base, &parsed.program));
+    }
+
     let lean = crate::engine::LeanEngine::new(parsed.program.clone(), lean_package_root());
 
     let mut out = Vec::with_capacity(base.len());
@@ -1543,6 +1570,438 @@ fn nlsat_realwitness_cert(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Stage-3 REQ-2 (`.design/stage3-bv-reconstruction.md` REQ-2 / AC-2 / AC-3): the
+// `--engine bv` PER-CLAUSE bit-vector route (the RFC's `mix64` shape). A `@bvN`-tagged
+// clause lowers to fixed-width QF_BV via the BitVectorEngine (the `EngineName::
+// BitVector` route alongside stage-1's `Nlsat`); an untagged clause lowers as before
+// (relaxable polynomial → nlsat L4, else an honest skip). One function thus carries
+// wraparound and unbounded clauses side by side, each labeled per engine; the item
+// level is the MIN over the clauses. A `@bv`-tagged `lemma` is discharged directly by
+// the bit-vector engine with no author proof block (AC-2).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// The `--engine bv` per-clause bit-vector pass (`.design/stage3-bv-reconstruction.md`
+/// REQ-2). Each `fn` item is rebuilt by [`bv_fn_cert`] (its `ens` clauses dispatched by
+/// their `@bv` tag); each `@bv`-tagged `lemma` is discharged directly by the bit-vector
+/// engine ([`bv_lemma_cert`]). A non-`fn`, non-bv-lemma item keeps its base cert. The
+/// v1 corpus carries no `@bv` tag, so its goldens are byte-identical.
+fn bv_check(base: Vec<Certificate>, program: &Program) -> Vec<Certificate> {
+    let bv = crate::bitvector::BitVectorEngine::new();
+    let nlsat = crate::engine::NlsatEngine::new(program.clone());
+    let mut out = Vec::with_capacity(base.len());
+    for cert in base {
+        match crate::lean_export::find_item(program, &cert.item) {
+            Some(Item::Fn(f)) => out.push(bv_fn_cert(&bv, &nlsat, f, &cert)),
+            _ => out.push(cert),
+        }
+    }
+    // A clean `@bv`-tagged `lemma` is absent from `base` (the base path skips a hole-free
+    // forge item, REQ-3), so it is minted here; a holed/battery-refused lemma already
+    // carries its reject in `out` and is not re-discharged (the forge-route precedent).
+    for item in &program.items {
+        if let Item::Forge(thermite_syntax::ForgeItem::Lemma(l)) = item {
+            if lemma_has_bv_tag(l) && !out.iter().any(|c| c.item == l.name) {
+                out.push(bv_lemma_cert(&bv, l));
+            }
+        }
+    }
+    out
+}
+
+/// The [`crate::engine::EngineAttribution`] a bit-vector discharge records: the
+/// `bitvector` engine tag + its QF_BV solver trust base (REQ-2). Centralized so the
+/// per-clause block and the item-level attribution agree.
+fn bv_attribution() -> crate::engine::EngineAttribution {
+    crate::engine::EngineAttribution {
+        engine: crate::engine::EngineName::BitVector.tag().to_string(),
+        trust_profile: crate::engine::bv_trust_profile().items,
+    }
+}
+
+/// Does the lemma carry a `@bv`-tagged `ens` clause (`.design/stage3-bv-reconstruction.md`
+/// REQ-2 / AC-2)? The bit-vector route discharges such a lemma directly, with no author
+/// proof block.
+fn lemma_has_bv_tag(l: &thermite_syntax::LemmaItem) -> bool {
+    l.ens.iter().any(|c| c.bv.is_some())
+}
+
+/// Does `e` reference the `result` keyword (`.design/stage3-bv-reconstruction.md`
+/// REQ-2)? A `@bv` clause that names `result` must have it grounded by the body before
+/// it can be a closed QF_BV query over the parameters.
+fn expr_mentions_result(e: &thermite_syntax::Expr) -> bool {
+    use thermite_syntax::Expr as E;
+    match e {
+        E::Path(segs) => segs.len() == 1 && segs[0] == "result",
+        E::Binary { lhs, rhs, .. } => expr_mentions_result(lhs) || expr_mentions_result(rhs),
+        E::Unary { expr, .. } | E::Cast { expr, .. } => expr_mentions_result(expr),
+        _ => false,
+    }
+}
+
+/// Ground a `@bv` clause's `result` by the function body (`.design/stage3-bv-reconstruction.md`
+/// REQ-2). A clause that names `result` is rewritten with `result := body` (the
+/// forge-route precedent, [`substitute_result_with_body`]) so the QF_BV query is closed
+/// over the parameters; a clause naming `result` on a body-less `fn` is an honest skip
+/// (`Err`) rather than a query with a free, unconstrained `result` (which could mint a
+/// spurious counterexample).
+fn ground_result_in_clause(
+    f: &thermite_syntax::FnItem,
+    expr: &thermite_syntax::Expr,
+) -> Result<thermite_syntax::Expr, String> {
+    if !expr_mentions_result(expr) {
+        return Ok(expr.clone());
+    }
+    let body = f
+        .body
+        .as_ref()
+        .and_then(effective_result_expr)
+        .ok_or_else(|| {
+            format!(
+                "the `@bv` clause names `result` but `{}` has no in-language body to ground it",
+                f.name
+            )
+        })?;
+    Ok(substitute_result_with_body(expr, &body))
+}
+
+/// Build one `fn`'s `--engine bv` certificate (`.design/stage3-bv-reconstruction.md`
+/// REQ-2 / AC-2 / AC-3 — the `mix64` shape). Each `ens` clause is dispatched by its
+/// `@bv` tag: a TAGGED clause → the [`crate::bitvector::BitVectorEngine`] (QF_BV at the
+/// tag width); an UNTAGGED clause → the [`crate::engine::NlsatEngine`] when it is a
+/// relaxable polynomial (the unbounded side), else an honest skip. A `Proved` tagged
+/// clause certifies at the caged rung [`Level::L4`] (decidable, complete bit-pattern
+/// countermodels; solver-trusted Z3 QF_BV), as does an nlsat `Proved`;
+/// the item level is the MIN. The FIRST non-certifying clause (a bit-level
+/// counterexample, an over-budget multiplier timeout, an undecided/unsupported clause)
+/// short-circuits to its honest non-certified cert.
+fn bv_fn_cert(
+    bv: &crate::bitvector::BitVectorEngine,
+    nlsat: &crate::engine::NlsatEngine,
+    f: &thermite_syntax::FnItem,
+    base: &Certificate,
+) -> Certificate {
+    use crate::bitvector::BvOutcome;
+    use crate::engine::NlsatOutcome;
+    let effects = base.effects.clone();
+    let slag = f.slag.is_some();
+    let vars: Vec<String> = f.params.iter().map(|p| p.name.clone()).collect();
+    let req = &f.contract.req.expr;
+    let bv_attr = bv_attribution();
+    let mut obligations = Vec::with_capacity(f.contract.ens.len());
+    let mut item_level = Level::L4;
+    let mut item_attr: Option<crate::engine::EngineAttribution> = None;
+
+    for (k, ens) in f.contract.ens.iter().enumerate() {
+        if let Some(tag) = &ens.bv {
+            let clause_expr = match ground_result_in_clause(f, &ens.expr) {
+                Ok(e) => e,
+                Err(reason) => return bv_skip_cert(&f.name, &effects, slag, k, &reason),
+            };
+            match bv.discharge_bv(&vars, Some(req), &clause_expr, tag.width) {
+                BvOutcome::Proved => {
+                    obligations.push(bv_proved_obl(&f.name, k, tag, &bv_attr));
+                    // A `@bv` clause is decidable QF_BV with COMPLETE bit-pattern
+                    // countermodels — the L4 (caged) refutation quality, RFC-1 §2/§4.
+                    // The rung is the refutation quality; the SOLVER trust base
+                    // (`solver Z3 QF_BV`) is recorded separately in the attribution and
+                    // kernel-grounded by REQ-7/8 (same rung, smaller trust).
+                    item_level = item_level.min(Level::L4);
+                    item_attr.get_or_insert_with(|| bv_attr.clone());
+                }
+                BvOutcome::Counterexample { bits } => {
+                    return bv_counterexample_cert(
+                        &f.name, &effects, slag, k, tag, &bits, &bv_attr,
+                    );
+                }
+                BvOutcome::Timeout { profile, detail } => {
+                    return bv_timeout_cert(
+                        &f.name, &effects, slag, k, tag, &profile, &detail, &bv_attr,
+                    );
+                }
+                BvOutcome::Unknown(reason) => {
+                    return bv_skip_cert(&f.name, &effects, slag, k, &reason);
+                }
+            }
+        } else {
+            // Untagged → the unbounded side: nlsat when the clause is a relaxable
+            // polynomial, else an honest skip (this route lowers only the bit-vector
+            // clauses and the relaxable unbounded clauses).
+            let synth = single_ens_fn(f, ens);
+            if crate::relax::classify_fn(&synth).is_relaxable() {
+                match nlsat.discharge_relax(&synth) {
+                    NlsatOutcome::Proved => {
+                        let attr = crate::engine::attribution_for(nlsat);
+                        obligations.push(bv_untagged_nlsat_obl(&f.name, k, &attr));
+                        item_level = item_level.min(Level::L4);
+                        item_attr.get_or_insert(attr);
+                    }
+                    other => {
+                        return Certificate::rejected(
+                            f.name.clone(),
+                            effects,
+                            slag,
+                            RejectReason {
+                                cause: "BvUntaggedUndecided".to_string(),
+                                detail: format!(
+                                    "the bit-vector route could not certify `{}`'s untagged \
+                                     (unbounded) clause `ens#{k}` via the nlsat side (NOT \
+                                     certified, an honest skip): {other:?}",
+                                    f.name
+                                ),
+                            },
+                        );
+                    }
+                }
+            } else {
+                return Certificate::rejected(
+                    f.name.clone(),
+                    effects,
+                    slag,
+                    RejectReason {
+                        cause: "BvUntaggedUnsupported".to_string(),
+                        detail: format!(
+                            "`{}`'s untagged clause `ens#{k}` is neither `@bv`-tagged nor a \
+                             relaxable polynomial, so the bit-vector route does not lower it \
+                             (an honest skip — tag it `@bvN` for machine semantics, or use a \
+                             route that lowers it)",
+                            f.name
+                        ),
+                    },
+                );
+            }
+        }
+    }
+
+    let attribution = item_attr.unwrap_or(bv_attr);
+    Certificate::new(f.name.clone(), item_level, effects, 0, obligations)
+        .graduate_triage_clean()
+        .with_engine_attribution(attribution)
+}
+
+/// Build a `@bv`-tagged `lemma`'s bit-vector certificate (`.design/stage3-bv-reconstruction.md`
+/// REQ-2 / AC-2 — "the injectivity lemma discharges at `@bv64` with no proof block").
+/// A lemma carries no `result` and no body: each `@bv`-tagged `ens` clause is a closed
+/// QF_BV query over the parameters under the lemma's `req`. A non-tagged lemma clause is
+/// an honest skip (this route lowers only the bit-vector clauses). The lemma certifies
+/// at [`Level::L4`] (the caged rung — decidable, complete bit-pattern countermodels;
+/// solver-trusted Z3 QF_BV); a counterexample / timeout short-circuits.
+fn bv_lemma_cert(
+    bv: &crate::bitvector::BitVectorEngine,
+    l: &thermite_syntax::LemmaItem,
+) -> Certificate {
+    use crate::bitvector::BvOutcome;
+    let effects = vec!["pure".to_string()];
+    let vars: Vec<String> = l.params.iter().map(|p| p.name.clone()).collect();
+    let req = &l.req.expr;
+    let bv_attr = bv_attribution();
+    let mut obligations = Vec::with_capacity(l.ens.len());
+
+    for (k, ens) in l.ens.iter().enumerate() {
+        let Some(tag) = &ens.bv else {
+            return Certificate::rejected(
+                l.name.clone(),
+                effects,
+                false,
+                RejectReason {
+                    cause: "BvUntaggedUnsupported".to_string(),
+                    detail: format!(
+                        "the bit-vector route lowers only `@bv`-tagged lemma clauses; `{}`'s \
+                         `ens#{k}` carries no tag (an honest skip)",
+                        l.name
+                    ),
+                },
+            );
+        };
+        match bv.discharge_bv(&vars, Some(req), &ens.expr, tag.width) {
+            BvOutcome::Proved => obligations.push(bv_proved_obl(&l.name, k, tag, &bv_attr)),
+            BvOutcome::Counterexample { bits } => {
+                return bv_counterexample_cert(&l.name, &effects, false, k, tag, &bits, &bv_attr);
+            }
+            BvOutcome::Timeout { profile, detail } => {
+                return bv_timeout_cert(
+                    &l.name, &effects, false, k, tag, &profile, &detail, &bv_attr,
+                );
+            }
+            BvOutcome::Unknown(reason) => {
+                return bv_skip_cert(&l.name, &effects, false, k, &reason);
+            }
+        }
+    }
+
+    Certificate::new(l.name.clone(), Level::L4, effects, 0, obligations)
+        .graduate_triage_clean()
+        .with_engine_attribution(bv_attr)
+}
+
+/// The per-clause [`ObligationResult`] a bit-vector `Proved` records (`.design/
+/// stage3-bv-reconstruction.md` REQ-2 / AC-2): the engine (`bitvector`), the QF_BV
+/// solver trust base, the `Proved` verdict, and a name that states the engine AND the
+/// fixed-width semantics ("each clause's certificate naming its engine and semantics").
+fn bv_proved_obl(
+    item: &str,
+    k: usize,
+    tag: &thermite_syntax::BvTag,
+    attr: &crate::engine::EngineAttribution,
+) -> ObligationResult {
+    ObligationResult::discharged(format!(
+        "{item}::ens#{k}: discharged by the bit-vector route over {} (fixed-width \
+         wraparound machine semantics; QF_BV-decidable with complete bit-pattern \
+         countermodels — L4 caged rung, solver-trusted (Z3 QF_BV); \
+         stage3-bv-reconstruction.md REQ-2)",
+        bv_semantics_label(tag)
+    ))
+    .with_clause_attribution(
+        attr.engine.clone(),
+        attr.trust_profile.clone(),
+        crate::verdict::CertVerdict::Proved,
+    )
+}
+
+/// The per-clause [`ObligationResult`] an untagged (unbounded) nlsat `Proved` records on
+/// the bit-vector route (`.design/stage3-bv-reconstruction.md` REQ-2 — the `mix64`
+/// shape's third, unbounded clause). It carries the `nlsat` engine + the L4 kernel-
+/// grounded trust base, so the mixed-mechanism function attributes each clause to the
+/// engine that grounds it.
+fn bv_untagged_nlsat_obl(
+    item: &str,
+    k: usize,
+    attr: &crate::engine::EngineAttribution,
+) -> ObligationResult {
+    ObligationResult::discharged(format!(
+        "{item}::ens#{k}: untagged (unbounded) clause discharged by the nlsat relax route \
+         (unbounded-integer semantics; QF_NRA-valid → integer-valid by the kernel-checked \
+         r_relax_sound — L4 kernel-grounded; stage1-forge-tier.md REQ-8)"
+    ))
+    .with_clause_attribution(
+        attr.engine.clone(),
+        attr.trust_profile.clone(),
+        crate::verdict::CertVerdict::Proved,
+    )
+}
+
+/// The `bvN` (`nowrap`) semantics label of a tag (`.design/stage3-bv-reconstruction.md`
+/// REQ-2). Names the fixed width and whether the `nowrap` modifier is present.
+fn bv_semantics_label(tag: &thermite_syntax::BvTag) -> String {
+    let width = tag.width.bits();
+    if tag.nowrap {
+        format!("bv{width} (nowrap)")
+    } else {
+        format!("bv{width} (wraparound)")
+    }
+}
+
+/// The bit-level `Counterexample` cert a falsified `@bv` clause produces (`.design/
+/// stage3-bv-reconstruction.md` REQ-2 / AC-3): a non-certified cert whose diagnostic
+/// carries the witnessing **bit pattern** per variable, with the per-clause
+/// [`crate::verdict::CertVerdict::Counterexample`].
+fn bv_counterexample_cert(
+    item: &str,
+    effects: &[String],
+    slag: bool,
+    k: usize,
+    tag: &thermite_syntax::BvTag,
+    bits: &[crate::bitvector::BvBitPattern],
+    attr: &crate::engine::EngineAttribution,
+) -> Certificate {
+    let pattern = bits
+        .iter()
+        .map(crate::bitvector::BvBitPattern::render)
+        .collect::<Vec<_>>()
+        .join(", ");
+    let detail = format!(
+        "the bit-vector route found a {} counterexample to `{item}`'s clause `ens#{k}`: \
+         the bit pattern {pattern} falsifies it at fixed width (stage3-bv-reconstruction.md \
+         REQ-2 / AC-3)",
+        bv_semantics_label(tag)
+    );
+    let witness_obl =
+        ObligationResult::failed(format!("{item}#ens#{k}"), None, Some(detail.clone()));
+    let cert_verdict = crate::verdict::CertVerdict::Counterexample {
+        obligations: vec![witness_obl.clone()],
+    };
+    let mut cert = Certificate::rejected(
+        item.to_string(),
+        effects.to_vec(),
+        slag,
+        RejectReason {
+            cause: "Counterexample".to_string(),
+            detail,
+        },
+    );
+    cert.obligations = vec![witness_obl.with_clause_attribution(
+        attr.engine.clone(),
+        attr.trust_profile.clone(),
+        cert_verdict,
+    )];
+    cert.with_engine_attribution(attr.clone())
+}
+
+/// The `Timeout` cert an over-budget 64-bit multiplier query produces (`.design/
+/// stage3-bv-reconstruction.md` REQ-2 / AC-3): a non-certified cert naming the dedicated
+/// budget profile, with the per-clause [`crate::verdict::CertVerdict::Timeout`] — never
+/// `unknown` and never a silent downgrade.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the timeout cert threads the item/effects/slag identity, the clause index \
+              + tag, and the budget profile + Z3 detail; each is a distinct datum the \
+              non-silent Timeout verdict records"
+)]
+fn bv_timeout_cert(
+    item: &str,
+    effects: &[String],
+    slag: bool,
+    k: usize,
+    tag: &thermite_syntax::BvTag,
+    profile: &str,
+    detail: &str,
+    attr: &crate::engine::EngineAttribution,
+) -> Certificate {
+    let full = format!(
+        "`{item}`'s {} clause `ens#{k}` exhausted the dedicated `{profile}` budget profile \
+         (the 64-bit multiplier cost cliff): {detail}. Reported as Timeout, NEVER unknown \
+         and never a silent downgrade (stage3-bv-reconstruction.md REQ-2 / AC-3).",
+        bv_semantics_label(tag)
+    );
+    let obl = ObligationResult::failed(format!("{item}#ens#{k}"), None, Some(full.clone()))
+        .with_clause_attribution(
+            attr.engine.clone(),
+            attr.trust_profile.clone(),
+            crate::verdict::CertVerdict::Timeout {
+                detail: format!("budget profile `{profile}`: {detail}"),
+            },
+        );
+    let mut cert = Certificate::rejected(
+        item.to_string(),
+        effects.to_vec(),
+        slag,
+        RejectReason {
+            cause: "BvBudgetTimeout".to_string(),
+            detail: full,
+        },
+    );
+    cert.obligations = vec![obl];
+    cert.with_engine_attribution(attr.clone())
+}
+
+/// The honest-skip cert a non-rendering / Z3-absent `@bv` clause produces (`.design/
+/// stage3-bv-reconstruction.md` REQ-2): non-certified, naming the reason — never a false
+/// verdict (the nlsat-route `NlsatUnknown` precedent).
+fn bv_skip_cert(item: &str, effects: &[String], slag: bool, k: usize, reason: &str) -> Certificate {
+    Certificate::rejected(
+        item.to_string(),
+        effects.to_vec(),
+        slag,
+        RejectReason {
+            cause: "BvUnknown".to_string(),
+            detail: format!(
+                "the bit-vector route did not decide `{item}`'s clause `ens#{k}` (Z3 absent / \
+                 outside the QF_BV fragment — NOT certified, an honest skip): {reason}"
+            ),
+        },
+    )
+}
+
 // The G1 gate route (`.design/stage1-forge-tier.md` REQ-10 / AC-14): the per-clause
 // hybrid discharge that exercises the whole forge tier end to end on a covenant-routed
 // `fn`. Each `ens` clause is classified by `relax::classify_fn` (the same fragment gate
@@ -2060,6 +2519,11 @@ fn lean_engine_cert(
         // before this per-item Lean helper runs), so this arm is never reached; it keeps
         // the Verus base cert defensively (R-APG-1 — no panic on a future wiring change).
         EngineSelection::Forge => Ok(verus_cert),
+        // The bit-vector route (`.design/stage3-bv-reconstruction.md` REQ-2) is dispatched
+        // in `check_file_with_engine` (it returns early before this per-item Lean helper
+        // runs), so this arm is never reached; it keeps the Verus base cert defensively
+        // (R-APG-1 — no panic on a future wiring change).
+        EngineSelection::Bv => Ok(verus_cert),
         EngineSelection::Auto => {
             // Verus first: a Verus `Proven` (L3, no reject) is kept — Lean is not run
             // (no cost on the common case, no spurious disagreement). Only an

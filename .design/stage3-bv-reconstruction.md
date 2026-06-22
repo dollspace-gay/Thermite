@@ -20,9 +20,11 @@
 Stage 3 of the RFC-1 program — its last gate (G3) — in two halves that
 now converge on QF_BV. (1) The `@bv` machine-semantics clause tag
 (RFC-1 §4): `ens@bvN P` / `inv@bvN P` interpreted over fixed-width
-wraparound semantics via Verus's `by(bit_vector)` mode (QF_BV), where
-everything including multiplication is decidable with bit-level
-countermodels — shipped only with its three locks (shadow flag,
+wraparound semantics as QF_BV decided by Z3 directly (the same
+bit-blaster Verus's `by(bit_vector)` invokes), where everything
+including multiplication is decidable with bit-level countermodels —
+certifying at the caged rung L4, shipped only with its three locks
+(shadow flag,
 bv-semantics mutation, `nowrap` side obligation) and gate G3's
 structural guarantee that a build without shadow-flag plumbing cannot
 even *parse* the tag. (2) SMT proof reconstruction flipped to
@@ -59,17 +61,28 @@ locks shipping inside the same gate as the feature. Umbrella:
   `thermite-syntax/Cargo.toml`); the parser consults
   `cfg!(feature = "bv")` at the dispatch site so a release build with
   the feature off rejects the tag at parse time.
-- REQ-2 (**lowering**): tagged clauses lower through Verus
-  `by(bit_vector)` (QF_BV) via a new `EngineName::BitVector` alongside
-  the stage-1 `Nlsat` route (`forge/src/engine.rs`); untagged clauses
-  on the same item lower as before — one function may carry wraparound
-  and unbounded clauses side by side, each labeled (the RFC's mix64
-  shape: two `@bv64` clauses + one unbounded zero-fixpoint clause).
-  Verdicts ride stage-1 plumbing: bit-level `Counterexample` with the
-  bit pattern attached; `Timeout` for the multiplier cost cliff —
-  QF_BV 64-bit multiplication gets a **dedicated budget profile**,
-  reported as `Timeout`/`KernelBudget`, never `unknown` and never a
-  silent downgrade.
+- REQ-2 (**lowering**): tagged clauses lower to **QF_BV decided by Z3
+  directly** — the same decision procedure Verus's `by(bit_vector)`
+  invokes (Z3's bit-blaster), reached as its own `EngineName::BitVector`
+  route exactly as the stage-1 `Nlsat` route reaches Z3's nlsat directly
+  rather than through a Verus VC round-trip (`forge/src/engine.rs`,
+  `forge/src/bitvector.rs`). Direct emission is deliberate: the rendered
+  SMT-LIB2 QF_BV query *is* the artifact REQ-8 reconstruction replays, so
+  this route hands off cleanly to the kernel-grounding half. Untagged
+  clauses on the same item lower as before — one function may carry
+  wraparound and unbounded clauses side by side, each labeled (the RFC's
+  mix64 shape: two `@bv64` clauses + one unbounded zero-fixpoint clause).
+  A `@bv` clause certifies at **L4** (the caged rung — decidable, complete
+  bit-pattern countermodels per RFC §2/§4; never degraded), with its
+  SOLVER trust base (`solver Z3 QF_BV`) recorded **separately** in the
+  per-clause attribution — rung and trust are orthogonal axes, and REQ-8
+  shrinks the trust at the same rung. (The general Verus/Z3 cage still
+  certifies at L3 in code pending its own L4 promotion — a tracked
+  follow-up, not this increment.) Verdicts ride stage-1 plumbing:
+  bit-level `Counterexample` with the bit pattern attached; `Timeout` for
+  the multiplier cost cliff — QF_BV 64-bit multiplication gets a
+  **dedicated budget profile**, reported as `Timeout`/`KernelBudget`,
+  never `unknown` and never a silent downgrade.
 - REQ-3 (**lock 1 — the shadow flag**): every tagged clause's
   certificate carries `bv_shadow { flagged, semantics, nowrap_obligation,
   note }` (the RFC §9 shape) as an additive schema-v2 field on
@@ -129,7 +142,15 @@ locks shipping inside the same gate as the feature. Umbrella:
   per-run solver trust, labeled as today, and the audit names exactly
   what stayed solver-trusted (fallback F-J is free — reconstruction was
   never load-bearing for any gate, so no gate regresses if a fragment
-  is unsupported).
+  is unsupported). **REQ-8 owns the `render_bv_prop` faithfulness
+  obligation:** because REQ-2 emits QF_BV via a *direct* SMT-LIB2 render
+  (`forge/src/bitvector.rs`) rather than through the Verus lowering, that
+  render is a new translation NOT covered by the existing Verus-path
+  translation validation — it enters the TCB until reconstruction
+  replays forge's *actual rendered query* in the kernel. Closing that
+  bv-render trust gap (replaying the real query, not a re-derivation) is
+  an explicit REQ-8 acceptance condition, so the gap is tracked, not
+  silent.
 - REQ-9 (**gate G3**): the three locks demonstrably wired before the
   tag parses in any release build (REQ-1's build-flag test); the
   exporter + reconstruction default-on behind the fragment-support
@@ -198,8 +219,11 @@ locks shipping inside the same gate as the feature. Umbrella:
   the tag is genuinely new mechanism, not a copy of that seam.
 - **Lowering + engine** (`forge`): a new `EngineName::BitVector` in
   `src/engine.rs` (joining `Verus`, `LeanAuto`, `LeanInteractive`,
-  `Nlsat`), lowering tagged clauses through Verus `by(bit_vector)`.
-  Certificate attribution rides the existing
+  `Nlsat`), rendering tagged clauses to SMT-LIB2 QF_BV and deciding them
+  with Z3 directly (`src/bitvector.rs`) — the procedure `by(bit_vector)`
+  invokes, reached as its own route per the `Nlsat` precedent. A `Proved`
+  clause certifies at `Level::L4` (caged rung; trust `solver Z3 QF_BV`
+  recorded separately). Certificate attribution rides the existing
   `with_clause_attribution(engine, trust, verdict)`
   (`src/manifest.rs:306`) — the same mechanism stage-1's `Nlsat` route
   used, so a mixed-mechanism function (mix64) attributes per clause for

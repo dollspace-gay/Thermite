@@ -3,9 +3,10 @@
   "display_id": 352,
   "title": "Land resolved Stage-3 design doc on main + remove stray .kickoff-session",
   "description": "Two pre-REQ-2 housekeeping items. (1) main still carries the PROVISIONAL stage3-bv-reconstruction.md; the resolved re-pass (KICKOFF-READY, REQ-1..9/AC-1..10, decision record D-BVSCOPE/D-RECON) lives only in the working dir. REQ-2 agents branch off main, so the resolved doc must land first. (2) .kickoff-session (agent-id artifact) was committed by the REQ-1 agent's git add -A; git rm + .gitignore it.",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "rApq",
   "created_at": "2026-06-22T04:21:04.106547Z",
-  "updated_at": "2026-06-22T04:21:04.106547Z"
+  "updated_at": "2026-06-22T05:08:22.987642Z",
+  "closed_at": "2026-06-22T05:08:22.987642Z"
 }

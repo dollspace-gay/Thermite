@@ -2,9 +2,10 @@
   "uuid": "b720328d-01e4-435f-abc4-5edc224101d4",
   "display_id": 336,
   "title": "REQ-3 syntax unification (fix #68): unify Strat Tm/Atom/Frm so classifier + denotation share one sort-typed Frm; resolves axiom-probe Atom.ctorElim collision",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "rApq",
   "created_at": "2026-06-20T19:44:03.644517Z",
-  "updated_at": "2026-06-20T19:44:03.644517Z"
+  "updated_at": "2026-06-22T01:59:35.854368Z",
+  "closed_at": "2026-06-22T01:59:35.854368Z"
 }

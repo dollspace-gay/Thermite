@@ -11,11 +11,11 @@ rust-version.workspace = true
 # The shadow-flag plumbing for the stage-3 `@bv` machine-semantics clause tag
 # (`.design/stage3-bv-reconstruction.md` REQ-1). NON-DEFAULT and the structural
 # lock (R-BV-1): the parser code path that accepts `ens@bvN` / `inv@bvN` /
-# `@bvN(nowrap)` is `#[cfg(feature = "bv_shadow")]`-gated, so a build without this
+# `@bvN(nowrap)` is `#[cfg(feature = "bv")]`-gated, so a build without this
 # feature *cannot* parse the tag — the tag is a structured parse error there
 # (AC-1's negative half). Gate G3 ships the locks behind this same flag; until
 # then the tag is opt-in and loud.
-bv_shadow = []
+bv = []
 
 # Test-only: the conformance tests read the hand-authored JSON oracle fixtures
 # under `conformance/`. Production code (`src/`) has no serde dependency.

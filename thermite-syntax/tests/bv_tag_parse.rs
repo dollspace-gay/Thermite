@@ -3,20 +3,20 @@
 //! annotation in `thermite-syntax`, parse-gated behind the shadow-flag plumbing.
 //!
 //! The tag (`ens@bvN` / `inv@bvN` / `@bvN(nowrap)`, N ∈ {8, 16, 32, 64}) parses
-//! ONLY when the crate is built with the `bv_shadow` cargo feature — the
+//! ONLY when the crate is built with the `bv` cargo feature — the
 //! structural lock R-BV-1: a build without the plumbing genuinely cannot parse
 //! the tag (the parser code path is `#[cfg]`-removed), so the tag is a structured
 //! syntax error there. This file pins BOTH halves of AC-1, each behind the
 //! matching `cfg`:
 //!
-//! - `#[cfg(not(feature = "bv_shadow"))]` — the negative half: `ens@bv64` fails to
+//! - `#[cfg(not(feature = "bv"))]` — the negative half: `ens@bv64` fails to
 //!   parse with `SyntaxError::BvTagWithoutShadowPlumbing`.
-//! - `#[cfg(feature = "bv_shadow")]` — the positive half: all four widths +
+//! - `#[cfg(feature = "bv")]` — the positive half: all four widths +
 //!   `nowrap` parse with the AST tag recovered and the clause `text` round-trips
 //!   (the tag sits outside the addressing oracle string).
 //!
 //! CI runs `cargo test -p thermite-syntax` (negative half) AND
-//! `cargo test -p thermite-syntax --features bv_shadow` (positive half) so both
+//! `cargo test -p thermite-syntax --features bv` (positive half) so both
 //! configurations are exercised in one run (AC-1's "build-flag test in CI").
 //! R-CHAR-3: shapes hand-derived from the grammar; `tests/` is ungated.
 
@@ -27,11 +27,11 @@ use thermite_syntax::{parse, SyntaxError};
 // error — the feature cannot exist in the build.
 // ===========================================================================
 
-#[cfg(not(feature = "bv_shadow"))]
+#[cfg(not(feature = "bv"))]
 mod plumbing_absent {
     use super::*;
 
-    /// `ens@bv64` in a build WITHOUT `bv_shadow` is a structured syntax error
+    /// `ens@bv64` in a build WITHOUT `bv` is a structured syntax error
     /// pointing at the `@` (the structural lock R-BV-1 / AC-1 negative half).
     #[test]
     fn ens_bv_tag_is_a_parse_error_without_plumbing() {
@@ -71,7 +71,7 @@ mod plumbing_absent {
         }
     }
 
-    /// The error message names the `bv_shadow` feature so the gate is discoverable.
+    /// The error message names the `bv` feature so the gate is discoverable.
     #[test]
     fn the_error_message_points_at_the_feature() {
         let src = "fn f(a: u64) -> u64 req true ens@bv64 result == 0 fx pure { 0 }";
@@ -81,8 +81,8 @@ mod plumbing_absent {
             .find(|e| matches!(e, SyntaxError::BvTagWithoutShadowPlumbing { .. }))
             .expect("a BvTagWithoutShadowPlumbing error");
         assert!(
-            err.to_string().contains("bv_shadow"),
-            "the diagnostic should name the `bv_shadow` feature: {err}"
+            err.to_string().contains("bv"),
+            "the diagnostic should name the `bv` feature: {err}"
         );
     }
 }
@@ -92,7 +92,7 @@ mod plumbing_absent {
 // `nowrap` parse, the AST tag is recovered, and the clause text round-trips.
 // ===========================================================================
 
-#[cfg(feature = "bv_shadow")]
+#[cfg(feature = "bv")]
 mod plumbing_present {
     use super::*;
     use thermite_syntax::{BvWidth, Clause, ForgeItem, Item};

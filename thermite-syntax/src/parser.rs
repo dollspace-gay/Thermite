@@ -162,14 +162,14 @@ pub enum SyntaxError {
     /// shadow-flag plumbing compiled in (`.design/stage3-bv-reconstruction.md`
     /// REQ-1, AC-1). This is the structural lock (R-BV-1): the feature cannot
     /// exist without its visibility machinery, so a build that lacks the
-    /// `bv_shadow` cargo feature treats the tag as a parse error rather than
+    /// `bv` cargo feature treats the tag as a parse error rather than
     /// silently accepting (and then under-tracking) wraparound semantics. The span
     /// points at the `@`.
     BvTagWithoutShadowPlumbing { span: Span },
     /// A `@bv` tag whose width is not one of the four committed widths
     /// `bv8`/`bv16`/`bv32`/`bv64` (`.design/stage3-bv-reconstruction.md` REQ-1).
     /// `found` is the verbatim token that followed `@` (e.g. `bv7`, `bv`, `foo`).
-    /// Only reachable in a `bv_shadow` build (else `BvTagWithoutShadowPlumbing`
+    /// Only reachable in a `bv` build (else `BvTagWithoutShadowPlumbing`
     /// fires first).
     BvWidthInvalid { found: String, span: Span },
 }
@@ -298,7 +298,7 @@ impl std::fmt::Display for SyntaxError {
                 f,
                 "the `@bv` machine-semantics clause tag at byte {} requires the \
                  shadow-flag plumbing, which is not compiled into this build (build \
-                 `thermite-syntax` with the `bv_shadow` feature to enable it)",
+                 `thermite-syntax` with the `bv` feature to enable it)",
                 span.start
             ),
             SyntaxError::BvWidthInvalid { found, span } => write!(
@@ -1495,7 +1495,7 @@ impl<'a> Parser<'a> {
     /// (`.design/stage3-bv-reconstruction.md` REQ-1), the first clause-level
     /// annotation in `thermite-syntax`. Returns `Ok(None)` when no `@` follows the
     /// clause keyword (every v1/v2 clause). When a `@` IS present, the tag parses
-    /// only if the shadow-flag plumbing is compiled in (the `bv_shadow` cargo
+    /// only if the shadow-flag plumbing is compiled in (the `bv` cargo
     /// feature) — this is the build-flag gate, REQ-1's structural lock R-BV-1:
     ///
     /// - WITHOUT the feature, the `@`-handling code path below is `#[cfg]`-removed,
@@ -1515,12 +1515,12 @@ impl<'a> Parser<'a> {
             return Ok(None);
         }
         let at_span = self.peek_span();
-        #[cfg(not(feature = "bv_shadow"))]
+        #[cfg(not(feature = "bv"))]
         {
             // The shadow-flag plumbing is absent: the tag cannot parse (R-BV-1).
             Err(SyntaxError::BvTagWithoutShadowPlumbing { span: at_span })
         }
-        #[cfg(feature = "bv_shadow")]
+        #[cfg(feature = "bv")]
         {
             self.bump(); // consume `@`
             let width = self.parse_bv_width()?;
@@ -1551,8 +1551,8 @@ impl<'a> Parser<'a> {
     /// Parse the `bvN` width token of a `@bv` tag (`.design/stage3-bv-reconstruction.md`
     /// REQ-1). The `bvN` spelling lexes as a single identifier (`bv64`), so this
     /// matches the whole ident against the four committed widths; anything else is
-    /// `BvWidthInvalid`. Only compiled in a `bv_shadow` build.
-    #[cfg(feature = "bv_shadow")]
+    /// `BvWidthInvalid`. Only compiled in a `bv` build.
+    #[cfg(feature = "bv")]
     fn parse_bv_width(&mut self) -> PResult<BvWidth> {
         let span = self.peek_span();
         let ident = match self.peek().clone() {

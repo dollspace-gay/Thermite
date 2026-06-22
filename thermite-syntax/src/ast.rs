@@ -627,7 +627,7 @@ impl BvWidth {
 /// REQ-1). It marks a clause for interpretation over fixed-width wraparound
 /// (`by(bit_vector)`, QF_BV) semantics. `nowrap` additionally requests the
 /// no-overflow side obligation (REQ-5). The tag parses ONLY when the shadow-flag
-/// plumbing is compiled in (the `bv_shadow` cargo feature, REQ-1's structural
+/// plumbing is compiled in (the `bv` cargo feature, REQ-1's structural
 /// lock R-BV-1); lowering + the three locks are REQ-2..REQ-5.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BvTag {
@@ -646,9 +646,9 @@ pub struct BvTag {
 ///
 /// `bv` carries an optional `@bvN` machine-semantics tag
 /// (`.design/stage3-bv-reconstruction.md` REQ-1). It is `None` for every v1/v2
-/// clause and for every clause when the `bv_shadow` plumbing is not compiled in
+/// clause and for every clause when the `bv` plumbing is not compiled in
 /// (the tag cannot parse there); `Some` only on an `ens`/`inv`/`req`/lemma clause
-/// that carried the tag in a `bv_shadow` build. The tag sits OUTSIDE `text`, so
+/// that carried the tag in a `bv` build. The tag sits OUTSIDE `text`, so
 /// the addressing oracle string is unchanged by it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Clause {

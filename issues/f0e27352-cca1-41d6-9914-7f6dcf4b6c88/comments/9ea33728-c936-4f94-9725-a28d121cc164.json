@@ -1,0 +1,10 @@
+{
+  "uuid": "9ea33728-c936-4f94-9725-a28d121cc164",
+  "issue_uuid": "f0e27352-cca1-41d6-9914-7f6dcf4b6c88",
+  "author": "rApq",
+  "content": "Stage 2 (stratified cage) COMPLETE — all 11 increments REQ-0..REQ-10 (#322–#332) shipped and merged to main. Gate G2 reached @8547e2b9: make audit [1'][4'][8][9] green in one run, gating the honestly-scoped stratified trust flip (structure + qfree→v1 proven; rel/array by z3-theory). 8-pin regression battery guards the soundness theorems. Next: Stage 3 (kernel-grounding the solver-trusted rel atoms via reconstruction) → G3.",
+  "created_at": "2026-06-22T01:30:12.602870Z",
+  "kind": "note",
+  "signed_by": "SHA256:tVRGNaCPy5N1tRtokzkbgsOCzGZujGDWQlGHFruaL9c",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgylLCWwpnQm2E2UQO23AN1e/yB6k0yzmPM7qiYPujTNYAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA9RT1zZddfHxb6PbWuP4D0xSixSiSZ1IDBff2xgPABAx70HkcjOTHoGr340pfF2Rhy/cAouIiXC6mDHUiky17DQ=="
+}

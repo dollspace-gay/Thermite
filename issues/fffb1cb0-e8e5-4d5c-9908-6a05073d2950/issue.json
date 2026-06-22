@@ -1,0 +1,12 @@
+{
+  "uuid": "fffb1cb0-e8e5-4d5c-9908-6a05073d2950",
+  "display_id": 351,
+  "title": "Stage-3 REQ-9: gate G3 — locks wired, reconstruction default-on, claims flip",
+  "description": "The G3 gate. The three locks demonstrably wired before the tag parses in any release build (REQ-1's build-flag test); the exporter + reconstruction default-on behind the fragment-support check with the trust: migration visible in certificates and the residual-trust statement honest about what stayed solver-trusted; README/RATIONALE/docs claims about @bv and default reconstruction change AT GATE TIME ONLY (R-GATE-1), as G1 and G2 did. AC-10: all G3 items hold in one CI run before any README/RATIONALE claim about @bv or default reconstruction merges (the gate-time flip). Doc: REQ-9. Gate: G3 (the program's final gate).",
+  "status": "open",
+  "priority": "high",
+  "parent_uuid": "4e1e886c-254a-4a9f-bf03-0c399c95866b",
+  "created_by": "rApq",
+  "created_at": "2026-06-22T03:10:32.138507Z",
+  "updated_at": "2026-06-22T03:10:32.138507Z"
+}

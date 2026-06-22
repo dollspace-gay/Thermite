@@ -1,0 +1,8 @@
+{
+  "uuid": "09b585eb-c3f6-4c49-9e53-a1fced85f2e8",
+  "issue_uuid": "51f9e8ed-5391-40ca-98ca-4c9c842155e0",
+  "author": "BbPF",
+  "content": "[orchestrator review] PR #86. bv_shadow impl sound (additive serde-default → v1 byte-identical; oracle inclusion; greppable in cert/review/audit; AC-4 verified locally with full env). ONE fix applied (the user-flagged concern): the audit/review auto-route downgraded ordinary Verus fns L3→L0 when they shared a file with a @bv fn — bv_check re-derived EVERY fn through the bv route (rejecting non-@bv non-relaxable clauses). Fixed to a per-item overlay (only @bv-tagged fns re-derived; fn_has_bv_tag); regression test + bv_mixed_audit.th fixture. Also: agent's '9 engine::tests fail (corrupt smt)' was a MISDIAGNOSIS — just the unbuilt spine; all pass with full spine. Full suite green, clippy/fmt clean, doc-drift exit 0.",
+  "created_at": "2026-06-22T21:15:07.134376Z",
+  "kind": "note"
+}

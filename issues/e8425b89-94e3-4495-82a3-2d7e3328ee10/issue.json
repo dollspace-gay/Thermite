@@ -1,0 +1,10 @@
+{
+  "uuid": "e8425b89-94e3-4495-82a3-2d7e3328ee10",
+  "display_id": 355,
+  "title": "Close lean-smt BitVec Bitblast.lean eq_eq_beq sorry → kernel-clean QF_BV reconstruction",
+  "status": "open",
+  "priority": "high",
+  "created_by": "7jYS",
+  "created_at": "2026-06-23T18:20:09.324262Z",
+  "updated_at": "2026-06-23T18:20:09.324262Z"
+}

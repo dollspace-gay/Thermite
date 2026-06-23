@@ -1,0 +1,8 @@
+{
+  "uuid": "30dcf8f3-1741-457a-a51e-ff4eb3d5b965",
+  "issue_uuid": "7382e6a6-d7ce-4125-9e47-8611d1eeeb51",
+  "author": "OfXD",
+  "content": "Result: REQ-5 lock 3 nowrap side obligation SHIPPED. bitvector.rs: discharge_nowrap(vars,req,clause,width) discharges the no-overflow obligation in-cage as a QF_BV query (asserts req AND OR-of-per-op overflow conditions, NOT negated); collect_overflow_conditions emits textbook unsigned predicates for +/-/* (add carry-out 'bvult (bvadd l r) l', sub borrow 'bvult l r', mul high-half-nonzero via 2N zero_extend) recursing so nested (a+b)*c emits both; vacuous Proved when no wrap-prone op (no z3). check.rs: a Proved @bvN(nowrap) clause runs bv_nowrap_verdict -> Holds/Undecided recorded in bv_shadow.nowrap_obligation (cert certifies), Overflow REJECTS via BvNowrapOverflow cert whose witness obligation records the FAILED verdict + concrete bit pattern. Wired in bv_fn_cert + bv_lemma_cert; bv_shadow_for + bv_proved_obl thread Option<String>. AC-6 verified end-to-end: @bv64(nowrap) result==a+b body{a+b} -> rejected with overflowing bits; non-arithmetic body -> discharged vacuously; bare @bv -> nowrap_obligation None. manifest.rs: Some-verdict serialization pinned. Tests: 7 new in bitvector.rs (3 live+4 unit) + 3 in check.rs + manifest serialize. Full forge suite green (455 lib + integration) with --features bv + full lean spine; clippy clean; fmt clean (rustup 1.95.0 workspace). No existing fixture uses nowrap -> goldens unperturbed.",
+  "created_at": "2026-06-23T03:09:48.167662Z",
+  "kind": "result"
+}

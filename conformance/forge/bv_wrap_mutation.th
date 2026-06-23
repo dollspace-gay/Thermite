@@ -1,0 +1,30 @@
+// bv_wrap_mutation.th — the stage-3 lock 2 (bv-semantics mutation) fixture
+// (`.design/stage3-bv-reconstruction.md` REQ-4 / AC-5). A `@bv`-tagged `fn` whose
+// `ens` clause CONSTRAINS the body via `result`, so the frozen mutation battery has a
+// real discriminator — and one of its frozen mutants is WRAP-EXPLOITING: equivalent at
+// unbounded semantics (it survives the unbounded check) but distinguishable at width
+// (the bv-semantics mutation run kills it).
+//
+//   * `ens@bv64 result >= x`  — the identity body `x + 0` makes `result == x`, so
+//                               `result >= x` holds at every 64-bit assignment → the
+//                               bit-vector route certifies it at the caged rung L4.
+//
+// The frozen off-by-one mutator turns the literal `0` into `1`, giving the mutant body
+// `x + 1`. Its grounded clause is `x + 1 >= x`:
+//   - over UNBOUNDED integers it is valid (`x + 1 >= x` for all `x`) → the mutant would
+//     SURVIVE an unbounded mutation run;
+//   - over fixed-width QF_BV64 it is FALSE at `x = 2^64 - 1` (`x + 1` wraps to `0`, and
+//     `0 >= 2^64 - 1` is false) → the wrap-aware kill check finds a bit-level
+//     counterexample → the mutant is KILLED.
+//
+// So `forge check --engine bv` certifies the fn at L4 AND its certificate surfaces a
+// non-trivial mutation score (the wrap-exploiting mutant is among the killed). The
+// score is surfaced, not gated: the L4 rung is solver-decided.
+//
+// (`+` binds tighter than `>=`, so the clause needs no parens — and a `@bvN` clause
+// cannot open with `(`, which the REQ-1 tag grammar reads as the `(nowrap)` modifier.)
+fn succ_ge(x: u64) -> u64
+    req true
+    ens@bv64 result >= x
+    fx pure
+{ x + 0 }

@@ -218,6 +218,49 @@ fn over_budget_multiplier_is_timeout_under_named_profile_never_unknown() {
     }
 }
 
+/// AC-5 (Lock 2 — bv-semantics mutation): a `@bv` fn whose `ens` clause constrains the
+/// body via `result` certifies at L4 AND its certificate surfaces a non-trivial mutation
+/// score from the WRAP-AWARE battery. The `succ_ge` fixture's `ens@bv64 result >= x` over
+/// the identity body `x + 0` is machine-valid (L4); the frozen off-by-one mutator's
+/// `x + 1` body is the wrap-exploiting mutant — valid over unbounded integers but false
+/// over QF_BV64 at `x = 2^64 - 1`, so the wrap-aware kill check kills it. The score is
+/// surfaced (`contract_quality.mutants_killed`), not gated — the L4 rung is
+/// solver-decided. The unit suite (`check::tests::ac5_*`, z3-gated) pins the
+/// width-vs-unbounded contrast at the engine level; this pins the end-to-end cert.
+#[test]
+fn bv_semantics_mutation_surfaces_a_nontrivial_kill_ratio_on_a_result_clause() {
+    if !verus_present() {
+        eprintln!("SKIP: verus (z3) absent — the bit-vector mutation battery is not run.");
+        return;
+    }
+    let (code, certs) = run_bv("bv_wrap_mutation.th");
+    assert_eq!(code, Some(0), "the @bv fn certifies (exit 0)");
+
+    let c = cert(&certs, "succ_ge");
+    assert_eq!(
+        c["level"],
+        Value::from("L4"),
+        "the @bv fn certifies at the caged rung L4"
+    );
+    // The wrap-aware mutation battery scored the result-referencing @bv clause and killed
+    // the wrap-exploiting (and early-return) mutants: a non-`"0/0"` kill ratio.
+    let killed = c["contract_quality"]["mutants_killed"]
+        .as_str()
+        .unwrap_or("0/0");
+    assert_eq!(
+        killed, "2/4",
+        "the bv-semantics battery kills the wrap-exploiting `x + 1` and the early-return \
+         `0` mutants (2 of 4 scored): {c}"
+    );
+    // The surviving mutant is a body-equivalent one (`return x`), never the killed
+    // wrap-exploiting mutant.
+    let survivor = c["contract_quality"]["survivor"].as_str().unwrap_or("");
+    assert!(
+        !survivor.contains("off-by-one literal 0->1"),
+        "the wrap-exploiting mutant is killed, never surfaced as a survivor: {survivor}"
+    );
+}
+
 /// Run a forge subcommand over a conformance example, returning `(exit, parsed JSON)`.
 fn run_forge_json(subcommand: &str, example: &str) -> (Option<i32>, Value) {
     let th = repo_root().join("conformance/forge").join(example);

@@ -1,0 +1,8 @@
+{
+  "uuid": "438851f1-7f1c-47b3-9112-72cccf28b9ca",
+  "issue_uuid": "9a2b9c07-5e3c-481e-a787-1da7d044db8a",
+  "author": "7jYS",
+  "content": "Committed: Stage-3 REQ-7 the Rust->Lean obligation exporter (QF_LIA + QF_BV) | Files: 8 files changed, 988 insertions(+), 16 deletions(-) | commit 6ce20ae1",
+  "created_at": "2026-06-23T15:33:47.769143Z",
+  "kind": "result"
+}

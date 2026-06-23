@@ -97,6 +97,17 @@ pub struct AuditManifest {
     /// discipline). The section gates nothing — informational, like `lean_fragment`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bv_shadows: Vec<BvShadowRow>,
+    /// The "semantic forks and definition towers" section
+    /// (`.design/stage3-bv-reconstruction.md` REQ-6 / AC-7): the AGGREGATE legibility
+    /// surface over the per-clause `bv_shadows` above + the burned-lemma towers — bv-shadow
+    /// density per module, every burned lemma's definition-tower depth, and the post-ship
+    /// **F-F density tripwire**. A pure projection ([`crate::forks::SemanticForks::build`]);
+    /// `None` (and omitted) for a tag-free, lemma-free project, so the v1 corpus serializes
+    /// BYTE-IDENTICALLY (the additive `bv_shadows`/`lean_fragment` discipline;
+    /// `manifest_version` stays `"v1"`). The section gates nothing — informational, like
+    /// `bv_shadows`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub semantic_forks: Option<crate::forks::SemanticForks>,
 }
 
 /// One `@bv`-tagged clause's shadow-flag row in the audit manifest
@@ -605,6 +616,10 @@ impl AuditManifest {
         // Lock 1 (stage-3 REQ-3 / AC-4): the project's `@bv` shadow flags, one row per
         // tagged clause — a pure projection of the certs' obligations.
         let bv_shadows = BvShadowRow::from_certificates(certs);
+        // REQ-6 / AC-7: the aggregate "semantic forks and definition towers" section — the
+        // bv-shadow density per module, the burned-lemma tower depths, and the F-F density
+        // tripwire. `None` (omitted) for a tag-free, lemma-free project (the v1 corpus).
+        let semantic_forks = crate::forks::SemanticForks::build(certs, program);
         AuditManifest {
             manifest_version: MANIFEST_VERSION.to_string(),
             functions,
@@ -612,6 +627,7 @@ impl AuditManifest {
             tcb,
             lean_fragment,
             bv_shadows,
+            semantic_forks,
         }
     }
 }

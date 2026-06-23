@@ -1,0 +1,33 @@
+// bv_density_spike.th — a SYNTHETIC density spike that trips the named F-F warning
+// (`.design/stage3-bv-reconstruction.md` REQ-6 / AC-7, the "spike" case).
+//
+// The post-ship F-F tripwire: when machine-semantics forks become the MAJORITY of the
+// contract-bearing postcondition surface, the program has drifted far enough toward the
+// fork that the @bv retreat ladder (full → nowrap-only → lemma-only → drop) should be
+// weighed. Here TWO @bv-tagged ens clauses sit among THREE contract-bearing ens clauses:
+// a project density of 2/3 = 666‰, at or above the 500‰ retreat threshold — the F-F
+// tripwire FIRES (a loud, informational warning; it gates nothing, changes no verdict).
+//
+// Per-module known counts (a pure parse-level projection):
+//   * wrap_comm  — 1/1 ens machine-semantics (1000‰)
+//   * wrap_xor   — 1/1 ens machine-semantics (1000‰)
+//   * plain_add  — 0/1 (0‰)
+//   project      — 2/3 ens machine-semantics (666‰) → REACHES the 500‰ threshold (TRIP).
+
+fn wrap_comm(a: u64, b: u64) -> u64
+    req true
+    ens@bv64 a + b == b + a
+    fx pure
+{ a + b }
+
+fn wrap_xor(a: u64, b: u64) -> u64
+    req true
+    ens@bv64 a ^ b ^ b == a
+    fx pure
+{ a ^ b }
+
+fn plain_add(a: u64, b: u64) -> u64
+    req a < 100 && b < 100
+    ens result >= a
+    fx pure
+{ a + b }

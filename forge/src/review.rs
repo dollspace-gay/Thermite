@@ -250,6 +250,16 @@ pub struct ReviewArtifact {
     /// `forge review --json` ≡ the project's tagged clauses (AC-4).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bv_shadows: Vec<BvShadowClause>,
+    /// The "semantic forks and definition towers" section
+    /// (`.design/stage3-bv-reconstruction.md` REQ-6 / AC-7): the AGGREGATE legibility
+    /// surface a reviewer reads alongside the per-clause `bv_shadows` + `burned_lemmas`
+    /// above — bv-shadow density per module, every burned lemma's definition-tower depth,
+    /// and the post-ship **F-F density tripwire**. A pure projection
+    /// ([`crate::forks::SemanticForks::build`]); `None` (and omitted) on the default Verus
+    /// path / the v1 corpus (no `@bv` tag, no burned lemma), so a v1 review artifact
+    /// serializes BYTE-IDENTICALLY (the additive `bv_shadows`/`burned_lemmas` discipline).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub semantic_forks: Option<crate::forks::SemanticForks>,
 }
 
 /// One `@bv`-tagged clause's shadow flag in the review artifact
@@ -463,11 +473,17 @@ fn project_artifact(
         }
     }
 
+    // REQ-6 / AC-7: the aggregate "semantic forks and definition towers" section — the
+    // bv-shadow density per module, the burned-lemma tower depths, and the F-F density
+    // tripwire. `None` (omitted) on the default Verus / v1 path (no tag, no burned lemma).
+    let semantic_forks = crate::forks::SemanticForks::build(certs, program);
+
     ReviewArtifact {
         intent_reviewable,
         battery_failing,
         burned_lemmas,
         bv_shadows,
+        semantic_forks,
     }
 }
 

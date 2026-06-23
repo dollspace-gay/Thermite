@@ -4,7 +4,7 @@
 tier: 3-component
 status: shipped
 audited-sha: 5ae0816c042debb01c70eb9b89c775837f0c0f24 (content-sha256 re-pinned 2026-06-21 for stage-2 REQ-8 / AC-8 (#330), faithfulness + two-phase TV + the trust flip: the change to this doc's governed file (cli.rs) is the additive `forge strat-faithful-tv [--generated N] [--seed <u64>] [--json]` subcommand (`Command::StratFaithfulTv` → `run_strat_faithful_tv`, the two-phase TV sweep reporting the phase split + the gated trust profile); every other subcommand + flag parse is unchanged. The legacy commit pin stays at the 5ae0816c stable-main ancestor; only the active content-sha256 digest moves. prior: 2026-06-20 stage-2 REQ-4 / AC-4 (#326) `forge strat-tv` + `ForgeError::StratDifferential`; 2026-06-18 umbrella REQ-2c / AC-4 rotating-seed `--seed` flag on `forge tv`; §6 metrics dashboard `--metrics` value)
-audited-content-sha256: fefedbf24bbda305680c8fb5947123fd1190ce32279fca0fc21b9f6bb8c86b42
+audited-content-sha256: fdf790121bf8dc4fa50c43b0b476a3a390d114cac27709240a111b11f126dcab
 governs: forge/src/cli.rs
 thesis-refs:
   - thermite-design.md §5

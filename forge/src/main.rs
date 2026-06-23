@@ -43,6 +43,7 @@ mod degrade;
 mod effect_wrappers;
 mod engine;
 mod exec_tv;
+mod forks;
 mod goal_repl;
 mod kani;
 mod lean_export;

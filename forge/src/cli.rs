@@ -2761,6 +2761,12 @@ fn render_review(artifact: &ReviewArtifact) -> String {
             ));
         }
     }
+    // REQ-6 / AC-7: the aggregate "semantic forks and definition towers" section — the
+    // bv-shadow density per module + burned-lemma tower depths + the F-F density tripwire.
+    if let Some(forks) = &artifact.semantic_forks {
+        out.push('\n');
+        out.push_str(&forks.render());
+    }
     out
 }
 
@@ -3006,6 +3012,11 @@ fn render_audit(manifest: &AuditManifest) -> String {
                 s.item, s.clause, s.shadow.flagged, s.shadow.semantics
             ));
         }
+    }
+    // REQ-6 / AC-7: the aggregate "semantic forks and definition towers" section — the
+    // bv-shadow density per module + burned-lemma tower depths + the F-F density tripwire.
+    if let Some(forks) = &manifest.semantic_forks {
+        out.push_str(&forks.render());
     }
     out
 }

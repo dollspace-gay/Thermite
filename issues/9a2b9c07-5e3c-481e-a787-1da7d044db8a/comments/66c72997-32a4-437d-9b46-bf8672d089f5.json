@@ -1,0 +1,8 @@
+{
+  "uuid": "66c72997-32a4-437d-9b46-bf8672d089f5",
+  "issue_uuid": "9a2b9c07-5e3c-481e-a787-1da7d044db8a",
+  "author": "7jYS",
+  "content": "Plan: new forge/src/lean_smt_export.rs — automated Rust->Lean SMT-tactic exporter. Renders a Thermite predicate Expr (+env+fragment) to a Lean Prop, emits the TV goal (P_prod) <-> (P_ref) := by smt + #print axioms. Fragments: (1) QF_LIA scalar over Int (SmtDemo proven shape); (2) QF_BV via integer machine-model. Deliverables: committed lean/Thermite/SmtExport.lean (exporter-generated, root-imported, lake-build kernel-checked) + Rust golden test (file IS exporter output) + unit tests + lake-gated axiom-clean test (AC-8).",
+  "created_at": "2026-06-23T15:11:23.853725Z",
+  "kind": "plan"
+}

@@ -38,7 +38,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use thermite_syntax::{FnItem, Item, Program, SpecFnItem};
+use thermite_syntax::{Expr, FnItem, Item, Program, SpecFnItem};
 
 /// The Q2 default definition-tower DEPTH budget (REQ-6c): the maximum length of the
 /// longest distinct-definition unfolding chain rooted at the contract. A tower whose
@@ -287,14 +287,7 @@ impl DefinitionTower {
 /// not part of the tower (it is not an unfoldable in-file definition).
 #[must_use]
 pub fn build_tower(program: &Program, src: &str, f: &FnItem) -> DefinitionTower {
-    let spec_decls: BTreeMap<&str, &SpecFnItem> = program
-        .items
-        .iter()
-        .filter_map(|i| match i {
-            Item::SpecFn(s) => Some((s.name.as_str(), s)),
-            _ => None,
-        })
-        .collect();
+    let spec_decls = spec_decls_of(program);
 
     // The roots: the spec fns the CONTRACT (`req ∪ ens`) directly references — the
     // meaning surface. (The body's own calls are implementation, not the claim.)
@@ -304,41 +297,8 @@ pub fn build_tower(program: &Program, src: &str, f: &FnItem) -> DefinitionTower 
         crate::check::collect_expr_spec_fn_calls(&ens.expr, &spec_decls, &mut roots);
     }
 
-    // The per-definition callee edges (intersected with the in-file spec-fn set): a
-    // definition's meaning unfolds the spec fns its `body ∪ dec` references.
-    let edges: BTreeMap<String, BTreeSet<String>> = spec_decls
-        .iter()
-        .map(|(name, decl)| {
-            let mut callees: BTreeSet<String> = BTreeSet::new();
-            crate::check::collect_block_spec_fn_calls(&decl.body, &spec_decls, &mut callees);
-            crate::check::collect_expr_spec_fn_calls(&decl.dec.expr, &spec_decls, &mut callees);
-            ((*name).to_string(), callees)
-        })
-        .collect();
-
-    // The reachable set (transitive closure of the roots over the edges) and each
-    // definition's level (shortest reference distance from a root, root = 1) by BFS.
-    let mut level: BTreeMap<String, usize> = BTreeMap::new();
-    let mut frontier: Vec<String> = roots.iter().cloned().collect();
-    for r in &frontier {
-        level.insert(r.clone(), 1);
-    }
-    while let Some(name) = frontier.pop() {
-        let cur = level.get(&name).copied().unwrap_or(1);
-        if let Some(callees) = edges.get(&name) {
-            for c in callees {
-                let next = cur + 1;
-                let improved = match level.get(c) {
-                    Some(&existing) => next < existing,
-                    None => true,
-                };
-                if improved {
-                    level.insert(c.clone(), next);
-                    frontier.push(c.clone());
-                }
-            }
-        }
-    }
+    let edges = spec_fn_edges(&spec_decls);
+    let level = reachable_levels(&roots, &edges);
 
     // The defs in source order (deterministic), each with its verbatim span slice.
     let defs: Vec<TowerDef> = program
@@ -361,6 +321,94 @@ pub fn build_tower(program: &Program, src: &str, f: &FnItem) -> DefinitionTower 
         defs,
         depth,
     }
+}
+
+/// The definition-tower DEPTH + distinct-definition count rooted at an arbitrary set of
+/// contract clause exprs (stage-3 REQ-6) — the depth-only projection the "semantic forks
+/// and definition towers" section ([`crate::forks`]) uses for a burned `lemma`. A
+/// [`thermite_syntax::LemmaItem`] carries `req ∪ ens` but no `FnItem`/body, so
+/// [`build_tower`] (which keys on a `FnItem` + slices `src` for verbatim text) does not
+/// apply, and the section needs only the depth + count, not the unfolded text — so this
+/// takes no `src`. It reuses the same `spec fn` call collectors + edge graph helpers as
+/// [`build_tower`], so the two AGREE on what "the tower" is (the spec-fn meaning closure
+/// of the contract). Pure (R-CODE-5): a function of the AST alone. Returns
+/// `(depth, definition_count)`.
+#[must_use]
+pub fn tower_metrics(program: &Program, root_exprs: &[&Expr]) -> (usize, usize) {
+    let spec_decls = spec_decls_of(program);
+    let mut roots: BTreeSet<String> = BTreeSet::new();
+    for e in root_exprs {
+        crate::check::collect_expr_spec_fn_calls(e, &spec_decls, &mut roots);
+    }
+    let edges = spec_fn_edges(&spec_decls);
+    let level = reachable_levels(&roots, &edges);
+    let depth = tower_depth(&roots, &edges);
+    // The reachable set is exactly the keys of `level` (the collectors only insert names
+    // in `spec_decls`, so every reached name is an in-file definition) — `level.len()` is
+    // the distinct-definition count, the same count `build_tower`'s `defs` carries.
+    (depth, level.len())
+}
+
+/// The in-file `spec fn` declarations, keyed by name (shared by [`build_tower`] +
+/// [`tower_metrics`]). A combinator / cross-file callee has no in-file declaration and so
+/// is not in this map (and never enters the tower).
+fn spec_decls_of(program: &Program) -> BTreeMap<&str, &SpecFnItem> {
+    program
+        .items
+        .iter()
+        .filter_map(|i| match i {
+            Item::SpecFn(s) => Some((s.name.as_str(), s)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The per-definition callee edges (intersected with the in-file spec-fn set): a
+/// definition's meaning unfolds the spec fns its `body ∪ dec` references. Shared by
+/// [`build_tower`] + [`tower_metrics`].
+fn spec_fn_edges(spec_decls: &BTreeMap<&str, &SpecFnItem>) -> BTreeMap<String, BTreeSet<String>> {
+    spec_decls
+        .iter()
+        .map(|(name, decl)| {
+            let mut callees: BTreeSet<String> = BTreeSet::new();
+            crate::check::collect_block_spec_fn_calls(&decl.body, spec_decls, &mut callees);
+            crate::check::collect_expr_spec_fn_calls(&decl.dec.expr, spec_decls, &mut callees);
+            ((*name).to_string(), callees)
+        })
+        .collect()
+}
+
+/// The reachable set (transitive closure of the roots over the edges) with each
+/// definition's level (shortest reference distance from a root, root = 1) by BFS. Shared
+/// by [`build_tower`] (which maps levels to `TowerDef`s) + [`tower_metrics`] (which counts
+/// the keys). Deterministic (R-CODE-5): the `BTreeMap`/`BTreeSet` iteration order is
+/// stable.
+fn reachable_levels(
+    roots: &BTreeSet<String>,
+    edges: &BTreeMap<String, BTreeSet<String>>,
+) -> BTreeMap<String, usize> {
+    let mut level: BTreeMap<String, usize> = BTreeMap::new();
+    let mut frontier: Vec<String> = roots.iter().cloned().collect();
+    for r in &frontier {
+        level.insert(r.clone(), 1);
+    }
+    while let Some(name) = frontier.pop() {
+        let cur = level.get(&name).copied().unwrap_or(1);
+        if let Some(callees) = edges.get(&name) {
+            for c in callees {
+                let next = cur + 1;
+                let improved = match level.get(c) {
+                    Some(&existing) => next < existing,
+                    None => true,
+                };
+                if improved {
+                    level.insert(c.clone(), next);
+                    frontier.push(c.clone());
+                }
+            }
+        }
+    }
+    level
 }
 
 /// The longest distinct-definition unfolding chain rooted at any contract root

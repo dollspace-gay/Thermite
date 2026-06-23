@@ -591,3 +591,124 @@ fn bv_nowrap_side_obligation_rejects_overflow_and_records_the_verdict() {
         "the nowrap obligation holds in-cage: {held}"
     );
 }
+
+/// REQ-6 / AC-7 (the "semantic forks and definition towers" section, normal density): the
+/// additive section reports bv-shadow density PER MODULE matching the fixture's known
+/// counts, and the project-wide F-F tripwire stays WITHIN the retreat threshold (one tagged
+/// clause among four contract-bearing clauses, 250‰ < 500‰ → no trip). The whole project
+/// certifies (the ordinary fns at L3, the @bv fn at L4), so the audit exits 0.
+#[test]
+fn forge_audit_semantic_forks_density_matches_known_counts() {
+    if !verus_present() {
+        eprintln!("SKIP: verus (z3) absent — forge audit's bv route is not run.");
+        return;
+    }
+    let (code, manifest) = run_forge_json("audit", "bv_density_normal.th");
+    assert_eq!(
+        code,
+        Some(0),
+        "the normal-density project certifies: {manifest}"
+    );
+    let forks = &manifest["semantic_forks"];
+    assert!(
+        !forks.is_null(),
+        "the audit manifest carries the semantic_forks section: {manifest}"
+    );
+
+    // Per-module density matches the fixture's KNOWN counts (a pure parse-level projection).
+    let density = forks["bv_density"]
+        .as_array()
+        .expect("a bv_density per-module list");
+    let row = |module: &str| -> &Value {
+        density
+            .iter()
+            .find(|d| d["module"] == module)
+            .unwrap_or_else(|| panic!("module `{module}` in the density report: {forks}"))
+    };
+    assert_eq!(row("wrap_add")["shadow_clauses"], Value::from(1));
+    assert_eq!(row("wrap_add")["contract_clauses"], Value::from(1));
+    assert_eq!(row("wrap_add")["density_permille"], Value::from(1000));
+    assert_eq!(row("plain_add")["shadow_clauses"], Value::from(0));
+    assert_eq!(row("plain_add")["density_permille"], Value::from(0));
+
+    // The project-wide F-F tripwire: 1/4 = 250‰ < 500‰ → NOT tripped, no warning.
+    let tw = &forks["tripwire"];
+    assert_eq!(tw["shadow_clauses"], Value::from(1));
+    assert_eq!(tw["contract_clauses"], Value::from(4));
+    assert_eq!(tw["density_permille"], Value::from(250));
+    assert_eq!(tw["threshold_permille"], Value::from(500));
+    assert_eq!(
+        tw["tripped"],
+        Value::Bool(false),
+        "250‰ is within threshold"
+    );
+    assert!(
+        tw.get("warning").is_none() || tw["warning"].is_null(),
+        "no F-F warning when within the retreat threshold: {tw}"
+    );
+}
+
+/// REQ-6 / AC-7 (the F-F tripwire, density spike): a synthetic density spike — two
+/// `@bv`-tagged clauses among three contract-bearing clauses (666‰ ≥ 500‰) — TRIPS the
+/// named F-F warning, which names the retreat ladder. The tripwire gates nothing: the
+/// project still certifies (exit 0), the warning is purely informational.
+#[test]
+fn forge_audit_density_spike_trips_the_named_ff_tripwire() {
+    if !verus_present() {
+        eprintln!("SKIP: verus (z3) absent — forge audit's bv route is not run.");
+        return;
+    }
+    let (code, manifest) = run_forge_json("audit", "bv_density_spike.th");
+    assert_eq!(
+        code,
+        Some(0),
+        "the F-F tripwire gates nothing — the project still certifies: {manifest}"
+    );
+    let tw = &manifest["semantic_forks"]["tripwire"];
+    assert_eq!(tw["shadow_clauses"], Value::from(2));
+    assert_eq!(tw["contract_clauses"], Value::from(3));
+    assert_eq!(tw["density_permille"], Value::from(666), "2/3 → 666‰");
+    assert_eq!(
+        tw["tripped"],
+        Value::Bool(true),
+        "666‰ reaches the 500‰ threshold"
+    );
+    let warning = tw["warning"]
+        .as_str()
+        .expect("a tripped tripwire carries the named warning");
+    assert!(
+        warning.contains("F-F tripwire TRIPPED"),
+        "the named F-F warning fires: {warning}"
+    );
+    assert!(
+        warning.contains("full → nowrap-only → lemma-only → drop"),
+        "the warning names the retreat ladder: {warning}"
+    );
+}
+
+/// REQ-6 / AC-7: `forge review` carries the same additive semantic-forks section as
+/// `forge audit` — the reviewer sees the per-module density + the F-F tripwire alongside
+/// the per-clause shadow flags.
+#[test]
+fn forge_review_carries_the_semantic_forks_section() {
+    if !verus_present() {
+        eprintln!("SKIP: verus (z3) absent — forge review's bv route is not run.");
+        return;
+    }
+    let (_code, artifact) = run_forge_json("review", "bv_density_spike.th");
+    let forks = &artifact["semantic_forks"];
+    assert!(
+        !forks.is_null(),
+        "the review artifact carries the semantic_forks section: {artifact}"
+    );
+    assert_eq!(
+        forks["bv_density"].as_array().map(Vec::len),
+        Some(3),
+        "three contract-bearing modules in the density report: {forks}"
+    );
+    assert_eq!(
+        forks["tripwire"]["tripped"],
+        Value::Bool(true),
+        "the spike trips in review too: {forks}"
+    );
+}

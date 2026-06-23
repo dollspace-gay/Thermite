@@ -1,0 +1,40 @@
+// bv_density_normal.th — a project whose bv-shadow density is BELOW the F-F retreat
+// threshold (`.design/stage3-bv-reconstruction.md` REQ-6 / AC-7, the "normal" case).
+//
+// `forge audit` / `forge review` auto-route this through the bit-vector engine (it carries
+// a `@bv` tag), so the "semantic forks and definition towers" section reports the
+// per-module bv-shadow density and the project-wide F-F tripwire. Here ONE @bv-tagged ens
+// clause sits among FOUR contract-bearing ens clauses: a project density of 1/4 = 250‰,
+// well within the 500‰ retreat threshold — the tripwire does NOT fire (the healthy
+// baseline: a small, deliberate machine-semantics fork in an otherwise-unbounded codebase).
+//
+// Per-module known counts (a pure parse-level projection):
+//   * wrap_add  — 1/1 ens machine-semantics (1000‰)
+//   * plain_add — 0/1 (0‰)
+//   * plain_inc — 0/1 (0‰)
+//   * plain_id  — 0/1 (0‰)
+//   project     — 1/4 ens machine-semantics (250‰) → WITHIN the 500‰ threshold.
+
+fn wrap_add(a: u64, b: u64) -> u64
+    req true
+    ens@bv64 a + b == b + a
+    fx pure
+{ a + b }
+
+fn plain_add(a: u64, b: u64) -> u64
+    req a < 100 && b < 100
+    ens result >= a
+    fx pure
+{ a + b }
+
+fn plain_inc(x: u32) -> u32
+    req x < 100
+    ens result == x + 1
+    fx pure
+{ x + 1 }
+
+fn plain_id(x: u32) -> u32
+    req true
+    ens result == x
+    fx pure
+{ x }

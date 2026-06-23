@@ -1,0 +1,8 @@
+{
+  "uuid": "225f8860-f1cf-43bb-89e7-bbfcf26cc8f4",
+  "issue_uuid": "7382e6a6-d7ce-4125-9e47-8611d1eeeb51",
+  "author": "OfXD",
+  "content": "[orchestrator review] PR opened. Cleanest kickoff yet — no behavioral fix needed. discharge_nowrap overflow predicates are textbook-correct (add carry-out/sub borrow/mul high-half); a witnessed overflow REJECTS (BvNowrapOverflow) not certifies (AC-6). Verified AC-6 end-to-end (add_overflows→reject w/ overflow bits; add_bounded→L4 holds, a REAL z3 discharge). All prior invariants preserved (mix64 L4, double WeakContract REQ-4 gate, REQ-3 per-item overlay). Added: binary-level bv_nowrap.th fixture + integration test (kickoff had in-crate only) + the doc-drift re-pin (8 docs). Full suite green.",
+  "created_at": "2026-06-23T03:38:19.481796Z",
+  "kind": "note"
+}

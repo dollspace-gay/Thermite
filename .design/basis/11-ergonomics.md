@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: c696c12acddb7b4656b97509485896c0eb59988eec493945544f430e37f3929b (migrated from legacy audited-sha commit pin to a squash-stable content digest; doc-drift-tripwire.md REQ-2 — content pin is primary, commit pin is a migration fallback)
+audited-content-sha256: 0be0416df846c149e4d5b6feaf22596d7ab912906bd992184cb63eec8d0e9723 (migrated from legacy audited-sha commit pin to a squash-stable content digest; doc-drift-tripwire.md REQ-2 — content pin is primary, commit pin is a migration fallback)
 governs: thermite-syntax/src/parser.rs
 governs: thermite-syntax/src/ast.rs
 governs: thermite-lower/src/lower.rs

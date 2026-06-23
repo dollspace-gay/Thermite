@@ -1,0 +1,17 @@
+// bv_weak_contract.th — a WEAK result-referencing `@bv` contract (stage-3 REQ-4 / AC-5,
+// the lock-2 anti-Goodhart gate, RFC-1 §10).
+//
+// `ens@bv64 result + 0 == result` is a tautology: it holds for ANY `result`, so it
+// constrains the body not at all. The bv-semantics mutation battery mutates the body and
+// re-discharges the clause at width; every (non-equivalent) mutant SURVIVES (the clause
+// is true regardless), giving a 0-kill score below the 0.60 floor. The gate must reject
+// this `WeakContract` rather than let it certify L4 — the anti-gaming hole the mutation
+// battery exists to close. Contrast `bv_wrap_mutation.th`'s `succ_ge`, whose loose-looking
+// `result >= x` kills the wrap-exploiting mutant and whose only survivors are body-
+// equivalent (excluded at width), so it legitimately meets the floor.
+
+fn double(x: u64) -> u64
+    req true
+    ens@bv64 result + 0 == result
+    fx pure
+{ x + x }

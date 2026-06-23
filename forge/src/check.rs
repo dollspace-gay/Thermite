@@ -1817,17 +1817,31 @@ fn bv_fn_cert(
     let mut cert = Certificate::new(f.name.clone(), item_level, effects, 0, obligations)
         .graduate_triage_clean()
         .with_engine_attribution(attribution);
-    // Lock 2 (REQ-4 / AC-5): the bv-semantics mutation battery. Run the FROZEN mutation
-    // catalogue against this fn's `@bv` clauses with the WRAP-AWARE kill check (each
-    // mutant re-discharged at the tag width), and surface the score on the cert (the
-    // `mutants_killed`/`survivor` `contract_quality` fields the Verus battery uses).
-    // `None` when the fn carries no result-referencing `@bv` clause — a tagged clause
-    // closed over the parameters (`mix64`'s `a + b == b + a`) is invariant under a body
-    // mutation, so it is not a body-constraining discriminator and the cert keeps its
-    // forward-declared `"0/0"` (the bv route surfaces the score; it does not gate — the
-    // L4 caged rung is solver-decided, and gating a non-discriminating clause would
-    // spuriously reject a machine-valid fn).
+    // Lock 2 (REQ-4 / AC-5, RFC-1 §10 anti-Goodhart): the bv-semantics mutation battery.
+    // Run the FROZEN mutation catalogue against this fn's `@bv` clauses with the WRAP-AWARE
+    // kill check (each mutant re-discharged at the tag width). `bv_mutation_score` returns:
+    //   - `None` when the fn carries no result-referencing `@bv` clause — a tagged clause
+    //     closed over the parameters only (`mix64`'s `a + b == b + a`) is a body-INVARIANT
+    //     algebraic identity, not a body-constraining discriminator, so there is nothing
+    //     to pin; it is NOT gated (gating it would spuriously reject a machine-valid fn);
+    //   - `Some(score)` when a result-referencing `@bv` clause IS mutation-discriminating.
+    //     Then the wrap-aware kill ratio GATES the cert exactly as the Verus and Lean
+    //     paths do (`meets_floor`): a below-floor score is a `WeakContract` reject, never a
+    //     silent L4. Without this gate a weak/tautological result clause (`ens@bv64
+    //     result + 0 == result`) would survive every mutant yet still certify — the
+    //     anti-gaming hole §10 forbids.
     if let Some(score) = bv_mutation_score(bv, f, adt_deps) {
+        if !score.meets_floor(crate::mutation::MUTATION_FLOOR) {
+            return Certificate::rejected_weak_contract(
+                f.name.clone(),
+                cert.effects.clone(),
+                score.mutants_killed_string(),
+                score
+                    .survivor
+                    .clone()
+                    .unwrap_or_else(|| "the mutated body".to_string()),
+            );
+        }
         cert = cert.with_mutation_score(score.mutants_killed_string(), score.survivor.clone());
     }
     cert
@@ -1887,8 +1901,12 @@ fn bv_mutation_score(
     let vars: Vec<String> = f.params.iter().map(|p| p.name.clone()).collect();
     let req = &f.contract.req.expr;
     let mutants = crate::mutation::generate(f, 0, adt_deps);
+    // The ORIGINAL body's effective result — the reference for the observable-equivalence
+    // exclusion below (#101, at width).
+    let orig_result = f.body.as_ref().and_then(effective_result_expr);
     let mut killed = 0usize;
     let mut scored = 0usize;
+    let mut equivalent = 0usize;
     let mut survivor: Option<String> = None;
 
     for m in &mutants {
@@ -1921,14 +1939,42 @@ fn bv_mutation_score(
         if !decided {
             continue;
         }
-        scored += 1;
         // `classify_mutant`'s oracle (`mutation.rs`), evaluated at width: a width
         // counterexample is `proved == false` → killed; an admitted mutant is
         // `proved == true` → survived.
         let proved = !caught;
         if crate::mutation::classify_mutant(proved) == crate::mutation::MutantOutcome::Killed {
+            scored += 1;
             killed += 1;
-        } else if survivor.is_none() {
+            continue;
+        }
+        // The mutant SURVIVED at width. Apply the observable-equivalence exclusion (#101)
+        // AT WIDTH before counting it: a mutant whose result is provably equal to the
+        // ORIGINAL body's result over QF_BV — mod 2^width for EVERY discriminator clause —
+        // is not a real discriminator (it computes the same observable value), so it is
+        // netted out of `scored` rather than counted a survivor, exactly as the Verus path
+        // nets out proved-equivalent mutants before the floor gate. Without this, a loose
+        // but legitimate contract (`ens@bv64 result >= x` over `{ x }`, whose `return x`
+        // variants are equivalent) would be spuriously gated `WeakContract`.
+        let is_equivalent = orig_result.as_ref().is_some_and(|orig| {
+            result_clauses.iter().all(|(tag, _)| {
+                let eq = thermite_syntax::Expr::Binary {
+                    op: thermite_syntax::BinOp::Eq,
+                    lhs: Box::new(result_expr.clone()),
+                    rhs: Box::new(orig.clone()),
+                };
+                matches!(
+                    bv.discharge_bv(&vars, Some(req), &eq, tag.width),
+                    BvOutcome::Proved
+                )
+            })
+        });
+        if is_equivalent {
+            equivalent += 1;
+            continue;
+        }
+        scored += 1;
+        if survivor.is_none() {
             survivor = Some(m.desc.clone());
         }
     }
@@ -1936,10 +1982,9 @@ fn bv_mutation_score(
     Some(crate::mutation::MutationScore {
         killed,
         scored,
-        // The bv route does not run the #101 observable-equivalence exclusion (that is a
-        // Verus-path equivalence query); a width-admitted mutant stays a counted
-        // survivor.
-        equivalent: 0,
+        // The #101 observable-equivalence exclusion, run AT WIDTH via the bv engine: a
+        // width-admitted mutant whose result equals the original's is excluded here.
+        equivalent,
         survivor,
     })
 }
@@ -6314,18 +6359,25 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
         let score = bv_mutation_score(&bv, &f, &[])
             .expect("a result-referencing @bv clause yields a scoreable mutant set");
         // The off-by-one `x + 1` (wrap-exploiting) and the early-return `0` are killed at
-        // width; the body-equivalent `return x` / `x - 0` survive.
+        // width; the body-equivalent `return x` / `x - 0` survivors are netted out by the
+        // #101 observable-equivalence exclusion run at width, so `scored` is 2 (not 4) and
+        // the kill ratio is a clean 1.0 (above the floor).
         assert_eq!(
             score.killed, 2,
             "two mutants are killed at width: {score:?}"
         );
         assert_eq!(
-            score.scored, 4,
-            "four mutants are decisively scored: {score:?}"
+            score.scored, 2,
+            "the 2 killed mutants are scored; the 2 body-equivalent survivors are excluded \
+             at width: {score:?}"
+        );
+        assert_eq!(
+            score.equivalent, 2,
+            "the two body-equivalent survivors are recorded as excluded: {score:?}"
         );
         assert!(
-            score.kill_ratio() > 0.0,
-            "the wrap-aware battery records a non-trivial kill ratio: {score:?}"
+            score.meets_floor(crate::mutation::MUTATION_FLOOR),
+            "with equivalents excluded the kill ratio (2/2) meets the floor: {score:?}"
         );
         // The first survivor is a body-equivalent mutant, NOT the wrap-exploiting one
         // (which was killed) — the wrap mutant never reaches the survivor slot.

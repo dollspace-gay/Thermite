@@ -243,21 +243,52 @@ fn bv_semantics_mutation_surfaces_a_nontrivial_kill_ratio_on_a_result_clause() {
         "the @bv fn certifies at the caged rung L4"
     );
     // The wrap-aware mutation battery scored the result-referencing @bv clause and killed
-    // the wrap-exploiting (and early-return) mutants: a non-`"0/0"` kill ratio.
+    // the wrap-exploiting (and early-return) mutants. The body-equivalent survivors
+    // (`return x` variants ≡ `x + 0`) are netted out by the #101 observable-equivalence
+    // exclusion run AT WIDTH, so the kill ratio is 2/2 (a clean floor pass), not 2/4.
     let killed = c["contract_quality"]["mutants_killed"]
         .as_str()
         .unwrap_or("0/0");
     assert_eq!(
-        killed, "2/4",
-        "the bv-semantics battery kills the wrap-exploiting `x + 1` and the early-return \
-         `0` mutants (2 of 4 scored): {c}"
+        killed, "2/2",
+        "the battery kills the wrap-exploiting `x + 1` and the early-return `0` mutants; \
+         the 2 body-equivalent survivors are excluded at width (2/2, meets the floor): {c}"
     );
-    // The surviving mutant is a body-equivalent one (`return x`), never the killed
-    // wrap-exploiting mutant.
+    // No real survivor remains — the wrap-exploiting mutant is killed, the rest excluded.
     let survivor = c["contract_quality"]["survivor"].as_str().unwrap_or("");
     assert!(
         !survivor.contains("off-by-one literal 0->1"),
         "the wrap-exploiting mutant is killed, never surfaced as a survivor: {survivor}"
+    );
+}
+
+/// REQ-4 / AC-5 (lock 2 — anti-Goodhart gate): a WEAK result-referencing `@bv` contract
+/// whose mutants all survive at width is rejected `WeakContract`, exactly as the Verus
+/// and Lean paths gate their mutation score — it does NOT silently certify L4. The
+/// tautological `ens@bv64 result + 0 == result` survives every (non-equivalent) body
+/// mutant: a 0-kill score below the floor. (Without the bv mutation GATE this contract
+/// certified L4 — the anti-gaming hole RFC §10 forbids.)
+#[test]
+fn a_weak_result_referencing_bv_contract_is_gated_weakcontract() {
+    if !verus_present() {
+        eprintln!("SKIP: verus (z3) absent — the bit-vector mutation battery is not run.");
+        return;
+    }
+    let (code, certs) = run_bv("bv_weak_contract.th");
+    assert_ne!(code, Some(0), "a weak @bv contract must NOT certify the project");
+    let c = cert(&certs, "double");
+    assert_eq!(c["level"], Value::from("L0"), "the weak @bv fn is gated, not L4: {c}");
+    assert_eq!(
+        c["reject"]["cause"],
+        Value::from("WeakContract"),
+        "the gate is the mutation floor (WeakContract), not some other reject: {c}"
+    );
+    let killed = c["contract_quality"]["mutants_killed"]
+        .as_str()
+        .unwrap_or("");
+    assert!(
+        killed.starts_with("0/"),
+        "the tautological clause kills no mutant (0/N, below floor): {c}"
     );
 }
 

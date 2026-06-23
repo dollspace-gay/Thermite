@@ -1,0 +1,24 @@
+// bv_nowrap.th — the `@bvN(nowrap)` lock-3 no-overflow side obligation (stage-3 REQ-5 /
+// AC-6). `@bv64(nowrap)` means: interpret over fixed-width machine semantics, but `nowrap`
+// declares that wrap is NOT the intent — so forge additionally discharges, in-cage, a
+// QF_BV obligation that no operation in the clause overflows at the width. A witnessed
+// overflow is a broken promise: the clause is REJECTED (`BvNowrapOverflow`) with the
+// concrete overflowing bit pattern, never silently certified.
+//
+//   * `add_overflows` — `req true`, so `a + b` can exceed 2^64-1 (e.g. a = MAX, b = 1).
+//                       The side obligation FAILS → rejected with the overflow witness.
+//   * `add_bounded`   — `req a < 100 && b < 100` bounds `a + b < 200`, so it can never
+//                       overflow at bv64 → the obligation HOLDS in-cage and the clause
+//                       certifies L4, its verdict recorded in `bv_shadow.nowrap_obligation`.
+
+fn add_overflows(a: u64, b: u64) -> u64
+    req true
+    ens@bv64(nowrap) result == a + b
+    fx pure
+{ a + b }
+
+fn add_bounded(a: u64, b: u64) -> u64
+    req a < 100 && b < 100
+    ens@bv64(nowrap) result == a + b
+    fx pure
+{ a + b }

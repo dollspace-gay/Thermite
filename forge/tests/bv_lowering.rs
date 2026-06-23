@@ -517,3 +517,77 @@ fn forge_review_lists_the_bv_shadows() {
         "every reviewed shadow is flagged"
     );
 }
+
+/// REQ-5 / AC-6 (lock 3 — `@bvN(nowrap)`): the no-overflow side obligation, end to end
+/// through the binary. A `@bv64(nowrap)` clause whose arithmetic can overflow at width
+/// fails its side obligation — the fn is rejected `BvNowrapOverflow` with the concrete
+/// overflowing bit pattern recorded in `bv_shadow.nowrap_obligation`. A clause whose `req`
+/// bounds the arithmetic below the wrap point holds in-cage and certifies L4, the holding
+/// verdict recorded in the same slot.
+#[test]
+fn bv_nowrap_side_obligation_rejects_overflow_and_records_the_verdict() {
+    if !verus_present() {
+        eprintln!("SKIP: verus (z3) absent — the bit-vector route is not run.");
+        return;
+    }
+    let (code, certs) = run_bv("bv_nowrap.th");
+    assert_ne!(
+        code,
+        Some(0),
+        "the overflowing nowrap fn must reject the project"
+    );
+
+    // (1) `add_overflows` — the side obligation FAILS with a concrete overflow witness.
+    let of = cert(&certs, "add_overflows");
+    assert_eq!(
+        of["level"],
+        Value::from("L0"),
+        "an overflowing nowrap clause does not certify: {of}"
+    );
+    assert_eq!(
+        of["reject"]["cause"],
+        Value::from("BvNowrapOverflow"),
+        "rejected by the nowrap obligation, not some other cause: {of}"
+    );
+    let witness = of["obligations"]
+        .as_array()
+        .and_then(|o| {
+            o.iter()
+                .find(|o| o["bv_shadow"]["nowrap_obligation"].is_string())
+        })
+        .expect("a witness obligation carries the nowrap verdict");
+    let nowrap = witness["bv_shadow"]["nowrap_obligation"]
+        .as_str()
+        .unwrap_or("");
+    assert!(
+        nowrap.contains("FAILED"),
+        "the failed nowrap verdict is recorded: {nowrap}"
+    );
+    assert!(
+        nowrap.contains("0b"),
+        "with the concrete overflowing bit pattern: {nowrap}"
+    );
+
+    // (2) `add_bounded` — `req` bounds the sum, so the obligation HOLDS in-cage at L4.
+    let ok = cert(&certs, "add_bounded");
+    assert_eq!(
+        ok["level"],
+        Value::from("L4"),
+        "a non-overflowing nowrap clause certifies at the caged rung L4: {ok}"
+    );
+    assert!(
+        ok.get("reject").map(|r| r.is_null()).unwrap_or(true),
+        "a held nowrap obligation is no reject: {ok}"
+    );
+    let held = ok["obligations"]
+        .as_array()
+        .and_then(|o| {
+            o.iter()
+                .find_map(|o| o["bv_shadow"]["nowrap_obligation"].as_str())
+        })
+        .expect("the holding nowrap verdict is recorded");
+    assert!(
+        held.contains("discharged"),
+        "the nowrap obligation holds in-cage: {held}"
+    );
+}

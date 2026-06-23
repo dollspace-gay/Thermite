@@ -1,0 +1,8 @@
+{
+  "uuid": "59852335-5aff-4d33-8ece-0dc483f9ae98",
+  "issue_uuid": "e8425b89-94e3-4495-82a3-2d7e3328ee10",
+  "author": "7jYS",
+  "content": "SPIKE (option 1, rev-bump) — VERDICT: NOT VIABLE. Findings via GitHub API: (1) our pinned rev 7d1d8239 IS the HEAD of lean-smt main ('Update Lean toolchain to v4.29.0' #226, 2026-04-17) — there is NO newer rev to bump to. (2) Bitblast.lean (with the eq_eq_beq sorry) was last meaningfully touched 2024-12-20; the bv reconstruction file is dormant ~18mo. Recent upstream work (#221 datatypes, #220 fixes, #217 ite) is on OTHER theories — zero bv reconstruction activity. (3) main is on v4.29.0 (same as us). (4) ONE open PR exists: ufmg-smite/lean-smt#227 (2026-04-21, outside contributor, UNMERGED) 'eliminate sorry in Bitblast' — proves eq_eq_beq by induction on beq.go + omega + BitVec.eq_of_getLsbD_eq (IDENTICAL to the fix I wrote independently, validating it), on v4.29.0. BUT its scope is ONLY the eq_eq_beq sorry, which I already proved is necessary-not-sufficient — it does NOT touch the coverage gaps (unsolved-goals residuals on cmp/arith, the ac_rfl_top AC bug) that actually block non-trivial QF_BV TV obligations. CONCLUSION: no rev-bump unblocks literal kernel-clean QF_BV. Pinning to an unmerged outside PR branch is also against the SHA-pin reproducibility discipline (trust-audit F4). The bounded-int model (shipped REQ-7) stands; REQ-8's literal-bv-query replay should be rescoped to F-J. Optional future: contribute the broader bv reconstruction-rule coverage upstream (the real, multi-rule fix), of which eq_eq_beq/#227 is one piece.",
+  "created_at": "2026-06-23T21:25:32.856229Z",
+  "kind": "result"
+}

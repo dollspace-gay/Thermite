@@ -1,0 +1,10 @@
+{
+  "uuid": "8fffa494-a747-448c-9fea-de88ac4770e2",
+  "issue_uuid": "4e1e886c-254a-4a9f-bf03-0c399c95866b",
+  "author": "rApq",
+  "content": "REQ-6 (#348) SHIPPED → main @d2f2e2f0 (PR #89): semantic-forks-and-towers review/audit section + F-F density tripwire (500permille). SERIAL 3→6 PATH COMPLETE — the bv-half locks (REQ-3 shadow flag, REQ-4 mutation gate, REQ-5 nowrap, REQ-6 review surface) all shipped. 6/9 stage-3 increments done. REMAINING: the reconstruction half — REQ-7 (#349 Rust→Lean exporter, the big one), REQ-8 (#350 reconstruction default-on), then REQ-9 (#351 gate G3). Orchestrator fixes this run: REQ-2 L4 rung, REQ-3 per-item overlay (user-flagged), REQ-4 mutation gate+exclusion (user-approved). Follow-up #354 (cage L3→L4).",
+  "created_at": "2026-06-23T04:58:04.236760Z",
+  "kind": "note",
+  "signed_by": "SHA256:tVRGNaCPy5N1tRtokzkbgsOCzGZujGDWQlGHFruaL9c",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgylLCWwpnQm2E2UQO23AN1e/yB6k0yzmPM7qiYPujTNYAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA08lATfEOY3TS+eOLJdA9HMitArtAUktzsMq2KL4V2Ei5BwjadrYYOWIqh2r81lXC81bnjYFHPawI6xjmgeqYAg=="
+}

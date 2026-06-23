@@ -3,12 +3,13 @@
   "display_id": 346,
   "title": "Stage-3 REQ-4: lock 2 — bv-semantics mutation (kill check at width)",
   "description": "The mutation battery (forge/src/mutation.rs) runs against bv semantics for tagged clauses. The frozen operator catalogue (MUTANT_CAP=64, mutation.rs:61) is reused UNCHANGED — the stage-1 re-elaboration precedent: only the kill check swaps. classify_mutant's oracle (mutation.rs:99) is evaluated AT WIDTH, so a wrap-exploiting mutant (equivalent at unbounded semantics, distinguishable at width) must be killable by a wrap-aware check. AC-5: a wrap-exploiting mutant is killed by the bv-semantics mutation run on a tagged clause AND survives the unbounded check — a fixture test pinning the width-aware kill. Doc: REQ-4. Gate: G3.",
-  "status": "open",
+  "status": "closed",
   "priority": "medium",
   "parent_uuid": "4e1e886c-254a-4a9f-bf03-0c399c95866b",
   "created_by": "rApq",
   "created_at": "2026-06-22T03:10:09.615493Z",
-  "updated_at": "2026-06-22T03:10:52.023088Z",
+  "updated_at": "2026-06-23T01:15:25.567566Z",
+  "closed_at": "2026-06-23T01:15:25.567566Z",
   "labels": [
     "forge"
   ],

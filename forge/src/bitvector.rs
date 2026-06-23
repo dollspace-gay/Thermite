@@ -446,6 +446,111 @@ impl BitVectorEngine {
         }
     }
 
+    /// Discharge the `@bvN(nowrap)` no-overflow SIDE OBLIGATION over fixed-width QF_BV
+    /// semantics (`.design/stage3-bv-reconstruction.md` REQ-5 / AC-6 — lock 3). A
+    /// `nowrap` tag declares that, although the clause is interpreted at machine width,
+    /// wrap is NOT the author's intent: every wrap-prone arithmetic operation in the
+    /// clause body (`+`, `-`, `*`) must stay within `N` bits for every input satisfying
+    /// the precondition. The obligation is itself a QF_BV query — "does some operation
+    /// overflow at width `N`?" — asked the OPPOSITE way round to the main clause: it
+    /// asserts the precondition AND the disjunction of the per-operation overflow
+    /// conditions (NOT negated, since we are hunting for an overflowing assignment).
+    ///
+    /// - `unsat` → no input overflows → [`BvOutcome::Proved`] (the obligation holds);
+    /// - `sat` → a concrete overflowing input → [`BvOutcome::Counterexample`] carrying
+    ///   the witnessing bit pattern (AC-6 — "fails with a concrete overflowing input");
+    /// - `unknown` under a bounded profile → [`BvOutcome::Timeout`] (the multiplier
+    ///   cliff — the overflow query zero-extends a 64-bit multiply to 128 bits, so it
+    ///   inherits the same dedicated budget; never a bare `unknown`);
+    /// - Z3 absent / an out-of-fragment operand → [`BvOutcome::Unknown`] (an honest skip).
+    ///
+    /// A clause whose body carries NO wrap-prone operation (a pure comparison such as
+    /// `result == a`) has nothing that could overflow, so the obligation holds VACUOUSLY
+    /// ([`BvOutcome::Proved`]) without a solver round-trip. `vars` / `req` mirror
+    /// [`BitVectorEngine::discharge_bv`] (the `result`-grounded clause closed over the
+    /// parameters).
+    #[must_use]
+    pub fn discharge_nowrap(
+        &self,
+        vars: &[String],
+        req: Option<&Expr>,
+        clause: &Expr,
+        width: BvWidth,
+    ) -> BvOutcome {
+        let n = width.bits();
+        // Collect the per-operation overflow conditions. An out-of-fragment operand is an
+        // honest skip (never a silent pass) — the obligation is not quietly dropped.
+        let mut conds = Vec::new();
+        if let Err(reason) = collect_overflow_conditions(clause, n, &mut conds) {
+            return BvOutcome::Unknown(format!(
+                "the `@bv{n}(nowrap)` side obligation did not render to QF_BV: {reason}"
+            ));
+        }
+        // No wrap-prone arithmetic → nothing can overflow → the obligation holds
+        // vacuously, with no solver query (and no spurious `unknown` when Z3 is absent).
+        if conds.is_empty() {
+            return BvOutcome::Proved;
+        }
+        // The precondition is a hypothesis on the overflowing assignment. As in
+        // `discharge_bv`, an unrenderable `req` is a SKIP, never a dropped guard — dropping
+        // it could mint an overflow witness at an assignment the precondition rules out.
+        let req_smt = match req {
+            Some(r) => match render_bv_prop(r, n) {
+                Ok(s) => Some(s),
+                Err(reason) => {
+                    return BvOutcome::Unknown(format!(
+                        "the `@bv{n}(nowrap)` obligation's precondition did not render to QF_BV \
+                         (skipping rather than dropping the guard): {reason}"
+                    ))
+                }
+            },
+            None => None,
+        };
+
+        let overflow_smt = if conds.len() == 1 {
+            conds.remove(0)
+        } else {
+            format!("(or {})", conds.join(" "))
+        };
+        // The overflow query reuses the clause's budget profile: a 64-bit variable
+        // multiply zero-extends to a 128-bit `bvmul` here, an even costlier bit-blast, so
+        // it deserves the dedicated multiplier budget exactly as the main query does.
+        let profile = BvBudgetProfile::for_query(
+            width,
+            &req.into_iter()
+                .chain(std::iter::once(clause))
+                .collect::<Vec<_>>(),
+        );
+        let query = build_nowrap_query(vars, req_smt.as_deref(), &overflow_smt, n, &profile);
+
+        match Self::run_z3(&query, profile.timeout_secs) {
+            Ok((result, model)) => match result.as_str() {
+                // No assignment overflows → the no-overflow obligation holds.
+                "unsat" => BvOutcome::Proved,
+                // A concrete overflowing input → the obligation FAILS, witnessed by the
+                // bit pattern (AC-6).
+                "sat" => BvOutcome::Counterexample {
+                    bits: parse_bv_model(&model, vars, n),
+                },
+                // The 128-bit multiplier bit-blast cliff: reported as Timeout under the
+                // named profile, never a bare `unknown` (the `discharge_bv` precedent).
+                "unknown" => BvOutcome::Timeout {
+                    profile: profile.name.clone(),
+                    detail: format!(
+                        "Z3 returned `unknown` under the `{}` budget profile (rlimit {}, {}s) \
+                         on the `@bv{n}(nowrap)` overflow query — reported as Timeout, never a \
+                         silent unknown",
+                        profile.name, profile.rlimit, profile.timeout_secs
+                    ),
+                },
+                other => BvOutcome::Unknown(format!(
+                    "Z3 returned an unexpected result `{other}` on the `@bv{n}(nowrap)` query"
+                )),
+            },
+            Err(reason) => BvOutcome::Unknown(reason),
+        }
+    }
+
     /// Run Z3 over an SMT-LIB2 `query` (fed on stdin), returning `(result, model)`.
     /// `Err` on Z3 absent / spawn failure / no result token (an honest skip reason,
     /// never a silent success — R-CODE-4). Mirrors [`crate::engine::NlsatEngine`]'s
@@ -524,6 +629,111 @@ pub fn build_bv_query(
     }
     // The clause is valid at width N iff `req ∧ ¬clause` is unsatisfiable.
     s.push_str(&format!("(assert (not {clause_smt}))\n"));
+    s.push_str("(check-sat)\n");
+    s.push_str("(get-model)\n");
+    s
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The `nowrap` no-overflow side obligation (REQ-5 — lock 3).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Collect the per-operation no-overflow side conditions of a `@bvN(nowrap)` clause
+/// body (`.design/stage3-bv-reconstruction.md` REQ-5 / AC-6). For every wrap-prone
+/// arithmetic operation in `e` — addition, subtraction, multiplication — push the
+/// SMT-LIB2 `Bool` that is TRUE exactly when THAT operation overflows `width` bits, with
+/// its operands rendered as the actual width-`N` machine terms fed into it. The walk
+/// recurses through the whole expression (propositions, connectives, comparisons, and
+/// the operand sub-terms), so a nested `(a + b) * c` emits a condition for both the
+/// inner add and the outer multiply. The disjunction of the collected conditions is
+/// satisfiable iff some input overflows. `Err` names an out-of-fragment operand — an
+/// honest skip, so the obligation is never silently dropped. Pure (R-CODE-5).
+fn collect_overflow_conditions(e: &Expr, width: u32, out: &mut Vec<String>) -> Result<(), String> {
+    match e {
+        Expr::Binary { op, lhs, rhs } => {
+            if let Some(cond) = overflow_condition(*op, lhs, rhs, width)? {
+                out.push(cond);
+            }
+            collect_overflow_conditions(lhs, width, out)?;
+            collect_overflow_conditions(rhs, width, out)
+        }
+        Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => {
+            collect_overflow_conditions(expr, width, out)
+        }
+        _ => Ok(()),
+    }
+}
+
+/// The SMT-LIB2 `Bool` that holds exactly when the `op` of `lhs op rhs` overflows
+/// `width` bits (`.design/stage3-bv-reconstruction.md` REQ-5 / AC-6), or `Ok(None)` when
+/// `op` is not a wrap-prone arithmetic operator (comparisons, connectives, bitwise/shift
+/// and division never overflow the unsigned width — a shift/bitwise result is defined
+/// at width, and unsigned `udiv`/`urem` only shrink). The three overflow tests are the
+/// textbook unsigned ones:
+///
+/// - `+` overflows iff the sum carries out — equivalently the width-`N` result is LESS
+///   than an operand: `(bvult (bvadd l r) l)`;
+/// - `-` underflows iff it would go below zero — i.e. `l < r`: `(bvult l r)`;
+/// - `*` overflows iff the true `2N`-bit product has any high-half bit set: zero-extend
+///   both operands to `2N`, multiply, and check the top `N` bits are non-zero.
+///
+/// `Err` propagates an out-of-fragment operand from [`render_bv_term`].
+fn overflow_condition(
+    op: BinOp,
+    lhs: &Expr,
+    rhs: &Expr,
+    width: u32,
+) -> Result<Option<String>, String> {
+    if !matches!(op, BinOp::Add | BinOp::Sub | BinOp::Mul) {
+        return Ok(None);
+    }
+    let l = render_bv_term(lhs, width)?;
+    let r = render_bv_term(rhs, width)?;
+    let cond = match op {
+        BinOp::Add => format!("(bvult (bvadd {l} {r}) {l})"),
+        BinOp::Sub => format!("(bvult {l} {r})"),
+        BinOp::Mul => {
+            let hi = 2 * width - 1;
+            format!(
+                "(not (= ((_ extract {hi} {width}) \
+                 (bvmul ((_ zero_extend {width}) {l}) ((_ zero_extend {width}) {r}))) \
+                 (_ bv0 {width})))"
+            )
+        }
+        _ => unreachable!("the guard fixed the wrap-prone operator set"),
+    };
+    Ok(Some(cond))
+}
+
+/// Build the SMT-LIB2 `QF_BV` query whose satisfiability decides a `@bvN(nowrap)`
+/// no-overflow side obligation (`.design/stage3-bv-reconstruction.md` REQ-5 / AC-6).
+/// Unlike [`build_bv_query`] (which asserts the NEGATED clause to seek a falsifying
+/// model), this asserts the precondition and the overflow disjunction DIRECTLY — a `sat`
+/// model is a concrete OVERFLOWING input (the obligation fails), `unsat` means no input
+/// overflows (the obligation holds). Sets the budget profile's `rlimit` when bounded
+/// (the 64-bit multiplier cliff, now widened to a 128-bit `bvmul`).
+#[must_use]
+pub fn build_nowrap_query(
+    vars: &[String],
+    req_smt: Option<&str>,
+    overflow_smt: &str,
+    width: u32,
+    profile: &BvBudgetProfile,
+) -> String {
+    let mut s = String::new();
+    s.push_str("(set-logic QF_BV)\n");
+    if profile.rlimit > 0 {
+        s.push_str(&format!("(set-option :rlimit {})\n", profile.rlimit));
+    }
+    for v in vars {
+        s.push_str(&format!("(declare-const {v} (_ BitVec {width}))\n"));
+    }
+    if let Some(req) = req_smt {
+        s.push_str(&format!("(assert {req})\n"));
+    }
+    // The obligation FAILS iff `req ∧ (some operation overflows)` is satisfiable — so the
+    // overflow disjunction is asserted directly (NOT negated, unlike the main clause).
+    s.push_str(&format!("(assert {overflow_smt})\n"));
     s.push_str("(check-sat)\n");
     s.push_str("(get-model)\n");
     s
@@ -955,5 +1165,237 @@ mod tests {
                 "the dedicated budget profile is named"
             );
         }
+    }
+
+    // ── The `nowrap` no-overflow side obligation (REQ-5 / AC-6, lock 3).
+
+    fn overflow_conds(e: &Expr, width: u32) -> Vec<String> {
+        let mut out = Vec::new();
+        collect_overflow_conditions(e, width, &mut out).expect("renders");
+        out
+    }
+
+    #[test]
+    fn overflow_conditions_cover_add_sub_mul_with_the_textbook_predicates() {
+        // a + b → unsigned add carry-out: result < an operand.
+        assert_eq!(
+            overflow_conds(&bin(BinOp::Add, var("a"), var("b")), 64),
+            vec!["(bvult (bvadd a b) a)".to_string()]
+        );
+        // a - b → unsigned underflow: a < b.
+        assert_eq!(
+            overflow_conds(&bin(BinOp::Sub, var("a"), var("b")), 32),
+            vec!["(bvult a b)".to_string()]
+        );
+        // a * b → high-half of the 2N-bit product non-zero.
+        assert_eq!(
+            overflow_conds(&bin(BinOp::Mul, var("a"), var("b")), 8),
+            vec!["(not (= ((_ extract 15 8) (bvmul ((_ zero_extend 8) a) \
+                  ((_ zero_extend 8) b))) (_ bv0 8)))"
+                .to_string()]
+        );
+    }
+
+    #[test]
+    fn overflow_conditions_recurse_into_nested_operations() {
+        // (a + b) * c emits BOTH the inner add overflow and the outer multiply overflow,
+        // with the outer multiply's left operand the wrapped `(bvadd a b)` machine value.
+        let e = bin(BinOp::Mul, bin(BinOp::Add, var("a"), var("b")), var("c"));
+        let conds = overflow_conds(&e, 64);
+        assert_eq!(conds.len(), 2, "one condition per wrap-prone op: {conds:?}");
+        assert!(
+            conds.iter().any(|c| c.contains("(bvult (bvadd a b) a)")),
+            "the inner add overflow is collected: {conds:?}"
+        );
+        assert!(
+            conds
+                .iter()
+                .any(|c| c.contains("(bvmul ((_ zero_extend 64) (bvadd a b))")),
+            "the outer multiply's operand is the wrapped inner sum: {conds:?}"
+        );
+    }
+
+    #[test]
+    fn non_arithmetic_clause_has_no_overflow_conditions() {
+        // A pure comparison / bitwise / shift body has nothing that wraps — the
+        // obligation holds vacuously (no conditions to discharge).
+        assert!(overflow_conds(&bin(BinOp::Eq, var("a"), var("b")), 64).is_empty());
+        assert!(overflow_conds(&bin(BinOp::BitAnd, var("a"), var("b")), 64).is_empty());
+        assert!(overflow_conds(&bin(BinOp::Shl, var("a"), lit(3)), 64).is_empty());
+        // A comparison over arithmetic operands still surfaces the inner overflow.
+        let e = bin(BinOp::Lt, bin(BinOp::Add, var("a"), var("b")), var("c"));
+        assert_eq!(
+            overflow_conds(&e, 64),
+            vec!["(bvult (bvadd a b) a)".to_string()]
+        );
+    }
+
+    #[test]
+    fn out_of_fragment_operand_is_an_honest_error() {
+        // A multiply whose operand is outside the term fragment (a method call) is an
+        // Err — the obligation is skipped, never silently passed.
+        let mc = Expr::MethodCall {
+            receiver: Box::new(var("a")),
+            name: "len".to_string(),
+            args: vec![],
+        };
+        let mut out = Vec::new();
+        assert!(collect_overflow_conditions(&bin(BinOp::Add, mc, var("b")), 64, &mut out).is_err());
+    }
+
+    #[test]
+    fn nowrap_query_asserts_overflow_directly_not_negated() {
+        let q = build_nowrap_query(
+            &["a".to_string(), "b".to_string()],
+            Some("(bvult a (_ bv100 64))"),
+            "(bvult (bvadd a b) a)",
+            64,
+            &BvBudgetProfile::default_profile(),
+        );
+        assert!(q.contains("(set-logic QF_BV)"));
+        assert!(q.contains("(declare-const a (_ BitVec 64))"));
+        assert!(
+            q.contains("(assert (bvult a (_ bv100 64)))"),
+            "the precondition is a hypothesis"
+        );
+        // The overflow disjunction is asserted DIRECTLY (not wrapped in `(not …)`), so a
+        // model is an overflowing input.
+        assert!(q.contains("(assert (bvult (bvadd a b) a))"));
+        assert!(
+            !q.contains("(not (bvult (bvadd a b) a))"),
+            "the overflow is NOT negated"
+        );
+        assert!(q.contains("(check-sat)"));
+    }
+
+    /// AC-6 (engine level): a `@bv64(nowrap)` body that cannot overflow holds — `a + b`
+    /// with both operands bounded below `2^32` never carries out of 64 bits.
+    #[test]
+    fn live_bounded_sum_passes_the_nowrap_obligation() {
+        if bv_skip() {
+            return;
+        }
+        let engine = BitVectorEngine::new();
+        // req a < 2^32 && b < 2^32 ; body a + b — provably no 64-bit overflow.
+        let req = bin(
+            BinOp::And,
+            bin(BinOp::Lt, var("a"), lit(1u128 << 32)),
+            bin(BinOp::Lt, var("b"), lit(1u128 << 32)),
+        );
+        let body = bin(BinOp::Add, var("a"), var("b"));
+        let out = engine.discharge_nowrap(
+            &["a".to_string(), "b".to_string()],
+            Some(&req),
+            &body,
+            BvWidth::W64,
+        );
+        assert_eq!(
+            out,
+            BvOutcome::Proved,
+            "a bounded 64-bit sum never overflows"
+        );
+    }
+
+    /// AC-6 (engine level): an unconstrained `@bv64(nowrap)` `a + b` CAN overflow — the
+    /// obligation fails with a concrete overflowing bit pattern (the witness genuinely
+    /// carries out of 64 bits).
+    #[test]
+    fn live_unbounded_sum_fails_with_a_concrete_overflowing_input() {
+        if bv_skip() {
+            return;
+        }
+        let engine = BitVectorEngine::new();
+        let body = bin(BinOp::Add, var("a"), var("b"));
+        let out = engine.discharge_nowrap(
+            &["a".to_string(), "b".to_string()],
+            None,
+            &body,
+            BvWidth::W64,
+        );
+        match out {
+            BvOutcome::Counterexample { bits } => {
+                assert_eq!(bits.len(), 2, "a bit pattern per variable");
+                // The witness genuinely overflows: a + b wraps below an operand at width 64.
+                let mask = u64::MAX as u128;
+                let wrapped = (bits[0].value + bits[1].value) & mask;
+                assert!(
+                    wrapped < bits[0].value || wrapped < bits[1].value,
+                    "the witness carries out of 64 bits: a={}, b={}",
+                    bits[0].value,
+                    bits[1].value
+                );
+            }
+            other => panic!("expected an overflowing Counterexample, got {other:?}"),
+        }
+    }
+
+    /// AC-6 (engine level): the multiply-overflow predicate is well-formed SMT and z3
+    /// decides it both ways. A small-width `a * b` with both operands bounded below
+    /// `2^(N/2)` cannot overflow `N` bits (Proved), while the same product unconstrained
+    /// CAN overflow (Counterexample). This exercises the `zero_extend`/`extract` render
+    /// against the real solver — a syntax slip would surface here, not just in the unit
+    /// string check.
+    #[test]
+    fn live_multiply_overflow_predicate_is_decided_both_ways() {
+        if bv_skip() {
+            return;
+        }
+        let engine = BitVectorEngine::new();
+        let body = bin(BinOp::Mul, var("a"), var("b"));
+        // Bounded below 2^4 at width 8 → a*b < 2^8 always → no overflow (Proved).
+        let req = bin(
+            BinOp::And,
+            bin(BinOp::Lt, var("a"), lit(16)),
+            bin(BinOp::Lt, var("b"), lit(16)),
+        );
+        let bounded = engine.discharge_nowrap(
+            &["a".to_string(), "b".to_string()],
+            Some(&req),
+            &body,
+            BvWidth::W8,
+        );
+        assert_eq!(
+            bounded,
+            BvOutcome::Proved,
+            "a*b with both operands < 2^4 never overflows 8 bits"
+        );
+        // Unconstrained → a*b can overflow 8 bits (e.g. 16*16 = 256 ≡ 0): Counterexample.
+        let unbounded = engine.discharge_nowrap(
+            &["a".to_string(), "b".to_string()],
+            None,
+            &body,
+            BvWidth::W8,
+        );
+        match unbounded {
+            BvOutcome::Counterexample { bits } => {
+                let prod = bits[0].value * bits[1].value;
+                assert!(
+                    prod >= 256,
+                    "the witness genuinely overflows 8 bits: a={}, b={}, a*b={prod}",
+                    bits[0].value,
+                    bits[1].value
+                );
+            }
+            other => panic!("expected an overflowing Counterexample, got {other:?}"),
+        }
+    }
+
+    /// AC-6 (engine level): a non-arithmetic `nowrap` body holds VACUOUSLY without a
+    /// solver round-trip (so it passes even with z3 absent — no skip guard needed).
+    #[test]
+    fn nowrap_obligation_is_vacuous_for_a_non_arithmetic_body() {
+        let engine = BitVectorEngine::new();
+        let body = bin(BinOp::Eq, var("a"), var("b"));
+        let out = engine.discharge_nowrap(
+            &["a".to_string(), "b".to_string()],
+            None,
+            &body,
+            BvWidth::W64,
+        );
+        assert_eq!(
+            out,
+            BvOutcome::Proved,
+            "no wrap-prone op → vacuously no overflow"
+        );
     }
 }

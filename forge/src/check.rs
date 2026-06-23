@@ -1740,7 +1740,23 @@ fn bv_fn_cert(
             };
             match bv.discharge_bv(&vars, Some(req), &clause_expr, tag.width) {
                 BvOutcome::Proved => {
-                    obligations.push(bv_proved_obl(&f.name, k, tag, &bv_attr));
+                    // Lock 3 (REQ-5 / AC-6): a `nowrap` clause additionally discharges its
+                    // no-overflow side obligation in-cage. A witnessed overflow REJECTS
+                    // (the nowrap promise is violated); a holds/undecided verdict rides the
+                    // clause's `bv_shadow.nowrap_obligation`.
+                    let nowrap = if tag.nowrap {
+                        match bv_nowrap_verdict(bv, &vars, req, &clause_expr, tag.width) {
+                            NowrapVerdict::Holds(v) | NowrapVerdict::Undecided(v) => Some(v),
+                            NowrapVerdict::Overflow { verdict, bits } => {
+                                return bv_nowrap_overflow_cert(
+                                    &f.name, &effects, slag, k, tag, &verdict, &bits, &bv_attr,
+                                );
+                            }
+                        }
+                    } else {
+                        None
+                    };
+                    obligations.push(bv_proved_obl(&f.name, k, tag, &bv_attr, nowrap));
                     // A `@bv` clause is decidable QF_BV with COMPLETE bit-pattern
                     // countermodels — the L4 (caged) refutation quality, RFC-1 §2/§4.
                     // The rung is the refutation quality; the SOLVER trust base
@@ -2024,7 +2040,24 @@ fn bv_lemma_cert(
             );
         };
         match bv.discharge_bv(&vars, Some(req), &ens.expr, tag.width) {
-            BvOutcome::Proved => obligations.push(bv_proved_obl(&l.name, k, tag, &bv_attr)),
+            BvOutcome::Proved => {
+                // Lock 3 (REQ-5 / AC-6): a `nowrap` lemma clause discharges its no-overflow
+                // side obligation too — a witnessed overflow rejects the lemma, else the
+                // verdict rides the clause's `bv_shadow.nowrap_obligation`.
+                let nowrap = if tag.nowrap {
+                    match bv_nowrap_verdict(bv, &vars, req, &ens.expr, tag.width) {
+                        NowrapVerdict::Holds(v) | NowrapVerdict::Undecided(v) => Some(v),
+                        NowrapVerdict::Overflow { verdict, bits } => {
+                            return bv_nowrap_overflow_cert(
+                                &l.name, &effects, false, k, tag, &verdict, &bits, &bv_attr,
+                            );
+                        }
+                    }
+                } else {
+                    None
+                };
+                obligations.push(bv_proved_obl(&l.name, k, tag, &bv_attr, nowrap));
+            }
             BvOutcome::Counterexample { bits } => {
                 return bv_counterexample_cert(&l.name, &effects, false, k, tag, &bits, &bv_attr);
             }
@@ -2053,6 +2086,7 @@ fn bv_proved_obl(
     k: usize,
     tag: &thermite_syntax::BvTag,
     attr: &crate::engine::EngineAttribution,
+    nowrap_obligation: Option<String>,
 ) -> ObligationResult {
     ObligationResult::discharged(format!(
         "{item}::ens#{k}: discharged by the bit-vector route over {} (fixed-width \
@@ -2066,8 +2100,136 @@ fn bv_proved_obl(
         attr.trust_profile.clone(),
         crate::verdict::CertVerdict::Proved,
     )
-    // Lock 1 (REQ-3 / AC-4): the shadow flag rides every tagged clause's obligation.
-    .with_bv_shadow(bv_shadow_for(tag))
+    // Lock 1 (REQ-3 / AC-4): the shadow flag rides every tagged clause's obligation;
+    // Lock 3 (REQ-5 / AC-6): a `nowrap` clause's no-overflow verdict rides it too.
+    .with_bv_shadow(bv_shadow_for(tag, nowrap_obligation))
+}
+
+/// The outcome of a `@bvN(nowrap)` clause's no-overflow SIDE OBLIGATION (`.design/
+/// stage3-bv-reconstruction.md` REQ-5 / AC-6 — lock 3), run after the main clause is
+/// `Proved`. The obligation is discharged in-cage by [`crate::bitvector::BitVectorEngine::
+/// discharge_nowrap`]; this triages the result into a verdict the certificate records.
+enum NowrapVerdict {
+    /// No operation overflows at width — the obligation holds. The verdict string is
+    /// recorded in `bv_shadow.nowrap_obligation`; the cert certifies normally.
+    Holds(String),
+    /// The obligation could not be decided (Z3 absent, the multiplier cliff, or an
+    /// out-of-fragment operand). Recorded HONESTLY in `bv_shadow.nowrap_obligation` — the
+    /// main clause still certifies (an undecided side obligation is labeled, never
+    /// silently passed and never a false `nowrap` claim).
+    Undecided(String),
+    /// A concrete overflowing input — the `nowrap` promise is violated, so the cert is
+    /// REJECTED (a witnessed nowrap violation must not certify). The verdict + bit
+    /// pattern ride the rejection cert's `bv_shadow.nowrap_obligation`.
+    Overflow {
+        verdict: String,
+        bits: Vec<crate::bitvector::BvBitPattern>,
+    },
+}
+
+/// Discharge a `@bvN(nowrap)` clause's no-overflow side obligation and triage it
+/// (`.design/stage3-bv-reconstruction.md` REQ-5 / AC-6). `clause` is the `result`-grounded
+/// clause body (the same expression the main QF_BV query decided); `req` is the
+/// precondition (the overflowing input must satisfy it). Pure beyond the in-cage Z3
+/// discharge.
+fn bv_nowrap_verdict(
+    bv: &crate::bitvector::BitVectorEngine,
+    vars: &[String],
+    req: &thermite_syntax::Expr,
+    clause: &thermite_syntax::Expr,
+    width: thermite_syntax::BvWidth,
+) -> NowrapVerdict {
+    use crate::bitvector::BvOutcome;
+    let n = width.bits();
+    match bv.discharge_nowrap(vars, Some(req), clause, width) {
+        BvOutcome::Proved => NowrapVerdict::Holds(format!(
+            "discharged: no operation in the clause overflows at bv{n} (the `nowrap` \
+             no-overflow side obligation holds in-cage; stage3-bv-reconstruction.md REQ-5)"
+        )),
+        BvOutcome::Counterexample { bits } => NowrapVerdict::Overflow {
+            verdict: format!(
+                "FAILED: a bv{n} operation overflows on input [{}] — the `nowrap` \
+                 no-overflow side obligation is violated by a concrete overflowing input \
+                 (stage3-bv-reconstruction.md REQ-5 / AC-6)",
+                render_bv_pattern(&bits)
+            ),
+            bits,
+        },
+        BvOutcome::Timeout { profile, detail } => NowrapVerdict::Undecided(format!(
+            "undecided (Timeout under `{profile}`): {detail} — the `nowrap` side obligation \
+             was not decided; recorded honestly, never a false no-overflow claim"
+        )),
+        BvOutcome::Unknown(reason) => NowrapVerdict::Undecided(format!(
+            "undecided (skipped): {reason} — the `nowrap` side obligation was not decided; \
+             recorded honestly, never a false no-overflow claim"
+        )),
+    }
+}
+
+/// Render a QF_BV bit-pattern witness as the certificate's one-line diagnostic fragment
+/// (`.design/stage3-bv-reconstruction.md` REQ-5 / AC-6). Joins the per-variable
+/// [`crate::bitvector::BvBitPattern::render`] lines.
+fn render_bv_pattern(bits: &[crate::bitvector::BvBitPattern]) -> String {
+    bits.iter()
+        .map(crate::bitvector::BvBitPattern::render)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// The rejection cert a FAILED `@bvN(nowrap)` no-overflow side obligation produces
+/// (`.design/stage3-bv-reconstruction.md` REQ-5 / AC-6 — lock 3). The main clause was
+/// `Proved` at width, but the `nowrap` promise is violated by a concrete overflowing
+/// input, so the item does NOT certify: a witnessed nowrap violation must not pass. The
+/// witness obligation records the overflowing bit pattern in `bv_shadow.nowrap_obligation`
+/// (so `grep bv_shadow` still finds this tagged clause) with the per-clause
+/// [`crate::verdict::CertVerdict::Counterexample`].
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the nowrap-overflow cert threads the item/effects/slag identity, the clause \
+              index + tag, the verdict + witnessing bit pattern, and the attribution; each \
+              is a distinct datum the rejection records"
+)]
+fn bv_nowrap_overflow_cert(
+    item: &str,
+    effects: &[String],
+    slag: bool,
+    k: usize,
+    tag: &thermite_syntax::BvTag,
+    verdict: &str,
+    bits: &[crate::bitvector::BvBitPattern],
+    attr: &crate::engine::EngineAttribution,
+) -> Certificate {
+    let detail = format!(
+        "`{item}`'s {} clause `ens#{k}` is machine-valid at width but its `nowrap` \
+         no-overflow side obligation FAILED: the bit pattern [{}] makes an operation \
+         overflow at fixed width — machine width is the domain but wrap is not the intent \
+         (stage3-bv-reconstruction.md REQ-5 / AC-6)",
+        bv_semantics_label(tag),
+        render_bv_pattern(bits)
+    );
+    let witness_obl =
+        ObligationResult::failed(format!("{item}#ens#{k}#nowrap"), None, Some(detail.clone()))
+            // Lock 1 + Lock 3: the shadow flag stays greppable AND carries the nowrap
+            // verdict, so the failing side obligation is visible in the certificate.
+            .with_bv_shadow(bv_shadow_for(tag, Some(verdict.to_string())));
+    let cert_verdict = crate::verdict::CertVerdict::Counterexample {
+        obligations: vec![witness_obl.clone()],
+    };
+    let mut cert = Certificate::rejected(
+        item.to_string(),
+        effects.to_vec(),
+        slag,
+        RejectReason {
+            cause: "BvNowrapOverflow".to_string(),
+            detail,
+        },
+    );
+    cert.obligations = vec![witness_obl.with_clause_attribution(
+        attr.engine.clone(),
+        attr.trust_profile.clone(),
+        cert_verdict,
+    )];
+    cert.with_engine_attribution(attr.clone())
 }
 
 /// The per-clause [`ObligationResult`] an untagged (unbounded) nlsat `Proved` records on
@@ -2106,18 +2268,21 @@ fn bv_semantics_label(tag: &thermite_syntax::BvTag) -> String {
 /// Build Lock 1 — the bv shadow flag (`.design/stage3-bv-reconstruction.md` REQ-3 /
 /// AC-4, the RFC §9 shape) — for a tagged clause's obligation from its tag. `flagged`
 /// is always true (it IS a tagged clause), `semantics` is the fixed-width label, and
-/// `note` names the fork + lock. `nowrap_obligation` is the RESERVED slot REQ-5 fills
-/// for the `@bvN(nowrap)` spelling (the `ContractQuality` forward-declaration
-/// precedent): `None` here even for a `nowrap` tag, because this increment ships the
-/// flag, not the side obligation. Pure (R-CODE-5).
-fn bv_shadow_for(tag: &thermite_syntax::BvTag) -> crate::manifest::BvShadow {
+/// `note` names the fork + lock. `nowrap_obligation` carries Lock 3's verdict (REQ-5 /
+/// AC-6): `Some(verdict)` for a `@bvN(nowrap)` clause whose side obligation ran (the
+/// no-overflow discharge result), `None` for a bare `@bvN` (no side obligation
+/// requested). Pure (R-CODE-5).
+fn bv_shadow_for(
+    tag: &thermite_syntax::BvTag,
+    nowrap_obligation: Option<String>,
+) -> crate::manifest::BvShadow {
     let semantics = bv_semantics_label(tag);
     crate::manifest::BvShadow {
         flagged: true,
         semantics: semantics.clone(),
-        // REQ-5 (`@bvN(nowrap)` side obligation) fills this; until then it is the
-        // schema-reserved slot, `None` for both the bare and the `nowrap` spelling.
-        nowrap_obligation: None,
+        // Lock 3 (REQ-5 / AC-6): the `@bvN(nowrap)` no-overflow side obligation's verdict,
+        // filled by `bv_nowrap_verdict` for a `nowrap` clause and `None` for a bare tag.
+        nowrap_obligation,
         note: format!(
             "machine-semantics fork: this clause is interpreted over fixed-width {semantics} \
              (RFC §9 lock 1 — the shadow flag; stage3-bv-reconstruction.md REQ-3)"
@@ -2153,7 +2318,7 @@ fn bv_counterexample_cert(
         ObligationResult::failed(format!("{item}#ens#{k}"), None, Some(detail.clone()))
             // Lock 1 (REQ-3 / AC-4): a refuted tagged clause still carries the shadow flag —
             // a counterexample is a machine-semantics fact, so the fork must stay visible.
-            .with_bv_shadow(bv_shadow_for(tag));
+            .with_bv_shadow(bv_shadow_for(tag, None));
     let cert_verdict = crate::verdict::CertVerdict::Counterexample {
         obligations: vec![witness_obl.clone()],
     };
@@ -2210,7 +2375,7 @@ fn bv_timeout_cert(
         )
         // Lock 1 (REQ-3 / AC-4): the shadow flag rides the timeout obligation too — the
         // multiplier cliff is a machine-semantics fact, so the fork stays greppable.
-        .with_bv_shadow(bv_shadow_for(tag));
+        .with_bv_shadow(bv_shadow_for(tag, None));
     let mut cert = Certificate::rejected(
         item.to_string(),
         effects.to_vec(),
@@ -2255,7 +2420,7 @@ fn bv_skip_cert(
     cert.obligations =
         vec![
             ObligationResult::failed(format!("{item}#ens#{k}"), None, Some(detail))
-                .with_bv_shadow(bv_shadow_for(tag)),
+                .with_bv_shadow(bv_shadow_for(tag, None)),
         ];
     cert
 }
@@ -6414,6 +6579,159 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
             bv_mutation_score(&bv, &f, &[]).is_none(),
             "a parameter-closed @bv clause (no `result`) yields no scoreable mutant set — \
              so mix64's golden is unperturbed (needs no z3: the early `None` return)"
+        );
+    }
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // REQ-5 / AC-6 (stage-3 lock 3 — the `nowrap` side obligation). A `@bvN(nowrap)`
+    // clause additionally discharges a no-overflow side obligation IN-CAGE; its verdict
+    // rides `bv_shadow.nowrap_obligation`. A body that can overflow FAILS the obligation
+    // with a concrete overflowing input (the cert is rejected); a body that cannot
+    // overflow records the discharged verdict and certifies. These drive the full cert
+    // through `bv_fn_cert`.
+    // ───────────────────────────────────────────────────────────────────────────
+
+    /// Build one `@bv`-tagged `fn`'s full bit-vector certificate from source (the AC-6
+    /// driver — the same `bv_fn_cert` the `--engine bv` route runs per item).
+    #[cfg(feature = "bv")]
+    fn bv_fn_cert_from(src: &str, name: &str) -> Certificate {
+        let parsed = thermite_syntax::parse(src);
+        assert!(parsed.is_clean(), "fixture must parse: {:?}", parsed.errors);
+        let f = parsed
+            .program
+            .items
+            .iter()
+            .find_map(|i| match i {
+                Item::Fn(f) if f.name == name => Some(f.clone()),
+                _ => None,
+            })
+            .expect("fixture has the named fn");
+        let bv = crate::bitvector::BitVectorEngine::new();
+        let nlsat = crate::engine::NlsatEngine::new(parsed.program.clone());
+        let base = Certificate::new(
+            name.to_string(),
+            Level::L4,
+            vec!["pure".to_string()],
+            0,
+            vec![],
+        );
+        bv_fn_cert(&bv, &nlsat, &f, &base, &[])
+    }
+
+    /// AC-6: a `@bv64(nowrap)` clause whose body can overflow FAILS its side obligation
+    /// with a concrete overflowing input, and the verdict is recorded in
+    /// `bv_shadow.nowrap_obligation`. The clause `result == a + b` is machine-valid at
+    /// width (result is DEFINED as `a + b` mod 2^64, so the equality is tautological),
+    /// but `a + b` itself overflows 64 bits for some input — so the nowrap promise is
+    /// violated and the cert is rejected `BvNowrapOverflow`.
+    #[cfg(feature = "bv")]
+    #[test]
+    fn ac6_nowrap_body_that_overflows_fails_with_a_concrete_input() {
+        use crate::bitvector::BitVectorEngine;
+        if !BitVectorEngine::z3_present() {
+            eprintln!("SKIP: z3 absent — the AC-6 nowrap-overflow discharge needs z3.");
+            return;
+        }
+        let cert = bv_fn_cert_from(
+            "fn add_nowrap(a: u64, b: u64) -> u64 req true ens@bv64(nowrap) result == a + b \
+             fx pure { a + b }",
+            "add_nowrap",
+        );
+        // A witnessed nowrap overflow must NOT certify (the promise is violated).
+        let reject = cert
+            .reject
+            .as_ref()
+            .expect("a body that can overflow fails the nowrap obligation → rejected");
+        assert_eq!(
+            reject.cause, "BvNowrapOverflow",
+            "the rejection names the failed nowrap side obligation"
+        );
+        // The verdict + concrete overflowing bit pattern ride `bv_shadow.nowrap_obligation`,
+        // so the failure is greppable in the certificate.
+        let shadow = cert
+            .obligations
+            .iter()
+            .find_map(|o| o.bv_shadow.as_ref())
+            .expect("the witness obligation carries the bv shadow flag");
+        let verdict = shadow
+            .nowrap_obligation
+            .as_ref()
+            .expect("the nowrap obligation verdict is recorded");
+        assert!(
+            verdict.contains("FAILED"),
+            "the verdict records the failure: {verdict}"
+        );
+        assert!(
+            verdict.contains("0b"),
+            "the verdict carries a concrete overflowing bit pattern: {verdict}"
+        );
+    }
+
+    /// AC-6 (the holds side): a `@bv64(nowrap)` clause whose body carries no wrap-prone
+    /// arithmetic discharges the no-overflow obligation VACUOUSLY (no operation can
+    /// overflow), certifies at L4, and records the discharged verdict in
+    /// `bv_shadow.nowrap_obligation`. `result == a` over body `{ a }` needs no z3 (the
+    /// obligation is vacuous — there is nothing that could overflow).
+    #[cfg(feature = "bv")]
+    #[test]
+    fn ac6_nowrap_body_without_arithmetic_holds_and_records_discharged() {
+        let cert = bv_fn_cert_from(
+            "fn idem(a: u64) -> u64 req true ens@bv64(nowrap) result == a fx pure { a }",
+            "idem",
+        );
+        assert!(
+            cert.reject.is_none(),
+            "a non-arithmetic nowrap body certifies (the obligation holds vacuously): {:?}",
+            cert.reject
+        );
+        assert_eq!(
+            cert.level,
+            Level::L4,
+            "the @bv clause certifies at the caged rung"
+        );
+        let shadow = cert
+            .obligations
+            .iter()
+            .find_map(|o| o.bv_shadow.as_ref())
+            .expect("the @bv clause obligation carries the bv shadow flag");
+        let verdict = shadow
+            .nowrap_obligation
+            .as_ref()
+            .expect("the nowrap obligation verdict is recorded even when it holds");
+        assert!(
+            verdict.contains("discharged"),
+            "the holds verdict records the discharge: {verdict}"
+        );
+        assert!(
+            shadow.semantics.contains("nowrap"),
+            "the semantics label names the nowrap fork: {}",
+            shadow.semantics
+        );
+    }
+
+    /// A bare `@bv64` (NO `nowrap`) clause runs NO side obligation, so its
+    /// `bv_shadow.nowrap_obligation` stays `None` — the slot is filled only for the
+    /// `nowrap` spelling (REQ-5). Guards against the lock firing on every tagged clause.
+    #[cfg(feature = "bv")]
+    #[test]
+    fn bare_bv_clause_records_no_nowrap_obligation() {
+        let cert = bv_fn_cert_from(
+            "fn idem(a: u64) -> u64 req true ens@bv64 result == a fx pure { a }",
+            "idem",
+        );
+        assert!(
+            cert.reject.is_none(),
+            "a tautological bare @bv clause certifies"
+        );
+        let shadow = cert
+            .obligations
+            .iter()
+            .find_map(|o| o.bv_shadow.as_ref())
+            .expect("a bare @bv clause still carries the shadow flag (lock 1)");
+        assert!(
+            shadow.nowrap_obligation.is_none(),
+            "a bare @bv clause runs no side obligation: {:?}",
+            shadow.nowrap_obligation
         );
     }
 }

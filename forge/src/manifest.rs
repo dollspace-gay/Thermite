@@ -303,10 +303,13 @@ pub struct BvShadow {
     /// shape) — the named fork, so a reader sees WHICH machine semantics this clause
     /// committed to.
     pub semantics: String,
-    /// The `@bvN(nowrap)` no-overflow side obligation's verdict (REQ-5 / AC-6). `None`
-    /// for a bare `@bvN` (no side obligation requested), and a RESERVED slot until REQ-5
-    /// fills it for the `nowrap` spelling — the schema-reserves-the-slot,
-    /// producer-fills-the-value forward-declaration precedent ([`ContractQuality`]).
+    /// The `@bvN(nowrap)` no-overflow side obligation's verdict (REQ-5 / AC-6, lock 3).
+    /// `Some(verdict)` for a `@bvN(nowrap)` clause whose side obligation ran — the in-cage
+    /// no-overflow discharge result ("discharged: no operation overflows…" when it holds,
+    /// "FAILED: a bvN operation overflows on input […]" with the witnessing bit pattern
+    /// when a concrete input overflows, or an "undecided …" label when Z3 could not
+    /// decide it). `None` for a bare `@bvN` (no side obligation requested). Filled by
+    /// `check::bv_nowrap_verdict`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub nowrap_obligation: Option<String>,
     /// A human note naming the fork + the lock (the auditor's one-line "why this block
@@ -1619,7 +1622,8 @@ mod tests {
 
     // Stage-3 REQ-3 / AC-4 (Lock 1, the shadow flag): the `bv_shadow` field is additive —
     // a v1 / untagged clause omits it (byte-identical goldens), a tagged clause serializes
-    // the RFC §9 block, and `nowrap_obligation` is the reserved (None → omitted) slot.
+    // the RFC §9 block; `nowrap_obligation` is omitted for a bare tag and filled (REQ-5)
+    // for the `nowrap` spelling.
     #[test]
     fn bv_shadow_is_additive_and_serializes_the_rfc9_shape() {
         // A v1-shape clause (no shadow) must NOT serialize a `bv_shadow` key — so the v1
@@ -1663,12 +1667,40 @@ mod tests {
         assert!(shadow.get("note").is_some(), "the §9 note is present");
         assert!(
             shadow.get("nowrap_obligation").is_none(),
-            "the reserved `nowrap_obligation` slot (None) is omitted, not a placeholder \
-             (REQ-5 fills it): {json}"
+            "a bare/wraparound clause runs no side obligation, so `nowrap_obligation` is \
+             omitted (None → skipped, never a placeholder): {json}"
         );
         // Round-trips: deserialize → re-serialize is byte-stable.
         let back: Certificate = serde_json::from_str(&json).expect("round-trip");
         assert_eq!(serialize(&back), json, "the shadow block round-trips");
+
+        // Lock 3 (REQ-5 / AC-6): a `@bvN(nowrap)` clause whose obligation ran serializes
+        // the verdict — the filled slot is present and greppable, round-tripping stably.
+        let nowrap = Certificate::new(
+            "add_nowrap",
+            Level::L4,
+            vec!["pure".to_string()],
+            0,
+            vec![
+                ObligationResult::discharged("add_nowrap::ens#0").with_bv_shadow(BvShadow {
+                    flagged: true,
+                    semantics: "bv64 (nowrap)".to_string(),
+                    nowrap_obligation: Some(
+                        "discharged: no operation in the clause overflows at bv64".to_string(),
+                    ),
+                    note: "machine-semantics fork".to_string(),
+                }),
+            ],
+        );
+        let njson = serialize(&nowrap);
+        let nv: serde_json::Value = serde_json::from_str(&njson).expect("parse");
+        assert_eq!(
+            nv["obligations"][0]["bv_shadow"]["nowrap_obligation"],
+            serde_json::Value::from("discharged: no operation in the clause overflows at bv64"),
+            "the filled nowrap obligation verdict serializes: {njson}"
+        );
+        let nback: Certificate = serde_json::from_str(&njson).expect("round-trip");
+        assert_eq!(serialize(&nback), njson, "the filled slot round-trips");
     }
 
     // Stage-3 REQ-3 / AC-4: the shadow flag is ORACLE-INCLUDED (Q-ORACLE: deterministic +

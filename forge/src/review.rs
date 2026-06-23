@@ -255,7 +255,7 @@ pub struct ReviewArtifact {
 /// One `@bv`-tagged clause's shadow flag in the review artifact
 /// (`.design/stage3-bv-reconstruction.md` REQ-3 / AC-4 — Lock 1). A pure projection of an
 /// obligation's [`crate::manifest::BvShadow`]: the owning item, the per-clause obligation
-/// name, and the shadow block (flag + semantics + reserved `nowrap_obligation` + note).
+/// name, and the shadow block (flag + semantics + `nowrap_obligation` + note).
 /// Never fabricated — read verbatim from the cert (R-CODE-5).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BvShadowClause {

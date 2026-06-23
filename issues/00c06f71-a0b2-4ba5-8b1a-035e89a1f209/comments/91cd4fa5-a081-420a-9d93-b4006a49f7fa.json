@@ -1,0 +1,8 @@
+{
+  "uuid": "91cd4fa5-a081-420a-9d93-b4006a49f7fa",
+  "issue_uuid": "00c06f71-a0b2-4ba5-8b1a-035e89a1f209",
+  "author": "NtIP",
+  "content": "Implemented: new forge/src/forks.rs (SemanticForks: bv_density per module, burned_lemma_towers, FfTripwire). Added meaning::tower_metrics (depth-only, no src, refactored shared graph helpers). Additive Option<SemanticForks> on AuditManifest + ReviewArtifact (serde skip_if_none → v1 goldens byte-identical). cli render_audit/render_review append the section. Fixtures: bv_density_normal.th (250permille, no trip) + bv_density_spike.th (666permille, trips). Tests: 6 forks unit + 3 bv_lowering conformance, all green; audit/review conformance goldens unperturbed; clippy clean (both feature sets); pinned rustfmt applied. F-F threshold = 500permille (majority of ens surface).",
+  "created_at": "2026-06-23T04:24:51.052501Z",
+  "kind": "result"
+}

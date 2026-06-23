@@ -1,0 +1,8 @@
+{
+  "uuid": "703ed241-4fee-468b-a036-a6f30edeb550",
+  "issue_uuid": "7382e6a6-d7ce-4125-9e47-8611d1eeeb51",
+  "author": "OfXD",
+  "content": "Plan: REQ-5 nowrap side obligation. (1) bitvector.rs: collect_overflow_conditions builds per-op no-overflow predicates for +/-/* at width N (unsigned add carry-out, unsigned sub borrow, mul high-half-nonzero via 2N zero_extend), recursing so nested (a+b)*c emits both; discharge_nowrap(vars,req,clause,width)->BvOutcome asserts req AND (or overflow_conds) NOT negated and check-sat: sat=overflowing input (Counterexample), unsat=no overflow (Proved), unknown=Timeout. (2) check.rs: a Proved @bvN nowrap clause runs the side obligation; verdict string threaded into bv_shadow.nowrap_obligation (bv_shadow_for gains Option<String>). A FAILED obligation REJECTS via new BvNowrapOverflow cert whose witness obl records the overflow bit pattern (nowrap is a promise; witnessed violation must not certify). Holds->discharged note; undecided->recorded skip. Wired in bv_fn_cert and bv_lemma_cert. (3) Tests: render-predicate unit, live discharge_nowrap holds/overflow, AC-6 end-to-end fixture. No existing fixture uses nowrap, goldens unperturbed.",
+  "created_at": "2026-06-23T02:54:44.843404Z",
+  "kind": "plan"
+}

@@ -1,0 +1,8 @@
+{
+  "uuid": "8ba4bb77-f772-40fc-9a3b-6fa614f95c15",
+  "issue_uuid": "00c06f71-a0b2-4ba5-8b1a-035e89a1f209",
+  "author": "NtIP",
+  "content": "Plan: Stage-3 REQ-6 'semantic forks and definition towers' section (AC-7). New module forge/src/forks.rs: SemanticForks { bv_density (per contract-bearing item, denominated by ens clauses), burned_lemma_towers (meaning.rs spec-fn tower depth rooted at lemma req∪ens, depth-only path), tripwire (project-wide bv-shadow density vs 500permille=50% named F-F threshold; spike trips informational warning). Embed additive Option<SemanticForks> on AuditManifest + ReviewArtifact (serde default+skip_if_none → v1 goldens byte-identical). Render in cli. Fixtures bv_density_normal.th + bv_density_spike.th.",
+  "created_at": "2026-06-23T04:00:10.773022Z",
+  "kind": "plan"
+}

@@ -1,0 +1,8 @@
+{
+  "uuid": "ba57d80f-28a5-4a66-b666-b3de33f8ae34",
+  "issue_uuid": "9a2b9c07-5e3c-481e-a787-1da7d044db8a",
+  "author": "7jYS",
+  "content": "Decision: render QF_BV obligation over range-bounded INTEGER machine-model (bv var x -> Int with 0<=x<2^N; wrap op -> (a OP b) % 2^N; unsigned cmp -> Int cmp), NOT Lean BitVec N. EVIDENCE (probed @ pinned lean-smt 7d1d8239): every BitVec-typed 'by smt' goal pulls sorryAx — QF_BV reconstruction bit-blasts through the upstream Smt/Reconstruct/BitVec/Bitblast.lean sorry (matches z3-demotion.md wall). Bounded-Int model of cmp + modular linear arithmetic discharges clean [propext, Classical.choice, Quot.sound]. The literal BitVec render (bitvector.rs, the artifact REQ-8 replays) stays the documented residual.",
+  "created_at": "2026-06-23T15:11:26.526674Z",
+  "kind": "decision"
+}

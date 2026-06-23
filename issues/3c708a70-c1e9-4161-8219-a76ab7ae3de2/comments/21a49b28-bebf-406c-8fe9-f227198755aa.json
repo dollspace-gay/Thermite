@@ -1,0 +1,8 @@
+{
+  "uuid": "21a49b28-bebf-406c-8fe9-f227198755aa",
+  "issue_uuid": "3c708a70-c1e9-4161-8219-a76ab7ae3de2",
+  "author": "0lzM",
+  "content": "Committed: Stage-3 REQ-4: lock 2 — bv-semantics mutation (#346) | Files: 3 files changed, 395 insertions(+), 3 deletions(-) | bv_mutation_score (frozen catalogue, wrap-aware kill at tag width) surfaced on bv cert (not gated); mix64/AC-2 unperturbed (None on non-result clauses); fixture bv_wrap_mutation.th; 3 in-crate AC-5 tests + e2e (2/4 kill). All bv_lowering(9)+bin(444)+engine(64 w/spine)+mutation/audit/metrics conformance green; clippy/fmt/doc-drift clean.",
+  "created_at": "2026-06-23T00:05:30.566863Z",
+  "kind": "result"
+}

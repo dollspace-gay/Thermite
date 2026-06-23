@@ -1,0 +1,8 @@
+{
+  "uuid": "4f3c358c-5a2c-4313-bd27-482ccb8dbed1",
+  "issue_uuid": "e8425b89-94e3-4495-82a3-2d7e3328ee10",
+  "author": "7jYS",
+  "content": "PROOF (replaces the Bitblast.lean:36 sorry; verified [propext, Quot.sound]):\n\ntheorem beq_go_iff (x y : BitVec w) (k : Nat) :\n    (beq.go x y k = true) <-> forall j, j <= k -> x.getLsbD (w-1-j) = y.getLsbD (w-1-j) := by\n  induction k with\n  | zero => simp only [beq.go, beq_iff_eq]; constructor\n            . intro h j hj; have : j = 0 := Nat.le_zero.mp hj; subst this; simpa using h\n            . intro h; simpa using h 0 (Nat.le_refl 0)\n  | succ k ih => simp only [beq.go, Bool.and_eq_true, beq_iff_eq, ih]; constructor\n            . rintro <hhead, htail> j hj; rcases Nat.lt_or_eq_of_le hj with hlt | heq\n              . exact htail j (Nat.le_of_lt_succ hlt)\n              . subst heq; exact hhead\n            . intro h; exact <h (k+1) (Nat.le_refl _), fun j hj => h j (Nat.le_succ_of_le hj)>\n\ntheorem eq_iff_beq (x y : BitVec w) : (x = y) <-> (x.beq y = true) := by\n  rw [beq, beq_go_iff, eq_of_getLsbD_eq_iff]\n  rcases Nat.eq_zero_or_pos w with hw | hw\n  . subst hw; constructor\n    . intro _ j _; simp\n    . intro _ i hi; exact absurd hi (Nat.not_lt_zero i)\n  . constructor\n    . intro h j _; exact h (w-1-j) (by omega)\n    . intro h i hi; have hj := h (w-1-i) (by omega); rwa [Nat.sub_sub_self (by omega)] at hj\n\ndef eq_eq_beq (x y : BitVec w) : (x = y) = x.beq y := propext (eq_iff_beq x y)",
+  "created_at": "2026-06-23T18:29:37.207166Z",
+  "kind": "note"
+}

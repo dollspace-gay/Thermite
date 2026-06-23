@@ -531,7 +531,11 @@ fn bv_nowrap_side_obligation_rejects_overflow_and_records_the_verdict() {
         return;
     }
     let (code, certs) = run_bv("bv_nowrap.th");
-    assert_ne!(code, Some(0), "the overflowing nowrap fn must reject the project");
+    assert_ne!(
+        code,
+        Some(0),
+        "the overflowing nowrap fn must reject the project"
+    );
 
     // (1) `add_overflows` — the side obligation FAILS with a concrete overflow witness.
     let of = cert(&certs, "add_overflows");
@@ -547,7 +551,10 @@ fn bv_nowrap_side_obligation_rejects_overflow_and_records_the_verdict() {
     );
     let witness = of["obligations"]
         .as_array()
-        .and_then(|o| o.iter().find(|o| o["bv_shadow"]["nowrap_obligation"].is_string()))
+        .and_then(|o| {
+            o.iter()
+                .find(|o| o["bv_shadow"]["nowrap_obligation"].is_string())
+        })
         .expect("a witness obligation carries the nowrap verdict");
     let nowrap = witness["bv_shadow"]["nowrap_obligation"]
         .as_str()
@@ -574,7 +581,10 @@ fn bv_nowrap_side_obligation_rejects_overflow_and_records_the_verdict() {
     );
     let held = ok["obligations"]
         .as_array()
-        .and_then(|o| o.iter().find_map(|o| o["bv_shadow"]["nowrap_obligation"].as_str()))
+        .and_then(|o| {
+            o.iter()
+                .find_map(|o| o["bv_shadow"]["nowrap_obligation"].as_str())
+        })
         .expect("the holding nowrap verdict is recorded");
     assert!(
         held.contains("discharged"),

@@ -1,0 +1,8 @@
+{
+  "uuid": "a0ddf020-3c83-4738-a6e0-b90745f60ccf",
+  "issue_uuid": "9a2b9c07-5e3c-481e-a787-1da7d044db8a",
+  "author": "7jYS",
+  "content": "Result: shipped the automated Rust->Lean obligation exporter. New forge/src/lean_smt_export.rs (renderers for QF_LIA over Int + QF_BV over the bounded-int machine-model; reference_normalize as the independent reference encoding; export_theorem/export_file) + 'forge smt-export [<file>] [--out P]' CLI. Committed lean/Thermite/SmtExport.lean (exporter's verbatim output, root-imported, golden-tested). AC-8 PASS: lake build kernel-checks all 3 theorems (1 QF_LIA + 2 QF_BV), #print axioms = [propext, Classical.choice, Quot.sound] — no sorryAx/oracle/ofReduceBool. KEY FINDING: BitVec-typed 'by smt' always bit-blasts through the upstream Bitblast.lean sorry (pulls sorryAx) even for pure comparisons; the bounded-int model is the reconstruction-supported QF_BV encoding (documented in z3-demotion.md walls). 9 module tests + AC-8 live test pass; 464 forge bin tests pass; clippy -D warnings clean (default+bv); fmt clean; doc-drift CURRENT (re-pinned cli.md + workspace.md). AC boxes left unchecked (flip at G3 per stage-3 convention).",
+  "created_at": "2026-06-23T15:33:09.005430Z",
+  "kind": "result"
+}

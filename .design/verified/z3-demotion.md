@@ -113,6 +113,13 @@ reconstructable subset TODAY** (demonstrated, kernel-clean). The richer fragment
    `gen.rs` exec-side surface) would NOT be kernel-clean** — its reconstruction would route
    through the `sorry`. This is a hard wall for the bitwise fragment until upstream closes
    it.
+   **UPDATE (stage-3 REQ-7, #349):** empirically reconfirmed at the pinned rev and found
+   to be WIDER than "bitwise/shift only" — *every* `BitVec`-typed `by smt` goal, including
+   a pure unsigned comparison `a ≤ b ↔ ¬ (b < a)` over `BitVec 8`, bit-blasts and pulls
+   `sorryAx`. The stage-3 exporter therefore renders a `@bvN` clause over the
+   **range-bounded integer machine-model** (`0 ≤ x < 2^N`, wrap as `% 2^N`, unsigned cmp
+   as `Int` cmp), which IS kernel-clean — the literal `BitVec N` render (the artifact
+   REQ-8 replays) stays the residual behind this wall.
 2. **Coverage ~30% of cvc5's proof rules (finding #8).** Quantified obligations (the
    bounded combinators) and theory-lemma-heavy proofs may hit an unreconstructable cvc5
    rule and FAIL (the `smt` tactic errors rather than producing an unsound proof — it does
@@ -131,9 +138,16 @@ reconstructable subset TODAY** (demonstrated, kernel-clean). The richer fragment
    predicates as Verus SOURCE STRINGS (`thermite_lower` for `P_prod`,
    `thermite-tv/src/ref_encode.rs` for `P_ref`). An AUTOMATED demotion needs a **Rust→Lean
    exporter** that parses both emitted predicate strings into Lean `Prop`s over the typed
-   env the obligation frame declares. That exporter is NOT built in this increment (it is
-   the #185-adjacent correspondence-bridge work). The LOGICAL CONTENT discharged is exactly
+   env the obligation frame declares. The LOGICAL CONTENT discharged is exactly
    the per-run obligation; the residual is the parse/translate step.
+   **UPDATE (stage-3 REQ-7, #349 — this gap is now CLOSED for the scalar/bv-model
+   fragment).** `forge/src/lean_smt_export.rs` is the automated Rust→Lean obligation
+   exporter (`forge smt-export`): it renders a Thermite predicate `Expr` into a Lean
+   `Prop` and emits the `(P_prod) ⟺ (P_ref)` theorem `by smt` + `#print axioms`. The
+   committed `lean/Thermite/SmtExport.lean` is its verbatim output for one QF_LIA scalar
+   clause and two QF_BV `@bv` clauses, all three `#print axioms` ⊆ `{propext,
+   Classical.choice, Quot.sound}` (verified by `lake build`). The hand-translation step
+   `SmtDemo.lean` performed is now mechanical.
 
 ## The upstream asks (what would have to change)
 

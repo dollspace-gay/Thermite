@@ -47,6 +47,7 @@ mod forks;
 mod goal_repl;
 mod kani;
 mod lean_export;
+mod lean_smt_export;
 mod lemma_library;
 mod manifest;
 mod meaning;

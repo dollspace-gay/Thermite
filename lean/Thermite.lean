@@ -78,6 +78,17 @@ import Thermite.Faithfulness
 -- excluding bitwise obligations; Verus/Z3 not emitting reconstructable certificates) are in
 -- `.design/verified/z3-demotion.md`.
 import Thermite.SmtDemo
+-- Layer 4 (trust-shrink), stage-3 increment REQ-7 (#349; `.design/stage3-bv-reconstruction.md`
+-- REQ-7 / AC-8): the AUTOMATED Rust→Lean obligation exporter's output. Where `SmtDemo`
+-- hand-translated two TV obligations, `forge/src/lean_smt_export.rs` now EMITS the
+-- `(P_prod) ⟺ (P_ref)` Lean goals — one QF_LIA scalar clause + two QF_BV `@bv` clauses
+-- (the bounded-integer machine-model, since lean-smt's literal BitVec reconstruction
+-- bit-blasts through an upstream `sorry`) — each discharged by `smt` and kernel-checked,
+-- `#print axioms` ⊆ {propext, Classical.choice, Quot.sound}. The file is the exporter's
+-- verbatim output (pinned by `golden_file_matches_exporter`); building it here makes the
+-- default `lake build` kernel-check the AC-8 reconstruction (the Smt toolchain already
+-- enters the graph via `SmtDemo`, so this adds no dependency).
+import Thermite.SmtExport
 -- The stabilization spine prerequisite (increment (ii), #240, ref #203;
 -- `.design/verified/proof-backends.md` §4/§6.1): the `stabilizes`/`stabilizesProp`
 -- relations (the §4 stabilized-form keys, not a raw fuel index), `stabilizes_unique`

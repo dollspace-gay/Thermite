@@ -1595,10 +1595,21 @@ fn nlsat_realwitness_cert(
 fn bv_check(base: Vec<Certificate>, program: &Program) -> Vec<Certificate> {
     let bv = crate::bitvector::BitVectorEngine::new();
     let nlsat = crate::engine::NlsatEngine::new(program.clone());
+    // The reachable `struct`/`enum` decls the bv-semantics mutation battery (REQ-4 /
+    // AC-5) threads into `mutation::generate` for the F-STRUCT-ZERO early-return family —
+    // the same `adt_deps` shape the Verus + Lean batteries weave.
+    let adt_deps: Vec<Item> = program
+        .items
+        .iter()
+        .filter(|i| matches!(i, Item::Struct(_) | Item::Enum(_)))
+        .cloned()
+        .collect();
     let mut out = Vec::with_capacity(base.len());
     for cert in base {
         match crate::lean_export::find_item(program, &cert.item) {
-            Some(Item::Fn(f)) if fn_has_bv_tag(f) => out.push(bv_fn_cert(&bv, &nlsat, f, &cert)),
+            Some(Item::Fn(f)) if fn_has_bv_tag(f) => {
+                out.push(bv_fn_cert(&bv, &nlsat, f, &cert, &adt_deps))
+            }
             _ => out.push(cert),
         }
     }
@@ -1708,6 +1719,7 @@ fn bv_fn_cert(
     nlsat: &crate::engine::NlsatEngine,
     f: &thermite_syntax::FnItem,
     base: &Certificate,
+    adt_deps: &[Item],
 ) -> Certificate {
     use crate::bitvector::BvOutcome;
     use crate::engine::NlsatOutcome;
@@ -1802,9 +1814,179 @@ fn bv_fn_cert(
     }
 
     let attribution = item_attr.unwrap_or(bv_attr);
-    Certificate::new(f.name.clone(), item_level, effects, 0, obligations)
+    let mut cert = Certificate::new(f.name.clone(), item_level, effects, 0, obligations)
         .graduate_triage_clean()
-        .with_engine_attribution(attribution)
+        .with_engine_attribution(attribution);
+    // Lock 2 (REQ-4 / AC-5, RFC-1 §10 anti-Goodhart): the bv-semantics mutation battery.
+    // Run the FROZEN mutation catalogue against this fn's `@bv` clauses with the WRAP-AWARE
+    // kill check (each mutant re-discharged at the tag width). `bv_mutation_score` returns:
+    //   - `None` when the fn carries no result-referencing `@bv` clause — a tagged clause
+    //     closed over the parameters only (`mix64`'s `a + b == b + a`) is a body-INVARIANT
+    //     algebraic identity, not a body-constraining discriminator, so there is nothing
+    //     to pin; it is NOT gated (gating it would spuriously reject a machine-valid fn);
+    //   - `Some(score)` when a result-referencing `@bv` clause IS mutation-discriminating.
+    //     Then the wrap-aware kill ratio GATES the cert exactly as the Verus and Lean
+    //     paths do (`meets_floor`): a below-floor score is a `WeakContract` reject, never a
+    //     silent L4. Without this gate a weak/tautological result clause (`ens@bv64
+    //     result + 0 == result`) would survive every mutant yet still certify — the
+    //     anti-gaming hole §10 forbids.
+    if let Some(score) = bv_mutation_score(bv, f, adt_deps) {
+        if !score.meets_floor(crate::mutation::MUTATION_FLOOR) {
+            return Certificate::rejected_weak_contract(
+                f.name.clone(),
+                cert.effects.clone(),
+                score.mutants_killed_string(),
+                score
+                    .survivor
+                    .clone()
+                    .unwrap_or_else(|| "the mutated body".to_string()),
+            );
+        }
+        cert = cert.with_mutation_score(score.mutants_killed_string(), score.survivor.clone());
+    }
+    cert
+}
+
+/// The bv-semantics mutation battery for a `@bv`-tagged `fn`
+/// (`.design/stage3-bv-reconstruction.md` REQ-4 / AC-5 — lock 2). Reuses the FROZEN
+/// mutation operator catalogue [`crate::mutation::generate`] UNCHANGED (the stage-1
+/// re-elaboration precedent — only the kill check swaps, exactly as
+/// [`forge_reelaboration_mutation`] swaps Verus for the Lean engine): for each mutant,
+/// every result-referencing `@bv`-tagged `ens` clause is re-discharged with `result`
+/// grounded by the mutant's effective body, over fixed-width QF_BV semantics AT THE TAG
+/// WIDTH (the wrap-aware kill check). The classification reuses
+/// [`crate::mutation::classify_mutant`]'s oracle, now evaluated at width:
+///
+/// - a tagged clause `Counterexample` (the mutant body falsifies the clause for some
+///   `N`-bit assignment) → the contract caught the mutant AT WIDTH → **killed**. A
+///   wrap-exploiting mutant (equivalent at unbounded semantics, distinguishable at
+///   width) is killed here though the unbounded check would let it survive — the AC-5
+///   width-aware kill;
+/// - every tagged clause still `Proved` → the contract admits the mutant → **survived**;
+/// - a clause whose width discharge is `Timeout`/`Unknown` (the 64-bit multiplier cliff,
+///   an unrenderable mutant) does not decide the mutant; a mutant with no decisive
+///   clause is dropped from the denominator (the OQ-5 precedent — never a silent kill).
+///
+/// Returns `None` when the fn carries NO result-referencing `@bv` clause: a tagged
+/// clause closed over the parameters (`mix64`'s `a + b == b + a`) is invariant under a
+/// body mutation, so it neither kills nor distinguishes any mutant — there is no
+/// scoreable discriminator and the cert keeps its forward-declared score (so the AC-2
+/// `mix64` golden is unperturbed). Deterministic: `mutation::generate` is a pure
+/// function of the AST + the frozen table, and each width discharge is the same
+/// deterministic QF_BV query the L4 path runs.
+fn bv_mutation_score(
+    bv: &crate::bitvector::BitVectorEngine,
+    f: &thermite_syntax::FnItem,
+    adt_deps: &[Item],
+) -> Option<crate::mutation::MutationScore> {
+    use crate::bitvector::BvOutcome;
+    // Only a result-referencing `@bv` clause is a body-constraining discriminator: a
+    // tagged clause that names no `result` is invariant under a body mutation (grounding
+    // is a no-op), so it can never catch a mutant. A fn with none has no scoreable
+    // mutant set — return `None` rather than a vacuous all-survivor score. Capture the
+    // `(tag, clause expr)` pair in the filter so the discharge needs no re-unwrap.
+    let result_clauses: Vec<(&thermite_syntax::BvTag, &thermite_syntax::Expr)> = f
+        .contract
+        .ens
+        .iter()
+        .filter_map(|c| match &c.bv {
+            Some(tag) if expr_mentions_result(&c.expr) => Some((tag, &c.expr)),
+            _ => None,
+        })
+        .collect();
+    if result_clauses.is_empty() {
+        return None;
+    }
+
+    let vars: Vec<String> = f.params.iter().map(|p| p.name.clone()).collect();
+    let req = &f.contract.req.expr;
+    let mutants = crate::mutation::generate(f, 0, adt_deps);
+    // The ORIGINAL body's effective result — the reference for the observable-equivalence
+    // exclusion below (#101, at width).
+    let orig_result = f.body.as_ref().and_then(effective_result_expr);
+    let mut killed = 0usize;
+    let mut scored = 0usize;
+    let mut equivalent = 0usize;
+    let mut survivor: Option<String> = None;
+
+    for m in &mutants {
+        // Ground `result` by the mutant's effective body (the head early-return value
+        // for a discriminator mutant, else the tail expression) — the same grounding the
+        // L4 clause path uses. A mutant with no effective `result` is not scoreable.
+        let Some(result_expr) = m.item.body.as_ref().and_then(effective_result_expr) else {
+            continue;
+        };
+        // Re-discharge every result-referencing tagged clause at its width with `result`
+        // grounded by THIS mutant's body — the wrap-aware kill check.
+        let mut decided = false; // at least one tagged clause gave a decisive verdict
+        let mut caught = false; // some tagged clause refuted the mutant at width
+        for (tag, clause_expr) in &result_clauses {
+            let grounded = substitute_result_with_body(clause_expr, &result_expr);
+            match bv.discharge_bv(&vars, Some(req), &grounded, tag.width) {
+                BvOutcome::Proved => decided = true,
+                BvOutcome::Counterexample { .. } => {
+                    decided = true;
+                    caught = true;
+                    break;
+                }
+                // Undecided AT WIDTH (the multiplier cliff / an unrenderable mutant) —
+                // this clause does not decide the mutant (OQ-5).
+                BvOutcome::Timeout { .. } | BvOutcome::Unknown(_) => {}
+            }
+        }
+        // A mutant no tagged clause could decide (every clause Timeout/Unknown on it) is
+        // dropped from the denominator (OQ-5), never silently counted killed.
+        if !decided {
+            continue;
+        }
+        // `classify_mutant`'s oracle (`mutation.rs`), evaluated at width: a width
+        // counterexample is `proved == false` → killed; an admitted mutant is
+        // `proved == true` → survived.
+        let proved = !caught;
+        if crate::mutation::classify_mutant(proved) == crate::mutation::MutantOutcome::Killed {
+            scored += 1;
+            killed += 1;
+            continue;
+        }
+        // The mutant SURVIVED at width. Apply the observable-equivalence exclusion (#101)
+        // AT WIDTH before counting it: a mutant whose result is provably equal to the
+        // ORIGINAL body's result over QF_BV — mod 2^width for EVERY discriminator clause —
+        // is not a real discriminator (it computes the same observable value), so it is
+        // netted out of `scored` rather than counted a survivor, exactly as the Verus path
+        // nets out proved-equivalent mutants before the floor gate. Without this, a loose
+        // but legitimate contract (`ens@bv64 result >= x` over `{ x }`, whose `return x`
+        // variants are equivalent) would be spuriously gated `WeakContract`.
+        let is_equivalent = orig_result.as_ref().is_some_and(|orig| {
+            result_clauses.iter().all(|(tag, _)| {
+                let eq = thermite_syntax::Expr::Binary {
+                    op: thermite_syntax::BinOp::Eq,
+                    lhs: Box::new(result_expr.clone()),
+                    rhs: Box::new(orig.clone()),
+                };
+                matches!(
+                    bv.discharge_bv(&vars, Some(req), &eq, tag.width),
+                    BvOutcome::Proved
+                )
+            })
+        });
+        if is_equivalent {
+            equivalent += 1;
+            continue;
+        }
+        scored += 1;
+        if survivor.is_none() {
+            survivor = Some(m.desc.clone());
+        }
+    }
+
+    Some(crate::mutation::MutationScore {
+        killed,
+        scored,
+        // The #101 observable-equivalence exclusion, run AT WIDTH via the bv engine: a
+        // width-admitted mutant whose result equals the original's is excluded here.
+        equivalent,
+        survivor,
+    })
 }
 
 /// Build a `@bv`-tagged `lemma`'s bit-vector certificate (`.design/stage3-bv-reconstruction.md`
@@ -6043,6 +6225,195 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
             user.oracle_subset(),
             user_before.oracle_subset(),
             "the dedup rewrite is oracle-excluded (Q-BURN): the oracle subset is unchanged"
+        );
+    }
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // REQ-4 / AC-5 (stage-3 lock 2 — bv-semantics mutation). The bv-semantics mutation
+    // battery reuses the FROZEN catalogue UNCHANGED; only the kill check swaps to a
+    // WRAP-AWARE discharge at the tag width. These tests need the `bv` parse-gate (to
+    // build a `@bv`-tagged clause) and z3 (the live QF_BV / QF_NRA queries); a shard
+    // without z3 SKIPS, mirroring `bitvector.rs`'s live tests.
+    // ───────────────────────────────────────────────────────────────────────────
+
+    /// The single `@bv`-tagged `fn` of the AC-5 fixture (the `bv_wrap_mutation.th`
+    /// shape): `result >= x` is the body-constraining clause, `x + 0` the identity body.
+    #[cfg(feature = "bv")]
+    fn parse_succ_ge() -> thermite_syntax::FnItem {
+        let src = "fn succ_ge(x: u64) -> u64 req true ens@bv64 result >= x fx pure { x + 0 }";
+        let parsed = thermite_syntax::parse(src);
+        assert!(parsed.is_clean(), "fixture must parse: {:?}", parsed.errors);
+        parsed
+            .program
+            .items
+            .into_iter()
+            .find_map(|i| match i {
+                Item::Fn(f) if f.name == "succ_ge" => Some(f),
+                _ => None,
+            })
+            .expect("fixture has fn succ_ge")
+    }
+
+    /// AC-5: a wrap-exploiting mutant is killed by the bv-semantics mutation run AT WIDTH
+    /// while the SAME mutant survives the unbounded check. The frozen off-by-one mutator
+    /// turns the body `x + 0`'s literal `0` into `1`, so its grounded clause is
+    /// `x + 1 >= x` — valid over unbounded integers (it SURVIVES the nlsat unbounded
+    /// route) but false over QF_BV64 at `x = 2^64 - 1` (the wrap-aware kill finds a
+    /// bit-level counterexample). The contrast is the lock 2 invariant: the kill check is
+    /// width-aware, not unbounded.
+    #[cfg(feature = "bv")]
+    #[test]
+    fn ac5_wrap_exploiting_mutant_killed_at_width_survives_unbounded() {
+        use crate::bitvector::{BitVectorEngine, BvOutcome};
+        use crate::engine::{NlsatEngine, NlsatOutcome};
+        use thermite_syntax::BvWidth;
+
+        if !BitVectorEngine::z3_present() {
+            eprintln!("SKIP: z3 absent — the AC-5 width-vs-unbounded kill contrast needs z3.");
+            return;
+        }
+
+        let f = parse_succ_ge();
+        // The frozen catalogue (UNCHANGED) produces the wrap-exploiting mutant: the
+        // off-by-one `0->1` on the body literal, giving the mutant body `x + 1`.
+        let mutants = crate::mutation::generate(&f, 0, &[]);
+        let wrap = mutants
+            .iter()
+            .find(|m| m.desc == "off-by-one literal 0->1")
+            .expect("the frozen off-by-one mutator yields the `x + 1` wrap-exploiting mutant");
+        let result_expr = wrap
+            .item
+            .body
+            .as_ref()
+            .and_then(effective_result_expr)
+            .expect("the mutant body has an effective result");
+
+        // The tagged clause `result >= x` grounded by the mutant body → `x + 1 >= x`.
+        let ens = &f.contract.ens[0];
+        assert!(ens.bv.is_some(), "the fixture clause is @bv-tagged");
+        let grounded = substitute_result_with_body(&ens.expr, &result_expr);
+
+        // (1) WIDTH kill: the wrap-aware QF_BV64 discharge finds the `x = 2^64 - 1`
+        // counterexample (`x + 1` wraps to 0, `0 >= 2^64 - 1` is false) → KILLED.
+        let bv = BitVectorEngine::new();
+        let at_width = bv.discharge_bv(&["x".to_string()], None, &grounded, BvWidth::W64);
+        match &at_width {
+            BvOutcome::Counterexample { bits } => {
+                assert_eq!(bits.len(), 1, "one bit pattern for `x`");
+                assert_eq!(
+                    bits[0].value,
+                    u64::MAX as u128,
+                    "the falsifying assignment is the wraparound boundary x = 2^64 - 1"
+                );
+            }
+            other => panic!("the wrap-exploiting mutant must be KILLED at width: {other:?}"),
+        }
+
+        // (2) UNBOUNDED survival: the same grounded clause `x + 1 >= x` is valid over
+        // unbounded integers, so the nlsat real-relaxation route (the codebase's
+        // unbounded path) PROVES it → the mutant SURVIVES the unbounded check.
+        let synth = thermite_syntax::FnItem {
+            contract: thermite_syntax::Contract {
+                ens: vec![thermite_syntax::Clause {
+                    expr: grounded.clone(),
+                    text: "result >= x [result := x + 1]".to_string(),
+                    span: thermite_syntax::Span::new(0, 0),
+                    bv: None,
+                }],
+                ..f.contract.clone()
+            },
+            ..f.clone()
+        };
+        assert!(
+            crate::relax::classify_fn(&synth).is_relaxable(),
+            "the linear comparison `x + 1 >= x` is a relaxable (unbounded) clause"
+        );
+        let nlsat = NlsatEngine::new(thermite_syntax::Program { items: vec![] });
+        let unbounded = nlsat.discharge_relax(&synth);
+        assert_eq!(
+            unbounded,
+            NlsatOutcome::Proved,
+            "the wrap-exploiting mutant SURVIVES the unbounded check (`x + 1 >= x` is \
+             valid over the integers): {unbounded:?}"
+        );
+    }
+
+    /// AC-5: the bv-semantics mutation RUN (`bv_mutation_score`) kills the wrap-exploiting
+    /// mutant — its certificate carries a non-trivial kill ratio with the off-by-one
+    /// `x + 1` mutant among the killed (and the early-return `0` mutant too). The
+    /// survivors are the body-equivalent mutants (`return x`, `x - 0`), which the bv
+    /// route does not exclude as #101-equivalent. Proves the battery, not just the raw
+    /// discharge, is wrap-aware.
+    #[cfg(feature = "bv")]
+    #[test]
+    fn ac5_bv_mutation_run_kills_the_wrap_exploiting_mutant() {
+        use crate::bitvector::BitVectorEngine;
+
+        if !BitVectorEngine::z3_present() {
+            eprintln!("SKIP: z3 absent — the bv-semantics mutation run needs z3.");
+            return;
+        }
+
+        let f = parse_succ_ge();
+        let bv = BitVectorEngine::new();
+        let score = bv_mutation_score(&bv, &f, &[])
+            .expect("a result-referencing @bv clause yields a scoreable mutant set");
+        // The off-by-one `x + 1` (wrap-exploiting) and the early-return `0` are killed at
+        // width; the body-equivalent `return x` / `x - 0` survivors are netted out by the
+        // #101 observable-equivalence exclusion run at width, so `scored` is 2 (not 4) and
+        // the kill ratio is a clean 1.0 (above the floor).
+        assert_eq!(
+            score.killed, 2,
+            "two mutants are killed at width: {score:?}"
+        );
+        assert_eq!(
+            score.scored, 2,
+            "the 2 killed mutants are scored; the 2 body-equivalent survivors are excluded \
+             at width: {score:?}"
+        );
+        assert_eq!(
+            score.equivalent, 2,
+            "the two body-equivalent survivors are recorded as excluded: {score:?}"
+        );
+        assert!(
+            score.meets_floor(crate::mutation::MUTATION_FLOOR),
+            "with equivalents excluded the kill ratio (2/2) meets the floor: {score:?}"
+        );
+        // The first survivor is a body-equivalent mutant, NOT the wrap-exploiting one
+        // (which was killed) — the wrap mutant never reaches the survivor slot.
+        let survivor = score.survivor.as_deref().unwrap_or("");
+        assert!(
+            !survivor.contains("off-by-one literal 0->1"),
+            "the wrap-exploiting mutant is killed, never a survivor: {survivor}"
+        );
+    }
+
+    /// REQ-4 regression: a `@bv` clause closed over the parameters (no `result`) is
+    /// invariant under a body mutation, so it is NOT a body-constraining discriminator —
+    /// `bv_mutation_score` returns `None` and the cert keeps its forward-declared score.
+    /// This is why the AC-2 `mix64` golden (whose `@bv` clauses are `a + b == b + a` and
+    /// `a ^ b ^ b == a`) is unperturbed by lock 2.
+    #[cfg(feature = "bv")]
+    #[test]
+    fn ac5_non_result_bv_clause_has_no_scoreable_mutant() {
+        let src = "fn commute(a: u64, b: u64) -> u64 req true ens@bv64 a + b == b + a fx pure \
+                   { a + b }";
+        let parsed = thermite_syntax::parse(src);
+        assert!(parsed.is_clean(), "fixture must parse: {:?}", parsed.errors);
+        let f = parsed
+            .program
+            .items
+            .into_iter()
+            .find_map(|i| match i {
+                Item::Fn(f) if f.name == "commute" => Some(f),
+                _ => None,
+            })
+            .expect("fixture has fn commute");
+        let bv = crate::bitvector::BitVectorEngine::new();
+        assert!(
+            bv_mutation_score(&bv, &f, &[]).is_none(),
+            "a parameter-closed @bv clause (no `result`) yields no scoreable mutant set — \
+             so mix64's golden is unperturbed (needs no z3: the early `None` return)"
         );
     }
 }

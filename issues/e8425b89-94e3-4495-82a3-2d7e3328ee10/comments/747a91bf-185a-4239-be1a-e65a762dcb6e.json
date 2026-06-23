@@ -1,0 +1,8 @@
+{
+  "uuid": "747a91bf-185a-4239-be1a-e65a762dcb6e",
+  "issue_uuid": "e8425b89-94e3-4495-82a3-2d7e3328ee10",
+  "author": "7jYS",
+  "content": "INVESTIGATED — the eq_eq_beq sorry IS fixable (proof below, verified axiom-clean: 'BitVec.eq_eq_beq depends on axioms: [propext, Quot.sound]'), and it unblocks TRIVIAL bv equality reconstruction ((x=x) now reconstructs clean [propext, Classical.choice, Quot.sound]). BUT it is NECESSARY-NOT-SUFFICIENT: non-trivial QF_BV goals (comparisons, arithmetic, even (x=y)<->(y=x)) STILL fail with 'unsolved goals' -> sorryAx. The residual for (x=y)<->(y=x): '|- ... -> 1#8*(y-x) = 255#8*(x-y)' and '|- ... -> (y=x)=(x=y)' — lean-smt reconstructs cvc5's bv-eq-to-subtraction-normal-form rewrite + an equality-commutativity step and CANNOT discharge either. Plus a separate ac_rfl_top AC-matcher bug on &&&. These are missing/incomplete RECONSTRUCTION RULES (the design's wall #2, '~30% cvc5 rule coverage'), not sorries — fixing them is substantial lean-smt reconstruction-engine work, not a one-lemma fix. CONCLUSION: the 'real fix' for kernel-clean QF_BV TV obligations is NOT closing this one sorry. Options: (a) upstream the broader coverage work + this lemma; (b) rev-bump to a newer lean-smt where coverage improved (highest leverage, needs a research spike); (c) keep the bounded-int model (shipped in REQ-7). The proof below is correct + upstreamable as-is.",
+  "created_at": "2026-06-23T18:29:34.999554Z",
+  "kind": "result"
+}

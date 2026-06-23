@@ -275,9 +275,17 @@ fn a_weak_result_referencing_bv_contract_is_gated_weakcontract() {
         return;
     }
     let (code, certs) = run_bv("bv_weak_contract.th");
-    assert_ne!(code, Some(0), "a weak @bv contract must NOT certify the project");
+    assert_ne!(
+        code,
+        Some(0),
+        "a weak @bv contract must NOT certify the project"
+    );
     let c = cert(&certs, "double");
-    assert_eq!(c["level"], Value::from("L0"), "the weak @bv fn is gated, not L4: {c}");
+    assert_eq!(
+        c["level"],
+        Value::from("L0"),
+        "the weak @bv fn is gated, not L4: {c}"
+    );
     assert_eq!(
         c["reject"]["cause"],
         Value::from("WeakContract"),

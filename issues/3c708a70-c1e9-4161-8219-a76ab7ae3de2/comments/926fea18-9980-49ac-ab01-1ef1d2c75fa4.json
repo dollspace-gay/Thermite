@@ -1,0 +1,8 @@
+{
+  "uuid": "926fea18-9980-49ac-ab01-1ef1d2c75fa4",
+  "issue_uuid": "3c708a70-c1e9-4161-8219-a76ab7ae3de2",
+  "author": "0lzM",
+  "content": "[orchestrator review] PR opened. Mechanism (AC-5 wrap-kill at width, frozen catalogue) sound. ORCHESTRATOR FIX: the mutation score was computed but NOT gated → a weak tautological @bv contract (result+0==result) certified L4 (anti-Goodhart hole, RFC §10). Added (1) at-width #101 equivalent-mutant exclusion (succ_ge 2/4→2/2, survivors are body-equivalent) and (2) the floor gate (below-floor→WeakContract, body-invariant→ungated). double→WeakContract, succ_ge→L4, mix64→L4. Agent had DELIBERATELY deferred the gate (its comment noted no equivalence exclusion); the exclusion is what makes gating correct. Full suite green.",
+  "created_at": "2026-06-23T00:57:58.724566Z",
+  "kind": "note"
+}

@@ -3,12 +3,13 @@
   "display_id": 348,
   "title": "Stage-3 REQ-6: review surface — semantic forks + towers (the F-F tripwire)",
   "description": "forge review / forge audit gain a 'semantic forks and definition towers' section, additive over the existing audit manifest (functions/project_assurance/tcb/lean_fragment) and the tower analysis in meaning.rs + burned-lemma surfacing in review.rs: bv-shadow density per module and burned-lemma tower depths — the human-audit surface for the two legibility risks the forge and bv add. Because no bv corpus exists until the tag ships (the Q-BVSCOPE circularity), this density report is the POST-SHIP retreat trigger: rising shadow-flag density in contract-bearing code is the named F-F tripwire down the ladder (full→nowrap-only→lemma-only→drop). AC-7: the section reports bv-shadow density per module and tower depth for burned lemmas; numbers match a fixture project's known counts; a synthetic density spike trips the named F-F warning. Doc: REQ-6. Gate: G3.",
-  "status": "open",
+  "status": "closed",
   "priority": "medium",
   "parent_uuid": "4e1e886c-254a-4a9f-bf03-0c399c95866b",
   "created_by": "rApq",
   "created_at": "2026-06-22T03:10:19.035492Z",
-  "updated_at": "2026-06-22T03:10:58.709309Z",
+  "updated_at": "2026-06-23T04:57:37.759327Z",
+  "closed_at": "2026-06-23T04:57:37.759327Z",
   "labels": [
     "forge"
   ],

@@ -1,0 +1,10 @@
+{
+  "uuid": "cf0cdb15-d69c-4d65-9422-cbca68ec717d",
+  "issue_uuid": "7382e6a6-d7ce-4125-9e47-8611d1eeeb51",
+  "author": "rApq",
+  "content": "Delivered via PR #88 (squash-merged): @bvN(nowrap) no-overflow side obligation (in-cage QF_BV; held→recorded in bv_shadow.nowrap_obligation, witnessed overflow→BvNowrapOverflow reject). AC-6. Cleanest kickoff — no behavioral fix; added e2e fixture + doc-drift re-pin. CI green.",
+  "created_at": "2026-06-23T03:53:47.551247Z",
+  "kind": "result",
+  "signed_by": "SHA256:tVRGNaCPy5N1tRtokzkbgsOCzGZujGDWQlGHFruaL9c",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgylLCWwpnQm2E2UQO23AN1e/yB6k0yzmPM7qiYPujTNYAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAZvGgKmznZds8TqmgWOdvDiOS5gM3C71qJWzIVUnrBZ2POriAVlQAREg0a5e2CMZKRiVxrKblVZIQIwTPY/KcCg=="
+}

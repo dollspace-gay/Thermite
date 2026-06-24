@@ -1,0 +1,10 @@
+{
+  "uuid": "10c5fed7-b2a7-40c1-9102-1e1010bfd5d5",
+  "display_id": 356,
+  "title": "Path B: kernel-prove bv-model faithfulness (BitVec semantics ≡ bounded-int model) in the spine — closes REQ-8 render_bv_prop gap without lean-smt bv reconstruction",
+  "status": "open",
+  "priority": "high",
+  "created_by": "7jYS",
+  "created_at": "2026-06-24T00:55:42.221048Z",
+  "updated_at": "2026-06-24T00:55:42.221048Z"
+}

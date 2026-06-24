@@ -1,0 +1,11 @@
+{
+  "uuid": "ed4da697-8bd0-48ab-845b-4798d70dc41b",
+  "display_id": 357,
+  "title": "Adversarial review of the whole bv build (REQ-1..8) before accepting the trust flip",
+  "description": "Before REQ-8 (#350) trust: solver(z3)->kernel migration is accepted (merge + G3), run an ADVERSARIAL review over the ENTIRE bv build (REQ-1..8), not just the flipping increment. ACToR pattern: fan out acto-critic agents, each hunting divergence between the toolchain behavior and its authority (RFC ladder + design doc + lean faithfulness), each pinning any divergence with a FAILING test. Run in the REQ-8 worktree (= main REQ-1..7 + REQ-8) so the target is the full post-flip build. Dimensions: (1) trust-flip soundness + the faithfulness chain (bounded-int model ⇔ BitVec via BvModel ⇔ the two string-emission legs); (2) fragment-support split honesty (can a bitwise/rotate or div/mod clause render+migrate wrongly? is SmtExportError airtight? is every renderable op covered by BvModel faithfulness?); (3) L4 rung soundness (any Timeout/unknown silently→Proved/L4?); (4) anti-Goodhart locks (mutation gate+exclusion bypass? nowrap overflow escape? shadow-flag completeness); (5) per-item overlay (non-@bv fn mis-certified by bv route?); (6) bitvector.rs QF_BV render correctness (overflow preds, bit-pattern cex, wrap semantics — all in TCB); (7) v1 conformance byte-identity (additive field leak into v1 oracle subset?). Findings → fix on the REQ-8 branch → only then merge + proceed to REQ-9/G3. Triggered by user 2026-06-24.",
+  "status": "open",
+  "priority": "high",
+  "created_by": "rApq",
+  "created_at": "2026-06-24T14:57:05.976702Z",
+  "updated_at": "2026-06-24T14:57:05.976702Z"
+}

@@ -1,0 +1,10 @@
+{
+  "uuid": "856a4fb8-a2bf-45d8-8983-5c22b920b869",
+  "issue_uuid": "10c5fed7-b2a7-40c1-9102-1e1010bfd5d5",
+  "author": "rApq",
+  "content": "The BvModel.lean faithfulness metatheorem (tmInt_eq_toNat / frmInt_iff_frmBV / tv_equiv_faithful, axiom-clean) SHIPPED under REQ-7 (PR #90, main @0e9c7b83). What remains for REQ-8 (#350): WIRE it — the per-clause trust migration for the arithmetic/comparison QF_BV fragment cites this theorem as the render_bv_prop faithfulness justification (the bounded-int model the exporter discharges ⇔ the BitVec semantics bitvector.rs renders). Residual after that = the two string-emission legs (exporter pretty-print + bitvector.rs SMT render encode the same Frm). Keep open until REQ-8 consumes it.",
+  "created_at": "2026-06-24T03:55:01.392715Z",
+  "kind": "note",
+  "signed_by": "SHA256:tVRGNaCPy5N1tRtokzkbgsOCzGZujGDWQlGHFruaL9c",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgylLCWwpnQm2E2UQO23AN1e/yB6k0yzmPM7qiYPujTNYAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAKmehdp6BKwvHzwC9oaXRaIleN/CUKzJKj1+kOQIUDuL1hHV9ae/4U2RhD+kBY9/4WIE13P86cOWqP46PulB7Cg=="
+}

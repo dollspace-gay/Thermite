@@ -1,0 +1,10 @@
+{
+  "uuid": "60891f5f-f890-4332-b46d-3f23a3f6f3ce",
+  "issue_uuid": "4e1e886c-254a-4a9f-bf03-0c399c95866b",
+  "author": "rApq",
+  "content": "REQ-7 (#349) SHIPPED → main @0e9c7b83 (PR #90): the Rust→Lean obligation exporter (forge smt-export + SmtExport.lean), QF_LIA + arithmetic/comparison QF_BV via a bounded-int model. Hit the lean-smt BitVec sorryAx wall; bounded-int workaround with KERNEL-PROVEN faithfulness (BvModel.lean, #356) — no behavioral fix needed. Bitwise/rotate refused→solver-trusted F-J. AC-8 verified axiom-clean. 7/9 done. REMAINING: REQ-8 (#350 reconstruction default-on — design-doc note added for its fragment-support check) → REQ-9 (#351 gate G3).",
+  "created_at": "2026-06-24T03:54:36.675969Z",
+  "kind": "note",
+  "signed_by": "SHA256:tVRGNaCPy5N1tRtokzkbgsOCzGZujGDWQlGHFruaL9c",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgylLCWwpnQm2E2UQO23AN1e/yB6k0yzmPM7qiYPujTNYAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABABqUNjPryqZ4Ze2NZQbaK8gex/zW8d7+31CW4mAm4w/ruI25bHto0EdEsXhzUlxqF3NzNFEZDdRbStlHUuCv+Dg=="
+}

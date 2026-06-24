@@ -1,0 +1,8 @@
+{
+  "uuid": "875a4276-3920-43fa-a5c7-5903e24970a0",
+  "issue_uuid": "14ac8bec-af82-46b6-9559-ee0f16f57342",
+  "author": "utd6",
+  "content": "Decision: the kernel-checked-vs-solver split keys on the 'kernel-checked' trust-string MARKER, not on engine name — the bv engine tag stays 'bitvector' whether or not the clause migrated, and nlsat-relax clauses are also kernel-grounded, so a name-based split would miscount. Decision: EPR-stratified rel/array (the G2 residual) is NAMED not migrated — the reconstruction fragment (QF_LIA + arith/cmp QF_BV) structurally excludes uninterpreted rel/array atoms; F-J makes that free. Decision: gate the ResidualTrust section on !bv_shadows.is_empty() so the v1/nlsat audit goldens stay byte-identical (the additive semantic_forks discipline).",
+  "created_at": "2026-06-24T16:02:49.547338Z",
+  "kind": "decision"
+}

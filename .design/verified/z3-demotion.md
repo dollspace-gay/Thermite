@@ -116,10 +116,27 @@ reconstructable subset TODAY** (demonstrated, kernel-clean). The richer fragment
    **UPDATE (stage-3 REQ-7, #349):** empirically reconfirmed at the pinned rev and found
    to be WIDER than "bitwise/shift only" — *every* `BitVec`-typed `by smt` goal, including
    a pure unsigned comparison `a ≤ b ↔ ¬ (b < a)` over `BitVec 8`, bit-blasts and pulls
-   `sorryAx`. The stage-3 exporter therefore renders a `@bvN` clause over the
-   **range-bounded integer machine-model** (`0 ≤ x < 2^N`, wrap as `% 2^N`, unsigned cmp
-   as `Int` cmp), which IS kernel-clean — the literal `BitVec N` render (the artifact
-   REQ-8 replays) stays the residual behind this wall.
+   `sorryAx`. Root cause (read in the vendored source): `reconstructRewrite` is a total
+   stub (`| _ => return none` for every cvc5 DSL rewrite) and `BV_BITBLAST_STEP` covers
+   only `EQUAL`/`BITVECTOR_ADD`; closing the `eq_eq_beq` sorry alone (verified, = upstream
+   PR ufmg-smite/lean-smt#227) is necessary but NOT sufficient. The stage-3 exporter
+   therefore renders a `@bvN` clause over the **range-bounded integer machine-model**
+   (`0 ≤ x < 2^N`, wrap as `% 2^N`, unsigned cmp as `Int` cmp), which IS kernel-clean.
+
+   **UPDATE (stage-3 "Path B", #356) — the `render_bv_prop` gap is now CLOSED in our own
+   spine, no upstream dependency.** Rather than complete lean-smt's literal bv
+   reconstruction (weeks–months, fork-owning), `lean/Thermite/BvModel.lean` proves the
+   integer machine-model FAITHFUL to the `BitVec N` semantics: `frmInt_iff_frmBV`
+   (the two denotations agree) + `tv_equiv_faithful` (so the exporter's int-model `↔`
+   certifies the genuine `@bv` clause), KERNEL-CHECKED, `#print axioms` ⊆ {propext,
+   Classical.choice, Quot.sound}, and **Mathlib/Smt-free** (so it runs in CI via
+   `scripts/lean-axiom-probe.sh`, unlike the `Smt`-importing `SmtExport`). Combined with
+   the exporter's `by smt`-reconstructed int-model `↔`, a `@bv` clause's truth is
+   kernel-grounded end to end with no solver in the trust base for the renderable
+   fragment. This is the route that retires the bit-blasting wall for our purposes —
+   completing lean-smt's literal QF_BV reconstruction (the `reconstructRewrite` stub +
+   the missing `BV_BITBLAST_STEP` arms) remains the open UPSTREAM task, not load-bearing
+   for us.
 2. **Coverage ~30% of cvc5's proof rules (finding #8).** Quantified obligations (the
    bounded combinators) and theory-lemma-heavy proofs may hit an unreconstructable cvc5
    rule and FAIL (the `smt` tactic errors rather than producing an unsound proof — it does

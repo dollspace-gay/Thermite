@@ -44,10 +44,20 @@
 //! reconstructs kernel-clean (the proven path) — so a `@bv` clause obligation rendered
 //! this way discharges within `{propext, Classical.choice, Quot.sound}`. The literal
 //! `BitVec N` render (`crate::bitvector::render_bv_prop`, the SMT-LIB2 query
-//! `--engine bv` runs) stays the documented residual: it is the artifact REQ-8's
-//! `render_bv_prop` faithfulness obligation replays, and remains blocked on the
-//! upstream bit-blasting `sorry`. REQ-7 is the exporter only; the bv-render
-//! faithfulness wiring and the real-query replay are REQ-8.
+//! `--engine bv` runs) is the artifact lean-smt's literal QF_BV replay would consume,
+//! and remains blocked on the upstream bit-blasting `sorry`.
+//!
+//! **Faithfulness of the integer model is kernel-proven** (`lean/Thermite/BvModel.lean`,
+//! issue #356): the term/proposition fragment [`render_term`] / [`render_prop`] emit here
+//! corresponds arm-for-arm to `Thermite.BvModel.{Tm, Frm}`, and the metatheorem
+//! `frmInt_iff_frmBV` proves the bounded-integer denotation agrees with the genuine
+//! `BitVec N` denotation (`#print axioms` ⊆ the standard set, Mathlib/Smt-free). So with
+//! the exporter's `by smt` int-model `↔` reconstructed in the kernel AND that faithfulness
+//! theorem, a `@bv` clause's truth is kernel-grounded end to end — discharging the REQ-8
+//! `render_bv_prop` faithfulness obligation in our own spine, with no solver in the trust
+//! base for the renderable fragment and no dependency on lean-smt's literal bv
+//! reconstruction. The Rust-emitter ⟷ Lean-AST correspondence is inspection-tier (as for
+//! the whole exporter — `.design/verified/exporter-surface-correspondence.md`).
 //!
 //! ## Out of the renderable fragment
 //!

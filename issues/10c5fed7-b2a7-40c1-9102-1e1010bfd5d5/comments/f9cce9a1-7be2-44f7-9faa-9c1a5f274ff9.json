@@ -1,0 +1,8 @@
+{
+  "uuid": "f9cce9a1-7be2-44f7-9faa-9c1a5f274ff9",
+  "issue_uuid": "10c5fed7-b2a7-40c1-9102-1e1010bfd5d5",
+  "author": "7jYS",
+  "content": "DONE (Path B, commit dcbd76e7). lean/Thermite/BvModel.lean proves the bounded-integer machine-model FAITHFUL to BitVec N semantics — frmInt_iff_frmBV (denotations agree) + tv_equiv_faithful (int-model ↔ certifies the genuine @bv clause). KERNEL-CHECKED, #print axioms ⊆ {propext, Classical.choice, Quot.sound}, Mathlib/Smt-FREE. Proof: structural induction; crux is BitVec.toNat_{add,sub,mul} modular identities bridged to Int via Int.natCast_emod/ofNat_sub + Int.add_emod_right (sub case; omega does NOT do symbolic-modulus). Wired: root import + lean-axiom-probe.sh build target (runs in CI, unlike SmtExport) + in-file #print axioms (SubstKit convention). Discharges the REQ-8 render_bv_prop faithfulness obligation in OUR spine — @bv clause truth kernel-grounded end to end, no solver in trust base for the renderable fragment, no dependency on lean-smt's stalled bv reconstruction. Gates: full lake build green, clippy/fmt clean, doc-drift CURRENT, 9 exporter tests pass. NOTE: promoting tv_equiv_faithful into the gated THEOREMS list is the REQ-8/G3 trust-flip action (not done here, per stage-3 gate discipline).",
+  "created_at": "2026-06-24T01:09:37.453728Z",
+  "kind": "result"
+}

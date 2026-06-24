@@ -437,6 +437,30 @@ pub fn free_vars(e: &Expr) -> Vec<String> {
     acc.into_iter().collect()
 }
 
+/// Is a per-clause predicate inside the RECONSTRUCTION-SUPPORTED fragment
+/// (`.design/stage3-bv-reconstruction.md` REQ-8 / AC-9 — the fragment-support check
+/// REQ-8's trust migration keys on)? `true` iff the exporter renders this clause's
+/// `(P_prod) ⟺ (P_ref)` translation-validation goal WITHOUT [`SmtExportError`] in the
+/// given fragment — i.e. exactly the QF_LIA scalar + arithmetic/comparison QF_BV subset
+/// (`+`/`-`/`*`, unsigned `=`/`≠`/`<`/`≤`/`>`/`≥`, logical connectives). The
+/// bitwise/shift/rotate QF_BV subset (`^`/`&`/`|`/`<<`/`>>`, rotate) and
+/// division/remainder are the [`SmtExportError::OutOfFragment`] refusal — the
+/// bit-blasting wall (`.design/verified/z3-demotion.md`) — and read `false` here, so
+/// those clauses stay solver-trusted (the F-J residual the audit names).
+///
+/// Renderability IS the reconstruction-support signal: a clause this returns `true` for
+/// is rendered over the bounded-integer machine-model that lean-smt reconstructs
+/// kernel-clean (`#print axioms ⊆ {propext, Classical.choice, Quot.sound}`, the AC-8
+/// committed `lean/Thermite/SmtExport.lean` proof + the kernel-checked
+/// `BvModel.frmInt_iff_frmBV` faithfulness metatheorem) — so the renderable fragment's
+/// axiom-cleanliness is discharged by REQ-7 once, statically, not re-run per clause.
+/// Total + deterministic (R-CODE-5): a leaf the renderer would refuse is refused here
+/// too, never a silent claim of support.
+#[must_use]
+pub fn clause_reconstruction_supported(prod: &Expr, fragment: SmtFragment) -> bool {
+    render_goal(&obligation_for_predicate("clause", prod, fragment)).is_ok()
+}
+
 /// Mint an equivalence obligation for a production predicate by pairing it with its
 /// [`reference_normalize`] encoding (`.design/stage3-bv-reconstruction.md` REQ-7).
 /// The binder set is the predicate's [`free_vars`]; the fragment is the caller's.
@@ -572,6 +596,45 @@ mod tests {
         );
         // A pure variable / literal leaf is returned unchanged (totality).
         assert_eq!(reference_normalize(&var("x")), var("x"));
+    }
+
+    // REQ-8 / AC-9: the per-clause fragment-support check keys on renderability — the
+    // arithmetic/comparison subset is reconstruction-supported (migrates trust), the
+    // bitwise/shift/rotate subset is refused (stays solver-trusted).
+    #[test]
+    fn clause_reconstruction_supported_keys_on_the_renderable_fragment() {
+        // The mix64 split: `a + b == b + a` (arith) is supported; `a ^ b ^ b == a` (xor) is not.
+        let add = ens_expr(
+            "fn p(a: u64, b: u64) -> u64 req true ens a + b == b + a fx pure { a }",
+            "p",
+        );
+        assert!(
+            clause_reconstruction_supported(&add, SmtFragment::Bv(BvWidth::W64)),
+            "wraparound-add commutativity is the reconstruction-supported QF_BV subset"
+        );
+        let xor = ens_expr(
+            "fn p(a: u64, b: u64) -> u64 req true ens a ^ b ^ b == a fx pure { a }",
+            "p",
+        );
+        assert!(
+            !clause_reconstruction_supported(&xor, SmtFragment::Bv(BvWidth::W64)),
+            "xor is the bitwise subset the exporter refuses — stays solver-trusted (F-J)"
+        );
+        // A QF_LIA scalar comparison is supported too.
+        let lia = ens_expr(
+            "fn p(a: u64, b: u64) -> u64 req true ens a <= b fx pure { a }",
+            "p",
+        );
+        assert!(clause_reconstruction_supported(&lia, SmtFragment::Lia));
+        // A shift clause (the rotl1 lemma shape) is refused.
+        let shift = ens_expr(
+            "fn p(a: u64, b: u64) -> u64 req true ens (a << b) == a fx pure { a }",
+            "p",
+        );
+        assert!(!clause_reconstruction_supported(
+            &shift,
+            SmtFragment::Bv(BvWidth::W64)
+        ));
     }
 
     // REQ-7: the file-driven exporter mints a QF_LIA obligation per renderable `ens`

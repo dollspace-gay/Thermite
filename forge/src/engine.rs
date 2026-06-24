@@ -139,6 +139,76 @@ pub fn bv_trust_profile() -> TrustProfile {
     }
 }
 
+/// The named trust base a reconstruction-SUPPORTED [`EngineName::BitVector`] clause
+/// carries after REQ-8's default-on trust migration (`.design/stage3-bv-reconstruction.md`
+/// REQ-8 / AC-9). Where the per-clause obligation is inside the renderable fragment
+/// ([`crate::lean_smt_export::clause_reconstruction_supported`] — the arithmetic/comparison
+/// QF_BV subset), its `trust:` migrates from the SOLVER base ([`bv_trust_profile`], `Z3
+/// QF_BV`) to THIS kernel-checked base, at the SAME caged rung [`crate::manifest::Level::L4`]
+/// (rung and trust are orthogonal axes — REQ-8 shrinks the trust base, never the rung).
+///
+/// The migration is honest about exactly what grounds the clause and what residual stays:
+///
+/// 1. The clause obligation `(P_prod) ⟺ (P_ref)` is rendered over the bounded-integer
+///    machine-model and reconstructed by the lean-smt `smt` tactic (cvc5) inside the Lean
+///    kernel, `#print axioms ⊆ {propext, Classical.choice, Quot.sound}` (the AC-8 committed
+///    `lean/Thermite/SmtExport.lean` proof) — NO solver in the load-bearing base.
+/// 2. The bounded-integer model ⇔ the genuine `BitVec N` semantics is the kernel-checked
+///    `Thermite.BvModel.frmInt_iff_frmBV` / `tv_equiv_faithful` metatheorem (axiom-clean,
+///    Mathlib/Smt-free; in `lean-axiom-probe.sh`) — so the int-model reconstruction grounds
+///    the genuine machine semantics, not a re-derivation.
+/// 3. The named RESIDUAL (the pretty-printer-trust class, NOT a semantic one, #356): the
+///    two string-emission legs — this exporter's pretty-printer and `bitvector.rs`'s SMT
+///    renderer — both encode the same `Frm`; their agreement is inspection-tier
+///    (`.design/verified/exporter-surface-correspondence.md`), the only residual REQ-8
+///    leaves on the renderable fragment.
+///
+/// Strictly smaller than the solver base for the renderable fragment: Z3 QF_BV is no longer
+/// load-bearing (the kernel rechecks the clause), leaving only the kernel + the
+/// pretty-printer residual. The bitwise/shift/rotate subset is NOT migrated (it keeps
+/// [`bv_trust_profile`], named F-J in the audit).
+#[must_use]
+pub fn bv_kernel_checked_trust_profile() -> TrustProfile {
+    TrustProfile {
+        items: vec![
+            "Lean kernel (the (P_prod) ⟺ (P_ref) obligation reconstructed by lean-smt `smt`/cvc5 \
+             over the bounded-integer machine-model; #print axioms ⊆ {propext, Classical.choice, \
+             Quot.sound} — no solver in the base)"
+                .to_string(),
+            "spine-lemma frmInt_iff_frmBV / tv_equiv_faithful (bounded-integer model ⇔ BitVec N \
+             machine semantics, kernel-checked, BvModel.lean)"
+                .to_string(),
+            "pretty-printer residual (the lean_smt_export + bitvector.rs string-emission legs \
+             encode the same Frm; inspection-tier, #356)"
+                .to_string(),
+        ],
+    }
+}
+
+/// The stable marker substring every KERNEL-CHECKED / kernel-grounded per-clause trust
+/// item carries (`.design/stage3-bv-reconstruction.md` REQ-8 / AC-9). Both the bv
+/// reconstruction profile's faithfulness lemma ([`bv_kernel_checked_trust_profile`] —
+/// `frmInt_iff_frmBV … kernel-checked`) and the nlsat relax spine lemmas
+/// (`r_relax_sound`/`rencode_sound … kernel-checked`) name themselves with it, so the
+/// audit's residual-trust statement keys the kernel-checked-vs-solver split on ONE marker
+/// rather than re-deriving the split from engine names (which would miscount the bv route,
+/// whose engine tag stays `bitvector` whether or not the clause migrated).
+pub const KERNEL_CHECKED_TRUST_MARKER: &str = "kernel-checked";
+
+/// Is this per-clause trust base kernel-grounded (`.design/stage3-bv-reconstruction.md`
+/// REQ-8 / AC-9)? `true` iff any named trust item carries [`KERNEL_CHECKED_TRUST_MARKER`]
+/// — a reconstruction-migrated bv clause or an nlsat-relax clause. `false` for a base that
+/// is purely solver-trusted (the bv solver profile `Z3 QF_BV`, a Verus L3 base, the
+/// EPR-stratified rel/array residual). An empty trust base (the v1 Verus corpus, recorded
+/// by `status`/`level`) is not classified by this — the residual-trust statement only
+/// aggregates obligations that carry a per-clause trust base.
+#[must_use]
+pub fn trust_is_kernel_checked(trust: &[String]) -> bool {
+    trust
+        .iter()
+        .any(|t| t.contains(KERNEL_CHECKED_TRUST_MARKER))
+}
+
 /// The reason an engine returned [`Verdict::Unknown`] (`.design/verified/
 /// proof-backends.md` REQ-2(b)/REQ-3). An `Unknown` means this engine could not
 /// decide; it is not a failure verdict and it degrades per the ladder (§6). The two

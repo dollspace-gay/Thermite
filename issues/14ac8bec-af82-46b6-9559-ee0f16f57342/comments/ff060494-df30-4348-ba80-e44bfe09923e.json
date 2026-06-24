@@ -1,0 +1,8 @@
+{
+  "uuid": "ff060494-df30-4348-ba80-e44bfe09923e",
+  "issue_uuid": "14ac8bec-af82-46b6-9559-ee0f16f57342",
+  "author": "utd6",
+  "content": "Result: SHIPPED commit 3a546cf0. Files: forge/src/{lean_smt_export,engine,check,audit}.rs + forge/tests/bv_lowering.rs (5 files, +580). Trust migrates solver(z3)->kernel-checked where reconstruction-supported, default-ON, same rung. mix64 IS the AC-9 same-item split (a+b==b+a migrates kernel-checked, a^b^b==a stays solver). audit ResidualTrust statement aggregates the split + names the still-solver fragments incl EPR rel/array (F-J). Tests: 3 unit + 2 e2e pass; full bv_lowering(16) + audit/review/check/nlsat conformance green; clippy clean; rustfmt(1.95.0) applied; doc-drift exit 0; v1 goldens byte-identical. The 9 engine::tests interactive_/live_ failures are the documented Lean-spine env set (exact count match), NOT regressions. AC boxes flip at G3 (REQ-9 #351), not here.",
+  "created_at": "2026-06-24T16:03:02.238156Z",
+  "kind": "result"
+}

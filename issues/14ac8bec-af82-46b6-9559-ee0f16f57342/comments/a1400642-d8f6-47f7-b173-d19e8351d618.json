@@ -1,0 +1,8 @@
+{
+  "uuid": "a1400642-d8f6-47f7-b173-d19e8351d618",
+  "issue_uuid": "14ac8bec-af82-46b6-9559-ee0f16f57342",
+  "author": "utd6",
+  "content": "Plan: per-clause REQ-8 trust migration. (1) lean_smt_export: pub clause_reconstruction_supported(expr,fragment)=render_goal.is_ok() — renderability IS the support signal; axiom-cleanliness discharged once by REQ-7 AC-8 + BvModel. (2) engine.rs: bv_kernel_checked_trust_profile (smt-reconstruction + BvModel frmInt_iff_frmBV faithfulness + named pretty-printer residual #356; z3 not load-bearing) + trust_is_kernel_checked marker. (3) check.rs bv_proved_obl (fn+lemma callers): supported arith/cmp -> kernel-checked, bitwise/shift/rotate -> solver(z3). mix64 = AC-9 same-item split. (4) audit.rs ResidualTrust statement aggregating the split + naming EPR rel/array (F-J). (5) default-ON.",
+  "created_at": "2026-06-24T16:02:34.570483Z",
+  "kind": "plan"
+}

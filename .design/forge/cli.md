@@ -3,8 +3,8 @@
 <!--
 tier: 3-component
 status: shipped
-audited-sha: 5ae0816c042debb01c70eb9b89c775837f0c0f24 (content-sha256 re-pinned 2026-06-21 for stage-2 REQ-8 / AC-8 (#330), faithfulness + two-phase TV + the trust flip: the change to this doc's governed file (cli.rs) is the additive `forge strat-faithful-tv [--generated N] [--seed <u64>] [--json]` subcommand (`Command::StratFaithfulTv` → `run_strat_faithful_tv`, the two-phase TV sweep reporting the phase split + the gated trust profile); every other subcommand + flag parse is unchanged. The legacy commit pin stays at the 5ae0816c stable-main ancestor; only the active content-sha256 digest moves. prior: 2026-06-20 stage-2 REQ-4 / AC-4 (#326) `forge strat-tv` + `ForgeError::StratDifferential`; 2026-06-18 umbrella REQ-2c / AC-4 rotating-seed `--seed` flag on `forge tv`; §6 metrics dashboard `--metrics` value)
-audited-content-sha256: fdf790121bf8dc4fa50c43b0b476a3a390d114cac27709240a111b11f126dcab
+audited-sha: 5ae0816c042debb01c70eb9b89c775837f0c0f24 (content-sha256 re-pinned 2026-06-23 for stage-3 REQ-7 / AC-8 (#349), the automated Rust→Lean obligation exporter: the change to this doc's governed file (cli.rs) is the additive `forge smt-export [<file>] [--out <path>]` subcommand (`Command::SmtExport` → `run_smt_export`, emitting the `(P_prod) ⟺ (P_ref)` `by smt` Lean theorems + `#print axioms` probes via `lean_smt_export.rs`); every other subcommand + flag parse is unchanged. The legacy commit pin stays at the 5ae0816c stable-main ancestor; only the active content-sha256 digest moves. prior: 2026-06-21 stage-2 REQ-8 / AC-8 (#330) `forge strat-faithful-tv`; 2026-06-20 stage-2 REQ-4 / AC-4 (#326) `forge strat-tv` + `ForgeError::StratDifferential`; 2026-06-18 umbrella REQ-2c / AC-4 rotating-seed `--seed` flag on `forge tv`; §6 metrics dashboard `--metrics` value)
+audited-content-sha256: c26663ba3002a4cb2bd72fd30383d6d4f0c9b0eb9f975ea1d6aa0599b2a45826
 governs: forge/src/cli.rs
 thesis-refs:
   - thermite-design.md §5
@@ -15,10 +15,10 @@ thesis-refs:
 ## Summary
 
 `forge/src/cli.rs` (2,778 lines) is the command surface of the `forge` driver:
-a hand-rolled argv matcher (`fn parse_args in cli.rs`) that dispatches THIRTEEN
+a hand-rolled argv matcher (`fn parse_args in cli.rs`) that dispatches FOURTEEN
 verbs — `new` / `check` / `audit` / `repair` / `review` / `build` / `tv` /
-`exec-tv` / `body-tv` / `goal` / `battery` / `edit` / `fill` — renders each
-verb's result as human-readable text or (under `--json`) the §5.1 structured
+`exec-tv` / `body-tv` / `goal` / `battery` / `edit` / `fill` / `smt-export` —
+renders each verb's result as human-readable text or (under `--json`) the §5.1 structured
 document, owns `enum ForgeError in cli.rs` (the boundary error that AGGREGATES
 every driven library's error plus driver-native subprocess/environment
 variants), and maps every outcome to a typed exit code
@@ -55,10 +55,16 @@ What the old doc never saw, grouped (each verb cites its issue in the code):
 - **Proof backends** — `--engine verus|lean|auto` + the disagreement
   `SoundnessAlarm` halt (#247); the usage-banner `--engine` currency fix
   (#257, commit `6368550a` — the banner had drifted behind the parser).
+- **SMT-tactic obligation export** — `forge smt-export [<file>] [--out <path>]`
+  (stage-3 REQ-7 / AC-8, #349): the automated Rust→Lean obligation exporter
+  (`Command::SmtExport` → `run_smt_export`, driving `lean_smt_export.rs`). Emits a
+  `(P_prod) ⟺ (P_ref)` `by smt`-discharged Lean theorem + `#print axioms` probe per
+  renderable contract clause (QF_LIA, or QF_BV over the bounded-integer model for a
+  `@bvN` clause in a `bv` build); no file emits the canonical demo batch.
 
 ## Requirements
 
-- REQ-1 (command surface): `forge` exposes exactly the thirteen verbs above;
+- REQ-1 (command surface): `forge` exposes exactly the fourteen verbs above;
   no args, an unknown verb, a missing positional, or an unknown flag is a
   structured `ForgeError::Usage` carrying `fn usage_text in cli.rs`, never a
   panic and never exit 0.
@@ -67,7 +73,7 @@ What the old doc never saw, grouped (each verb cites its issue in the code):
   — a `match` over the verb with per-verb flag loops — NOT a derive-macro
   dependency (`forge/Cargo.toml` declares no `clap`). The original two-verb
   justification (§2.2/§2.3/§4.4 low-magic posture) was made when the grammar
-  was `new <name> | check <file> [--json]`; the decision SURVIVED to 13 verbs
+  was `new <name> | check <file> [--json]`; the decision SURVIVED to 14 verbs
   and ~650 lines of matcher. Honest assessment: it still holds — every flag
   error is a precise structured diagnostic and the dependency cost stays zero —
   but the per-verb flag loops are hand-duplicated (see OQ-1).
@@ -247,20 +253,20 @@ a reader cannot mistake it for an oracle field.
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-1 (13-verb command surface) | SHIPPED | `fn parse_args in cli.rs` matches `new`/`check`/`audit`/`repair`/`review`/`build`/`tv`/`exec-tv`/`body-tv`/`goal`/`battery`/`edit`/`fill`; the fall-through arm is `Err(ForgeError::Usage(format!("unknown command \`{other}\`. {}", usage_text())))`. Non-test consumer: `fn main in main.rs` → `cli::run`. Verification: unit `usage_errors`; integration `missing_file_is_usage_error_nonzero`. |
-| REQ-2 (hand-rolled argv matcher) | SHIPPED | `fn parse_args in cli.rs` (~650 lines, verb `match` + per-verb flag loops); `grep clap forge/Cargo.toml` → no hit. Consumer: `fn dispatch in cli.rs`. Verification: the six `parses_*` unit tests. Decision survived the 2-verb → 13-verb growth; duplication cost named in OQ-1. |
+| REQ-1 (14-verb command surface) | SHIPPED | `fn parse_args in cli.rs` matches `new`/`check`/`audit`/`repair`/`review`/`build`/`tv`/`exec-tv`/`body-tv`/`goal`/`battery`/`edit`/`fill`/`smt-export`; the fall-through arm is `Err(ForgeError::Usage(format!("unknown command \`{other}\`. {}", usage_text())))`. Non-test consumer: `fn main in main.rs` → `cli::run`. Verification: unit `usage_errors`; integration `missing_file_is_usage_error_nonzero`. |
+| REQ-2 (hand-rolled argv matcher) | SHIPPED | `fn parse_args in cli.rs` (~650 lines, verb `match` + per-verb flag loops); `grep clap forge/Cargo.toml` → no hit. Consumer: `fn dispatch in cli.rs`. Verification: the six `parses_*` unit tests. Decision survived the 2-verb → 14-verb growth; duplication cost named in OQ-1. |
 | REQ-3 (`ForgeError` aggregation) | SHIPPED | `enum ForgeError in cli.rs`: `Parse(Vec<SyntaxError>)`/`Spec`/`Effects`/`Lower` + the verus/kani/rustc/reviewer Absent-Spawn-Output families + `Io`/`Usage` + `SoundnessAlarm(crate::engine::Disagreement)`; `impl fmt::Display` forwards inner diagnostics. Non-test consumers: every driven module returns it (`check::check_file -> Result<_, ForgeError>`, `pub fn check_disagreement in engine.rs` surfaces the alarm). Verification: `aggregation_preserves_inner_diagnostics`. |
 | REQ-4 (human + `--json` dual rendering) | SHIPPED | `fn run_check in cli.rs`: `serde_json::to_string_pretty(&certs)` under `--json`, else `render_human` per cert + `render_assurance`; parallel paths in `run_audit`/`run_repair`/`run_review`/`run_build`/`run_tv`/`run_exec_tv`/`run_body_tv`; stderr for diagnostics (e.g. `run_review`'s `eprintln!` keeps `--json` stdout clean). Verification: `run_check_json` harness parses stdout whole in `check_conformance.rs`. |
 | REQ-5 (typed exit codes) | SHIPPED | `pub const EXIT_VERIFICATION_FAILURE: u8 = 1` / `EXIT_ENVIRONMENT: u8 = 2` in `cli.rs`; `run_check`/`run_audit` gate on `matches!(.., ProjectAssurance::Certified(_))`; `run_repair` on `report.all_upgraded()`; the TV trio on `counts.divergent == 0`; `fn exit_code in cli.rs` maps every `ForgeError` to `EXIT_ENVIRONMENT`. Verification: `errors_map_to_environment_exit_code`, `broken_contract_is_reported_failure_with_counterexample` (exit 1), `divergence_audit_check2_exit_swallow.rs` (the TV exit discipline). |
 | REQ-6 (no panics; Result discipline) | SHIPPED | every `run_*`/`parse_args` path returns `Result<_, ForgeError>`; no `unwrap`/`expect`/`panic!` outside `#[cfg(test)]` in `cli.rs`. Verification: clippy `-D warnings` + the anti-pattern gate in the gauntlet (HEAD commit `93d3cbc0` chain is gauntlet-green). |
 | REQ-7 (`forge new` scaffold) | SHIPPED | `pub fn scaffold_project in cli.rs` writes `forge.toml`/`forge.lock` (`seed = {DEFAULT_SOLVER_SEED}`)/`THERMITE.skill.pin`; non-empty target → `ForgeError::Usage("… refusing to overwrite")`. Non-test consumer: `fn dispatch` (`Command::New` arm). Verification: `scaffold_writes_layout_and_refuses_clobber`. |
 | REQ-8 (`check` flags + engine routing) | SHIPPED | `Command::Check { file, json, level, rlimit, mutation_floor, engine }`; `fn run_check` four-way route: default → `check::check_file` (cache-canonical), explicit options → `check::check_file_with_options`, `(CheckLevel::L3, sel)` lean/auto → `check::check_file_with_engine` (REQ-5 disagreement → `ForgeError::SoundnessAlarm`), `(CheckLevel::L2, _)` → `check::check_l2_file`. Verification: `parses_rlimit_flag`/`parses_mutation_floor_flag`/`parses_level_flag`, `engine_flag_parsing` + `engine_verus_flag_is_byte_identical_oracle` (`engine_attribution.rs`), `proven_refuted_disagreement_halts` (`engine.rs`). |
-| REQ-9 (usage-banner currency, #257) | SHIPPED | `fn usage_text in cli.rs` names all 13 verbs and the full flag surface including `[--engine verus|lean|auto]` — added by commit `6368550a` ("forge usage banner gains [--engine verus|lean|auto] (drift fix)"). Non-test consumer: `parse_args`'s no-verb and unknown-verb arms. Verification: `usage_errors` exercises both arms; `l2_check.rs` checks the banner rejects a bogus `--level`. |
+| REQ-9 (usage-banner currency, #257) | SHIPPED | `fn usage_text in cli.rs` names all 14 verbs and the full flag surface including `[--engine verus|lean|auto]` — added by commit `6368550a` ("forge usage banner gains [--engine verus|lean|auto] (drift fix)"). Non-test consumer: `parse_args`'s no-verb and unknown-verb arms. Verification: `usage_errors` exercises both arms; `l2_check.rs` checks the banner rejects a bogus `--level`. |
 | REQ-10 (project assurance display, #10) | SHIPPED | `fn render_assurance in cli.rs` prints per-fn `lowered-assurance:` lines + the `project assurance:` headline; `run_check` computes `AssuranceManifest::aggregate(&certs)` once for both the display and the exit gate. Verification: `render_assurance_shows_headline_and_lowered_flags`, `render_assurance_shows_failed_headline`. |
 
 ## Open questions
 
-- **OQ-1 (matcher scale):** the hand-rolled matcher survived to 13 verbs, but
+- **OQ-1 (matcher scale):** the hand-rolled matcher survived to 14 verbs, but
   the per-verb flag loops duplicate the
   `--json`/unknown-flag/extra-positional boilerplate ~10 times and the
   value-taking-flag pattern (`iter.next().ok_or_else(Usage)`) ~9 times. The

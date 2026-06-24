@@ -523,6 +523,18 @@ enum Command {
         addr: String,
         code: String,
     },
+    /// `forge smt-export [<file>] [--out <path>]` — the automated Rust→Lean obligation
+    /// exporter (`.design/stage3-bv-reconstruction.md` REQ-7 / AC-8). With a `<file>`,
+    /// emits a `(P_prod) ⟺ (P_ref)` Lean theorem (discharged `by smt`, then a
+    /// `#print axioms` probe) for every renderable contract `ens` clause — QF_LIA for
+    /// an untagged clause, QF_BV (the bounded-integer machine-model) for a `@bvN` clause
+    /// in a `bv`-feature build. Without a `<file>`, emits the canonical
+    /// reconstruction-supported demo batch (the source of `lean/Thermite/SmtExport.lean`).
+    /// `--out <path>` writes the Lean file there (else stdout).
+    SmtExport {
+        file: Option<PathBuf>,
+        out: Option<PathBuf>,
+    },
 }
 
 /// The default generated-clause count for `forge tv --generated` (REQ-3 / AC-7).
@@ -1413,6 +1425,36 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
             })?;
             Ok(Command::Fill { file, addr, code })
         }
+        "smt-export" => {
+            // `forge smt-export [<file>] [--out <path>]` (stage-3 REQ-7 / AC-8). An
+            // optional file positional and an optional `--out` path; no file means the
+            // canonical demo batch. A missing `--out` value is a Usage error.
+            let mut file: Option<PathBuf> = None;
+            let mut out: Option<PathBuf> = None;
+            while let Some(arg) = iter.next() {
+                match arg.as_str() {
+                    "--out" | "-o" => {
+                        let value = iter.next().ok_or_else(|| {
+                            ForgeError::Usage("`--out` requires a path".to_string())
+                        })?;
+                        out = Some(PathBuf::from(value));
+                    }
+                    flag if flag.starts_with('-') => {
+                        return Err(ForgeError::Usage(format!("unknown flag `{flag}`")));
+                    }
+                    positional => {
+                        if file.is_some() {
+                            return Err(ForgeError::Usage(format!(
+                                "`forge smt-export` takes at most one <file>; unexpected \
+                                 `{positional}`"
+                            )));
+                        }
+                        file = Some(PathBuf::from(positional));
+                    }
+                }
+            }
+            Ok(Command::SmtExport { file, out })
+        }
         other => Err(ForgeError::Usage(format!(
             "unknown command `{other}`. {}",
             usage_text()
@@ -1433,7 +1475,7 @@ fn usage_text() -> &'static str {
      [--json] | forge body-tv <file> [--json] | forge goal <file> [item] [--proof] | forge \
      battery <file> [item] | forge edit <file> <addr> --replace <code> | forge edit \
      --restratify [--json] | forge fill <file> \
-     <hole-addr> <code>"
+     <hole-addr> <code> | forge smt-export [<file>] [--out <PATH>]"
 }
 
 /// The entry boundary (`.design/forge/cli.md` Architecture): reads `argv`,
@@ -1533,6 +1575,7 @@ fn dispatch(args: &[String]) -> Result<ExitCode, ForgeError> {
         } => run_edit(&file, &addr, &replace),
         Command::Fill { file, addr, code } => run_fill(&file, &addr, &code),
         Command::Restratify { json } => run_restratify(json),
+        Command::SmtExport { file, out } => run_smt_export(file.as_deref(), out.as_deref()),
     }
 }
 
@@ -1597,6 +1640,60 @@ fn run_edit(file: &Path, addr: &str, replace: &str) -> Result<ExitCode, ForgeErr
 fn run_fill(file: &Path, addr: &str, code: &str) -> Result<ExitCode, ForgeError> {
     let rendered = goal_repl::fill_hole(file, addr, code)?;
     print!("{rendered}");
+    Ok(ExitCode::SUCCESS)
+}
+
+/// Run `forge smt-export`: the automated Rust→Lean obligation exporter
+/// (`.design/stage3-bv-reconstruction.md` REQ-7 / AC-8). With a `file`, parses it and
+/// exports a `(P_prod) ⟺ (P_ref)` `smt`-discharged Lean theorem per renderable
+/// contract `ens` clause (QF_LIA for an untagged clause; QF_BV bounded-integer model
+/// for a `@bvN` clause in a `bv` build); a non-renderable clause is reported as a
+/// named skip on stderr, never silently dropped. Without a `file`, emits the canonical
+/// reconstruction-supported demo batch (the source of `lean/Thermite/SmtExport.lean`).
+/// `out` writes the Lean file there (else stdout). A pure read + render: never a
+/// verification, never a panic (R-CODE-2/R-CODE-4).
+fn run_smt_export(file: Option<&Path>, out: Option<&Path>) -> Result<ExitCode, ForgeError> {
+    use crate::lean_smt_export::{
+        export_file, obligations_for_program, reconstruction_demo_obligations,
+    };
+
+    let obligations = if let Some(file) = file {
+        let src = std::fs::read_to_string(file).map_err(|e| ForgeError::Io {
+            path: file.display().to_string(),
+            source: e,
+        })?;
+        let parsed = thermite_syntax::parse(&src);
+        if !parsed.is_clean() {
+            return Err(ForgeError::Parse(parsed.errors));
+        }
+        let (obligations, skipped) = obligations_for_program(&parsed.program);
+        for skip in &skipped {
+            eprintln!("forge smt-export: skipping non-renderable clause — {skip}");
+        }
+        obligations
+    } else {
+        reconstruction_demo_obligations()
+    };
+
+    let rendered = export_file(&obligations).map_err(|e| {
+        ForgeError::Usage(format!(
+            "the obligation batch could not be exported to Lean: {e}"
+        ))
+    })?;
+
+    if let Some(out) = out {
+        std::fs::write(out, &rendered).map_err(|e| ForgeError::Io {
+            path: out.display().to_string(),
+            source: e,
+        })?;
+        eprintln!(
+            "forge smt-export: wrote {} obligation(s) to {}",
+            obligations.len(),
+            out.display()
+        );
+    } else {
+        print!("{rendered}");
+    }
     Ok(ExitCode::SUCCESS)
 }
 

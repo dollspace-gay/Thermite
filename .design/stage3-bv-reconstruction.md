@@ -289,6 +289,40 @@ solver-model-relative is migrated where the reconstruction path
 supports it and otherwise named honestly in the audit — F-J keeps that
 free, so G3 does not overclaim closing the entire rel/array gap.
 
+**As-built note (REQ-7 #349, 2026-06-23) — the QF_BV reconstruction
+wall and the bounded-int workaround.** D-RECON assumed cvc5's *literal*
+QF_BV reconstruction was kernel-clean. It is NOT: at the pinned lean-smt
+`7d1d8239`, any `BitVec N`-typed `by smt` goal — even a pure comparison
+— bit-blasts through the upstream `Smt/Reconstruct/BitVec/Bitblast.lean`
+`sorry` and pulls `sorryAx` (the `z3-demotion.md` wall). REQ-7's
+exporter therefore renders QF_BV obligations over a **bounded-integer
+machine model** (a `bvN` var → `Int` with `0 ≤ x < 2^N`; a wrap op →
+`(a · b) % 2^N`; an unsigned compare → `Int` compare), which `smt`
+discharges via clean linear-arith reconstruction — `#print axioms ⊆
+{propext, Classical.choice, Quot.sound}`, verified on all three shipped
+theorems. Consequences REQ-8 inherits:
+
+- **Reconstruction-support = QF_LIA + the *arithmetic/comparison*
+  subset of QF_BV** (`+`,`-`,`*`, unsigned `=/≠/</≤/>/≥`, logical
+  connectives). The **bitwise/shift/rotate** subset (`^`,`&`,`|`,`<<`,
+  `>>`, rotate) is NOT reconstruction-supported — no clean `Int`
+  encoding exists, and the literal-`BitVec` path hits the `sorry`. The
+  exporter **refuses** it (`SmtExportError`, a named skip, never a
+  silent mis-encode). So `mix64`'s `a^b^b==a` and the rotate lemma stay
+  **solver-trusted** (F-J) — REQ-8's fragment-support check keys on
+  exactly this renderable/refused split.
+- **The `render_bv_prop` faithfulness obligation is largely DISCHARGED,
+  not deferred.** REQ-7 ships `lean/Thermite/BvModel.lean`: a
+  kernel-checked, Mathlib-free, core-`BitVec`-only metatheorem
+  (`tmInt_eq_toNat`, `frmInt_iff_frmBV`, `tv_equiv_faithful`, all
+  axiom-clean, in `lean-axiom-probe.sh`) proving the bounded-int model
+  ⇔ the `BitVec` semantics. So the *semantic* gap REQ-8 was to own is
+  closed for the renderable fragment; the residual REQ-8 still owns is
+  narrower — the two **string-emission** legs (the Rust→Lean exporter's
+  pretty-printer and `bitvector.rs`'s SMT renderer both encode the same
+  `Frm`), a pretty-printer-trust class, not a semantic one. Tracked as
+  #356.
+
 ## Out of Scope
 
 - `@bv` as a default or file-level mode — non-goal, permanently

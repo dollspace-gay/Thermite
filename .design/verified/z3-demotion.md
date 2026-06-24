@@ -113,6 +113,30 @@ reconstructable subset TODAY** (demonstrated, kernel-clean). The richer fragment
    `gen.rs` exec-side surface) would NOT be kernel-clean** — its reconstruction would route
    through the `sorry`. This is a hard wall for the bitwise fragment until upstream closes
    it.
+   **UPDATE (stage-3 REQ-7, #349):** empirically reconfirmed at the pinned rev and found
+   to be WIDER than "bitwise/shift only" — *every* `BitVec`-typed `by smt` goal, including
+   a pure unsigned comparison `a ≤ b ↔ ¬ (b < a)` over `BitVec 8`, bit-blasts and pulls
+   `sorryAx`. Root cause (read in the vendored source): `reconstructRewrite` is a total
+   stub (`| _ => return none` for every cvc5 DSL rewrite) and `BV_BITBLAST_STEP` covers
+   only `EQUAL`/`BITVECTOR_ADD`; closing the `eq_eq_beq` sorry alone (verified, = upstream
+   PR ufmg-smite/lean-smt#227) is necessary but NOT sufficient. The stage-3 exporter
+   therefore renders a `@bvN` clause over the **range-bounded integer machine-model**
+   (`0 ≤ x < 2^N`, wrap as `% 2^N`, unsigned cmp as `Int` cmp), which IS kernel-clean.
+
+   **UPDATE (stage-3 "Path B", #356) — the `render_bv_prop` gap is now CLOSED in our own
+   spine, no upstream dependency.** Rather than complete lean-smt's literal bv
+   reconstruction (weeks–months, fork-owning), `lean/Thermite/BvModel.lean` proves the
+   integer machine-model FAITHFUL to the `BitVec N` semantics: `frmInt_iff_frmBV`
+   (the two denotations agree) + `tv_equiv_faithful` (so the exporter's int-model `↔`
+   certifies the genuine `@bv` clause), KERNEL-CHECKED, `#print axioms` ⊆ {propext,
+   Classical.choice, Quot.sound}, and **Mathlib/Smt-free** (so it runs in CI via
+   `scripts/lean-axiom-probe.sh`, unlike the `Smt`-importing `SmtExport`). Combined with
+   the exporter's `by smt`-reconstructed int-model `↔`, a `@bv` clause's truth is
+   kernel-grounded end to end with no solver in the trust base for the renderable
+   fragment. This is the route that retires the bit-blasting wall for our purposes —
+   completing lean-smt's literal QF_BV reconstruction (the `reconstructRewrite` stub +
+   the missing `BV_BITBLAST_STEP` arms) remains the open UPSTREAM task, not load-bearing
+   for us.
 2. **Coverage ~30% of cvc5's proof rules (finding #8).** Quantified obligations (the
    bounded combinators) and theory-lemma-heavy proofs may hit an unreconstructable cvc5
    rule and FAIL (the `smt` tactic errors rather than producing an unsound proof — it does
@@ -131,9 +155,16 @@ reconstructable subset TODAY** (demonstrated, kernel-clean). The richer fragment
    predicates as Verus SOURCE STRINGS (`thermite_lower` for `P_prod`,
    `thermite-tv/src/ref_encode.rs` for `P_ref`). An AUTOMATED demotion needs a **Rust→Lean
    exporter** that parses both emitted predicate strings into Lean `Prop`s over the typed
-   env the obligation frame declares. That exporter is NOT built in this increment (it is
-   the #185-adjacent correspondence-bridge work). The LOGICAL CONTENT discharged is exactly
+   env the obligation frame declares. The LOGICAL CONTENT discharged is exactly
    the per-run obligation; the residual is the parse/translate step.
+   **UPDATE (stage-3 REQ-7, #349 — this gap is now CLOSED for the scalar/bv-model
+   fragment).** `forge/src/lean_smt_export.rs` is the automated Rust→Lean obligation
+   exporter (`forge smt-export`): it renders a Thermite predicate `Expr` into a Lean
+   `Prop` and emits the `(P_prod) ⟺ (P_ref)` theorem `by smt` + `#print axioms`. The
+   committed `lean/Thermite/SmtExport.lean` is its verbatim output for one QF_LIA scalar
+   clause and two QF_BV `@bv` clauses, all three `#print axioms` ⊆ `{propext,
+   Classical.choice, Quot.sound}` (verified by `lake build`). The hand-translation step
+   `SmtDemo.lean` performed is now mechanical.
 
 ## The upstream asks (what would have to change)
 

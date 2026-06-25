@@ -1,0 +1,10 @@
+{
+  "uuid": "a709f440-fb85-4b14-a3b5-618b18f0c113",
+  "issue_uuid": "ed4da697-8bd0-48ab-845b-4798d70dc41b",
+  "author": "rApq",
+  "content": "RESOLVED (the gating finding): the bv-route vacuity gap is fixed on the REQ-8 branch (commit d5c3ddf4). BitVectorEngine::req_satisfiable SAT-checks req at the clause width; bv_fn_cert/bv_lemma_cert reject VacuousPrecondition when req is UNSAT (None→falls through, no false rejection). Regression test bv_vacuity_gate.rs pins both the vacuous lemma and the param-only fn (both now L0 VacuousPrecondition). No regressions — mix64/real lemmas/nowrap still L4; full forge suite green (verus+z3+full spine); clippy+rustfmt clean; doc-drift exit 0. All OTHER dimensions came back CLEAN (fragment refusal airtight, render ops correct, mul axiom-clean, faithfulness kernel-proven, Timeout≠Proved, req threaded). CAVEAT: the inline review covered the soundness-critical questions but was not the full 6-agent fan-out (subagents died on a spend limit) — lighter-touch on exhaustive mutation-bypass + overlay-contamination. Re-run the full fan-out when budget returns for belt-and-suspenders.",
+  "created_at": "2026-06-25T21:46:28.393081Z",
+  "kind": "note",
+  "signed_by": "SHA256:tVRGNaCPy5N1tRtokzkbgsOCzGZujGDWQlGHFruaL9c",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgylLCWwpnQm2E2UQO23AN1e/yB6k0yzmPM7qiYPujTNYAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAhx40JvrXNMye6d/ekFwqOcfwt8TWl+uRWnf7yoIXIZFJydv+Jdm99mBMQ19ATCaGBklPn92zO2LHAWutCKN8Ag=="
+}

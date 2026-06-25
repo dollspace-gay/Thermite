@@ -1,0 +1,8 @@
+{
+  "uuid": "7f60a95a-ddb3-4844-95c7-9b4f40a79880",
+  "issue_uuid": "14ac8bec-af82-46b6-9559-ee0f16f57342",
+  "author": "utd6",
+  "content": "[orchestrator review] PR opened (3 commits: agent + the #357 vacuity fix + doc-drift re-pin). AC-9 verified empirically (mix64 same-item split: a+b==b+a→kernel, a^b^b==a→solver; audit residual_trust 2/2). Trust-string-marker split + EPR named-not-migrated + residual_trust gated on bv_shadows are all sound decisions. The adversarial review (#357) found ONE gating issue — the bv route's vacuity gap (param-only/lemma clauses certified kernel-checked on req-false) — now FIXED + regression-tested. All other adversarial dimensions clean. Full suite green.",
+  "created_at": "2026-06-25T22:23:17.194942Z",
+  "kind": "note"
+}

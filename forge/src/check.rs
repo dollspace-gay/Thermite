@@ -1738,6 +1738,31 @@ fn bv_fn_cert(
                 Ok(e) => e,
                 Err(reason) => return bv_skip_cert(&f.name, &effects, slag, k, tag, &reason),
             };
+            // Anti-Goodhart vacuity gate (RFC-1 §10): a `@bv` clause is discharged as
+            // `req ⇒ clause`, so an UNSATISFIABLE `req` proves EVERY clause vacuously.
+            // The bv mutation gate only catches this for result-referencing clauses
+            // (every mutant survives → WeakContract); a param-only clause would otherwise
+            // certify L4 — and, post-REQ-8, carry a kernel-checked trust label — on a
+            // vacuous proof. Reject `VacuousPrecondition`, the same verdict the v1 cage
+            // gives. `None` (undecidable) falls through to the normal discharge.
+            if bv.req_satisfiable(&vars, req, tag.width) == Some(false) {
+                return Certificate::rejected_vacuity(
+                    f.name.clone(),
+                    effects.clone(),
+                    RejectReason {
+                        cause: "VacuousPrecondition".to_string(),
+                        detail: format!(
+                            "`{}`'s precondition is unsatisfiable at `@bv{}` — every `@bv` \
+                             clause holds vacuously (the §10 anti-Goodhart gaming vector), so \
+                             the contract certifies nothing. Fix or strengthen `req`.",
+                            f.name,
+                            tag.width.bits()
+                        ),
+                    },
+                    false,
+                    true,
+                );
+            }
             match bv.discharge_bv(&vars, Some(req), &clause_expr, tag.width) {
                 BvOutcome::Proved => {
                     // Lock 3 (REQ-5 / AC-6): a `nowrap` clause additionally discharges its
@@ -2046,6 +2071,28 @@ fn bv_lemma_cert(
                 },
             );
         };
+        // Anti-Goodhart vacuity gate (RFC-1 §10): a lemma has no body, so the mutation
+        // gate never runs on it — an unsatisfiable `req` would otherwise certify the
+        // lemma L4 (kernel-checked, post-REQ-8) on a vacuous proof. Reject
+        // `VacuousPrecondition` like the v1 cage. `None` falls through to discharge.
+        if bv.req_satisfiable(&vars, req, tag.width) == Some(false) {
+            return Certificate::rejected_vacuity(
+                l.name.clone(),
+                effects.clone(),
+                RejectReason {
+                    cause: "VacuousPrecondition".to_string(),
+                    detail: format!(
+                        "`{}`'s precondition is unsatisfiable at `@bv{}` — the lemma holds \
+                         vacuously (the §10 anti-Goodhart gaming vector) and asserts nothing. \
+                         Fix or strengthen `req`.",
+                        l.name,
+                        tag.width.bits()
+                    ),
+                },
+                false,
+                true,
+            );
+        }
         match bv.discharge_bv(&vars, Some(req), &ens.expr, tag.width) {
             BvOutcome::Proved => {
                 // Lock 3 (REQ-5 / AC-6): a `nowrap` lemma clause discharges its no-overflow

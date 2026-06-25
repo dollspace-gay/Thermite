@@ -446,6 +446,39 @@ impl BitVectorEngine {
         }
     }
 
+    /// Is the precondition `req` SATISFIABLE at width `N`? Anti-Goodhart vacuity check
+    /// (RFC-1 §10): a `@bv` clause is discharged as `req ⇒ clause`, so an UNSATISFIABLE
+    /// `req` proves *every* clause vacuously — the gaming vector the v1 cage rejects as
+    /// `VacuousPrecondition`. The bv route's mutation gate only catches this for
+    /// result-referencing clauses (every mutant survives); a param-only clause or a
+    /// `@bv` lemma (no body → no mutation) would otherwise certify L4 — and, post-REQ-8,
+    /// carry a kernel-checked trust label — on a vacuous proof. This asks Z3 the same
+    /// rendering the discharge uses (`req` at width `N`), so the verdict is consistent
+    /// with the discharge and never a width artifact.
+    ///
+    /// `Some(true)` = satisfiable (non-vacuous); `Some(false)` = UNSAT (vacuous — reject);
+    /// `None` = cannot decide (`req` absent/unrenderable, Z3 absent, or `unknown`), so the
+    /// caller does NOT flag vacuity and falls through to the normal discharge —
+    /// conservative, never a FALSE vacuity rejection.
+    #[must_use]
+    pub fn req_satisfiable(&self, vars: &[String], req: &Expr, width: BvWidth) -> Option<bool> {
+        let n = width.bits();
+        let req_smt = render_bv_prop(req, n).ok()?;
+        let mut s = String::from("(set-logic QF_BV)\n");
+        for v in vars {
+            s.push_str(&format!("(declare-const {v} (_ BitVec {n}))\n"));
+        }
+        s.push_str(&format!("(assert {req_smt})\n(check-sat)\n"));
+        match Self::run_z3(&s, BvBudgetProfile::default_profile().timeout_secs) {
+            Ok((result, _)) => match result.as_str() {
+                "sat" => Some(true),
+                "unsat" => Some(false),
+                _ => None,
+            },
+            Err(_) => None,
+        }
+    }
+
     /// Discharge the `@bvN(nowrap)` no-overflow SIDE OBLIGATION over fixed-width QF_BV
     /// semantics (`.design/stage3-bv-reconstruction.md` REQ-5 / AC-6 — lock 3). A
     /// `nowrap` tag declares that, although the clause is interpreted at machine width,

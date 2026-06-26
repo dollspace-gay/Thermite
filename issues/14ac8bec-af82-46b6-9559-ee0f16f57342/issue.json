@@ -3,12 +3,13 @@
   "display_id": 350,
   "title": "Stage-3 REQ-8: reconstruction default-on (trust migration, fragment-gated)",
   "description": "Where the obligation's fragment is reconstruction-supported (REQ-7's QF_LIA + QF_BV, axiom check passing), solver results are replayed/checked in the kernel and the clause's trust: migrates from solver(z3) to the kernel-checked form via with_clause_attribution (forge/src/manifest.rs:306) — same rung, smaller trust base, visible per clause and aggregated by the audit's residual-trust statement. The fragment-support check ADDITIONALLY migrates EPR-stratified rel/array clauses (the G2 residual that left strat_lowering_faithful's rel atoms z3-model-relative) WHERE the reconstruction path supports them; unsupported fragments keep per-run solver trust, labeled as today, and the audit names exactly what stayed solver-trusted (F-J is free — reconstruction was never load-bearing for any gate). AC-9: a reconstruction-supported clause (QF_LIA or QF_BV)'s cert shows the kernel-checked trust: form while an unsupported clause on the same item retains solver(z3); the audit's residual-trust statement aggregates the split and names the still-solver-trusted fragments. Doc: REQ-8. Gate: G3.",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "parent_uuid": "4e1e886c-254a-4a9f-bf03-0c399c95866b",
   "created_by": "rApq",
   "created_at": "2026-06-22T03:10:27.896973Z",
-  "updated_at": "2026-06-22T03:11:00.946681Z",
+  "updated_at": "2026-06-26T15:09:13.904977Z",
+  "closed_at": "2026-06-26T15:09:13.904977Z",
   "labels": [
     "forge"
   ],

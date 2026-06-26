@@ -168,6 +168,61 @@ fn mix64_certifies_with_two_bitvector_clauses_and_one_unbounded() {
     assert_eq!(lobls[0]["verdict"]["kind"], Value::from("Proved"));
 }
 
+/// REQ-8 / AC-9 (reconstruction default-on — the per-clause trust migration): in the SAME
+/// item `mix64`, the arithmetic clause `a + b == b + a` migrates its `trust:` to the
+/// KERNEL-CHECKED form (reconstruction-supported QF_BV) while the bitwise clause
+/// `a ^ b ^ b == a` RETAINS its solver(Z3 QF_BV) trust (the bit-blasting wall — F-J). Same
+/// rung (both `Proved` at L4); only the orthogonal trust axis moves. Default-on: no flag.
+#[test]
+fn req8_mix64_arith_clause_migrates_kernel_checked_bitwise_stays_solver() {
+    if !verus_present() {
+        eprintln!("SKIP: verus (z3) absent — the bit-vector route is not run.");
+        return;
+    }
+    let (code, certs) = run_bv("mix64.th");
+    assert_eq!(code, Some(0), "the mix64 example certifies");
+    let m = cert(&certs, "mix64");
+    let obls = m["obligations"].as_array().expect("obligations array");
+
+    // Both bit-vector clauses are still `Proved` at the same rung; the item is L4.
+    assert_eq!(
+        m["level"],
+        Value::from("L4"),
+        "the rung is unchanged (REQ-8 is trust-only)"
+    );
+
+    let trust_of = |k: usize| -> Vec<String> {
+        obls[k]["trust"]
+            .as_array()
+            .unwrap_or_else(|| panic!("clause ens#{k} names its trust base: {m}"))
+            .iter()
+            .map(|t| t.as_str().unwrap_or("").to_string())
+            .collect()
+    };
+    // ens#0 — `a + b == b + a` (arithmetic): migrated to kernel-checked.
+    let add_trust = trust_of(0);
+    assert!(
+        add_trust
+            .iter()
+            .any(|t| t.contains("kernel-checked") && t.contains("BvModel")),
+        "the arith clause's trust migrated to the kernel-checked BvModel base: {add_trust:?}"
+    );
+    assert!(
+        !add_trust.iter().any(|t| t.contains("Z3 QF_BV")),
+        "Z3 is no longer load-bearing for the reconstruction-supported arith clause: {add_trust:?}"
+    );
+    // ens#1 — `a ^ b ^ b == a` (bitwise xor): stays solver-trusted.
+    let xor_trust = trust_of(1);
+    assert!(
+        xor_trust.iter().any(|t| t.contains("Z3 QF_BV")),
+        "the xor clause retains its solver(Z3 QF_BV) trust (F-J): {xor_trust:?}"
+    );
+    assert!(
+        !xor_trust.iter().any(|t| t.contains("kernel-checked")),
+        "the xor clause did NOT migrate (the exporter refuses bitwise): {xor_trust:?}"
+    );
+}
+
 /// AC-3 (first half): a planted non-injective shift dies as a `Counterexample` with the
 /// bit pattern in the certificate.
 #[test]
@@ -444,6 +499,65 @@ fn forge_audit_lists_the_bv_shadows() {
     assert!(
         shadows.iter().any(|s| s["item"] == "rotl1_injective"),
         "the lemma's tagged clause is listed"
+    );
+}
+
+/// REQ-8 / AC-9: `forge audit` carries the RESIDUAL-TRUST STATEMENT — it aggregates the
+/// kernel-checked-vs-solver split and names the still-solver-trusted fragments. On `mix64`
+/// the migrated arith clause is kernel-checked while the xor + shift clauses stay
+/// solver-trusted; the statement names the bitwise/shift/rotate + EPR rel/array fragments.
+#[test]
+fn forge_audit_residual_trust_statement_names_the_split() {
+    if !verus_present() {
+        eprintln!("SKIP: verus (z3) absent — forge audit's bv route is not run.");
+        return;
+    }
+    let (_code, manifest) = run_forge_json("audit", "mix64.th");
+    let rt = &manifest["residual_trust"];
+    assert!(
+        !rt.is_null(),
+        "a bv project's audit carries the REQ-8 residual-trust statement: {manifest}"
+    );
+    // mix64::ens#0 (add) + the nlsat unbounded clause are kernel-grounded; the xor and the
+    // lemma's shift clause stay solver-trusted (≥ 2 solver-trusted clauses).
+    assert!(
+        rt["kernel_checked_clauses"].as_u64().unwrap_or(0) >= 1,
+        "at least the arith clause migrated to kernel-checked: {rt}"
+    );
+    assert!(
+        rt["solver_trusted_clauses"].as_u64().unwrap_or(0) >= 2,
+        "the xor + shift clauses stay solver-trusted: {rt}"
+    );
+    // The still-solver-trusted clauses are NAMED (the F-J inventory).
+    let named = rt["solver_trusted"]
+        .as_array()
+        .expect("the residual-trust statement names the solver-trusted clauses");
+    assert!(
+        named.iter().any(|c| c["item"] == "mix64"),
+        "mix64's xor clause is named as still-solver-trusted: {rt}"
+    );
+    // The standing F-J fragments are named: bitwise/shift/rotate + EPR rel/array.
+    let frags = rt["unsupported_fragments"]
+        .as_array()
+        .expect("the statement names the unsupported fragments");
+    assert!(
+        frags
+            .iter()
+            .any(|f| f.as_str().unwrap_or("").contains("bitwise/shift/rotate")),
+        "the bitwise/shift/rotate fragment is named: {rt}"
+    );
+    assert!(
+        frags
+            .iter()
+            .any(|f| f.as_str().unwrap_or("").contains("rel/array")),
+        "the EPR rel/array residual is named (F-J): {rt}"
+    );
+    assert!(
+        rt["statement"]
+            .as_str()
+            .unwrap_or("")
+            .contains("default-on"),
+        "the headline names reconstruction as default-on: {rt}"
     );
 }
 

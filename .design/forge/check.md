@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: 55156905add8adc25c30958b13c9136079c53e8c7393b35049e67da7bb22b420 (migrated from legacy audited-sha commit pin to a squash-stable content digest; doc-drift-tripwire.md REQ-2 — content pin is primary, commit pin is a migration fallback)
+audited-content-sha256: a10f679dd2fd4ae2dad1fc8607c93d13413d0d019823f55b85f41b61e1578c7a (migrated from legacy audited-sha commit pin to a squash-stable content digest; doc-drift-tripwire.md REQ-2 — content pin is primary, commit pin is a migration fallback)
 governs: forge/src/check.rs
 thesis-refs:
   - thermite-design.md §5.1

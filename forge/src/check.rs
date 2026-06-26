@@ -1738,6 +1738,31 @@ fn bv_fn_cert(
                 Ok(e) => e,
                 Err(reason) => return bv_skip_cert(&f.name, &effects, slag, k, tag, &reason),
             };
+            // Anti-Goodhart vacuity gate (RFC-1 §10): a `@bv` clause is discharged as
+            // `req ⇒ clause`, so an UNSATISFIABLE `req` proves EVERY clause vacuously.
+            // The bv mutation gate only catches this for result-referencing clauses
+            // (every mutant survives → WeakContract); a param-only clause would otherwise
+            // certify L4 — and, post-REQ-8, carry a kernel-checked trust label — on a
+            // vacuous proof. Reject `VacuousPrecondition`, the same verdict the v1 cage
+            // gives. `None` (undecidable) falls through to the normal discharge.
+            if bv.req_satisfiable(&vars, req, tag.width) == Some(false) {
+                return Certificate::rejected_vacuity(
+                    f.name.clone(),
+                    effects.clone(),
+                    RejectReason {
+                        cause: "VacuousPrecondition".to_string(),
+                        detail: format!(
+                            "`{}`'s precondition is unsatisfiable at `@bv{}` — every `@bv` \
+                             clause holds vacuously (the §10 anti-Goodhart gaming vector), so \
+                             the contract certifies nothing. Fix or strengthen `req`.",
+                            f.name,
+                            tag.width.bits()
+                        ),
+                    },
+                    false,
+                    true,
+                );
+            }
             match bv.discharge_bv(&vars, Some(req), &clause_expr, tag.width) {
                 BvOutcome::Proved => {
                     // Lock 3 (REQ-5 / AC-6): a `nowrap` clause additionally discharges its
@@ -1756,7 +1781,14 @@ fn bv_fn_cert(
                     } else {
                         None
                     };
-                    obligations.push(bv_proved_obl(&f.name, k, tag, &bv_attr, nowrap));
+                    obligations.push(bv_proved_obl(
+                        &f.name,
+                        k,
+                        tag,
+                        &clause_expr,
+                        &bv_attr,
+                        nowrap,
+                    ));
                     // A `@bv` clause is decidable QF_BV with COMPLETE bit-pattern
                     // countermodels — the L4 (caged) refutation quality, RFC-1 §2/§4.
                     // The rung is the refutation quality; the SOLVER trust base
@@ -2039,6 +2071,28 @@ fn bv_lemma_cert(
                 },
             );
         };
+        // Anti-Goodhart vacuity gate (RFC-1 §10): a lemma has no body, so the mutation
+        // gate never runs on it — an unsatisfiable `req` would otherwise certify the
+        // lemma L4 (kernel-checked, post-REQ-8) on a vacuous proof. Reject
+        // `VacuousPrecondition` like the v1 cage. `None` falls through to discharge.
+        if bv.req_satisfiable(&vars, req, tag.width) == Some(false) {
+            return Certificate::rejected_vacuity(
+                l.name.clone(),
+                effects.clone(),
+                RejectReason {
+                    cause: "VacuousPrecondition".to_string(),
+                    detail: format!(
+                        "`{}`'s precondition is unsatisfiable at `@bv{}` — the lemma holds \
+                         vacuously (the §10 anti-Goodhart gaming vector) and asserts nothing. \
+                         Fix or strengthen `req`.",
+                        l.name,
+                        tag.width.bits()
+                    ),
+                },
+                false,
+                true,
+            );
+        }
         match bv.discharge_bv(&vars, Some(req), &ens.expr, tag.width) {
             BvOutcome::Proved => {
                 // Lock 3 (REQ-5 / AC-6): a `nowrap` lemma clause discharges its no-overflow
@@ -2056,7 +2110,7 @@ fn bv_lemma_cert(
                 } else {
                     None
                 };
-                obligations.push(bv_proved_obl(&l.name, k, tag, &bv_attr, nowrap));
+                obligations.push(bv_proved_obl(&l.name, k, tag, &ens.expr, &bv_attr, nowrap));
             }
             BvOutcome::Counterexample { bits } => {
                 return bv_counterexample_cert(&l.name, &effects, false, k, tag, &bits, &bv_attr);
@@ -2078,26 +2132,62 @@ fn bv_lemma_cert(
 }
 
 /// The per-clause [`ObligationResult`] a bit-vector `Proved` records (`.design/
-/// stage3-bv-reconstruction.md` REQ-2 / AC-2): the engine (`bitvector`), the QF_BV
-/// solver trust base, the `Proved` verdict, and a name that states the engine AND the
-/// fixed-width semantics ("each clause's certificate naming its engine and semantics").
+/// stage3-bv-reconstruction.md` REQ-2 / AC-2 + REQ-8 / AC-9): the engine (`bitvector`),
+/// the clause's trust base (migrated per REQ-8 — see below), the `Proved` verdict, and a
+/// name that states the engine AND the fixed-width semantics ("each clause's certificate
+/// naming its engine and semantics").
+///
+/// REQ-8 default-on trust migration: `clause_expr` is the `result`-grounded clause body
+/// (the same expression the QF_BV query decided). The per-clause fragment-support check
+/// [`crate::lean_smt_export::clause_reconstruction_supported`] decides the trust base:
+///
+/// - a RECONSTRUCTION-SUPPORTED clause (the arithmetic/comparison QF_BV subset the exporter
+///   renders) migrates its `trust:` to the KERNEL-CHECKED base
+///   ([`crate::engine::bv_kernel_checked_trust_profile`] — the lean-smt reconstruction over
+///   the bounded-integer model + the kernel-checked `BvModel.frmInt_iff_frmBV` faithfulness),
+///   with Z3 no longer load-bearing — same rung (L4), smaller trust;
+/// - an UNSUPPORTED clause (the bitwise/shift/rotate subset the exporter refuses) keeps the
+///   SOLVER base `solver_attr.trust_profile` (`Z3 QF_BV`), labeled as today (the F-J residual
+///   the audit names).
+///
+/// The engine tag stays `bitvector` (the bit-vector route decided the clause); only the
+/// trust base — the orthogonal axis — moves. Default-on: no flag gates the migration.
 fn bv_proved_obl(
     item: &str,
     k: usize,
     tag: &thermite_syntax::BvTag,
-    attr: &crate::engine::EngineAttribution,
+    clause_expr: &thermite_syntax::Expr,
+    solver_attr: &crate::engine::EngineAttribution,
     nowrap_obligation: Option<String>,
 ) -> ObligationResult {
+    let supported = crate::lean_smt_export::clause_reconstruction_supported(
+        clause_expr,
+        crate::lean_smt_export::SmtFragment::Bv(tag.width),
+    );
+    let (trust, trust_phrase) = if supported {
+        (
+            crate::engine::bv_kernel_checked_trust_profile().items,
+            "kernel-checked (the (P_prod) ⟺ (P_ref) obligation reconstructed in the Lean kernel \
+             via lean-smt over the bounded-integer model + the kernel-checked BvModel.lean \
+             faithfulness; Z3 no longer load-bearing — REQ-8 default-on)",
+        )
+    } else {
+        (
+            solver_attr.trust_profile.clone(),
+            "solver-trusted (Z3 QF_BV) — the bitwise/shift/rotate subset is outside the \
+             reconstruction-supported fragment, named honestly (F-J residual)",
+        )
+    };
     ObligationResult::discharged(format!(
         "{item}::ens#{k}: discharged by the bit-vector route over {} (fixed-width \
          wraparound machine semantics; QF_BV-decidable with complete bit-pattern \
-         countermodels — L4 caged rung, solver-trusted (Z3 QF_BV); \
-         stage3-bv-reconstruction.md REQ-2)",
+         countermodels — L4 caged rung, {trust_phrase}; stage3-bv-reconstruction.md \
+         REQ-2 / REQ-8)",
         bv_semantics_label(tag)
     ))
     .with_clause_attribution(
-        attr.engine.clone(),
-        attr.trust_profile.clone(),
+        solver_attr.engine.clone(),
+        trust,
         crate::verdict::CertVerdict::Proved,
     )
     // Lock 1 (REQ-3 / AC-4): the shadow flag rides every tagged clause's obligation;
@@ -6391,6 +6481,84 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
             user_before.oracle_subset(),
             "the dedup rewrite is oracle-excluded (Q-BURN): the oracle subset is unchanged"
         );
+    }
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // REQ-8 / AC-9 (stage-3 reconstruction default-on — the per-clause trust migration).
+    // `bv_proved_obl` is PURE (no solver): it keys the trust base off the per-clause
+    // fragment-support check, so the migration is unit-testable without z3.
+    // ───────────────────────────────────────────────────────────────────────────
+
+    /// REQ-8 / AC-9: a reconstruction-supported (arith/cmp) `@bv` clause migrates its
+    /// `trust:` to the kernel-checked base while a bitwise (xor) clause on the SAME item
+    /// stays solver-trusted — the mix64 split, the actual trust flip. Default-on: no flag
+    /// gates the migration. Same rung (the obligation is `Proved` either way); only the
+    /// trust base moves.
+    #[test]
+    fn req8_supported_clause_migrates_to_kernel_checked_bitwise_stays_solver() {
+        use thermite_syntax::{BinOp, BvTag, BvWidth, Expr};
+        fn var(s: &str) -> Expr {
+            Expr::Path(vec![s.to_string()])
+        }
+        fn bin(op: BinOp, l: Expr, r: Expr) -> Expr {
+            Expr::Binary {
+                op,
+                lhs: Box::new(l),
+                rhs: Box::new(r),
+            }
+        }
+        let tag = BvTag {
+            width: BvWidth::W64,
+            nowrap: false,
+            span: thermite_syntax::Span::new(0, 0),
+        };
+        let attr = bv_attribution();
+
+        // mix64::ens#0 — `a + b == b + a` (wraparound-add commutativity): SUPPORTED.
+        let add = bin(
+            BinOp::Eq,
+            bin(BinOp::Add, var("a"), var("b")),
+            bin(BinOp::Add, var("b"), var("a")),
+        );
+        let supported = bv_proved_obl("mix64", 0, &tag, &add, &attr, None);
+        assert!(
+            crate::engine::trust_is_kernel_checked(&supported.trust),
+            "the arith clause's trust migrates to the kernel-checked base (REQ-8)"
+        );
+        assert!(
+            supported.trust.iter().any(|t| t.contains("BvModel")),
+            "the migrated trust cites the BvModel faithfulness metatheorem"
+        );
+        assert!(
+            !supported.trust.iter().any(|t| t.contains("Z3 QF_BV")),
+            "Z3 is no longer load-bearing for the reconstruction-supported clause"
+        );
+
+        // mix64::ens#1 — `a ^ b ^ b == a` (xor self-inverse): UNSUPPORTED, stays solver.
+        let xor = bin(
+            BinOp::Eq,
+            bin(
+                BinOp::BitXor,
+                bin(BinOp::BitXor, var("a"), var("b")),
+                var("b"),
+            ),
+            var("a"),
+        );
+        let solver = bv_proved_obl("mix64", 1, &tag, &xor, &attr, None);
+        assert!(
+            !crate::engine::trust_is_kernel_checked(&solver.trust),
+            "the bitwise clause stays solver-trusted (F-J — the exporter refuses xor)"
+        );
+        assert!(
+            solver.trust.iter().any(|t| t.contains("Z3 QF_BV")),
+            "the unsupported clause names the Z3 QF_BV solver base, as today"
+        );
+
+        // Both invariants hold across the split: the engine tag stays `bitvector` (only the
+        // orthogonal trust axis moved) and Lock 1's shadow flag rides both obligations.
+        assert_eq!(supported.engine.as_deref(), Some("bitvector"));
+        assert_eq!(solver.engine.as_deref(), Some("bitvector"));
+        assert!(supported.bv_shadow.is_some() && solver.bv_shadow.is_some());
     }
 
     // ───────────────────────────────────────────────────────────────────────────

@@ -1,0 +1,10 @@
+{
+  "uuid": "35e11648-b807-4da1-a8b0-a8543cf6f444",
+  "issue_uuid": "4e1e886c-254a-4a9f-bf03-0c399c95866b",
+  "author": "rApq",
+  "content": "REQ-8 (#350) SHIPPED → main @8c022a62 (PR #91): reconstruction default-on, per-clause trust solver(z3)→kernel-checked migration, fragment-gated. THE TRUST FLIP IS ACCEPTED. Preceded by a full adversarial review (#357) over the whole bv build — found+fixed one gating issue (the bv vacuity gap), all other dimensions clean. 8/9 done. REMAINING: REQ-9 (#351) — gate G3, the program's FINAL gate.",
+  "created_at": "2026-06-26T15:09:49.397263Z",
+  "kind": "note",
+  "signed_by": "SHA256:tVRGNaCPy5N1tRtokzkbgsOCzGZujGDWQlGHFruaL9c",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgylLCWwpnQm2E2UQO23AN1e/yB6k0yzmPM7qiYPujTNYAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAJenU5IfbK6riY5KFa7V5qVPIX3o7/2QN1r/ObfszfKT37e7W7aeNoz0aESgfHL7CCtHnQZKcz1WMOJ1TO1aoAg=="
+}

@@ -1,189 +1,129 @@
-# Z3-demotion (Lean-SMT / cvc5 proof reconstruction) — the investigation + the PoC
+# Checked solver replay
 
-<!--
-tier: verified
-status: investigation + proof-of-concept (increment 4a, crosslink #184; epic #169 Layer 4)
-governing: .design/verified/thermite-semantics.md REQ-5 (the COMMITTED Lean-SMT tooling
-           decision + its TCB-shrink rationale) and the SOTA finding #8
-           (.design/research/formal-methods-sota.md): proof-PRODUCING SMT + reconstruction.
-boundary:  the `h_tv` premise of `Thermite.lowering_faithful` (lean/Thermite/Faithfulness.lean)
-           — Z3-TRUSTED today; this increment is the route to demote it to KERNEL-CHECKED.
--->
+Status: shipped for QF_LIA and the Stage 3 QF_BV surface. Wider formulas remain
+solver-trusted.
 
-## What this increment is
+## Purpose
 
-`Thermite.lowering_faithful` (the T2 capstone, `lean/Thermite/Faithfulness.lean`) is a
-KERNEL-CHECKED theorem RELATIVE to a named trust base. The single per-run input it
-consumes is `h_tv` — the denotational equality the per-run translation-validation (TV)
-check attests. Today `h_tv` is discharged by **Z3** (via Verus): the obligation
-`assert((P_production) <==> (P_reference))` that `thermite-tv/src/obligation.rs::equivalence_obligation`
-emits is verified by Z3, and by Verus's logic soundness that VERIFIED result MEANS the
-`h_tv` equality. So `h_tv` is a **Z3-TRUSTED** premise — Lean does not check Z3's work.
+The Lean spine proves general lowering theorems, but a per-run solver still
+decides concrete obligations. Checked replay reduces that remaining trust: the
+solver finds the result, then Lean checks the theorem the result asserts.
 
-The Z3-demotion goal (finding #8): make the SMT solver **proof-producing**, replay the
-proof in the Lean kernel, and thereby demote `h_tv` from *trusted-oracle* to
-*kernel-checked*. The live route is **Lean-SMT** (`github.com/ufmg-smite/lean-smt`,
-arXiv 2505.15796): its `smt` tactic shells out to **cvc5** and reconstructs the cvc5
-proof into native Lean proof terms submitted to the kernel.
+For clause certification, that theorem is:
 
-This is the **frontier brick**: an honestly-documented wall is an acceptable outcome.
-The result below is the FURTHEST tier that genuinely works under our toolchain.
-
-## TIER REACHED — Tier 3 (the prize), with documented residual gaps
-
-**Tier 3 is reached:** TWO REAL per-run TV equivalence obligations — the
-`(P_production) ⟺ (P_reference)` shape `equivalence_obligation` asserts — were
-hand-translated into Lean and discharged by the `smt` tactic, **kernel-checked**, with the
-standard axiom set only. See `lean/Thermite/SmtDemo.lean`:
-
-- `tv_obligation_arith_cmp (a b c : Int) : (a - b ≤ c) ↔ (a ≤ c + b)` — the contract
-  clause `(a - b) <= c` lowered two faithful-but-syntactically-different ways (the
-  production direct emission vs an algebraically-rearranged reference form). This is a
-  genuine `P_prod ⟺ P_ref` over the scalar contract sublanguage.
-- `tv_obligation_or_le (a b : Int) : (a = b ∨ a < b) ↔ (a ≤ b)` — a comparison +
-  logical-connective clause (`==`/`<` disjunction lowered to a single `<=`), the
-  `gen.rs::gen_bool`/`gen_comparison` surface.
-
-Plus two Tier-2 toy witnesses (`toy_lt_iff_not_ge`, `toy_tv_equiv_shape`).
-
-### THE HONESTY CRUX — `#print axioms` (kernel-checked, not oracle-trusted)
-
-```
-'Thermite.SmtDemo.toy_lt_iff_not_ge'     depends on axioms: [propext, Classical.choice, Quot.sound]
-'Thermite.SmtDemo.toy_tv_equiv_shape'    depends on axioms: [propext, Classical.choice, Quot.sound]
-'Thermite.SmtDemo.tv_obligation_arith_cmp' depends on axioms: [propext, Classical.choice, Quot.sound]
-'Thermite.SmtDemo.tv_obligation_or_le'   depends on axioms: [propext, Classical.choice, Quot.sound]
+```lean
+theorem generated (variables...) : semantic_req → query_clause := by
+  ...
 ```
 
-Every `smt`-discharged theorem — including the two REAL TV obligations — depends on the
-**STANDARD Lean axiom set `{propext, Classical.choice, Quot.sound}` ONLY**. There is NO
-`sorryAx`, NO cvc5/`Smt` oracle axiom, NO `Lean.ofReduceBool`/`Lean.trustCompiler` (native
-decide). For these QF-linear-integer-arithmetic obligations the cvc5 proof is GENUINELY
-REPLAYED in the kernel — this is a real (partial-scope) demotion of Z3 to kernel-checked,
-NOT laundering (R-DEFER-9). cvc5 IS the solver, but its result is RE-CHECKED, so cvc5 is
-not in the trust base for these obligations; only the Lean kernel + the standard axioms are.
+The route determines those two expressions. QF_BV grounds `result` with the
+body used in its direct query. QF_LIA quantifies `result` and includes the
+unsigned-domain guards from its nlsat input.
 
-## The dependency / toolchain story (Tier 2 — the dep BUILDS, spine stays green)
+Production/reference equivalence theorems are still useful translation audits.
+They do not prove that a clause is valid and therefore cannot change its trust
+profile.
 
-- **Lean-SMT** has no release tags. Thermite pins upstream PR #227
-  (`ee6d36b`), which requires **`leanprover/lean4:v4.29.0`** + full **Mathlib v4.29.0** +
-  **lean-auto** (`5c4433f`) + **lean-cvc5** (`abdoo8080/lean-cvc5` @ `4ecae27`).
-- **lean-cvc5** downloads a **VENDORED cvc5 1.3.2 static library** (from
-  `abdoo8080/cvc5/releases`, Linux-x86_64-static) and builds an FFI binding. It does NOT
-  use a system cvc5. (A system `cvc5 1.2.1` IS present at `/usr/sbin/cvc5` here, but
-  Lean-SMT uses its own vendored 1.3.2 via the FFI.)
-- **Our spine was on `v4.30.0`.** Lean-SMT's nearest supported toolchain is `v4.29.0`.
-  Per the manifest's conditional authorization, the `lean/lean-toolchain` was pinned DOWN
-  to `v4.29.0` — and verified that **the ENTIRE existing proof spine still builds green on
-  v4.29.0** (a clean `lake build` of `Thermite.{Ast,Denote,RefEncode,Soundness,Exec,
-  Exec.Stmt,Faithfulness}` — 10 jobs green) BOTH before adding the dependency and after.
-  The spine is Lean-core-only (no external imports), so the one-minor-version downgrade is
-  inert for it. (Had the spine broken, the toolchain change would have been REVERTED and
-  this would stop at Tier 1 — the spine's green is non-negotiable.)
-- `lake update` resolved `smt` + mathlib (v4.29.0) + lean-cvc5 + lean-auto + plausible +
-  batteries + aesop + proofwidgets + importGraph + LeanSearchClient + Qq into
-  `lake-manifest.json`; the Mathlib build-cache (8232 files) downloaded; `lake build Smt`
-  built the cvc5 FFI (`libcvc5_cvc5.so`) + the reconstruction library (358 jobs green).
-- **The full project builds green** (`lake build`, default target `Thermite`, now incl.
-  `Thermite.SmtDemo`).
+## Current coverage
 
-## The architecture of the demotion (what fragment, is it reconstructable?)
-
-The per-run TV obligation is `lower(P) ⟺ ref(P)` as a Verus/SMT query. For the CAGED
-contract sublanguage the relevant SMT fragments are:
-
-| Clause family (`gen.rs`/`obligation.rs`)        | SMT fragment        | Kernel-checked export? |
+| Fragment | Lean representation | Checker |
 |---|---|---|
-| scalar comparisons + logical connectives (`==`/`<=`/`&&`/`||`/`!`) | QF_LIA / QF_UF      | **YES** — kernel-clean (the two Tier-3 obligations) |
-| integer arithmetic (`+`/`-`/`*`-by-literal, linear) | QF_LIA              | **YES** (linear); nonlinear `*` is solver-incomplete (not a reconstruction wall, a solver one) |
-| bounded quantifier combinators (`forall_in`/`sorted`/…) | quantified (UF + LIA + arrays) | PARTIAL — quantifier-instantiation rules have weaker reconstruction coverage (~30% of cvc5 rules overall, finding #8); not exercised here |
-| bitwise / shift ops (`&`/`|`/`^`/`<<`)          | QF_BV               | **YES** — literal `BitVec N` normalization proof |
-| `spec_sum`/recursive spec fns, `permutation_of` | UF + recursion / multiset | OUT — needs the recursive definition exported as an SMT axiomatization; not a single reconstructable query |
+| QF_LIA | `Int` arithmetic and propositions | `omega` |
+| QF_BV | literal `BitVec N` terms for N = 8, 16, 32, 64 | axiom-clean LRAT, Lean automation, and proved lemmas |
+| quantified, recursive, relation, or array formulas | outside the current validity exporter | solver-trusted |
 
-The scalar/linear core uses Lean-SMT. QF_BV takes a separate literal-`BitVec` path in
-Thermite's exporter. Quantified and recursive fragments remain outside the automated path.
+The QF_BV exporter covers wrapping addition, subtraction, and multiplication;
+unsigned division and remainder; bitwise not, and, or, and xor; logical and
+right shifts; unsigned comparisons; equality; inequality; and boolean
+connectives.
 
-## THE EXACT WALLS
+## The production check
 
-1. **Lean-SMT's cvc5 BitVec reconstructor remains partial, but Thermite no longer uses
-   it for QF_BV.** The pinned revision includes the proof of `BitVec.eq_eq_beq`, so the
-   dependency build has no `sorry` warning. Thermite's exporter renders the complete
-   fixed-width term surface directly as Lean `BitVec N`. Its production/reference
-   normalization needs only order duality, `≠` expansion, and commutativity, all proved
-   with ordinary kernel-checked lemmas. The full-term fixture's `#print axioms` stays
-   within `{propext, Classical.choice, Quot.sound}`.
+`forge/src/lean_smt_export.rs` performs the replay:
 
-   `lean/Thermite/BvModel.lean` keeps the former bounded-integer equivalence as an
-   independent cross-check. It is no longer part of the active export path.
-2. **Coverage ~30% of cvc5's proof rules (finding #8).** Quantified obligations (the
-   bounded combinators) and theory-lemma-heavy proofs may hit an unreconstructable cvc5
-   rule and FAIL (the `smt` tactic errors rather than producing an unsound proof — it does
-   not silently trust). The scalar/linear core is comfortably inside the covered subset.
-3. **Verus/Z3 do NOT emit reconstructable certificates (finding #8).** This is the
-   load-bearing wall for an END-TO-END demotion. Our production TV check runs the obligation
-   through **Verus → Z3**, and Z3-via-Verus does not emit a proof certificate that Lean-SMT
-   (a cvc5 reconstructor) can replay. The demotion path therefore requires RE-DISCHARGING
-   the obligation through **cvc5** (Lean-SMT's solver) instead of trusting the Verus/Z3
-   pass — i.e. the obligation is solved a SECOND time by cvc5 and that cvc5 proof is what
-   gets kernel-checked. The PoC does exactly this (the `smt` tactic calls cvc5). The Verus/Z3
-   pass stays as the production fast path; the Lean-SMT/cvc5 pass is the kernel-checked
-   audit of the same `↔`.
-4. **The hand-translation gap (Tier-3 residual).** The PoC obligations were HAND-translated
-   from the `(P_prod) ⟺ (P_ref)` shape into Lean `Prop`s over `Int`. Production emits both
-   predicates as Verus SOURCE STRINGS (`thermite_lower` for `P_prod`,
-   `thermite-tv/src/ref_encode.rs` for `P_ref`). An AUTOMATED demotion needs a **Rust→Lean
-   exporter** that parses both emitted predicate strings into Lean `Prop`s over the typed
-   env the obligation frame declares. The LOGICAL CONTENT discharged is exactly
-   the per-run obligation; the residual is the parse/translate step.
-   **UPDATE (stage-3 REQ-7, #349).** `forge/src/lean_smt_export.rs` is the automated
-   Rust→Lean obligation
-   exporter (`forge smt-export`): it renders a Thermite predicate `Expr` into a Lean
-   `Prop` and emits the `(P_prod) ⟺ (P_ref)` theorem plus `#print axioms`. QF_LIA uses
-   `smt`; QF_BV uses literal `BitVec N` lemmas. The committed module contains one QF_LIA
-   and three QF_BV fixtures, including the complete term surface. All four axiom reports
-   stay within `{propext, Classical.choice, Quot.sound}`.
+1. Render the solver route's validity theorem from the same source AST and
+   domain assumptions.
+2. Run Lean through the pinned Lake environment.
+3. Require Lean to accept the theorem.
+4. Parse the theorem's anchored `#print axioms` report.
+5. Accept only `{propext, Classical.choice, Quot.sound}`.
 
-## The upstream asks (what would have to change)
+Only a `ReconstructionOutcome::Checked` result changes the clause's trust
+profile. The other outcomes preserve useful distinctions:
 
-- **Lean-SMT:** raise proof-rule coverage above ~30%, especially quantifier
-  instantiation for the bounded combinators. Complete cvc5 BitVec reconstruction
-  would still help other users, but Thermite's QF_BV exporter no longer depends on it.
-- **Verus / Z3:** emit a **reconstructable proof certificate** for a discharged VC (proof
-  logging Lean-SMT/SMTCoq can replay). Until then the demotion must RE-SOLVE the obligation
-  through cvc5 rather than reuse the Verus/Z3 attestation.
-- **Thermite:** widen the exporter to quantified and recursive obligation shapes while
-  preserving the typed environment and stabilization evidence.
+- `Unsupported`: the expression is outside the fragment.
+- `Unavailable`: Lean or the pinned package could not run.
+- `Failed`: Lean rejected the theorem or its axiom report.
 
-## Honest assessment — when does FULL demotion become practical?
+Each checked certificate stores:
 
-- **Today (this increment):** the scalar QF_LIA core can be re-discharged by cvc5
-  and kernel-checked with the standard axioms. Thermite's literal `BitVec` path covers
-  its complete QF_BV term surface with ordinary Lean lemmas. Quantified and recursive
-  fragments remain limited by reconstruction coverage, and Verus/Z3 still do not emit
-  replayable certificates.
-- **Practical full demotion** needs three things: (1) broader Lean-SMT
-  quantifier-rule coverage; (2) Verus/Z3 proof-logging or
-  an accepted policy of
-  re-solving every TV obligation through cvc5 (a latency cost — every L3 program's TV runs
-  twice); (3) the Rust→Lean exporter. None is fundamental; all are engineering + upstream
-  maturation. Realistically this is a multi-cycle, partly-upstream-gated effort — exactly
-  why the SOTA flagged it least-confident. The architecture is SOUND and the PoC PROVES the
-  kernel-checked path exists for the core fragment; the wall is breadth + the production
-  plumbing, not feasibility.
+- the generated theorem name;
+- the successful checker;
+- the full generated-source SHA-256;
+- the fragment;
+- the validated axiom list;
+- the SHA-256 of the exact solver input when the route exposes it.
 
-## Trust-base impact (relative to `Faithfulness.lean`'s enumeration)
+The query hash prevents evidence for a separately rendered approximation from
+being presented as evidence for the solver query. The remaining
+Rust-to-SMT/Rust-to-Lean correspondence is inspection-tier and stays in the
+trust statement.
 
-Until full demotion lands, `Thermite.lowering_faithful`'s `h_tv` REMAINS Z3-trusted and the
-trust base still enumerates Z3 + Verus (no overclaim — R-DEFER-9). This increment PROVES the
-demotion path is real for the scalar core (kernel-clean `#print axioms`) and pins the exact
-walls for the rest. It does NOT change `lowering_faithful`'s status: `h_tv` is not yet
-sourced from a kernel-checked proof in production — the PoC is a standalone witness, not a
-wired-in replacement.
+## QF_BV reconstruction
+
+Lean's `bv_decide` obtains and checks an LRAT certificate, then uses native
+evaluation for the final Boolean check. That adds a generated-code evaluation
+axiom, so Thermite does not use it for trust migration.
+
+`lean/Thermite/Reconstruct.lean` reuses Lean's bit-blaster, SAT solver, LRAT
+parser, and proved LRAT soundness theorem. Its `bv_reconstruct` tactic has the
+kernel reduce the certificate check. Successful theorems therefore stay within
+the standard axiom allowlist.
+
+Lean 4.29's call-by-value reducer can reject some repeated-subterm circuits
+while folding internal projection terms. Reconstruction then tries ordinary
+kernel-checked automation or an applicable proved lemma. The certificate names
+the path that succeeded; a failed LRAT attempt is never labeled as LRAT
+evidence.
+
+`lean/Thermite/PinReconstruction.lean` keeps a permanent 64-bit theorem on the
+LRAT path. `scripts/lean-axiom-probe.sh` builds it and checks its axiom report.
+
+## History
+
+`lean/Thermite/SmtDemo.lean` established the first QF_LIA proof of concept by
+re-discharge through Lean-SMT/cvc5. It showed that the scalar obligations could
+be reconstructed with the standard Lean axioms.
+
+Stage 3 then added two distinct production pieces:
+
+- a translation-equivalence exporter for auditing the production and reference
+  encodings;
+- a validity exporter and replay path for clause trust migration.
+
+The second piece is the one certification uses. QF_LIA now uses `omega`, and
+QF_BV uses literal `BitVec` proofs rather than Lean-SMT's partial BitVec
+reconstructor.
+
+## Trust statement
+
+For a checked QF_LIA or QF_BV clause, the trust base contains the Lean kernel,
+the allowed standard axioms, and the inspection-tier renderer correspondence.
+Z3 is no longer needed for the truth of that clause theorem.
+
+If replay is unsupported, unavailable, or unsuccessful, the existing solver
+trust remains. The project audit names those clauses and always lists the
+EPR-stratified relation/array residual.
+
+This is per-clause trust reduction. It does not claim that every Verus VC,
+translation-validation theorem, or quantified formula has been reconstructed.
 
 ## Verification
 
-```
-cd lean && lake build         # FULL project green (spine + Smt + Thermite.SmtDemo) on v4.29.0
-#print axioms (the four smt-discharged theorems) → [propext, Classical.choice, Quot.sound]
-cargo build --workspace       # Rust unaffected (the lean/ dir is not a Cargo crate, not routed)
+```sh
+cargo test -p forge --features bv --bin forge lean_smt_export::tests -- --nocapture
+cargo test -p forge --features bv --test bv_lowering -- --nocapture
+cd lean && lake build Thermite.PinReconstruction
+bash scripts/lean-axiom-probe.sh
+bash scripts/g3-gate.sh
 ```

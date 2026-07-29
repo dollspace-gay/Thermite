@@ -561,30 +561,25 @@ five-item residual-trust block; the checker the spine itself leans on is item 1)
 5. **rustc / LLVM / the build chain**: the `Rust → machine code` link, inherited
    from the Rust toolchain (the RustBelt/Stacked Borrows boundary).
 
-**Z3 demotion (the path to shrink residual 2).** The route to demote Z3 from
-*trusted* to *kernel-checked* is **proof-producing SMT + reconstruction**
-(Lean-SMT's cvc5 path, SOTA finding #8). `lean/Thermite/SmtDemo.lean` is a
-**proven proof-of-concept**: two *real* per-run TV equivalence obligations over
-the scalar/QF-linear-integer contract fragment were re-discharged by cvc5 and
-**kernel-checked** with the standard axioms only (`#print axioms` → `{propext,
-Classical.choice, Quot.sound}`, no `sorryAx`, no cvc5 oracle axiom; a partial-scope
-demotion rather than laundering). The remaining obstacles to *full* demotion: an
-upstream Lean-SMT reconstructor that only partially covers QF_BV; ~30% cvc5
-proof-rule coverage (especially for quantified/recursive fragments); and Verus/Z3
-not emitting reconstructable certificates. Thermite now has a Rust→Lean exporter
-for QF_LIA and its complete QF_BV term surface. The latter uses literal `BitVec N`
-normalization lemmas instead of the partial upstream bit-blast route. The remaining
-work is documented in
+**Checked clause replay.** Stage 3 replays supported solver verdicts as the
+Lean theorem for the route's `req → clause` validity query. QF_LIA uses
+`omega`; QF_BV uses literal `BitVec N` terms and an axiom-clean proof
+portfolio. A trust migration requires
+Lean to accept the theorem and report only `{propext, Classical.choice,
+Quot.sound}`. The certificate stores the theorem, checker, generated-source
+hash, and axiom list. It also stores the exact solver-input hash when the route
+exposes that input.
+
+This removes Z3 from the trust base for each successfully replayed clause,
+subject to the inspection-tier correspondence between the SMT and Lean
+renderers. Quantified, recursive, relation, and array fragments outside
+QF_LIA/QF_BV remain solver-trusted and are named by the audit. See
 [`.design/verified/z3-demotion.md`](.design/verified/z3-demotion.md).
 
-**Why Lean 4 (and not Coq / Isabelle / Verus-native).** The live route to demote
-Z3 is proof reconstruction, and Lean-SMT (cvc5 reconstruction into the Lean
-kernel) is the maturing path to it; that TCB-shrink lever drove the choice over
-Coq/Isabelle (`thermite-semantics.md` REQ-5). Verus-native meta-theory was
-rejected because it would re-trust the very Z3 the spine exists to be auditable
-*against* (the meaning of Thermite is defined by the Lean semantics rather than by
-Verus; Verus is the first proof engine, proven faithful, rather than the
-foundation).
+**Why Lean 4.** Lean provides both the semantic spine and the kernel target for
+proof reconstruction. That lets Thermite check solver-facing theorems without
+making Verus/Z3 the definition of the language. The choice and alternatives
+are recorded in `thermite-semantics.md` REQ-5.
 
 **Limits / failure modes.** The theorem upgrades exactly *one* link (lowering)
 from existential to universal; the Verus VC-generator + Z3, the borrow
@@ -838,10 +833,9 @@ and check [1]'s coverage grows.
   the exporter stops at straight-line bodies today (`while` is next — the spine's
   rule is already proven).
   [`.design/verified/proof-backends.md`](.design/verified/proof-backends.md).
-- **Full Z3 demotion**: literal QF_BV normalization is now kernel-checked in
-  Thermite. The remaining work is wider cvc5 proof-rule coverage and replayable
-  evidence for the quantified/recursive TV obligations, so `h_tv` no longer
-  depends on Z3.
+- **Wider checked replay**: QF_LIA and the shipped QF_BV surface are live.
+  Quantified, recursive, relation, and array obligations still need a
+  kernel-checked encoding before their solver trust can move.
   [`.design/verified/z3-demotion.md`](.design/verified/z3-demotion.md)
   (upstream-gated; the scalar core is already a proven PoC).
 - **The extraction bridge**: a mechanized Lean→Rust extraction (or a Rust-side

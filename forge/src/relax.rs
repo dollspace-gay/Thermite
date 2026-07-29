@@ -385,6 +385,12 @@ pub fn negated_contract_query(f: &FnItem) -> Option<String> {
     Some(s)
 }
 
+/// The exact input passed to Z3 for a real-relaxation validity check.
+#[must_use]
+pub fn nlsat_solver_input(f: &FnItem) -> Option<String> {
+    negated_contract_query(f).map(|query| format!("(set-option :pp.decimal true)\n{query}"))
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // The integer evaluator (REQ-8c, the integrality check Q8).
 // ─────────────────────────────────────────────────────────────────────────────

@@ -17,16 +17,19 @@ concurrency:
 #
 #   checks — the compile-light gates: fmt, clippy, the python doc-drift gate,
 #            the skill-budget gate, and doctests. Run once.
-#   test   — the Verus/Z3-backed conformance suite, which dominates wall-clock
+#   test   — the Verus/Z3-backed conformance suite plus mandatory live Lean replay,
+#            which dominates wall-clock
 #            (~100 of the workspace's integration-test binaries invoke the real
 #            solver). Profiling showed this is test EXECUTION time, not compile
 #            time, so it is sharded across N runners with cargo-nextest's
 #            partitioning; wall-clock drops ~linearly with the shard count.
 #
-# Both jobs install the pinned toolchain (rust-toolchain.toml channel, 1.95.0)
-# and restore the shared Rust build cache + the pinned Verus distribution; on a
-# warm cache the per-job compile is seconds. Verus is the L3 verification gate
-# (it bundles the matching rust toolchain + z3); tests resolve it via VERUS_BIN.
+# Both jobs install the pinned Rust toolchain (rust-toolchain.toml channel,
+# 1.95.0) and restore the shared Rust build cache + pinned Verus distribution.
+# The test shards also build the Lean modules used by live reconstruction tests;
+# a missing Lean dependency is a hard failure, not a skipped test. Verus is the
+# L3 verification gate (it bundles the matching rust toolchain + z3); tests
+# resolve it via VERUS_BIN.
 # The skill-budget gate fails CI if the generated THERMITE.skill.md exceeds its
 # 6,000-token budget (design §2.2 / §10).
 jobs:
@@ -133,6 +136,37 @@ jobs:
           # Some conformance tests (audit/doc-drift) read git history.
           fetch-depth: 0
 
+      - name: Install elan (Lean toolchain manager)
+        run: |
+          set -euo pipefail
+          curl -fsSL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -o /tmp/elan-init.sh
+          bash /tmp/elan-init.sh -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: Cache Lean build (.lake)
+        uses: actions/cache@v4
+        with:
+          path: |
+            lean/.lake/packages
+            lean/.lake/build
+          key: lean-${{ hashFiles('lean/lake-manifest.json', 'lean/lean-toolchain') }}
+          restore-keys: |
+            lean-
+
+      - name: Fetch prebuilt Mathlib cache (oleans)
+        working-directory: lean
+        run: lake exe cache get
+
+      - name: Build modules used by live Lean tests
+        working-directory: lean
+        run: >-
+          lake build
+          Thermite.Stabilize
+          Thermite.Exec.Stmt
+          Thermite.Exec.WhileBody
+          Thermite.Strat.Cls.Wire
+          Thermite.Reconstruct
+
       - name: Install toolchain (pinned to rust-toolchain.toml channel)
         uses: dtolnay/rust-toolchain@1.95.0
 
@@ -180,12 +214,11 @@ jobs:
   #   lean-probe       — `lake build` the spine subset + the `#print axioms` gate
   #                      (scripts/lean-axiom-probe.sh, the same check [1] `make audit`
   #                      runs, so local and CI cannot drift).
-  #   lean-spine-forge — the spine-GATED forge tests (the lake-gated live L3/L4
-  #                      discharges that self-skip in the `test` shards because those run
-  #                      WITHOUT the spine). Sharded 4 ways like `test`, so the slow Verus
-  #                      discharges run in parallel. EVERY forge test still runs (the union
-  #                      of the 4 shards = the whole `-p forge` suite); no filtering, no
-  #                      coverage loss.
+  #   lean-spine-forge — an independent run of the spine-gated forge tests.
+  #                      The ordinary test matrix also provisions Lean so a missing
+  #                      dependency cannot turn a live replay into an accidental skip.
+  #                      This dedicated matrix keeps the Lean-backed gate visible and
+  #                      shards the slow Verus discharges four ways.
   # Each job restores the shared lean-${{ hashFiles(...) }} `.lake` cache independently
   # (no `needs:` between them → they run concurrently; on a warm cache the per-job
   # `lake build` is incremental). lean-smt is SHA-pinned; Mathlib oleans come from the
@@ -236,13 +269,11 @@ jobs:
       - name: Lean spine build + axiom probe (lake build + #print axioms gate)
         run: bash scripts/lean-axiom-probe.sh
 
-  # The spine-GATED forge tests (Audit F4 / #309). The `test` shards run WITHOUT the Lean
-  # spine, so every `lake`-gated live test (the end-to-end L3/L4 forge discharges, the
-  # seven-verdict live cases, the merge-class G1 cert) self-skips there. Here the spine +
-  # lake + Verus exist, so those tests take their RUN branch. Sharded 4 ways (matching the
-  # `test` job) so the slow Verus discharges run in parallel; the union of the 4 shards is
-  # the whole `-p forge` suite — nothing is filtered out (zero coverage loss). Restores the
-  # same `.lake` cache as lean-probe; no `needs:` so it runs concurrently.
+  # The independent spine-GATED forge tests (Audit F4 / #309). Lean + Verus are
+  # mandatory here and in the ordinary test matrix; missing dependencies fail rather
+  # than silently reducing coverage. Sharded 4 ways so the slow Verus discharges run in
+  # parallel; the union is the whole `-p forge` suite. Restores the same `.lake` cache
+  # as lean-probe; no `needs:` so it runs concurrently.
   lean-spine-forge:
     runs-on: ubuntu-latest
     strategy:
@@ -290,7 +321,13 @@ jobs:
         # forge job must build Wire itself. Without these the live tests fail with
         # "unknown module prefix 'Thermite'" / "spine may not be built". Incremental on a
         # warm `.lake` cache.
-        run: lake build Thermite.Stabilize Thermite.Exec.Stmt Thermite.Exec.WhileBody Thermite.Strat.Cls.Wire
+        run: >-
+          lake build
+          Thermite.Stabilize
+          Thermite.Exec.Stmt
+          Thermite.Exec.WhileBody
+          Thermite.Strat.Cls.Wire
+          Thermite.Reconstruct
 
       - name: Install Rust toolchain (pinned)
         uses: dtolnay/rust-toolchain@1.95.0
@@ -351,3 +388,67 @@ jobs:
           set -euo pipefail
           cargo run -q -p forge -- strat-tv
           cargo run -q -p forge -- strat-faithful-tv
+
+  # Keep the parser lock, fixed-width checks, and Lean replay in one gate.
+  g3:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.95.0
+
+      - name: Install elan
+        run: |
+          set -euo pipefail
+          curl -fsSL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -o /tmp/elan-init.sh
+          bash /tmp/elan-init.sh -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: Cache Lean build
+        uses: actions/cache@v4
+        with:
+          path: |
+            lean/.lake/packages
+            lean/.lake/build
+          key: lean-${{ hashFiles('lean/lake-manifest.json', 'lean/lean-toolchain') }}
+          restore-keys: |
+            lean-
+
+      - name: Fetch Mathlib cache
+        working-directory: lean
+        run: lake exe cache get
+
+      - name: Cache Verus
+        uses: actions/cache@v4
+        with:
+          path: ~/verus-dist
+          key: verus-0.2026.05.24.ecee80a-x86-linux
+
+      - name: Install Verus and Z3
+        run: |
+          set -euo pipefail
+          VERUS_VER="0.2026.05.24.ecee80a"
+          if ! find "$HOME/verus-dist" -type f -name verus 2>/dev/null | grep -q .; then
+            curl -fsSL -o /tmp/verus.zip \
+              "https://github.com/verus-lang/verus/releases/download/release/${VERUS_VER}/verus-${VERUS_VER}-x86-linux.zip"
+            mkdir -p "$HOME/verus-dist"
+            unzip -q /tmp/verus.zip -d "$HOME/verus-dist"
+          fi
+          VERUS_BIN_PATH="$(find "$HOME/verus-dist" -type f -name verus | head -1)"
+          test -n "$VERUS_BIN_PATH"
+          echo "VERUS_BIN=$VERUS_BIN_PATH" >> "$GITHUB_ENV"
+          echo "$(dirname "$VERUS_BIN_PATH")" >> "$GITHUB_PATH"
+          "$VERUS_BIN_PATH" --version
+          "$(dirname "$VERUS_BIN_PATH")/z3" --version
+
+      - name: Rust build cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: g3
+
+      - name: Gate G3
+        run: bash scripts/g3-gate.sh

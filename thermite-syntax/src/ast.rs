@@ -622,18 +622,13 @@ impl BvWidth {
     }
 }
 
-/// A `@bvN` / `@bvN(nowrap)` machine-semantics clause tag — the first
-/// clause-level annotation in `thermite-syntax` (`.design/stage3-bv-reconstruction.md`
-/// REQ-1). It marks a clause for interpretation over fixed-width wraparound
-/// (`by(bit_vector)`, QF_BV) semantics. `nowrap` additionally requests the
-/// no-overflow side obligation (REQ-5). The tag parses only when the shadow-flag
-/// plumbing is compiled in (the `bv` cargo feature, REQ-1's structural
-/// lock R-BV-1); lowering + the three locks are REQ-2..REQ-5.
+/// A fixed-width tag on a postcondition, invariant, or lemma conclusion.
+/// `nowrap` adds a no-overflow side obligation. The parser accepts the tag only
+/// when the `bv` feature includes its certificate plumbing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BvTag {
     pub width: BvWidth,
-    /// `true` for the `@bvN(nowrap)` spelling — a no-overflow side obligation is
-    /// requested (REQ-5). `false` for the bare `@bvN`.
+    /// Whether the clause requests a no-overflow side obligation.
     pub nowrap: bool,
     /// The source span of the whole tag, from `@` through the closing `)` (or the
     /// width token when no `(nowrap)` follows).
@@ -644,12 +639,8 @@ pub struct BvTag {
 /// built from. The `text` is the oracle string `address.rs` resolves an
 /// `inv`/`dec` address to (semantic-addressing.md AC-1/AC-2).
 ///
-/// `bv` carries an optional `@bvN` machine-semantics tag
-/// (`.design/stage3-bv-reconstruction.md` REQ-1). It is `None` for every v1/v2
-/// clause and for every clause when the `bv` plumbing is not compiled in
-/// (the tag cannot parse there); `Some` only on an `ens`/`inv`/`req`/lemma clause
-/// that carried the tag in a `bv` build. The tag sits outside `text`, so
-/// the addressing oracle string is unchanged by it.
+/// `bv` is present on a tagged postcondition, invariant, or lemma conclusion.
+/// The tag sits outside `text`, so semantic addresses remain unchanged.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Clause {
     pub expr: Expr,

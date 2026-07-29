@@ -1,0 +1,25 @@
+enum Role { Owner, Player }
+enum Action { Ban, Chat }
+
+spec fn may_ban(r: Role) -> bool
+  dec r
+{
+  match r { Role::Owner => true, Role::Player => false }
+}
+
+spec fn is_ban(a: Action) -> bool
+  dec a
+{
+  match a { Action::Ban => true, Action::Chat => false }
+}
+
+fn authorize(r: Role, a: Action) -> bool
+  req true
+  ens result == (may_ban(r) || !is_ban(a))
+  fx  pure
+{
+  match r {
+    Role::Owner => true,
+    Role::Player => match a { Action::Ban => false, Action::Chat => true },
+  }
+}

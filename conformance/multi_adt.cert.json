@@ -1,0 +1,11 @@
+{
+  "item": "authorize",
+  "level": "L3",
+  "contract_quality": {
+    "tautology": false,
+    "vacuous_precondition": false
+  },
+  "effects": ["pure"],
+  "slag": false,
+  "note": "Stable-subset oracle (goal.md R-CHAR-3): item/level/tautology/vacuous_precondition/effects/slag are hand-derived from .design/forge/check.md REQ-5 (L3 iff verus reports 0 errors) + .design/basis/01-adts.md (REQ-2 enum, REQ-9 enum->Verus + match->Verus match) + thermite-design.md §6 ladder, and are oracle-compared. mutants_killed + solver_time_ms are tool-computed + EXCLUDED (oracle_subset, §5.3). HAND-DERIVATION: `authorize(r, a)` returns true for Owner (either Action), false for Player+Ban, true for Player+Chat. The ens `result == (may_ban(r) || !is_ban(a))` evaluates to: Owner -> may_ban true -> true (both actions); Player+Ban -> false || !true -> false; Player+Chat -> false || !false -> true. Body and contract agree on all four inhabitants of Role x Action, so every obligation discharges -> L3. NON-VACUOUS: a constant-true body fails at Player+Ban, so the ens constrains (R-DEFER-9); req `true` is satisfiable (a total function has no precondition). fx pure -> effects [\"pure\"]; no #[slag] -> slag false. THIS FILE IS THE crosslink #92 CORPUS ANCHOR: it is the first corpus program declaring more than one ADT, the shape that could not certify before #92 (the per-item sub-program omitted the ADTs reachable only through a woven spec fn, so `Role` and `Action` each landed L0 on E0425 and the project verdict was FAILED). The per-item levels of `Role`/`Action` are pinned in forge/tests/divergence_multi_adt_subprogram.rs."
+}

@@ -12,11 +12,13 @@
 name = "thermite"
 defaultTargets = ["Thermite"]
 
-# Pin lean-smt to the proof from upstream PR #227. It closes the
-# `BitVec.eq_eq_beq` axiom while keeping the Lean 4.29 dependency set.
+# Pin lean-smt to the proof from upstream PR #227. The PR author's fork
+# advertises this commit, so fresh Lake checkouts can fetch it by SHA.
+# It closes the `BitVec.eq_eq_beq` axiom while keeping the Lean 4.29
+# dependency set.
 [[require]]
 name = "smt"
-git = "https://github.com/ufmg-smite/lean-smt.git"
+git = "https://github.com/AlexeyMilovanov/lean-smt.git"
 rev = "ee6d36b97a70f6b378c8ad851a938ed79b321c65"
 
 [[lean_lib]]

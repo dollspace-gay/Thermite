@@ -5,7 +5,7 @@ tier: 3-component
 status: draft
 governs: forge/src/lean_export.rs
 audited-sha: 8978ecc950df30b58c00fe6df06f1fc5b4c56691 (re-pinned 2026-06-16 for stage-1 increment 2e, REQ-7: re-inspected the exporter surface for the new export_lemma. It reuses the EXACT tier-(a) fn-contract machinery (encode_expr + build_registry + R_item + the `Thermite.denote 0 … {v with specs := R_item}` framing) MINUS the body/result binding — a lemma is the pure `∀ params, req → ens` proposition with no body/result. The existing arms' correspondence is unchanged; the lemma goal is the same denote-framing the fn req/ens arms already certify, so no new soundness claim is introduced.)
-audited-content-sha256: abfa33bb083d691b2450d202ac11276fb88c6b7659e5ba99411d635a6ddac506
+audited-content-sha256: b258719b018ea9dd044d6649c01cca89483ed1e4df62788178d119a4335bbb91
              tone-pass that closed increment 0; increment 1 does NOT modify lean_export.rs,
              so this pin stays valid after the foundation commit)
 thesis-refs:

@@ -4,7 +4,7 @@
 tier: 3-component
 status: draft
 audited-sha: 90b8325951b0f625a693baf07776da39d0b95fbe (re-pinned 2026-06-17 after merging main into the #275 vacuity-fix branch: governed source carries #51's topology-stable doc-drift change + #275's ADT-deps/compile-error vacuity fix, both net-additive; the REQs this doc governs are unchanged.)
-audited-content-sha256: 3e29b4cdbc90c740be167ad1ee957ea5d30082d72248c9f49bf2f0345533e5d3
+audited-content-sha256: b94ec724e79313dae40144e6558258861253603740d035bae8b504c96cecfe47
 governs: forge/src/vacuity_solver.rs
 thesis-refs:
   - thermite-design.md §7

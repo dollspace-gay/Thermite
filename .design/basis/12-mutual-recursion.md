@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: a0626bfbc8c8a2afa354f257fa8d4b788f46cf1e7adfbd3e253ca0ab7a59a914 (migrated from legacy audited-sha commit pin to a squash-stable content digest; doc-drift-tripwire.md REQ-2 — content pin is primary, commit pin is a migration fallback)
+audited-content-sha256: 0dd9a7d3df24b2b39e14c312bdec059f5ac7447b50807f9a51eb0fc5806fe5c8 (migrated from legacy audited-sha commit pin to a squash-stable content digest; doc-drift-tripwire.md REQ-2 — content pin is primary, commit pin is a migration fallback)
 governs: forge/src/check.rs
 governs: thermite-lower/src/lower.rs
 thesis-refs:

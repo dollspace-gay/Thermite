@@ -4,7 +4,7 @@
 tier: 3-component
 status: draft
 audited-sha: f09f8ca376257cc1e2543b8ebc9fb771bffd04df (content-sha256 re-pinned 2026-06-21 for stage-2 REQ-10 / AC-10 (#332), the pin battery — the LAST stage-2 increment / gate G2: this doc's governed files (registry.toml, status.md) carry the additive REQ-S2-10 requirement entry + the regenerated status view; req-registry.py --check is clean (453 requirements, 119 views). The legacy commit pin stays at the f09f8ca3 stable-main ancestor; only the active content-sha256 digest moves. prior: 2026-06-21 stage-2 REQ-8 / AC-8 (#330) faithfulness + two-phase TV + the trust flip REQ-S2-8 entry; 2026-06-20 stage-2 REQ-6 / AC-6 combinator demotion REQ-S2-6 entry; 2026-06-20 stage-2 REQ-4 / AC-4 classifier ops half + differential battery REQ-S2-4 entry; 2026-06-20 stage-2 REQ-2 / AC-2 SubstKit REQ-S2-2 entry; 2026-06-19 stage-2 REQ-1 / AC-1 Strat spine foundation REQ-S2-1 entry; 2026-06-17 umbrella REQ-7 / AC-12 §6 metrics dashboard REQ-FORGE-METRICS-DASHBOARD entry; before that stage-1 REQ-10/AC-14 G1 gate REQ-S1-10 entry)
-audited-content-sha256: fff8bfb54b8e0772a2701d23c17f8b53cee5be7e1910f3f28bb0f88591494f3a
+audited-content-sha256: facf0609a82b2adea456647dfc0c21cb28f15b0858d8fb1a32e77b1307317838
 governs:
   - .design/reqs/registry.toml
   - .design/reqs/status.md

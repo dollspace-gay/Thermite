@@ -37,6 +37,7 @@
 # ACToR harness read-state (per-worktree)
 .crosslink/.spec-reads.json
 tooling/__pycache__/
+__pycache__/
 
 # Rust build artifacts
 target/

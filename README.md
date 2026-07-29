@@ -170,6 +170,11 @@ agent needs to work the repo **ships in the repo**:
   no stubs/TODOs), and the **route table** (`spec-routes.toml`: which file maps to
   which design doc). `.claude/settings.json` (also tracked) wires these into Claude
   Code's `PreToolUse`/`PostToolUse` events, so they enforce automatically — no setup.
+  That last sentence is itself CI-checked: `crosslink init` regenerates
+  `settings.json` from a generic template and once silently dropped both gates for
+  a whole stage (#93), so the **control-plane gate** (`control-plane-check.py`,
+  `make control-plane`) asserts every hook the docs claim is live is actually wired,
+  and the route table pins the control plane under `doc-drift.py`.
 - **`.claude/hooks/`** (gitignored — environment infra, *not* project source) — the
   crosslink issue-tracking + session machinery (`work-check.py` = an active issue is
   required before any edit, plus session/heartbeat/prompt hooks). These are regenerated

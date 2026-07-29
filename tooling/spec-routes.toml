@@ -977,3 +977,40 @@ crate_pattern = "thermite-tv/src/strat_two_phase.rs"
 design = ".design/verified/strat-rust-lean-correspondence.md"
 reference = []
 conformance_ops = []
+
+# ---------------------------------------------------------------------
+# tooling — the control plane gating itself (crosslink #93)
+# ---------------------------------------------------------------------
+# The two agent-facing gates (spec-discipline.py, anti-pattern-gate.py) only
+# fire because .claude/settings.json WIRES them, and until #93 no route covered
+# that file — so commit 5581b65f could de-wire both gates for the whole Stage-3
+# arc while README/goal.md/the agent defs kept claiming they enforce
+# automatically, and nothing in the repo could see it.
+#
+# DECLARATIVE for spec-discipline, ENFORCED for doc-drift (the same split as the
+# doc-drift.py dogfood route above): is_gated_path requires TARGET_EXTENSION
+# ".rs" + a thermite-/forge crate dir + a src/ component, so the hook
+# structurally cannot gate a .json or .md control-plane file. These routes make
+# the control plane CONTENT-PINNED under doc-drift.py (which IS enforced via
+# `make doc-drift` + CI): editing the hook wiring or an agent def without
+# bumping .design/tooling/control-plane.md's audited-content-sha256 fires the
+# tripwire. The wiring itself is separately asserted by
+# tooling/control-plane-check.py (`make control-plane`).
+
+[[route]]
+crate_pattern = ".claude/settings.json"
+design = ".design/tooling/control-plane.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = ".claude/agents/*.md"
+design = ".design/tooling/control-plane.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "tooling/control-plane-check.py"
+design = ".design/tooling/control-plane.md"
+reference = []
+conformance_ops = []

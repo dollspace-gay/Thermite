@@ -1,7 +1,7 @@
 # Thermite — convenience targets. The build/test system is Cargo; these are
 # thin entry points. `make audit` is the headline: a FULL TRUST-CHAIN
 # re-derivation a skeptic runs on their own machine (see scripts/audit.sh).
-.PHONY: audit audit-fast check test fmt clippy gauntlet doc-drift doc-drift-ci doc-drift-worktree doc-drift-test req-status req-status-test req-registry req-registry-test
+.PHONY: audit audit-fast check test fmt clippy gauntlet doc-drift doc-drift-ci doc-drift-worktree doc-drift-test req-status req-status-test req-registry req-registry-test control-plane control-plane-test
 
 DOC_DRIFT_CI_BASE ?= origin/main
 DOC_DRIFT_CI_HEAD ?= HEAD
@@ -107,4 +107,16 @@ req-registry:
 	@tooling/reqs check
 
 req-registry-test:
+	@python3 -m unittest discover -s tooling/tests -v
+
+# The gate that guards the gates (crosslink #93). doc-drift pins the CONTENT of
+# what the routes govern; this asserts the two agent-facing hooks are actually
+# WIRED in the tracked .claude/settings.json — the file `crosslink init`
+# regenerates, and which 5581b65f silently de-wired for the whole Stage-3 arc.
+# Not part of `make audit`: hook wiring is a development-discipline invariant,
+# not a link in the proof-trust chain (the doc-drift decision-5 precedent).
+control-plane:
+	@python3 tooling/control-plane-check.py
+
+control-plane-test:
 	@python3 -m unittest discover -s tooling/tests -v

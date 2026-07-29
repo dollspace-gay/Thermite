@@ -51,10 +51,15 @@ jobs:
       - name: cargo fmt
         run: cargo fmt --all --check
 
-      - name: doc-drift gate tests (tooling/tests)
+      - name: tooling gate tests (tooling/tests)
         run: python3 -m unittest discover -s tooling/tests
       - name: doc-drift tripwire (design-doc freshness)
         run: python3 tooling/doc-drift.py
+      # The gate that guards the gates (crosslink #93): asserts the two
+      # agent-facing hooks are still WIRED in the tracked settings.json, which
+      # `crosslink init` regenerates and 5581b65f silently clobbered.
+      - name: control-plane gate (hook wiring)
+        run: python3 tooling/control-plane-check.py
       - name: req-status lint (source-comment status consistency)
         run: python3 tooling/req-status.py
       - name: req-registry gate (canonical status inventory)

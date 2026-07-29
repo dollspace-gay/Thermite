@@ -23,14 +23,14 @@ echo "[G3 3/5] fixed-width lowering and invariant preservation"
 cargo test -p thermite-lower tagged_ -- --nocapture
 cargo test -p forge --features bv --test bv_invariants -- --nocapture
 
-echo "[G3 4/5] checked validity replay and the live BV route"
+echo "[G3 4/5] Lean spine and reconstruction axiom probe"
+bash scripts/lean-axiom-probe.sh
+
+echo "[G3 5/5] checked validity replay and the live BV route"
 cargo test -p forge --features bv --bin forge lean_smt_export::tests -- --nocapture
 cargo test -p forge --features bv --bin forge \
   check::tests::req8_arithmetic_and_bitwise_clauses_migrate_to_kernel_checked \
   -- --nocapture
 cargo test -p forge --features bv --test bv_lowering -- --nocapture
-
-echo "[G3 5/5] Lean spine and reconstruction axiom probe"
-bash scripts/lean-axiom-probe.sh
 
 echo "G3 gate passed"

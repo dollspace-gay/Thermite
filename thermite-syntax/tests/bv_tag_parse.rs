@@ -204,6 +204,20 @@ mod plumbing_present {
     }
 
     #[test]
+    fn preconditions_cannot_define_a_bit_width() {
+        let result =
+            parse("fn f(a: u64) -> u64 req@bv64 a == a ens@bv64 result == a fx pure { a }");
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|error| matches!(error, SyntaxError::BvTagOnPrecondition { .. })),
+            "expected BvTagOnPrecondition, got: {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
     fn an_invalid_width_is_a_structured_error() {
         // `@bv7` is not one of the four committed widths -> BvWidthInvalid.
         let result = parse(&fn_with_ens("@bv7"));

@@ -1,0 +1,25 @@
+// Tagged invariants use fixed-width values inside the ordinary Verus invariant VC.
+// The first loop invariant wraps; the second asks Verus to prove that its addition
+// cannot wrap. Both remain visible as bv_shadow records in the certificate.
+
+struct Word {
+    bits: u64,
+    amount: u64
+} inv@bv8 bits + amount == amount + bits
+
+fn advance(start: u64) -> u64
+    req start <= 3
+    ens result == 3
+    fx pure
+{
+    let mut i: u64 = start;
+    while i < 3
+        inv i <= 3
+        inv@bv8 i + 255 == i - 1
+        inv@bv8(nowrap) i + 1 <= 4
+        dec 3 - i
+    {
+        i = i + 1;
+    }
+    i
+}

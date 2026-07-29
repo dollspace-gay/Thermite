@@ -351,3 +351,67 @@ jobs:
           set -euo pipefail
           cargo run -q -p forge -- strat-tv
           cargo run -q -p forge -- strat-faithful-tv
+
+  # Keep the parser lock, fixed-width checks, and Lean replay in one gate.
+  g3:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.95.0
+
+      - name: Install elan
+        run: |
+          set -euo pipefail
+          curl -fsSL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -o /tmp/elan-init.sh
+          bash /tmp/elan-init.sh -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: Cache Lean build
+        uses: actions/cache@v4
+        with:
+          path: |
+            lean/.lake/packages
+            lean/.lake/build
+          key: lean-${{ hashFiles('lean/lake-manifest.json', 'lean/lean-toolchain') }}
+          restore-keys: |
+            lean-
+
+      - name: Fetch Mathlib cache
+        working-directory: lean
+        run: lake exe cache get
+
+      - name: Cache Verus
+        uses: actions/cache@v4
+        with:
+          path: ~/verus-dist
+          key: verus-0.2026.05.24.ecee80a-x86-linux
+
+      - name: Install Verus and Z3
+        run: |
+          set -euo pipefail
+          VERUS_VER="0.2026.05.24.ecee80a"
+          if ! find "$HOME/verus-dist" -type f -name verus 2>/dev/null | grep -q .; then
+            curl -fsSL -o /tmp/verus.zip \
+              "https://github.com/verus-lang/verus/releases/download/release/${VERUS_VER}/verus-${VERUS_VER}-x86-linux.zip"
+            mkdir -p "$HOME/verus-dist"
+            unzip -q /tmp/verus.zip -d "$HOME/verus-dist"
+          fi
+          VERUS_BIN_PATH="$(find "$HOME/verus-dist" -type f -name verus | head -1)"
+          test -n "$VERUS_BIN_PATH"
+          echo "VERUS_BIN=$VERUS_BIN_PATH" >> "$GITHUB_ENV"
+          echo "$(dirname "$VERUS_BIN_PATH")" >> "$GITHUB_PATH"
+          "$VERUS_BIN_PATH" --version
+          "$(dirname "$VERUS_BIN_PATH")/z3" --version
+
+      - name: Rust build cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: g3
+
+      - name: Gate G3
+        run: bash scripts/g3-gate.sh

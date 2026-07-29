@@ -384,39 +384,11 @@ impl BitVectorEngine {
         width: BvWidth,
     ) -> BvOutcome {
         let n = width.bits();
-        // Render the clause first — an unrenderable clause is a skip, never a
-        // false verdict (and never a spurious counterexample from a dropped guard).
-        let clause_smt = match render_bv_prop(clause, n) {
-            Ok(s) => s,
-            Err(reason) => {
-                return BvOutcome::Unknown(format!(
-                    "the `@bv{n}` clause did not render to QF_BV: {reason}"
-                ))
-            }
+        // Reconstruction hashes the query returned by this shared builder.
+        let (query, profile) = match validity_query(vars, req, clause, width) {
+            Ok(query) => query,
+            Err(reason) => return BvOutcome::Unknown(reason),
         };
-        // The precondition becomes a hypothesis. If it is present but unrenderable we
-        // SKIP (Unknown) rather than drop it — dropping a guard could mint a spurious
-        // counterexample at an assignment the precondition rules out (R-CODE-4).
-        let req_smt = match req {
-            Some(r) => match render_bv_prop(r, n) {
-                Ok(s) => Some(s),
-                Err(reason) => {
-                    return BvOutcome::Unknown(format!(
-                        "the `@bv{n}` clause's precondition did not render to QF_BV (skipping \
-                         rather than dropping the guard): {reason}"
-                    ))
-                }
-            },
-            None => None,
-        };
-
-        let profile = BvBudgetProfile::for_query(
-            width,
-            &req.into_iter()
-                .chain(std::iter::once(clause))
-                .collect::<Vec<_>>(),
-        );
-        let query = build_bv_query(vars, req_smt.as_deref(), &clause_smt, n, &profile);
 
         match Self::run_z3(&query, profile.timeout_secs) {
             Ok((result, model)) => match result.as_str() {
@@ -632,6 +604,36 @@ impl BitVectorEngine {
             })?;
         Ok((result, stdout.into_owned()))
     }
+}
+
+/// Build the SMT-LIB validity query used by both Z3 and replay evidence.
+pub fn validity_query(
+    vars: &[String],
+    req: Option<&Expr>,
+    clause: &Expr,
+    width: BvWidth,
+) -> Result<(String, BvBudgetProfile), String> {
+    let n = width.bits();
+    let clause_smt = render_bv_prop(clause, n)
+        .map_err(|reason| format!("the `@bv{n}` clause did not render to QF_BV: {reason}"))?;
+    let req_smt = req
+        .map(|req| {
+            render_bv_prop(req, n).map_err(|reason| {
+                format!(
+                    "the `@bv{n}` clause's precondition did not render to QF_BV \
+                     (skipping rather than dropping the guard): {reason}"
+                )
+            })
+        })
+        .transpose()?;
+    let profile = BvBudgetProfile::for_query(
+        width,
+        &req.into_iter()
+            .chain(std::iter::once(clause))
+            .collect::<Vec<_>>(),
+    );
+    let query = build_bv_query(vars, req_smt.as_deref(), &clause_smt, n, &profile);
+    Ok((query, profile))
 }
 
 /// Build the SMT-LIB2 `QF_BV` query whose satisfiability decides a `@bvN` clause

@@ -166,6 +166,10 @@ pub enum SyntaxError {
     /// silently accepting (and then under-tracking) wraparound semantics. The span
     /// points at the `@`.
     BvTagWithoutShadowPlumbing { span: Span },
+    /// A `@bv` tag was attached to a precondition. Preconditions are interpreted
+    /// at the width of each tagged conclusion and do not define a width by
+    /// themselves.
+    BvTagOnPrecondition { span: Span },
     /// A `@bv` tag whose width is not one of the four committed widths
     /// `bv8`/`bv16`/`bv32`/`bv64` (`.design/stage3-bv-reconstruction.md` REQ-1).
     /// `found` is the verbatim token that followed `@` (e.g. `bv7`, `bv`, `foo`).
@@ -226,6 +230,7 @@ impl SyntaxError {
             | SyntaxError::ProofHoleOutsideProofBlock { span, .. }
             | SyntaxError::BodyHoleInProofBlock { span, .. }
             | SyntaxError::BvTagWithoutShadowPlumbing { span }
+            | SyntaxError::BvTagOnPrecondition { span }
             | SyntaxError::BvWidthInvalid { span, .. } => *span,
         }
     }
@@ -299,6 +304,12 @@ impl std::fmt::Display for SyntaxError {
                 "the `@bv` machine-semantics clause tag at byte {} requires the \
                  shadow-flag plumbing, which is not compiled into this build (build \
                  `thermite-syntax` with the `bv` feature to enable it)",
+                span.start
+            ),
+            SyntaxError::BvTagOnPrecondition { span } => write!(
+                f,
+                "`@bv` cannot annotate a precondition at byte {}; put the tag on \
+                 each `ens` or `inv` whose fixed-width meaning you want",
                 span.start
             ),
             SyntaxError::BvWidthInvalid { found, span } => write!(
@@ -1397,8 +1408,7 @@ impl<'a> Parser<'a> {
         self.consume(&TokKind::RBrace, "`}` to close the refinement predicate")?;
         let span = start.to(end);
         let text = self.span_text(span);
-        // A refinement-sugar predicate carries no `@bv` tag (REQ-1's tag attaches
-        // to `ens`/`inv`/`req`/lemma clauses through `parse_clause`).
+        // Refinement sugar has no `@bv` tag.
         Ok(Clause {
             expr,
             text,
@@ -1468,10 +1478,14 @@ impl<'a> Parser<'a> {
     /// the expression for addressing (`Clause.text`).
     fn parse_clause(&mut self, keyword: &TokKind) -> PResult<Clause> {
         self.consume(keyword, "a clause keyword")?;
-        // An optional `@bvN` machine-semantics tag sits between the keyword and the
-        // clause expression (`ens@bv64 P`). It is parsed before `start` so the
-        // clause `text` (the addressing oracle string) stays the expression only.
+        // Parse the tag before recording the expression span so `Clause.text`
+        // remains the expression alone.
         let bv = self.parse_bv_tag()?;
+        if matches!(keyword, TokKind::Req) {
+            if let Some(tag) = bv {
+                return Err(SyntaxError::BvTagOnPrecondition { span: tag.span });
+            }
+        }
         let start = self.peek_span();
         // A clause expression is a no-struct-literal head: a clause is followed
         // by another clause keyword or a block `{` (a loop body, a spec-fn body),
@@ -1506,10 +1520,9 @@ impl<'a> Parser<'a> {
     ///   (`@bv7`, `@bv`) is `BvWidthInvalid`; a malformed modifier is the generic
     ///   unexpected-token error.
     ///
-    /// The tag is accepted on every clause that flows through `parse_clause`
-    /// (`ens`/`inv`/`req` and the lemma's `req`/`ens`), so `lemma` items accept it
-    /// under the same gate (REQ-1). `dec`/`fx` use their own parsers and carry no
-    /// tag.
+    /// Postconditions, invariants, and lemma conclusions accept the tag.
+    /// Preconditions are rejected because their width comes from the tagged
+    /// conclusion they guard. `dec` and `fx` carry no tag.
     fn parse_bv_tag(&mut self) -> PResult<Option<BvTag>> {
         if !self.check(&TokKind::At) {
             return Ok(None);

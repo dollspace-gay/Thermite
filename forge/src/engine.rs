@@ -139,35 +139,29 @@ pub fn bv_trust_profile() -> TrustProfile {
     }
 }
 
-/// The named trust base a reconstruction-supported [`EngineName::BitVector`] clause
-/// carries after REQ-8's default-on trust migration (`.design/stage3-bv-reconstruction.md`
-/// REQ-8 / AC-9). When
-/// [`crate::lean_smt_export::clause_reconstruction_supported`] can render the clause,
-/// its `trust:` migrates from the solver base ([`bv_trust_profile`], `Z3 QF_BV`) to
-/// this kernel-checked base at the same caged rung [`crate::manifest::Level::L4`].
-///
-/// The migration records what grounds the clause and what residual remains:
-///
-/// 1. The clause obligation `(P_prod) ⟺ (P_ref)` is rendered directly over `BitVec N`.
-///    Lean proves the normalization with order and commutativity lemmas, and
-///    `#print axioms` remains within `{propext, Classical.choice, Quot.sound}`.
-/// 2. The two string-emission paths — this exporter and `bitvector.rs`'s SMT-LIB
-///    renderer — encode the same fixed-width operators. Their agreement is the
-///    inspection-tier pretty-printer residual documented in
-///    `.design/verified/exporter-surface-correspondence.md`.
-///
-/// This profile no longer needs the bounded-integer bridge or cvc5's incomplete
-/// bit-vector proof reconstruction.
+/// Trust recorded after Lean checks a QF_BV clause theorem.
+/// The caller must already hold a checked replay result.
 #[must_use]
 pub fn bv_kernel_checked_trust_profile() -> TrustProfile {
     TrustProfile {
         items: vec![
-            "Lean kernel, kernel-checked (the literal BitVec N (P_prod) ⟺ (P_ref) obligation \
-             is proved by order and commutativity lemmas; #print axioms ⊆ {propext, \
-             Classical.choice, Quot.sound})"
+            "Lean kernel, kernel-checked (QF_BV req → clause theorem over literal BitVec N \
+             accepted; evidence names the checker and allowed #print axioms)"
                 .to_string(),
-            "pretty-printer residual (the lean_smt_export + bitvector.rs string-emission legs \
-             encode the same literal fixed-width operators; inspection-tier, #356)"
+            "query-correspondence residual (certificate hashes the Z3 query and generated \
+             Lean theorem; renderer correspondence remains inspection-tier)"
+                .to_string(),
+        ],
+    }
+}
+
+/// Trust recorded after `omega` checks a QF_LIA clause theorem.
+#[must_use]
+pub fn lia_kernel_checked_trust_profile() -> TrustProfile {
+    TrustProfile {
+        items: vec![
+            "Lean kernel, kernel-checked (QF_LIA req → clause theorem proved by omega; \
+             #print axioms passed the standard allowlist)"
                 .to_string(),
         ],
     }
@@ -2326,7 +2320,7 @@ impl NlsatEngine {
                 }
             ));
         }
-        let query = match crate::relax::negated_contract_query(f) {
+        let input = match crate::relax::nlsat_solver_input(f) {
             Some(q) => q,
             None => {
                 return NlsatOutcome::Unknown(format!(
@@ -2338,7 +2332,6 @@ impl NlsatEngine {
         // pp.decimal makes z3 print real (incl. algebraic) model values as decimals so
         // the integrality check can round them; the nlsat tactic is selected inside the
         // query (`check-sat-using qfnra-nlsat`).
-        let input = format!("(set-option :pp.decimal true)\n{query}");
         let (result, model) = match Self::run_z3(&input) {
             Ok(pair) => pair,
             Err(reason) => return NlsatOutcome::Unknown(reason),

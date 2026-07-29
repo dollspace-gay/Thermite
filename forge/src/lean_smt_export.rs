@@ -1,46 +1,21 @@
-//! Automated Rust→Lean export for per-clause translation-validation obligations
+//! Rust→Lean export and checked replay for clause-validity obligations
 //! (`.design/stage3-bv-reconstruction.md` REQ-7 / AC-8).
 //!
-//! This module closes the Tier-3 hand-translation gap that
-//! `lean/Thermite/SmtDemo.lean` left open ("the hand-translation step is the gap an
-//! automated Rust→Lean exporter would close"). Given a per-clause equivalence
-//! obligation — the translation-validation shape `(P_production) ⟺ (P_reference)`
-//! that `thermite-tv/src/obligation.rs::equivalence_obligation` asserts — it renders
-//! both predicate ASTs into Lean `Prop`s over a typed environment and emits a
-//! self-contained theorem followed by a `#print axioms` probe. QF_LIA uses the
-//! lean-smt `smt` tactic (pinned @ `ee6d36b`, with cvc5 over FFI). QF_BV is rendered
-//! as literal `BitVec N` expressions and its normalization equivalence is proved with
-//! kernel-checked library lemmas.
-//! A theorem whose `#print axioms` stays within `{propext, Classical.choice,
-//! Quot.sound}` (no `Smt`-internal oracle, no `sorryAx`, no `Lean.ofReduceBool`) is
-//! a kernel-checked reconstruction — that axiom-cleanliness is what makes a fragment
-//! count as *reconstruction-supported* (the signal REQ-8's trust migration consumes).
+//! Certification replays the solver route's actual `req → clause` validity theorem.
+//! The route supplies any implicit domain guards and result grounding. Lean must accept it,
+//! and its axiom report must pass the standard allowlist. QF_LIA uses `omega`.
+//! QF_BV uses an axiom-clean portfolio and records the successful checker.
 //!
-//! ## The two fragments (REQ-7)
-//!
-//! - **QF_LIA scalar** ([`SmtFragment::Lia`]): comparisons + boolean connectives +
-//!   linear integer arithmetic over `Int`. This is the PoC-proven shape
-//!   (`SmtDemo.lean`'s Tier-2/Tier-3 theorems), the contract sublanguage
-//!   `gen_comparison`/`gen_int` space. Rendered directly over Lean `Int`.
-//! - **QF_BV** ([`SmtFragment::Bv`]): the full fixed-width term fragment used by
-//!   [`crate::bitvector::BitVectorEngine`] (REQ-2), rendered directly over Lean
-//!   `BitVec N`.
-//!
-//! ## Literal QF_BV reconstruction
-//!
-//! The exported theorem is an equivalence between the production predicate and
-//! [`reference_normalize`]. That normalization uses only total-order duals,
-//! `≠` expansion, and commutativity of addition and multiplication. Lean proves
-//! those facts directly with `simp`, including when they occur below bitwise, shift,
-//! division, or remainder operations. This covers the complete QF_BV term surface
-//! without asking lean-smt to reconstruct cvc5's bit-blasting proof and without adding
-//! `bv_decide`'s native-reflection axiom.
-//!
-//! The Rust-emitter ↔ Lean-syntax correspondence remains inspection-tier, as described
-//! in `.design/verified/exporter-surface-correspondence.md`.
+//! The older translation-equivalence exporter remains below as a separate audit tool.
+//! It is not reconstruction evidence and is not consulted by certification.
 
 use std::collections::BTreeSet;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use thermite_syntax::{BinOp, BvWidth, Expr, Item, Program, UnaryOp};
 
 /// The SMT fragment a per-clause obligation is exported into
@@ -93,6 +68,55 @@ pub struct SmtEquivObligation {
     pub reference: Expr,
     /// The fragment (QF_LIA or QF_BV at a width).
     pub fragment: SmtFragment,
+}
+
+/// The solver route's `req → clause` theorem used for trust migration.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SmtValidityObligation {
+    /// Stable clause identity, used in the generated theorem name.
+    pub item: String,
+    /// Variables quantified by the solver query.
+    pub vars: Vec<String>,
+    /// The query precondition.
+    pub req: Expr,
+    /// The clause used by the solver route.
+    pub clause: Expr,
+    /// Integer or fixed-width semantics.
+    pub fragment: SmtFragment,
+}
+
+/// Evidence from a successful Lean replay.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReconstructionEvidence {
+    /// Generated Lean theorem name.
+    pub theorem: String,
+    /// SHA-256 of the complete generated Lean source.
+    pub source_sha256: String,
+    /// Stable fragment label (`qf_lia` or `qf_bvN`).
+    pub fragment: String,
+    /// Kernel-checked tactic/certificate path.
+    pub checker: String,
+    /// Axioms reported by Lean, after validation against the standard allowlist.
+    pub axioms: Vec<String>,
+    /// SHA-256 of the exact SMT-LIB query, when the solver route exposes one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub solver_query_sha256: Option<String>,
+}
+
+/// The result of attempting a validity replay.
+///
+/// Only [`ReconstructionOutcome::Checked`] authorizes kernel trust. Other
+/// variants preserve the reason replay did not succeed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReconstructionOutcome {
+    /// Lean accepted the actual validity theorem and its axiom report passed.
+    Checked(ReconstructionEvidence),
+    /// The actual precondition or clause cannot be represented in this fragment.
+    Unsupported(String),
+    /// Lean/Lake or the pinned Lean package could not be invoked.
+    Unavailable(String),
+    /// Lean ran but did not accept the theorem or its axiom report.
+    Failed(String),
 }
 
 /// `2^width` as a `u128`. `width ≤ 64`, so `1u128 << 64` stays well inside `u128`.
@@ -242,6 +266,357 @@ pub fn render_goal(o: &SmtEquivObligation) -> Result<String, SmtExportError> {
     let prod = render_prop(&o.prod, o.fragment)?;
     let reference = render_prop(&o.reference, o.fragment)?;
     Ok(format!("{prod} ↔ {reference}"))
+}
+
+/// Render the actual clause-validity goal `req → clause`.
+pub fn render_validity_goal(o: &SmtValidityObligation) -> Result<String, SmtExportError> {
+    let req = render_prop(&o.req, o.fragment)?;
+    let clause = render_prop(&o.clause, o.fragment)?;
+    Ok(format!("{req} → {clause}"))
+}
+
+fn fragment_label(fragment: SmtFragment) -> String {
+    match fragment {
+        SmtFragment::Lia => "qf_lia".to_string(),
+        SmtFragment::Bv(width) => format!("qf_bv{}", width.bits()),
+    }
+}
+
+fn validity_theorem_name(o: &SmtValidityObligation, goal: &str) -> String {
+    let mut hash = Sha256::new();
+    hash.update(fragment_label(o.fragment));
+    hash.update([0]);
+    hash.update(goal);
+    let suffix: String = hash
+        .finalize()
+        .iter()
+        .take(8)
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    format!("thermite_valid_{}_{}", lean_ident(&o.item), suffix)
+}
+
+fn valid_lean_binder(name: &str) -> bool {
+    let mut chars = name.chars();
+    matches!(chars.next(), Some(first) if first.is_ascii_alphabetic() || first == '_')
+        && chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+        && !matches!(
+            name,
+            "by" | "do"
+                | "else"
+                | "end"
+                | "false"
+                | "for"
+                | "fun"
+                | "if"
+                | "in"
+                | "let"
+                | "match"
+                | "namespace"
+                | "open"
+                | "theorem"
+                | "true"
+                | "where"
+                | "with"
+        )
+}
+
+/// Emit the self-contained Lean module used for validity replay.
+fn export_validity_theorem_with_tactic(
+    o: &SmtValidityObligation,
+    bv_tactic: Option<&str>,
+    include_bv_helpers: bool,
+) -> Result<(String, String), SmtExportError> {
+    if let Some(name) = o.vars.iter().find(|name| !valid_lean_binder(name)) {
+        return Err(SmtExportError::OutOfFragment(format!(
+            "`{name}` is not a safe Lean binder identifier"
+        )));
+    }
+    let goal = render_validity_goal(o)?;
+    let name = validity_theorem_name(o, &goal);
+    let (binder, tactic) = match o.fragment {
+        SmtFragment::Lia => {
+            let binder = if o.vars.is_empty() {
+                String::new()
+            } else {
+                format!(" ({} : Int)", o.vars.join(" "))
+            };
+            (binder, "omega")
+        }
+        SmtFragment::Bv(width) => {
+            let binder = if o.vars.is_empty() {
+                String::new()
+            } else {
+                format!(" ({} : BitVec {})", o.vars.join(" "), width.bits())
+            };
+            (
+                binder,
+                bv_tactic.unwrap_or("bv_reconstruct (timeout := 30)"),
+            )
+        }
+    };
+    let bv_helpers = if include_bv_helpers && matches!(o.fragment, SmtFragment::Bv(_)) {
+        r#"
+theorem thermite_rotateRight_rotateLeft {w : Nat} (x : BitVec w) (r : Nat) :
+    (x.rotateLeft r).rotateRight r = x := by
+  cases w with
+  | zero => exact Subsingleton.elim _ _
+  | succ w =>
+    apply BitVec.eq_of_getLsbD_eq
+    intro i hi
+    have hr : r % (w + 1) < w + 1 := Nat.mod_lt _ (by omega)
+    simp only [BitVec.getLsbD_rotateRight, BitVec.getLsbD_rotateLeft]
+    by_cases h : i < w + 1 - r % (w + 1)
+    · simp [h]
+      omega
+    · simp [h, hi]
+      have heq : w + 1 - r % (w + 1) + (i - (w + 1 - r % (w + 1))) = i := by omega
+      have hlt : i - (w + 1 - r % (w + 1)) < r % (w + 1) := by omega
+      simp [hlt, heq, ← BitVec.getLsbD_eq_getElem]
+
+theorem thermite_rotateLeft_injective {w : Nat} (r : Nat) :
+    Function.Injective (fun x : BitVec w => x.rotateLeft r) := by
+  intro x y h
+  have h' := congrArg (fun z : BitVec w => z.rotateRight r) h
+  simpa only [thermite_rotateRight_rotateLeft] using h'
+"#
+    } else {
+        ""
+    };
+    let source = format!(
+        "import Mathlib.Tactic\n\
+         import Thermite.Reconstruct\n\n\
+         namespace Thermite.Reconstruction\n\
+         {bv_helpers}\n\
+         set_option maxRecDepth 1000000\n\
+         set_option maxHeartbeats 2000000 in\n\
+         theorem {name}{binder} :\n    {goal} := by\n  {tactic}\n\
+         #print axioms {name}\n\n\
+         end Thermite.Reconstruction\n"
+    );
+    Ok((name, source))
+}
+
+/// Emit the first-choice source so rendering tests can inspect the generated goal.
+#[cfg(test)]
+fn export_validity_theorem(o: &SmtValidityObligation) -> Result<(String, String), SmtExportError> {
+    export_validity_theorem_with_tactic(o, None, false)
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    let digest = Sha256::digest(bytes);
+    digest.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+fn lake_binary() -> PathBuf {
+    if let Some(home) = std::env::var_os("HOME") {
+        let elan = PathBuf::from(home).join(".elan/bin/lake");
+        if elan.exists() {
+            return elan;
+        }
+    }
+    PathBuf::from("lake")
+}
+
+fn lean_package_root() -> PathBuf {
+    std::env::var_os("THERMITE_LEAN_ROOT").map_or_else(
+        || PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../lean"),
+        PathBuf::from,
+    )
+}
+
+const RECONSTRUCTION_AXIOM_ALLOWLIST: &[&str] = &["propext", "Classical.choice", "Quot.sound"];
+
+fn parse_and_validate_axioms(output: &str, theorem: &str) -> Result<Vec<String>, String> {
+    let theorem_at = output
+        .find(theorem)
+        .ok_or_else(|| format!("missing anchored `#print axioms {theorem}` report"))?;
+    let report = &output[theorem_at..];
+    let report_head = report
+        .lines()
+        .next()
+        .ok_or_else(|| format!("empty `#print axioms {theorem}` report"))?;
+    if report_head.contains("does not depend on any axioms") {
+        return Ok(Vec::new());
+    }
+    if !report_head.contains("depends on axioms:") {
+        return Err(format!("missing anchored `#print axioms {theorem}` report"));
+    }
+    // Lean may wrap the report, so parse through its closing bracket.
+    let list = report
+        .split_once('[')
+        .and_then(|(_, rest)| rest.split_once(']'))
+        .map(|(inside, _)| inside)
+        .ok_or_else(|| format!("malformed axiom report: {report_head}"))?;
+    let axioms: Vec<String> = list
+        .split(',')
+        .map(str::trim)
+        .filter(|axiom| !axiom.is_empty())
+        .map(ToOwned::to_owned)
+        .collect();
+    if let Some(axiom) = axioms
+        .iter()
+        .find(|axiom| !RECONSTRUCTION_AXIOM_ALLOWLIST.contains(&axiom.as_str()))
+    {
+        return Err(format!(
+            "theorem `{theorem}` depends on non-allowlisted axiom `{axiom}`"
+        ));
+    }
+    Ok(axioms)
+}
+
+fn replay_validity_source(lean_root: &Path, theorem: &str, source: &str) -> ReconstructionOutcome {
+    let lake = lake_binary();
+    let mut child = match Command::new(&lake)
+        .arg("env")
+        .arg("lean")
+        .arg("--stdin")
+        // Full-surface QF_BV goals need more interpreter stack than Lean's default.
+        .arg("--tstack=65536")
+        .current_dir(lean_root)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(error) => {
+            return ReconstructionOutcome::Unavailable(format!(
+                "could not invoke `{}` for Lean reconstruction: {error}",
+                lake.display()
+            ))
+        }
+    };
+    let Some(mut stdin) = child.stdin.take() else {
+        return ReconstructionOutcome::Unavailable(
+            "the Lean reconstruction process did not expose stdin".to_string(),
+        );
+    };
+    if let Err(error) = stdin.write_all(source.as_bytes()) {
+        return ReconstructionOutcome::Unavailable(format!(
+            "could not send the validity theorem to Lean: {error}"
+        ));
+    }
+    drop(stdin);
+    let output = match child.wait_with_output() {
+        Ok(output) => output,
+        Err(error) => {
+            return ReconstructionOutcome::Unavailable(format!(
+                "could not collect the Lean reconstruction result: {error}"
+            ))
+        }
+    };
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    if !output.status.success() {
+        let head: String = combined.chars().take(600).collect();
+        return ReconstructionOutcome::Failed(format!(
+            "Lean rejected the actual validity theorem `{theorem}`: {head}"
+        ));
+    }
+    match parse_and_validate_axioms(&combined, theorem) {
+        Ok(axioms) => ReconstructionOutcome::Checked(ReconstructionEvidence {
+            theorem: theorem.to_string(),
+            source_sha256: sha256_hex(source.as_bytes()),
+            fragment: String::new(),
+            checker: String::new(),
+            axioms,
+            solver_query_sha256: None,
+        }),
+        Err(reason) => ReconstructionOutcome::Failed(reason),
+    }
+}
+
+/// Replay a clause theorem in Lean and validate its axiom report.
+///
+/// When available, `solver_query` is hashed into the evidence.
+#[must_use]
+pub fn reconstruct_validity(
+    obligation: &SmtValidityObligation,
+    solver_query: Option<&str>,
+) -> ReconstructionOutcome {
+    let fragment = fragment_label(obligation.fragment);
+    let lrat = (
+        "Lean kernel + proof-producing LRAT reconstruction",
+        Some("bv_reconstruct (timeout := 30)"),
+        false,
+    );
+    let simp = (
+        "Lean kernel + BitVec simplification",
+        Some(
+            "simp [BitVec.sub_eq_add_neg, BitVec.neg_eq_not_add, \
+             BitVec.add_comm, BitVec.mul_comm, BitVec.and_comm, \
+             BitVec.or_comm, BitVec.xor_assoc]",
+        ),
+        false,
+    );
+    let grind = ("Lean kernel + grind", Some("grind"), false);
+    let rotate = (
+        "Lean kernel + rotate-left injectivity lemma",
+        Some(
+            "intro thermite_ne thermite_eq\n  \
+             apply thermite_ne\n  \
+             apply thermite_rotateLeft_injective 1\n  \
+             simpa only [BitVec.rotateLeft_def] using thermite_eq",
+        ),
+        true,
+    );
+    let attempts: Vec<(&str, Option<&str>, bool)> = match obligation.fragment {
+        SmtFragment::Lia => vec![(
+            "Lean kernel + omega (verified Presburger procedure)",
+            None,
+            false,
+        )],
+        SmtFragment::Bv(_) => {
+            // Library lemmas reduce broad operator-surface conjunctions cheaply.
+            // Try them before asking the LRAT path to bitblast the whole bundle.
+            let is_surface_bundle =
+                render_validity_goal(obligation).is_ok_and(|goal| goal.matches('∧').count() >= 4);
+            if is_surface_bundle {
+                vec![simp, grind, lrat, rotate]
+            } else {
+                vec![lrat, simp, grind, rotate]
+            }
+        }
+    };
+    let mut failures = Vec::new();
+    for (checker, tactic, helpers) in attempts {
+        let (theorem, source) =
+            match export_validity_theorem_with_tactic(obligation, tactic, helpers) {
+                Ok(exported) => exported,
+                Err(error) => return ReconstructionOutcome::Unsupported(error.to_string()),
+            };
+        let outcome = match replay_validity_source(&lean_package_root(), &theorem, &source) {
+            ReconstructionOutcome::Checked(mut evidence) => {
+                evidence.fragment = fragment.clone();
+                evidence.checker = checker.to_string();
+                evidence.solver_query_sha256 =
+                    solver_query.map(|query| sha256_hex(query.as_bytes()));
+                ReconstructionOutcome::Checked(evidence)
+            }
+            ReconstructionOutcome::Unavailable(reason) => {
+                return ReconstructionOutcome::Unavailable(reason)
+            }
+            ReconstructionOutcome::Failed(reason) => {
+                failures.push(format!("{checker}: {reason}"));
+                continue;
+            }
+            ReconstructionOutcome::Unsupported(reason) => {
+                return ReconstructionOutcome::Unsupported(reason)
+            }
+        };
+        if std::env::var_os("THERMITE_TRACE_RECONSTRUCTION").is_some() {
+            eprintln!(
+                "reconstruction theorem `{theorem}` ({fragment}) via {checker}: \
+                 {outcome:?}\n--- Lean source ---\n{source}"
+            );
+        }
+        return outcome;
+    }
+    ReconstructionOutcome::Failed(failures.join("\n"))
 }
 
 /// Lemmas needed for the commutative rewrites performed by [`reference_normalize`].
@@ -447,22 +822,6 @@ pub fn free_vars(e: &Expr) -> Vec<String> {
     acc.into_iter().collect()
 }
 
-/// Is a per-clause predicate inside the RECONSTRUCTION-supported fragment
-/// (`.design/stage3-bv-reconstruction.md` REQ-8 / AC-9 — the fragment-support check
-/// REQ-8's trust migration keys on)? `true` iff the exporter renders this clause's
-/// `(P_prod) ⟺ (P_ref)` translation-validation goal without [`SmtExportError`] in the
-/// given fragment. QF_LIA covers its scalar arithmetic subset. QF_BV covers the full
-/// fixed-width term surface: wrapping arithmetic, bitwise operators, shifts, unsigned
-/// division and remainder, comparisons, and logical connectives.
-///
-/// Renderability IS the reconstruction-support signal: a clause this returns `true` for
-/// has an axiom-clean proof shape in the committed `lean/Thermite/SmtExport.lean`.
-/// Total + deterministic (R-CODE-5): a leaf the renderer would refuse is refused here.
-#[must_use]
-pub fn clause_reconstruction_supported(prod: &Expr, fragment: SmtFragment) -> bool {
-    render_goal(&obligation_for_predicate("clause", prod, fragment)).is_ok()
-}
-
 /// Mint an equivalence obligation for a production predicate by pairing it with its
 /// [`reference_normalize`] encoding (`.design/stage3-bv-reconstruction.md` REQ-7).
 /// The binder set is the predicate's [`free_vars`]; the fragment is the caller's.
@@ -629,41 +988,187 @@ mod tests {
         assert_eq!(reference_normalize(&var("x")), var("x"));
     }
 
-    // REQ-8 / AC-9: the per-clause support check covers the complete QF_BV term
-    // surface, while QF_LIA retains its smaller scalar fragment.
+    // REQ-8 / AC-9: validity export covers the complete QF_BV term surface and the
+    // QF_LIA scalar surface. This is a rendering test only; kernel trust is tested
+    // separately from a `ReconstructionOutcome::Checked` replay.
     #[test]
-    fn clause_reconstruction_supported_keys_on_the_renderable_fragment() {
+    fn validity_export_covers_lia_and_bv_surfaces() {
+        let req = Expr::BoolLit(true);
+        let render = |clause: Expr, fragment| {
+            export_validity_theorem(&SmtValidityObligation {
+                item: "clause".to_string(),
+                vars: free_vars(&clause),
+                req: req.clone(),
+                clause,
+                fragment,
+            })
+        };
         let add = ens_expr(
             "fn p(a: u64, b: u64) -> u64 req true ens a + b == b + a fx pure { a }",
             "p",
         );
         assert!(
-            clause_reconstruction_supported(&add, SmtFragment::Bv(BvWidth::W64)),
-            "wrapping arithmetic is reconstruction-supported"
+            render(add, SmtFragment::Bv(BvWidth::W64)).is_ok(),
+            "wrapping arithmetic has a validity theorem"
         );
         let xor = ens_expr(
             "fn p(a: u64, b: u64) -> u64 req true ens a ^ b ^ b == a fx pure { a }",
             "p",
         );
         assert!(
-            clause_reconstruction_supported(&xor, SmtFragment::Bv(BvWidth::W64)),
-            "bitwise terms are reconstructed literally"
+            render(xor, SmtFragment::Bv(BvWidth::W64)).is_ok(),
+            "bitwise terms have a literal BitVec validity theorem"
         );
-        // A QF_LIA scalar comparison is supported too.
         let lia = ens_expr(
             "fn p(a: u64, b: u64) -> u64 req true ens a <= b fx pure { a }",
             "p",
         );
-        assert!(clause_reconstruction_supported(&lia, SmtFragment::Lia));
-        // Shift terms use a BitVec shift amount, matching SMT-LIB `bvshl`.
+        assert!(render(lia, SmtFragment::Lia).is_ok());
         let shift = ens_expr(
             "fn p(a: u64, b: u64) -> u64 req true ens (a << b) == a fx pure { a }",
             "p",
         );
-        assert!(clause_reconstruction_supported(
-            &shift,
-            SmtFragment::Bv(BvWidth::W64)
-        ));
+        assert!(render(shift, SmtFragment::Bv(BvWidth::W64)).is_ok());
+    }
+
+    #[test]
+    fn axiom_reports_are_anchored_allowlisted_and_multiline() {
+        let theorem = "thermite_valid_example";
+        let wrapped = "\
+info: 'thermite_valid_example' depends on axioms: [propext,\n\
+  Classical.choice,\n\
+  Quot.sound]\n";
+        assert_eq!(
+            parse_and_validate_axioms(wrapped, theorem).unwrap(),
+            vec!["propext", "Classical.choice", "Quot.sound"]
+        );
+
+        let injected = "info: 'thermite_valid_example' depends on axioms: [propext, sorryAx]\n";
+        let error = parse_and_validate_axioms(injected, theorem)
+            .expect_err("a non-standard axiom must block reconstruction");
+        assert!(error.contains("sorryAx"));
+
+        let wrong_theorem = "info: 'some_other_theorem' depends on axioms: [propext]\n";
+        assert!(
+            parse_and_validate_axioms(wrong_theorem, theorem).is_err(),
+            "an unrelated axiom report is not evidence for this theorem"
+        );
+    }
+
+    #[cfg(feature = "bv")]
+    #[test]
+    fn live_validity_replay_checks_lia_and_rejects_false_goals() {
+        let req = ens_expr(
+            "fn p(a: u64, b: u64) -> u64 req true ens a <= b fx pure { a }",
+            "p",
+        );
+        let clause = ens_expr(
+            "fn p(a: u64, b: u64) -> u64 req true ens a + 1 <= b + 1 fx pure { a }",
+            "p",
+        );
+        let valid = reconstruct_validity(
+            &SmtValidityObligation {
+                item: "lia_monotone".to_string(),
+                vars: vec!["a".to_string(), "b".to_string()],
+                req,
+                clause,
+                fragment: SmtFragment::Lia,
+            },
+            None,
+        );
+        let ReconstructionOutcome::Checked(evidence) = valid else {
+            panic!("the actual QF_LIA implication must reconstruct: {valid:?}");
+        };
+        assert_eq!(evidence.fragment, "qf_lia");
+        assert!(evidence.checker.contains("omega"));
+        assert!(evidence.solver_query_sha256.is_none());
+
+        let false_clause = ens_expr("fn p(a: u64) -> u64 req true ens a < a fx pure { a }", "p");
+        let invalid = reconstruct_validity(
+            &SmtValidityObligation {
+                item: "lia_false".to_string(),
+                vars: vec!["a".to_string()],
+                req: Expr::BoolLit(true),
+                clause: false_clause,
+                fragment: SmtFragment::Lia,
+            },
+            None,
+        );
+        assert!(
+            !matches!(invalid, ReconstructionOutcome::Checked(_)),
+            "renderability cannot turn a false theorem into checked evidence: {invalid:?}"
+        );
+    }
+
+    #[cfg(feature = "bv")]
+    #[test]
+    fn live_bv_replay_checks_the_complete_literal_surface_and_hashes_the_query() {
+        let clause = ens_expr(
+            "fn p(a: u64, b: u64) -> u64 req true \
+             ens a + b == b + a \
+                 && a - 0 == a \
+                 && a * b == b * a \
+                 && (a & b) == (b & a) \
+                 && (a | b) == (b | a) \
+                 && (a ^ b ^ b) == a \
+                 && (a << 0) == a \
+                 && (a >> 0) == a \
+                 && (a / 0) == !0 \
+                 && (a % 0) == a \
+                 && !(a != a) \
+                 && !(a < a) \
+                 && a <= a \
+                 && !(a > a) \
+                 && a >= a \
+                 && (a == a || a == b) \
+             fx pure { a }",
+            "p",
+        );
+        let query = "(set-logic QF_BV)\n; exact query bytes\n";
+        let outcome = reconstruct_validity(
+            &SmtValidityObligation {
+                item: "bv8_surface".to_string(),
+                vars: vec!["a".to_string(), "b".to_string()],
+                req: Expr::BoolLit(true),
+                clause,
+                fragment: SmtFragment::Bv(BvWidth::W8),
+            },
+            Some(query),
+        );
+        let ReconstructionOutcome::Checked(evidence) = outcome else {
+            panic!("the complete literal QF_BV surface must reconstruct: {outcome:?}");
+        };
+        assert_eq!(evidence.fragment, "qf_bv8");
+        assert!(
+            evidence.checker.contains("LRAT")
+                || evidence.checker.contains("simplification")
+                || evidence.checker.contains("grind"),
+            "the evidence names the strategy that actually succeeded: {}",
+            evidence.checker
+        );
+        assert_eq!(
+            evidence.solver_query_sha256,
+            Some(sha256_hex(query.as_bytes()))
+        );
+        assert!(evidence
+            .axioms
+            .iter()
+            .all(|axiom| RECONSTRUCTION_AXIOM_ALLOWLIST.contains(&axiom.as_str())));
+    }
+
+    #[test]
+    fn unsafe_binder_is_unsupported_before_replay() {
+        let outcome = reconstruct_validity(
+            &SmtValidityObligation {
+                item: "unsafe_binder".to_string(),
+                vars: vec!["bad-name".to_string()],
+                req: Expr::BoolLit(true),
+                clause: Expr::BoolLit(true),
+                fragment: SmtFragment::Lia,
+            },
+            None,
+        );
+        assert!(matches!(outcome, ReconstructionOutcome::Unsupported(_)));
     }
 
     // REQ-7: the file-driven exporter mints a QF_LIA obligation per renderable `ens`

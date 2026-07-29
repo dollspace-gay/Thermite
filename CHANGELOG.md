@@ -11,11 +11,34 @@ merge time).
 
 ## [Unreleased]
 
-### Next — Stage 3 → Gate G3
-- `@bv` clause mode + a reconstruction kernel that **kernel-grounds the
-  solver-trusted rel/array atoms** which G2 left model-relative. This closes the
-  one trust boundary Stage 2 scoped out. Design re-pass pending; see
-  `.design/stage3-bv-reconstruction.md`.
+## Gate G3 — Stage 3: fixed-width clauses and checked reconstruction (2026-07-29)
+
+Stage 3 completes the RFC-1 program. Fixed-width arithmetic is explicit at the
+clause boundary, and supported solver results are replayed as Lean theorems
+before their trust profile changes.
+
+### Added
+
+- `ens@bvN`, `inv@bvN`, and `@bvN(nowrap)` for 8-, 16-, 32-, and 64-bit
+  unsigned semantics.
+- Fixed-width lowering for postconditions, lemma conclusions, struct
+  invariants, and nested loop invariants.
+- Per-clause `bv_shadow` records, width-aware mutation checks, fail-closed
+  nowrap obligations, and audit/review density reporting.
+- Default Lean replay of the solver route's `req → clause` theorem for QF_LIA and
+  QF_BV. Certificates record the theorem, checker, source hash, axiom report,
+  and the exact solver-input hash when the route exposes it.
+- An axiom-clean LRAT reconstruction tactic and permanent 64-bit probe.
+- The `g3` CI job, which runs both release parser configurations, the live
+  fixed-width route, invariant checks, reconstruction tests, and the Lean
+  axiom probe in one gate.
+
+### Trust boundary
+
+A clause moves from solver trust only after Lean accepts its validity theorem
+with axioms contained in `{propext, Classical.choice, Quot.sound}`. Unsupported
+or failed replay remains solver-trusted and is listed by the audit.
+EPR-stratified relation and array atoms remain model-relative.
 
 ## Gate G2 — Stage 2: the stratified-FOL cage (2026-06-22)
 

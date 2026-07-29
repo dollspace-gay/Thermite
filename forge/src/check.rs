@@ -1447,7 +1447,7 @@ fn nlsat_item_cert(
         );
     }
     match engine.discharge_relax(f) {
-        NlsatOutcome::Proved => nlsat_l4_cert(engine, &base),
+        NlsatOutcome::Proved => nlsat_l4_cert(engine, f, &base),
         NlsatOutcome::Counterexample { integer_point } => {
             nlsat_counterexample_cert(engine, &base, &integer_point)
         }
@@ -1474,23 +1474,35 @@ fn nlsat_item_cert(
 /// integer clause holds — the item certifies at L4 with the `engine: nlsat`
 /// attribution (the trust profile is solver(nlsat) + spine-lemma(kernel)). The
 /// per-clause verdict is [`CertVerdict::Proved`].
-fn nlsat_l4_cert(engine: &crate::engine::NlsatEngine, base: &Certificate) -> Certificate {
+fn nlsat_l4_cert(
+    engine: &crate::engine::NlsatEngine,
+    f: &thermite_syntax::FnItem,
+    base: &Certificate,
+) -> Certificate {
     let attribution = crate::engine::attribution_for(engine);
+    let solver_input = crate::relax::nlsat_solver_input(f);
+    let obligations = f
+        .contract
+        .ens
+        .iter()
+        .enumerate()
+        .map(|(index, clause)| {
+            lia_proved_obl(
+                &f.name,
+                index,
+                f,
+                &clause.expr,
+                &attribution,
+                solver_input.as_deref(),
+            )
+        })
+        .collect();
     Certificate::new(
         base.item.clone(),
         Level::L4,
         base.effects.clone(),
         0,
-        vec![ObligationResult::discharged(
-            "discharged by the nlsat relax route (the real relaxation is QF_NRA-valid by \
-             the Z3 nlsat tactic; integer-valid by the kernel-checked r_relax_sound — \
-             L4 kernel-grounded; stage1-forge-tier.md REQ-8)",
-        )
-        .with_clause_attribution(
-            attribution.engine.clone(),
-            attribution.trust_profile.clone(),
-            crate::verdict::CertVerdict::Proved,
-        )],
+        obligations,
     )
     .graduate_triage_clean()
     .with_engine_attribution(attribution)
@@ -1629,7 +1641,31 @@ fn bv_check(base: Vec<Certificate>, program: &Program) -> Vec<Certificate> {
     for cert in base {
         match crate::lean_export::find_item(program, &cert.item) {
             Some(Item::Fn(f)) if fn_has_bv_tag(f) => {
-                out.push(bv_fn_cert(&bv, &nlsat, f, &cert, &adt_deps))
+                let invariant_tags = fn_bv_invariant_tags(f);
+                let base_proved = cert.level == Level::L3 && cert.reject.is_none();
+                let rebuilt = if fn_has_bv_ens_tag(f) && (invariant_tags.is_empty() || base_proved)
+                {
+                    bv_fn_cert(&bv, &nlsat, f, &cert, &adt_deps)
+                } else {
+                    // The base Verus result includes initiation and preservation
+                    // for invariants lowered to fixed-width operations.
+                    cert
+                };
+                out.push(attach_bv_invariant_shadows(
+                    rebuilt,
+                    &invariant_tags,
+                    base_proved,
+                ));
+            }
+            Some(Item::Struct(s)) => {
+                let tags = s
+                    .inv
+                    .as_ref()
+                    .and_then(|inv| inv.bv)
+                    .map(|tag| vec![(format!("{}::inv#0", s.name), tag)])
+                    .unwrap_or_default();
+                let base_proved = cert.level == Level::L3 && cert.reject.is_none();
+                out.push(attach_bv_invariant_shadows(cert, &tags, base_proved));
             }
             _ => out.push(cert),
         }
@@ -1664,26 +1700,130 @@ fn lemma_has_bv_tag(l: &thermite_syntax::LemmaItem) -> bool {
     l.ens.iter().any(|c| c.bv.is_some())
 }
 
-/// Does the program carry any `@bv`-tagged clause (`.design/stage3-bv-reconstruction.md`
-/// REQ-3 / AC-4)? `true` iff some `fn`'s `ens` or some `lemma`'s `ens` is `@bv`-tagged.
-/// `forge audit` / `forge review` consult this to route a bit-vector project through the
-/// bv engine (so the shadow flags surface), while a tag-free program — every v1 / non-bv
-/// project — keeps the default Verus pipeline byte-identical. A tag only exists when the
-/// `bv` cargo feature is compiled in (REQ-1's parse gate), so a feature-off build always
-/// reads `false` here.
+/// Whether the program has a tagged postcondition, lemma conclusion, or invariant.
+/// Audit and review use this to select the route that emits `bv_shadow` records.
 pub fn program_has_bv_tag(program: &Program) -> bool {
     program.items.iter().any(|item| match item {
         Item::Fn(f) => fn_has_bv_tag(f),
+        Item::Struct(s) => s.inv.as_ref().is_some_and(|inv| inv.bv.is_some()),
         Item::Forge(thermite_syntax::ForgeItem::Lemma(l)) => lemma_has_bv_tag(l),
         _ => false,
     })
 }
 
-/// Does this `fn` carry at least one `@bv`-tagged `ens` clause? Only such a `fn` is
-/// re-derived by the bit-vector route (`bv_check`); an untagged `fn` keeps its base
-/// Verus cert so the auto-routed `forge audit`/`review` never downgrades it.
+/// Does this function contain any tagged postcondition or invariant?
 fn fn_has_bv_tag(f: &thermite_syntax::FnItem) -> bool {
+    fn_has_bv_ens_tag(f) || !fn_bv_invariant_tags(f).is_empty()
+}
+
+fn fn_has_bv_ens_tag(f: &thermite_syntax::FnItem) -> bool {
     f.contract.ens.iter().any(|c| c.bv.is_some())
+}
+
+/// Tagged loop invariants in address order.
+fn fn_bv_invariant_tags(f: &thermite_syntax::FnItem) -> Vec<(String, thermite_syntax::BvTag)> {
+    fn walk(
+        block: &thermite_syntax::Block,
+        item: &str,
+        loop_index: &mut usize,
+        out: &mut Vec<(String, thermite_syntax::BvTag)>,
+    ) {
+        for stmt in &block.stmts {
+            match stmt {
+                thermite_syntax::Stmt::If { then, else_, .. } => {
+                    walk(then, item, loop_index, out);
+                    if let Some(else_) = else_ {
+                        walk(else_, item, loop_index, out);
+                    }
+                }
+                thermite_syntax::Stmt::Loop(loop_node) => {
+                    let this_loop = *loop_index;
+                    *loop_index += 1;
+                    for (inv_index, inv) in loop_node.invs.iter().enumerate() {
+                        if let Some(tag) = inv.bv {
+                            out.push((format!("{item}::loop#{this_loop}::inv#{inv_index}"), tag));
+                        }
+                    }
+                    walk(&loop_node.body, item, loop_index, out);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let mut out = Vec::new();
+    let mut loop_index = 0;
+    if let Some(body) = &f.body {
+        walk(body, &f.name, &mut loop_index, &mut out);
+    }
+    out
+}
+
+/// Attach the visibility/trust record for invariants whose fixed-width semantics
+/// were checked inside the Verus VC.
+fn attach_bv_invariant_shadows(
+    mut cert: Certificate,
+    tags: &[(String, thermite_syntax::BvTag)],
+    base_proved: bool,
+) -> Certificate {
+    use crate::engine::Engine as _;
+
+    if tags.is_empty() {
+        return cert;
+    }
+    // Invariant initiation and preservation remain part of the L3 Verus VC.
+    if cert.level > Level::L3 {
+        cert.level = Level::L3;
+    }
+    let trust = crate::engine::VerusEngine.trust_profile().items;
+    for (name, tag) in tags {
+        let nowrap = tag.nowrap.then(|| {
+            if base_proved {
+                "discharged: Verus proved every checked uN invariant operation \
+                 stays in range"
+                    .to_string()
+            } else {
+                "not discharged: the Verus invariant VC did not prove the no-overflow \
+                 condition"
+                    .to_string()
+            }
+        });
+        let shadow = bv_shadow_for(tag, nowrap);
+        let obligation = if base_proved {
+            ObligationResult::discharged(format!(
+                "{name}: fixed-width invariant initiation/preservation proved by Verus \
+                 over literal u{} semantics",
+                tag.width.bits()
+            ))
+            .with_clause_attribution(
+                crate::engine::EngineName::Verus.tag(),
+                trust.clone(),
+                crate::verdict::CertVerdict::Proved,
+            )
+        } else {
+            ObligationResult::failed(
+                name,
+                None,
+                Some(
+                    "the fixed-width invariant initiation/preservation VC was not proved"
+                        .to_string(),
+                ),
+            )
+            .with_clause_attribution(
+                crate::engine::EngineName::Verus.tag(),
+                trust.clone(),
+                crate::verdict::CertVerdict::Stuck {
+                    goals: vec![format!(
+                        "{name}: fixed-width invariant initiation and preservation"
+                    )],
+                    hint: Some("inspect the original Verus rejection on this item".to_string()),
+                },
+            )
+        }
+        .with_bv_shadow(shadow);
+        cert.obligations.push(obligation);
+    }
+    cert
 }
 
 /// Does `e` reference the `result` keyword (`.design/stage3-bv-reconstruction.md`
@@ -1792,7 +1932,12 @@ fn bv_fn_cert(
                     // clause's `bv_shadow.nowrap_obligation`.
                     let nowrap = if tag.nowrap {
                         match bv_nowrap_verdict(bv, &vars, req, &clause_expr, tag.width) {
-                            NowrapVerdict::Holds(v) | NowrapVerdict::Undecided(v) => Some(v),
+                            NowrapVerdict::Holds(v) => Some(v),
+                            NowrapVerdict::Undecided(v) => {
+                                return bv_nowrap_undecided_cert(
+                                    &f.name, &effects, slag, k, tag, &v, &bv_attr,
+                                );
+                            }
                             NowrapVerdict::Overflow { verdict, bits } => {
                                 return bv_nowrap_overflow_cert(
                                     &f.name, &effects, slag, k, tag, &verdict, &bits, &bv_attr,
@@ -1803,11 +1948,15 @@ fn bv_fn_cert(
                         None
                     };
                     obligations.push(bv_proved_obl(
-                        &f.name,
-                        k,
-                        tag,
-                        &clause_expr,
-                        &bv_attr,
+                        BvProvedClause {
+                            item: &f.name,
+                            index: k,
+                            tag,
+                            vars: &vars,
+                            req,
+                            clause: &clause_expr,
+                            solver_attr: &bv_attr,
+                        },
                         nowrap,
                     ));
                     // A `@bv` clause is decidable QF_BV with complete bit-pattern
@@ -1841,7 +1990,15 @@ fn bv_fn_cert(
                 match nlsat.discharge_relax(&synth) {
                     NlsatOutcome::Proved => {
                         let attr = crate::engine::attribution_for(nlsat);
-                        obligations.push(bv_untagged_nlsat_obl(&f.name, k, &attr));
+                        let solver_input = crate::relax::nlsat_solver_input(&synth);
+                        obligations.push(lia_proved_obl(
+                            &f.name,
+                            k,
+                            &synth,
+                            &ens.expr,
+                            &attr,
+                            solver_input.as_deref(),
+                        ));
                         item_level = item_level.min(Level::L4);
                         item_attr.get_or_insert(attr);
                     }
@@ -2121,7 +2278,12 @@ fn bv_lemma_cert(
                 // verdict rides the clause's `bv_shadow.nowrap_obligation`.
                 let nowrap = if tag.nowrap {
                     match bv_nowrap_verdict(bv, &vars, req, &ens.expr, tag.width) {
-                        NowrapVerdict::Holds(v) | NowrapVerdict::Undecided(v) => Some(v),
+                        NowrapVerdict::Holds(v) => Some(v),
+                        NowrapVerdict::Undecided(v) => {
+                            return bv_nowrap_undecided_cert(
+                                &l.name, &effects, false, k, tag, &v, &bv_attr,
+                            );
+                        }
                         NowrapVerdict::Overflow { verdict, bits } => {
                             return bv_nowrap_overflow_cert(
                                 &l.name, &effects, false, k, tag, &verdict, &bits, &bv_attr,
@@ -2131,7 +2293,18 @@ fn bv_lemma_cert(
                 } else {
                     None
                 };
-                obligations.push(bv_proved_obl(&l.name, k, tag, &ens.expr, &bv_attr, nowrap));
+                obligations.push(bv_proved_obl(
+                    BvProvedClause {
+                        item: &l.name,
+                        index: k,
+                        tag,
+                        vars: &vars,
+                        req,
+                        clause: &ens.expr,
+                        solver_attr: &bv_attr,
+                    },
+                    nowrap,
+                ));
             }
             BvOutcome::Counterexample { bits } => {
                 return bv_counterexample_cert(&l.name, &effects, false, k, tag, &bits, &bv_attr);
@@ -2152,63 +2325,74 @@ fn bv_lemma_cert(
         .with_engine_attribution(bv_attr)
 }
 
-/// The per-clause [`ObligationResult`] a bit-vector `Proved` records (`.design/
-/// stage3-bv-reconstruction.md` REQ-2 / AC-2 + REQ-8 / AC-9): the engine (`bitvector`),
-/// the clause's trust base (migrated per REQ-8 — see below), the `Proved` verdict, and a
-/// name that states the engine and the fixed-width semantics ("each clause's certificate
-/// naming its engine and semantics").
+struct BvProvedClause<'a> {
+    item: &'a str,
+    index: usize,
+    tag: &'a thermite_syntax::BvTag,
+    vars: &'a [String],
+    req: &'a thermite_syntax::Expr,
+    clause: &'a thermite_syntax::Expr,
+    solver_attr: &'a crate::engine::EngineAttribution,
+}
+
+/// Build the result for a QF_BV clause that Z3 proved.
 ///
-/// REQ-8 default-on trust migration: `clause_expr` is the `result`-grounded clause body
-/// (the same expression the QF_BV query decided). The per-clause fragment-support check
-/// [`crate::lean_smt_export::clause_reconstruction_supported`] decides the trust base:
-///
-/// - a reconstruction-supported clause migrates its `trust:` to the kernel-checked
-///   literal-`BitVec N` base ([`crate::engine::bv_kernel_checked_trust_profile`]);
-/// - a clause with an expression outside the exporter's QF_BV surface keeps the solver
-///   base `solver_attr.trust_profile` (`Z3 QF_BV`).
-///
-/// The engine tag stays `bitvector` (the bit-vector route decided the clause); only the
-/// trust base — the orthogonal axis — moves. Default-on: no flag gates the migration.
+/// Lean replays the grounded `req → clause` theorem by default. Checked evidence
+/// selects kernel trust; every other replay outcome keeps the Z3 trust profile.
+/// The engine remains `bitvector` in either case.
 fn bv_proved_obl(
-    item: &str,
-    k: usize,
-    tag: &thermite_syntax::BvTag,
-    clause_expr: &thermite_syntax::Expr,
-    solver_attr: &crate::engine::EngineAttribution,
+    clause: BvProvedClause<'_>,
     nowrap_obligation: Option<String>,
 ) -> ObligationResult {
-    let supported = crate::lean_smt_export::clause_reconstruction_supported(
-        clause_expr,
-        crate::lean_smt_export::SmtFragment::Bv(tag.width),
+    let solver_query = crate::bitvector::validity_query(
+        clause.vars,
+        Some(clause.req),
+        clause.clause,
+        clause.tag.width,
+    )
+    .ok()
+    .map(|(query, _)| query);
+    let reconstruction = crate::lean_smt_export::reconstruct_validity(
+        &crate::lean_smt_export::SmtValidityObligation {
+            item: format!("{}_ens{}", clause.item, clause.index),
+            vars: clause.vars.to_vec(),
+            req: clause.req.clone(),
+            clause: clause.clause.clone(),
+            fragment: crate::lean_smt_export::SmtFragment::Bv(clause.tag.width),
+        },
+        solver_query.as_deref(),
     );
-    let (trust, trust_phrase) = if supported {
-        (
+    let (trust, trust_phrase) = match &reconstruction {
+        crate::lean_smt_export::ReconstructionOutcome::Checked(_) => (
             crate::engine::bv_kernel_checked_trust_profile().items,
-            "kernel-checked (the (P_prod) ⟺ (P_ref) obligation reconstructed in the Lean kernel \
-             over literal BitVec N semantics; Z3 no longer load-bearing — REQ-8 default-on)",
-        )
-    } else {
-        (
-            solver_attr.trust_profile.clone(),
-            "solver-trusted (Z3 QF_BV) — the clause expression is outside the \
-             reconstruction-supported QF_BV surface (F-J residual)",
-        )
+            "kernel-checked (Lean accepted the req → clause theorem and its axiom report; \
+             evidence includes the SMT-LIB query hash)",
+        ),
+        _ => (
+            clause.solver_attr.trust_profile.clone(),
+            "solver-trusted (Lean replay did not produce checked evidence)",
+        ),
     };
-    ObligationResult::discharged(format!(
-        "{item}::ens#{k}: discharged by the bit-vector route over {} (fixed-width \
+    let mut obligation = ObligationResult::discharged(format!(
+        "{}::ens#{}: discharged by the bit-vector route over {} (fixed-width \
          wraparound machine semantics; QF_BV-decidable with complete bit-pattern \
          countermodels — L4 caged rung, {trust_phrase}; stage3-bv-reconstruction.md \
          REQ-2 / REQ-8)",
-        bv_semantics_label(tag)
+        clause.item,
+        clause.index,
+        bv_semantics_label(clause.tag)
     ))
     .with_clause_attribution(
-        solver_attr.engine.clone(),
+        clause.solver_attr.engine.clone(),
         trust,
         crate::verdict::CertVerdict::Proved,
     )
-    // Lock 1 (REQ-3 / AC-4): the shadow flag rides every tagged clause's obligation;
-    // Lock 3 (REQ-5 / AC-6): a `nowrap` clause's no-overflow verdict rides it too.
-    .with_bv_shadow(bv_shadow_for(tag, nowrap_obligation))
+    // Every tagged clause records its width and any nowrap result.
+    .with_bv_shadow(bv_shadow_for(clause.tag, nowrap_obligation));
+    if let crate::lean_smt_export::ReconstructionOutcome::Checked(evidence) = reconstruction {
+        obligation = obligation.with_reconstruction(evidence);
+    }
+    obligation
 }
 
 /// The outcome of a `@bvN(nowrap)` clause's no-overflow side obligation (`.design/
@@ -2220,9 +2404,7 @@ enum NowrapVerdict {
     /// recorded in `bv_shadow.nowrap_obligation`; the cert certifies normally.
     Holds(String),
     /// The obligation could not be decided (Z3 absent, the multiplier cliff, or an
-    /// out-of-fragment operand). Recorded HONESTLY in `bv_shadow.nowrap_obligation` — the
-    /// main clause still certifies (an undecided side obligation is labeled, never
-    /// silently passed and never a false `nowrap` claim).
+    /// out-of-fragment operand). The caller records the reason and withholds.
     Undecided(String),
     /// A concrete overflowing input — the `nowrap` promise is violated, so the cert is
     /// rejected (a witnessed nowrap violation must not certify). The verdict + bit
@@ -2263,11 +2445,10 @@ fn bv_nowrap_verdict(
         },
         BvOutcome::Timeout { profile, detail } => NowrapVerdict::Undecided(format!(
             "undecided (Timeout under `{profile}`): {detail} — the `nowrap` side obligation \
-             was not decided; recorded honestly, never a false no-overflow claim"
+             was not decided"
         )),
         BvOutcome::Unknown(reason) => NowrapVerdict::Undecided(format!(
-            "undecided (skipped): {reason} — the `nowrap` side obligation was not decided; \
-             recorded honestly, never a false no-overflow claim"
+            "undecided (skipped): {reason} — the `nowrap` side obligation was not decided"
         )),
     }
 }
@@ -2280,6 +2461,45 @@ fn render_bv_pattern(bits: &[crate::bitvector::BvBitPattern]) -> String {
         .map(crate::bitvector::BvBitPattern::render)
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+/// Withhold certification when a `nowrap` side obligation is undecided.
+fn bv_nowrap_undecided_cert(
+    item: &str,
+    effects: &[String],
+    slag: bool,
+    k: usize,
+    tag: &thermite_syntax::BvTag,
+    verdict: &str,
+    attr: &crate::engine::EngineAttribution,
+) -> Certificate {
+    let detail = format!(
+        "`{item}`'s {} clause `ens#{k}` is machine-valid, but its requested `nowrap` \
+         side obligation was not decided: {verdict}. Certification is withheld until \
+         no-overflow is proved.",
+        bv_semantics_label(tag)
+    );
+    let obligation =
+        ObligationResult::failed(format!("{item}#ens#{k}#nowrap"), None, Some(detail.clone()))
+            .with_clause_attribution(
+                attr.engine.clone(),
+                attr.trust_profile.clone(),
+                crate::verdict::CertVerdict::Timeout {
+                    detail: verdict.to_string(),
+                },
+            )
+            .with_bv_shadow(bv_shadow_for(tag, Some(verdict.to_string())));
+    let mut cert = Certificate::rejected(
+        item.to_string(),
+        effects.to_vec(),
+        slag,
+        RejectReason {
+            cause: "BvNowrapUndecided".to_string(),
+            detail,
+        },
+    );
+    cert.obligations = vec![obligation];
+    cert.with_engine_attribution(attr.clone())
 }
 
 /// The rejection cert a FAILED `@bvN(nowrap)` no-overflow side obligation produces
@@ -2343,21 +2563,71 @@ fn bv_nowrap_overflow_cert(
 /// shape's third, unbounded clause). It carries the `nlsat` engine + the L4 kernel-
 /// grounded trust base, so the mixed-mechanism function attributes each clause to the
 /// engine that grounds it.
-fn bv_untagged_nlsat_obl(
+fn lia_replay_req(f: &thermite_syntax::FnItem) -> thermite_syntax::Expr {
+    use thermite_syntax::{BinOp, Expr};
+
+    crate::relax::integer_vars(f).into_iter().rev().fold(
+        f.contract.req.expr.clone(),
+        |req, variable| {
+            let nonnegative = Expr::Binary {
+                op: BinOp::Ge,
+                lhs: Box::new(Expr::Path(vec![variable])),
+                rhs: Box::new(Expr::IntLit {
+                    value: 0,
+                    raw: "0".to_string(),
+                }),
+            };
+            Expr::Binary {
+                op: BinOp::And,
+                lhs: Box::new(nonnegative),
+                rhs: Box::new(req),
+            }
+        },
+    )
+}
+
+fn lia_proved_obl(
     item: &str,
     k: usize,
+    f: &thermite_syntax::FnItem,
+    clause: &thermite_syntax::Expr,
     attr: &crate::engine::EngineAttribution,
+    solver_input: Option<&str>,
 ) -> ObligationResult {
-    ObligationResult::discharged(format!(
+    let reconstruction = crate::lean_smt_export::reconstruct_validity(
+        &crate::lean_smt_export::SmtValidityObligation {
+            item: format!("{item}_ens{k}"),
+            vars: crate::relax::integer_vars(f),
+            req: lia_replay_req(f),
+            clause: clause.clone(),
+            fragment: crate::lean_smt_export::SmtFragment::Lia,
+        },
+        solver_input,
+    );
+    let (trust, trust_phrase) = match &reconstruction {
+        crate::lean_smt_export::ReconstructionOutcome::Checked(_) => (
+            crate::engine::lia_kernel_checked_trust_profile().items,
+            "the actual QF_LIA req → clause theorem was kernel-checked by omega",
+        ),
+        _ => (
+            attr.trust_profile.clone(),
+            "the Lean validity replay produced no checked evidence, so nlsat trust remains",
+        ),
+    };
+    let mut obligation = ObligationResult::discharged(format!(
         "{item}::ens#{k}: untagged (unbounded) clause discharged by the nlsat relax route \
-         (unbounded-integer semantics; QF_NRA-valid → integer-valid by the kernel-checked \
-         r_relax_sound — L4 kernel-grounded; stage1-forge-tier.md REQ-8)"
+         (unbounded-integer semantics; {trust_phrase}; L4 caged rung; \
+         stage3-bv-reconstruction.md REQ-8)"
     ))
     .with_clause_attribution(
         attr.engine.clone(),
-        attr.trust_profile.clone(),
+        trust,
         crate::verdict::CertVerdict::Proved,
-    )
+    );
+    if let crate::lean_smt_export::ReconstructionOutcome::Checked(evidence) = reconstruction {
+        obligation = obligation.with_reconstruction(evidence);
+    }
+    obligation
 }
 
 /// The `bvN` (`nowrap`) semantics label of a tag (`.design/stage3-bv-reconstruction.md`
@@ -2671,20 +2941,15 @@ fn forge_gate_item_cert(
             match nlsat.discharge_relax(&synth) {
                 crate::engine::NlsatOutcome::Proved => {
                     let attribution = crate::engine::attribution_for(nlsat);
-                    obligations.push(
-                        ObligationResult::discharged(format!(
-                            "{}::ens#{k}: relaxable polynomial side-condition discharged by the \
-                             nlsat relax route (QF_NRA-valid by the Z3 nlsat tactic; \
-                             integer-valid by the kernel-checked r_relax_sound — L4 \
-                             kernel-grounded; stage1-forge-tier.md REQ-8/REQ-10)",
-                            f.name
-                        ))
-                        .with_clause_attribution(
-                            attribution.engine.clone(),
-                            attribution.trust_profile.clone(),
-                            crate::verdict::CertVerdict::Proved,
-                        ),
-                    );
+                    let solver_input = crate::relax::nlsat_solver_input(&synth);
+                    obligations.push(lia_proved_obl(
+                        &f.name,
+                        k,
+                        &synth,
+                        &ens.expr,
+                        &attribution,
+                        solver_input.as_deref(),
+                    ));
                     item_level = item_level.min(Level::L4);
                 }
                 other => {
@@ -6523,8 +6788,8 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
 
     // ───────────────────────────────────────────────────────────────────────────
     // REQ-8 / AC-9 (stage-3 reconstruction default-on — the per-clause trust migration).
-    // `bv_proved_obl` is PURE (no solver): it keys the trust base off the per-clause
-    // fragment-support check, so the migration is unit-testable without z3.
+    // These are live Lean replays. A clause migrates only when its actual validity
+    // theorem produces checked evidence.
     // ───────────────────────────────────────────────────────────────────────────
 
     /// REQ-8 / AC-9: arithmetic and bitwise `@bv` clauses both migrate to the
@@ -6548,6 +6813,8 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
             span: thermite_syntax::Span::new(0, 0),
         };
         let attr = bv_attribution();
+        let vars = vec!["a".to_string(), "b".to_string()];
+        let req = Expr::BoolLit(true);
 
         // mix64::ens#0 — `a + b == b + a` (wraparound-add commutativity): supported.
         let add = bin(
@@ -6555,7 +6822,18 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
             bin(BinOp::Add, var("a"), var("b")),
             bin(BinOp::Add, var("b"), var("a")),
         );
-        let supported = bv_proved_obl("mix64", 0, &tag, &add, &attr, None);
+        let supported = bv_proved_obl(
+            BvProvedClause {
+                item: "mix64",
+                index: 0,
+                tag: &tag,
+                vars: &vars,
+                req: &req,
+                clause: &add,
+                solver_attr: &attr,
+            },
+            None,
+        );
         assert!(
             crate::engine::trust_is_kernel_checked(&supported.trust),
             "the arith clause's trust migrates to the kernel-checked base (REQ-8)"
@@ -6569,7 +6847,11 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
         );
         assert!(
             !supported.trust.iter().any(|t| t.contains("Z3 QF_BV")),
-            "Z3 is no longer load-bearing for the reconstruction-supported clause"
+            "Z3 is no longer load-bearing for the reconstructed clause"
+        );
+        assert!(
+            supported.reconstruction.is_some(),
+            "migration carries the checked theorem evidence"
         );
 
         // mix64::ens#1 — `a ^ b ^ b == a` (xor self-inverse): supported literally.
@@ -6582,7 +6864,18 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
             ),
             var("a"),
         );
-        let bitwise = bv_proved_obl("mix64", 1, &tag, &xor, &attr, None);
+        let bitwise = bv_proved_obl(
+            BvProvedClause {
+                item: "mix64",
+                index: 1,
+                tag: &tag,
+                vars: &vars,
+                req: &req,
+                clause: &xor,
+                solver_attr: &attr,
+            },
+            None,
+        );
         assert!(
             crate::engine::trust_is_kernel_checked(&bitwise.trust),
             "the bitwise clause migrates to the literal BitVec kernel path"
@@ -6591,12 +6884,160 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
             !bitwise.trust.iter().any(|t| t.contains("Z3 QF_BV")),
             "the bitwise clause no longer names the solver base"
         );
+        assert!(
+            bitwise.reconstruction.is_some(),
+            "the xor clause carries its checked theorem evidence"
+        );
 
         // Both invariants hold across the split: the engine tag stays `bitvector` (only the
         // orthogonal trust axis moved) and Lock 1's shadow flag rides both obligations.
         assert_eq!(supported.engine.as_deref(), Some("bitvector"));
         assert_eq!(bitwise.engine.as_deref(), Some("bitvector"));
         assert!(supported.bv_shadow.is_some() && bitwise.bv_shadow.is_some());
+
+        let parsed = thermite_syntax::parse(
+            "fn linear(a: u64, b: u64) -> u64 req a <= b \
+             ens a + 1 <= b + 1 fx pure { a }",
+        );
+        assert!(
+            parsed.is_clean(),
+            "linear fixture parses: {:?}",
+            parsed.errors
+        );
+        let linear = parsed
+            .program
+            .items
+            .iter()
+            .find_map(|item| match item {
+                thermite_syntax::Item::Fn(function) => Some(function),
+                _ => None,
+            })
+            .expect("linear fixture has a function");
+        let nlsat = crate::engine::NlsatEngine::new(parsed.program.clone());
+        let base = Certificate::new(
+            &linear.name,
+            Level::L3,
+            vec!["pure".to_string()],
+            0,
+            vec![ObligationResult::discharged("base")],
+        );
+        let linear_cert = nlsat_l4_cert(&nlsat, linear, &base);
+        let lia = &linear_cert.obligations[0];
+        assert!(
+            crate::engine::trust_is_kernel_checked(&lia.trust),
+            "the ordinary nlsat certification route migrates only after omega checks its theorem"
+        );
+        let lia_evidence = lia
+            .reconstruction
+            .as_ref()
+            .expect("QF_LIA migration carries checked theorem evidence");
+        assert_eq!(lia_evidence.fragment, "qf_lia");
+        assert!(lia_evidence.checker.contains("omega"));
+        assert!(
+            lia_evidence
+                .solver_query_sha256
+                .as_ref()
+                .is_some_and(|hash| hash.len() == 64),
+            "QF_LIA evidence commits to the exact nlsat input"
+        );
+    }
+
+    #[cfg(feature = "bv")]
+    #[test]
+    fn tagged_invariants_are_a_complete_visible_inventory() {
+        use thermite_syntax::{BvWidth, Item};
+
+        let parsed = thermite_syntax::parse(
+            "struct Word { bits: u64 } inv@bv8 bits + 255 == bits - 1\n\
+             fn f(x: u64) -> u64 req x <= 2 ens result == 2 fx pure {\n\
+               let mut i: u64 = x;\n\
+               while i < 2 inv@bv16 i + 65535 == i - 1 inv i <= 2 dec 2 - i {\n\
+                 i = i + 1;\n\
+               }\n\
+               i\n\
+             }",
+        );
+        assert!(parsed.is_clean(), "fixture parses: {:?}", parsed.errors);
+        assert!(
+            program_has_bv_tag(&parsed.program),
+            "a tag on an invariant routes the project through the visibility overlay"
+        );
+
+        let function = parsed
+            .program
+            .items
+            .iter()
+            .find_map(|item| match item {
+                Item::Fn(function) => Some(function),
+                _ => None,
+            })
+            .expect("fixture has a function");
+        let tags = fn_bv_invariant_tags(function);
+        assert_eq!(tags.len(), 1);
+        assert_eq!(tags[0].0, "f::loop#0::inv#0");
+        assert_eq!(tags[0].1.width, BvWidth::W16);
+
+        let base = Certificate::new(
+            "f",
+            Level::L3,
+            vec!["pure".to_string()],
+            0,
+            vec![ObligationResult::discharged("f")],
+        );
+        let cert = attach_bv_invariant_shadows(base, &tags, true);
+        let shadowed: Vec<_> = cert
+            .obligations
+            .iter()
+            .filter(|obligation| obligation.bv_shadow.is_some())
+            .collect();
+        assert_eq!(shadowed.len(), tags.len());
+        assert_eq!(shadowed[0].engine.as_deref(), Some("verus"));
+        assert_eq!(
+            shadowed[0].verdict,
+            Some(crate::verdict::CertVerdict::Proved)
+        );
+        assert_eq!(cert.level, Level::L3);
+    }
+
+    #[test]
+    fn an_unproved_tagged_invariant_never_certifies() {
+        use thermite_syntax::{BvTag, BvWidth, Span};
+
+        let base = Certificate::rejected(
+            "f",
+            vec!["pure".to_string()],
+            false,
+            RejectReason {
+                cause: "VerusCounterexample".to_string(),
+                detail: "loop invariant is not preserved".to_string(),
+            },
+        );
+        let tags = vec![(
+            "f::loop#0::inv#0".to_string(),
+            BvTag {
+                width: BvWidth::W8,
+                nowrap: true,
+                span: Span::new(0, 0),
+            },
+        )];
+        let cert = attach_bv_invariant_shadows(base, &tags, false);
+        assert!(cert.reject.is_some());
+        assert_ne!(cert.level, Level::L3);
+        let obligation = cert
+            .obligations
+            .iter()
+            .find(|obligation| obligation.bv_shadow.is_some())
+            .expect("the failed invariant remains visible");
+        assert_eq!(obligation.status, crate::manifest::ObligationStatus::Failed);
+        assert!(matches!(
+            obligation.verdict,
+            Some(crate::verdict::CertVerdict::Stuck { .. })
+        ));
+        assert!(obligation
+            .bv_shadow
+            .as_ref()
+            .and_then(|shadow| shadow.nowrap_obligation.as_deref())
+            .is_some_and(|text| text.contains("not discharged")));
     }
 
     // ───────────────────────────────────────────────────────────────────────────
@@ -6939,5 +7380,42 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
             "a bare @bv clause runs no side obligation: {:?}",
             shadow.nowrap_obligation
         );
+    }
+
+    #[test]
+    fn an_undecided_nowrap_obligation_fails_closed() {
+        use thermite_syntax::{BvTag, BvWidth, Span};
+
+        let tag = BvTag {
+            width: BvWidth::W64,
+            nowrap: true,
+            span: Span::new(0, 0),
+        };
+        let attr = bv_attribution();
+        let cert = bv_nowrap_undecided_cert(
+            "bounded_add",
+            &["pure".to_string()],
+            false,
+            0,
+            &tag,
+            "undecided: solver budget exhausted",
+            &attr,
+        );
+        assert_eq!(
+            cert.reject.as_ref().map(|reject| reject.cause.as_str()),
+            Some("BvNowrapUndecided")
+        );
+        assert_ne!(cert.level, Level::L4);
+        let obligation = &cert.obligations[0];
+        assert_eq!(obligation.status, crate::manifest::ObligationStatus::Failed);
+        assert!(matches!(
+            obligation.verdict,
+            Some(crate::verdict::CertVerdict::Timeout { .. })
+        ));
+        assert!(obligation
+            .bv_shadow
+            .as_ref()
+            .and_then(|shadow| shadow.nowrap_obligation.as_deref())
+            .is_some_and(|text| text.contains("undecided")));
     }
 }

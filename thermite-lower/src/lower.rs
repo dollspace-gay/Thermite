@@ -1002,20 +1002,163 @@ fn lower_struct(
             .filter(|f| ty_reaches_string(&f.ty))
             .map(|f| f.name.as_str())
             .collect();
-        let body = lower_inv_expr(
-            &inv.expr,
-            &field_names,
-            &string_fields,
-            spec_fn_param_types,
-            0,
-            s.span,
-        )?;
+        let body = if let Some(tag) = inv.bv {
+            lower_bv_prop(&inv.expr, tag, Some(&field_names), 0, s.span)?
+        } else {
+            lower_inv_expr(
+                &inv.expr,
+                &field_names,
+                &string_fields,
+                spec_fn_param_types,
+                0,
+                s.span,
+            )?
+        };
         writeln!(out, "\nimpl {} {{", s.name).ok();
         out.push_str("    pub open spec fn well_formed(&self) -> bool {\n");
         writeln!(out, "        {body}").ok();
         out.push_str("    }\n}\n");
     }
     Ok(out)
+}
+
+/// Lower an invariant with the same unsigned semantics as Forge's QF_BV query.
+/// Values narrow to `uN`; bare arithmetic wraps; division and shifts include the
+/// SMT-LIB edge cases. `nowrap` uses checked arithmetic so Verus proves range.
+fn lower_bv_prop(
+    expr: &Expr,
+    tag: thermite_syntax::BvTag,
+    struct_fields: Option<&[&str]>,
+    depth: usize,
+    span: Span,
+) -> Result<String, LowerError> {
+    if depth >= MAX_EMIT_DEPTH {
+        return Err(LowerError::TooDeep {
+            limit: MAX_EMIT_DEPTH,
+            span,
+        });
+    }
+    let d = depth + 1;
+    match expr {
+        Expr::BoolLit(value) => Ok(value.to_string()),
+        Expr::Binary { op, lhs, rhs } => match op {
+            BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
+                let lhs = lower_bv_term(lhs, tag, struct_fields, d, span)?;
+                let rhs = lower_bv_term(rhs, tag, struct_fields, d, span)?;
+                Ok(format!("({lhs} {} {rhs})", binop(*op)))
+            }
+            BinOp::And | BinOp::Or => {
+                let lhs = lower_bv_prop(lhs, tag, struct_fields, d, span)?;
+                let rhs = lower_bv_prop(rhs, tag, struct_fields, d, span)?;
+                Ok(format!("({lhs} {} {rhs})", binop(*op)))
+            }
+            other => Err(LowerError::Unsupported {
+                what: format!("`{other:?}` is a bit-vector term operator at proposition position"),
+                span,
+            }),
+        },
+        Expr::Unary {
+            op: UnaryOp::Not,
+            expr,
+        } => Ok(format!(
+            "(!{})",
+            lower_bv_prop(expr, tag, struct_fields, d, span)?
+        )),
+        other => Err(LowerError::Unsupported {
+            what: format!("`{other:?}` is outside the tagged-invariant QF_BV proposition fragment"),
+            span,
+        }),
+    }
+}
+
+/// Term half of [`lower_bv_prop`].
+fn lower_bv_term(
+    expr: &Expr,
+    tag: thermite_syntax::BvTag,
+    struct_fields: Option<&[&str]>,
+    depth: usize,
+    span: Span,
+) -> Result<String, LowerError> {
+    if depth >= MAX_EMIT_DEPTH {
+        return Err(LowerError::TooDeep {
+            limit: MAX_EMIT_DEPTH,
+            span,
+        });
+    }
+    let d = depth + 1;
+    let bits = tag.width.bits();
+    let ty = format!("u{bits}");
+    let lit = |value: u128| format!("{}u{bits}", value % (1u128 << bits));
+    match expr {
+        Expr::IntLit { value, .. } => Ok(lit(*value)),
+        Expr::Path(segs) if segs.len() == 1 => {
+            let name = if struct_fields.is_some_and(|fields| fields.contains(&segs[0].as_str())) {
+                format!("self.{}", segs[0])
+            } else {
+                segs[0].clone()
+            };
+            Ok(format!("({name} as {ty})"))
+        }
+        Expr::Binary { op, lhs, rhs } => {
+            let lhs = lower_bv_term(lhs, tag, struct_fields, d, span)?;
+            let rhs = lower_bv_term(rhs, tag, struct_fields, d, span)?;
+            match op {
+                BinOp::Add | BinOp::Sub | BinOp::Mul => {
+                    if tag.nowrap {
+                        Ok(format!("({lhs} {} {rhs})", binop(*op)))
+                    } else {
+                        let method = match op {
+                            BinOp::Add => "wrapping_add",
+                            BinOp::Sub => "wrapping_sub",
+                            BinOp::Mul => "wrapping_mul",
+                            _ => unreachable!("the outer match fixed the arithmetic set"),
+                        };
+                        Ok(format!("({lhs}).{method}({rhs})"))
+                    }
+                }
+                // SMT-LIB makes division and remainder total at zero:
+                // bvudiv x 0 = all-ones; bvurem x 0 = x.
+                BinOp::Div => Ok(format!(
+                    "(if {rhs} == {} {{ {ty}::MAX }} else {{ {lhs} / {rhs} }})",
+                    lit(0)
+                )),
+                BinOp::Rem => Ok(format!(
+                    "(if {rhs} == {} {{ {lhs} }} else {{ {lhs} % {rhs} }})",
+                    lit(0)
+                )),
+                // SMT bvshl/bvlshr return zero when the unsigned shift amount is
+                // at least the width. Rust shifts would instead create a proof
+                // obligation, so keep the SMT edge case explicit.
+                BinOp::Shl | BinOp::Shr => Ok(format!(
+                    "(if {rhs} >= {} {{ {} }} else {{ {lhs} {} ({rhs} as u32) }})",
+                    lit(u128::from(bits)),
+                    lit(0),
+                    binop(*op)
+                )),
+                BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor => {
+                    Ok(format!("({lhs} {} {rhs})", binop(*op)))
+                }
+                other => Err(LowerError::Unsupported {
+                    what: format!(
+                        "`{other:?}` is a proposition operator in a tagged-invariant term"
+                    ),
+                    span,
+                }),
+            }
+        }
+        Expr::Unary {
+            op: UnaryOp::Not,
+            expr,
+        } => Ok(format!(
+            "(!{})",
+            lower_bv_term(expr, tag, struct_fields, d, span)?
+        )),
+        Expr::Cast { expr, .. } => lower_bv_term(expr, tag, struct_fields, d, span),
+        other => Err(LowerError::Unsupported {
+            what: format!("`{other:?}` is outside the tagged-invariant QF_BV term fragment"),
+            span,
+        }),
+    }
 }
 
 /// Lower an `inv` expression to the `well_formed(&self)` predicate body (REQ-8):
@@ -8839,7 +8982,11 @@ fn lower_loop(
     out.push_str(&format!("{ipad}invariant\n"));
     let mut inv_strings: Vec<String> = Vec::new();
     for inv in &l.invs {
-        inv_strings.push(lower_expr(&inv.expr, spec, 0, f.span)?);
+        inv_strings.push(if let Some(tag) = inv.bv {
+            lower_bv_prop(&inv.expr, tag, None, 0, f.span)?
+        } else {
+            lower_expr(&inv.expr, spec, 0, f.span)?
+        });
     }
     let lifted = lift_immutable_preconds(f, spec, &inv_strings)?;
     for inv in inv_strings.iter().chain(lifted.iter()) {
@@ -9638,7 +9785,7 @@ mod exec_expr_tests {
     //! do match the production lowering (R-CHAR-3 — the faithful column traces
     //! to production here, the reference to `exec_encode`).
     use super::*;
-    use thermite_syntax::ast::{BinOp, Expr, IndexArg, PrimType, Type};
+    use thermite_syntax::ast::{BinOp, BvTag, BvWidth, Expr, IndexArg, PrimType, Type};
 
     fn path(name: &str) -> Expr {
         Expr::Path(vec![name.to_string()])
@@ -9699,6 +9846,49 @@ mod exec_expr_tests {
             index: IndexArg::Single(Box::new(path("i"))),
         };
         assert_eq!(lower_exec_expr(&e).unwrap(), "xs[i]");
+    }
+
+    #[test]
+    fn tagged_invariant_uses_literal_fixed_width_semantics() {
+        let tag = BvTag {
+            width: BvWidth::W8,
+            nowrap: false,
+            span: zero_span(),
+        };
+        let prop = bin(BinOp::Eq, bin(BinOp::Add, path("x"), int(255)), path("y"));
+        assert_eq!(
+            lower_bv_prop(&prop, tag, None, 0, zero_span()).unwrap(),
+            "(((x as u8)).wrapping_add(255u8) == (y as u8))"
+        );
+
+        let nowrap = BvTag {
+            nowrap: true,
+            ..tag
+        };
+        assert_eq!(
+            lower_bv_prop(&prop, nowrap, None, 0, zero_span()).unwrap(),
+            "(((x as u8) + 255u8) == (y as u8))",
+            "nowrap keeps the u8 domain but leaves overflow as a Verus VC"
+        );
+    }
+
+    #[test]
+    fn tagged_struct_invariant_rewrites_fields_and_total_shift() {
+        let tag = BvTag {
+            width: BvWidth::W16,
+            nowrap: false,
+            span: zero_span(),
+        };
+        let prop = bin(
+            BinOp::Eq,
+            bin(BinOp::Shl, path("bits"), path("amount")),
+            int(0),
+        );
+        let fields = ["bits", "amount"];
+        let lowered = lower_bv_prop(&prop, tag, Some(&fields), 0, zero_span()).unwrap();
+        assert!(lowered.contains("(self.bits as u16)"));
+        assert!(lowered.contains("(self.amount as u16) >= 16u16"));
+        assert!(lowered.contains("else { (self.bits as u16) << ((self.amount as u16) as u32) }"));
     }
 }
 

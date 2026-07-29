@@ -284,6 +284,10 @@ pub struct ObligationResult {
     /// semantic fork changes what the clause means, so the oracle pins it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bv_shadow: Option<BvShadow>,
+    /// Evidence that Lean accepted this clause's `req → clause` theorem and
+    /// its axiom report passed. Failed or unavailable replay leaves this absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reconstruction: Option<crate::lean_smt_export::ReconstructionEvidence>,
 }
 
 /// Lock 1, the bv shadow FLAG (`.design/stage3-bv-reconstruction.md` REQ-3 / AC-4 — the
@@ -331,6 +335,7 @@ impl ObligationResult {
             trust: Vec::new(),
             verdict: None,
             bv_shadow: None,
+            reconstruction: None,
         }
     }
 
@@ -350,6 +355,7 @@ impl ObligationResult {
             trust: Vec::new(),
             verdict: None,
             bv_shadow: None,
+            reconstruction: None,
         }
     }
 
@@ -378,6 +384,16 @@ impl ObligationResult {
     #[must_use]
     pub fn with_bv_shadow(mut self, shadow: BvShadow) -> Self {
         self.bv_shadow = Some(shadow);
+        self
+    }
+
+    /// Attach the checked theorem evidence that authorizes kernel trust.
+    #[must_use]
+    pub fn with_reconstruction(
+        mut self,
+        evidence: crate::lean_smt_export::ReconstructionEvidence,
+    ) -> Self {
+        self.reconstruction = Some(evidence);
         self
     }
 }

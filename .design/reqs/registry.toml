@@ -16123,3 +16123,198 @@ note = "the three new pins (PinStratSelfLoop/PinNNFPolarity/PinRelaxRefute) adde
 kind = "command"
 target = "bash scripts/lean-axiom-probe.sh"
 note = "AC-10 (ci): builds all eight battery pins (zero sorry under lean/Thermite/) and the spine; rc=0 — a sorry/disallowed axiom in any pin or gated theorem fails the Lean CI job"
+
+[[requirement]]
+id = "REQ-S3-1"
+title = "The @bv syntax gate and fixed set of widths"
+owner = ".design/stage3-bv-reconstruction.md"
+status = "shipped"
+scope = "verified"
+summary = "The bv feature accepts ens/inv/lemma tags at widths 8, 16, 32, and 64, including nowrap. Feature-off builds return BvTagWithoutShadowPlumbing. Preconditions cannot carry a width because each tagged conclusion supplies the width used to interpret its req."
+aliases = ["Stage-3 REQ-1", "@bv syntax gate", "Stage-3 AC-1"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-syntax/src/parser.rs"
+note = "Parses the four widths behind the bv feature and rejects tagged preconditions."
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-syntax/tests/bv_tag_parse.rs"
+note = "Covers both feature configurations, all widths, nowrap, invariants, lemmas, round trips, and tagged-precondition rejection."
+
+[[requirement]]
+id = "REQ-S3-2"
+title = "Direct fixed-width clause and lemma discharge"
+owner = ".design/stage3-bv-reconstruction.md"
+status = "shipped"
+scope = "verified"
+summary = "EngineName::BitVector renders tagged conclusions as QF_BV, returns concrete bit-pattern countermodels, and applies a dedicated timeout profile to the 64-bit multiplication cliff. Untagged clauses keep their unbounded route."
+aliases = ["Stage-3 REQ-2", "BitVector engine", "Stage-3 AC-2", "Stage-3 AC-3"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/bitvector.rs"
+note = "QF_BV renderer, solver route, countermodel parser, and bounded multiplication profile."
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/bv_lowering.rs"
+note = "Covers mixed clauses, tagged lemmas, counterexamples, and multiplier timeout."
+
+[[requirement]]
+id = "REQ-S3-3"
+title = "Visible certificate records for every fixed-width clause"
+owner = ".design/stage3-bv-reconstruction.md"
+status = "shipped"
+scope = "verified"
+summary = "Every tagged postcondition or invariant carries a bv_shadow record with its width, wrap mode, and nowrap result. Audit and review project those records without recomputing them."
+aliases = ["Stage-3 REQ-3", "bv_shadow", "Stage-3 AC-4"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/manifest.rs"
+note = "Defines the additive bv_shadow certificate field."
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/audit.rs"
+note = "Projects tagged clauses into audit rows."
+
+[[requirement]]
+id = "REQ-S3-4"
+title = "Width-aware mutation scoring"
+owner = ".design/stage3-bv-reconstruction.md"
+status = "shipped"
+scope = "verified"
+summary = "Result-bearing tagged clauses reuse the frozen mutation catalogue and decide each mutant at the clause width. Undecided mutants do not count as kills, and proved-equivalent results leave the denominator."
+aliases = ["Stage-3 REQ-4", "bv mutation", "Stage-3 AC-5"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "forge::check::bv_mutation_score"
+note = "Runs the mutation oracle through fixed-width discharge."
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/bv_lowering.rs"
+note = "Pins the wrap-sensitive mutant behavior."
+
+[[requirement]]
+id = "REQ-S3-5"
+title = "Fail-closed nowrap side obligations"
+owner = ".design/stage3-bv-reconstruction.md"
+status = "shipped"
+scope = "verified"
+summary = "A nowrap tag adds a no-overflow query. Proved overflow, timeout, missing solver, and unsupported expressions all withhold certification and preserve the reason in bv_shadow."
+aliases = ["Stage-3 REQ-5", "nowrap", "Stage-3 AC-6"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "forge::bitvector::BitVectorEngine::discharge_nowrap"
+note = "Builds and decides the fixed-width overflow query."
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge::check::tests::an_undecided_nowrap_obligation_fails_closed"
+note = "Pins fail-closed behavior for an undecided side obligation."
+
+[[requirement]]
+id = "REQ-S3-6"
+title = "Review surface for semantic forks and definition towers"
+owner = ".design/stage3-bv-reconstruction.md"
+status = "shipped"
+scope = "verified"
+summary = "Forge review and audit report fixed-width tag density, burned-lemma tower depth, and the configured density warning."
+aliases = ["Stage-3 REQ-6", "semantic forks", "Stage-3 AC-7"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/forks.rs"
+note = "Builds the density and tower-depth view."
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge::forks::tests"
+note = "Pins the fixture counts and density warning."
+
+[[requirement]]
+id = "REQ-S3-7"
+title = "Rust-to-Lean export for QF_LIA and QF_BV"
+owner = ".design/stage3-bv-reconstruction.md"
+status = "shipped"
+scope = "verified"
+summary = "The Lean exporter renders integer propositions and the complete shipped literal-BitVec term surface. Translation equivalence remains a separate audit artifact."
+aliases = ["Stage-3 REQ-7", "SMT exporter", "Stage-3 AC-8"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/lean_smt_export.rs"
+note = "Renders QF_LIA and literal QF_BV expressions and theorem modules."
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge::lean_smt_export::tests"
+note = "Covers the full operator surface and out-of-fragment refusals."
+
+[[requirement]]
+id = "REQ-S3-8"
+title = "Default replay of the clause-validity theorem"
+owner = ".design/stage3-bv-reconstruction.md"
+status = "shipped"
+scope = "verified"
+summary = "Kernel trust requires Lean to accept the solver route's req-to-clause theorem and an anchored axiom report within the standard allowlist. Evidence records the theorem, checker, source hash, fragment, axioms, and the exact solver-input hash when available. Unsupported, unavailable, and failed replay retain solver trust."
+aliases = ["Stage-3 REQ-8", "checked reconstruction", "Stage-3 AC-9"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "lean/Thermite/Reconstruct.lean"
+note = "Proof-producing LRAT path with kernel evaluation of the certificate check."
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/lean_smt_export.rs"
+note = "Runs replay, validates anchored axiom reports, and creates ReconstructionEvidence."
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge::check::tests::req8_arithmetic_and_bitwise_clauses_migrate_to_kernel_checked"
+note = "Checks actual QF_BV and QF_LIA certificate migration and successful-checker labels."
+
+[[requirement.evidence]]
+kind = "command"
+target = "bash scripts/lean-axiom-probe.sh"
+note = "Builds and axiom-checks the permanent 64-bit LRAT theorem."
+
+[[requirement]]
+id = "REQ-S3-9"
+title = "Gate G3"
+owner = ".design/stage3-bv-reconstruction.md"
+status = "shipped"
+scope = "verified"
+summary = "One CI job runs the feature-off and feature-on release parser tests, fixed-width lowering, tagged invariant preservation, live QF_LIA/QF_BV replay, the full bit-vector suite, and the Lean spine axiom probe. Missing tools fail the gate."
+aliases = ["Stage-3 REQ-9", "G3", "Stage-3 AC-10", "github:dollspace-gay/Thermite#80", "crosslink:351"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "scripts/g3-gate.sh"
+note = "Single fail-fast command for all G3 checks."
+
+[[requirement.evidence]]
+kind = "file"
+target = ".github/workflows/ci.yml"
+note = "The g3 job installs the pinned dependencies and runs scripts/g3-gate.sh."
+
+[[requirement.evidence]]
+kind = "command"
+target = "bash scripts/g3-gate.sh"
+note = "Gate G3; exits nonzero on any failed check or missing dependency."

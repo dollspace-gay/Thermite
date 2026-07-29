@@ -206,7 +206,21 @@ fn req8_mix64_arithmetic_and_bitwise_clauses_migrate_kernel_checked() {
     );
     assert!(
         !add_trust.iter().any(|t| t.contains("Z3 QF_BV")),
-        "Z3 is no longer load-bearing for the reconstruction-supported arith clause: {add_trust:?}"
+        "Z3 is no longer load-bearing for the reconstructed arith clause: {add_trust:?}"
+    );
+    let add_evidence = &obls[0]["reconstruction"];
+    assert_eq!(add_evidence["fragment"], "qf_bv64");
+    assert!(
+        add_evidence["checker"]
+            .as_str()
+            .is_some_and(|checker| checker.contains("LRAT")),
+        "the arithmetic clause records the checker that succeeded: {add_evidence}"
+    );
+    assert!(
+        add_evidence["solver_query_sha256"]
+            .as_str()
+            .is_some_and(|hash| hash.len() == 64),
+        "the evidence commits to the exact SMT-LIB query: {add_evidence}"
     );
     // ens#1 — `a ^ b ^ b == a` (bitwise xor): migrated too.
     let xor_trust = trust_of(1);
@@ -219,6 +233,33 @@ fn req8_mix64_arithmetic_and_bitwise_clauses_migrate_kernel_checked() {
     assert!(
         !xor_trust.iter().any(|t| t.contains("Z3 QF_BV")),
         "the xor clause no longer names Z3 in its migrated trust: {xor_trust:?}"
+    );
+    let xor_evidence = &obls[1]["reconstruction"];
+    assert_eq!(xor_evidence["fragment"], "qf_bv64");
+    assert!(
+        xor_evidence["checker"]
+            .as_str()
+            .is_some_and(|checker| checker.contains("simplification")),
+        "XOR records its actual axiom-clean fallback, not a false LRAT label: {xor_evidence}"
+    );
+
+    // ens#2 is unbounded QF_LIA. Its nlsat verdict is independently replayed as
+    // the actual req → clause implication with omega.
+    let lia_trust = trust_of(2);
+    assert!(
+        lia_trust.iter().any(|trust| trust.contains("omega")),
+        "the unbounded clause migrates after its QF_LIA theorem is checked: {lia_trust:?}"
+    );
+    let lia_evidence = &obls[2]["reconstruction"];
+    assert_eq!(lia_evidence["fragment"], "qf_lia");
+    assert!(lia_evidence["checker"]
+        .as_str()
+        .is_some_and(|checker| checker.contains("omega")));
+    assert!(
+        lia_evidence["solver_query_sha256"]
+            .as_str()
+            .is_some_and(|hash| hash.len() == 64),
+        "QF_LIA evidence commits to the exact nlsat input: {lia_evidence}"
     );
 }
 

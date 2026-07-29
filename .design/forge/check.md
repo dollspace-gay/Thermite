@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: a10f679dd2fd4ae2dad1fc8607c93d13413d0d019823f55b85f41b61e1578c7a (migrated from legacy audited-sha commit pin to a squash-stable content digest; doc-drift-tripwire.md REQ-2 — content pin is primary, commit pin is a migration fallback)
+audited-content-sha256: acc8e6a294496a3e18324b722bc17b92fa985dff2e36e274cc98134bc9feffe2 (migrated from legacy audited-sha commit pin to a squash-stable content digest; doc-drift-tripwire.md REQ-2 — content pin is primary, commit pin is a migration fallback)
 governs: forge/src/check.rs
 thesis-refs:
   - thermite-design.md §5.1
@@ -64,6 +64,29 @@ REQ status table).
 > The post-pin language-growth arcs (#92/#93/#95/#109/#112/#121/#123 corpus
 > widening, #101 equivalent-mutant exclusion, #232 struct-inv weave, #237
 > narrowing) extend the pipeline without contradicting the REQs above.
+
+> **Amendment 2026-07-28 (crosslink #92 — the ADT-referrer correction, R-HONEST-4).**
+> The per-item ADT weave (`#68`) seeded `reachable_adt_deps` with `[item] +
+> fn_deps` while every arm of `item_subprogram` wove `item_spec_items` as well, so
+> the referrer set was a strict subset of what the sub-program contained. An ADT
+> reachable only through a woven spec fn was omitted from the emitted Verus, and
+> the run failed closed on an unresolvable type. Three surfaces: a checked
+> `struct`/`enum` landed L0 on `E0425` (`collect_item_adt_refs` is inert on an ADT
+> decl, so `adt_deps` was empty for every ADT item) and dragged `project
+> assurance` to FAILED; a checked `fn` naming no ADT that a woven spec fn takes
+> aborted the run through `vacuity_solver::interpret_summary`'s undetermined-harness
+> refusal; a checked `spec fn` was already correct. A single-ADT file masked all
+> of it, because the only ADT is the checked item, which the ADT arm pushes itself
+> — so no corpus program declaring more than one ADT had ever certified. The seed
+> now extends with `item_spec_items` for every item kind (replaced, not extended,
+> for the `Item::SpecFn` arm — `#71`'s distinct per-spec-fn sub-program), and the
+> ADT arm drops the checked item from `adt_deps` before pushing it, keeping one
+> declaration. REQ-1's per-item pipeline and REQ-5's level rule are unchanged; this
+> corrects their input. Corpus anchor: `conformance/multi_adt.th` +
+> `conformance/multi_adt.cert.json`. Pin:
+> `forge/tests/divergence_multi_adt_subprogram.rs`. Same under-approximated-closure
+> class as the `reachable_spec_fn_deps` body-only omission recorded in
+> `.design/verified/proof-backends.md`'s increment-(i) build-blocker note.
 
 The stages, in order, are:
 

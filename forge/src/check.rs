@@ -660,17 +660,38 @@ pub fn check_file_with_options(
             Item::SpecFn(_) => reachable_spec_fn_deps(&parsed.program, item.name()),
             _ => spec_items.clone(),
         };
-        // For a checked `Item::SpecFn`, the ADT referrers are its own reachable
-        // spec-fn set (which includes the spec fn itself), so its `enum`/`struct`
-        // decls are present even though the file's full `spec_items` is no longer
-        // woven (#71). The `Item::Fn` path is unchanged — its ADT referrers stay
-        // `[item] + fn_deps` exactly as before (the exec sub-program is byte-stable;
-        // the corpus cert oracle is unperturbed). The Fn arm of `item_subprogram`
-        // still weaves the full `spec_items`.
+        // #92: the referrer set covers everything `item_subprogram` weaves. Every
+        // arm of `item_subprogram` weaves `item_spec_items`, so the spec fns seed
+        // the ADT walk too — an ADT reachable only through a woven spec fn is
+        // otherwise absent from the sub-program and verus cannot resolve it
+        // (`E0425 cannot find type`).
+        //
+        // Before #92 the seed was `[item] + fn_deps`, a strict subset of what is
+        // woven, which surfaced three ways:
+        //   - a checked `struct`/`enum`: `collect_item_adt_refs` is inert on an ADT
+        //     decl (its own field types are followed by the type-graph fixed point
+        //     instead), so `adt_deps` came out empty for every ADT item, while the
+        //     ADT arm weaves the file's whole `spec_items`. A spec fn naming a
+        //     second ADT dangled, so the item landed L0 and the project verdict
+        //     FAILED. A single-ADT file hid this: the only ADT is the checked item,
+        //     which the ADT arm pushes itself.
+        //   - a checked `fn` whose contract and body name no ADT that a woven spec
+        //     fn takes: the solver-vacuity harness failed to elaborate, which
+        //     `vacuity_solver::interpret_summary` refuses as undetermined — a
+        //     `ForgeError` aborting the run (fail-closed, never a silent clean).
+        //   - a checked `spec fn`: already correct via the clear+extend below, which
+        //     is why the single-ADT corpus never exercised the gap.
+        // This is the same under-approximated-closure class the proof-backends
+        // build-blocker note records for `reachable_spec_fn_deps` walking
+        // `decl.body` without `decl.dec`.
+        //
+        // For a checked `Item::SpecFn` the referrers are its own reachable spec-fn
+        // closure alone (which includes the spec fn itself) — #71's distinct
+        // per-spec-fn sub-program — so the seed is replaced rather than extended.
         if matches!(item, Item::SpecFn(_)) {
             referrers.clear();
-            referrers.extend(item_spec_items.iter());
         }
+        referrers.extend(item_spec_items.iter());
         let adt_deps = reachable_adt_deps(&parsed.program, &referrers);
         let sub = item_subprogram(item, &item_spec_items, &fn_deps, &adt_deps);
         let lowered = thermite_lower::lower(&sub).map_err(ForgeError::Lower)?;
@@ -3874,7 +3895,16 @@ fn item_subprogram(
         // `adt_deps`/`spec_items` for an `inv`-free struct keeps the sub-program
         // the item alone (byte-stable for the no-invariant corpus).
         Item::Struct(_) | Item::Enum(_) => {
-            let mut items = adt_deps.to_vec();
+            // #92: since the referrer seed includes the woven `spec_items`, a spec
+            // fn naming the checked ADT puts that ADT in `adt_deps` as well. The
+            // item is pushed below, so drop it here to keep one declaration —
+            // verus rejects a duplicate definition (`E0428`). The other decls a
+            // spec fn reaches stay, which is the point of the fix.
+            let mut items: Vec<Item> = adt_deps
+                .iter()
+                .filter(|d| d.name() != item.name())
+                .cloned()
+                .collect();
             items.extend(spec_items.iter().cloned());
             items.push(item.clone());
             Program { items }

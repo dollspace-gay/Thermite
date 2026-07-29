@@ -5,8 +5,8 @@
 # ACTUAL guarantee and prints, honestly, what it could NOT discharge:
 #
 #   1  THE UNIVERSAL THEOREM, re-checked locally  — `lake build` the Lean spine
-#      from source, then `#print axioms` the five load-bearing theorems and PARSE
-#      the axiom lists: PASS iff every list ⊆ {propext, Classical.choice, Quot.sound}
+#      from source, then `#print axioms` the twelve gated theorems and PARSE the
+#      axiom lists: PASS iff every list ⊆ {propext, Classical.choice, Quot.sound}
 #      (no sorryAx, no custom axiom). This is the ∀-programs faithfulness theorem
 #      re-verified by YOUR Lean kernel — trust does NOT include our claim of having
 #      proven it. (Requires elan/lake; SKIPs-with-consequence if absent.)
@@ -179,9 +179,9 @@ echo
 # CHECK 1 — THE UNIVERSAL THEOREM, re-checked locally (the centerpiece).
 # -----------------------------------------------------------------------------
 bold "[1/5] THE UNIVERSAL THEOREM — re-verified by YOUR Lean kernel"
-note "Re-builds the Lean proof spine from source, then \`#print axioms\` the five"
-note "load-bearing theorems PLUS the two relax-route spine lemmas (r_relax_sound,"
-note "rencode_sound) and PARSES each axiom list. PASS iff every list is a subset of"
+note "Re-builds the Lean proof spine from source, then \`#print axioms\` all twelve"
+note "gated theorems: the v1 and loop spine, relax route, Stage 2 spine, and the"
+note "Stage 3 reconstruction probe. PASS iff every axiom list is a subset of"
 note "{propext, Classical.choice, Quot.sound} — no sorryAx, no custom axiom."
 note "The build + parse is the SHARED scripts/lean-axiom-probe.sh — the same probe the"
 note "Lean CI job runs (trust-audit F4), so local and CI cannot drift in what they check."
@@ -207,6 +207,8 @@ else
     note "T1 soundness pillars (ref_sound / exec_ref_sound / body_ref_sound), the loop"
     note "WHILE-RULE (while_rule), and the two relax-route spine lemmas (r_relax_sound /"
     note "rencode_sound) were re-verified by YOUR Lean kernel just now."
+    note "STAGE 3: the permanent LRAT reconstruction theorem was also rebuilt and"
+    note "axiom-checked, so the fixed-width replay probe contains no hidden proof hole."
     note "Trust does NOT include our claim of having proven them — you re-checked it."
     note "STAGE 2 ([1′]): the probe ALSO gated the four stratified soundness theorems"
     note "(strat_ref_sound, strat_lowering_faithful, classifier_correct, restrat_conservative)"

@@ -795,7 +795,7 @@ pub fn check_file_with_options(
         // Clean (or a `spec fn`, which carries no contract to check): the solver
         // runs the real L3 proof (REQ-3). Assemble the cert exactly as the
         // non-cached path always has.
-        let verus = run_verus(&sub, &lowered, seed, rlimit)?;
+        let verus = run_verus(&lowered, item.name(), seed, rlimit)?;
         let cert = assemble_certificate(item, &verus);
 
         // #10 automatic degrade ladder (`.design/forge/degrade-ladder.md`, the
@@ -5182,16 +5182,30 @@ impl Drop for ScratchDir {
 /// with parseable failure → a reported failure cert; unparseable output →
 /// `ForgeError::VerusOutput` (REQ-3).
 fn run_verus(
-    program: &Program,
     lowered: &str,
+    subject: &str,
     seed: u64,
     rlimit: f64,
 ) -> Result<VerusResult, ForgeError> {
-    // Name the scratch dir + `.rs` after the first item (deterministic) so
-    // concurrent runs over different files do not collide; fall back to a fixed
-    // stem. The crate-name gotcha (REQ-2 / AC-4) is unchanged: the `.rs` stem is
-    // still the no-`.` `crate_stem`, so verus's crate-name derivation succeeds.
-    let label = program.items.first().map(|i| i.name()).unwrap_or("forge");
+    // Name the scratch dir + `.rs` after the item this harness is checking
+    // (deterministic) so concurrent runs over different files do not collide.
+    //
+    // #92: the label was `program.items.first()` — the first item of the woven
+    // SUB-program, which is the checked item only when nothing is woven ahead of
+    // it. `item_subprogram` weaves ADT decls and spec fns first and pushes the
+    // checked item last, so a failing `enum Unused` reported its diagnostics under
+    // `forge_is_owner_check_<pid>_<n>/is_owner_check.rs` — naming a sibling that
+    // was merely woven in. The reporter of #92 read that path as the failure
+    // belonging to `is_owner` (certified L3) and concluded the L3 refusal path had
+    // a hole; it did not. A harness names what it checks.
+    //
+    // The sub-program is deliberately not a parameter: taking the label from it
+    // is what went wrong, and a harness that cannot see the woven set cannot name
+    // one of its members by accident.
+    //
+    // The crate-name gotcha (REQ-2 / AC-4) is unchanged: the `.rs` stem is still
+    // the no-`.` `crate_stem`, so verus's crate-name derivation succeeds.
+    let label = if subject.is_empty() { "forge" } else { subject };
     let stem = crate_stem(Path::new(label));
     let scratch = ScratchDir {
         path: unique_scratch_dir(&stem),
@@ -5723,13 +5737,13 @@ fn mutation_score(
             if let Some(stored) = cache::load(cache_dir, &key) {
                 mutant_cert_is_survivor(&stored)
             } else {
-                let verus = run_verus(&sub, &lowered, seed, rlimit)?;
+                let verus = run_verus(&lowered, item.name(), seed, rlimit)?;
                 let cert = assemble_certificate(&item, &verus);
                 let _ = cache::store(cache_dir, &key, &cert);
                 mutant_cert_is_survivor(&cert)
             }
         } else {
-            let verus = run_verus(&sub, &lowered, seed, rlimit)?;
+            let verus = run_verus(&lowered, item.name(), seed, rlimit)?;
             mutant_outcome_is_survivor(&verus.outcome)
         };
 
@@ -5863,11 +5877,10 @@ fn equivalence_proves_equal(
         // carried (never a silent collapse into the proved-distinguishing bucket).
         Err(e) => return Ok(EquivOutcome::Unsupported(e.to_string())),
     };
-    // The obligation is a complete Verus program (the seam emits the frame); run
-    // it as a single-item program for the `run_verus` scratch-dir/label machinery.
-    let label_program = Program {
-        items: vec![Item::Fn(f.clone())],
-    };
+    // The obligation is a complete Verus program (the seam emits the frame), so it
+    // needs no woven sub-program. #92: it used to be wrapped in a single-item
+    // `Program` purely to feed `run_verus`'s label machinery; `run_verus` now takes
+    // the subject name directly, so the wrapper (and its `f.clone()`) is gone.
     let key = cache::cache_key(&obligation, seed, verus_version, THERMITE_VERSION);
     let proved = if use_cache {
         if let Some(stored) = cache::load(cache_dir, &key) {
@@ -5876,7 +5889,7 @@ fn equivalence_proves_equal(
             // mutant kill-check caches — a `Proved` obligation is "survivor"-true).
             mutant_cert_is_survivor(&stored)
         } else {
-            let verus = run_verus(&label_program, &obligation, seed, rlimit)?;
+            let verus = run_verus(&obligation, &f.name, seed, rlimit)?;
             let proved = mutant_outcome_is_survivor(&verus.outcome);
             // Cache the equivalence verdict (REQ-6 determinism): assemble + store
             // the same cert shape the mutant kill-check stores, keyed on the
@@ -5887,7 +5900,7 @@ fn equivalence_proves_equal(
             proved
         }
     } else {
-        let verus = run_verus(&label_program, &obligation, seed, rlimit)?;
+        let verus = run_verus(&obligation, &f.name, seed, rlimit)?;
         mutant_outcome_is_survivor(&verus.outcome)
     };
     // The exclusion fires only on a verus-proved `ensures` (REQ-2/REQ-3/REQ-8):
@@ -5996,12 +6009,12 @@ fn strengthen_certificate(
             if let Some(stored) = cache::load(cache_dir, &key) {
                 return Ok(mutant_cert_is_survivor(&stored));
             }
-            let verus = run_verus(&sub, &lowered, seed, rlimit)?;
+            let verus = run_verus(&lowered, item.name(), seed, rlimit)?;
             let cert = assemble_certificate(&item, &verus);
             let _ = cache::store(cache_dir, &key, &cert);
             Ok(mutant_cert_is_survivor(&cert))
         } else {
-            let verus = run_verus(&sub, &lowered, seed, rlimit)?;
+            let verus = run_verus(&lowered, item.name(), seed, rlimit)?;
             Ok(mutant_outcome_is_survivor(&verus.outcome))
         }
     };

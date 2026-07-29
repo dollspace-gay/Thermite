@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: acc8e6a294496a3e18324b722bc17b92fa985dff2e36e274cc98134bc9feffe2 (migrated from legacy audited-sha commit pin to a squash-stable content digest; doc-drift-tripwire.md REQ-2 — content pin is primary, commit pin is a migration fallback)
+audited-content-sha256: 39db2140160524b596b95cffd085a1c025c06e0b2dd4820f590ee926c9d97198 (migrated from legacy audited-sha commit pin to a squash-stable content digest; doc-drift-tripwire.md REQ-2 — content pin is primary, commit pin is a migration fallback)
 governs: forge/src/check.rs
 thesis-refs:
   - thermite-design.md §5.1
@@ -87,6 +87,23 @@ REQ status table).
 > `forge/tests/divergence_multi_adt_subprogram.rs`. Same under-approximated-closure
 > class as the `reachable_spec_fn_deps` body-only omission recorded in
 > `.design/verified/proof-backends.md`'s increment-(i) build-blocker note.
+>
+> The same issue carried a diagnostics defect, corrected alongside. `run_verus`
+> took its scratch stem from `program.items.first()`, and `item_subprogram` weaves
+> ADT decls and spec fns ahead of the checked item, so any item with something
+> woven before it filed its diagnostics under a sibling's name — a failing `enum
+> Unused` reported `E0425` at `forge_is_owner_check_<pid>_<n>/is_owner_check.rs`
+> while `is_owner` itself certified L3. That misattribution is why #92 was first
+> read as two defects, the second being a hole in the L3 refusal path; there is no
+> such hole, and REQ-4's "the failed obligation and its source position" is not
+> satisfied by a position under another item's filename. `run_verus` now takes the
+> checked item's name as a `subject` parameter and no longer receives the
+> sub-program at all, so a harness cannot name a merely-woven member by accident;
+> the equivalence-probe call site's single-item `Program` wrapper, which existed
+> only to feed the old label machinery, is gone with it. Amendment item 6's
+> `<stem>.rs`-inside-`forge_<stem>_<pid>_<n>/` scheme and the AC-4 no-`.` crate-stem
+> property are both unchanged — only the source of `<stem>` moved. Pin:
+> `forge/tests/divergence_harness_names_checked_item.rs`.
 
 The stages, in order, are:
 

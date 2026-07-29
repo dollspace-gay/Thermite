@@ -64,7 +64,7 @@ def encAtomCap : Atom → Atom
   | .rel ρ t u => .rel ρ (encTmCap t) (encTmCap u)
   | .qfree e   => .qfree e
 
-/-- The capture-broken formula encoder: every binder REUSES the name `0` (no
+/-- The capture-broken formula encoder: every binder reuses the name `0` (no
     fresh-name discipline), so a nested binder shadows its parent. -/
 def sencodeCap : Frm → Tok
   | .atom a   => .atom (encAtomCap a)
@@ -75,7 +75,7 @@ def sencodeCap : Frm → Tok
   | .all s φ  => .all s 0 true (sencodeCap φ)   -- BUG: name 0, not the fresh level
   | .ex s φ   => .ex s 0 true (sencodeCap φ)
 
-/-- The witness sentence `∀x:usize. ∃y:usize. x = c0` — depends only on the OUTER
+/-- The witness sentence `∀x:usize. ∃y:usize. x = c0` — depends only on the outer
     `x` (de Bruijn index 1 under the two binders); FALSE over `dom` (`c1 ≠ c0`). -/
 def phiCap : Frm := .all usizeS (.ex usizeS (.atom (.rel .eq (.var usizeS 1) c0)))
 
@@ -87,7 +87,7 @@ theorem capture_counterexample :
     tokDenote qEq dom (sencodeCap phiCap) σ0 = true
       ∧ fdenote qEq dom phiCap σ0 = false := by decide
 
-/-- The pin: encoder soundness is FALSE for the capturing encoder — there is a
+/-- The pin: encoder soundness is false for the capturing encoder — there is a
     formula on a concrete domain where its token disagrees with the source. -/
 theorem capture_breaks_soundness :
     ¬ ∀ (φ : Frm) (σ ρ : Subst),

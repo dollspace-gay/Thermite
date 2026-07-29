@@ -7,7 +7,7 @@
 //! A forge-tier contract gets its *meaning* by unfolding the `spec fn`s its
 //! `req`/`ens` clauses reference, which unfold the `spec fn`s *they* reference, and
 //! so on — a tower of definitions. A contract can be made to "say" something while
-//! hiding the real claim behind a deep stack of definitions an auditor cannot read
+//! hiding the claim behind a deep stack of definitions an auditor cannot read
 //! through (the Goodhart move: optimize "the contract proves" by making the contract
 //! unreadable). REQ-6c bounds that tower: the **Q2 default budget** is a
 //! [`TOWER_DEPTH_BUDGET`] of `4` (the longest distinct-definition unfolding chain)
@@ -15,10 +15,10 @@
 //! tower deeper or wider than the budget does not certify — a refusal at certify
 //! time, never a silent pass.
 //!
-//! ## Where the gate lives (and where it does NOT)
+//! ## Where the gate lives (and where it does not)
 //!
 //! The gate is a **certify-time gate on the discharge path** (`check.rs`, the
-//! forge/Lean `--engine` route), NOT in `forge audit`. `forge audit`'s "gates
+//! forge/Lean `--engine` route), not in `forge audit`. `forge audit`'s "gates
 //! nothing" projection invariant is shipped (#274, `.design/forge/audit-manifest.md`
 //! REQ-10): it re-derives no verdict and changes no exit code. `forge audit
 //! --meaning` is the **read-only companion**: it prints the unfolded tower and
@@ -40,13 +40,13 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thermite_syntax::{Expr, FnItem, Item, Program, SpecFnItem};
 
-/// The Q2 default definition-tower DEPTH budget (REQ-6c): the maximum length of the
+/// The Q2 default definition-tower depth budget (REQ-6c): the maximum length of the
 /// longest distinct-definition unfolding chain rooted at the contract. A tower whose
 /// deepest chain exceeds this does not certify (a certify-time refusal). `4` is the
 /// Q2 default in `.design/stage1-forge-tier.md` REQ-6.
 pub const TOWER_DEPTH_BUDGET: usize = 4;
 
-/// The Q2 default definition-tower SIZE budget (REQ-6c): the maximum number of
+/// The Q2 default definition-tower size budget (REQ-6c): the maximum number of
 /// distinct definitions reachable from the contract. A tower with more distinct
 /// definitions than this does not certify. `40` is the Q2 default.
 pub const TOWER_DEFINITION_BUDGET: usize = 40;
@@ -289,7 +289,7 @@ impl DefinitionTower {
 pub fn build_tower(program: &Program, src: &str, f: &FnItem) -> DefinitionTower {
     let spec_decls = spec_decls_of(program);
 
-    // The roots: the spec fns the CONTRACT (`req ∪ ens`) directly references — the
+    // The roots: the spec fns the contract (`req ∪ ens`) directly references — the
     // meaning surface. (The body's own calls are implementation, not the claim.)
     let mut roots: BTreeSet<String> = BTreeSet::new();
     crate::check::collect_expr_spec_fn_calls(&f.contract.req.expr, &spec_decls, &mut roots);
@@ -323,7 +323,7 @@ pub fn build_tower(program: &Program, src: &str, f: &FnItem) -> DefinitionTower 
     }
 }
 
-/// The definition-tower DEPTH + distinct-definition count rooted at an arbitrary set of
+/// The definition-tower depth + distinct-definition count rooted at an arbitrary set of
 /// contract clause exprs (stage-3 REQ-6) — the depth-only projection the "semantic forks
 /// and definition towers" section ([`crate::forks`]) uses for a burned `lemma`. A
 /// [`thermite_syntax::LemmaItem`] carries `req ∪ ens` but no `FnItem`/body, so
@@ -579,7 +579,7 @@ fn f(x: u32) -> u32 req true ens a(x) fx pure { x }";
         assert!(tower.within_budget());
     }
 
-    /// A definition referenced only by the body (not the contract) is NOT in the
+    /// A definition referenced only by the body (not the contract) is not in the
     /// tower: the tower is the meaning of the contract, not the implementation. Here
     /// `contract_dep` roots the tower via `ens`; `body_dep` is called only from the
     /// body, so it is absent (and a `spec fn` it would have pulled in does not count).

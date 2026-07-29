@@ -18,7 +18,7 @@
 //!
 //! - Re-implemented here (the infidelity surface): the spec-context rewrites
 //!   where production fidelity bugs live — comparison/connective binop map
-//!   (the `==`/`<=` distinction, the canonical teeth case F1), the slice→`@`
+//!   (the `==`/`<=` distinction, negative case F1), the slice→`@`
 //!   view, the method→`spec_*` byte-view dispatch keyed on the receiver's shape
 //!   (`.byte_at(i)`/`.len()` — the #127 class, F3), and the integer cast→`as
 //!   nat`/`as int` with the #122 paren discipline.
@@ -43,7 +43,7 @@ use std::fmt;
 
 use thermite_syntax::ast::{BinOp, Expr, IndexArg, MatchArm, Pattern, UnaryOp};
 
-/// An honest failure to encode a construct outside the frozen contract
+/// An failure to encode a construct outside the frozen contract
 /// sublanguage (REQ-1). The reference encoder never panics and never silently
 /// emits a wrong encoding: an unsupported construct is a real `Err` carrying the
 /// offending shape (R-CODE-2 / R-APG-1). A silent wrong encoding would compare a
@@ -216,7 +216,7 @@ impl RefCtx {
 /// - [`Expr::Index`] (`a[i]` / `a[..i]`→`a.subrange(0, i as int)`);
 /// - [`Expr::Cast`]→`(inner) as nat`/`as int` with the #122 paren discipline.
 ///
-/// Anything else is an honest [`RefEncodeError`] (never a panic, never a silent
+/// Anything else is an [`RefEncodeError`] (never a panic, never a silent
 /// wrong encoding).
 pub fn ref_contract_pred(expr: &Expr, ctx: &RefCtx) -> Result<String, RefEncodeError> {
     encode(expr, ctx)
@@ -277,7 +277,7 @@ fn encode_path(segments: &[String]) -> Result<String, RefEncodeError> {
 
 /// The faithful 1-to-1 binary-operator map (`thermite-design.md` §4.2). Re-stated
 /// here independently of the production `binop in lower.rs`: the `==`-vs-`<=`
-/// distinction is the canonical teeth case (F1). If this imported production's
+/// distinction is negative case F1. If this imported production's
 /// map, a production binop bug would be invisible.
 fn binop_str(op: BinOp) -> &'static str {
     match op {
@@ -492,7 +492,7 @@ fn encode_call(callee: &Expr, args: &[Expr], ctx: &RefCtx) -> Result<String, Ref
 /// - [`ArgKind::Value`] → the value as-is ([`encode`]).
 ///
 /// The arity + arg-kinds are already validated by the registry/validator, so we
-/// index `arg_kinds` by position; a mismatch is an honest `Err` (never a panic).
+/// index `arg_kinds` by position; a mismatch is an `Err` (never a panic).
 fn encode_combinator_call(
     name: &str,
     args: &[Expr],
@@ -543,7 +543,7 @@ fn encode_combinator_arg(
 /// Encode a combinator `Pred`-kind argument: a predicate closure `|x| <body>` is
 /// re-encoded to a Verus closure `|x: u32| <body>`; the body is encoded by the
 /// same independent recursion (so a closure-predicate infidelity, F2's `x <= 10`
-/// vs `x < 10`, is caught). A non-closure in a `Pred` slot is an honest `Err`
+/// vs `x < 10`, is caught). A non-closure in a `Pred` slot is an `Err`
 /// (the registry says this slot must be a closure).
 fn encode_pred_arg(arg: &Expr, ctx: &RefCtx) -> Result<String, RefEncodeError> {
     match arg {
@@ -623,7 +623,7 @@ fn encode_method_call(
 
     match name {
         // The byte-view accessor (#127): `s.byte_at(i)` is the i-th byte of the
-        // sequence view, `recv[i]`. F3's teeth bite here: a production misdispatch
+        // sequence view, `recv[i]`. F3 covers a production misdispatch
         // to index `1` for source index `0` differs from this. This is the
         // `Seq<u8>`-bound byte-view (a #127/#147 `Seq`-receiver), distinct from
         // the `String`/TString wrapper byte-view above (#150 gap #2).
@@ -688,7 +688,7 @@ fn encode_method_call(
 ///
 /// `.slice(..)` over a `String` is not in the frozen contract byte-view set (the
 /// `TString` wrapper has no `spec_slice`: `slice` is an exec constructor, never
-/// named in a contract; no corpus clause uses it) → an honest [`RefEncodeError`],
+/// named in a contract; no corpus clause uses it) → an [`RefEncodeError`],
 /// never a silent wrong encoding.
 fn encode_string_byteview(
     recv: &str,
@@ -740,7 +740,7 @@ fn encode_string_byteview(
 /// - `.len()` → `m.len()` — the wrapper `spec fn len(&self) -> nat`, unchanged.
 ///
 /// `.get(_)`/`.insert(_)` are not spec-rewritten (production names `get` only via a
-/// `match`-in-`ens` over the result, and `insert` is exec) → an honest
+/// `match`-in-`ens` over the result, and `insert` is exec) → an
 /// [`RefEncodeError`], never a silent wrong encoding.
 fn encode_map_accessor(
     recv: &str,
@@ -844,7 +844,7 @@ fn encode_match(
 /// a binding (`x`), and a wildcard (`_`). A nested/struct/slice/or pattern, or a
 /// user enum variant (which production would enum-qualify via its `variants` map —
 /// the reference has no such map, so qualifying it would risk a silent wrong
-/// encoding) is an honest [`RefEncodeError`].
+/// encoding) is an [`RefEncodeError`].
 fn encode_pattern(pat: &Pattern) -> Result<String, RefEncodeError> {
     match pat {
         Pattern::Wildcard => Ok("_".to_string()),
@@ -960,7 +960,7 @@ fn encode_index(base: &Expr, index: &IndexArg, ctx: &RefCtx) -> Result<String, R
 ///   `xs@` when not seq-bound, the identity `xs` when bound as `Seq`).
 ///
 /// A `&` over anything else (a scalar, a non-slice expr) is outside the frozen
-/// contract sublanguage → an honest [`RefEncodeError`] (never a silent wrong
+/// contract sublanguage → an [`RefEncodeError`] (never a silent wrong
 /// encoding).
 fn encode_ref(inner: &Expr, ctx: &RefCtx) -> Result<String, RefEncodeError> {
     match inner {

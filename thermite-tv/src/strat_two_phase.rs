@@ -14,17 +14,17 @@
 //!
 //! ## The two phases (metatheory §8.2)
 //!
-//! - **Phase 1 — SYNTACTIC** (the common path): normalize both encodings to the layer-1
+//! - **Phase 1 — syntactic** (the common path): normalize both encodings to the layer-1
 //!   canonical form ([`crate::normalize`], carrying `nnf_sound`/`prenex_sound` — the
 //!   Lean `Strat/Nnf.lean` lemmas these passes mirror) and compare byte-for-byte. A hit
-//!   certifies equivalence WITHOUT a solver call. SPIKE-2 measured 40/40 = 100 %
+//!   certifies equivalence without a solver call. SPIKE-2 measured 40/40 = 100 %
 //!   syntactic coverage over the corpus, clearing the ≥ 90 % bar (Q-TV2), so this is the
 //!   dominant path.
-//! - **Phase 2 — SEMANTIC** (the thin fallback): on a syntactic miss, emit the
-//!   negation-unfriendly quantified-equivalence Z3 query with FINITE-BOUND assertions
+//! - **Phase 2 — semantic** (the thin fallback): on a syntactic miss, emit the
+//!   negation-unfriendly quantified-equivalence Z3 query with FINITE-bound assertions
 //!   ([`semantic_obligation`]) and run it. The two non-quantifier combinators
 //!   (`count_where`, a recursive `nat` fold; `permutation_of`, a multiset equality;
-//!   REQ-6) have NO raw-quantifier spelling, so they bypass phase 1 entirely
+//!   REQ-6) have no raw-quantifier spelling, so they bypass phase 1 entirely
 //!   ([`ClauseRoute::DirectSemantic`]) and land here directly.
 //! - **Timeout** is HONEST: a solver timeout in phase 2 WITHHOLDS the certificate
 //!   ([`TvVerdict::Withheld`]) — it is never reported as a pass. A withheld clause keeps
@@ -33,12 +33,12 @@
 //! ## The trust flip (the G2 gate)
 //!
 //! During the rollout window a stratified clause carries `trust: solver(z3) +
-//! ref_encode(strat, UNPROVEN — stage 2 in progress)` — honest that the reference
+//! ref_encode(strat, UNPROVEN — stage 2 in progress)`, recording that the reference
 //! encoder's soundness (T1-S/T2-S) is proven but the END-TO-END flip is gated on G2
 //! (`make audit` [1′][4′][8][9] green, REQ-9). The flip to the proven form
-//! `ref_encode(strat)` is the ONE-LINE change of the [`G2_FLIPPED`] gate, and is itself
+//! `ref_encode(strat)` is the one-LINE change of the [`G2_FLIPPED`] gate, and is itself
 //! a tested code path ([`strat_trust_profile`] + the toggle test). The gate constraint
-//! (REQ-5 option B / REQ-9): the flip must NOT trigger on REQ-5's structural soundness
+//! (REQ-5 option B / REQ-9): the flip must not trigger on REQ-5's structural soundness
 //! alone — it attests "proven over source meaning", which is REQ-8's atom-grounding
 //! (`lean/Thermite/Strat/Faithfulness.lean` T2-S), gated on the audit.
 //!
@@ -63,14 +63,14 @@ pub enum ClauseRoute {
 }
 
 /// The outcome of a phase-2 semantic Z3 query (the pluggable solver oracle's verdict).
-/// The solver execution lives in the caller (`forge`/Verus), exactly as the contract-TV
+/// The solver execution lives in the caller (`forge`/Verus), as the contract-TV
 /// obligation text is executed there — this crate produces the query and routes the
 /// verdict.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SemanticOutcome {
     /// Z3 proved `production <==> reference` (over the finite-bound model).
     Equivalent,
-    /// Z3 found a model where they differ — a real lowering-fidelity bug.
+    /// Z3 found a model where they differ — a lowering-fidelity bug.
     Divergent,
     /// Z3 timed out / returned `unknown` — no verdict.
     Timeout,
@@ -91,9 +91,9 @@ pub enum TvVerdict {
     /// Certified equivalent by the named phase — the clause may carry the stratified
     /// trust profile.
     Certified(TvPhase),
-    /// A real divergence (phase 2 found a counter-model): the lowering is NOT faithful.
+    /// A real divergence (phase 2 found a counter-model): the lowering is not faithful.
     Divergent,
-    /// The semantic phase timed out — the certificate is WITHHELD (honest `Timeout`
+    /// The semantic phase timed out — the certificate is WITHHELD (`Timeout`
     /// fallback). Never a pass; the clause keeps the conservative trust profile.
     Withheld,
 }
@@ -111,7 +111,7 @@ impl TvVerdict {
 ///
 /// `route` selects whether phase 1 is attempted (`count_where`/`permutation_of` skip it).
 /// `solve` is the phase-2 oracle: it is invoked at most once, with the
-/// [`semantic_obligation`] text, ONLY when phase 1 misses (or is skipped). The closure
+/// [`semantic_obligation`] text, only when phase 1 misses (or is skipped). The closure
 /// shape keeps the solver out of this crate (independence) while making the routing,
 /// the withhold-on-timeout, and the direct-semantic path fully unit-testable.
 pub fn classify_pair(
@@ -134,7 +134,7 @@ pub fn classify_pair(
 }
 
 /// Build the phase-2 semantic obligation: the negation-unfriendly quantified-equivalence
-/// Z3 query with FINITE-BOUND assertions (metatheory §8.2). The query asserts the
+/// Z3 query with FINITE-bound assertions (metatheory §8.2). The query asserts the
 /// production and reference encodings are equivalent over a bounded model — every carrier
 /// is constrained to a finite size so the `forall`s have a decidable instantiation set
 /// (the (R1) finite-carrier datum, mirrored at the solver). The text is a Verus/SMT
@@ -196,7 +196,7 @@ pub struct PhaseSplit {
     pub semantic: usize,
     /// Withheld: the semantic phase timed out (no certificate).
     pub timeout_withheld: usize,
-    /// Divergent: a real lowering-fidelity bug (phase 2 found a counter-model).
+    /// Divergent: a lowering-fidelity bug (phase 2 found a counter-model).
     pub divergent: usize,
 }
 
@@ -209,7 +209,7 @@ impl PhaseSplit {
 
     /// The run is clean iff no clause diverged and none was withheld — i.e. every clause
     /// was certified by one of the two phases. (A withheld clause is not a failure of the
-    /// lowering, but it is NOT a pass either; a clean two-phase sweep certifies all.)
+    /// lowering, but it is not a pass either; a clean two-phase sweep certifies all.)
     #[must_use]
     pub fn all_certified(&self) -> bool {
         self.divergent == 0 && self.timeout_withheld == 0
@@ -288,33 +288,33 @@ pub fn render_report(report: &TwoPhaseReport, header: &str) -> String {
 // The trust flip (the G2 gate)
 // ===========================================================================
 
-/// THE G2 DECLARATION (REQ-8's one-line flip, now enabled by REQ-9). This is the
+/// the G2 declaration (REQ-8's one-line flip, now enabled by REQ-9). This is the
 /// compiled-in intent — "the four stratified soundness theorems are in the spine and the
 /// G2 trust flip is ENABLED" — flipped to `true` at G2 (REQ-9), the increment that built
 /// the audit gate and saw [1′][4′][8][9] green in one `make audit` run.
 ///
-/// CRUCIALLY, the declaration alone does NOT emit the proven label: the EFFECTIVE per-clause
-/// flip is [`g2_flip_permitted`]`(G2_FLIPPED, &checks)` — the declaration AND every gating
+/// CRUCIALLY, the declaration alone does not emit the proven label: the effective per-clause
+/// flip is [`g2_flip_permitted`]`(G2_FLIPPED, &checks)` — the declaration and every gating
 /// audit check green. A red check downgrades the label back to the conservative rollout
 /// form regardless of this constant (the AC-9 mechanical block: a flipped certificate can
 /// never out-run the audit that justifies it). `forge g2-gate` is the runtime enforcer —
-/// it FAILS `make audit` if `G2_FLIPPED` is set while any of the four is red.
+/// it fails `make audit` if `G2_FLIPPED` is set while any of the four is red.
 ///
-/// The proven label is honestly SCOPED (REQ-9 / REQ-5 option B): structure proven (T1-S),
+/// The proven label is scoped (REQ-9 / REQ-5 option B): structure proven (T1-S),
 /// qfree atoms grounded to the v1 `Thermite.denote` (T2-S), and rel/array atoms discharged
 /// by Z3's theory (the solver base) — kernel-grounding the rel atoms is stage-3
 /// reconstruction. See [`REF_ENCODE_PROVEN`].
 pub const G2_FLIPPED: bool = true;
 
-/// The conservative (pre-G2) reference-encoder trust string: honest that the reference
-/// encoder is sound (T1-S/T2-S) but the end-to-end flip is gated on G2.
+/// The conservative pre-G2 trust string records that the reference encoder is sound
+/// (T1-S/T2-S) while the end-to-end flip remains gated on G2.
 pub const REF_ENCODE_UNPROVEN: &str = "ref_encode(strat, UNPROVEN — stage 2 in progress)";
 
-/// The proven (post-G2) reference-encoder trust string — HONESTLY SCOPED (REQ-9 / REQ-5
+/// The proven (post-G2) reference-encoder trust string — HONESTLY scoped (REQ-9 / REQ-5
 /// option B / #330–#331). The flip attests exactly: the quantifier/boolean STRUCTURE is
 /// proven faithful (T1-S `strat_ref_sound`), `qfree` atoms are grounded to the v1
 /// `Thermite.denote` (T2-S `strat_lowering_faithful`), and `rel`/array atoms are discharged
-/// by Z3's theory (the solver base — model-relative, the honest L4 boundary). It does NOT
+/// by Z3's theory (the solver base — model-relative, the L4 boundary). It does not
 /// claim kernel-grounding of the rel/array atoms; that is stage-3 reconstruction. The
 /// string starts with `ref_encode(strat)` (the recognizable proven prefix) and carries the
 /// scope inline so a reader of the certificate sees the boundary, not an over-claim.
@@ -329,8 +329,8 @@ pub const SOLVER_Z3: &str = "solver(z3)";
 /// The trust profile a stratified clause carries, parameterized by the gate. This is the
 /// flip's tested code path: `g2_proven == false` (the rollout window) reads the UNPROVEN
 /// form; `g2_proven == true` (post-G2) reads the proven form. The solver component is
-/// unchanged. A clause whose two-phase verdict is NOT certified
-/// ([`TvVerdict::is_certified`]) must NOT be given this profile by the caller (a withheld
+/// unchanged. A clause whose two-phase verdict is not certified
+/// ([`TvVerdict::is_certified`]) must not be given this profile by the caller (a withheld
 /// or divergent clause keeps the conservative cage profile).
 #[must_use]
 pub fn strat_trust_profile(g2_proven: bool) -> Vec<String> {
@@ -357,7 +357,7 @@ pub fn strat_trust_profile_current() -> Vec<String> {
 
 /// The four `make audit` checks that gate the G2 trust flip (REQ-9 / AC-9). Each field is
 /// the green (`true`) / red (`false`) outcome of one audit sub-check; the flip is permitted
-/// only when EVERY one is green. The field names mirror the design-doc check labels
+/// only when every one is green. The field names mirror the design-doc check labels
 /// ([1′][4′][8][9], `.design/stage2-stratified-cage.md` REQ-9).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct G2Checks {
@@ -386,7 +386,7 @@ impl G2Checks {
         self.axiom_probe && self.doc_drift && self.differential && self.two_phase_tv
     }
 
-    /// The labels of the RED checks (for the audit report / the withhold reason). Empty iff
+    /// The labels of the red checks (for the audit report / the withhold reason). Empty iff
     /// [`all_green`](Self::all_green). Deterministically ordered [1′][4′][8][9].
     #[must_use]
     pub fn red(&self) -> Vec<&'static str> {
@@ -418,8 +418,8 @@ impl G2Checks {
     }
 }
 
-/// THE G2 GATE (AC-9). The trust flip is PERMITTED iff G2 is DECLARED (`declared`, the
-/// compiled-in [`G2_FLIPPED`]) AND every gating audit check is green
+/// the G2 gate (AC-9). The trust flip is PERMITTED iff G2 is declared (`declared`, the
+/// compiled-in [`G2_FLIPPED`]) and every gating audit check is green
 /// ([`G2Checks::all_green`]). This is the mechanical block: any red check withholds the
 /// flip regardless of the declaration, so a flipped certificate can never out-run the audit
 /// that justifies it. This is the tested code path — the toggle tests below drive each of
@@ -429,9 +429,9 @@ pub fn g2_flip_permitted(declared: bool, checks: &G2Checks) -> bool {
     declared && checks.all_green()
 }
 
-/// The effective stratified trust profile UNDER the G2 gate: the proven (honestly scoped)
+/// The effective stratified trust profile under the G2 gate: the proven, scoped
 /// form iff [`g2_flip_permitted`], else the conservative `UNPROVEN` rollout form. The
-/// production / audit-surface emitter routes through HERE so a red check automatically
+/// production / audit-surface emitter routes through here so a red check automatically
 /// downgrades the label (never an over-claim — REQ-9 / REQ-5 option B).
 #[must_use]
 pub fn strat_trust_profile_gated(declared: bool, checks: &G2Checks) -> Vec<String> {
@@ -581,7 +581,7 @@ mod tests {
 
     #[test]
     fn trust_profile_reads_unproven_before_g2_and_proven_after() {
-        // The pre-G2 (rollout) form: honest UNPROVEN reference-encoder string.
+        // The pre-G2 rollout form uses the UNPROVEN reference-encoder string.
         let before = strat_trust_profile(false);
         assert_eq!(
             before,
@@ -605,9 +605,9 @@ mod tests {
 
     #[test]
     fn compiled_declaration_is_flipped_at_g2() {
-        // REQ-9 reached G2: `G2_FLIPPED` is now the DECLARATION (`true`). The
-        // declaration-level profile reads the proven (honestly scoped) form — but this is
-        // the DECLARATION only; the per-clause emit still routes through the gate
+        // REQ-9 reached G2: `G2_FLIPPED` is now the declaration (`true`). The
+        // declaration-level profile reads the proven, scoped form — but this is
+        // the declaration only; the per-clause emit still routes through the gate
         // ([`g2_flip_permitted`]), which a red check downgrades (see the toggle tests).
         // REQ-9 flips the G2 declaration on (checked at compile time).
         const _: () = assert!(G2_FLIPPED);
@@ -636,7 +636,7 @@ mod tests {
 
     #[test]
     fn gate_blocks_the_flip_when_any_one_check_is_red() {
-        // AC-9: toggle EACH of the four red in turn (the others green) and assert the flip
+        // AC-9: toggle each of the four red in turn (the others green) and assert the flip
         // is mechanically withheld — the proven label is never emitted while a check is red,
         // even though the declaration is on.
         let labels = [

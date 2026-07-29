@@ -1,7 +1,7 @@
 //! Divergence pins (crosslink #229) — the #225/#227 type-directed spec-call
 //! narrowing cast (`Ctx::spec_call_param_cast` fed by `spec_fn_param_type_map`)
 //! is still not threaded to every spec-context lowering site. #227 (commit
-//! `1c59e4fd`) claims "narrowing target = callee's declared param type at ALL
+//! `1c59e4fd`) claims "narrowing target = callee's declared param type at all
 //! six spec-context entry points", but the proof-aid emission paths re-lower
 //! contract clauses with a bare un-threaded `Ctx::spec_seq()`:
 //!

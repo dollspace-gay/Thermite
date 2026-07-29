@@ -7,20 +7,20 @@
 //! with the independent stratified reference encoder
 //! (`thermite_tv::strat_ref_encode`), validates the production lowering against it
 //! through the two phases (syntactic normalizer → thin semantic fallback), reports the
-//! phase split, and assigns each CERTIFIED clause its `trust:` profile under the G2 gate
+//! phase split, and assigns each certified clause its `trust:` profile under the G2 gate
 //! (`thermite_tv::strat_two_phase::G2_FLIPPED`).
 //!
 //! The flip is the central deliverable: during the rollout window a certified stratified
 //! clause carries `trust: solver(z3) + ref_encode(strat, UNPROVEN — stage 2 in
 //! progress)`; the one-line `G2_FLIPPED` change switches it to the proven form
 //! `ref_encode(strat)` once `make audit`'s [1′][4′][8][9] are green (REQ-9). A WITHHELD
-//! (timeout) or DIVERGENT clause is NOT given the profile — it keeps the conservative
+//! (timeout) or DIVERGENT clause is not given the profile — it keeps the conservative
 //! cage trust.
 //!
 //! The real Z3 discharge of the rarely-hit semantic phase is wired by the audit
 //! integration (REQ-9, check [9]); absent a wired solver this orchestrator is
 //! conservative — a syntactic MISS WITHHOLDS (never a false pass), so the generated
-//! faithful stream (every clause a syntactic hit) certifies while any genuine miss is
+//! faithful stream (every clause a syntactic hit) certifies while any miss is
 //! surfaced as withheld for the solver pass to adjudicate.
 
 use thermite_tv::strat_two_phase::{
@@ -41,7 +41,7 @@ pub const STRAT_FAITHFUL_DEFAULT_SEED: u64 = 0x5354_5246_4149_5448; // "STRFAITH
 pub struct StratFaithfulReport {
     /// The two-phase split (syntactic / semantic / timeout-withheld / divergent).
     pub split: PhaseSplit,
-    /// The `trust:` profile every CERTIFIED clause carries under the compiled-in gate
+    /// The `trust:` profile every certified clause carries under the compiled-in gate
     /// (`G2_FLIPPED`). Empty if no clause certified.
     pub trust_profile: Vec<String>,
     /// Whether the compiled-in gate is the proven (post-G2) form.
@@ -72,7 +72,7 @@ pub fn run_generated(seed: u64, n: usize) -> StratFaithfulReport {
             let reference = strat_ref_encode(phi);
             // The production lowering of an admitted clause is faithful to the reference
             // by T1-S/T2-S; here both come from the independent encoder, so a correct
-            // clause is a syntactic hit. (The real production string is supplied by
+            // clause is a syntactic hit. (The production string is supplied by
             // `thermite_lower` in the audit wiring, REQ-9.)
             StratClause {
                 label: format!("gen:{i}"),
@@ -84,11 +84,11 @@ pub fn run_generated(seed: u64, n: usize) -> StratFaithfulReport {
         .collect();
 
     // Conservative semantic oracle: a syntactic miss has no wired solver yet, so WITHHOLD
-    // (honest — never a false pass). REQ-9 replaces this with the finite-bound Z3 query.
+    // ( never a false pass). REQ-9 replaces this with the finite-bound Z3 query.
     let report = run_two_phase(&clauses, |_obligation| SemanticOutcome::Timeout);
 
-    // The sweep vouches for audit check [9] DIRECTLY (its own two-phase verdict); the other
-    // three gating checks ([1′][4′][8]) are the G2 DECLARATION's responsibility (`G2_FLIPPED`
+    // The sweep vouches for audit check [9] directly (its own two-phase verdict); the other
+    // three gating checks ([1′][4′][8]) are the G2 declaration's responsibility (`G2_FLIPPED`
     // is only set because `make audit` saw them green — `forge g2-gate` mechanically enforces
     // it). So the emitted `trust:` profile routes through the gate with [9] = this sweep's
     // pass, downgrading to the conservative `UNPROVEN` form automatically if a clause diverged
@@ -168,7 +168,7 @@ mod tests {
     fn the_trust_profile_is_the_proven_scoped_form_at_g2() {
         // REQ-9 reached G2: a PASSING sweep vouches for check [9], and the declaration
         // (`G2_FLIPPED`) carries [1′][4′][8], so the gated profile reads the proven
-        // (honestly scoped) reference-encoder string — no UNPROVEN. The mechanical block (a
+        // scoped reference-encoder string — no UNPROVEN. The mechanical block (a
         // red check downgrading the label) is covered by the gate-toggle tests in
         // `thermite_tv::strat_two_phase` (AC-9).
         let r = run_generated(STRAT_FAITHFUL_DEFAULT_SEED, 8);

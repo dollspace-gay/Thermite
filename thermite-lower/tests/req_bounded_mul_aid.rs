@@ -5,9 +5,9 @@
 //! overflow obligation, even `n * n` under `req n <= 30` (probed live against
 //! verus 0.2026.05.24). The lowerer emits, at the start of the block that
 //! contains the product, one
-//! `assert((EXPR) <= BOUND) by(nonlinear_arith) requires <req conjuncts>;`
+//! `assert((EXPR) <= bound) by(nonlinear_arith) requires <req conjuncts>;`
 //! whose `requires` are exactly the req conjuncts the bound depends on (no
-//! invented bound) and whose `BOUND` is the syntactic product of those conjuncts'
+//! invented bound) and whose `bound` is the syntactic product of those conjuncts'
 //! constants. The aid can only fail, never prove a false thing (R-DEFER-9).
 //!
 //! Expected values are hand-derived from the design contract + the user's

@@ -434,7 +434,7 @@ fn parse_program(path: &Path) -> Result<Program, ForgeError> {
 
 /// Emit the full compiled L1 source for `path` (incl. any `--entry` runner)
 /// without compiling it (REQ-1/REQ-5/AC-6). This is `build_file`'s codegen
-/// source-of-truth — `build_file` compiles exactly these bytes, and the
+/// source-of-truth — `build_file` compiles these bytes, and the
 /// reproducibility test asserts they are byte-identical across two calls (forge
 /// owns the emission determinism, independent of any rustc nondeterminism). The
 /// `--entry` runner is appended deterministically (`synthesize_entry_main`).
@@ -758,9 +758,9 @@ fn invoke_rustc(
         path: scratch.path.display().to_string(),
         source: e,
     })?;
-    // The CANONICAL scratch path (REQ-5/AC-6, byte-reproducibility). On macOS the
+    // The canonical scratch path (REQ-5/AC-6, byte-reproducibility). On macOS the
     // temp root `/var/folders/...` is reached through the `/var → /private/var`
-    // symlink, and rustc records the CANONICAL cwd (`/private/var/...`, the
+    // symlink, and rustc records the canonical cwd (`/private/var/...`, the
     // DW_AT_comp_dir) in the artifact. A `--remap-path-prefix` keyed only on the
     // non-canonical `scratch.path` (`/var/...`) therefore silently MISSES, and the
     // per-run, PID-bearing absolute path leaks into the rlib — so two same-input
@@ -803,7 +803,7 @@ fn invoke_rustc(
         .arg(&rs_name)
         .arg("--remap-path-prefix")
         .arg(format!("{}=.", scratch.path.display()))
-        // Also remap the CANONICAL scratch path: on macOS rustc records the
+        // Also remap the canonical scratch path: on macOS rustc records the
         // `/private/var/...` form, which the non-canonical remap above misses
         // (REQ-5/AC-6 — the byte-reproducibility fix). On Linux this equals the
         // line above (a harmless duplicate).

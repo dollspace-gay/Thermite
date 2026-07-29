@@ -1,8 +1,8 @@
-//! The R-CHAR-3 exec-teeth-test (`.design/verified/exec-tv.md` REQ-4; epic
+//! The R-CHAR-3 exec-TV negative test (`.design/verified/exec-tv.md` REQ-4; epic
 //! crosslink #151, blocker #155). The proof that exec-position TV discriminates a
 //! faithful body-expression lowering from an injected infidelity — the #122/#146
 //! infidelity class in its general home (the exec body), plus the wrong-op/overflow
-//! and off-by-one classes the contract-position teeth cannot reach.
+//! and off-by-one classes that contract-position tests cannot reach.
 //!
 //! For each orchestrator-authored fixture (E1–E4) the test builds the exec-fn
 //! equivalence obligation twice — once with the faithful `P_production` (the exact
@@ -63,7 +63,7 @@ fn cast(inner: Expr, ty: Type) -> Expr {
     }
 }
 
-// ---- verus resolution + discharge (mirrors teeth.rs) -----------------------
+// ---- verus resolution + discharge (mirrors tests/teeth.rs) -----------------
 
 fn verus_bin() -> Option<PathBuf> {
     if let Ok(p) = std::env::var("VERUS_BIN") {
@@ -170,8 +170,8 @@ enum CatchShape {
 }
 
 /// Discharge an infidel obligation: TV must catch it. Skips with a logged note if
-/// verus is absent. The catch shape is asserted precisely so the teeth bite for the
-/// right reason (R-CHAR-3 — a spurious unrelated failure is not a pass).
+/// verus is absent. The asserted catch shape rules out unrelated failures
+/// (R-CHAR-3).
 fn assert_infidel_caught(fixture: &str, program: &str, expect: CatchShape) {
     let tmp = std::env::temp_dir().join(format!("tv_exec_teeth_{fixture}_infidel.rs"));
     std::fs::write(&tmp, program).unwrap_or_else(|e| panic!("write {fixture} infidel: {e}"));
@@ -226,7 +226,7 @@ fn assert_infidel_caught(fixture: &str, program: &str, expect: CatchShape) {
 }
 
 // ============================================================================
-// E1 — cast-paren (#122): the inner-paren teeth
+// E1 — cast-paren (#122): missing inner parentheses
 // source exec expr: (n - 1) as u8     req frame: n: u64, n >= 1 (+ n - 1 <= 255
 //   so the narrowing cast is well-defined — a bound on the expr, not the bug)
 // faithful P_prod:  (n - 1) as u8     (pinned in thermite-lower exec_expr_tests)
@@ -270,7 +270,7 @@ fn e1_cast_paren_infidel_caught() {
 }
 
 // ============================================================================
-// E2 — cast-`<` (#146): the outer-paren teeth
+// E2 — cast-`<` (#146): missing outer parentheses
 // source exec expr: x as u32 < 33     req frame: x: u64
 // faithful P_prod:  (x as u32) < 33   (pinned in thermite-lower exec_expr_tests)
 // infidel  P_prod:  x as u32 < 33     (the `u32 <` mis-parses as a generic list)
@@ -312,7 +312,7 @@ fn e2_cast_lt_infidel_caught() {
 }
 
 // ============================================================================
-// E3 — wrong-op / overflow: the bounded-value teeth (the EXEC-value semantics)
+// E3 — wrong operator or overflow under bounded exec-value semantics
 // source exec expr: a + b   req frame: a: u64, b: u64, a + b <= 0xFFFF (no overflow)
 // faithful P_prod:  a + b               (pinned in thermite-lower exec_expr_tests)
 // infidel  P_prod:  a.wrapping_sub(b)   (wrong op → value differs)
@@ -357,7 +357,7 @@ fn e3_wrong_op_infidel_caught() {
 }
 
 // ============================================================================
-// E4 — off-by-one index: the bounded-access teeth
+// E4 — off-by-one index under bounded-access semantics
 // source exec expr: xs[i]   req frame: xs: &[u32], i: usize, i < xs.len()
 // faithful P_prod:  xs[i]                 (pinned in thermite-lower exec_expr_tests)
 // infidel  P_prod:  xs[i + 1]             (off-by-one → value differs / OOB)
@@ -403,7 +403,7 @@ fn e4_index_infidel_caught() {
     assert_infidel_caught("e4", &prog, CatchShape::Postcondition);
 }
 
-// ---- exec_ref_value unit checks (the reference output MEANS the faithful col) -
+// ---- exec_ref_value unit checks (the reference output means the faithful col) -
 
 /// The exec reference encoding of each source must be a string that means the
 /// faithful production column at the bounded type (the obligation tests prove
@@ -437,7 +437,7 @@ fn exec_ref_value_matches_faithful_meaning() {
     );
 }
 
-/// An out-of-scope construct (a method call / Vec-String accessor) is an honest
+/// An out-of-scope construct (a method call / Vec-String accessor) is an
 /// `Err`, never a panic / silent wrong encoding (REQ-1 / R-CODE-2). This is the
 /// #154/#156 territory the step-2.1 encoder refuses.
 #[test]

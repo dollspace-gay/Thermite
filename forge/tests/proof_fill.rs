@@ -89,7 +89,7 @@ fn fill_closes_a_proof_hole_and_commits_the_tactics() {
     let _ = std::fs::remove_file(&th);
 }
 
-// AC-11 / REQ-5: a fill citing a tactic OUTSIDE the frozen battery is REFUSED on the
+// AC-11 / REQ-5: a fill citing a tactic outside the frozen battery is REFUSED on the
 // re-check, named — never silently accepted (the 2c battery is the elaboration gate).
 #[test]
 fn fill_with_an_unlisted_tactic_is_refused_by_the_battery() {
@@ -107,7 +107,7 @@ fn fill_with_an_unlisted_tactic_is_refused_by_the_battery() {
     let _ = std::fs::remove_file(&th);
 }
 
-// The §5.1 fill loop: a fill whose tactics introduce a NEW `?pN` hole re-presents the
+// The §5.1 fill loop: a fill whose tactics introduce a new `?pN` hole re-presents the
 // new open hole (and the item stays non-certified until it is closed).
 #[test]
 fn fill_introducing_a_new_hole_re_presents_it() {

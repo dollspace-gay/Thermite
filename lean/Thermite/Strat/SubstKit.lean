@@ -181,7 +181,7 @@ theorem substAtom_liftAtom (c : Nat) (s : Tm) (a : Atom) :
   | eq t u => simp only [liftAtom, substAtom, substTm_liftTm]
   | qf e => rfl
 
-/-! ## The two load-bearing lemmas (note §4, verbatim shapes)
+/-! ## The two required lemmas (note §4, verbatim shapes)
 
     `q` is fixed context; the formula `φ` is the induction target; the cutoff /
     index / value / environment are quantified after it. The `atom` case factors

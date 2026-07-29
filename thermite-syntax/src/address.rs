@@ -68,7 +68,7 @@ pub enum AddrKind {
     /// `witness#N`, or a proof obligation `f.proof.ens#k`. The consumers (proof view
     /// 2e, lemma library 3) resolve these; here they are addressable + round-trip.
     Forge,
-    /// An open PROOF hole `?pN` (`.design/stage1-forge-tier.md` REQ-3) inside a
+    /// An open proof hole `?pN` (`.design/stage1-forge-tier.md` REQ-3) inside a
     /// proof block. Addressed `<lemma>.proof.?pN` / `f.proof.ens#k.?pN`. Distinct
     /// from a body [`AddrKind::Hole`]: `forge fill` targeting a proof hole is the
     /// proof view (increment 2e, REQ-7), so for now this is addressable + round-trip

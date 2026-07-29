@@ -3,7 +3,7 @@
 //! 07-strings.md REQ-13), `find` (→ `Option<u64>`, REQ-14, reusing C7), `split` (→
 //! `Vec<String>`, REQ-15, reusing C6), and `trim` (→ `String`, REQ-16). These run
 //! against the two external truths the toolchain does not author for itself: the
-//! built `forge` binary's certificate ladder (`forge check`, real verus) for the
+//! built `forge` binary's certificate ladder (`forge check`, verus) for the
 //! predicate/find ops, and — for the `split`/`trim` constructing ops whose thin
 //! surface caller cannot be mutation-scored (the §7 floor needs a scoreable body
 //! mutant; a one-line `{ s.split(sep) }` delegates entirely to the proven method, the
@@ -15,13 +15,13 @@
 //!   * `s.starts_with(p)` / `s.contains(p)` / `s.ends_with(p)` → L3 pure with the
 //!     `ens result == occurs_at(..)` / `contains_sub(..)` contract; a true case
 //!     (a known prefix) proves `result == true`, a false case proves `result ==
-//!     false`, and a broken `starts_with` fails verus (the predicate is real teeth).
+//!     false`, and a broken `starts_with` fails verus.
 //!   * `s.find(p)` → L3 pure with the spec-`match`-in-`ens`; a pinned Some case
 //!     (needle present at 0) proves `result is Some`, so the always-`None` mutant is
 //!     provably wrong (killable — the #101 trap avoided).
-//!   * `s.split(sep)` → the count-bound + sep-free contract verifies under real verus
+//!   * `s.split(sep)` → the count-bound + sep-free contract verifies under verus
 //!     `0 errors`; a `split`-drop body (always 1 piece) fails the count bound.
-//!   * `s.trim()` → the length floor + subrange content verifies under real verus.
+//!   * `s.trim()` → the length floor + subrange content verifies under verus.
 //!   * The `contains` name-clash: a String `s.contains(needle)` and a Vec
 //!     `v.contains(x)` both certify (receiver-type dispatch — `TString::contains` vs
 //!     `TVec::contains` — neither clobbers).
@@ -155,7 +155,7 @@ fn verus_on_lowered(tag: &str, program: &str) -> (bool, String) {
 /// AC-9 — `starts_with`/`contains`/`ends_with` certify L3 pure with the
 /// `occurs_at`/`contains_sub` contract; a true case and a false case both prove.
 ///
-/// AUTHORITY: `.design/basis/07-strings.md` REQ-13 — the predicates lower to the byte
+/// authority: `.design/basis/07-strings.md` REQ-13 — the predicates lower to the byte
 /// scans, the contract names the seeded `occurs_at`/`contains_sub` spec fns inside the
 /// §4.2 cage. `thermite-design.md` §6: a fully-discharged verus proof is L3. Grounded
 /// `14 verified, 0 errors`.
@@ -195,7 +195,7 @@ fn ac9_predicates_certify_l3_pure() {
 /// true`, so the predicate is non-vacuous (a broken always-false `starts_with` would
 /// fail this contract).
 ///
-/// AUTHORITY: `.design/basis/07-strings.md` REQ-13 — a true case proves `result ==
+/// authority: `.design/basis/07-strings.md` REQ-13 — a true case proves `result ==
 /// true`; non-vacuity (the false case bites a broken predicate). Grounded.
 #[test]
 fn ac9_true_case_pinned_certifies_l3() {
@@ -220,7 +220,7 @@ fn ac9_true_case_pinned_certifies_l3() {
 /// AC-10 — `find` certifies L3 pure with the spec-`match`-in-`ens`; the Some case is
 /// pinned so the always-None mutant is killable (#101 trap avoided).
 ///
-/// AUTHORITY: `.design/basis/07-strings.md` REQ-14 — `s.find(p)` lowers to the
+/// authority: `.design/basis/07-strings.md` REQ-14 — `s.find(p)` lowers to the
 /// occurrence scan, the `ens match result { Some(at) => occurs_at(..), None =>
 /// !contains_sub(..) }` (the C7 spec-`match`). A pinned Some case (needle present)
 /// proves `result is Some`. Grounded. `thermite-design.md` §6: a discharged proof is L3.
@@ -254,13 +254,13 @@ fn ac10_find_certifies_l3_with_pinned_some() {
 
 /// AC-9 non-vacuity (R-DEFER-9) — a broken `starts_with` (drops the byte-mismatch
 /// check, always returns `true`) fails verus. The predicate's `ens result ==
-/// occurs_at(..)` is load-bearing: an always-`true` body does not satisfy it when the
+/// occurs_at(..)` is required: an always-`true` body does not satisfy it when the
 /// prefix does not match.
 ///
-/// AUTHORITY: `.design/basis/07-strings.md` REQ-13 — a broken `starts_with` fails
+/// authority: `.design/basis/07-strings.md` REQ-13 — a broken `starts_with` fails
 /// (`13 verified, 1 errors`, the false case bites). `thermite-design.md` §7. The break
 /// is injected into a standalone verus probe (the surface cannot mutate the generated
-/// method body), confirming the predicate's contract is a real proof.
+/// method body), confirming the predicate's contract is a proof.
 #[test]
 fn ac9_broken_starts_with_fails_real_verus() {
     if !verus_present() {
@@ -313,13 +313,13 @@ fn main() {}
     );
 }
 
-/// AC-11 — `split` verifies under real verus with the count-bound + sep-free contract
+/// AC-11 — `split` verifies under verus with the count-bound + sep-free contract
 /// (the Vec<String> push loop, fx alloc). A thin `{ s.split(sep) }` caller cannot be
 /// mutation-scored (the parse_u64 AC-4 precedent — the method's proof is the
-/// deliverable), so the cert level is established by the real verus run, not the
+/// deliverable), so the cert level is established by the verus run, not the
 /// §7-gated `forge check` level.
 ///
-/// AUTHORITY: `.design/basis/07-strings.md` REQ-15 — `s.split(sep)` lowers to the scan
+/// authority: `.design/basis/07-strings.md` REQ-15 — `s.split(sep)` lowers to the scan
 /// loop pushing `TString` pieces into a `TVecTString` (reusing C6), `ens
 /// result.len() == 1 + count_sep(s@, sep) && forall|k| sep_free(..)`. Grounded `7
 /// verified, 0 errors`. `thermite-design.md` §6.
@@ -343,9 +343,9 @@ fn ac11_split_count_bound_verifies_under_real_verus() {
 }
 
 /// AC-11 non-vacuity (R-DEFER-9) — a broken `split` that drops the mid-loop
-/// `pieces.push` (always 1 piece) fails the count bound under real verus.
+/// `pieces.push` (always 1 piece) fails the count bound under verus.
 ///
-/// AUTHORITY: `.design/basis/07-strings.md` REQ-15 — a broken `split` fails (`6
+/// authority: `.design/basis/07-strings.md` REQ-15 — a broken `split` fails (`6
 /// verified, 1 errors`, the count bound bites). `thermite-design.md` §7.
 #[test]
 fn ac11_broken_split_fails_real_verus() {
@@ -412,10 +412,10 @@ fn main() {}
     );
 }
 
-/// AC-12 — `trim` verifies under real verus with the length floor + subrange content
+/// AC-12 — `trim` verifies under verus with the length floor + subrange content
 /// contract (fx alloc). Like `split`, the thin caller is verus-grounded directly.
 ///
-/// AUTHORITY: `.design/basis/07-strings.md` REQ-16 — `s.trim()` lowers to the
+/// authority: `.design/basis/07-strings.md` REQ-16 — `s.trim()` lowers to the
 /// forward/backward whitespace scan + bounded copy, `ens result.len() <= s.len() &&
 /// exists|lo,hi| result == s.subrange(lo,hi)`. Grounded `8 verified, 0 errors`.
 #[test]
@@ -441,7 +441,7 @@ fn ac12_trim_verifies_under_real_verus() {
 /// both ops certify L3, receiver-type-dispatched (`TString::contains` vs
 /// `TVec::contains`), neither clobbers the other.
 ///
-/// AUTHORITY: `.design/basis/07-strings.md` REQ-13 (the design-flagged name-clash) +
+/// authority: `.design/basis/07-strings.md` REQ-13 (the design-flagged name-clash) +
 /// `.design/basis/04-collections.md` REQ-12 (the Vec membership `contains`). Rust keys
 /// inherent-method resolution on the receiver type, so the shared surface name resolves
 /// to two distinct methods. `thermite-design.md` §6.
@@ -457,7 +457,7 @@ fn contains_name_clash_both_string_and_vec_certify() {
     // C6 admits `v.contains` as a flat built-in but the v1 corpus exercises it in exec,
     // not a contract `ens`). Both lower in one program: the String op resolves to
     // `TString::contains`, the Vec op to `TVec::contains` — receiver-type dispatch, no
-    // clobber. The whole program lowering verifying under real verus is the proof both
+    // clobber. The whole program lowering verifying under verus is the proof both
     // dispatch correctly (a clobber would mis-resolve one and fail verus).
     let (ok, output) = verus_on_lowered(
         "name_clash",

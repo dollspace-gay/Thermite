@@ -3,7 +3,7 @@
 //! (`.design/lower/l2-kani.md` AC-1/AC-2/AC-3/AC-5). For each corpus program:
 //! parse it, `lower_l2` it, write the emitted harness into a throwaway cargo
 //! crate, run `cargo kani --output-format terse`, and assert
-//! `VERIFICATION:- SUCCESSFUL` (the contract holds for all inputs up to the
+//! `verification:- successful` (the contract holds for all inputs up to the
 //! bound) at the design-pinned bound `N = 4` (`unwind(5)` for `sum`'s
 //! `while`, `unwind(6)` for `binary_search`'s `loop`).
 //!
@@ -11,7 +11,7 @@
 //! kani-spawning tests skip (a diagnostic + early return, not `#[ignore]`)
 //! when kani is absent, mirroring the verus-absent skip in `lower_conformance.rs`
 //! (`.design/lower/l2-kani.md` REQ-8). The pure emitter shape assertions (no kani
-//! spawn) run unconditionally. Expected `VERIFICATION:- SUCCESSFUL` / the
+//! spawn) run unconditionally. Expected `verification:- successful` / the
 //! counterexample markers trace to the grounded real-kani runs (R-CHAR-3 — Kani's
 //! own format, not forge's output). `unwrap`/`expect` are fine here (`tests/` is
 //! not anti-pattern-gated).

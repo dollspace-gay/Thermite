@@ -1,36 +1,36 @@
 //! `forge/src/lemma_library.rs` — the Stage-1 forge-tier **lemma library mechanics**
-//! (`.design/stage1-forge-tier.md` REQ-9 / AC-13, increment 3; the LAST stage-1
-//! feature increment). This is the LOGIC the surface (2a's `lemma` item), the proof
+//! (`.design/stage1-forge-tier.md` REQ-9 / AC-13, increment 3; the last stage-1
+//! feature increment). This is the logic the surface (2a's `lemma` item), the proof
 //! discharge (2e's `discharge_forge_lemma`), and the frozen battery (2c's
 //! `scan_citations`) set up for. REQ-9 trails usage — it is last in dependency order
 //! because it reasons about ALREADY-discharged lemma certificates.
 //!
-//! Three mechanics, all per-project (Q1 — there is NO cross-project sharing; that is
+//! Three mechanics, all per-project (Q1 — there is no cross-project sharing; that is
 //! deferred, see the spec's Out of Scope):
 //!
 //! 1. **Per-project lemma namespace** (Q1). A project's top-level `lemma` items form a
-//!    namespace ([`LemmaLibrary`]) keyed by name. Only a TOP-LEVEL [`LemmaItem`] enters
+//!    namespace ([`LemmaLibrary`]) keyed by name. Only a top-level [`LemmaItem`] enters
 //!    the namespace — a proof-local `have`/`let` binding never does, so the namespace is
-//!    the ONLY cross-function citation surface (Q6: "no cross-function sharing except via
+//!    the only cross-function citation surface (Q6: "no cross-function sharing except via
 //!    a lemma"). A `proof for f` block's several `ens#k` obligations share that one
 //!    function's local context; a name they establish locally is invisible to `proof for
 //!    g` (it is not in the namespace) — enforced structurally by building the namespace
 //!    from top-level lemmas only.
 //!
 //! 2. **Certified-only citation resolution** (AC-13). A proof citing a project lemma
-//!    (`simp [melems_cons]`) resolves ONLY if that lemma carries a certificate. A
-//!    citation to a project lemma that did NOT certify is REFUSED — named — never a
+//!    (`simp [melems_cons]`) resolves only if that lemma carries a certificate. A
+//!    citation to a project lemma that did not certify is REFUSED — named — never a
 //!    silent pass ([`enforce_citations`] → [`UncertifiedCitation`]). This is the
 //!    proof-tier analogue of the frozen-battery refusal: the frozen battery refuses a
 //!    citation outside the closed spine simp set; REQ-9 refuses a citation to an
-//!    uncertified PROJECT lemma. The two compose — a simp citation resolves against the
+//!    uncertified project lemma. The two compose — a simp citation resolves against the
 //!    frozen battery OR a certified project lemma; anything else is refused.
 //!
 //! 3. **Dedup-on-burn by statement hash with citation rewrite** (Q1 / AC-13). Two
-//!    lemmas with the SAME statement (same params + `req` + `ens`) under DIFFERENT names
-//!    are ONE proven fact: only the first (the canonical) is stored, and a citation to
-//!    the duplicate is REWRITTEN to the canonical ([`LemmaLibrary::rewrite_citations`]).
-//!    The statement hash ([`statement_hash`]) excludes the lemma NAME and the PROOF, so
+//!    lemmas with the same statement (same params + `req` + `ens`) under different names
+//!    are one proven fact: only the first (the canonical) is stored, and a citation to
+//!    the duplicate is rewritten to the canonical ([`LemmaLibrary::rewrite_citations`]).
+//!    The statement hash ([`statement_hash`]) excludes the lemma NAME and the proof, so
 //!    re-proving the same statement under a new name dedups to the existing lemma rather
 //!    than storing a copy.
 //!
@@ -49,9 +49,9 @@ use crate::manifest::{Certificate, Level};
 /// cache's `DOMAIN` discipline, `cache.rs`).
 const DOMAIN: &[u8] = b"thermite.forge.lemma-library.v1";
 
-/// The content hash of a lemma's STATEMENT (REQ-9 / Q1) — a lowercase-hex sha256 over
+/// The content hash of a lemma's statement (REQ-9 / Q1) — a lowercase-hex sha256 over
 /// the lemma's params + `req` + every `ens`, domain-tagged and length-prefixed (the
-/// `cache::field` discipline). The lemma NAME and the PROOF are EXCLUDED: two lemmas
+/// `cache::field` discipline). The lemma NAME and the proof are excluded: two lemmas
 /// stating the same proposition under different names (or proved by different tactics)
 /// share a statement hash — that is the dedup key (AC-13: "two identical lemmas under
 /// different names → one stored"). Pure and deterministic (R-CODE-5): the params are
@@ -176,7 +176,7 @@ pub enum CitationResolution {
         /// The canonical stored lemma for this statement hash (the dedup target).
         canonical: String,
     },
-    /// A known project lemma that did NOT certify — the citation is REFUSED, named
+    /// A known project lemma that did not certify — the citation is REFUSED, named
     /// (AC-13: "citing an uncertified lemma fails with the lemma named").
     Uncertified,
     /// Neither a frozen lemma nor a project lemma — left to the frozen battery's
@@ -191,7 +191,7 @@ pub enum CitationResolution {
 #[derive(Debug, Clone, Default)]
 pub struct LemmaLibrary {
     /// Every top-level project lemma, by name (Q1 namespace). A proof-local `have`/`let`
-    /// binding is NOT here — only a top-level `lemma` enters, so this is the sole
+    /// binding is not here — only a top-level `lemma` enters, so this is the sole
     /// cross-function citation surface (Q6).
     by_name: BTreeMap<String, LemmaEntry>,
     /// statement-hash → the canonical (first certified, source order) lemma name. The
@@ -203,7 +203,7 @@ impl LemmaLibrary {
     /// Build the per-project lemma namespace (REQ-9 / Q1) from the parsed `program` and
     /// the settled cert collection `certs`. A top-level `lemma` is `certified` iff `certs`
     /// carries an L3, non-rejected cert under its name (the discharge produced a proof).
-    /// The canonical for a statement hash is the FIRST certified lemma in SOURCE order
+    /// The canonical for a statement hash is the first certified lemma in source order
     /// (`program.items` is source-ordered), so dedup is deterministic.
     #[must_use]
     pub fn build(program: &Program, certs: &[Certificate]) -> Self {
@@ -340,7 +340,7 @@ impl LemmaLibrary {
 }
 
 /// A REQ-9 certified-only citation refusal (AC-13): a proof cites a project lemma that
-/// lacks a certificate. A HARD error, named — the proof-tier analogue of the frozen
+/// lacks a certificate. A hard error, named — the proof-tier analogue of the frozen
 /// battery's [`crate::battery::BatteryViolation`] and the covenant refusal.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UncertifiedCitation {
@@ -373,12 +373,12 @@ impl UncertifiedCitation {
 }
 
 /// The REQ-9 certified-only citation gate (AC-13): scan a proof block's `simp [ … ]`
-/// citations and refuse the FIRST one that names an UNCERTIFIED project lemma, naming it.
+/// citations and refuse the first one that names an UNCERTIFIED project lemma, naming it.
 /// A citation to a frozen battery lemma or a certified project lemma resolves; an
-/// `Unknown` citation is NOT this gate's concern (the frozen-battery gate refuses it as
+/// `Unknown` citation is not this gate's concern (the frozen-battery gate refuses it as
 /// an unlisted simp lemma). `item` names the citing item for the refusal message.
 ///
-/// This is the forge/Lean-path gate `check_file_with_engine` runs AFTER the lemma
+/// This is the forge/Lean-path gate `check_file_with_engine` runs after the lemma
 /// discharge pass (so certification status is settled), beside the frozen battery's
 /// elaboration gate.
 pub fn enforce_citations(
@@ -402,7 +402,7 @@ pub fn enforce_citations(
     Ok(())
 }
 
-/// The set of top-level project lemma NAMES in `program` (REQ-9 / Q1). Collected from
+/// The set of top-level project lemma names in `program` (REQ-9 / Q1). Collected from
 /// the parsed program (no certs needed), so the frozen-battery elaboration gate
 /// ([`crate::battery::enforce_forge_item_with_lemmas`]) can DEFER a project-lemma
 /// citation (not refuse it as an unlisted simp lemma) — the certified-only resolution
@@ -442,7 +442,7 @@ mod tests {
         .graduate_triage_clean()
     }
 
-    // Two lemmas with the SAME statement (params + req + ens) under DIFFERENT names hash
+    // Two lemmas with the same statement (params + req + ens) under different names hash
     // EQUAL; a different statement hashes differently (REQ-9 / Q1: the dedup key excludes
     // the name + the proof).
     #[test]
@@ -474,14 +474,14 @@ mod tests {
     }
 
     // AC-13: citing an UNCERTIFIED project lemma is refused, naming the lemma; a citation
-    // to a CERTIFIED project lemma (or a frozen spine lemma) resolves.
+    // to a certified project lemma (or a frozen spine lemma) resolves.
     #[test]
     fn uncertified_citation_is_refused_with_the_lemma_named() {
         let prog = parse_ok(
             "lemma melems_cons(n: u32) req n > 0 ens n >= 1 proof { omega }\n\
              lemma user(n: u32) req n > 0 ens n >= 1 proof { simp [melems_cons]; omega }",
         );
-        // `melems_cons` did NOT certify (absent from the cert collection).
+        // `melems_cons` did not certify (absent from the cert collection).
         let lib = LemmaLibrary::build(&prog, &[]);
         assert!(lib.is_project_lemma("melems_cons"));
         assert!(!lib.is_certified("melems_cons"));
@@ -494,7 +494,7 @@ mod tests {
             }
             Ok(()) => panic!("expected an uncertified-citation refusal naming `melems_cons`"),
         }
-        // Once `melems_cons` certifies, the SAME citation resolves (no refusal).
+        // Once `melems_cons` certifies, the same citation resolves (no refusal).
         let lib = LemmaLibrary::build(&prog, &[certified("melems_cons")]);
         assert!(lib.is_certified("melems_cons"));
         assert!(enforce_citations(&lib, "user", "simp [melems_cons]; omega").is_ok());
@@ -526,7 +526,7 @@ mod tests {
     }
 
     // AC-13: burning a statement-hash duplicate rewrites the citation to the canonical
-    // lemma instead of storing a copy — TWO identical lemmas under DIFFERENT names → ONE
+    // lemma instead of storing a copy — TWO identical lemmas under different names → one
     // stored, the citation to the duplicate rewritten to the first (canonical).
     #[test]
     fn dedup_on_burn_rewrites_citation_to_canonical() {
@@ -535,18 +535,18 @@ mod tests {
              lemma melems_cons_dup(n: u32) req n > 0 ens n >= 1 proof { omega }\n\
              lemma user(n: u32) req n > 0 ens n >= 1 proof { simp [melems_cons_dup]; omega }",
         );
-        // BOTH duplicates certify; the FIRST in source order (`melems_cons`) is canonical.
+        // both duplicates certify; the first in source order (`melems_cons`) is canonical.
         let lib = LemmaLibrary::build(
             &prog,
             &[certified("melems_cons"), certified("melems_cons_dup")],
         );
-        // Only ONE is stored (the canonical) — the duplicate dedups away.
+        // Only one is stored (the canonical) — the duplicate dedups away.
         assert_eq!(
             lib.stored_lemmas(),
             vec!["melems_cons".to_string()],
             "two identical-statement lemmas store ONE canonical copy"
         );
-        // A citation to the duplicate is REWRITTEN to the canonical.
+        // A citation to the duplicate is rewritten to the canonical.
         assert_eq!(
             lib.canonical_name("melems_cons_dup"),
             Some("melems_cons"),
@@ -557,15 +557,15 @@ mod tests {
             vec!["melems_cons".to_string()],
             "the burned citation is rewritten to the canonical, not stored as a copy"
         );
-        // Citing both the canonical AND the duplicate collapses to one (dedup in order).
+        // Citing both the canonical and the duplicate collapses to one (dedup in order).
         assert_eq!(
             lib.rewrite_citations(&["melems_cons".to_string(), "melems_cons_dup".to_string()]),
             vec!["melems_cons".to_string()]
         );
     }
 
-    // Q6: only a TOP-LEVEL lemma enters the namespace — a name a `proof for f` establishes
-    // locally is NOT a project lemma, so `proof for g` cannot cite it (no cross-function
+    // Q6: only a top-level lemma enters the namespace — a name a `proof for f` establishes
+    // locally is not a project lemma, so `proof for g` cannot cite it (no cross-function
     // sharing except via a lemma). The namespace is built from `Item::Forge(Lemma)` only.
     #[test]
     fn only_top_level_lemmas_are_in_the_namespace() {
@@ -577,7 +577,7 @@ mod tests {
         let lib = LemmaLibrary::build(&prog, &[certified("shared")]);
         // A top-level lemma IS in the namespace (the cross-function shareable surface).
         assert!(lib.is_project_lemma("shared"));
-        // A `proof for f`-local name is NOT — it never entered the namespace, so a citation
+        // A `proof for f`-local name is not — it never entered the namespace, so a citation
         // to it from anywhere resolves `Unknown` (refused by the frozen battery), never as a
         // shareable project lemma. This is Q6 enforced structurally.
         assert!(!lib.is_project_lemma("local_fact"));

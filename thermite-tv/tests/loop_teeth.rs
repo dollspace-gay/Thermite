@@ -1,4 +1,4 @@
-//! The R-CHAR-3 loop-teeth-test (`.design/verified/loop-tv.md` REQ-2 / AC-1..AC-4;
+//! The R-CHAR-3 loop-TV negative test (`.design/verified/loop-tv.md` REQ-2 / AC-1..AC-4;
 //! epic crosslink #169, blocker #163). The proof that the v1 frozen-subset `while`
 //! loop TV (step 2.2.2-i) discriminates a faithful loop lowering from an injected
 //! per-iteration / after-loop infidelity, via the three per-run obligations:
@@ -13,16 +13,16 @@
 //!   - L2 (broken-preservation mutant) — a production loop body that mutates a cell
 //!     the invariant constrains in a way that breaks the per-iteration step (`lo + 2`
 //!     for source `lo + 1`) fails the preservation obligation with `postcondition not
-//!     satisfied` (the `body_ref_sound` per-iteration teeth, AC-2/AC-5).
+//!     satisfied` (the `body_ref_sound` per-iteration check, AC-2/AC-5).
 //!   - L3 (wrong-after-loop-state mutant) — a production after-loop characterization
 //!     that over-claims (stronger than `inv ∧ ¬cond` — claims `lo > hi` when only
 //!     `lo == hi` follows) fails the exit obligation (a counterexample, AC-3).
 //!   - L4 (loop-without-usable-inv / out-of-v1) — a `loop`-kind, a `break` body, a
-//!     mid-body `return`, and a trivially-weak `inv true` are each an honest
+//!     mid-body `return`, and a trivially-weak `inv true` are each an
 //!     `RefEncodeError::Unsupported` (Skipped, never silently Faithful — AC-4 /
 //!     R-HONEST-3). No verus needed (the obligation builder refuses to emit).
 //!
-//! The teeth are real (the load-bearing point, R-CHAR-3): the L2 mutant's per-
+//! The tests exercise both failure modes (R-CHAR-3): the L2 mutant's per-
 //! iteration state differs from the reference `body_ref_state` step, so the
 //! preservation `ensures result.i == <step_i>` is provably violated; the L3 mutant's
 //! over-claim is provably not implied by `inv ∧ ¬cond`. Expected verdicts are derived
@@ -177,8 +177,8 @@ fn assert_obligation_verifies(fixture: &str, program: &str) {
 }
 
 /// Discharge an infidel loop obligation: TV must catch it. `expect_msg` is the precise
-/// catch shape (so the teeth bite for the right reason, R-CHAR-3). Skips with a logged
-/// note if verus absent.
+/// catch shape rules out unrelated failures (R-CHAR-3). Skips with a logged note if
+/// verus is absent.
 fn assert_obligation_caught(fixture: &str, program: &str, expect_msg: &str) {
     let tmp = std::env::temp_dir().join(format!("tv_loop_teeth_{fixture}.rs"));
     std::fs::write(&tmp, program).unwrap_or_else(|e| panic!("write {fixture}: {e}"));
@@ -322,8 +322,8 @@ fn l2_broken_preservation_caught() {
     // The per-iteration infidelity: production steps `lo = lo + 2` (the source step is
     // `lo + 1`). The reference step_cells.1 = `(lo + 1)`, so production's returned
     // `lo + 2 != lo + 1` → the body-TV `ensures result.1 == (lo + 1)` is provably
-    // violated (a `postcondition not satisfied` — the same teeth `body_ref_sound`'s
-    // per-iteration negative lemmas bite). This is the AC-5 reuse: the single-iteration
+    // violated (a `postcondition not satisfied`, as covered by `body_ref_sound`'s
+    // per-iteration negative lemmas). This is the AC-5 reuse: the single-iteration
     // step is the shipped body_ref_state, and a wrong per-iteration mutation breaks the
     // preservation obligation, not a silent pass.
     let prog = loop_preservation_obligation(
@@ -344,7 +344,7 @@ fn l2_broken_preservation_caught() {
 #[test]
 fn l3_wrong_exit_characterization_caught() {
     // The after-loop over-claim: production characterizes the exit state as `lo > n`,
-    // stronger than the genuine `inv ∧ ¬cond` (which gives only `lo == n`). From
+    // stronger than the `inv ∧ ¬cond` (which gives only `lo == n`). From
     // `lo <= n && !(lo < n)` the claim `lo > n` is false (we have `lo <= n`), so the
     // exit assertion fails with a counterexample. A wrong after-loop characterization
     // is caught, never silently accepted.
@@ -353,11 +353,11 @@ fn l3_wrong_exit_characterization_caught() {
     assert_obligation_caught("l3_wrong_exit", &prog, "assertion failed");
 }
 
-// ---- L4: out-of-v1 loops → honest Skipped (Unsupported), never Faithful ----
+// ---- L4: out-of-v1 loops → Skipped (Unsupported), never Faithful -----------
 //
-// Each out-of-v1 form makes the obligation builder refuse to emit (an honest
+// Each out-of-v1 form makes the obligation builder refuse to emit (an
 // `RefEncodeError::Unsupported`), not a silent wrong encoding. No verus needed:
-// the refusal is the honest Skip (`loop-tv.md` AC-4 / R-HONEST-3).
+// the refusal is the Skip (`loop-tv.md` AC-4 / R-HONEST-3).
 
 fn skipped_block(loop_node: LoopNode) -> Block {
     Block {
@@ -389,7 +389,7 @@ fn l4_loop_kind_is_skipped() {
         loop_ref_obligations(&block, &BodyRefCtx::default()),
         Err(RefEncodeError::Unsupported(_))
     ));
-    // The obligation emitters propagate the honest Skip too (never silently Faithful).
+    // The obligation emitters propagate the Skip too (never silently Faithful).
     assert!(matches!(
         loop_entry_obligation(&block, &l1_frame()),
         Err(RefEncodeError::Unsupported(_))

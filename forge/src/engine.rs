@@ -29,7 +29,7 @@
 //! type error `error[E0308]` the corpus pins at L0. A coarse "no parsed span →
 //! Unknown" rule would degrade that E0308 to L2 (and crash on the ADT L2 lowering),
 //! perturbing the oracle. The narrow signature keeps E0308 (and every witnessed
-//! countermodel) at `Refuted` → L0, so it fires only on a genuine SMT-`unknown`, a
+//! countermodel) at `Refuted` → L0, so it fires only on a SMT-`unknown`, a
 //! case the corpus does not contain, leaving every `conformance/*.cert.json`
 //! byte-identical (REQ-3.1's "the remap only changes behavior on inputs the corpus
 //! does not contain").
@@ -83,7 +83,7 @@ pub enum EngineName {
     LeanInteractive,
     /// The nlsat real-relaxation engine (`.design/stage1-forge-tier.md` REQ-8 /
     /// Q-NLSAT, increment 2f): a direct Z3 `nlsat`-tactic (QF_NRA) query over the
-    /// relax fragment. Today Z3 is reached only THROUGH Verus (a VC-gen solver call);
+    /// relax fragment. Today Z3 is reached only through Verus (a VC-gen solver call);
     /// this is the first real-arithmetic Z3 query as its own engine. A `Proven`
     /// nlsat discharge certifies at the kernel-grounded [`crate::manifest::Level::L4`]
     /// — its trust profile is `solver(nlsat) + spine-lemma(kernel)` (the real→integer
@@ -126,7 +126,7 @@ impl EngineName {
 /// SOLVER trust base is recorded here regardless of the rung. It is strictly smaller
 /// than the Verus base (no VC-gen, no lowering theorem): the clause is a direct, ground
 /// QF_BV query. Kernel-grounding it (proof reconstruction) is REQ-7/8, which shrinks
-/// this trust base at the SAME rung; until then the bit-vector discharge is
+/// this trust base at the same rung; until then the bit-vector discharge is
 /// solver-trusted, named here for the auditor.
 #[must_use]
 pub fn bv_trust_profile() -> TrustProfile {
@@ -139,58 +139,46 @@ pub fn bv_trust_profile() -> TrustProfile {
     }
 }
 
-/// The named trust base a reconstruction-SUPPORTED [`EngineName::BitVector`] clause
+/// The named trust base a reconstruction-supported [`EngineName::BitVector`] clause
 /// carries after REQ-8's default-on trust migration (`.design/stage3-bv-reconstruction.md`
-/// REQ-8 / AC-9). Where the per-clause obligation is inside the renderable fragment
-/// ([`crate::lean_smt_export::clause_reconstruction_supported`] — the arithmetic/comparison
-/// QF_BV subset), its `trust:` migrates from the SOLVER base ([`bv_trust_profile`], `Z3
-/// QF_BV`) to THIS kernel-checked base, at the SAME caged rung [`crate::manifest::Level::L4`]
-/// (rung and trust are orthogonal axes — REQ-8 shrinks the trust base, never the rung).
+/// REQ-8 / AC-9). When
+/// [`crate::lean_smt_export::clause_reconstruction_supported`] can render the clause,
+/// its `trust:` migrates from the solver base ([`bv_trust_profile`], `Z3 QF_BV`) to
+/// this kernel-checked base at the same caged rung [`crate::manifest::Level::L4`].
 ///
-/// The migration is honest about exactly what grounds the clause and what residual stays:
+/// The migration records what grounds the clause and what residual remains:
 ///
-/// 1. The clause obligation `(P_prod) ⟺ (P_ref)` is rendered over the bounded-integer
-///    machine-model and reconstructed by the lean-smt `smt` tactic (cvc5) inside the Lean
-///    kernel, `#print axioms ⊆ {propext, Classical.choice, Quot.sound}` (the AC-8 committed
-///    `lean/Thermite/SmtExport.lean` proof) — NO solver in the load-bearing base.
-/// 2. The bounded-integer model ⇔ the genuine `BitVec N` semantics is the kernel-checked
-///    `Thermite.BvModel.frmInt_iff_frmBV` / `tv_equiv_faithful` metatheorem (axiom-clean,
-///    Mathlib/Smt-free; in `lean-axiom-probe.sh`) — so the int-model reconstruction grounds
-///    the genuine machine semantics, not a re-derivation.
-/// 3. The named RESIDUAL (the pretty-printer-trust class, NOT a semantic one, #356): the
-///    two string-emission legs — this exporter's pretty-printer and `bitvector.rs`'s SMT
-///    renderer — both encode the same `Frm`; their agreement is inspection-tier
-///    (`.design/verified/exporter-surface-correspondence.md`), the only residual REQ-8
-///    leaves on the renderable fragment.
+/// 1. The clause obligation `(P_prod) ⟺ (P_ref)` is rendered directly over `BitVec N`.
+///    Lean proves the normalization with order and commutativity lemmas, and
+///    `#print axioms` remains within `{propext, Classical.choice, Quot.sound}`.
+/// 2. The two string-emission paths — this exporter and `bitvector.rs`'s SMT-LIB
+///    renderer — encode the same fixed-width operators. Their agreement is the
+///    inspection-tier pretty-printer residual documented in
+///    `.design/verified/exporter-surface-correspondence.md`.
 ///
-/// Strictly smaller than the solver base for the renderable fragment: Z3 QF_BV is no longer
-/// load-bearing (the kernel rechecks the clause), leaving only the kernel + the
-/// pretty-printer residual. The bitwise/shift/rotate subset is NOT migrated (it keeps
-/// [`bv_trust_profile`], named F-J in the audit).
+/// This profile no longer needs the bounded-integer bridge or cvc5's incomplete
+/// bit-vector proof reconstruction.
 #[must_use]
 pub fn bv_kernel_checked_trust_profile() -> TrustProfile {
     TrustProfile {
         items: vec![
-            "Lean kernel (the (P_prod) ⟺ (P_ref) obligation reconstructed by lean-smt `smt`/cvc5 \
-             over the bounded-integer machine-model; #print axioms ⊆ {propext, Classical.choice, \
-             Quot.sound} — no solver in the base)"
-                .to_string(),
-            "spine-lemma frmInt_iff_frmBV / tv_equiv_faithful (bounded-integer model ⇔ BitVec N \
-             machine semantics, kernel-checked, BvModel.lean)"
+            "Lean kernel, kernel-checked (the literal BitVec N (P_prod) ⟺ (P_ref) obligation \
+             is proved by order and commutativity lemmas; #print axioms ⊆ {propext, \
+             Classical.choice, Quot.sound})"
                 .to_string(),
             "pretty-printer residual (the lean_smt_export + bitvector.rs string-emission legs \
-             encode the same Frm; inspection-tier, #356)"
+             encode the same literal fixed-width operators; inspection-tier, #356)"
                 .to_string(),
         ],
     }
 }
 
-/// The stable marker substring every KERNEL-CHECKED / kernel-grounded per-clause trust
+/// The stable marker substring used by every kernel-checked or kernel-grounded per-clause trust
 /// item carries (`.design/stage3-bv-reconstruction.md` REQ-8 / AC-9). Both the bv
 /// reconstruction profile's faithfulness lemma ([`bv_kernel_checked_trust_profile`] —
 /// `frmInt_iff_frmBV … kernel-checked`) and the nlsat relax spine lemmas
 /// (`r_relax_sound`/`rencode_sound … kernel-checked`) name themselves with it, so the
-/// audit's residual-trust statement keys the kernel-checked-vs-solver split on ONE marker
+/// audit's residual-trust statement keys the kernel-checked-vs-solver split on one marker
 /// rather than re-deriving the split from engine names (which would miscount the bv route,
 /// whose engine tag stays `bitvector` whether or not the clause migrated).
 pub const KERNEL_CHECKED_TRUST_MARKER: &str = "kernel-checked";
@@ -254,7 +242,7 @@ pub struct Evidence {
 /// The verdict an engine returns for a discharge (`.design/verified/
 /// proof-backends.md` REQ-2(b)). The strict mapping discipline (REQ-3): a
 /// tactic/solver failure without a witnessing input is [`Verdict::Unknown`], not
-/// [`Verdict::Refuted`]; refutation requires a genuine countermodel.
+/// [`Verdict::Refuted`]; refutation requires a countermodel.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Verdict {
     /// The engine proved the obligation (for all inputs at a sound-for-all-inputs
@@ -343,7 +331,7 @@ pub trait Engine {
     /// a NON-OPTIONAL parameter so the proof-search path cannot be entered without one
     /// (covenant-before-burn is a type-level seam, not a runtime convention). Today every
     /// program carries [`CovenantRecord::none`] (the `witness` surface syntax is REQ-3,
-    /// not yet present), so the record is inert here; the covenant LOGIC (inhabit/falsify,
+    /// not yet present), so the record is inert here; the covenant logic (inhabit/falsify,
     /// the before-burn enforcement, the `CovenantRefuted` hard fail) is increment 2b,
     /// which fills it in at this seam without re-touching any call site.
     fn discharge(&self, o: &Obligation, covenant: &CovenantRecord) -> Verdict;
@@ -379,13 +367,13 @@ impl VerusEngine {
     /// - `Proved` → [`Verdict::Proven`] (with the discharged-count evidence + key).
     /// - `Timeout` → [`Verdict::Unknown`] (`VerusTimeout`) → degrade (unchanged).
     /// - `Counterexample` split by [`counterexample_is_incompleteness_unknown`]:
-    ///   - the genuine SMT-`unknown` signature (span-less, no frontend `error[E…]`,
+    ///   - the SMT-`unknown` signature (span-less, no frontend `error[E…]`,
     ///     an explicit `unknown` signal) → [`Verdict::Unknown`] (`IncompleteUnknown`)
     ///     → degrade (the REQ-3.1 delta: today this hard-fails; behind the interface
     ///     it degrades, matching §6's degrade-on-incompleteness intent);
     ///   - everything else (a witnessed countermodel with a parsed `--> span`, or a
     ///     frontend type error `error[E…]` like the provenance E0308) → [`Verdict::
-    ///     Refuted`] (hard fail, byte-identical to today: a real bug or rejection
+    ///     Refuted`] (hard fail, byte-identical to today: a bug or rejection
     ///     never degrades).
     #[must_use]
     pub fn verdict_of(&self, outcome: &crate::check::VerusOutcome, key: CacheKey) -> Verdict {
@@ -400,7 +388,7 @@ impl VerusEngine {
             }
             VerusOutcome::Counterexample { obligations } => {
                 if counterexample_is_incompleteness_unknown(obligations) {
-                    // The REQ-3.1 remap: only the genuine SMT-incompleteness
+                    // The REQ-3.1 remap: only the SMT-incompleteness
                     // `unknown` edge (a witness-less failure carrying the explicit
                     // SMT-`unknown` signature, no frontend/type error) degrades.
                     // Refutation requires a witnessing input; an incompleteness
@@ -419,7 +407,7 @@ impl VerusEngine {
                     // countermodel and a frontend rejection (a type error `error[E…]`,
                     // e.g. the IFC un-typeable `careless_query` E0308 the provenance
                     // corpus pins at L0). The remap is inert on the corpus: only the
-                    // narrow genuine-`unknown` signature (which the corpus does not
+                    // narrow solver-`unknown` signature (which the corpus does not
                     // contain) is rerouted, so every `conformance/*.cert.json` is
                     // unperturbed (the increment (i) cert-oracle AC).
                     Verdict::Refuted(Counterexample {
@@ -655,13 +643,13 @@ impl LeanEngine {
         match output {
             Ok(out) if out.status.success() => {
                 // REQ-2 / AC-5 certify-time axiom gate, HOISTED onto the auto path: a
-                // clean lake exit is necessary but NOT sufficient for `Proven`. The
+                // clean lake exit is necessary but not sufficient for `Proven`. The
                 // emitted source carries a `#print axioms <obligation theorem>` probe
-                // (appended in `discharge`); the SAME gate the interactive replay runs
+                // (appended in `discharge`); the same gate the interactive replay runs
                 // ([`certify_lean_axioms`]) checks the obligation theorem is sorry-free
                 // and rests only on the allowlisted axioms. A surviving `sorry` or a
-                // smuggled axiom downgrades to `Unknown` (an honest skip — the cert's
-                // enumerable trusted base cannot be vouched for), NEVER `Proven`.
+                // smuggled axiom downgrades to `Unknown` (a skip — the cert's
+                // enumerable trusted base cannot be vouched for), never `Proven`.
                 let probe_out = String::from_utf8_lossy(&out.stdout);
                 match certify_lean_axioms(source, &probe_out, item) {
                     Ok(()) => Verdict::Proven(Evidence { verified, key }),
@@ -865,9 +853,9 @@ impl Engine for LeanEngine {
         }
 
         // 3. Append the obligation theorem's `#print axioms` probe so the auto path runs
-        //    the SAME certify-time axiom gate the interactive replay runs (REQ-2 / AC-5:
-        //    the gate is hoisted onto EVERY Lean discharge path, not just interactive
-        //    replay). Without this, a clean lake exit was certified `Proven` with NO
+        //    the same certify-time axiom gate the interactive replay runs (REQ-2 / AC-5:
+        //    the gate is hoisted onto every Lean discharge path, not just interactive
+        //    replay). Without this, a clean lake exit was certified `Proven` with no
         //    axiom check on the auto tiers — a smuggled axiom / surviving `sorry` would
         //    not be caught. The probe anchors on the obligation theorem's exact name.
         let thm_name = format!("thermite_obligation_{}", proof_thm_sanitize(&o.item));
@@ -940,16 +928,16 @@ impl Engine for LeanEngine {
 }
 
 impl LeanEngine {
-    /// Discharge a ready-made exported Lean SOURCE that was NOT minted from an
+    /// Discharge a ready-made exported Lean source that was not minted from an
     /// [`Obligation`] — the forge-tier `lemma` path (`.design/stage1-forge-tier.md`
     /// REQ-7, increment 2e). The lemma exporter ([`crate::lean_export::export_lemma`])
     /// produces a self-contained file (preamble + `R_item` + the
     /// `thermite_obligation_<lemma>` theorem proved by the author's frozen-battery
-    /// tactics); this appends the SAME certify-time axiom probe (`#print axioms
+    /// tactics); this appends the same certify-time axiom probe (`#print axioms
     /// thermite_obligation_<lemma>`) the auto [`Engine::discharge`] path appends, writes
-    /// a scratch file, runs lake, and gates `Proven` on the axiom report via the SAME
+    /// a scratch file, runs lake, and gates `Proven` on the axiom report via the same
     /// [`certify_lean_axioms`] gate (a surviving `sorry` / smuggled axiom / lake failure
-    /// is an honest `Unknown`, never `Proven`). Lean-absent → `Unknown` (a skip). The
+    /// is an `Unknown`, never `Proven`). Lean-absent → `Unknown` (a skip). The
     /// evidence key binds the source + toolchain + spine content so a bump forces a
     /// miss.
     pub(crate) fn discharge_source(&self, source: &str, item: &str) -> Verdict {
@@ -1008,7 +996,7 @@ impl LeanEngine {
     /// tier (a)/(b). A refusal (out-of-spine / not-pure-contract / incomplete registry
     /// / non-int result) or a tier-(c) interactive obligation is not admitted by the
     /// auto path — "untested against lean" (REQ-9), never a kill. This runs the export
-    /// (the same one `discharge` runs), so it is the genuine per-mutant admission gate.
+    /// (the same one `discharge` runs), so it is the per-mutant admission gate.
     #[must_use]
     pub fn admits_auto(&self, o: &Obligation) -> bool {
         matches!(self.export(o), Ok(e) if e.tier.is_auto())
@@ -1017,24 +1005,24 @@ impl LeanEngine {
     /// Run the REQ-6a arbitrary-result re-elaboration tautology check on an obligation
     /// (`.design/stage1-forge-tier.md` REQ-6 / AC-10, increment 2d — anti-Goodhart
     /// defense (a)). The L3 counterpart of `vacuity_solver.rs::build_tautology_harness`:
-    /// it exports the SAME obligation with `result` bound to a fresh universally-
+    /// it exports the same obligation with `result` bound to a fresh universally-
     /// quantified `(r : Int)` instead of the body denotation
-    /// ([`crate::lean_export::export_arbitrary_result_harness`]), then DRIVES THE
+    /// ([`crate::lean_export::export_arbitrary_result_harness`]), then DRIVES the
     /// EXISTING discharge path — the same `#print axioms` probe + [`Self::run_lake`] a
     /// normal obligation uses (no new elaborator, per the substrate note).
     ///
     /// The polarity mirrors the Verus harness exactly:
     /// - lake kernel-accepts the harness ([`Verdict::Proven`]) → the `ens` holds for an
-    ///   ARBITRARY result, so the contract says nothing about what the body computes: a
+    ///   arbitrary result, so the contract says nothing about what the body computes: a
     ///   body-ignoring **tautology** → [`ArbitraryResultOutcome::Tautology`] (reject).
     /// - lake fails to elaborate (an elaboration/tactic failure, not a countermodel) →
-    ///   the `ens` genuinely constrains the result → [`ArbitraryResultOutcome::Clean`].
+    ///   the `ens` constrains the result → [`ArbitraryResultOutcome::Clean`].
     ///   A true tautology the auto battery cannot close is a missed detection (the SAFE
-    ///   completeness gap — never an unsound false reject), exactly as the Verus harness.
+    ///   completeness gap — never an unsound false reject), as the Verus harness.
     /// - the harness is not exportable on the auto path (a refusal / a tier-(c)
     ///   recursive obligation / lake absent / the axiom gate) → [`ArbitraryResultOutcome::
-    ///   Skipped`] — the check could not run, so it NEVER rejects (the item keeps its
-    ///   real proof; the tautology gate is an additional layer, not a replacement).
+    ///   Skipped`] — the check could not run, so it never rejects (the item keeps its
+    ///   proof; the tautology gate is an additional layer, not a replacement).
     #[must_use]
     pub fn arbitrary_result_reelaboration(&self, o: &Obligation) -> ArbitraryResultOutcome {
         let item = match find_item(&self.program, &o.item) {
@@ -1048,7 +1036,7 @@ impl LeanEngine {
         };
         // Export the arbitrary-result harness (same registry / req / ens as the real
         // obligation; only `result` is the fresh `(r : Int)` binder). A refusal is an
-        // honest skip (not exportable on the auto path), never a reject.
+        // skip (not exportable on the auto path), never a reject.
         let harness =
             match crate::lean_export::export_arbitrary_result_harness(o, &self.program, item) {
                 Ok(e) => e,
@@ -1070,7 +1058,7 @@ impl LeanEngine {
             ));
         }
         // Append the obligation theorem's `#print axioms` probe (the same gate the real
-        // discharge runs) and drive lake exactly as a normal obligation.
+        // discharge runs) and drive lake as a normal obligation.
         let thm_name = format!("thermite_obligation_{}", proof_thm_sanitize(&o.item));
         let probed = format!("{}\n\n#print axioms {thm_name}\n", harness.source);
         let pid = std::process::id();
@@ -1087,9 +1075,9 @@ impl LeanEngine {
         let verdict = self.run_lake(&scratch, &o.item, &probed, 1, key);
         let _ = std::fs::remove_file(&scratch);
         match verdict {
-            // The harness kernel-accepted for an ARBITRARY result → body-ignoring ens.
+            // The harness kernel-accepted for an arbitrary result → body-ignoring ens.
             Verdict::Proven(_) => ArbitraryResultOutcome::Tautology,
-            // A genuine elaboration/tactic failure (the auto battery could not close the
+            // An elaboration/tactic failure (the auto battery could not close the
             // arbitrary-result goal) → the ens constrains the result → clean. An env /
             // spawn / axiom-gate condition is a skip (the check could not run), never a
             // claim of clean (R-CODE-4: an undetermined run is not read as a verdict).
@@ -1261,7 +1249,7 @@ impl LeanEngine {
         // The proof is fresh: replay the reconstructed file via lake and capture the
         // anchored `#print axioms <thm>` (already appended by `reconstruct_replay`) for
         // the explicit sorry check + the trust-base axiom allowlist (lake exits 0 on a
-        // `sorry`, so the source/axioms scan is what distinguishes a genuine proof,
+        // `sorry`, so the source/axioms scan is what distinguishes a proof,
         // REQ-7(ii)). The probe target is the canonical declaration by construction.
         let probe = reconstructed;
         let pid = std::process::id();
@@ -1562,7 +1550,7 @@ pub fn verdict_ladder_action(
     }
 }
 
-/// Does a `Counterexample` outcome carry the genuine SMT-incompleteness `unknown`
+/// Does a `Counterexample` outcome carry the SMT-incompleteness `unknown`
 /// signature? (`.design/verified/proof-backends.md` REQ-3.1.) This is the narrow
 /// remap predicate: the REQ-3.1 fast-`unknown` is the case where the SMT solver
 /// returned `unknown` (the solver could not decide, an incompleteness event
@@ -1573,27 +1561,27 @@ pub fn verdict_ladder_action(
 ///
 /// The shipped `classify_verus_outcome` lumps all three span-less failures into the
 /// `Counterexample` bucket. To keep the cert oracle byte-identical (the increment
-/// (i) AC), the remap fires only on the genuine incompleteness signature and
+/// (i) AC), the remap fires only on the incompleteness signature and
 /// defaults to `Refuted` (the shipped `Counterexample → HardFail`) for everything
 /// else. The signature: no obligation carries a witnessing `--> span` location
 /// (a real countermodel is witnessed and stays `Refuted`), and no diagnostic
-/// carries a frontend error marker (`error[E`: a Rust/VIR type error is a genuine
+/// carries a frontend error marker (`error[E`: a Rust/VIR type error is a
 /// rejection, not an SMT `unknown`, and stays `Refuted` → L0), and a diagnostic
 /// explicitly names the SMT `unknown` incompleteness verdict. This makes the remap
 /// inert on the corpus (which contains witnessed failures + E0308 type errors, not
-/// genuine SMT `unknown`s), so every `conformance/*.cert.json` is unperturbed.
+/// SMT `unknown`s), so every `conformance/*.cert.json` is unperturbed.
 /// Determinism: a pure function of the parsed obligations (R-CODE-5).
 #[must_use]
 pub fn counterexample_is_incompleteness_unknown(
     obligations: &[crate::manifest::ObligationResult],
 ) -> bool {
-    // A witnessed countermodel (any parsed `--> span`) is a genuine disproof → not
+    // A witnessed countermodel (any parsed `--> span`) is a disproof → not
     // remapped (stays `Refuted`).
     if obligations.iter().any(|o| o.location.is_some()) {
         return false;
     }
     // A frontend error (`error[E…]`, a type/VIR rejection like the IFC E0308) is a
-    // genuine rejection, not an SMT `unknown` → not remapped (stays `Refuted` → L0,
+    // rejection, not an SMT `unknown` → not remapped (stays `Refuted` → L0,
     // preserving the provenance corpus oracle).
     let has_frontend_error = obligations.iter().any(|o| {
         o.diagnostic
@@ -1603,7 +1591,7 @@ pub fn counterexample_is_incompleteness_unknown(
     if has_frontend_error {
         return false;
     }
-    // The genuine incompleteness signature: a diagnostic explicitly naming the SMT
+    // The incompleteness signature: a diagnostic explicitly naming the SMT
     // `unknown` verdict (verus surfaces "unknown" when Z3 returns `unknown` without
     // a model). Only this narrow case degrades (REQ-3.1). A bare/empty diagnostic
     // is not remapped; without a positive `unknown` signal we keep the shipped
@@ -1621,7 +1609,7 @@ pub fn counterexample_is_incompleteness_unknown(
 // (the cert field is `Option`, populated only when a non-default engine discharges),
 // so the default Verus path leaves it `None` and the corpus certs stay byte-identical.
 // Honest-min project aggregation is unchanged; this is per-obligation metadata
-// orthogonal to `Level` (§5 "project aggregation stays honest-min").
+// orthogonal to `Level` (§5 "project aggregation stays minimum").
 // ============================================================================
 
 /// The per-obligation engine attribution (`.design/verified/proof-backends.md`
@@ -1664,7 +1652,7 @@ pub fn attribution_for(engine: &dyn Engine) -> EngineAttribution {
 
 /// A soundness alarm (`.design/verified/proof-backends.md` REQ-5): one engine
 /// `Proven` and another `Refuted` (a witnessed countermodel) on the same obligation.
-/// A genuine countermodel from one engine contradicting a proof from another means
+/// A countermodel from one engine contradicting a proof from another means
 /// one engine (or the exporter/lowering, or `S` itself) is unsound; proceeding would
 /// launder unsoundness into a certificate, the failure §1's enumerable-base promise
 /// forbids. Carries both engine names + the obligation + the refuting counterexample
@@ -1737,7 +1725,7 @@ pub fn check_disagreement(
 
 // ============================================================================
 // REQ-7 — interactive proofs (`.design/verified/proof-backends.md` REQ-7(ii) / §4
-// "INTERACTIVE" / §6 tier (c), increment (iii), #247): for a tier-(c) item the engine
+// "interactive" / §6 tier (c), increment (iii), #247): for a tier-(c) item the engine
 // emits the skeleton to `<file>.lean-proofs/<item>.lean` when absent; when present the
 // file is replayed (lake) with the obligation-hash staleness gate (the emitted header
 // carries the evidence_key; a mismatch = stale → Unknown("stale proof — re-derive"),
@@ -1784,7 +1772,7 @@ pub fn interactive_proof_path(source_file: &std::path::Path, item: &str) -> Path
 /// `sorry` token in the source (the skeleton's placeholder an agent must fill), and
 /// (2) a `sorryAx` / `sorry` in the `#print axioms` output (a `sorry` that survived
 /// elaboration, the authoritative kernel signal). Either is an open hole → the proof
-/// is not a genuine kernel proof and is never `Proven`. Determinism: a pure function
+/// is not a kernel proof and is never `Proven`. Determinism: a pure function
 /// of the inspected strings (R-CODE-5).
 #[must_use]
 pub fn proof_has_sorry(source: &str, print_axioms_output: &str) -> bool {
@@ -1793,7 +1781,7 @@ pub fn proof_has_sorry(source: &str, print_axioms_output: &str) -> bool {
 
 /// A textual `sorry` token in the proof source (a whole-word match so a substring
 /// like `sorryless` does not false-positive). The skeleton emits `  sorry  --
-/// INTERACTIVE …`, so an unfilled skeleton trips this.
+/// interactive …`, so an unfilled skeleton trips this.
 fn source_contains_sorry_token(source: &str) -> bool {
     source
         .split(|c: char| !c.is_alphanumeric() && c != '_')
@@ -1802,7 +1790,7 @@ fn source_contains_sorry_token(source: &str) -> bool {
 
 /// A `sorryAx` / `sorry` axiom in a `#print axioms` output (the authoritative kernel
 /// signal that a `sorry` survived elaboration: lake exits 0 on a `sorry`, so the
-/// axioms output is what distinguishes a genuine kernel proof from a `sorry`-carrying
+/// axioms output is what distinguishes a kernel proof from a `sorry`-carrying
 /// one).
 fn axioms_contain_sorry(print_axioms_output: &str) -> bool {
     let lower = print_axioms_output.to_ascii_lowercase();
@@ -1899,18 +1887,18 @@ fn nonstandard_axiom(print_axioms_output: &str, item: &str) -> AxiomReport {
 }
 
 /// The shared certify-time axiom gate (REQ-2 / AC-5, `.design/stage1-forge-tier.md`): run
-/// on EVERY Lean discharge path — the auto tiers (a)/(b) (via [`LeanEngine::run_lake`]) AND
+/// on every Lean discharge path — the auto tiers (a)/(b) (via [`LeanEngine::run_lake`]) and
 /// the interactive replay (via `replay_interactive`). Given the emitted Lean `source` and
 /// the lake/lean output (which must contain the obligation theorem's `#print axioms`
-/// report), returns `Ok(())` iff the obligation is sorry-free AND its axioms ⊆ the
+/// report), returns `Ok(())` iff the obligation is sorry-free and its axioms ⊆ the
 /// allowlist; otherwise `Err(reason)` naming the surviving `sorry`, the smuggled axiom, or
 /// the missing report. Hoisting this onto the auto path closes the AC-5 hole: a clean lake
 /// exit was previously certified `Proven` with no axiom check on the auto tiers. The two
-/// callers share THIS function so the gate's behavior cannot drift between paths.
+/// callers share this function so the gate's behavior cannot drift between paths.
 fn certify_lean_axioms(source: &str, lake_output: &str, item: &str) -> Result<(), String> {
     // (1) `sorry` first (the dedicated message): a `sorry` survives a clean lake exit
     // (lake exits 0 on a `sorry`), so the source/`sorryAx`-axioms scan is what
-    // distinguishes a genuine kernel proof. NEVER `Proven` (REQ-7(ii)).
+    // distinguishes a kernel proof. This is never `Proven` (REQ-7(ii)).
     if proof_has_sorry(source, lake_output) {
         return Err(format!(
             "the exported obligation `{item}` carries a `sorry` (detected in the source \
@@ -2134,7 +2122,7 @@ fn declaration_sites(source: &str, thm_name: &str) -> Vec<usize> {
 /// fixed generator-emitted goal, so a proof term cannot vacate that goal. This belt is a
 /// defense layer against an `… in`-style top-level command form smuggled into the
 /// term (`open … in`, `set_option … in`, a `#…`-command): any of these as an exact token
-/// (whitespace-independent, position-independent) → reject. A genuine term/tactic proof
+/// (whitespace-independent, position-independent) → reject. A term/tactic proof
 /// never needs these; auxiliary lemmas inline as `have`/`let`/`suffices`. The `#` family
 /// is handled separately (any `#`-prefixed token).
 const PROOF_TERM_FORBIDDEN_COMMANDS: [&str; 16] = [
@@ -2219,17 +2207,17 @@ pub fn trust_profile_interactive() -> TrustProfile {
 // REQ-8 — the nlsat real-relaxation engine (`.design/stage1-forge-tier.md` REQ-8 /
 // Q-NLSAT / AC-12, increment 2f). The relax route: a relaxable polynomial contract
 // (the `relax` fragment) is handed to a direct Z3 `nlsat`-tactic (QF_NRA) query — the
-// FIRST real-arithmetic Z3 query as its own engine (today Z3 is reached only THROUGH
+// first real-arithmetic Z3 query as its own engine (today Z3 is reached only through
 // Verus). `unsat` over ℝ ⇒ (by the kernel-checked `r_relax_sound`) valid over ℤ ⇒
 // certify L4 (kernel-grounded). `sat` ⇒ the integrality check (Q8: round into the
-// radius-2 ℤⁿ box) splits a genuine integer `Counterexample` from a real-only
+// radius-2 ℤⁿ box) splits an integer `Counterexample` from a real-only
 // `RealWitness` (true over ℤ, false over ℝ) — the latter escalates UP to the forge,
 // never down to a `Counterexample`.
 // ============================================================================
 
 /// The outcome of an nlsat relax discharge (`.design/stage1-forge-tier.md` REQ-8 /
 /// AC-12). The richer-than-[`Verdict`] result the relax route returns: the
-/// [`RealWitness`](NlsatOutcome::RealWitness) case carries a raw REAL point the 3-arm
+/// [`RealWitness`](NlsatOutcome::RealWitness) case carries a raw real point the 3-arm
 /// engine `Verdict` cannot, so [`NlsatEngine::discharge_relax`] is the route's real
 /// entry point (the `Engine::discharge` trait impl maps it down for generic callers).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2237,13 +2225,13 @@ pub enum NlsatOutcome {
     /// `unsat` over ℝ: no real counterexample → the relaxation `∀ x : ℝ, req → ⋀ ens`
     /// holds → by `r_relax_sound` the integer clause holds → certify at L4.
     Proved,
-    /// `sat` over ℝ AND an integer point in the radius-2 ℤⁿ box genuinely falsifies the
+    /// `sat` over ℝ and an integer point in the radius-2 ℤⁿ box falsifies the
     /// integer clause → a real integer `Counterexample`. Carries the integer witness.
     Counterexample {
         /// The integer falsifying point (variable → value, textual).
         integer_point: Vec<(String, String)>,
     },
-    /// `sat` over ℝ but NO integer point in the box falsifies → the clause is true over
+    /// `sat` over ℝ but no integer point in the box falsifies → the clause is true over
     /// ℤ, false over ℝ → a `RealWitness` escalation (never a `Counterexample`). Carries
     /// the raw real point nlsat returned, handed to the forge as goal metadata.
     RealWitness {
@@ -2251,7 +2239,7 @@ pub enum NlsatOutcome {
         point: crate::verdict::RealPoint,
     },
     /// z3 returned `unknown`, z3 is absent, the item is not relaxable, or the query
-    /// failed to render — an honest skip (never a false `Proved`, never a
+    /// failed to render — a skip (never a false `Proved`, never a
     /// `Counterexample`). Carries the reason.
     Unknown(String),
 }
@@ -2276,10 +2264,9 @@ impl NlsatEngine {
         NlsatEngine { program }
     }
 
-    /// Locate the `z3` binary (`.design/stage1-forge-tier.md` REQ-8 / Q-NLSAT). Z3 is
-    /// bundled alongside the `verus` distribution and resolved on `PATH` (the same way
-    /// `check::run_verus` reaches `verus`); a bare `z3` lookup suffices in the
-    /// verus-on-PATH environment. Deterministic given the environment (R-CODE-5).
+    /// Locate the `z3` binary (`.design/stage1-forge-tier.md` REQ-8 / Q-NLSAT).
+    /// The nlsat route requires `z3` itself on `PATH`; finding `verus` alone is not
+    /// sufficient. Deterministic given the environment (R-CODE-5).
     fn z3_binary() -> &'static str {
         "z3"
     }
@@ -2306,7 +2293,7 @@ impl NlsatEngine {
     /// / AC-12.) The narrowed-fragment admission is the `relaxable` syntactic check
     /// ([`crate::relax::classify_fn`]) over the item's `fn`, not the static
     /// `admits_all_classes` flag (`false` for this engine). A non-`fn` item or a
-    /// non-relaxable contract is not admitted (an honest skip, never a verdict).
+    /// non-relaxable contract is not admitted (a skip, never a verdict).
     #[must_use]
     pub fn admits_relax(&self, item: &str) -> bool {
         match find_item(&self.program, item) {
@@ -2316,7 +2303,7 @@ impl NlsatEngine {
     }
 
     /// Discharge a relaxable `fn`'s contract via the direct Z3 nlsat (QF_NRA) query
-    /// (`.design/stage1-forge-tier.md` REQ-8c / AC-12 — the relax route's real entry
+    /// (`.design/stage1-forge-tier.md` REQ-8c / AC-12 — the relax route's entry
     /// point). Builds the negated-contract query ([`crate::relax::negated_contract_query`]),
     /// runs the nlsat tactic, and:
     ///
@@ -2326,7 +2313,7 @@ impl NlsatEngine {
     ///   [`NlsatOutcome::Counterexample`]; none → [`NlsatOutcome::RealWitness`] carrying
     ///   the raw real point;
     /// - `unknown` / z3 absent / not relaxable / render failure →
-    ///   [`NlsatOutcome::Unknown`] (an honest skip, never a false verdict).
+    ///   [`NlsatOutcome::Unknown`] (a skip, never a false verdict).
     #[must_use]
     pub fn discharge_relax(&self, f: &thermite_syntax::FnItem) -> NlsatOutcome {
         if !crate::relax::classify_fn(f).is_relaxable() {
@@ -2371,7 +2358,7 @@ impl NlsatEngine {
     }
 
     /// The integrality check (`.design/stage1-forge-tier.md` REQ-8c / Q8): given the
-    /// `sat` real model, decide whether the counterexample is a genuine integer
+    /// `sat` real model, decide whether the counterexample is an integer
     /// `Counterexample` or a real-only `RealWitness`. Rounds each variable to the
     /// nearest integer and tests the radius-2 ℤⁿ box; an integer point that falsifies
     /// the integer clause is a `Counterexample`, otherwise the raw real point is a
@@ -2401,7 +2388,7 @@ impl NlsatEngine {
     /// falsifies the integer clause (`.design/stage1-forge-tier.md` REQ-8c / Q8). Each
     /// variable's box center is its rounded real value (an unconstrained / unparseable
     /// variable centers at 0); the box is the Cartesian product of `center ± {0,1,2}`.
-    /// Returns the first integer falsifier (a genuine `Counterexample`), or `None` (the
+    /// Returns the first integer falsifier (a `Counterexample`), or `None` (the
     /// real countermodel is real-only → `RealWitness`). The box is small (5ⁿ over the
     /// few relax variables), well within the Q8 1s budget.
     fn integrality_box_falsifier(
@@ -2448,7 +2435,7 @@ impl NlsatEngine {
 
     /// Run z3 over the SMT-LIB2 `input` (fed on stdin), returning `(result, model)`:
     /// the first result token (`sat`/`unsat`/`unknown`) and the raw model text. `Err`
-    /// on z3 absent / spawn failure / no result token (an honest skip reason, never a
+    /// on z3 absent / spawn failure / no result token (a skip reason, never a
     /// silent success — R-CODE-4).
     fn run_z3(input: &str) -> Result<(String, BTreeMap<String, String>), String> {
         use std::io::Write as _;
@@ -2498,7 +2485,7 @@ impl NlsatEngine {
 
     /// Parse z3's `(get-model)` output into a `variable → raw-value-text` map
     /// (`.design/stage1-forge-tier.md` REQ-8c). Extracts each `(define-fun NAME () Real
-    /// VALUE)` with balanced-paren value capture; the raw value text (a decimal, a
+    /// value)` with balanced-paren value capture; the raw value text (a decimal, a
     /// `(- d)`, or a `(/ a b)`) is kept verbatim for the `RealWitness` point and parsed
     /// to `f64` by [`real_to_f64`](NlsatEngine::real_to_f64) for the integrality
     /// rounding.
@@ -2515,8 +2502,8 @@ impl NlsatEngine {
             match Self::matching_paren(model, open) {
                 Some(close) => {
                     let inner = &model[after..close];
-                    // The declared form is `NAME () Real VALUE`; z3 prints VALUE on the
-                    // SAME or the NEXT line (multi-line models), so anchor on `) Real`
+                    // The declared form is `NAME () Real value`; z3 prints value on the
+                    // same or the NEXT line (multi-line models), so anchor on `) Real`
                     // and take the remainder trimmed (a decimal `1.41?`, a `(- d)`, or a
                     // `(/ a b)`).
                     if let Some(rpos) = inner.find(") Real") {
@@ -2594,7 +2581,7 @@ impl Engine for NlsatEngine {
 
     fn discharge(&self, o: &Obligation, covenant: &CovenantRecord) -> Verdict {
         // REQ-4 seam: the covenant record is threaded but inert on the relax route (the
-        // covenant LOGIC is 2b; the relax route is a pure-real discharge).
+        // covenant logic is 2b; the relax route is a pure-real discharge).
         let _ = covenant;
         // Resolve the obligation's `fn` to read its full contract (an `Obligation` does
         // not carry the `ens` clauses the relax encoding needs).
@@ -2606,7 +2593,7 @@ impl Engine for NlsatEngine {
         };
         // Map the rich relax outcome down to the 3-arm engine `Verdict` (the trait's
         // total type). `RealWitness` has no engine-`Verdict` image (it carries a real
-        // point) → `Unknown` here; `discharge_relax` is the route's real entry point
+        // point) → `Unknown` here; `discharge_relax` is the route's entry point
         // that preserves it. This keeps the trait usable for the disagreement check
         // (a `Proven` nlsat vs a `Refuted` other engine) without laundering a
         // `RealWitness` into a `Counterexample`.
@@ -2699,11 +2686,11 @@ pub enum ArbitraryResultOutcome {
     /// The harness kernel-accepted for an arbitrary `result` → the `ens` is body-ignoring
     /// (a semantic tautology over the Lean discharge domain) → the discharge gate rejects.
     Tautology,
-    /// The harness failed to elaborate for an arbitrary `result` → the `ens` genuinely
-    /// constrains the result → clean (the contract is not a body-ignoring tautology).
+    /// The harness failed to elaborate for an arbitrary `result`, so the `ens`
+    /// constrains the result and the contract is not a body-ignoring tautology.
     Clean,
     /// The check could not run (export refusal / tier-(c) interactive / lake absent /
-    /// axiom-gate) — an honest skip that NEVER rejects. Carries the reason.
+    /// axiom-gate) — a skip that never rejects. Carries the reason.
     Skipped(String),
 }
 
@@ -2717,7 +2704,7 @@ pub enum ArbitraryResultOutcome {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LeanMutantOutcome {
     /// The Lean engine proved the mutant — it survived (the contract is too weak,
-    /// unless then proven equivalent to the real body, the #101 exclusion the caller
+    /// unless then proven equivalent to the body, the #101 exclusion the caller
     /// applies).
     Survived,
     /// The mutant was attempted by the Lean engine and killed (`Refuted`, a witnessed
@@ -2781,7 +2768,7 @@ impl LeanMutationTally {
     /// `proven_equivalent` is the shipped #101 equivalence-probe result for a survived
     /// mutant (a §0.1 meta-query, outside the Engine interface in v1, a direct verus
     /// query the caller threads): an equivalent survivor is dropped from both the
-    /// survivor set and the denominator (it is not a genuine survivor).
+    /// survivor set and the denominator (it is not a survivor).
     pub fn record(&mut self, outcome: LeanMutantOutcome, proven_equivalent: bool) {
         match outcome {
             LeanMutantOutcome::UntestedAgainstLean => self.untested += 1,
@@ -2889,9 +2876,9 @@ mod tests {
         }
     }
 
-    // REQ-2 / AC-5 (the shared certify-time axiom gate, hoisted onto EVERY Lean discharge
+    // REQ-2 / AC-5 (the shared certify-time axiom gate, hoisted onto every Lean discharge
     // path including the auto tiers): `certify_lean_axioms` accepts a clean report, and
-    // REFUSES a fourth (Classical-adjacent) axiom by name, a surviving `sorry`, and a
+    // refuses a fourth (Classical-adjacent) axiom by name, a surviving `sorry`, and a
     // missing report — hermetically, over synthetic `#print axioms` output anchored on the
     // obligation theorem. This is the gate `run_lake` now runs on a clean lake exit, so a
     // smuggled axiom / `sorry` can no longer be certified `Proven` on the auto path.
@@ -2948,11 +2935,11 @@ mod tests {
     }
 
     // REQ-2 / AC-5 ("Every ExportRefusal variant has at least one test"; the refusal
-    // inventory stays LOUD and COMPLETE): construct EACH of the seven structured refusal
+    // inventory stays LOUD and complete): construct each of the seven structured refusal
     // variants and assert its `Display` renders the variant's class marker. The behavioral
     // construction paths are covered elsewhere (undefined-callee → IncompleteRegistry,
     // while-body → LoopBody, optres-result → OptResResult, capture-unsafe / out-of-spine →
-    // OutOfFragment, open-hole → OpenHole); this pins the COMPLETE inventory so a variant
+    // OutOfFragment, open-hole → OpenHole); this pins the complete inventory so a variant
     // cannot be silently dropped (the foundation must PRESERVE every variant, REQ-2).
     #[test]
     fn export_refusal_inventory_is_complete() {
@@ -3089,7 +3076,7 @@ mod tests {
             !counterexample_is_incompleteness_unknown(&e0308),
             "an E0308 type error is a genuine rejection, NOT an SMT `unknown` (corpus L0)"
         );
-        // (3) The genuine SMT-`unknown` signature is remapped (degrade, REQ-3.1).
+        // (3) The SMT-`unknown` signature is remapped (degrade, REQ-3.1).
         let unknown = vec![ObligationResult::failed(
             "verus reported obligation failure",
             None,
@@ -3244,7 +3231,7 @@ mod tests {
         }
     }
 
-    // REQ-8 / AC-12 (LIVE, z3-gated): the isqrt characterization — `r*r<=n ∧
+    // REQ-8 / AC-12 (live, z3-gated): the isqrt characterization — `r*r<=n ∧
     // n<(r+1)² ∧ 1<=r → r<=n` — is a real-valid universal polynomial implication, so
     // the nlsat relax route discharges it `Proved` (unsat over ℝ → integer-valid by
     // r_relax_sound → L4). z3-absent SKIPs (CI shards have no z3), mirroring the
@@ -3272,9 +3259,9 @@ mod tests {
         );
     }
 
-    // REQ-8 / AC-12 (LIVE, z3-gated): `∀ n. n*n ≠ 2` is true over ℤ but false over ℝ
-    // (n = √2). The relax route's integrality check finds NO integer falsifier in the
-    // radius-2 box → a `RealWitness` carrying the raw real point (√2), NEVER a
+    // REQ-8 / AC-12 (live, z3-gated): `∀ n. n*n ≠ 2` is true over ℤ but false over ℝ
+    // (n = √2). The relax route's integrality check finds no integer falsifier in the
+    // radius-2 box → a `RealWitness` carrying the raw real point (√2), never a
     // `Counterexample`.
     #[test]
     fn live_nlsat_n_squared_ne_two_is_real_witness() {
@@ -3304,11 +3291,11 @@ mod tests {
         }
     }
 
-    // REQ-8 / REQ-10 / AC-14 (UNGATED, structural): the RealWitness PRODUCER, exercised
-    // WITHOUT z3. Feed `classify_sat` the real countermodel z3 would return for
+    // REQ-8 / REQ-10 / AC-14 (ungated, structural): the RealWitness producer, exercised
+    // without z3. Feed `classify_sat` the real countermodel z3 would return for
     // `∀ n. n*n ≠ 2` (n ≈ √2) directly: the integrality check rounds it into the radius-2
-    // ℤⁿ box, finds NO integer falsifier of `n*n ≠ 2`, and classifies the point a
-    // `RealWitness` carrying the raw √2 — NEVER a `Counterexample`. This pins the producer
+    // ℤⁿ box, finds no integer falsifier of `n*n ≠ 2`, and classifies the point a
+    // `RealWitness` carrying the raw √2 — never a `Counterexample`. This pins the producer
     // logic hermetically (the AC-14 RealWitness-producer coverage that does not depend on
     // z3 being installed); the z3 end-to-end run is `live_nlsat_n_squared_ne_two_is_real_witness`.
     #[test]
@@ -3338,8 +3325,8 @@ mod tests {
         }
     }
 
-    // REQ-8 (LIVE, z3-gated): a contract false over ℤ with an integer falsifier
-    // (`n+1 <= n`) yields a genuine integer `Counterexample` (not a RealWitness) — the
+    // REQ-8 (live, z3-gated): a contract false over ℤ with an integer falsifier
+    // (`n+1 <= n`) yields an integer `Counterexample` (not a RealWitness) — the
     // integrality check finds the integer witness in the box.
     #[test]
     fn live_nlsat_integer_counterexample_is_caught() {
@@ -3362,8 +3349,8 @@ mod tests {
         }
     }
 
-    // REQ-8b (no z3 needed): a div-containing contract is NOT relaxable, so the route
-    // skips it (an honest `Unknown`, never a verdict) — the fragment gate.
+    // REQ-8b (no z3 needed): a div-containing contract is not relaxable, so the route
+    // skips it (an `Unknown`, never a verdict) — the fragment gate.
     #[test]
     fn nlsat_div_clause_is_not_relaxable() {
         let program = parse_program(
@@ -3438,9 +3425,9 @@ mod tests {
     }
 
     // REQ-6 / AC-10 (increment 2d, anti-Goodhart defense (a)): the arbitrary-result
-    // re-elaboration REJECTS a body-ignoring `ens`. `ens x > 0` (given `req x > 0`)
-    // says nothing about `result` — it holds for an ARBITRARY result, so the harness
-    // (which binds `result` to a fresh `r : Int`) kernel-accepts → `Tautology`. (LIVE:
+    // re-elaboration rejects a body-ignoring `ens`. `ens x > 0` (given `req x > 0`)
+    // says nothing about `result` — it holds for an arbitrary result, so the harness
+    // (which binds `result` to a fresh `r : Int`) kernel-accepts → `Tautology`. (live:
     // needs the built Lean spine; skips if lake is absent, like the sibling live tests.)
     #[test]
     fn live_arbitrary_result_rejects_body_ignoring_ens() {
@@ -3462,9 +3449,9 @@ mod tests {
     }
 
     // REQ-6 / AC-10 (increment 2d): the contrast — a body-CONSTRAINING `ens` is Clean.
-    // `ens result == x + 1` does NOT hold for an arbitrary result (only for `r = x+1`),
-    // so the arbitrary-result harness fails to elaborate → `Clean` (the gate does NOT
-    // reject a genuine, body-pinning contract).
+    // `ens result == x + 1` does not hold for an arbitrary result (only for `r = x+1`),
+    // so the arbitrary-result harness fails to elaborate → `Clean` (the gate does not
+    // reject a body-pinning contract).
     #[test]
     fn live_arbitrary_result_clean_for_body_constraining_ens() {
         if !lake_present() {
@@ -4382,12 +4369,12 @@ mod tests {
     // REQ-6 / §1 / R-DEFER-9 (the #252 belt): the proof-term command scan. The proof term
     // is the only author-controlled text and is type-checked against the fixed generator
     // goal, so this is a defense layer against an `… in`-style command form smuggled into
-    // the term. A genuine term/tactic proof (with inline `have`/`let`/`suffices`) carries
+    // the term. A term/tactic proof (with inline `have`/`let`/`suffices`) carries
     // no command keyword; an `open … in` / `set_option … in` / `#…` form is caught
     // position-independently (exact-token). No lake needed (R-CHAR-3: a structural scan).
     #[test]
     fn proof_term_command_token_scans_position_independently() {
-        // Permitted: a genuine tactic/term proof, including inline `have`/`let`/`suffices`
+        // Permitted: a tactic/term proof, including inline `have`/`let`/`suffices`
         // auxiliaries and identifiers that merely contain a keyword (`openVal`,
         // `Nat.openInterval`) or are `.`-qualified projections.
         for ok in [
@@ -4438,7 +4425,7 @@ mod tests {
     // outside the proof term is dropped, never spliced; the indented-command poison (the
     // #252 divergence) and the #251 macro-poison both have nowhere to live, so the
     // reconstructed file carries only the canonical preamble + the proof term + the anchored
-    // probe. A genuine inline-`have` proof term still splices. No lake (a structural test).
+    // probe. An inline-`have` proof term still splices. No lake (a structural test).
     #[test]
     fn reconstruct_drops_author_helper_section() {
         let canonical = "import Thermite.Stabilize\n\n\
@@ -4500,7 +4487,7 @@ mod tests {
             );
         }
 
-        // A genuine inline-have proof term still splices (no expressivity loss: a
+        // An inline-have proof term still splices (no expressivity loss: a
         // single-obligation proof inlines auxiliaries as `have`).
         let legit = "-- evidence_key: abc\n\
                      import Thermite.Stabilize\n\
@@ -5162,7 +5149,7 @@ mod tests {
     // self-contained theorem (the pure `∀ params, req → ens` proposition over the
     // denotation spine) proved by the author's frozen-battery tactics; `discharge_source`
     // runs lake + the certify-time axiom gate. A clean merge-flavored arithmetic lemma
-    // kernel-accepts and PROVES (needs the built Lean spine — skipped without it, like the
+    // kernel-accepts and proves (needs the built Lean spine — skipped without it, like the
     // other `live_*` engine tests; the CI lean job is authoritative).
     #[test]
     fn live_forge_lemma_discharges_proven() {

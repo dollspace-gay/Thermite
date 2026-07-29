@@ -5,7 +5,7 @@
 //! registry-free call `wf(<rel>)`) carries an ACCESSIBILITY obligation: the relation must
 //! be well-founded on the recursion's carrier for the recursion to be admitted. That proof
 //! is expensive and re-derivable, and — crucially — it is shared across every item that
-//! recurses under the SAME (relation, carrier): the well-foundedness of `<` on `u32` is one
+//! recurses under the same (relation, carrier): the well-foundedness of `<` on `u32` is one
 //! fact, not one-per-item. So it is content-addressed by the (relation, carrier) pair and
 //! cached ([`crate::cache::AccessibilityProof`]) under the same `CHECK_SCHEMA_VERSION` gate
 //! key as the per-item proof cache.
@@ -13,7 +13,7 @@
 //! This module is the CONSUMER that populates that cache from the check path: it extracts
 //! the (relation, carrier) of an item's `dec wf` measure ([`dec_wf_relation_and_carrier`])
 //! and discharges-or-serves the accessibility proof through the cache
-//! ([`discharge_accessibility`]). A re-check on an unchanged (relation, carrier) HITS the
+//! ([`discharge_accessibility`]). A re-check on an unchanged (relation, carrier) hits the
 //! cache (AC-13) — exactly the cross-invocation hit the per-item proof cache uses (`forge
 //! check` writes, a re-check reads), observable through the cache layer.
 //!
@@ -28,7 +28,7 @@ use crate::cache::{self, AccessibilityProof};
 
 /// Extract the `(relation, carrier)` pair of an item's `dec wf <rel>` measure, or `None`
 /// if the item carries no `dec wf` measure (REQ-9 / Q7). The carrier is the recursing
-/// item's FIRST parameter type (the measure ranges over the structurally-decreasing
+/// item's first parameter type (the measure ranges over the structurally-decreasing
 /// argument), rendered span-free so the same carrier caches identically regardless of
 /// source position (reuses [`crate::lemma_library::render_type`]). An item with no params
 /// has the unit carrier `()`.
@@ -76,7 +76,7 @@ fn wf_relation(clause: &Clause) -> Option<String> {
 
 /// Discharge OR serve the accessibility proof for a `(relation, carrier)` through the cache
 /// (REQ-9 / AC-13). On a cache HIT the stored proof is returned (flagged `cached: true`) —
-/// a re-check on an unchanged (relation, carrier) does NOT re-derive (the observable
+/// a re-check on an unchanged (relation, carrier) does not re-derive (the observable
 /// cache-layer hit). On a MISS, `derive()` computes the well-founded verdict, which is
 /// stored (best-effort — a write failure does not fail the check, R-CODE-2) and returned.
 ///
@@ -104,7 +104,7 @@ pub fn discharge_accessibility(
 /// wf` measure (REQ-9 / AC-13), keyed by (relation, carrier). `derive(name)` supplies the
 /// accessibility verdict for the item named `name` (on the check path: whether its cert
 /// admitted the recursion). A side-effecting write-through pass: the cache is populated so
-/// a SUBSEQUENT `forge check` re-check hits it (the cross-invocation hit the per-item proof
+/// a subsequent `forge check` re-check hits it (the cross-invocation hit the per-item proof
 /// cache uses). Items with no `dec wf` measure are skipped — a no-op on the v1 corpus (no
 /// v1 item uses `dec wf`).
 pub fn cache_dec_wf_accessibility(
@@ -161,15 +161,15 @@ mod tests {
         assert_eq!(dec_wf_relation_and_carrier(plain), None);
     }
 
-    // A `dec lex(...)` / plain `dec <expr>` measure is NOT a `dec wf` — no accessibility key.
+    // A `dec lex(...)` / plain `dec <expr>` measure is not a `dec wf` — no accessibility key.
     #[test]
     fn non_wf_measures_are_not_accessibility_keyed() {
         let prog = parse_ok("spec fn rank(n: u32) -> u32 dec n { n }");
         assert_eq!(dec_wf_relation_and_carrier(&prog.items[0]), None);
     }
 
-    // REQ-9 / AC-13: the FIRST discharge derives + stores; a re-check on the same
-    // (relation, carrier) HITS the cache (no re-derivation), observable via the cache layer.
+    // REQ-9 / AC-13: the first discharge derives + stores; a re-check on the same
+    // (relation, carrier) hits the cache (no re-derivation), observable via the cache layer.
     #[test]
     fn recheck_hits_without_rederiving() {
         let dir = unique_dir("discharge");
@@ -183,7 +183,7 @@ mod tests {
         assert!(!first.cached, "the first discharge is a fresh derivation");
         assert!(first.well_founded);
         assert_eq!(derivations.get(), 1, "derived once on the miss");
-        // The re-check HITS — the derive closure must NOT run again.
+        // The re-check hits — the derive closure must not run again.
         let second = discharge_accessibility(&dir, "lt_rel", "Prim(U32)", || {
             derivations.set(derivations.get() + 1);
             panic!("a cache hit must not re-derive");

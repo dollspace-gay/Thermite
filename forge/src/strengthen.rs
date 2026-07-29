@@ -1,10 +1,10 @@
 //! `forge/src/strengthen.rs` — §7 step 5 of the vacuity battery: strengthening
 //! probes (`thermite-design.md` §7 "template-based tightenings of `ens` … if a
 //! strictly stronger contract proves with no body change, Forge suggests it").
-//! Given a `fn` whose real body already proved L3 but whose contract is weak
+//! Given a `fn` whose body already proved L3 but whose contract is weak
 //! (#12 mutation scoring found one or more survivors: behavior the `ens` does
 //! not pin), this module generates a frozen, deterministic, bounded set of
-//! candidate stronger `ens` clauses, verifies each against the real body by
+//! candidate stronger `ens` clauses, verifies each against the body by
 //! reusing the existing verus driver (`check::run_verus`, threaded as a verify
 //! closure), and surfaces the candidates that (a) verify against the body and (b)
 //! are strictly stronger than the current `ens` as adoptable [`Suggestion`]s.
@@ -85,7 +85,7 @@ pub struct CandidateClause {
 /// One adoptable strengthening suggestion surfaced on a certificate (REQ-4). It
 /// is the §7 step-5 "consider strengthening `ens` with `<clause>` — it holds for
 /// your body and would kill survivor `<M>`" prompt, made concrete: the `clause`
-/// verifies against the real body (so it is adoptable with no body change) and is
+/// verifies against the body (so it is adoptable with no body change) and is
 /// strictly stronger than the current `ens` (so it narrows the allowed outputs).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Suggestion {
@@ -333,7 +333,7 @@ pub fn generate_candidates(
 
 /// Build a copy of `f` whose `ens` is replaced by the single candidate clause
 /// (REQ-2). The body, `req`, and `fx` are unchanged: only the postcondition is
-/// the candidate, so the verify step proves the candidate against the real body
+/// the candidate, so the verify step proves the candidate against the body
 /// (the §7 step-5 "proves with no body change"). The candidate replaces the `ens`
 /// (rather than conjoining) so the verify run is a clean test of the candidate
 /// alone; a candidate strictly stronger than the current `ens` that proves on its
@@ -433,7 +433,7 @@ fn is_slice_param(ty: &Type) -> bool {
     matches!(ty, Type::Ref { inner, .. } if matches!(inner.as_ref(), Type::Slice(_)))
 }
 
-/// `true` iff `f`'s parameter types match `params` in order AND `f`'s return type
+/// `true` iff `f`'s parameter types match `params` in order and `f`'s return type
 /// matches `ret` (the family-1 spec-fn-equality signature check). A `spec fn`
 /// whose signature matches `f`'s can be applied to `f`'s parameters to pin the
 /// result (`result == s(<f's params>)`).
@@ -453,7 +453,7 @@ fn spec_fn_signature_matches(f: &FnItem, params: &[thermite_syntax::Param], ret:
 /// Run the strengthening probe over `f` (REQ-2/REQ-3/REQ-4). For each candidate
 /// (in the deterministic family order):
 ///
-/// 1. Verify the candidate against the real body via `verify_body` (the threaded
+/// 1. Verify the candidate against the body via `verify_body` (the threaded
 ///    `check::run_verus` of the `item_subprogram` shape, content-addressed via the
 ///    #8 cache). A candidate that does not verify is discarded (no unadoptable
 ///    suggestion, R-DEFER-1). A `ForgeError` propagates (R-CODE-4).
@@ -481,7 +481,7 @@ pub fn probe(
     let mut suggestions = Vec::new();
 
     for candidate in &candidates {
-        // REQ-2: the candidate must verify against the real body to be adoptable.
+        // REQ-2: the candidate must verify against the body to be adoptable.
         let woven = candidate_fn(f, candidate);
         if !verify_body(&woven)? {
             continue;

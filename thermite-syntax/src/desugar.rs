@@ -1,24 +1,24 @@
 //! Post-parse desugaring passes (`.design/stage1-forge-tier.md` REQ-3, the forge
-//! tier). This is the NEW post-parse pass the refinement-type sugar resolution
+//! tier). This is the new post-parse pass the refinement-type sugar resolution
 //! (Q-DECWF note) calls for: none existed in `thermite-syntax` before. It runs at
 //! the end of [`crate::parse`], after the recursive-descent parser has built the
 //! `Program`, and rewrites the surface sugar into the v1 clause shapes so every
 //! downstream stage (`thermite-spec` validation, `thermite-lower` lowering, `forge`)
-//! sees ONLY the v1 contract grammar plus the new forge-tier item kinds.
+//! sees only the v1 contract grammar plus the new forge-tier item kinds.
 //!
 //! ## Refinement-type sugar (`x: T{P}` / `-> T{P}`)
 //!
 //! A refined parameter `x: T{P}` says "the argument is a `T` satisfying `P`"; a
 //! refined return `-> T{P}` says "the result is a `T` satisfying `P`". The parser
-//! captures the predicates on [`crate::ast::FnItem::refinements`] (TRANSIENT). This
+//! captures the predicates on [`crate::ast::FnItem::refinements`] (transient). This
 //! pass folds them into the function's mandatory v1 contract:
 //!
 //! - a PARAMETER refinement `P` becomes a `req` conjunct (`req` ← `req && P`). The
-//!   precondition is the function's own assumption AND — because Verus enforces a
+//!   precondition is the function's own assumption and — because Verus enforces a
 //!   callee's `req` at every call site — the refinement automatically becomes the
 //!   caller's proof obligation (the "call-site obligations" of REQ-3), with no
 //!   separate mechanism.
-//! - a RETURN refinement `P` becomes a new `ens` clause (the result postcondition).
+//! - a return refinement `P` becomes a new `ens` clause (the result postcondition).
 //!
 //! After folding, `refinements` is cleared, so the sugar is invisible downstream.
 
@@ -42,7 +42,7 @@ pub fn desugar_refinements(program: &mut Program) {
             continue;
         }
         // Take the refinements out so we can fold them by value (and so the field
-        // is left EMPTY — the post-condition downstream relies on).
+        // is left empty — the post-condition downstream relies on).
         let refinements = std::mem::take(&mut f.refinements);
         for Refinement { target, pred } in refinements {
             match target {

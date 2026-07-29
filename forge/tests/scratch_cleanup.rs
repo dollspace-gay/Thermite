@@ -111,7 +111,7 @@ fn assert_no_scratch_leak(file: &Path, label: &str) -> Option<i32> {
     code
 }
 
-// ---- #53: the SUCCESS path leaves no orphan ------------------------------
+// ---- #53: the success path leaves no orphan ------------------------------
 
 #[test]
 fn success_path_leaves_no_scratch_orphan() {

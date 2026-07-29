@@ -14,7 +14,7 @@
 //! (renamed cause `MutualRecursionMissingDecreases`).
 //!
 //! These run against the external truth the toolchain does not author for itself:
-//! the built `forge` binary's certificate ladder (`forge check`, real verus).
+//! the built `forge` binary's certificate ladder (`forge check`, verus).
 //! R-CODE-4: the subprocess status is checked, never swallowed.
 //!
 //! Pins the C11 ACs (the grounded forms from the design's Verification section,
@@ -190,7 +190,7 @@ const THREE_CYCLE_L3: &str = "fn step_a(n: u64) -> u64\n  \
     {\n  if n == 0 { 0 } else { step_a(n - 1) }\n}\n";
 
 // ---------------------------------------------------------------------------
-// AC-1 (REQ-1/REQ-3): a dec-complete mutual pair certifies L3 (real verus).
+// AC-1 (REQ-1/REQ-3): a dec-complete mutual pair certifies L3 (verus).
 // ---------------------------------------------------------------------------
 
 #[test]

@@ -81,7 +81,7 @@ theorem body_stabilizes_to_5 : stabilizes fCall envA 5 := by
 theorem rbody_at_hint_fuel_is_bottom : intVal 1 fCall envA = 0 := by
   simp [fCall, intVal, intValArgs, envA, Ra, Env.bindParams, Env.bindInt]
 
-/-- `ens: result == 0` — a contract the real item (result = 5) violates. -/
+/-- `ens: result == 0` — a contract the item (result = 5) violates. -/
 def ensWrong : Expr := Expr.cmp CmpOp.eq (Expr.var "result") (Expr.intLit 0)
 
 /-- The pin (A): the §4 displayed obligation, with `rbody` rendered via the only

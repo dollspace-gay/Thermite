@@ -123,13 +123,9 @@ IMPORTS=(
   "Thermite.PinStratSelfLoop"
   "Thermite.PinNNFPolarity"
   "Thermite.PinRelaxRefute"
-  # Stage-3 REQ-7/REQ-8 (#356, Path B): the bit-vector ⟷ bounded-integer model
-  # faithfulness metatheorem (`Thermite.BvModel`). Core-only (no Mathlib, no Smt — unlike
-  # `Thermite.SmtExport`), so it builds in CI and is added as a BUILD target here: a
-  # `sorry` or broken proof fails the Lean job. The three faithfulness theorems
-  # (`tmInt_eq_toNat`/`frmInt_iff_frmBV`/`tv_equiv_faithful`) are axiom-probed IN-FILE
-  # (the SubstKit/SPIKE-1 convention); promoting `tv_equiv_faithful` into the gated
-  # THEOREMS list below is the REQ-8/G3 trust-flip action, not done here.
+  # Stage-3 reference model (#356): the core-only BitVec ⟷ bounded-integer
+  # faithfulness theorems. The active exporter now emits literal BitVec terms, but this
+  # independent model remains in the no-sorry build and keeps its in-file axiom probes.
   "Thermite.BvModel"
 )
 # The five load-bearing universal-theorem pillars + the two relax-route spine lemmas

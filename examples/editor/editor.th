@@ -1,80 +1,19 @@
-// A verified, RUNNABLE nano-like MULTI-LINE text editor (crosslink #125, ref #83,
-// builds on #90) — the keystone acceptance program, MAX-VERIFIED.
+// Verified multi-line editor example (crosslink #125).
 //
-// THE THESIS (verified vs trusted, pushed as far as the language allows):
-//   * VERIFIED (certifies L3 — proven Thermite, NOT trusted glue):
-//       - the EDIT CORE: Buffer + insert_str + backspace + move_left + move_right
-//         (the cursor math + buffer edits — proven for all inputs). The buffer is
-//         ONE String with `\n` bytes; the cursor is a byte offset, so insert_str/
-//         backspace/move_left/move_right work UNCHANGED over the multi-line text
-//         (a `\n` is just a byte).
-//       - the NAV / LAYOUT CORE (the multi-line heart, #125): cursor_row / cursor_col
-//         (the verified ROW/COLUMN of the cursor — a recursive `\n`-counting scan
-//         over the buffer prefix, proven) + move_up / move_down (verified up/down
-//         line navigation — find the prev/next line boundaries, clamp the column,
-//         set the new cursor, proven IN BOUNDS). The recursive scans count_nl /
-//         line_start / line_end carry real `ens` + `dec` and certify L3 individually.
-//       - the RENDER-FRAME: `render_frame(&b)` builds the full ANSI terminal frame
-//         as a String (C1 escape literals + `b.text` by concat + the cursor
-//         coordinate `\x1b[<row+1>;<col+1>H` via the verified row/col + C4
-//         `.to_string()`); its `ens` PROVES the frame is at least as long as the
-//         buffer text. The 1-based ANSI conversion is the PROVEN `to_1based`
-//         (`ens result == x + 1` — the off-by-one is killed, not laundered).
-//       - the DECODE: `decode(b0,b1,b2)` — a PURE TOTAL function mapping the raw read
-//         bytes to a key code (printable -> itself, DEL -> backspace, Enter (CR/LF)
-//         -> insert-newline, Ctrl-S -> save, Ctrl-Q -> quit, the arrow escapes ->
-//         synthetic up/down/left/right codes). The keystroke interpretation is proven.
-//   * TRUSTED (the MINIMAL syscall boundary — certifies L1, the honest seam):
-//       - os::raw_mode_on / os::raw_mode_off (termios raw mode via extern-C
-//         tcgetattr/tcsetattr — libc through std, self-contained),
-//       - os::read_key_raw (read 1 byte; on ESC read the 2-byte arrow tail; packed),
-//       - os::write_frame (write the rendered String to stdout),
-//       - os::read_file (LOAD the initial buffer from the fixed demo file) and
-//         os::write_file (SAVE the buffer on Ctrl-S) — extern-C `std::fs` (#125).
-//   * THE EVENT LOOP `run` (L1, the `fx diverge` cap): the non-terminating loop is
-//     the honest L1 seam; the LOGIC it calls (decode, render_frame, the edit + nav
-//     ops) is the L3-verified core.
-//
-// Only the raw read/write/ioctl/open SYSCALLS are trusted. The editing, the
-// navigation, AND the cursor-layout LOGIC — the editor's bug-prone parts — are
-// VERIFIED. See README.md for the split + the keymap + how to run.
+// Buffer edits, navigation, layout, frame construction, and key decoding verify
+// at L3. Terminal mode, file access, input, and output cross the L1 boundary.
+// The event loop is also L1 because it diverges. See README.md for the keymap and
+// commands.
 
-// ---------------------------------------------------------------------------
-// THE VERIFIED EDIT CORE (L3) — proven cursor math + buffer edits.
-// ---------------------------------------------------------------------------
-
-// The editor buffer: the text (one String, `\n` bytes mark line breaks) and the
-// cursor offset (a byte index). The type invariant is the editor's core safety
-// claim — the cursor never points past the end of the text, and the text stays
-// within the bounded-String capacity (the §4.2 cage). Every edit + nav op below
-// preserves this invariant (proven L3).
+// The cursor is a byte offset into a String whose newline bytes separate lines.
+// The invariant keeps the cursor in bounds and limits the buffer size.
 struct Buffer {
   text: String,
   cursor: u64,
 } inv cursor <= text.len() && text.len() <= 1_000_000
 
-// Insert `ins` at the cursor: split the text at the cursor, splice `ins` between
-// the halves, advance the cursor past the inserted run. PROVEN: the text grows by
-// exactly `ins.len()` and the cursor advances by exactly `ins.len()`. (Enter
-// inserts "\n" through this SAME op — a newline is just a byte.)
-//
-// CONTENT PINS (#276, the built-in `bytes_eq` — `.design/basis/07-strings.md`
-// REQ-18, the field-access operand view #279): the new text is EXACTLY the splice
-// `head ++ ins ++ tail`, certified byte-for-byte by three `bytes_eq` windows over
-// the result's `text` field (the byte-view `result.text` → `result.text.data@` —
-// the BARE-FIELD operand form, one of #279's four sanctioned operand shapes; the
-// editor is the keystone that must BOTH `forge check` AND `forge build --entry run`,
-// and the bare-field spelling lowers cleanly through BOTH the L3 spec path and the
-// L1 exec runtime-check twin):
-//   * the UNCHANGED PREFIX text[0..cursor) survives verbatim;
-//   * the INSERTED RUN ins[0..ins.len()) lands at the cursor;
-//   * the SHIFTED SUFFIX text[cursor..end) reappears at cursor+ins.len().
-// These are CONTENT teeth a length pin cannot fake — a head/tail-swap mutant
-// (`tail ++ ins ++ head`) has the SAME length but fails every window (R-DEFER-9).
-// The byte windows discharge via the prove-once `lemma_bytes_eq_bridge` (one
-// auto-emitted citation, zero per-conjunct glue). The cage `req` is the SAME
-// `<= 1_000_000` the §4.2 bounded concat needs; the windows add no new precondition
-// (the Buffer inv `cursor <= text.len()` supplies the bounds the bridge consumes).
+// Insert text at the cursor. The three `bytes_eq` conditions preserve the
+// prefix, insert `ins`, and preserve the shifted suffix byte for byte (REQ-18).
 fn insert_str(b: Buffer, ins: String) -> Buffer
   req b.text.len() + ins.len() <= 1_000_000
   ens result.text.len() == b.text.len() + ins.len()
@@ -90,20 +29,8 @@ fn insert_str(b: Buffer, ins: String) -> Buffer
   Buffer { text: head.concat(ins).concat(tail), cursor: b.cursor + n }
 }
 
-// Delete the byte before the cursor: splice the text around the deleted byte and
-// step the cursor back one. PROVEN: the text shrinks by exactly one and the cursor
-// steps back exactly one (`req cursor > 0` guarantees a byte to delete).
-//
-// CONTENT PINS (#276, `bytes_eq` — REQ-18): the result text is EXACTLY
-// `head ++ tail` with the byte at `cursor-1` excised, certified by two `bytes_eq`
-// windows over `&result.text`:
-//   * the UNCHANGED PREFIX text[0..cursor-1) survives verbatim;
-//   * the SHIFTED SUFFIX text[cursor..end) reappears at cursor-1 (the deletion
-//     pulls the tail back exactly one byte).
-// (bare-field `result.text` operand — #279's sanctioned shape, builds + checks.)
-// CONTENT teeth: a mutant deleting the WRONG byte (or duplicating the prefix) keeps
-// the same length but fails a window. Discharged via `lemma_bytes_eq_bridge`. No new
-// `req` (the existing `cursor > 0` + the Buffer inv feed the bridge bounds).
+// Delete the byte before the cursor. The `bytes_eq` conditions preserve the
+// surrounding content rather than checking only the new length.
 fn backspace(b: Buffer) -> Buffer
   req b.cursor > 0
   ens result.text.len() == b.text.len() - 1
@@ -118,8 +45,7 @@ fn backspace(b: Buffer) -> Buffer
   Buffer { text: head.concat(tail), cursor: lo }
 }
 
-// Move the cursor one byte left. PROVEN: the cursor steps back exactly one and the
-// text is unchanged.
+// Move the cursor one byte left without changing the text.
 fn move_left(b: Buffer) -> Buffer
   req b.cursor > 0
   ens result.cursor == b.cursor - 1
@@ -129,8 +55,7 @@ fn move_left(b: Buffer) -> Buffer
   Buffer { text: b.text, cursor: b.cursor - 1 }
 }
 
-// Move the cursor one byte right. PROVEN: the cursor advances exactly one (kept in
-// bounds by `req cursor < text.len()`) and the text is unchanged.
+// Move the cursor one byte right without changing the text.
 fn move_right(b: Buffer) -> Buffer
   req b.cursor < b.text.len()
   ens result.cursor == b.cursor + 1
@@ -140,23 +65,9 @@ fn move_right(b: Buffer) -> Buffer
   Buffer { text: b.text, cursor: b.cursor + 1 }
 }
 
-// ---------------------------------------------------------------------------
-// THE VERIFIED NAV / LAYOUT CORE (L3, #125) — the multi-line heart, PROVEN.
-//
-// cursor_row / cursor_col compute the cursor's ROW and COLUMN by VERIFIED scans
-// over the buffer prefix (each scan a recursive `fn` with a real `ens` + `dec`);
-// move_up / move_down move the cursor to (approximately) the same column on the
-// previous / next line, clamping to that line's length and proving the new cursor
-// stays IN BOUNDS (the Buffer type invariant). This is the editor's navigation +
-// layout LOGIC — proven, not trusted.
-// ---------------------------------------------------------------------------
+// Navigation and layout use recursive scans over newline-delimited text.
 
-// Count the newline (byte 10) occurrences in text[i..end] — a verified recursive
-// FORWARD scan (it examines `byte_at(i)` at the plain loop index `i`, so the L1
-// runtime-check lowering of the contract has no compound-index cast to mangle).
-// PROVEN: result <= end - i (a bound), AND when the byte at i is a newline the
-// count is at least one (a boundary teeth clause that kills the trivial `return 0`
-// mutant — the contract is non-vacuous). `dec end - i` proves it terminates.
+// Count newline bytes in `text[i..end]`.
 fn count_nl(text: &String, i: u64, end: u64) -> u64
   req i <= end && end <= text.len()
   ens result <= end - i
@@ -177,12 +88,7 @@ fn count_nl(text: &String, i: u64, end: u64) -> u64
   }
 }
 
-// The SPEC twin of the exec `count_nl` (#270, mirroring the #126 `spec_line_start`
-// precedent): the same `\n`-counting forward scan as a `spec fn` so `count_nl`'s
-// `ens` can NAME its exact value — this kills the F-IDENT identity mutants
-// (`return i`/`return end`) that the bounds-only `ens` could not. The base case is
-// `i >= end` (a spec fn carries no `req`, so `dec end - i` must be well-founded for
-// every `i`); the recursion mirrors `count_nl` byte-for-byte. PROVEN to terminate.
+// Specification counterpart to `count_nl`, used to state its exact result (#270).
 spec fn spec_count_nl(text: &String, i: u64, end: u64) -> u64
   dec end - i
 {
@@ -197,11 +103,8 @@ spec fn spec_count_nl(text: &String, i: u64, end: u64) -> u64
   }
 }
 
-// The start index of the line that `target` sits on: a verified FORWARD scan from
-// `i` to `target`, carrying `acc` = the index just after the most recent newline
-// seen (0 if none). Each step examines `byte_at(i)` at the plain index `i` (no
-// compound-index cast). PROVEN: acc <= result <= target — the line start is
-// at-or-before the target and never before the running accumulator. `dec target - i`.
+// Find the start of the line containing `target`. `acc` is the position after
+// the most recent newline seen by the scan.
 fn line_start(text: &String, i: u64, target: u64, acc: u64) -> u64
   req i <= target && target <= text.len() && acc <= i
   ens result <= target
@@ -222,12 +125,8 @@ fn line_start(text: &String, i: u64, target: u64, acc: u64) -> u64
   }
 }
 
-// The index of the next newline at-or-after position i, or n (= text.len()) if
-// none — the end of the line position i sits on. A verified FORWARD scan examining
-// `byte_at(i)` at the plain index. PROVEN: i <= result <= n. The length `n` is
-// passed as a u64 so the `dec n - i` measure is a plain arithmetic term (a `.len()`
-// call is exec-mode, not admitted in a `dec`). `req n == text.len()` ties it to the
-// real length.
+// Find the next newline at or after `i`, or return `n` if there is none. Passing
+// `n` explicitly keeps the termination measure in specification mode.
 fn line_end(text: &String, i: u64, n: u64) -> u64
   req i <= n && n == text.len()
   ens result >= i
@@ -248,12 +147,7 @@ fn line_end(text: &String, i: u64, n: u64) -> u64
   }
 }
 
-// The SPEC twin of the exec `line_end` (#270): the same next-newline forward scan
-// as a `spec fn` so `line_end`'s `ens` can NAME its exact value — pinning the
-// result KILLS the F-IDENT identity mutants (`return i`/`return n` both satisfied
-// the bounds-only `ens result >= i && result <= n`, the move-down-class hole). The
-// base case is `i >= n` (a spec fn carries no `req`, `dec n - i` well-founded for
-// every `i`); the recursion mirrors `line_end` byte-for-byte. PROVEN to terminate.
+// Specification counterpart to `line_end` (#270).
 spec fn spec_line_end(text: &String, i: u64, n: u64) -> u64
   dec n - i
 {
@@ -268,9 +162,7 @@ spec fn spec_line_end(text: &String, i: u64, n: u64) -> u64
   }
 }
 
-// min of two u64s — PROVEN result is <= both AND equals one of them (so it is a
-// real minimum, not a constant). Used to CLAMP the target column to the
-// destination line's length in move_up/move_down.
+// Minimum used to clamp a requested column to the destination line.
 fn min2(a: u64, b: u64) -> u64
   req true
   ens result <= a
@@ -282,23 +174,14 @@ fn min2(a: u64, b: u64) -> u64
   if a <= b { a } else { b }
 }
 
-// The SPEC twin of the exec `min2` (#270): a pure `spec fn` mirroring the
-// two-way min, so `min2`'s `ens` NAMES its exact value AND the navigation spec
-// twins (`spec_move_up_target`/`spec_move_down_target`) can express the clamped
-// target column compositionally. (`min2`'s identity mutants are already killed by
-// `result <= a && result <= b`; the twin hardens it to an exact pin and supplies
-// the combinator the nav pins compose with.)
+// Specification counterpart to `min2` (#270).
 spec fn spec_min2(a: u64, b: u64) -> u64
   dec a
 {
   if a <= b { a } else { b }
 }
 
-// The cursor's ROW (0-based): the count of newlines in text[0..cursor]. Delegates
-// to the verified `count_nl` forward scan. PROVEN: result <= cursor, AND the
-// boundary teeth (if the text begins with a newline and the cursor is past it, the
-// row is >= 1) — a plain `byte_at(0)` index that kills the trivial `return 0`
-// mutant (non-vacuous), buildable at L1.
+// Return the zero-based cursor row by counting preceding newlines.
 fn cursor_row(b: &Buffer) -> u64
   req true
   ens result <= b.cursor
@@ -309,27 +192,15 @@ fn cursor_row(b: &Buffer) -> u64
   count_nl(&b.text, 0, b.cursor)
 }
 
-// The SPEC twin of the exec `cursor_row` (#270): the cursor's row is EXACTLY the
-// `spec_count_nl` of the buffer prefix — the same value the exec scan computes
-// (tied by `count_nl`'s own `ens result == spec_count_nl(...)`). Pinning the row
-// exactly KILLS cursor_row's F-IDENT/return-0 mutants (the prior bounds-only `ens`
-// could not). Takes `(&String, u64)` (NOT `&Buffer`) so the spec-fn pool stays
-// free of the `Buffer` ADT dep — mirroring `spec_line_start`/`spec_count_nl` over
-// `&String` (the #126 `cursor_col` precedent). `dec cursor` is the trivial measure.
+// Specification counterpart to `cursor_row`; it takes text and cursor separately
+// to avoid a `Buffer` dependency in the specification-function pool.
 spec fn spec_cursor_row(text: &String, cursor: u64) -> u64
   dec cursor
 {
   spec_count_nl(text, 0, cursor)
 }
 
-// The SPEC twin of the exec `line_start` (#126): the same `\n`-scan over the
-// `&String` prefix, as a `spec fn` so `cursor_col`'s `ens` can NAME the exact line
-// start. The base case is `i >= target` (a spec fn carries no `req`, so the
-// `decreases target - i` must be well-founded for every `i`); the recursion mirrors
-// `line_start` byte-for-byte (`acc` jumps to `i + 1` just past a newline). PROVEN to
-// terminate (`dec target - i`). The exec `line_start`'s `ens result == spec_line_-
-// start(text, i, target, acc)` (below) ties the two together, so a contract that
-// names `spec_line_start` is pinned to the value the exec scan computes.
+// Specification counterpart to `line_start` (#126).
 spec fn spec_line_start(text: &String, i: u64, target: u64, acc: u64) -> u64
   dec target - i
 {
@@ -344,15 +215,7 @@ spec fn spec_line_start(text: &String, i: u64, target: u64, acc: u64) -> u64
   }
 }
 
-// The cursor's COLUMN (0-based): the distance from the line start to the cursor.
-// Delegates to the verified `line_start` forward scan. PINNED (#126): the column is
-// EXACTLY `cursor - spec_line_start(text, 0, cursor, 0)` — the distance from the
-// PROVEN line start to the cursor — not merely bounded by `<= cursor`. This kills
-// the return-0 (and return-cursor) mutant: a body `0` or `b.cursor` no longer
-// satisfies the equality (it must equal the real `cursor - line_start`), so the §7
-// gate scores cursor_col 4/4 (the survivor is gone). The body is UNCHANGED
-// (`b.cursor - line_start(...)`); only the contract tightens. Mirrors cursor_row's
-// tight-contract precedent.
+// Return the zero-based cursor column: the distance from the current line start.
 fn cursor_col(b: &Buffer) -> u64
   req true
   ens result == b.cursor - spec_line_start(&b.text, 0, b.cursor, 0)
@@ -363,23 +226,9 @@ fn cursor_col(b: &Buffer) -> u64
   b.cursor - ls
 }
 
-// The SPEC twin of the exec `move_up`'s TARGET CURSOR (#270): the exact cursor the
-// up-navigation computes for a `(text, cursor)`, as a pure `spec fn` composed over
-// the verified `spec_line_start` + `spec_min2`. It mirrors `move_up`'s body
-// branch-for-branch: the `ls == 0` first-line arm leaves the cursor put (the `b`
-// no-op), else it clamps the column to the previous line's length. PINNING
-// `move_up`'s `ens result.cursor == spec_move_up_target(&b.text, b.cursor)` KILLS
-// the F-IDENT `return b` mutant — the review's `move_up` weak-contract escape — and
-// every other body mutant that would shift the cursor (the §7 gate now scores it
-// against the EXACT target, not the loose `<= b.cursor` bound). Mirrors the
-// `cursor_col`/#126 spec-twin precedent.
-// The previous-line-relative branch of the up target, given the CURRENT line
-// start `ls` already computed (a helper keeps `spec_move_up_target` a single
-// expression — the lowerer cannot cast-wrap a body whose head is a `let`, so the
-// nav twins are written `let`-free; the `0 +` keeps both `if` arms the same `int`
-// type before the trailing `as u64`). The `ls == 0` first-line arm leaves the
-// cursor put (`move_up`'s `b` no-op); otherwise the column clamps to the previous
-// line's length. `dec cursor` is the trivial well-founded measure (non-recursive).
+// Compute the upward-navigation target from a known line start. This helper is
+// expression-only because the lowerer cannot cast-wrap a body headed by `let`.
+// `0 + cursor` keeps the two branches at the same integer type.
 spec fn spec_move_up_from(text: &String, cursor: u64, ls: u64) -> u64
   dec cursor
 {
@@ -391,25 +240,15 @@ spec fn spec_move_up_from(text: &String, cursor: u64, ls: u64) -> u64
   }
 }
 
-// The SPEC twin of the exec `move_up`'s TARGET CURSOR (#270): the exact cursor the
-// up-navigation computes for a `(text, cursor)`, composed over the verified
-// `spec_line_start` + `spec_min2` (through `spec_move_up_from` with the current
-// line start). It mirrors `move_up`'s body branch-for-branch. PINNING `move_up`'s
-// `ens result.cursor == spec_move_up_target(&b.text, b.cursor)` KILLS the F-IDENT
-// `return b` mutant — the review's `move_up` weak-contract escape — and every
-// other body mutant that would shift the cursor (the §7 gate now scores it against
-// the EXACT target, not the loose `<= b.cursor` bound). Mirrors `cursor_col`/#126.
+// Exact target for upward navigation (#270).
 spec fn spec_move_up_target(text: &String, cursor: u64) -> u64
   dec cursor
 {
   spec_move_up_from(text, cursor, spec_line_start(text, 0, cursor, 0))
 }
 
-// The next-line-relative branch of the down target, given the CURRENT line end
-// `cur_end` (= `spec_line_end(text, cursor, text.len())`) already computed. The
-// `cur_end == n` last-line arm leaves the cursor put (`move_down`'s `b` no-op);
-// otherwise the column clamps to the next line's length. `let`-free + symmetric
-// `int` arms for the same lowerer reasons as `spec_move_up_from`.
+// Compute the downward-navigation target from a known line end. It uses the same
+// expression-only form and integer-branch convention as `spec_move_up_from`.
 spec fn spec_move_down_from(text: &String, cursor: u64, n: u64, cur_end: u64) -> u64
   dec cursor
 {
@@ -422,11 +261,7 @@ spec fn spec_move_down_from(text: &String, cursor: u64, n: u64, cur_end: u64) ->
   }
 }
 
-// The SPEC twin of the exec `move_down`'s TARGET CURSOR (#270): the exact cursor
-// the down-navigation computes, composed over `spec_line_start` + `spec_line_end` +
-// `spec_min2` (through `spec_move_down_from`). PINNING `move_down`'s `ens
-// result.cursor == spec_move_down_target(&b.text, b.cursor)` KILLS the F-IDENT
-// `return b` mutant.
+// Exact target for downward navigation (#270).
 spec fn spec_move_down_target(text: &String, cursor: u64) -> u64
   dec cursor
 {
@@ -434,15 +269,8 @@ spec fn spec_move_down_target(text: &String, cursor: u64) -> u64
                       spec_line_end(text, cursor, text.len()))
 }
 
-// Move the cursor to (approximately) the same column on the PREVIOUS line. Find
-// the current line start; if it is 0 the cursor is already on the first line
-// (no-op). Otherwise the newline before the start ends the previous line; find
-// that line's start, clamp the target column to its length, and set the new
-// cursor. PROVEN: the text is unchanged (length identity — a dropped-text mutant
-// fails), the new cursor never advances past the old one (it moves up), AND (#270)
-// the new cursor is EXACTLY `spec_move_up_target` — the exact-target pin that kills
-// the F-IDENT `return b` mutant (the review's weak-contract escape). The new cursor
-// stays in bounds (the Buffer type invariant — `cursor <= text.len()`).
+// Move to the previous line, preserving the column when possible and clamping it
+// to the previous line's length. The postcondition fixes the exact target (#270).
 fn move_up(b: Buffer) -> Buffer
   req true
   ens result.text.len() == b.text.len()
@@ -463,13 +291,8 @@ fn move_up(b: Buffer) -> Buffer
   }
 }
 
-// Move the cursor to (approximately) the same column on the NEXT line. Find the
-// current line end; if it is the text end there is no next line (no-op).
-// Otherwise the byte after the end starts the next line; find that line's end,
-// clamp the target column to its length, and set the new cursor. PROVEN: the text
-// is unchanged, the new cursor stays in bounds (`cursor <= text.len()` — the
-// Buffer invariant), AND (#270) the new cursor is EXACTLY `spec_move_down_target`
-// — the exact-target pin that kills the F-IDENT `return b` mutant.
+// Move to the next line, preserving the column when possible and clamping it to
+// the next line's length. The postcondition fixes the exact target (#270).
 fn move_down(b: Buffer) -> Buffer
   req true
   ens result.text.len() == b.text.len()
@@ -492,11 +315,7 @@ fn move_down(b: Buffer) -> Buffer
   }
 }
 
-// Convert a 0-based coordinate to the 1-based form ANSI cursor positioning needs.
-// PROVEN: `result == x + 1` — so an off-by-one mutant (`+ 0` / `+ 2`) FAILS the
-// postcondition and is killed. The 1-based conversion is thus PROVEN here, not an
-// unverified literal floating in render_frame (that lets render_frame certify L3
-// without a surviving off-by-one).
+// Convert a zero-based coordinate to ANSI's one-based coordinate system.
 fn to_1based(x: u64) -> u64
   req x < 1_000_000
   ens result == x + 1
@@ -505,44 +324,10 @@ fn to_1based(x: u64) -> u64
   x + 1
 }
 
-// ---------------------------------------------------------------------------
-// THE VERIFIED RENDER-FRAME (L3, #125) — the multi-line DISPLAY logic, PROVEN.
-// ---------------------------------------------------------------------------
-
-// Build the full-screen ANSI frame as a String (no syscall — pure construction):
-//   * "\x1b[2J\x1b[H"            — C1 escape literals: clear the screen + home;
-//   * b.text                     — the buffer contents (carried in by concat — the
-//                                  `\n` bytes render as terminal line breaks, so a
-//                                  multi-line buffer shows as multiple lines);
-//   * "\x1b[" + (row+1) + ";" + (col+1) + "H"
-//                                — position the terminal cursor at row+1, col+1 (the
-//                                  C4 decimal coordinates of the VERIFIED cursor_row
-//                                  / cursor_col, 1-based via the PROVEN to_1based).
-// PROVEN (non-vacuous): the frame is at least as long as the buffer text —
-// `result.len() >= b.text.len()` — i.e. the whole buffer text is carried into the
-// frame (a dropped-text mutant shortens the frame and fails the `ens`). The `req`
-// bounds the text so every bounded `concat` stays within the §4.2 cage; the C4
-// coordinate concat discharges because `u64_to_string`'s `ens` bounds the
-// formatted length <= 20 (blocker #105). VERIFIED Thermite (L3) — the multi-line
-// display logic is proven, NOT a trusted wrapper. The actual `write` syscall
-// (write_frame) is the trusted boundary.
-//
-// CONTENT PAYLOAD PIN (#276, `bytes_eq` — REQ-18, AC-15): the frame carries the
-// WHOLE buffer text VERBATIM, byte-for-byte, at the post-clear offset. `clear` is
-// the fixed 7-byte escape `"\x1b[2J\x1b[H"` (ESC `[` `2` `J` ESC `[` `H`), so the
-// body `b.text` lands at offset 7 — pinned by
-// `bytes_eq(result, b.text, 7, 0, b.text.len())` (the bare whole-result + bare-field
-// operand forms, #279's sanctioned shapes lowering through both L3 + L1). This is the STRONGEST
-// contiguous content claim: the prior `result.len() >= b.text.len()` proved only
-// that the frame is long enough; this proves the buffer text is reproduced
-// EXACTLY (a mutant that scrambles, truncates, or substitutes the body fails the
-// window — a length-only `ens` cannot catch that). Discharged via
-// `lemma_bytes_eq_bridge`. RESIDUAL (honest): the trailing `pos` cursor-coordinate
-// escape `"\x1b["++(row)++";"++(col)++"H"` is NOT byte-pinned — its bytes depend on
-// the runtime decimal `to_string()` of the verified row/col (variable length), and
-// `bytes_eq` pins a FIXED-offset/FIXED-length window, not a content-dependent
-// suffix. The leading `clear` is a compile-time constant and the body is fully
-// pinned; the unpinned residual is exactly the format-dependent coordinate tail.
+// Build the ANSI clear-screen frame, append the buffer, and position the cursor.
+// The buffer begins at byte 7 after the fixed clear sequence, so `bytes_eq`
+// verifies the complete payload (REQ-18, AC-15). The variable-length coordinate
+// suffix is covered by its component contracts rather than a fixed byte window.
 fn render_frame(b: &Buffer) -> String
   req b.text.len() <= 900_000
   ens result.len() >= b.text.len()
@@ -557,25 +342,9 @@ fn render_frame(b: &Buffer) -> String
   clear.concat(body).concat(pos)
 }
 
-// ---------------------------------------------------------------------------
-// THE VERIFIED DECODE (L3, #125) — the editor's INPUT logic, PROVEN PURE + TOTAL.
-// ---------------------------------------------------------------------------
-
-// Decode the raw read bytes (b0, b1, b2 — a keystroke, EOF=256, or an arrow escape
-// sequence) to a single key code. A PURE TOTAL function over the bytes:
-//   * the arrow escape sequence 0x1b 0x5b 0x41..0x44 -> a synthetic code
-//       up=1000, down=1001, right=1002, left=1003 (the 0x41..0x44 tail offset);
-//   * Enter — CR (13) or LF (10)                      -> 1004 (insert a newline);
-//   * a printable byte 32..126                        -> itself (insert it);
-//   * 127 (DEL)                                        -> backspace;
-//   * 19  (Ctrl-S)                                     -> 19 (save);
-//   * 17  (Ctrl-Q)                                     -> 17 (quit);
-//   * anything else                                    -> 0 (a no-op key).
-// PROVEN (non-vacuous): a printable non-ESC byte decodes to itself; Enter (CR/LF)
-// decodes to 1004; Ctrl-S to 19; Ctrl-Q to 17; the arrows to 1000..1003; and the
-// result is always a bounded code (`result <= 1004`). The mapping is total and
-// each special case is pinned (a decode that dropped a case fails the `ens`).
-// VERIFIED Thermite (L3) — the keystroke interpretation is proven, not trusted.
+// Decode a keystroke into the editor's internal key code. Printable bytes and
+// Ctrl-S/Ctrl-Q retain their values; arrows map to 1000–1003, Enter maps to
+// 1004, and unsupported input maps to zero.
 fn decode(b0: u64, b1: u64, b2: u64) -> u64
   req true
   ens b0 < 32 || b0 > 126 || b0 == 27 || result == b0
@@ -642,32 +411,25 @@ fn decode(b0: u64, b1: u64, b2: u64) -> u64
   }
 }
 
-// ---------------------------------------------------------------------------
-// THE MINIMAL TRUSTED SYSCALL BOUNDARY (L1 / extern-C, self-contained).
-// ---------------------------------------------------------------------------
-
 // Put the terminal into raw mode via extern-C tcgetattr/tcsetattr (libc through
-// std). Returns a status (0 = ok / not-a-TTY no-op, 1 = error). Trusted-by-fiat;
-// the foreign body handles a non-TTY stdin gracefully. #57-confined to `fx term`
-// — the termios wrappers issue ONLY the `ioctl` syscall (16), which `term` grants
-// (runtime-sandbox.md REQ-7, #106), so the editor runs FULLY sandboxed.
+// std). Status is zero for success or a non-TTY no-op and one for error. The
+// boundary is limited to the `term` effect and ioctl syscall (#57, REQ-7).
 #[boundary("os::raw_mode_on")] fn raw_mode_on() -> u64
   req true
   ens result <= 1
   fx  term
   ;
 
-// Restore the terminal's original mode. MUST run on exit. Trusted, #57-confined.
+// Restore the terminal's original mode.
 #[boundary("os::raw_mode_off")] fn raw_mode_off() -> u64
   req true
   ens result <= 1
   fx  term
   ;
 
-// Read one keystroke, returning the raw bytes PACKED into a u64 for `decode`: b0 in
+// Read one keystroke, returning the raw bytes packed into a u64 for `decode`: b0 in
 // bits 0..9, b1 in 9..18, b2 in 18..27. A plain key reads 1 byte; an ESC reads the
-// 2-byte arrow tail. The packed maximum fits in 27 bits. Trusted, #57-confined to
-// the `read` syscall set.
+// two-byte arrow tail. The packed maximum fits in 27 bits.
 #[boundary("os::read_key_raw")] fn read_key_raw() -> u64
   req true
   ens result <= 134_217_727
@@ -675,46 +437,31 @@ fn decode(b0: u64, b1: u64, b2: u64) -> u64
   ;
 
 // Write the rendered frame String to stdout (and flush). Returns a status u64 (0 =
-// ok, 1 = I/O error). Trusted, #57-confined to the `write` syscall set.
+// ok, 1 = I/O error).
 #[boundary("os::write_frame")] fn write_frame(s: String) -> u64
   req true
   ens result <= 1
   fx  write(output)
   ;
 
-// LOAD the initial buffer content from the editor's fixed demo file (the
-// THERMITE_EDITOR_FILE env path, else /tmp/thermite_editor.txt) into a String
-// (the multi-line `\n` bytes preserved). A missing file yields the empty string (a
-// fresh buffer) — the honest arm, no crash. The v0.1 `--entry run` synthesizes no
-// path arg, so the load source is fixed. Trusted, #57-confined to the `read`/`open`
-// syscall set (#125).
+// Load the initial buffer from `THERMITE_EDITOR_FILE`, or from
+// `/tmp/thermite_editor.txt` if the variable is unset. A missing file produces
+// an empty buffer.
 #[boundary("os::read_file")] fn read_file() -> String
   req true
   ens result.len() <= 1_000_000
   fx  read(input)
   ;
 
-// SAVE the buffer String's bytes (incl. the `\n` line breaks) to the editor's fixed
-// demo file. Returns a status u64 (0 = ok, 1 = I/O error). Bound to Ctrl-S in the
-// loop. Trusted, #57-confined to the `open`/`write` syscall set (#125).
+// Save the buffer, including newline bytes, to the configured editor file.
 #[boundary("os::write_file")] fn write_file(content: String) -> u64
   req true
   ens result <= 1
   fx  write(output)
   ;
 
-// ---------------------------------------------------------------------------
-// THE EVENT LOOP `run` (L1 — the honest `fx diverge` seam).
-// ---------------------------------------------------------------------------
-
-// The interactive multi-line loop: enter raw mode; LOAD the initial buffer from the
-// file (read_file); then read a keystroke, DECODE it (the L3-verified decode),
-// dispatch the decoded code to the L3-verified edit + nav ops (insert_str — incl.
-// the newline insert on Enter, backspace, move_left/right, move_up/down), build the
-// multi-line frame (the L3-verified render_frame positioning the cursor by the
-// verified row/col), write it, SAVE on Ctrl-S (write_file), and repeat until Ctrl-Q
-// (decode -> 17) breaks; finally restore the terminal. This loop is the honest `fx
-// diverge` seam; the LOGIC it drives is the L3-proven core.
+// Run the interactive loop until Ctrl-Q, saving on Ctrl-S. This function is L1
+// because it performs boundary I/O and carries the `diverge` effect.
 fn run() -> u64
   req true
   ens result <= 1

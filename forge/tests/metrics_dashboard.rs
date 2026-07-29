@@ -1,9 +1,9 @@
 //! AC-12 (umbrella `.design/thermite2-program.md` REQ-7): the §6 metrics dashboard.
 //! Drives the built `forge` binary with `audit --metrics` and asserts that forge emits
-//! the routing-reason + verdict + TV-phase telemetry and the audit PRINTS the dashboard
-//! — and, critically, that the dashboard GATES NOTHING (#274,
+//! the routing-reason + verdict + TV-phase telemetry and the audit prints the dashboard
+//! — and, critically, that the dashboard gates nothing (#274,
 //! `.design/forge/audit-manifest.md` REQ-10): the exit code is byte-for-byte identical
-//! with and without `--metrics`, on a certifying project AND on a failing one.
+//! with and without `--metrics`, on a certifying project and on a failing one.
 //!
 //! Three telemetry kinds, exercised across two fixtures:
 //! - the v1 Verus corpus (`conformance/sum.th`) drives the **TV phase split** (the
@@ -54,7 +54,7 @@ fn verus_present() -> bool {
 }
 
 /// `lake` on PATH / under `~/.elan` — the forge-tier L3 (lemma) clause needs the built
-/// Lean spine. Absent → the gate route cannot discharge, so the forge-tier test SKIPS.
+/// Lean spine. Absent → the gate route cannot discharge, so the forge-tier test skips.
 fn lake_present() -> bool {
     if let Ok(home) = std::env::var("HOME") {
         if PathBuf::from(home).join(".elan/bin/lake").exists() {
@@ -90,8 +90,8 @@ fn write_temp_program(name: &str, program: &str) -> PathBuf {
     path
 }
 
-// AC-12: `forge audit --metrics` over the v1 corpus PRINTS the §6 dashboard (the TV
-// phase split + the in-cage routing share) and GATES NOTHING — the exit code is
+// AC-12: `forge audit --metrics` over the v1 corpus prints the §6 dashboard (the TV
+// phase split + the in-cage routing share) and gates nothing — the exit code is
 // identical to the bare audit, and the metrics are appended after the manifest.
 #[test]
 fn audit_metrics_prints_dashboard_and_gates_nothing() {
@@ -107,7 +107,7 @@ fn audit_metrics_prints_dashboard_and_gates_nothing() {
     let (bare_code, bare_stdout, _) = run_audit(&file, &[]);
     let (metrics_code, metrics_stdout, _) = run_audit(&file, &["--metrics"]);
 
-    // GATES NOTHING: the exit code is byte-for-byte identical with and without --metrics.
+    // gates nothing: the exit code is byte-for-byte identical with and without --metrics.
     assert_eq!(
         bare_code, metrics_code,
         "`forge audit --metrics` must not change the exit code (audit gates nothing, #274)"
@@ -136,7 +136,7 @@ fn audit_metrics_prints_dashboard_and_gates_nothing() {
         "the TV split must report the faithful baseline:\n{metrics_stdout}"
     );
 
-    // The bare audit prints NO metrics section (the flag is opt-in).
+    // The bare audit prints no metrics section (the flag is opt-in).
     assert!(
         !bare_stdout.contains("§6 metrics dashboard"),
         "the bare `forge audit` must NOT print the metrics section:\n{bare_stdout}"
@@ -178,7 +178,7 @@ fn audit_metrics_output_is_deterministic() {
     );
 }
 
-// AC-12: under `--json` the metrics go to stderr so stdout stays ONE valid v1 manifest
+// AC-12: under `--json` the metrics go to stderr so stdout stays one valid v1 manifest
 // document (the dashboard never corrupts the oracle-asserted JSON surface).
 #[test]
 fn audit_metrics_json_keeps_stdout_a_single_manifest() {
@@ -188,7 +188,7 @@ fn audit_metrics_json_keeps_stdout_a_single_manifest() {
     }
     let file = repo_root().join("conformance/sum.th");
     let (_code, stdout, stderr) = run_audit(&file, &["--metrics", "--json"]);
-    // stdout is a single JSON manifest (the metrics did NOT leak into it).
+    // stdout is a single JSON manifest (the metrics did not leak into it).
     let manifest: Value = serde_json::from_str(stdout.trim()).unwrap_or_else(|e| {
         panic!("`forge audit --metrics --json` stdout must be one JSON doc: {e}\n{stdout}")
     });
@@ -232,7 +232,7 @@ fn run_check_forge_json(file: &Path) -> (Option<i32>, Vec<Value>) {
 }
 
 // AC-12 ("forge emits the routing-reason + verdict telemetry fields the §6 dashboard
-// needs"): the forge-tier `isqrt_class` example, checked with `--engine forge`, EMITS the
+// needs"): the forge-tier `isqrt_class` example, checked with `--engine forge`, emits the
 // per-clause telemetry the metrics dashboard projects into the cage-vs-forge share by
 // reason + the seven-verdict counts — 2 nlsat (relaxable → forge) + 1 lean (lemma →
 // forge) clauses, all `Proved`. (The dashboard's aggregation of these fields into the
@@ -256,7 +256,7 @@ fn forge_engine_emits_routing_and_verdict_telemetry() {
         .expect("the cert carries per-clause obligations");
     assert_eq!(obls.len(), 3, "three ens clauses, three obligations");
 
-    // The ROUTING telemetry: the per-clause `engine` field (which the dashboard projects
+    // The routing telemetry: the per-clause `engine` field (which the dashboard projects
     // to in-cage / relaxable / lemma). Two nlsat (relaxable) + one lean (lemma).
     let engines: Vec<&str> = obls
         .iter()

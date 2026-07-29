@@ -3,10 +3,10 @@
 //! annotation in `thermite-syntax`, parse-gated behind the shadow-flag plumbing.
 //!
 //! The tag (`ens@bvN` / `inv@bvN` / `@bvN(nowrap)`, N ∈ {8, 16, 32, 64}) parses
-//! ONLY when the crate is built with the `bv` cargo feature — the
-//! structural lock R-BV-1: a build without the plumbing genuinely cannot parse
+//! only when the crate is built with the `bv` cargo feature — the
+//! structural lock R-BV-1: a build without the plumbing cannot parse
 //! the tag (the parser code path is `#[cfg]`-removed), so the tag is a structured
-//! syntax error there. This file pins BOTH halves of AC-1, each behind the
+//! syntax error there. This file pins both halves of AC-1, each behind the
 //! matching `cfg`:
 //!
 //! - `#[cfg(not(feature = "bv"))]` — the negative half: `ens@bv64` fails to
@@ -15,7 +15,7 @@
 //!   `nowrap` parse with the AST tag recovered and the clause `text` round-trips
 //!   (the tag sits outside the addressing oracle string).
 //!
-//! CI runs `cargo test -p thermite-syntax` (negative half) AND
+//! CI runs `cargo test -p thermite-syntax` (negative half) and
 //! `cargo test -p thermite-syntax --features bv` (positive half) so both
 //! configurations are exercised in one run (AC-1's "build-flag test in CI").
 //! R-CHAR-3: shapes hand-derived from the grammar; `tests/` is ungated.
@@ -31,7 +31,7 @@ use thermite_syntax::{parse, SyntaxError};
 mod plumbing_absent {
     use super::*;
 
-    /// `ens@bv64` in a build WITHOUT `bv` is a structured syntax error
+    /// `ens@bv64` in a build without `bv` is a structured syntax error
     /// pointing at the `@` (the structural lock R-BV-1 / AC-1 negative half).
     #[test]
     fn ens_bv_tag_is_a_parse_error_without_plumbing() {
@@ -97,7 +97,7 @@ mod plumbing_present {
     use super::*;
     use thermite_syntax::{BvWidth, Clause, ForgeItem, Item};
 
-    /// Parse `src` cleanly and return the single `fn`'s `ens` clauses.
+    /// Parse `src` and return the single `fn`'s `ens` clauses.
     fn fn_ens(src: &str) -> Vec<Clause> {
         let result = parse(src);
         assert!(
@@ -143,7 +143,7 @@ mod plumbing_present {
     #[test]
     fn the_tag_sits_outside_the_clause_text_round_trip() {
         // The clause `text` is the addressing oracle string (semantic-addressing
-        // AC-1): the `@bv64` tag must NOT bleed into it — only the expression.
+        // AC-1): the `@bv64` tag must not bleed into it — only the expression.
         let ens = fn_ens(&fn_with_ens("@bv64"));
         assert_eq!(ens[0].text, "result == 0");
         assert!(ens[0].bv.is_some());

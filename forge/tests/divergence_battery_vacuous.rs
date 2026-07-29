@@ -11,18 +11,18 @@
 //! bools and never consults `cert.reject`, so the battery view renders the
 //! §7.1-(a)-rejected contract as "non-vacuous" — the exact degenerate-contract
 //! lie the battery exists to prevent. (`goal_repl::render_goal_item` gets this
-//! right: it reports `NOT CERTIFIED — EnsIsTrivial` for the same cert.)
+//! right: it reports `not certified — EnsIsTrivial` for the same cert.)
 //!
 //! Authority:
 //! - `thermite-design.md` §7: "A function does not certify until its
 //!   **contract** certifies"; §7.1 (a): "`ens` simplifies to `true` → reject".
 //! - `.design/forge/goal-repl.md` REQ-1: `forge battery` "reports the §7
-//!   anti-Goodhart battery ... WITHOUT re-defining any verdict. A thin VIEW
+//!   anti-Goodhart battery ... without re-defining any verdict. A thin view
 //!   over the existing per-item pipeline." The pipeline's verdict for this
 //!   program is rejected `EnsIsTrivial`; the view re-defines it to non-vacuous.
 //! - `conformance/vacuity/triage.json` `reject[]` entry `ens_is_true`
 //!   (`cause: EnsIsTrivial`, program `fn f() -> () req true ens true fx pure { }`)
-//!   — the hand-derived §7.1 oracle this test loads its input AND expected
+//!   — the hand-derived §7.1 oracle this test loads its input and expected
 //!   cause from (R-CHAR-3: nothing here is copied from the verb's own output).
 //!
 //! Toolchain (symbol anchors): `goal_repl::render_battery_item` (reads

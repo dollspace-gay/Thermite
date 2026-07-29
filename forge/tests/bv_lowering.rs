@@ -5,9 +5,9 @@
 //! mixed-mechanism function attributes each clause to the engine that grounds it.
 //!
 //! The whole suite is gated on the `bv` cargo feature (the shadow-flag plumbing — without
-//! it the `@bv` tag is a structured parse error, REQ-1's R-BV-1 lock) AND on `verus`/z3
+//! it the `@bv` tag is a structured parse error, REQ-1's R-BV-1 lock) and on `verus`/z3
 //! being reachable (the route reuses the Verus base pass and reaches z3 for the QF_BV and
-//! QF_NRA queries). A shard without them SKIPS — the CI lean/verus job is the authoritative
+//! QF_NRA queries). A shard without them skips — the CI lean/verus job is the authoritative
 //! gate, mirroring `g1_gate.rs` and `nlsat_relax_conformance.rs`.
 
 #![cfg(feature = "bv")]
@@ -168,13 +168,10 @@ fn mix64_certifies_with_two_bitvector_clauses_and_one_unbounded() {
     assert_eq!(lobls[0]["verdict"]["kind"], Value::from("Proved"));
 }
 
-/// REQ-8 / AC-9 (reconstruction default-on — the per-clause trust migration): in the SAME
-/// item `mix64`, the arithmetic clause `a + b == b + a` migrates its `trust:` to the
-/// KERNEL-CHECKED form (reconstruction-supported QF_BV) while the bitwise clause
-/// `a ^ b ^ b == a` RETAINS its solver(Z3 QF_BV) trust (the bit-blasting wall — F-J). Same
-/// rung (both `Proved` at L4); only the orthogonal trust axis moves. Default-on: no flag.
+/// REQ-8 / AC-9: both arithmetic and bitwise clauses in `mix64` use the literal
+/// `BitVec N` kernel-checked reconstruction path. Their L4 rung is unchanged.
 #[test]
-fn req8_mix64_arith_clause_migrates_kernel_checked_bitwise_stays_solver() {
+fn req8_mix64_arithmetic_and_bitwise_clauses_migrate_kernel_checked() {
     if !verus_present() {
         eprintln!("SKIP: verus (z3) absent — the bit-vector route is not run.");
         return;
@@ -204,22 +201,24 @@ fn req8_mix64_arith_clause_migrates_kernel_checked_bitwise_stays_solver() {
     assert!(
         add_trust
             .iter()
-            .any(|t| t.contains("kernel-checked") && t.contains("BvModel")),
-        "the arith clause's trust migrated to the kernel-checked BvModel base: {add_trust:?}"
+            .any(|t| t.contains("Lean kernel") && t.contains("literal BitVec N")),
+        "the arithmetic clause uses the literal BitVec kernel base: {add_trust:?}"
     );
     assert!(
         !add_trust.iter().any(|t| t.contains("Z3 QF_BV")),
         "Z3 is no longer load-bearing for the reconstruction-supported arith clause: {add_trust:?}"
     );
-    // ens#1 — `a ^ b ^ b == a` (bitwise xor): stays solver-trusted.
+    // ens#1 — `a ^ b ^ b == a` (bitwise xor): migrated too.
     let xor_trust = trust_of(1);
     assert!(
-        xor_trust.iter().any(|t| t.contains("Z3 QF_BV")),
-        "the xor clause retains its solver(Z3 QF_BV) trust (F-J): {xor_trust:?}"
+        xor_trust
+            .iter()
+            .any(|t| t.contains("Lean kernel") && t.contains("literal BitVec N")),
+        "the xor clause uses the literal BitVec kernel base: {xor_trust:?}"
     );
     assert!(
-        !xor_trust.iter().any(|t| t.contains("kernel-checked")),
-        "the xor clause did NOT migrate (the exporter refuses bitwise): {xor_trust:?}"
+        !xor_trust.iter().any(|t| t.contains("Z3 QF_BV")),
+        "the xor clause no longer names Z3 in its migrated trust: {xor_trust:?}"
     );
 }
 
@@ -245,7 +244,7 @@ fn planted_non_injective_shift_is_a_counterexample_with_bit_pattern() {
 }
 
 /// AC-3 (second half): an over-budget 64-bit multiplier query yields `Timeout` under the
-/// dedicated budget profile — NEVER `unknown` and never a silent downgrade. The robust
+/// dedicated budget profile — never `unknown` and never a silent downgrade. The robust
 /// invariant (across z3 versions): the clause never lands a silent `BvUnknown` skip; when
 /// it IS a timeout, the cert names the `bv64-multiplier` profile.
 #[test]
@@ -274,7 +273,7 @@ fn over_budget_multiplier_is_timeout_under_named_profile_never_unknown() {
 }
 
 /// AC-5 (Lock 2 — bv-semantics mutation): a `@bv` fn whose `ens` clause constrains the
-/// body via `result` certifies at L4 AND its certificate surfaces a non-trivial mutation
+/// body via `result` certifies at L4 and its certificate surfaces a non-trivial mutation
 /// score from the WRAP-AWARE battery. The `succ_ge` fixture's `ens@bv64 result >= x` over
 /// the identity body `x + 0` is machine-valid (L4); the frozen off-by-one mutator's
 /// `x + 1` body is the wrap-exploiting mutant — valid over unbounded integers but false
@@ -318,10 +317,10 @@ fn bv_semantics_mutation_surfaces_a_nontrivial_kill_ratio_on_a_result_clause() {
 }
 
 /// REQ-4 / AC-5 (lock 2 — anti-Goodhart gate): a WEAK result-referencing `@bv` contract
-/// whose mutants all survive at width is rejected `WeakContract`, exactly as the Verus
-/// and Lean paths gate their mutation score — it does NOT silently certify L4. The
+/// whose mutants all survive at width is rejected `WeakContract`, as the Verus
+/// and Lean paths gate their mutation score — it does not silently certify L4. The
 /// tautological `ens@bv64 result + 0 == result` survives every (non-equivalent) body
-/// mutant: a 0-kill score below the floor. (Without the bv mutation GATE this contract
+/// mutant: a 0-kill score below the floor. (Without the bv mutation gate this contract
 /// certified L4 — the anti-gaming hole RFC §10 forbids.)
 #[test]
 fn a_weak_result_referencing_bv_contract_is_gated_weakcontract() {
@@ -385,7 +384,7 @@ fn shadowed_clause_count(certs: &[Value]) -> usize {
 }
 
 /// AC-4 (Lock 1 — the shadow flag): every `@bv`-tagged clause's certificate carries
-/// `bv_shadow` (the RFC §9 shape) and NOTHING untagged does — `grep bv_shadow` over the
+/// `bv_shadow` (the RFC §9 shape) and nothing untagged does — `grep bv_shadow` over the
 /// certs ≡ exactly the tagged clauses. `mix64` has two `@bv64` clauses + one unbounded
 /// clause, plus the injectivity lemma's `@bv64` clause: three tagged clauses carry the
 /// flag, the unbounded clause does not. `nowrap_obligation` is the reserved (REQ-5) slot,
@@ -420,7 +419,7 @@ fn every_bv_tagged_clause_carries_the_shadow_flag_and_nothing_else() {
             "the reserved nowrap_obligation slot (REQ-5) is omitted for a bare @bv64: {s}"
         );
     }
-    // The untagged (unbounded) clause carries NO shadow flag — grep finds nothing else.
+    // The untagged (unbounded) clause carries no shadow flag — grep finds nothing else.
     assert!(
         obls[2].get("bv_shadow").is_none(),
         "the untagged unbounded clause has no shadow flag: {}",
@@ -440,7 +439,7 @@ fn every_bv_tagged_clause_carries_the_shadow_flag_and_nothing_else() {
         "the lemma clause names its bv64 semantics: {ls}"
     );
 
-    // Grep-completeness over the WHOLE cert collection: exactly the three tagged clauses
+    // Grep-completeness over the whole cert collection: exactly the three tagged clauses
     // (mix64::ens#0, mix64::ens#1, rotl1_injective::ens#0) carry bv_shadow.
     assert_eq!(
         shadowed_clause_count(&certs),
@@ -449,7 +448,7 @@ fn every_bv_tagged_clause_carries_the_shadow_flag_and_nothing_else() {
     );
 }
 
-/// AC-4: a refuted `@bv` clause STILL carries the shadow flag — a counterexample is a
+/// AC-4: a refuted `@bv` clause still carries the shadow flag — a counterexample is a
 /// machine-semantics fact, so the fork stays greppable even on a hard fail.
 #[test]
 fn a_refuted_bv_clause_still_carries_the_shadow_flag() {
@@ -502,10 +501,9 @@ fn forge_audit_lists_the_bv_shadows() {
     );
 }
 
-/// REQ-8 / AC-9: `forge audit` carries the RESIDUAL-TRUST STATEMENT — it aggregates the
-/// kernel-checked-vs-solver split and names the still-solver-trusted fragments. On `mix64`
-/// the migrated arith clause is kernel-checked while the xor + shift clauses stay
-/// solver-trusted; the statement names the bitwise/shift/rotate + EPR rel/array fragments.
+/// REQ-8 / AC-9: `forge audit` carries the RESIDUAL-TRUST statement — it aggregates the
+/// kernel-checked-vs-solver split and names the remaining unsupported fragments. All
+/// QF_BV clauses in `mix64` are kernel-checked; EPR rel/array remains listed.
 #[test]
 fn forge_audit_residual_trust_statement_names_the_split() {
     if !verus_present() {
@@ -518,34 +516,25 @@ fn forge_audit_residual_trust_statement_names_the_split() {
         !rt.is_null(),
         "a bv project's audit carries the REQ-8 residual-trust statement: {manifest}"
     );
-    // mix64::ens#0 (add) + the nlsat unbounded clause are kernel-grounded; the xor and the
-    // lemma's shift clause stay solver-trusted (≥ 2 solver-trusted clauses).
+    // Two mix64 QF_BV clauses, its nlsat clause, and the rotate lemma are kernel-grounded.
     assert!(
-        rt["kernel_checked_clauses"].as_u64().unwrap_or(0) >= 1,
-        "at least the arith clause migrated to kernel-checked: {rt}"
+        rt["kernel_checked_clauses"].as_u64().unwrap_or(0) >= 4,
+        "the complete literal QF_BV surface migrated to kernel-checked: {rt}"
+    );
+    assert_eq!(
+        rt["solver_trusted_clauses"].as_u64().unwrap_or(u64::MAX),
+        0,
+        "the mix64 QF_BV surface has no solver-trusted residual: {rt}"
     );
     assert!(
-        rt["solver_trusted_clauses"].as_u64().unwrap_or(0) >= 2,
-        "the xor + shift clauses stay solver-trusted: {rt}"
+        rt["solver_trusted"].is_null()
+            || rt["solver_trusted"].as_array().is_some_and(Vec::is_empty),
+        "there are no named solver-trusted clauses: {rt}"
     );
-    // The still-solver-trusted clauses are NAMED (the F-J inventory).
-    let named = rt["solver_trusted"]
-        .as_array()
-        .expect("the residual-trust statement names the solver-trusted clauses");
-    assert!(
-        named.iter().any(|c| c["item"] == "mix64"),
-        "mix64's xor clause is named as still-solver-trusted: {rt}"
-    );
-    // The standing F-J fragments are named: bitwise/shift/rotate + EPR rel/array.
+    // The standing EPR residual remains named.
     let frags = rt["unsupported_fragments"]
         .as_array()
         .expect("the statement names the unsupported fragments");
-    assert!(
-        frags
-            .iter()
-            .any(|f| f.as_str().unwrap_or("").contains("bitwise/shift/rotate")),
-        "the bitwise/shift/rotate fragment is named: {rt}"
-    );
     assert!(
         frags
             .iter()
@@ -562,8 +551,8 @@ fn forge_audit_residual_trust_statement_names_the_split() {
 }
 
 /// REQ-3 / AC-4 regression: the auto-routed bv engine (`forge audit`/`review`) is a
-/// PER-ITEM overlay, never a wholesale re-route. An ordinary Verus-provable `fn` that
-/// merely shares a program with a `@bv` `fn` keeps its true L3 cert — it is NOT downgraded
+/// per-ITEM overlay, never a wholesale re-route. An ordinary Verus-provable `fn` that
+/// merely shares a program with a `@bv` `fn` keeps its true L3 cert — it is not downgraded
 /// to L0. (Before the `bv_check` fix, every `fn` was routed through the bv route, whose
 /// untagged-clause branch rejects a non-`@bv`, non-relaxable clause — silently downgrading
 /// `plain_add` from L3 to L0 in the audit.)
@@ -651,7 +640,7 @@ fn bv_nowrap_side_obligation_rejects_overflow_and_records_the_verdict() {
         "the overflowing nowrap fn must reject the project"
     );
 
-    // (1) `add_overflows` — the side obligation FAILS with a concrete overflow witness.
+    // (1) `add_overflows` — the side obligation fails with a concrete overflow witness.
     let of = cert(&certs, "add_overflows");
     assert_eq!(
         of["level"],
@@ -707,7 +696,7 @@ fn bv_nowrap_side_obligation_rejects_overflow_and_records_the_verdict() {
 }
 
 /// REQ-6 / AC-7 (the "semantic forks and definition towers" section, normal density): the
-/// additive section reports bv-shadow density PER MODULE matching the fixture's known
+/// additive section reports bv-shadow density per MODULE matching the fixture's known
 /// counts, and the project-wide F-F tripwire stays WITHIN the retreat threshold (one tagged
 /// clause among four contract-bearing clauses, 250‰ < 500‰ → no trip). The whole project
 /// certifies (the ordinary fns at L3, the @bv fn at L4), so the audit exits 0.
@@ -745,7 +734,7 @@ fn forge_audit_semantic_forks_density_matches_known_counts() {
     assert_eq!(row("plain_add")["shadow_clauses"], Value::from(0));
     assert_eq!(row("plain_add")["density_permille"], Value::from(0));
 
-    // The project-wide F-F tripwire: 1/4 = 250‰ < 500‰ → NOT tripped, no warning.
+    // The project-wide F-F tripwire: 1/4 = 250‰ < 500‰ → not tripped, no warning.
     let tw = &forks["tripwire"];
     assert_eq!(tw["shadow_clauses"], Value::from(1));
     assert_eq!(tw["contract_clauses"], Value::from(4));

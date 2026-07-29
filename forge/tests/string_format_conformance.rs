@@ -3,7 +3,7 @@
 //! and `n.to_string()` with the gold-standard round-trip (`parse_le(result) == n`,
 //! REQ-8). These run the built `forge` binary end-to-end against the external truths
 //! the toolchain does not author for itself: the real `verus` SMT prover (the cert
-//! levels) and the real `rustc` compiler + a real process run (the formatter prints
+//! levels) and the real `rustc` compiler + a process run (the formatter prints
 //! the decimal).
 //!
 //! It pins the three C4 deliverables (REQ-9 `parse_u64` is out, blocked on C7/#95):
@@ -13,7 +13,7 @@
 //!   * `n.to_string()` → L3 with the round-trip `ens parse_le(result) == n` (the
 //!     grounded `16 verified, 0 errors` form: the divide/mod-by-10 digit loop, the
 //!     `pow10`/`parse_le` spec fns, the `lemma_parse_push` append lemma). A wrong
-//!     digit emission fails the round-trip ens (the contract is load-bearing,
+//!     digit emission fails the round-trip ens (the contract is required,
 //!     R-DEFER-9 non-vacuity).
 //!   * `forge build` a formatter (`fn show42() -> String { ... n.to_string() }`
 //!     entry) → compiles, runs, and prints the correct decimal (42 → the bytes
@@ -96,12 +96,12 @@ fn cert_for<'a>(certs: &'a [Value], item: &str) -> &'a Value {
         .unwrap_or_else(|| panic!("no cert for `{item}` in {certs:?}"))
 }
 
-/// `true` iff the `forge build --entry` runnable artifact can LINK + RUN here. The
+/// `true` iff the `forge build --entry` runnable artifact can link + run here. The
 /// #57 runtime seccomp sandbox (`forge/src/sandbox.rs`) is native Linux only, with
 /// generated filters for x86_64 and aarch64. The emitted runner does not link off
 /// Linux (`Undefined symbols: _prctl` on macOS).
 /// The build+run tests SKIP with an explicit warning on any non-Linux platform —
-/// FULL ACCEPTANCE OF THE BUILD+RUN PATH REQUIRES LINUX CI. Mirrors the
+/// full acceptance OF the build+run PATH requires LINUX CI. Mirrors the
 /// `verus_present()` skip precedent (a missing capability is a logged skip, not a
 /// panic, R-CODE-4).
 fn linux_build_run_supported(test: &str) -> bool {
@@ -192,10 +192,10 @@ fn ac7_to_string_round_trip_certifies_l3() {
 }
 
 /// AC-7 non-vacuity (R-DEFER-9) — a wrong digit emission fails the round-trip ens.
-/// The round-trip `parse_le(result) == n` is load-bearing: a formatter that emits
+/// The round-trip `parse_le(result) == n` is required: a formatter that emits
 /// the wrong digit produces a byte sequence that does not parse back to `n`, so the
 /// `ens` is undischarged → not L3. (Here the surface program is correct; this test
-/// pins that the generated `u64_to_string`'s round-trip ens is a real proof: it
+/// pins that the generated `u64_to_string`'s round-trip ens is a proof: it
 /// fails for a broken loop, grounded `15 verified, 1 errors` for a +1 digit shift.
 /// The surface cannot inject a wrong digit into the generated fn, so the non-vacuity
 /// is proved at the codegen-grounding level; here we pin that an overclaimed ens,
@@ -213,7 +213,7 @@ fn ac7_overclaimed_round_trip_is_rejected() {
     // The fn returns `n.to_string()` (parse_le == n) but claims `parse_le(result) ==
     // n + 1`, an overclaim. The generated round-trip ens proves `parse_le == n`,
     // so `parse_le == n + 1` is false (for n where n != n+1, i.e. always) → verus
-    // fails the postcondition → not L3. The round-trip is real teeth.
+    // fails the postcondition and therefore does not reach L3.
     let certs = check_program(
         "tostring_overclaim",
         "fn bad(n: u64) -> String\n  req n < 1000\n  ens parse_be(result) == n + 1\n  fx alloc\n{ n.to_string() }\n",

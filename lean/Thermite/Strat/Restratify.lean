@@ -47,13 +47,13 @@ namespace Thermite.Strat.Cls
 
 /-! ## The rewrite, the abstraction, and the side obligation -/
 
-/-- The fresh OPAQUE boolean abstraction leaf standing in for an excised sub-formula.
+/-- The fresh opaque boolean abstraction leaf standing in for an excised sub-formula.
     A `qfree` atom is opaque to the classifier (no sorts, no graph edges — `edgesAtom`
     returns `[]`), so substituting it for a cycle-closing conjunct deletes that
     conjunct's edges from the sort graph. -/
 def absLeaf (e : Thermite.Expr) : Frm := .atom (.qfree e)
 
-/-- The restratify rewrite (metatheory §6).  On a conjunction `A ∧ B` whose RIGHT
+/-- The restratify rewrite (metatheory §6).  On a conjunction `A ∧ B` whose right
     conjunct `B` closes the alternation cycle, excise `B` and replace it with the fresh
     abstraction `p = absLeaf e` — yielding the admissible `A ∧ p`.  Any other shape is
     returned unchanged (the kv repair is the §6 worked instance; the classifier reports
@@ -62,7 +62,7 @@ def restrat (e : Thermite.Expr) : Frm → Frm
   | .conj A _ => .conj A (absLeaf e)
   | φ         => φ
 
-/-- The implication side obligation `Side(φ', φ)` (R-SIDE-1).  Parameterised by the
+/-- The implication side obligation `Side(φ', φ)` (R-side-1).  Parameterised by the
     abstraction token `e` introduced into φ' and the ORIGINAL φ (from which the excised
     conjunct `B` is read): the obligation that the abstraction `p = absLeaf e` soundly
     stands for `B`, i.e. `p ⇒ B`.  Discharging it IN-CAGE (it is admissible —
@@ -71,14 +71,14 @@ def Side (e : Thermite.Expr) : Frm → Frm
   | .conj _ B => .imp (absLeaf e) B
   | φ         => φ
 
-/-! ## T4-R — conservativity (R-SIDE-1): the certificate bridge
+/-! ## T4-R — conservativity (R-side-1): the certificate bridge
 
     For EVERY model `(q, dom)` and environment `ρ`, the rewritten formula φ' TOGETHER
     WITH a discharged `Side` re-establishes the original φ.  This is the soundness of
     using restratify: certifying φ' and discharging `Side` (both in-cage) certifies φ.
     The proof is a Boolean tautology — modus ponens on the abstraction's denotation. -/
 
-/-- **T4-R conservativity.**  `restrat_conservative` consumes BOTH φ' and `Side`:
+/-- **T4-R conservativity.**  `restrat_conservative` consumes both φ' and `Side`:
     `fdenote φ' ∧ fdenote Side ⇒ fdenote φ`, for all `(q, dom, ρ)`.  Dropping either
     hypothesis breaks it — the `Side` hypothesis is precisely what `PinRestratDropSide`
     shows is load-bearing. -/
@@ -96,7 +96,7 @@ theorem restrat_conservative (e : Thermite.Expr) (q : Atom → Bool) (dom : List
   · exact absurd (hp.symm.trans hpf) (by decide)
   · exact hB
 
-/-! ## T4-R — admissibility: φ' and `Side` are both IN-CAGE
+/-! ## T4-R — admissibility: φ' and `Side` are both in-cage
 
     The whole point of the split: the originally-rejected φ becomes TWO in-cage
     obligations.  Demonstrated on the §6 kv worked example. -/
@@ -109,12 +109,12 @@ def kvAbs : Thermite.Expr := .boolLit true
     `ex_kvCycle` to an ADMITTED formula (the `Value → Key` edge is gone with B). -/
 theorem restrat_admits : admitted (restrat kvAbs ex_kvCycle) = true := by decide
 
-/-- For contrast: the original kv cycle is REJECTED (`Strat/Fragment.lean`
+/-- For contrast: the original kv cycle is rejected (`Strat/Fragment.lean`
     `ex_kvCycle_rejected`), so `restrat` genuinely moves it into the cage. -/
 theorem restrat_moves_into_cage :
     admitted ex_kvCycle = false ∧ admitted (restrat kvAbs ex_kvCycle) = true := by decide
 
-/-- **T4-R `side_admitted`.**  The side obligation `Side(φ', φ)` is itself ADMITTED —
+/-- **T4-R `side_admitted`.**  The side obligation `Side(φ', φ)` is itself admitted —
     so it can be DISCHARGED IN-CAGE (it carries only the `Value → Key` edge from B, no
     cycle).  This is what makes the restratify split usable: both products are in-cage. -/
 theorem side_admitted : admitted (Side kvAbs ex_kvCycle) = true := by decide

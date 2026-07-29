@@ -569,11 +569,12 @@ the scalar/QF-linear-integer contract fragment were re-discharged by cvc5 and
 **kernel-checked** with the standard axioms only (`#print axioms` → `{propext,
 Classical.choice, Quot.sound}`, no `sorryAx`, no cvc5 oracle axiom; a partial-scope
 demotion rather than laundering). The remaining obstacles to *full* demotion: an
-upstream Lean-SMT `sorry` in the QF_BV (bitwise) reconstruction; ~30% cvc5
-proof-rule coverage (quantified/recursive fragments); Verus/Z3 not emitting
-reconstructable certificates (requiring the obligation to be re-solved through
-cvc5); and a missing Rust→Lean predicate exporter. These are engineering and
-upstream-maturation items rather than feasibility ones, documented in
+upstream Lean-SMT reconstructor that only partially covers QF_BV; ~30% cvc5
+proof-rule coverage (especially for quantified/recursive fragments); and Verus/Z3
+not emitting reconstructable certificates. Thermite now has a Rust→Lean exporter
+for QF_LIA and its complete QF_BV term surface. The latter uses literal `BitVec N`
+normalization lemmas instead of the partial upstream bit-blast route. The remaining
+work is documented in
 [`.design/verified/z3-demotion.md`](.design/verified/z3-demotion.md).
 
 **Why Lean 4 (and not Coq / Isabelle / Verus-native).** The live route to demote
@@ -837,9 +838,10 @@ and check [1]'s coverage grows.
   the exporter stops at straight-line bodies today (`while` is next — the spine's
   rule is already proven).
   [`.design/verified/proof-backends.md`](.design/verified/proof-backends.md).
-- **Full Z3 demotion**: close the upstream Lean-SMT QF_BV `sorry`, raise cvc5
-  proof-rule coverage, and re-solve TV obligations through cvc5 so `h_tv` becomes
-  kernel-checked rather than Z3-trusted.
+- **Full Z3 demotion**: literal QF_BV normalization is now kernel-checked in
+  Thermite. The remaining work is wider cvc5 proof-rule coverage and replayable
+  evidence for the quantified/recursive TV obligations, so `h_tv` no longer
+  depends on Z3.
   [`.design/verified/z3-demotion.md`](.design/verified/z3-demotion.md)
   (upstream-gated; the scalar core is already a proven PoC).
 - **The extraction bridge**: a mechanized Lean→Rust extraction (or a Rust-side

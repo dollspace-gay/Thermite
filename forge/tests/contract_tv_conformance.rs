@@ -1,18 +1,18 @@
 //! Conformance for the contract-faithfulness translation-validation phase
 //! (`.design/verified/contract-tv.md` REQ-5 / REQ-3; epic crosslink #139 /
-//! blockers #144 + #142). Two load-bearing properties, both through the real
+//! blockers #144 + #142). Two required properties, both through the real
 //! `verus` binary (skips with a logged note if absent, mirroring `check_conformance.rs`):
 //!
 //! 1. **Corpus no-false-positive (the key AC):** `forge tv <corpus.th> --json`
 //!    over the representative corpus (sum / binary_search / map_kv) yields zero
 //!    `divergent` clauses — the `faithful` production lowering must not trip TV. A
-//!    real divergence here would be a genuine lowering bug (a find), so the test
+//!    real divergence here would be a lowering bug (a find), so the test
 //!    pins `divergent == 0` (R-CHAR-3 — the expected value is the design's
 //!    faithful-lowering invariant, not the toolchain's own output).
 //! 2. **Off-corpus generated run (the thesis payoff):** `forge tv sum.th
 //!    --generated 200 --json` lowers + TV-checks 200 deterministically generated
 //!    clauses; the faithful lowerer makes every checked clause `faithful` (0
-//!    `divergent`). Any divergence is a real off-corpus infidelity finding (the
+//!    `divergent`). Any divergence is a off-corpus infidelity finding (the
 //!    whole point — surfaced).
 //!
 //! Expected values trace to the design's faithful-lowering invariant + the frozen
@@ -95,7 +95,7 @@ fn corpus_clause_verdict<'a>(report: &'a Value, clause: &str) -> Option<&'a str>
 
 // ---- AC: corpus no-false-positive -----------------------------------------
 
-/// REQ-5 / the key AC: `forge tv sum.th` checks the real contract clauses and
+/// REQ-5 / the key AC: `forge tv sum.th` checks the contract clauses and
 /// finds them all faithful (0 divergent). The faithful production lowering of
 /// `sum`'s `req`/`ens`/loop-`inv`/`dec` must not trip TV.
 #[test]
@@ -279,7 +279,7 @@ fn off_corpus_generated_run_all_faithful() {
         return;
     }
     // 200 clauses, the design's N (AC-7). Discharging 200 verus runs is slow but is
-    // the load-bearing thesis check; the `forge tv` binary runs them sequentially.
+    // the required thesis check; the `forge tv` binary runs them sequentially.
     let report = run_tv_json(&corpus_dir().join("sum.th"), Some(200));
     let gen = report
         .get("generated")
@@ -331,11 +331,11 @@ fn off_corpus_generated_run_all_faithful() {
     // k`) and non-`Eq` nat comparisons (`acc <= spec_sum(xs)`); every such checked
     // clause being `faithful` (0 divergent, asserted above) confirms the #146/#148
     // cast-paren fix + the #147 gap #2 Eq-only coercion hold off-corpus on both
-    // encoders. A `divergent`/`unverifiable` here = a real off-corpus hole. The
+    // encoders. A `divergent`/`unverifiable` here = a off-corpus hole. The
     // construct presence (so this guard is not vacuous) is asserted directly on the
     // deterministic generator in `thermite_tv::gen::tests::diverse_construct_coverage`
     // (`cast_lt >= 1`, `non_eq_nat_cmp >= 1`); here we re-confirm the run is the
     // extended one by requiring the clause count grew past the old 175-checked ceiling
-    // is not asserted (byte-view ratio varies by seed) — the load-bearing guard is the
+    // is not asserted (byte-view ratio varies by seed) — the required guard is the
     // `divergent == 0 && unverifiable == 0` over the cast-`<`-bearing stream above.
 }

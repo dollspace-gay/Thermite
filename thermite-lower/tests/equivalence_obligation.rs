@@ -5,7 +5,7 @@
 //! rendered into a Verus equivalence obligation that verifies for the equivalent
 //! case and fails (counterexample) for the distinguishing case. The decision is
 //! the real `verus` verdict (R-DEFER-9 — exclude only on a proof), so this test
-//! shells the real binary. It skips when verus is absent (mirroring
+//! shells the binary. It skips when verus is absent (mirroring
 //! `lower_conformance.rs`), never panics.
 //!
 //! Expected verdicts are hand-derived from the design's *Ground the path*

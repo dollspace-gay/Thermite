@@ -44,13 +44,13 @@ def admittedNoSelf (φ : Frm) : Bool :=
 
 /-! ## The pin -/
 
-/-- The concrete counterexample: the strip-self classifier ADMITS the `a[a[i]]`
+/-- The concrete counterexample: the strip-self classifier admits the `a[a[i]]`
     self-loop (`ex_selfLoop`), while the real `admitted` REJECTS it — the self-edge,
     which `stripSelf` discards, is the entire reason for the rejection. -/
 theorem selfLoop_counterexample :
     admittedNoSelf ex_selfLoop = true ∧ admitted ex_selfLoop = false := by decide
 
-/-- The pin: admission is UNSOUND for the strip-self classifier — it accepts a formula
+/-- The pin: admission is unsound for the strip-self classifier — it accepts a formula
     (`ex_selfLoop`) that the real `admitted` rejects, so the two classifiers disagree.
     Stripping reflexive edges is therefore not a safe refactor of `acyclic`. -/
 theorem stripSelf_breaks_admission :

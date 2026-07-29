@@ -1,4 +1,4 @@
-//! `forge/tests/lean_while.rs` — the integration-level oracle suite for the WHILE-BODY
+//! `forge/tests/lean_while.rs` — the integration-level oracle suite for the WHILE-body
 //! Lean exporter (`.design/verified/proof-backends.md` REQ-11 / §4.2, increment (v-b),
 //! blocker #264). The v1 `while` shape exports the five per-item obligations + the two
 //! generator-proved composed theorems (`while_compose` / `loopDenote_exits_of_dec`); a
@@ -20,7 +20,7 @@
 //! - **O-2** the full refusal matrix — every out-of-v1 shape does not certify L3-via-lean
 //!   (it is the `Unknown`/degrade skip, never a false verdict).
 //! - **O-3** the while-true vacuity fixture is never `Proven` L3-via-lean (the §4.2.3
-//!   termination-vacuity gate — the conjoined `_converges` obligation has teeth).
+//!   termination-vacuity gate, where the conjoined `_converges` obligation is required).
 //! - **O-4** an in-grammar while-body mutant is attempted (REQ-11.7) — the certificate's
 //!   mutation report says "against lean" with a non-zero attempted denominator, not the
 //!   `UntestedAgainstLean`/`0/0` backstop that every while mutant hit pre-(v-b).
@@ -167,7 +167,7 @@ fn count_certifies_l3_via_lean_auto() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
-// O-1 (honest) — `conformance/sum.th` does not certify L3-via-lean (the §4 residual).
+// O-1 — `conformance/sum.th` does not certify L3-via-lean (the §4 residual).
 // ════════════════════════════════════════════════════════════════════════════════
 
 #[test]
@@ -181,7 +181,7 @@ fn sum_does_not_certify_l3_via_lean_recursive_residual() {
     // sum.th's `ens result == spec_sum(xs)` is a recursive-registry contract clause (the
     // recursive `spec_sum` spec-fn) — the §4 stabilized form is the interactive residual,
     // so the auto Lean path refuses it (the contract-tier gate), and it does not certify
-    // L3 via the Lean engine. Expected from §4.2.1 / REQ-7 (R-CHAR-3): the honest landing
+    // L3 via the Lean engine. Expected from §4.2.1 / REQ-7 (R-CHAR-3): the landing
     // is not-L3-via-lean (it degrades / falls to Verus). Never a false L3-via-lean.
     assert!(
         !(level_of(&cert) == "L3" && certified_via_lean(&cert)),
@@ -201,7 +201,7 @@ fn refusal_matrix_no_lean_certification() {
         return;
     }
     // Each shape is out of the §4.2.1 v1 grammar (the §4.2.5 inventory). Under `--engine
-    // lean` each is the honest `Unknown`/degrade skip — never an L3-via-lean verdict. The
+    // lean` each is the `Unknown`/degrade skip — never an L3-via-lean verdict. The
     // out class is hand-derived from §4.2.5 (R-CHAR-3). Boundary cases pinned in
     // `engine.rs::while_refusal_inventory_is_structured` (the structured `ExportRefusal`
     // variant); here we assert the CERTIFICATE-level consequence (no Lean L3).

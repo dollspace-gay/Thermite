@@ -27,7 +27,7 @@
 //!   substituted under the current env, order-sensitive: `s = s + 1; s = s * 2`
 //!   threads `s |-> x` -> `s |-> (x + 1)` -> `s |-> ((x + 1) * 2)`, but the reorder
 //!   `s = s * 2; s = s + 1` threads to `((x * 2) + 1)`, a different closed form
-//!   (the state-sequencing teeth — `exec-stmt-tv.md` AC-3).
+//!   (the state-sequencing check in `exec-stmt-tv.md` AC-3).
 //! - `if c { .. } else { .. }` as the body tail composes the two branch
 //!   state-transformers into a Verus `if`-expression over the (substituted)
 //!   condition — `if c { <then-tail> } else { <else-tail> }` (`exec-stmt-tv.md`
@@ -56,7 +56,7 @@
 //!
 //! ## Honest boundary (out of the frozen 2.2.1 subset -> an `Err`, never silent-wrong)
 //!
-//! A construct outside the straight-line subset is an honest
+//! A construct outside the straight-line subset is an
 //! [`crate::exec_encode::RefEncodeError::Unsupported`] (R-CODE-2 / R-APG-1 — never a
 //! panic, never a silent wrong denotation): a `Stmt::Loop`/`Break`/`Continue` (step
 //! 2.2.2, kernel-gated), a mid-body early `return` nested in an `if` branch (the
@@ -91,7 +91,7 @@
 //! re-constrained to `inv ∧ ¬cond` (the analogue of how Verus itself models a
 //! loop's after-state). Every out-of-v1 loop (`loop`-kind, `break`/`continue`, a
 //! mid-body `return`, a nested loop, non-scalar state, a trivially-weak `inv`) is an
-//! honest [`RefEncodeError::Unsupported`] (R-HONEST-3 — Skipped, never silently
+//! [`RefEncodeError::Unsupported`] (R-HONEST-3 — Skipped, never silently
 //! Faithful).
 //!
 //! <!-- generated:reqs view=thermite-tv-exec-stmt-loop-status -->
@@ -188,7 +188,7 @@ pub fn body_ref_state(block: &Block, ctx: &BodyRefCtx) -> Result<String, RefEnco
 /// element's bounded arithmetic elaborates to `int`), but the per-projection
 /// `result.0: u64 == <u64 arithmetic>` compares element-wise at the bounded type
 /// (the grounded projection equality `r.0 == b`, `ast.rs` `TupleProj`). The
-/// reorder/wrong-cell teeth bite on whichever projection differs (B4's `b` cell).
+/// reorder and wrong-cell tests fail on whichever projection differs (B4's `b` cell).
 ///
 /// This is the obligation-shape concern (how `result` is compared), kept distinct
 /// from [`body_ref_state`] (the state denotation itself, REQ-2). Reuses the same
@@ -306,7 +306,7 @@ pub fn loop_ref_obligations(
     };
 
     // A trivially-weak `inv` (the conjunction is the bare `true`) is out of v1 (the
-    // after-loop `true ∧ ¬cond` is vacuous) — honest Err, checked before encoding.
+    // after-loop `true ∧ ¬cond` is vacuous), checked before encoding.
     if invariant_is_vacuous(&loop_node.invs) {
         return Err(RefEncodeError::Unsupported(
             "trivially-weak loop invariant (`inv true` — the after-loop `true ∧ ¬cond` \
@@ -340,7 +340,7 @@ pub fn loop_ref_obligations(
     // substitutes the whole entry env (so a referenced `hi |-> n` is resolved, not
     // left free); the fn inputs are the only surviving free vars. Every cell must have
     // a prefix `let mut` binding (an assigned cell needs an in-scope introducer);
-    // honest Err otherwise.
+    // Return Err otherwise.
     let mut entry_env: Env = Env::new();
     for stmt in prefix {
         thread_stmt(stmt, &mut entry_env)?;
@@ -406,7 +406,7 @@ pub fn loop_ref_obligations(
 /// Recognize the v1 frozen-subset `while` loop: `block`'s last statement must be a
 /// `Stmt::Loop` with `kind: While(_)`, non-empty `invs`, a `dec`, and a straight-line
 /// scalar body containing no nested loop / `break` / `continue` / mid-body `return`.
-/// Returns the pre-loop prefix statements + the loop node, or an honest
+/// Returns the pre-loop prefix statements + the loop node, or an
 /// [`RefEncodeError::Unsupported`] naming the out-of-v1 reason (Skipped, never
 /// silently Faithful — R-HONEST-3).
 fn recognize_v1_loop(block: &Block) -> Result<(&[Stmt], &LoopNode), RefEncodeError> {
@@ -441,7 +441,7 @@ fn recognize_v1_loop(block: &Block) -> Result<(&[Stmt], &LoopNode), RefEncodeErr
     }
     if loop_node.invs.is_empty() {
         // Structurally LoopNode carries a non-empty invs (the parser enforces §4.1);
-        // the honest Err keeps the rule total against a hand-built node.
+        // the Err keeps the rule total against a hand-built node.
         return Err(RefEncodeError::Unsupported(
             "`while` loop with no `inv` (v1's after-loop characterization needs a \
              usable invariant — Skipped honestly)"
@@ -455,12 +455,12 @@ fn recognize_v1_loop(block: &Block) -> Result<(&[Stmt], &LoopNode), RefEncodeErr
 }
 
 /// Reject an out-of-v1 loop body: a nested `Stmt::Loop`, a `break`/`continue`, or a
-/// mid-body `return` (the multi-exit CPS forms) → an honest
+/// mid-body `return` (the multi-exit CPS forms) → an
 /// [`RefEncodeError::Unsupported`]. Recurses into `if`-branch bodies (a `break` /
 /// `return` nested in an `if` is just as out). A straight-line scalar body (the v1
 /// in-set: `let`/`assign`/`if`/`expr`) passes; the per-statement value/scalar
 /// rejection is left to the shipped [`thread_stmt`] (e.g. a non-scalar assignment is
-/// already an honest Err there).
+/// already an Err there).
 fn reject_out_of_subset_body(body: &Block) -> Result<(), RefEncodeError> {
     for stmt in &body.stmts {
         reject_out_of_subset_stmt(stmt)?;
@@ -507,7 +507,7 @@ fn reject_out_of_subset_stmt(stmt: &Stmt) -> Result<(), RefEncodeError> {
 /// `Stmt::Assign` to a bare in-scope name). Recurses into `if`-branch bodies (a cell
 /// mutated in a branch is a mutated cell). A `let`-introduced branch-local binding is
 /// not a mutated outer cell (it does not leak — the body_ref_state semantics), so a
-/// branch-local `let mid = ..` is excluded. Returns an honest Err only on a malformed
+/// branch-local `let mid = ..` is excluded. Returns an Err only on a malformed
 /// non-bare-name target (left to the shipped threading otherwise).
 fn collect_assigned_cells(body: &Block) -> Result<BTreeSet<String>, RefEncodeError> {
     let mut cells = BTreeSet::new();
@@ -556,7 +556,7 @@ fn collect_assigned_cells_block(
 /// cells are substituted by their env value (entry / stepped) then the predicate is
 /// reused through [`exec_ref_value`] (the bounded comparison / logical reference — the
 /// same independent encoder the per-RHS value uses). A predicate outside the bounded
-/// exec sublanguage (a quantifier, a spec-only combinator) is an honest Err from
+/// exec sublanguage (a quantifier, a spec-only combinator) is an Err from
 /// [`exec_ref_value`]: the v1 loop subset is scalar-comparison invariants (`lo <=
 /// hi`, `i <= n`), never a `forall_*` (those are the `binary_search` v2 forms).
 fn encode_predicate(expr: &Expr, env: &Env, ctx: &BodyRefCtx) -> Result<String, RefEncodeError> {
@@ -598,7 +598,7 @@ pub fn negate_condition(cond: &str) -> String {
 /// Thread `block`'s statements through `env` (in order), then encode its tail value
 /// under the resulting env. A block with no tail (a unit-valued straight-line body)
 /// is outside the v1 single-exit value subset: the body-refinement obligation
-/// compares a result value, so a tail is required (an honest `Err` otherwise).
+/// compares a result value, so a tail is required (an `Err` otherwise).
 fn encode_block_tail(
     block: &Block,
     env: &mut Env,
@@ -623,7 +623,7 @@ fn encode_block_tail(
 /// `Expr` here; `If`/`Return` are only admitted in tail position (handled by
 /// [`encode_value`] / the tail), so an `If`/`Return` in non-tail (statement)
 /// position — a mid-body branch / early return — is out of v1 (the multi-exit CPS
-/// form) and an honest `Err`. A `Loop`/`Break`/`Continue` is step 2.2.2.
+/// form) and an `Err`. A `Loop`/`Break`/`Continue` is step 2.2.2.
 fn thread_stmt(stmt: &Stmt, env: &mut Env) -> Result<(), RefEncodeError> {
     match stmt {
         Stmt::Let {
@@ -631,7 +631,7 @@ fn thread_stmt(stmt: &Stmt, env: &mut Env) -> Result<(), RefEncodeError> {
         } => {
             // A re-shadow `let x = ..; let x = ..` in the same block is out of v1
             // (the flat name->value env can't represent two distinct `x` cells) —
-            // honest `Err`, never a silent wrong substitution.
+            // `Err`, never a silent wrong substitution.
             if env.contains_key(name) {
                 return Err(RefEncodeError::Unsupported(format!(
                     "re-shadowed binding `{name}` in the same block (the v1 state \
@@ -660,7 +660,7 @@ fn thread_stmt(stmt: &Stmt, env: &mut Env) -> Result<(), RefEncodeError> {
                 }
             };
             // The cell must already be in scope (a `let mut` introduced it). An
-            // assignment to an unbound name is malformed input — an honest `Err`.
+            // assignment to an unbound name is malformed input — an `Err`.
             if !env.contains_key(&name) {
                 return Err(RefEncodeError::Unsupported(format!(
                     "assignment to the unbound cell `{name}` (no in-scope `let mut` \
@@ -668,7 +668,7 @@ fn thread_stmt(stmt: &Stmt, env: &mut Env) -> Result<(), RefEncodeError> {
                 )));
             }
             // Order-sensitive: substitute under the current env (the value before
-            // this assignment), then rebind. This is the state-sequencing teeth: a
+            // this assignment), then rebind. This preserves assignment order: a
             // reorder threads a different substitution chain -> a different closed
             // form (`exec-stmt-tv.md` AC-3).
             let substituted = substitute(value, env)?;
@@ -695,7 +695,7 @@ fn thread_stmt(stmt: &Stmt, env: &mut Env) -> Result<(), RefEncodeError> {
         // states (the state-transformer semantics — exec-stmt-tv.md REQ-2 / AC-4). A
         // cell mutated in neither branch is unchanged. The recursion handles a nested
         // `if`-statement in a branch; an out-of-subset branch construct (a loop, a
-        // non-scalar mutation, a mid-branch return) propagates its honest `Err`.
+        // non-scalar mutation, a mid-branch return) propagates its `Err`.
         Stmt::If { cond, then, else_ } => {
             // The condition is itself an exec value — substitute it under the
             // pre-`if` env so the composed value is a closed form in the inputs.
@@ -703,7 +703,7 @@ fn thread_stmt(stmt: &Stmt, env: &mut Env) -> Result<(), RefEncodeError> {
 
             // Thread each branch into its own copy of the pre-`if` env. A branch-tail
             // value (a value-discarding `if c { ..; v }` statement) is out of the v1
-            // mutation subset — an honest `Err` (the state-denotation only composes a
+            // mutation subset — an `Err` (the state-denotation only composes a
             // branch that mutates cells, never a discarded branch value).
             let mut then_env = env.clone();
             thread_branch(then, &mut then_env)?;
@@ -773,11 +773,11 @@ fn thread_stmt(stmt: &Stmt, env: &mut Env) -> Result<(), RefEncodeError> {
 /// Thread an `if`-statement branch `Block`'s statements through `env` (in order),
 /// reusing the per-statement [`thread_stmt`] recursively (so a nested `if`-statement
 /// in the branch is composed, and an out-of-subset branch construct — a loop, a
-/// non-scalar mutation, a mid-branch early return — propagates its honest `Err`). A
+/// non-scalar mutation, a mid-branch early return — propagates its `Err`). A
 /// branch in the v1 mutation subset is value-less (`tail: None`): it mutates outer
 /// cells via `Stmt::Assign`, it does not produce a discarded value. A branch with a
 /// tail value (`if c { ..; v }` as a statement) is out of the v1 mutation subset — an
-/// honest [`RefEncodeError::Unsupported`], never a silent discard.
+/// [`RefEncodeError::Unsupported`], never a silent discard.
 fn thread_branch(branch: &Block, env: &mut Env) -> Result<(), RefEncodeError> {
     for stmt in &branch.stmts {
         thread_stmt(stmt, env)?;
@@ -1056,7 +1056,7 @@ mod tests {
         );
     }
 
-    /// B2 reference (the mutation-order teeth): `s = s + 1; s = s * 2` threads to
+    /// B2 mutation-order reference: `s = s + 1; s = s * 2` threads to
     /// `((x + 1) * 2)`, and the reorder threads to a different form, so the order
     /// matters in the reference, not just in production.
     #[test]
@@ -1135,8 +1135,8 @@ mod tests {
         );
     }
 
-    /// A loop body is out of the frozen 2.2.1 subset -> an honest `Err`, never a
-    /// silent (wrong) denotation (REQ-1 honest boundary).
+    /// A loop body is out of the frozen 2.2.1 subset -> an `Err`, never a
+    /// silent (wrong) denotation (REQ-1 boundary).
     #[test]
     fn loop_body_is_unsupported_not_panic() {
         use thermite_syntax::ast::{Clause, LoopKind, LoopNode};
@@ -1172,7 +1172,7 @@ mod tests {
     }
 
     /// A re-shadow `let x = ..; let x = ..` in the same block is out of v1 (the flat
-    /// env can't represent two `x` cells) -> an honest `Err`.
+    /// env can't represent two `x` cells) -> an `Err`.
     #[test]
     fn reshadow_is_unsupported() {
         let block = Block {

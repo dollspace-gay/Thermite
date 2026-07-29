@@ -13,30 +13,30 @@
 //! string*, this computes the concrete [`Value`] so 50_000 `falsify` inputs run
 //! in-process (a Verus run per input would be infeasible).
 //!
-//! ## The fragment (and why it is bounded honestly)
+//! ## The fragment (and why it is bounded)
 //!
 //! The evaluator admits the pure scalar fragment: integer (`u32`/`u64`/`usize`) and
 //! `bool` values; the arithmetic/comparison/logical/bitwise operators; `!`; `if`
 //! expressions; `as` casts; and a fn body of `let`/`if`/`return`/tail statements over
 //! that fragment. Anything outside it — a sequence/`Seq` value, a combinator call, a
-//! method call, a `match`, a struct/enum, a loop — is an honest
+//! method call, a `match`, a struct/enum, a loop — is an
 //! [`CovenantEvalError::Unsupported`] carrying the offending shape (it never silently
 //! evaluates a wrong value, mirroring [`thermite_tv::exec_encode`]'s
 //! `RefEncodeError::Unsupported`, R-CODE-2 / R-APG-1). A covenant declared on an item
-//! outside the fragment surfaces that error loudly rather than dropping the witness.
+//! outside the fragment surfaces that error rather than dropping the witness.
 //!
-//! ## The integer-value model (and what the covenant does NOT discriminate)
+//! ## The integer-value model (and what the covenant does not discriminate)
 //!
 //! Integers are evaluated as mathematical `i128`, wide enough to hold every `u64`,
 //! with `as` casts modelling the truncating bit-width semantics (`x as u32` reduces
 //! mod 2³²). Arithmetic, shifts, and bitwise ops (including the type-directed integer
-//! `!`) do NOT truncate to the operand width: the covenant checks the AGREEMENT between
-//! the body's computed value and what `ens` asserts, and it evaluates BOTH sides under
+//! `!`) do not truncate to the operand width: the covenant checks the AGREEMENT between
+//! the body's computed value and what `ens` asserts, and it evaluates both sides under
 //! the same `i128` semantics, so a width-truncation difference (an overflowing `*`, a
 //! `<<` past the width, a `!` complement) on one side that the other side also computes
 //! identically can never manufacture a spurious refutation. The absolute width-truncated
 //! value (the exec-TV / L3 surface, `forge/src/exec_tv.rs`) is not the covenant's
-//! discrimination target — only the body-vs-`ens` agreement is. A genuine runtime trap with no `ens` bearing —
+//! discrimination target — only the body-vs-`ens` agreement is. A runtime trap with no `ens` bearing —
 //! a divide-by-zero / shift-out-of-range — is a [`CovenantEvalError::Trap`]: the
 //! `falsify` driver treats a trapped input as not-evaluated (skipped), not a hit
 //! (REQ-4: a hit is an `ens` violation on a `req`-satisfying input, `req` is expected
@@ -53,9 +53,9 @@ use std::fmt;
 
 use thermite_syntax::ast::{BinOp, Block, Expr, PrimType, Stmt, Type, UnaryOp};
 
-/// An honest failure to evaluate a construct, never a wrong value (REQ-4, the dual of
+/// An failure to evaluate a construct, never a wrong value (REQ-4, the dual of
 /// [`thermite_tv::exec_encode`]'s `RefEncodeError`). The covenant producer surfaces
-/// every variant loudly; the `falsify` driver maps a [`CovenantEvalError::Trap`] to a
+/// every variant; the `falsify` driver maps a [`CovenantEvalError::Trap`] to a
 /// skipped input (a partial-operator trap is not an `ens` violation) and any other
 /// variant to a covenant error (the item is outside the covenant-checkable fragment).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -230,7 +230,7 @@ pub fn eval_expr(expr: &Expr, env: &Env) -> Result<Value, CovenantEvalError> {
                 )),
             }
         }
-        // Everything else is outside the covenant scalar fragment — honest Unsupported.
+        // Everything else is outside the covenant scalar fragment and returns Unsupported.
         other => Err(CovenantEvalError::Unsupported(expr_shape(other))),
     }
 }
@@ -240,7 +240,7 @@ pub fn eval_expr(expr: &Expr, env: &Env) -> Result<Value, CovenantEvalError> {
 /// a [`CovenantEvalError::Trap`]), the bitwise ops, the comparisons (→ `bool`), and the
 /// short-circuiting `&&`/`||`.
 fn eval_binary(op: BinOp, lhs: &Expr, rhs: &Expr, env: &Env) -> Result<Value, CovenantEvalError> {
-    // Short-circuit the logical connectives BEFORE evaluating the rhs (the exec
+    // Short-circuit the logical connectives before evaluating the rhs (the exec
     // semantics: `a && b` does not evaluate `b` when `a` is false).
     match op {
         BinOp::And => {
@@ -307,7 +307,7 @@ fn eval_binary(op: BinOp, lhs: &Expr, rhs: &Expr, env: &Env) -> Result<Value, Co
         BinOp::Ge => Value::Bool(a >= b),
         // Add/Sub/Mul/Div/Rem/Shl/Shr/BitAnd/BitOr/BitXor/Lt/Le/Gt/Ge handled above;
         // Eq/Ne/And/Or returned earlier. This arm is unreachable for the closed BinOp
-        // set, but we map it to an honest error rather than panic (R-APG-1).
+        // set, but we map it to an error rather than panic (R-APG-1).
         BinOp::Eq | BinOp::Ne | BinOp::And | BinOp::Or => {
             return Err(CovenantEvalError::Unsupported(
                 "binary operator dispatch".to_string(),
@@ -319,8 +319,8 @@ fn eval_binary(op: BinOp, lhs: &Expr, rhs: &Expr, env: &Env) -> Result<Value, Co
 
 /// Structural equality on two values (`==`/`!=`): integers compare numerically, bools
 /// logically; a cross-type comparison is a [`CovenantEvalError::Type`] (the source is
-/// type-checked, so this never fires on well-typed input, but it is honest, not a
-/// silent `false`).
+/// type-checked, so this never fires on well-typed input; it returns an error rather
+/// than `false`).
 fn value_eq(l: Value, r: Value) -> Result<bool, CovenantEvalError> {
     match (l, r) {
         (Value::Int(a), Value::Int(b)) => Ok(a == b),
@@ -332,7 +332,7 @@ fn value_eq(l: Value, r: Value) -> Result<bool, CovenantEvalError> {
 }
 
 /// The integer width of a cast target type, or `None` for a `bool` cast. A non-scalar
-/// cast target (a slice, a generic) is an honest [`CovenantEvalError::Unsupported`].
+/// cast target (a slice, a generic) is an [`CovenantEvalError::Unsupported`].
 fn cast_width(ty: &Type) -> Result<Option<IntWidth>, CovenantEvalError> {
     match ty {
         Type::Prim(p) => Ok(IntWidth::of_prim(*p)),
@@ -347,12 +347,12 @@ fn cast_width(ty: &Type) -> Result<Option<IntWidth>, CovenantEvalError> {
 /// `e`'s value), then evaluate the tail expression. A block with no tail and no
 /// `return` (a unit-valued block) is a [`CovenantEvalError::Type`] — a covenant item
 /// returns a scalar value. Loops / `break` / `continue` / mutation are outside the
-/// fragment (honest Unsupported).
+/// fragment and return Unsupported.
 pub fn eval_block(block: &Block, env: &Env) -> Result<Value, CovenantEvalError> {
     let mut local = env.clone();
     // The names a `let mut` introduced — the only names a `Stmt::Assign` may reassign
     // (Rust/Verus reject assignment to an immutable binding, E0384). Params + plain
-    // `let` bindings are absent, so reassigning one is an honest error, not a silent
+    // `let` bindings are absent, so reassigning one is an error, not a silent
     // mutation (the covenant-eval faithfulness contract).
     let mut mutable = BTreeSet::new();
     if let Some(v) = eval_stmts(&block.stmts, &mut local, &mut mutable)? {
@@ -401,7 +401,7 @@ fn eval_stmts(
                     let name = &segments[0];
                     if !mutable.contains(name) {
                         // Assignment to a param or a non-`mut` `let` binding — invalid
-                        // executable code (Verus E0384). Surface it loudly rather than
+                        // executable code (Verus E0384). Surface it rather than
                         // silently threading the mutation (the faithfulness contract).
                         return Err(CovenantEvalError::Unsupported(format!(
                             "assignment to immutable binding `{name}` (a covenant body must \
@@ -427,11 +427,11 @@ fn eval_stmts(
                 }
             },
             Stmt::If { cond, then, else_ } => {
-                // A STATEMENT-position `if/else` (the parser only emits `Stmt::If` here;
+                // A statement-position `if/else` (the parser only emits `Stmt::If` here;
                 // a tail-position `if/else` is an `Expr::If` handled by `eval_block`'s
-                // tail). Its VALUE is discarded — Rust/Verus semantics — so a branch's
-                // tail expression does NOT short-circuit the enclosing block; only a
-                // `return` STATEMENT inside the taken branch does (`eval_stmts` returns
+                // tail). Its value is discarded — Rust/Verus semantics — so a branch's
+                // tail expression does not short-circuit the enclosing block; only a
+                // `return` statement inside the taken branch does (`eval_stmts` returns
                 // `Some`). Evaluating the branch tail as a block return was a bug that
                 // manufactured a false refutation on e.g. `{ if c { x } else { x } 0 }`
                 // (which returns `0`, not `x`).
@@ -544,7 +544,7 @@ mod tests {
 
     #[test]
     fn logical_short_circuit_does_not_touch_unbound_rhs() {
-        // `false && <unbound>` must short-circuit to false WITHOUT evaluating the rhs
+        // `false && <unbound>` must short-circuit to false without evaluating the rhs
         // (so an unbound name on the dead side is not an error — the exec semantics).
         let e = env(&[("x", Value::Int(0))]);
         assert_eq!(eval_src("x > 5 && z == 1", &e), Ok(Value::Bool(false)));
@@ -573,7 +573,7 @@ mod tests {
 
     #[test]
     fn unsupported_construct_is_loud_not_silent() {
-        // A combinator call is outside the scalar fragment — an honest Unsupported.
+        // A combinator call is outside the scalar fragment — an Unsupported.
         let e = env(&[("x", Value::Int(1))]);
         let r = eval_src("forall_in(x, |i| true)", &e);
         assert!(
@@ -626,8 +626,8 @@ mod tests {
 
     #[test]
     fn stmt_position_if_value_is_discarded_not_an_early_return() {
-        // A STATEMENT-position `if/else` value is DISCARDED (Rust/Verus semantics): the
-        // body returns the trailing tail `0`, NOT the taken branch's tail `x`. A bug here
+        // A statement-position `if/else` value is DISCARDED (Rust/Verus semantics): the
+        // body returns the trailing tail `0`, not the taken branch's tail `x`. A bug here
         // (taking the branch tail as a block return) manufactures a false refutation on a
         // correct item — the divergence the critic pinned (#298).
         let f = parse_fn(
@@ -649,7 +649,7 @@ mod tests {
     #[test]
     fn assignment_to_immutable_binding_is_a_loud_error_let_mut_works() {
         // Assignment to a non-`mut` `let` binding is invalid executable code (Verus
-        // E0384) — an honest error, never a silent mutation (#299, the faithfulness
+        // E0384) — an error, never a silent mutation (#299, the faithfulness
         // contract). The only textual difference from the legal control is `mut`.
         let immutable = parse_fn(
             "fn setone(x: u64) -> u64 req true ens result == 1 fx pure \

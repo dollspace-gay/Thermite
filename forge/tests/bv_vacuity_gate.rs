@@ -2,10 +2,10 @@
 //!
 //! The v1/default cage rejects an unsatisfiable precondition as `VacuousPrecondition`
 //! (the anti-Goodhart battery, RFC-1 §10 — a `req false` contract "proves" anything and
-//! is a gaming vector). The bv route runs NO vacuity check: it only threads `req` into
+//! is a gaming vector). The bv route runs no vacuity check: it only threads `req` into
 //! the QF_BV query, so a `req false` clause discharges vacuously. For a result-referencing
 //! clause the mutation gate incidentally catches it (every mutant survives → WeakContract),
-//! but a PARAM-ONLY `@bv` clause or a `@bv` LEMMA (no body → no mutation) sails through and
+//! but a PARAM-only `@bv` clause or a `@bv` lemma (no body → no mutation) sails through and
 //! — post-REQ-8 — certifies L4 with a KERNEL-CHECKED trust label on a vacuous proof.
 //!
 //! These tests assert the correct (rejected) behavior — the regression guard for the
@@ -49,7 +49,7 @@ fn reject_cause(c: &Value) -> Option<String> {
         .map(String::from)
 }
 
-/// A `@bv` LEMMA with an unsatisfiable precondition must NOT certify — it is vacuous
+/// A `@bv` lemma with an unsatisfiable precondition must not certify — it is vacuous
 /// (the §10 anti-Goodhart gaming vector). Regression guard for the bv-route vacuity gate.
 #[test]
 fn vacuous_bv_lemma_is_rejected_not_certified() {
@@ -76,7 +76,7 @@ fn vacuous_bv_lemma_is_rejected_not_certified() {
     );
 }
 
-/// A param-only `@bv` fn clause under an unsatisfiable precondition must NOT certify
+/// A param-only `@bv` fn clause under an unsatisfiable precondition must not certify
 /// kernel-checked — the mutation gate misses param-only clauses, so the req-SAT gate must
 /// catch it. Regression guard for the bv-route vacuity gate.
 #[test]

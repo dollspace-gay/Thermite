@@ -37,9 +37,9 @@
 //!
 //! - `?N` — a body-position hole (`.design/forge/goal-repl.md` REQ-4, #193):
 //!   `?` + a run of ASCII digits → `Hole { number: N, proof: false }`.
-//! - `?pN` — a PROOF hole (`.design/stage1-forge-tier.md` REQ-3, the forge tier):
+//! - `?pN` — a proof hole (`.design/stage1-forge-tier.md` REQ-3, the forge tier):
 //!   `?` + `p` + a run of ASCII digits → `Hole { number: N, proof: true }`. The
-//!   `p` sigil rides the SAME machinery (no multibyte / no new token kind); only
+//!   `p` sigil rides the same machinery (no multibyte / no new token kind); only
 //!   the `proof` discriminant differs.
 //!
 //! A bare `?` with no following digit (or `?p` with no digit) is a stray-char
@@ -116,7 +116,7 @@ pub enum TokKind {
     /// REQ-0): the raw binder production `forall (x : S) in <dom>. φ` the (R2) index
     /// grammar admits. A RESERVED keyword (the closed set, REQ-2) so the binder is
     /// recognized unambiguously at expression head. The registry-free combinator
-    /// identifiers `forall_in`/`forall_below`/`forall_from` are DISTINCT words (they
+    /// identifiers `forall_in`/`forall_below`/`forall_from` are distinct words (they
     /// still lex to [`TokKind::Ident`]); only the bare `forall` is reserved, leaving
     /// the combinator registry untouched.
     Forall,
@@ -129,8 +129,8 @@ pub enum TokKind {
     // Literals / names.
     Ident(String),
     /// An integer literal carrying both the numeric `value` (with `_`
-    /// separators stripped, lexer.md REQ-3 VALUE, unchanged) and the verbatim
-    /// source `raw` (separators included, lexer.md REQ-3 RAW, #37). E.g.
+    /// separators stripped, lexer.md REQ-3 value, unchanged) and the verbatim
+    /// source `raw` (separators included, lexer.md REQ-3 raw, #37). E.g.
     /// `1_000_000` lexes to `{ value: 1000000, raw: "1_000_000" }`.
     Int {
         value: u128,
@@ -196,7 +196,7 @@ pub enum TokKind {
     At,
 
     /// A structural HOLE — either a body hole `?N` (`.design/forge/goal-repl.md`
-    /// REQ-4, #193) or a PROOF hole `?pN` (`.design/stage1-forge-tier.md` REQ-3,
+    /// REQ-4, #193) or a proof hole `?pN` (`.design/stage1-forge-tier.md` REQ-3,
     /// the forge tier), distinguished by `proof`. `number` is the verbatim hole
     /// number as written (`?0`/`?p0` → `0`); it is the surface ordinal the agent
     /// typed, not a document-order index (the parser records holes in document
@@ -428,9 +428,9 @@ fn lex_word(bytes: &[u8], i: usize) -> (Token, usize) {
 }
 
 /// Lex an integer literal with optional `_` separators (lexer.md REQ-3). The
-/// `_` are stripped while accumulating the numeric `value` (VALUE); the verbatim
+/// `_` are stripped while accumulating the numeric `value` (value); the verbatim
 /// source slice (separators + any `0x`/`0b` prefix included) is captured as `raw`
-/// (RAW, #37).
+/// (raw, #37).
 ///
 /// The radix is chosen by the prefix at the start of a digit run (lexer.md REQ-3,
 /// #92): `0x`/`0X` → hexadecimal, `0b`/`0B` → binary, otherwise decimal. A hex /

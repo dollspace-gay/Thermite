@@ -220,7 +220,7 @@ fn multiplier_instance_cites_the_generated_law_no_fresh_induction() {
 }
 
 /// Negative control (AC-2 / R-DEFER-9, §7): the generated law minus its per-node
-/// premise fails verus — the per-node premise is load-bearing, the induction is
+/// premise fails verus — the per-node premise is required, the induction is
 /// not vacuous. We take the emitted lowering, strip the `forall|…| f(x, acc) <=
 /// acc + b` premise line from `fold_bound_list`, and assert verus reports an
 /// error (the oracle `multiplier` expectation: dropping the premise → 1 error).

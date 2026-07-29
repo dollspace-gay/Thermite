@@ -1,5 +1,5 @@
 //! The Rust admission classifier — the **ops half** of the stage-2 stratified cage
-//! (`.design/stage2-stratified-cage.md` REQ-4 / AC-4). This is a deliberately-simple
+//! (`.design/stage2-stratified-cage.md` REQ-4 / AC-4). This is a simple
 //! re-implementation, in Rust, of the Lean kernel classifier shipped in REQ-3 (#325):
 //! `Thermite.Strat.Cls.admitted` (`lean/Thermite/Strat/Fragment.lean`),
 //!
@@ -8,11 +8,11 @@
 //! ```
 //!
 //! over the **sort-typed `Cls` surface syntax** (`Sort₂` + the array-property term
-//! vocabulary `Read`/`Len`/`Cast`/`IdxOp`/`Mul`/spec-fn + sorted binders), NOT REQ-1's
+//! vocabulary `Read`/`Len`/`Cast`/`IdxOp`/`Mul`/spec-fn + sorted binders), not REQ-1's
 //! minimal semantic-spine `Frm`. The two languages are distinct by design (the #68
 //! axiom-probe collision; see `Strat/Nnf.lean`'s header): this module mirrors the
 //! `Thermite.Strat.Cls.Frm` classifier surface so the **differential battery**
-//! (`thermite-tv`'s generator → both this classifier AND `lake env lean --run` on the
+//! (`thermite-tv`'s generator → both this classifier and `lake env lean --run` on the
 //! Lean `admitted`) can hold the two implementations to byte-equal verdicts on every
 //! generated formula. Any disagreement is a hard CI failure (audit check [8]); the
 //! `unknown`-on-admitted tripwire logs and escalates as classifier-suspect.
@@ -22,10 +22,10 @@
 //! Every `fn` below is a line-for-line transliteration of the Lean definition it names
 //! in its doc comment — `fin_sort`/`fin_carrier`, `same_width`/`has_bound_var`/
 //! `idx_ok_tm`/`idx_grammar_at`, `nnf`/`nnf_neg`, `edges_tm`/`edges_atom`/`edges_frm`/
-//! `sort_graph`, and `admitted`. The ONE intentional divergence is the acyclicity
+//! `sort_graph`, and `admitted`. The one intentional divergence is the acyclicity
 //! decision: the Lean kernel uses the exponential Roy–Warshall `reach` recursion
 //! (`Strat/Graph.lean`, fine for `decide` on the §3.2 micro-examples), whereas the Rust
-//! side computes the SAME boolean (`acyclic G ⟺ no node reaches itself`) by a
+//! side computes the same boolean (`acyclic G ⟺ no node reaches itself`) by a
 //! polynomial transitive-closure ([`Graph::acyclic`]); the two agree by
 //! `acyclic_iff_no_cycle`, and the differential battery is what witnesses the agreement
 //! empirically over the generated clause space.
@@ -34,7 +34,7 @@
 //!
 //! A rejection names its reason from the frozen [`RejectReason`] vocabulary
 //! (`infinite-carrier`/`seq-quantifier` for (R1), `index-grammar` for (R2), the named
-//! `…-cycle` for (R3)). The classifier is TOTAL — `classify` always returns a definite
+//! `…-cycle` for (R3)). The classifier is total — `classify` always returns a definite
 //! [`Verdict::Admitted`] or [`Verdict::Rejected`]; the [`Verdict::Unknown`] arm exists
 //! only for the differential battery's tripwire (a formula the classifier could not
 //! vouch for while Lean admitted it — escalate, never silently retry).
@@ -376,7 +376,7 @@ fn nnf_neg(phi: &Frm) -> Frm {
 // ===========================================================================
 
 /// A directed graph over sorts (`Strat/Graph.lean` `structure Graph`) — an explicit
-/// node list and edge list (kept with duplicates, exactly as the Lean `nodesOf` builds
+/// node list and edge list (kept with duplicates, as the Lean `nodesOf` builds
 /// them, so the node set matches; reachability is insensitive to the duplication).
 struct Graph {
     nodes: Vec<Sort2>,
@@ -562,7 +562,7 @@ fn sort_graph(phi: &Frm) -> Graph {
 // The classifier verdict + the frozen rejection vocabulary
 // ===========================================================================
 
-/// Why the classifier rejected a formula — the FROZEN vocabulary (REQ-4 / AC-4). One
+/// Why the classifier rejected a formula — the frozen vocabulary (REQ-4 / AC-4). One
 /// member per admission gate; every rejection names exactly one. The headline three the
 /// design names (`infinite-carrier`/`seq-quantifier`, the named cycle) are (R1) and
 /// (R3); `index-grammar` is the (R2) member (a bound index var under `mul` or a
@@ -636,7 +636,7 @@ impl Verdict {
 }
 
 /// Classify a formula — the Rust mirror of `Thermite.Strat.Cls.admitted` plus the
-/// rejection reason (REQ-4). Checks the three gates in the SAME order the Lean
+/// rejection reason (REQ-4). Checks the three gates in the same order the Lean
 /// `admitted` conjunction evaluates — (R1) `finCarrier`, then (R2) `idxGrammar`, then
 /// (R3) `acyclic (sortGraph (nnf φ))` — so the boolean `classify(φ).is_admitted()`
 /// equals `admitted φ` exactly (the differential invariant), and a rejection names the
@@ -838,12 +838,12 @@ fn write_frm(phi: &Frm, out: &mut String) {
 /// Grammar (tokens are `(`, `)`, and maximal non-paren non-space runs):
 ///
 /// ```text
-/// sort := (m WIDTH) | (s SORT) | (o NAT)
-/// tm   := (v SORT INT) | (l SORT) | (rd SORT TM TM) | (ln TM)
-///       | (ct SORT TM) | (ix TM INT) | (ml TM TM) | (a1 SORT SORT NAT TM)
+/// sort := (m WIDTH) | (s sort) | (o NAT)
+/// tm   := (v sort INT) | (l sort) | (rd sort TM TM) | (ln TM)
+///       | (ct sort TM) | (ix TM INT) | (ml TM TM) | (a1 sort sort NAT TM)
 /// atom := (r REL TM TM) | (qf)
 /// frm  := (at ATOM) | (ng FRM) | (cj FRM FRM) | (dj FRM FRM)
-///       | (im FRM FRM) | (al SORT FRM) | (ex SORT FRM)
+///       | (im FRM FRM) | (al sort FRM) | (ex sort FRM)
 /// ```
 pub fn parse_frm(wire: &str) -> Result<Frm, String> {
     let toks = tokenize(wire);
@@ -1037,7 +1037,7 @@ mod tests {
         Sort2::usize_s()
     }
 
-    // The four §3.2 worked micro-examples — the SAME concrete formulas the Lean
+    // The four §3.2 worked micro-examples — the same concrete formulas the Lean
     // `Strat/Fragment.lean` `decide`-checks (`ex_selfLoop`/`ex_castCycle`/`ex_kvCycle`/
     // `ex_sortedness`), transliterated to the Rust `Frm`. The Rust verdict must match the
     // Lean expected admit/reject outcome — the kernel-anchored end of the differential.
@@ -1174,7 +1174,7 @@ mod tests {
     #[test]
     fn mul_over_bound_var_is_index_grammar() {
         // `∀ i : usize. a[(i * i)] = a[(i * i)]` — a bound index var under `mul`, the
-        // (R2) rejection with NO graph-cycle witness.
+        // (R2) rejection with no graph-cycle witness.
         let u32s = Sort2::Mach(Mach::U32);
         let a_seq = || Tm::Lit(Sort2::Seq(Box::new(u32s.clone())));
         let prod = Tm::Mul(

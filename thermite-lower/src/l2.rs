@@ -22,8 +22,8 @@
 //!
 //! Governing design: `.design/lower/l2-kani.md`.
 //! Reference (real `cargo kani 0.67.0` runs, hand-grounded): `conformance/sum.th`
-//! → `VERIFICATION:- SUCCESSFUL` at `N = 4`/`unwind(5)`; `conformance/binary_search.th`
-//! → `VERIFICATION:- SUCCESSFUL` at `N = 4`/`unwind(6)`.
+//! → `verification:- successful` at `N = 4`/`unwind(5)`; `conformance/binary_search.th`
+//! → `verification:- successful` at `N = 4`/`unwind(6)`.
 //!
 //! ## The bound is type-driven, not name-driven (REQ-2)
 //!

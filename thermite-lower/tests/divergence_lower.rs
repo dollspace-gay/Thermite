@@ -9,11 +9,11 @@
 //! These probes author new Thermite programs that are structurally identical to
 //! the corpus shapes but use different names/predicates, lower them, and assert
 //! the emitted proof aids reference the new names (shape-derivation) and that the
-//! emitted Verus verifies with the real binary (REQ-8: verify, don't byte-match).
+//! emitted Verus verifies with the binary (REQ-8: verify, don't byte-match).
 //!
 //! Expected behavior traces to verus-lowering.md REQ-7 ("derives the needed
-//! proof aids from the program's AST/contract SHAPE — never from its identity")
-//! and AC-1/AC-2 ("proof aids are shape-general (REQ-7), NOT per-program
+//! proof aids from the program's AST/contract shape — never from its identity")
+//! and AC-1/AC-2 ("proof aids are shape-general (REQ-7), not per-program
 //! hardcoded"). A template that emits a canned `lemma_sum_push` / `haystack`
 //! blob for a renamed-but-structurally-identical program is the over-fitting
 //! divergence (R-CHAR-3: the expected new name comes from the input program, not
@@ -21,7 +21,7 @@
 //!
 //! Audit result (loop 4): all probes pass — the templates derive aids from
 //! shape (emitting `lemma_tally_push`/`data@`/`left`/`key`, not the corpus
-//! identities) and the renamed programs verify under real verus. These are
+//! identities) and the renamed programs verify under verus. These are
 //! retained as committed regression evidence of the generality claim, not as
 //! divergence pins (no divergence found).
 

@@ -4,7 +4,7 @@
 //! add" — the doc mandates, as the external truth the toolchain does not
 //! author for itself (goal.md verification model (B); R-CHAR-3):
 //!
-//!   > The orchestrator authors a NEW corpus program — `conformance/option_result.th`
+//!   > The orchestrator authors a new corpus program — `conformance/option_result.th`
 //!   > (`Some`/`None`/`Ok`/`Err` construct + match + `is` + a payload-in-contract
 //!   > `ens`, certifying L3) and extends the C4 string corpus with
 //!   > `conformance/parse_u64.th` (the `String`→`Option<u64>` parser, certifying L3

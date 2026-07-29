@@ -1,11 +1,11 @@
-//! AC-7 (`.design/stage1-forge-tier.md` REQ-3): an OPEN `?pN` proof hole blocks
+//! AC-7 (`.design/stage1-forge-tier.md` REQ-3): an open `?pN` proof hole blocks
 //! certification and build through the shared `goal_repl::open_proof_hole_reason`
 //! path — the proof-tier mirror of the `?N` body-hole short-circuit (#193). A
 //! forge-tier item carrying an open proof hole is incomplete: it must never
 //! certify and never ship a build artifact.
 //!
-//! These assertions need NO verus: the open-hole short-circuit precedes lowering /
-//! verus (exactly like the body-hole `OpenHole` gate in `goal_repl_fill.rs`).
+//! These assertions need no verus: the open-hole short-circuit precedes lowering /
+//! verus (like the body-hole `OpenHole` gate in `goal_repl_fill.rs`).
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -79,7 +79,7 @@ fn open_proof_hole_blocks_build() {
     let _ = std::fs::remove_file(&th);
 }
 
-// A hole-FREE lemma is NOT rejected for the open-hole reason — the gate fires only
+// A hole-free lemma is not rejected for the open-hole reason — the gate fires only
 // on an actual open proof hole (no false positives).
 #[test]
 fn hole_free_lemma_is_not_open_hole_rejected() {

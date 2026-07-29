@@ -7,7 +7,7 @@
 //!   `forge tv` / `forge exec-tv` / `forge body-tv` exit nonzero on any
 //!   Divergent obligation. `forge/src/cli.rs::run_tv` (and `run_body_tv` /
 //!   `run_exec_tv`, the same convention) documents and implements:
-//!     "Any DIVERGENT clause (corpus OR generated) is a real lowering-fidelity
+//!     "Any DIVERGENT clause (corpus OR generated) is a lowering-fidelity
 //!      finding → verification-failure exit" → `ExitCode::from(EXIT_VERIFICATION_FAILURE)`.
 //!
 //!   But `scripts/audit.sh` check [2]'s per-subcommand loop does:
@@ -17,12 +17,12 @@
 //!   parsing the report. A Divergent run (exit 1, report header "… 1 DIVERGENT …")
 //!   is therefore never counted: the program prints a green
 //!   "ok <name> 0 divergent", TOT_DIV stays 0, and check [2] prints
-//!   "PASS ZERO divergent across the whole corpus". The gate that exists to
+//!   "PASS zero divergent across the whole corpus". The gate that exists to
 //!   catch one condition cannot fire on that condition.
 //!
 //! Authority (R-CHAR-3 — the expected value is not taken from the script):
 //!   - `scripts/audit.sh` own stated contract (header + check [2] note):
-//!     "PASS iff ZERO Divergent across the corpus" — so one Divergent ⇒ FAIL ⇒ RC=1.
+//!     "PASS iff zero Divergent across the corpus" — so one Divergent ⇒ fail ⇒ RC=1.
 //!   - `forge/src/cli.rs::run_tv` — the Divergent ⇒ nonzero-exit convention the
 //!     script consumes (the fake forge below reproduces it, including
 //!     `forge/src/contract_tv.rs::render_report`'s header line shape).
@@ -30,7 +30,7 @@
 //!     §1 (trust relocation: the audit is what the skeptic relies on).
 //!
 //! Method: extract check [2] verbatim from the live `scripts/audit.sh` (between
-//! its `# CHECK 2` / `# CHECK 3` banners), run it against a fake `forge` that
+//! its `# check 2` / `# check 3` banners), run it against a fake `forge` that
 //! reports one corpus program as `1 DIVERGENT` with the real exit convention
 //! (exit 1), and assert the authority's expectation: the check fails (RC=1)
 //! and does not print the green zero-divergent PASS. This test fails against
@@ -127,7 +127,7 @@ fn divergence_audit_check2_swallows_divergent_exit() {
 
     fs::remove_dir_all(&scratch).ok();
 
-    // Authority expectation 1 — "PASS iff ZERO Divergent": one Divergent obligation
+    // Authority expectation 1 — "PASS iff zero Divergent": one Divergent obligation
     // (delivered with forge's real verification-failure exit) trips the gate.
     assert!(
         stdout.contains("FINAL_RC=1"),

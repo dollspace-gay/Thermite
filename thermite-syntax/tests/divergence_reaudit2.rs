@@ -67,7 +67,7 @@ fn in_fn(inner: &str) -> String {
 /// `parse_block` dispatches a `loop`/`while` statement to `parse_loop`, whose
 /// body is parsed by `parse_block` again — a `parse_block`<->`parse_loop` cycle
 /// that routes through neither `guard_recursion` entry point (the #31 fix
-/// guarded expr/type/pattern/if-tail, not this loop-body cycle). DEPTH nested
+/// guarded expr/type/pattern/if-tail, not this loop-body cycle). depth nested
 /// `loop`s (each `loop inv true dec 0 { ... }`) therefore recurse unbounded.
 ///
 /// Authority: `surface-grammar.md` REQ-3 / EBNF `LoopExpr ::= 'loop'
@@ -94,7 +94,7 @@ fn divergence_deep_nested_loop_no_panic() {
 ///
 /// Same `parse_block`<->`parse_loop` cycle as D2-R1, via the `while` arm. The
 /// `while` condition routes through the (guarded) `parse_expr`, but the
-/// BODY-cycle re-entry (`parse_loop` -> `parse_block` -> `parse_loop`) does not,
+/// body-cycle re-entry (`parse_loop` -> `parse_block` -> `parse_loop`) does not,
 /// so the guard caps the condition expression, never the loop nesting.
 ///
 /// Authority: `surface-grammar.md` REQ-3 / EBNF `WhileExpr ::= 'while' Expr
@@ -115,7 +115,7 @@ fn divergence_deep_nested_while_no_panic() {
     );
 }
 
-/// CONTROL — Deeply nested STATEMENT-form `if` is already bounded.
+/// CONTROL — Deeply nested statement-form `if` is already bounded.
 ///
 /// Statement `if a { if a { ... } }` re-enters `parse_block` -> `parse_if_parts`
 /// (GUARDED by the #31 fix) -> `parse_block`, so this path SHOULD return a

@@ -59,7 +59,7 @@ fn divergence_intlit_multi_underscore_value_and_raw() {
 /// neither value nor raw; both end at the last digit. `1_000_` lexes to value
 /// `1000` and raw `"1_000"` (the trailing `_` is dropped from raw; interior
 /// `_` kept). Expected hand-derived from REQ-3 ("A trailing/leading `_` …
-/// excluded from BOTH the value and the raw (the raw ends at the last digit)").
+/// excluded from both the value and the raw (the raw ends at the last digit)").
 #[test]
 fn divergence_intlit_trailing_underscore_excluded_from_raw() {
     assert_eq!(first_int("1_000_"), Some((1_000u128, "1_000".to_string())));

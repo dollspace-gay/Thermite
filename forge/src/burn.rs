@@ -1,11 +1,11 @@
 //! `forge/src/burn.rs` — the L3 **burn receipt** (`.design/stage1-forge-tier.md`
-//! REQ-7, increment 2e; the RFC-1 §9 L3 certificate shape; Q-BURN resolved). The
+//! REQ-7, increment 2e; the RFC-1 §9 L3 certificate shape; Q-burn resolved). The
 //! thesis's "burn the cheap resource" made auditable: when a forge-tier proof
 //! closes a goal, the certificate records how much proof text was committed and
 //! which lemmas it cited, so a reader can weigh the burned proof against the claim
 //! it discharges (the program plan §6 "tokens per discharged L3 clause" metric).
 //!
-//! ## The two token fields (Q-BURN, resolved)
+//! ## The two token fields (Q-burn, resolved)
 //!
 //! - [`BurnReceipt::proof_tokens`] — ALWAYS present: the **lexer-token count of the
 //!   committed proof text**, the project lexer ([`thermite_syntax::tokenize`]) run
@@ -15,12 +15,12 @@
 //! - [`BurnReceipt::authoring_tokens`] — OPTIONAL: the LLM tokens the authoring
 //!   harness spent producing the proof, recorded only when the harness supplies them
 //!   (absent otherwise). The burn-economics dashboard consumes this where present and
-//!   falls back to `proof_tokens` as a proxy (Q-BURN).
+//!   falls back to `proof_tokens` as a proxy (Q-burn).
 //!
-//! BOTH fields are **oracle-EXCLUDED** (Q-ORACLE / Q-BURN): re-authoring a proof
+//! both fields are **oracle-excluded** (Q-ORACLE / Q-burn): re-authoring a proof
 //! legitimately changes the committed token count and the authoring spend without
-//! changing what was proven, so the burn receipt is NOT part of
-//! [`crate::manifest::Certificate::oracle_subset`] — exactly like `solver_time_ms`.
+//! changing what was proven, so the burn receipt is not part of
+//! [`crate::manifest::Certificate::oracle_subset`] — like `solver_time_ms`.
 //! Adding it leaves the v1 golden certs byte-identical (a v1 item never burns a
 //! forge-tier proof, so its `burn` stays `None`).
 //!
@@ -37,10 +37,10 @@ use crate::battery::{self, Citation};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BurnReceipt {
     /// The lexer-token count of the committed proof text — the project lexer
-    /// ([`thermite_syntax::tokenize`]) run over the verbatim proof block (Q-BURN).
+    /// ([`thermite_syntax::tokenize`]) run over the verbatim proof block (Q-burn).
     /// Deterministic and re-derivable: a pure function of the committed text.
     pub proof_tokens: usize,
-    /// The LLM authoring tokens the harness spent, when it supplies them (Q-BURN).
+    /// The LLM authoring tokens the harness spent, when it supplies them (Q-burn).
     /// `None` unless the authoring harness records it; the dashboard falls back to
     /// `proof_tokens` as a proxy where absent. Oracle-excluded (re-authoring changes
     /// it without changing the claim). `#[serde(default, skip_serializing_if)]` so a
@@ -72,7 +72,7 @@ impl BurnReceipt {
         }
     }
 
-    /// Attach the optional LLM authoring-token count (Q-BURN), returning the receipt
+    /// Attach the optional LLM authoring-token count (Q-burn), returning the receipt
     /// with `authoring_tokens` set. Called by an authoring harness that tracked the
     /// spend; absent on a receipt minted purely from the committed text.
     #[allow(
@@ -89,7 +89,7 @@ impl BurnReceipt {
     }
 }
 
-/// The lexer-token count of the committed proof text (Q-BURN): the number of tokens
+/// The lexer-token count of the committed proof text (Q-burn): the number of tokens
 /// the project lexer ([`thermite_syntax::tokenize`]) emits over the verbatim text,
 /// EXCLUDING the trailing `Eof` sentinel (the lexer appends one `TokKind::Eof` to
 /// every stream — it is a parser marker, not committed proof content, so an empty
@@ -128,7 +128,7 @@ fn cited_lemmas(proof_text: &str) -> Vec<String> {
 mod tests {
     use super::*;
 
-    // REQ-7 / Q-BURN: `proof_tokens` is the project lexer's token count over the
+    // REQ-7 / Q-burn: `proof_tokens` is the project lexer's token count over the
     // committed proof text — deterministic and re-derivable. A simple `omega` proof
     // lexes to one token.
     #[test]
@@ -159,7 +159,7 @@ mod tests {
         );
     }
 
-    // Q-BURN: `authoring_tokens` is absent unless the harness supplies it; attaching
+    // Q-burn: `authoring_tokens` is absent unless the harness supplies it; attaching
     // it is opt-in and does not touch the deterministic fields.
     #[test]
     fn authoring_tokens_is_opt_in() {
@@ -173,7 +173,7 @@ mod tests {
         );
     }
 
-    // Q-BURN / Q-ORACLE: the burn receipt is ORACLE-EXCLUDED — a cert carrying a burn
+    // Q-burn / Q-ORACLE: the burn receipt is ORACLE-excluded — a cert carrying a burn
     // receipt and the same cert without it compare oracle-EQUAL, so re-authoring a proof
     // (which changes the receipt) never perturbs the cert oracle / breaks golden stability.
     #[test]

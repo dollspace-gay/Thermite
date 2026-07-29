@@ -6,7 +6,7 @@
 //! adds a proof rule, weakens an obligation, or launders a verification path
 //! (R-DEFER-9). These run against the two external truths the toolchain does not
 //! author for itself: the built `forge` binary's certificate ladder (`forge
-//! check`, real verus) and the `thermite_spec::validate` exhaustiveness checker.
+//! check`, verus) and the `thermite_spec::validate` exhaustiveness checker.
 //!
 //! Pins the C10 deliverables (`.design/basis/11-ergonomics.md`):
 //!

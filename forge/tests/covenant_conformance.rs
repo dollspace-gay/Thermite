@@ -7,16 +7,16 @@
 //! pinned by the `covenant_engine` unit tests; this is the end-to-end binary surface):
 //!   - `max_buggy` — a planted bug (`ens result >= y` with a body returning `x`) dies as
 //!     `CovenantRefuted` with the concrete `falsify` counterexample in the certificate,
-//!     BEFORE any L3 proof search (covenant-before-burn).
+//!     before any L3 proof search (covenant-before-burn).
 //!   - `max_no_witness` — a forge-routed item whose `witness` block carries no author
-//!     `inhabit` witness is refused, NAMED (`CovenantNoAuthorWitness`), before burn.
+//!     `inhabit` witness is refused, named (`CovenantNoAuthorWitness`), before burn.
 //!   - `max_correct` — a correct item's covenant validates (the unstated-vs-stated budget
-//!     run finds no refutation), burns to L3 WITH the covenant in hand, and carries the
+//!     run finds no refutation), burns to L3 with the covenant in hand, and carries the
 //!     deterministic evidence block (witness count, falsify generated/refuted = 2002/0,
 //!     fixed seed).
 //!
 //! `forge check` resolves the verus version before the per-item loop, so these checks
-//! need verus present even though the covenant short-circuits BEFORE the L3 burn; they
+//! need verus present even though the covenant short-circuits before the L3 burn; they
 //! skip with a logged note when verus is absent (mirroring `check_conformance.rs`),
 //! never panicking on a missing solver. `tests/` is not anti-pattern-gated, so
 //! `unwrap`/`expect` are fine here.

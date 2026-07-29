@@ -121,7 +121,7 @@ pub enum ExportRefusal {
     /// Carries the offending result type.
     NonIntResult(String),
     /// The item carries an open body hole (`?N`) — short-circuited L0 before any
-    /// engine (§8 OUT set); not exportable.
+    /// engine (§8 out set); not exportable.
     OpenHole(String),
     /// The loop-class structured refusal (§4.1.7 / REQ-10.6): a body containing a
     /// `loop`/`while`/`break`/`continue`/mid-body-`return`/non-scalar-mutation —
@@ -311,7 +311,7 @@ fn encode_expr(e: &Expr, ctx: &EncodeCtx) -> Result<String, ExportRefusal> {
                 other => encode_expr(other, ctx),
             }
         }
-        // Out of S_C's frozen subset (a refusal — §4 / §8 OUT set):
+        // Out of S_C's frozen subset (a refusal — §4 / §8 out set):
         Expr::Field { name, .. } => Err(ExportRefusal::OutOfFragment(format!(
             "field access `.{name}` (S_C has no struct-field projection)"
         ))),
@@ -338,8 +338,8 @@ fn encode_expr(e: &Expr, ctx: &EncodeCtx) -> Result<String, ExportRefusal> {
         )),
         // A raw quantifier `forall`/`exists` (`.design/stage2-stratified-cage.md`
         // REQ-0): the v1 contract fragment `S_C` (the `Ast.lean` mirror this exporter
-        // targets) has NO raw binder constructor — stratified Lean encoding is REQ-5
-        // (`Strat/RefEncode.lean`), a separate namespace. Refuse honestly so no
+        // targets) has no raw binder constructor — stratified Lean encoding is REQ-5
+        // (`Strat/RefEncode.lean`), a separate namespace. Refuse so no
         // unproven binder is ever exported to the v1 spine and the Rust↔Lean
         // correspondence stays pinned.
         Expr::Quantifier { .. } => Err(ExportRefusal::OutOfFragment(
@@ -385,7 +385,7 @@ fn encode_binary(
 
 /// Encode a cast target to a `Thermite.CastTy` (REQ-6 EXP; mirrors
 /// `RefEncode.lean`'s `cast_target`, #177). A cast to anything outside
-/// `u64`/`u32`/`usize`/`nat`/`int` is OUT of S_C.
+/// `u64`/`u32`/`usize`/`nat`/`int` is out of S_C.
 fn encode_cast_target(ty: &Type) -> Result<&'static str, ExportRefusal> {
     match ty {
         Type::Prim(PrimType::U64) => Ok("Thermite.CastTy.u64"),
@@ -423,7 +423,7 @@ fn encode_index(base: &Expr, index: &IndexArg, ctx: &EncodeCtx) -> Result<String
 
 /// Encode a method call — the `len`/`byte_at` byte-view dispatch (REQ-6 EXP;
 /// mirrors `RefEncode.lean`'s `seqLen`/`byteAt` arms, #178/#127). Any other method
-/// is OUT of S_C.
+/// is out of S_C.
 fn encode_method_call(
     receiver: &Expr,
     name: &str,
@@ -464,7 +464,7 @@ fn combinator_name(callee: &str) -> Option<&'static str> {
 /// Encode a free call `f(args)` — a combinator call (`Expr.comb`) or a named
 /// spec-fn call (`Expr.specCall`) (REQ-6 EXP; mirrors `RefEncode.lean`'s
 /// `encode_call` cases #179/#181). `old(x)` is the pre-state free name (→ `Expr.var
-/// "old(x)"`). A qualified / non-`Path` callee is OUT.
+/// "old(x)"`). A qualified / non-`Path` callee is out.
 fn encode_call(callee: &Expr, args: &[Expr], ctx: &EncodeCtx) -> Result<String, ExportRefusal> {
     let name = match callee {
         Expr::Path(segs) if segs.len() == 1 => segs[0].clone(),
@@ -574,7 +574,7 @@ fn encode_combinator(
 
 /// Encode a contract-position `match scrut { arms }` to `Expr.match_` (REQ-6 EXP;
 /// #180). Only the C7 built-in Option/Result 2-arm forms are in S_C; a user-ADT arm
-/// / a guard / a wildcard is OUT.
+/// / a guard / a wildcard is out.
 fn encode_match(
     scrutinee: &Expr,
     arms: &[thermite_syntax::MatchArm],
@@ -623,7 +623,7 @@ fn encode_match(
 }
 
 /// Encode a built-in variant name to `Thermite.Variant` (REQ-6 EXP; #180). A user
-/// variant is OUT of S_C.
+/// variant is out of S_C.
 fn encode_variant(path: &[String]) -> Result<&'static str, ExportRefusal> {
     let last = path.last().map(String::as_str).unwrap_or("");
     match last {
@@ -1430,8 +1430,8 @@ fn emit_theorem(
             //   body's stabilized value — the proof discharges `ens` for what the body
             //   computes.
             // - Arbitrary (the re-elaboration tautology harness): `result` = a fresh
-            //   `(r : Int)` theorem binder, the body DROPPED — the proof must discharge
-            //   `ens` for an ARBITRARY result. If the auto battery still closes it, the
+            //   `(r : Int)` theorem binder, the body dropped — the proof must discharge
+            //   `ens` for an arbitrary result. If the auto battery still closes it, the
             //   `ens` holds regardless of the body (a body-ignoring tautology). The
             //   Lean counterpart of `build_tautology_harness`'s arbitrary `result` param.
             let (binder, result_value) = match result_mode {
@@ -1568,7 +1568,7 @@ fn exec_result_of(ty: &Type) -> Result<ExecResult, ExportRefusal> {
     match ty {
         Type::Prim(PrimType::Bool) => Ok(ExecResult::Bool),
         // `Option<_>`/`Result<_,_>` are dedicated `Type` nodes (C7) — the optres
-        // result position is OUT (#254: `ExecVal` has no optres variant).
+        // result position is out (#254: `ExecVal` has no optres variant).
         Type::Option(_) | Type::Result(_, _) => Err(ExportRefusal::OptResResult(format!("{ty:?}"))),
         other => Err(ExportRefusal::OutOfFragment(format!(
             "straight-line-body result type {other:?} is not an exec int/bool sort \
@@ -1677,7 +1677,7 @@ fn encode_exec_expr(e: &Expr, width: &str, ctx: &ExecCtx) -> Result<String, Expo
         }
         Expr::Index { base, index } => encode_exec_index(base, index, ctx),
         Expr::Ref { expr, .. } => encode_exec_expr(expr, width, ctx),
-        // Out of `S_E`'s frozen subset (a refusal — §4.1 / §8 OUT):
+        // Out of `S_E`'s frozen subset (a refusal — §4.1 / §8 out):
         Expr::MethodCall { name, .. } => Err(ExportRefusal::OutOfFragment(format!(
             "method call `.{name}(..)` in exec-body position (S_E has no method calls)"
         ))),
@@ -1734,7 +1734,7 @@ fn encode_exec_binary(
 
 /// Encode an exec cast target to a `Thermite.Exec.IntTy` (the bounded-wrap cast,
 /// `Exec.lean`'s `castVal`). The exec domain wraps only to bounded int sorts (never
-/// `nat`/`int` — those are the unbounded `S_C` casts, OUT of `S_E`).
+/// `nat`/`int` — those are the unbounded `S_C` casts, out of `S_E`).
 fn exec_cast_target(ty: &Type) -> Result<&'static str, ExportRefusal> {
     exec_int_ty(ty).ok_or_else(|| {
         ExportRefusal::OutOfFragment(format!(
@@ -1827,7 +1827,7 @@ fn encode_exec_stmt(stmt: &Stmt, ctx: &mut ExecCtx) -> Result<String, ExportRefu
         }
         Stmt::Assign { target, value } => {
             // The v1 mutation form is `x = e` over a bare scalar `Path[x]` target; a
-            // non-scalar `xs[i] = e` / `m.field = e` is OUT (§4.1.7).
+            // non-scalar `xs[i] = e` / `m.field = e` is out (§4.1.7).
             let name = match target {
                 Expr::Path(segs) if segs.len() == 1 => segs[0].clone(),
                 other => {
@@ -2031,7 +2031,7 @@ fn emit_body_theorems(
          spine's `inputState` exemplar — a body `assign` to a param is `none`). -/\n\
          {state_of_def}\n\n\
          {lemmas}\n\n\
-         /-- {thm_name}: the HYPOTHESIZE CONTRACT obligation (§4.1.5). The result is\n    \
+         /-- {thm_name}: the HYPOTHESIZE contract obligation (§4.1.5). The result is\n    \
          bound THROUGH `bodyConverges` (uniqueness FREE — `bodyDenote` is a function);\n    \
          the OVERFLOW class is conjoined as `{thm_name}_overflow` (the soundness\n    \
          condition making the vacuous-on-overflow case harmless). -/\n\
@@ -2042,7 +2042,7 @@ fn emit_body_theorems(
          Thermite.denote 0 {req_term} {{ v with specs := R_item }} →\n    \
          Thermite.denote 0 {ens_term} {bind_result} := by\n\
          {body_battery}\n\n\
-         /-- {thm_name}_overflow: the conjoined OVERFLOW obligation (§4.1.5) — under\n    \
+         /-- {thm_name}_overflow: the conjoined overflow obligation (§4.1.5) — under\n    \
          the precondition every 2a obligation threaded through the body discharges\n    \
          (`bodyDenote … |>.isSome`). A Lean-only straight-line item certifies ONLY when\n    \
          BOTH this AND the CONTRACT theorem kernel-accept (the conjunction rule). -/\n\
@@ -2114,15 +2114,15 @@ pub fn export_item(
 /// How the obligation theorem binds `result` (REQ-6a, increment 2d — anti-Goodhart
 /// defense (a)). The shipped export binds `result` to the body's stabilized value;
 /// the arbitrary-result re-elaboration harness binds it to a fresh universally-
-/// quantified binder, so the goal becomes "the `ens` holds for an ARBITRARY result".
+/// quantified binder, so the goal becomes "the `ens` holds for an arbitrary result".
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ResultMode {
     /// The shipped binding: `result` = `(Thermite.intVal 0 <body> …)`, the body's
     /// stabilized value. The proof must discharge `ens` for the value the body computes.
     BodyDenotation,
     /// The arbitrary-result re-elaboration binding (REQ-6a): `result` = a fresh
-    /// `(r : Int)` theorem binder, the body denotation DROPPED. The proof must
-    /// discharge `ens` for an ARBITRARY result — if it still elaborates, the `ens`
+    /// `(r : Int)` theorem binder, the body denotation dropped. The proof must
+    /// discharge `ens` for an arbitrary result — if it still elaborates, the `ens`
     /// said nothing about what the body computes (a tautology, reject). The Lean
     /// counterpart of `vacuity_solver.rs::build_tautology_harness`'s arbitrary
     /// `result` proof-fn binder.
@@ -2131,18 +2131,18 @@ pub(crate) enum ResultMode {
 
 /// Build the arbitrary-result re-elaboration tautology harness for an item's
 /// obligation (REQ-6a / AC-10, increment 2d — anti-Goodhart defense (a)). The L3
-/// counterpart of `vacuity_solver.rs::build_tautology_harness`: it reuses the EXACT
-/// same exporter machinery as the real obligation (`export_item_with_mode`) — same
+/// counterpart of `vacuity_solver.rs::build_tautology_harness`: it reuses the exact
+/// same exporter machinery as the obligation (`export_item_with_mode`) — same
 /// preamble, same `R_item` registry, same byte-identical `req`/`ens` encoding, same
-/// auto-tactic battery and tier — and changes ONLY the `result` binding, from the
+/// auto-tactic battery and tier — and changes only the `result` binding, from the
 /// body's stabilized value to a fresh universally-quantified `(r : Int)`. Driving the
 /// existing discharge path (no new elaborator, per the substrate note), the produced
-/// source is fed to lake exactly as a normal obligation: if it kernel-accepts, the
+/// source is fed to lake as a normal obligation: if it kernel-accepts, the
 /// `ens` holds for an arbitrary result, so the contract is a body-ignoring tautology
-/// (reject); if it fails, the `ens` genuinely constrains the result (clean — the safe
+/// (reject); if it fails, the `ens` constrains the result (clean — the safe
 /// completeness direction, mirroring the Verus harness polarity). Returns the same
 /// `ExportRefusal` skips as `export_item` (a non-pure-contract / non-auto item is an
-/// honest skip — the arbitrary-result harness is the pure-contract auto path only in
+/// skip — the arbitrary-result harness is the pure-contract auto path only in
 /// increment 2d; the straight-line/while-body result-substitution is a residual).
 pub fn export_arbitrary_result_harness(
     obligation: &Obligation,
@@ -2155,21 +2155,21 @@ pub fn export_arbitrary_result_harness(
 /// Export a forge-tier `lemma` to a self-contained Lean file for discharge
 /// (`.design/stage1-forge-tier.md` REQ-7, increment 2e). A lemma states
 /// `∀ params, req → (ens₁ ∧ … ∧ ensₙ)` — a pure proposition over its typed params,
-/// with NO body to stabilize (unlike a fn-contract obligation). The emitted theorem
-/// reuses the EXACT fn-contract tier-(a) framing MINUS the body/result binding: the
+/// with no body to stabilize (unlike a fn-contract obligation). The emitted theorem
+/// reuses the exact fn-contract tier-(a) framing MINUS the body/result binding: the
 /// params are free vars in `v : Thermite.Env`, `req`/`ens` are encoded by the same
 /// [`encode_expr`] and denoted by `Thermite.denote 0 … { v with specs := R_item }`, so
 /// the u64 overflow semantics are modeled FAITHFULLY (a naive ℕ/ℤ encoding would be
 /// unsound — it would prove a claim false under wrapping). The proof is the author's
 /// frozen-battery `tactics` (the proof block text). The theorem name is the canonical
 /// `thermite_obligation_<lemma>` the certify-time axiom-gate probe anchors on
-/// (the same `sanitize` the fn path uses), so a lemma discharge runs the SAME axiom
+/// (the same `sanitize` the fn path uses), so a lemma discharge runs the same axiom
 /// gate ([`crate::engine::certify_lean_axioms`]) as every other Lean path.
 ///
 /// `called` is the full-expression-position spec-fn closure of `req ∪ ens` (computed by
 /// the caller with the same closure the fn path uses); `build_registry` populates
 /// `R_item` from it and hard-refuses an incomplete registry. An out-of-fragment
-/// `req`/`ens` construct is an honest [`ExportRefusal`] (a skip, never a partial file).
+/// `req`/`ens` construct is an [`ExportRefusal`] (a skip, never a partial file).
 pub fn export_lemma(
     l: &thermite_syntax::LemmaItem,
     called: &[String],
@@ -2180,7 +2180,7 @@ pub fn export_lemma(
     let ctx = ctx_for_params(&l.params);
 
     // Encode req + each ens via the same machinery the fn-contract path uses. An
-    // out-of-fragment construct refuses HERE (before emitting), an honest skip.
+    // out-of-fragment construct refuses here (before emitting), a skip.
     let req_term = encode_expr(&l.req.expr, &ctx)?;
     let ens_terms = l
         .ens
@@ -2224,7 +2224,7 @@ pub fn export_lemma(
     Ok(ExportedObligation {
         source,
         // The lemma's proof is the author's frozen-battery tactics (a reviewed step, not
-        // the auto battery), so the cert carries the INTERACTIVE trust profile; the tier
+        // the auto battery), so the cert carries the interactive trust profile; the tier
         // here is metadata (the lemma path runs lake directly via `discharge_source`, not
         // the tier-gated `discharge`). FuelFreeAuto marks the shallow denote goal.
         tier: ExportTier::FuelFreeAuto,
@@ -2275,7 +2275,7 @@ fn export_item_with_mode(
                 // The arbitrary-result harness (REQ-6a) is the pure-contract auto path
                 // only in increment 2d: a straight-line/while-body item binds `result`
                 // through `bodyDenote`/`stateOf`, whose result-substitution is a
-                // residual. An honest skip (OutOfFragment) rather than a body-denotation
+                // residual. A skip (OutOfFragment) rather than a body-denotation
                 // export — the tautology check reports "untested" for these, never a
                 // false clean (mirrors the mutation battery's untested-against-lean).
                 if result_mode == ResultMode::Arbitrary {
@@ -2738,7 +2738,7 @@ fn export_straight_line_body(
 /// statement is a `while` loop routes to the while-body exporter; everything else (a
 /// pure tail, a straight-line statement body, a `loop`-kind / non-last loop) goes to
 /// the straight-line exporter, which refuses any loop via `LoopBody`. The full v1
-/// recognition (the OUT classes) is in [`recognize_while_body`]; this is the cheap
+/// recognition (the out classes) is in [`recognize_while_body`]; this is the cheap
 /// router so a `loop`-kind in last position is still recognized + refused with its
 /// named reason (rather than slipping to the straight-line exporter's generic refusal).
 fn block_has_trailing_while(block: &Block) -> bool {
@@ -3554,9 +3554,9 @@ fn emit_while_theorems(ctx: WhileTheoremCtx<'_>) -> String {
         "{cellval_block}\n\n\
          /-- The straight-line PREFIX block (§4.2.1 — a tail-less `Block`). -/\n\
          def prefix_block : Thermite.Exec.Block := {prefix_block_term}\n\n\
-         /-- The loop CONDITION (`while <cond>`). -/\n\
+         /-- The loop condition (`while <cond>`). -/\n\
          def loop_cond : Thermite.Exec.ExecExpr := {loop_cond_term}\n\n\
-         /-- The straight-line SCALAR loop BODY (`Stmt::Loop.body`). -/\n\
+         /-- The straight-line SCALAR loop body (`Stmt::Loop.body`). -/\n\
          def loop_block : Thermite.Exec.Block := {loop_block_term}\n\n\
          /-- The tail value `ExecExpr` (the result at the exit state). -/\n\
          def tail_expr : Thermite.Exec.ExecExpr := {tail_term}\n\n\
@@ -3595,7 +3595,7 @@ fn emit_while_theorems(ctx: WhileTheoremCtx<'_>) -> String {
          (Thermite.Exec.blockThread loop_block st).isSome) := by\n\
          {progress_proof}\n\n\
          set_option maxHeartbeats 1000000 in\n\
-         /-- {thm_name}_dec (TERMINATION, §4.2.4): strict bounded-below descent of\n    \
+         /-- {thm_name}_dec (termination, §4.2.4): strict bounded-below descent of\n    \
          `mu_item` (`loopDenote_exits_of_dec`'s `h_dec`, the #265 PRE-state shape). -/\n\
          theorem {thm_name}_dec (v : Thermite.Env) :\n    \
          ∀ st st', Inv_item v st → Thermite.Exec.condBool loop_cond st = some true →\n      \
@@ -3614,7 +3614,7 @@ fn emit_while_theorems(ctx: WhileTheoremCtx<'_>) -> String {
          (Thermite.Exec.bindResult ({{ v with specs := R_item }} : Thermite.Env) r) := by\n\
          {exit_proof}\n\n\
          set_option maxHeartbeats 1000000 in\n\
-         /-- {thm_name} (the HYPOTHESIZE CONTRACT theorem, §4.2.4) — GENERATOR-PROVED via\n    \
+         /-- {thm_name} (the HYPOTHESIZE contract theorem, §4.2.4) — GENERATOR-proved via\n    \
          `Thermite.Exec.while_compose` (_entry + _pres) + _exit. -/\n\
          theorem {thm_name} (v : Thermite.Env) :\n    \
          ({in_range_pred}) →\n    \
@@ -4430,19 +4430,19 @@ mod tests {
     }
 
     // REQ-6a / AC-10 (increment 2d, anti-Goodhart defense (a)): the arbitrary-result
-    // re-elaboration harness reuses the EXACT exporter machinery and changes ONLY the
+    // re-elaboration harness reuses the exact exporter machinery and changes only the
     // `result` binding — a fresh `(r : Int)` theorem binder instead of the body's
     // stabilized value. A pure, no-lake structural test (the lake elaboration leg is the
     // live `engine::tests::live_arbitrary_result_*` tests): the harness theorem gains the
     // `(r : Int)` binder, binds `result` to `r`, drops the `intVal 0 <body>` denotation,
-    // and keeps the byte-identical `req`/`ens`/`R_item` of the real obligation.
+    // and keeps the byte-identical `req`/`ens`/`R_item` of the obligation.
     #[test]
     fn arbitrary_result_harness_binds_result_to_a_fresh_binder() {
         let p = parse_one("fn f(x: u32) -> u32 req x > 0 ens result == x + 1 fx pure { x + 1 }");
         let o = fn_obl(&p, "f", vec![]);
         let item = find_item(&p, "f").expect("fn f present");
 
-        // The real obligation binds `result` to the body's stabilized value.
+        // The obligation binds `result` to the body's stabilized value.
         let real = export_item(&o, &p, item).expect("real obligation exports");
         assert!(
             real.source.contains("Thermite.intVal 0"),
@@ -4468,7 +4468,7 @@ mod tests {
             "the harness DROPS the body denotation (result is arbitrary):\n{}",
             harness.source
         );
-        // The contract is byte-identical to the real obligation: same `R_item`, same
+        // The contract is byte-identical to the obligation: same `R_item`, same
         // `ens` term (only the result binding differs). The `ens` `result == x + 1`
         // encodes the same way in both.
         assert_eq!(

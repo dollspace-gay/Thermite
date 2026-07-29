@@ -129,7 +129,7 @@ fn divergence_list_fold_three_distinct_item_certs() {
 /// Companion (un-ignored, a no-divergence guard for the crux). The corpus
 /// `list_fold.th` certifies at project level L3: the generated `fold_list` /
 /// `for_all_list` schemes + the materialized `fold_bound_list` law verify under
-/// real verus. This pins that the scheme engine itself is sound end-to-end; the
+/// verus. This pins that the scheme engine itself is sound end-to-end; the
 /// divergence above is the per-item certificate identity, not a proof
 /// failure. Authority: `conformance/adt-schemes/cases.json` `certify` (all L3).
 #[test]
@@ -141,7 +141,7 @@ fn list_fold_project_assurance_is_l3() {
     let certs = check_json(&corpus("list_fold.th"));
     // Every emitted certificate is L3 (the oracle certifies all items L3); no
     // item degrades. This holds even under the identity collision (the served
-    // cert is itself a genuine L3), so it stays green and is not the divergence.
+    // cert is itself a L3), so it stays green and is not the divergence.
     assert!(
         !certs.is_empty(),
         "forge must emit at least one certificate for list_fold.th"

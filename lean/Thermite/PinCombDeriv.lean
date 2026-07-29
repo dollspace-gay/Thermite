@@ -64,7 +64,7 @@ def qPin : Atom → Bool
 
 /-- `0 ≤ i` (the faithful lower bound; reused verbatim from `CombDeriv`). -/
 def boundLoP (t : Tm) : Atom := .rel .le (.lit usizeS) t
-/-- `i ≤ len` — the OFF-BY-ONE upper bound (`.rel .le` where `.rel .lt` is meant). -/
+/-- `i ≤ len` — the OFF-BY-one upper bound (`.rel .le` where `.rel .lt` is meant). -/
 def boundHiWrong (sq t : Tm) : Atom := .rel .le t (.len sq)
 
 /-- The off-by-one `forall_in` expansion. -/
@@ -88,7 +88,7 @@ theorem offbyone_breaks_demotion :
     fdenote qPin dom (forallInExpWrong elem f) σ0
       ≠ fdenote qPin dom (forallInExp elem f) σ0 := by decide
 
-/-- For contrast: the FAITHFUL expansion's truth matches the bounded `∀`
+/-- For contrast: the faithful expansion's truth matches the bounded `∀`
     characterization `comb_deriv_forall_in` derives — the divergence is solely the
     off-by-one upper bound, not any other part of the expansion. -/
 theorem faithful_matches_bounded_forall :

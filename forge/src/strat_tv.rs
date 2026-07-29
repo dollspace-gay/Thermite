@@ -5,14 +5,14 @@
 //! classifier `Thermite.Strat.Cls.admitted` (`lean/Thermite/Strat/Fragment.lean`, REQ-3).
 //! This module is the differential that holds the two byte-equal: it draws a
 //! deterministic, well-sorted formula stream from the SplitMix64 generator
-//! (`thermite_tv::gen::gen_strat_formulas`), classifies each with BOTH the Rust
-//! classifier AND the Lean kernel `admitted` (via `lake env lean --run
+//! (`thermite_tv::gen::gen_strat_formulas`), classifies each with both the Rust
+//! classifier and the Lean kernel `admitted` (via `lake env lean --run
 //! Thermite/Strat/Cls/Wire.lean`, fed the shared S-expression wire format on stdin), and
 //! compares verdict-for-verdict.
 //!
-//! - A **disagreement** (Rust admit ≠ Lean admit, both definite) is a real classifier
+//! - A **disagreement** (Rust admit ≠ Lean admit, both definite) is a classifier
 //!   infidelity → surfaced as a verification-failure `ExitCode` (the hard CI failure the
-//!   audit check [8] gate raises), NOT a `ForgeError`. Mirrors `contract_tv`'s divergent
+//!   audit check [8] gate raises), not a `ForgeError`. Mirrors `contract_tv`'s divergent
 //!   handling.
 //! - The **unknown-on-admitted tripwire**: a formula the Rust classifier could not vouch
 //!   for ([`thermite_spec::Verdict::Unknown`], or a Lean `parse-error`) while the kernel
@@ -21,7 +21,7 @@
 //!   Rust classifier is total, so the count is structurally 0.
 //! - A harness/environment failure (lake un-spawnable, the Lean driver exits non-zero,
 //!   the verdict-line count desyncs) is a [`ForgeError::StratDifferential`]; lake-absent
-//!   is an honest `Skipped` (not run), never a false pass.
+//!   is an `Skipped` (not run), never a false pass.
 //!
 //! ## REQ status
 //!
@@ -48,7 +48,7 @@ pub const STRAT_TV_DEFAULT_N: usize = 200;
 pub const STRAT_TV_DEFAULT_SEED: u64 = 0x5354_5241_5430_3034; // "STRAT004"
 
 /// One verdict disagreement between the Rust classifier and the Lean kernel `admitted` —
-/// a real classifier infidelity (the hard-failure finding).
+/// a classifier infidelity (the hard-failure finding).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Disagreement {
     /// The formula's 0-based index in the generated stream (reproducible from the seed).
@@ -79,7 +79,7 @@ pub struct StratTvReport {
 }
 
 impl StratTvReport {
-    /// The battery passes iff there is no disagreement AND no tripwire (AC-4). A failing
+    /// The battery passes iff there is no disagreement and no tripwire (AC-4). A failing
     /// battery maps to a verification-failure `ExitCode` at the CLI.
     #[must_use]
     pub fn passed(&self) -> bool {
@@ -87,7 +87,7 @@ impl StratTvReport {
     }
 }
 
-/// The outcome of a differential run: it either ran end-to-end, or was honestly skipped
+/// The outcome of a differential run: it either ran end-to-end, or was skipped
 /// because `lake` is absent (the local-without-Lean case — never a false pass).
 #[derive(Debug, Clone)]
 pub enum StratTvOutcome {
@@ -106,7 +106,7 @@ fn lean_root() -> PathBuf {
 
 /// Locate the `lake` binary (mirrors `engine::LeanEngine::lake_binary`): the
 /// elan-managed `~/.elan/bin/lake` if present (so a non-login shell still finds it), else
-/// the bare `lake` on PATH. `None` if neither is available — the honest `Skipped` case.
+/// the bare `lake` on PATH. `None` if neither is available — the `Skipped` case.
 fn lake_binary() -> Option<PathBuf> {
     if let Some(home) = std::env::var_os("HOME") {
         let elan = PathBuf::from(home).join(".elan/bin/lake");
@@ -166,7 +166,7 @@ fn compare(formulas: &[Frm], rust: &[Verdict], lean_lines: &[String]) -> StratTv
                         if rust_admitted {
                             report.tripwire_unknown_on_admitted += 1;
                         } else {
-                            // Rust rejected AND the kernel could not parse: still a
+                            // Rust rejected and the kernel could not parse: still a
                             // harness anomaly, but not the dangerous admit case — count it
                             // as a disagreement so it is never silently dropped.
                             report.disagreements.push(Disagreement {
@@ -207,10 +207,10 @@ fn compare(formulas: &[Frm], rust: &[Verdict], lean_lines: &[String]) -> StratTv
 /// wire encodings to `lake env lean --run Thermite/Strat/Cls/Wire.lean` on stdin, reads
 /// the kernel verdicts, and compares.
 ///
-/// Returns [`StratTvOutcome::Skipped`] (never an error) if `lake` is absent — the honest
+/// Returns [`StratTvOutcome::Skipped`] (never an error) if `lake` is absent — the
 /// not-run case. A [`ForgeError::StratDifferential`] is a harness/environment failure
 /// (spawn failure, non-zero Lean exit, verdict-line desync), surfaced not swallowed
-/// (R-CODE-4). A verdict DISAGREEMENT is NOT an error — it lands in the returned report's
+/// (R-CODE-4). A verdict DISAGREEMENT is not an error — it lands in the returned report's
 /// `disagreements` for the CLI to surface as a verification-failure exit.
 pub fn run_generated(seed: u64, n: usize) -> Result<StratTvOutcome, ForgeError> {
     let Some(lake) = lake_binary() else {

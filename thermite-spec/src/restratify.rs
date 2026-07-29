@@ -1,9 +1,9 @@
-//! The restratification rewrite + its R-SIDE-1 certification discipline
+//! The restratification rewrite + its R-side-1 certification discipline
 //! (`.design/stage2-stratified-cage.md` REQ-7 / AC-7), the Rust ops-half mirroring
 //! `lean/Thermite/Strat/Restratify.lean`'s T4-R metatheory.
 //!
 //! `restrat` breaks an admission cycle by EXCISING the cycle-closing conjunct `B` and
-//! replacing it with a fresh OPAQUE abstraction `p` (an [`Atom::QFree`] leaf — opaque to
+//! replacing it with a fresh opaque abstraction `p` (an [`Atom::QFree`] leaf — opaque to
 //! the classifier, contributing no sorts and no graph edges). On the motivating kv
 //! alternation cycle
 //!
@@ -12,24 +12,24 @@
 //!       └──────────  A  ──────────┘     └──────────  B  ──────────┘
 //! ```
 //!
-//! whose sort graph has BOTH `Key → Value` (from A) and `Value → Key` (from B) — a cycle,
+//! whose sort graph has both `Key → Value` (from A) and `Value → Key` (from B) — a cycle,
 //! so `classify(φ)` is [`Verdict::Rejected`] — the rewrite yields
 //!
 //! ```text
-//! φ' = restrat(φ)  =  A ∧ p            (only Key → Value ⇒ acyclic ⇒ ADMITTED)
-//! Side(φ', φ)      =  p ⇒ B            (only Value → Key ⇒ acyclic ⇒ ADMITTED)
+//! φ' = restrat(φ)  =  A ∧ p            (only Key → Value ⇒ acyclic ⇒ admitted)
+//! Side(φ', φ)      =  p ⇒ B            (only Value → Key ⇒ acyclic ⇒ admitted)
 //! ```
 //!
-//! **R-SIDE-1 (the load-bearing discipline).** A certificate of φ' ALONE never counts for
+//! **R-side-1 (the required discipline).** A certificate of φ' alone never counts for
 //! φ: `p` is a fresh, unconstrained abstraction, so `A ∧ p` is satisfied trivially by
-//! `p := true` WITHOUT B holding. [`certify`] therefore WITHHOLDS the φ-certificate unless
-//! the `Side` obligation (`p ⇒ B`, itself in-cage) is SEPARATELY discharged. This mirrors
-//! the Lean `restrat_conservative`, which consumes BOTH φ' and `Side`; dropping `Side`
+//! `p := true` without B holding. [`certify`] therefore WITHHOLDS the φ-certificate unless
+//! the `Side` obligation (`p ⇒ B`, itself in-cage) is separately discharged. This mirrors
+//! the Lean `restrat_conservative`, which consumes both φ' and `Side`; dropping `Side`
 //! is exactly the mis-certification `Thermite.PinRestratDropSide` exhibits.
 
 use crate::classifier::{classify, Atom, Frm, Sort2, Tm, Verdict};
 
-/// The fresh OPAQUE boolean abstraction leaf standing in for an excised sub-formula
+/// The fresh opaque boolean abstraction leaf standing in for an excised sub-formula
 /// (`Strat/Restratify.lean` `absLeaf`). A `qfree` atom is opaque to the classifier — it
 /// contributes no sorts and no graph edges — so substituting it for a cycle-closing
 /// conjunct deletes that conjunct's edges from the sort graph.
@@ -51,7 +51,7 @@ pub struct RestratResult {
     pub side: Frm,
 }
 
-/// The restratify rewrite (metatheory §6). On a conjunction `A ∧ B` whose RIGHT conjunct
+/// The restratify rewrite (metatheory §6). On a conjunction `A ∧ B` whose right conjunct
 /// `B` closes the alternation cycle, excise `B`, replace it with the fresh abstraction
 /// `p`, and emit `Side = p ⇒ B` (`Strat/Restratify.lean` `restrat`/`Side`). Returns
 /// [`None`] when `φ` is not a conjunction — there is no cycle-closing conjunct to excise
@@ -69,7 +69,7 @@ pub fn restratify(phi: &Frm) -> Option<RestratResult> {
     }
 }
 
-/// Why a restratify-based φ-certificate was WITHHELD (R-SIDE-1).
+/// Why a restratify-based φ-certificate was WITHHELD (R-side-1).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WithheldReason {
     /// The rewrite did not apply — φ is not a conjunction, so there is no cycle-closing
@@ -80,35 +80,35 @@ pub enum WithheldReason {
     /// `Side` is not itself in-cage, so it cannot be discharged in-cage — the split is
     /// not usable.
     SideNotInCage,
-    /// φ' and `Side` are both in-cage, but `Side` was NOT discharged — the φ-certificate
-    /// is withheld (R-SIDE-1: a φ'-only certificate never counts for φ).
+    /// φ' and `Side` are both in-cage, but `Side` was not discharged — the φ-certificate
+    /// is withheld (R-side-1: a φ'-only certificate never counts for φ).
     SideUndischarged,
 }
 
 /// The certification verdict for restratifying φ.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Certification {
-    /// φ is certified: φ' is admitted AND `Side` was discharged in-cage. Carries the
+    /// φ is certified: φ' is admitted and `Side` was discharged in-cage. Carries the
     /// rewrite products for rendering / auditing.
     Certified(RestratResult),
-    /// φ is NOT certified — see the reason. Carries the rewrite products when the rewrite
+    /// φ is not certified — see the reason. Carries the rewrite products when the rewrite
     /// applied (for rendering), else `None`.
     Withheld(WithheldReason, Option<RestratResult>),
 }
 
 impl Certification {
-    /// `true` iff φ was certified (φ' admitted AND `Side` discharged in-cage).
+    /// `true` iff φ was certified (φ' admitted and `Side` discharged in-cage).
     #[must_use]
     pub fn is_certified(&self) -> bool {
         matches!(self, Certification::Certified(_))
     }
 }
 
-/// Certify φ through restratification, honouring R-SIDE-1. `side_discharged` models
-/// whether the caller SEPARATELY discharged the `Side` obligation in-cage; when `false`,
+/// Certify φ through restratification, honouring R-side-1. `side_discharged` models
+/// whether the caller separately discharged the `Side` obligation in-cage; when `false`,
 /// the φ-certificate is WITHHELD even though φ' is admitted — exactly the discipline
 /// `Thermite.Strat.Cls.restrat_conservative` enforces (it consumes the `Side` hypothesis)
-/// and `Thermite.PinRestratDropSide` shows is load-bearing.
+/// and `Thermite.PinRestratDropSide` shows is required.
 #[must_use]
 pub fn certify(phi: &Frm, side_discharged: bool) -> Certification {
     let Some(result) = restratify(phi) else {
@@ -121,7 +121,7 @@ pub fn certify(phi: &Frm, side_discharged: bool) -> Certification {
         return Certification::Withheld(WithheldReason::SideNotInCage, Some(result));
     }
     if !side_discharged {
-        // R-SIDE-1: φ' is admitted and Side is in-cage, but Side was not discharged.
+        // R-side-1: φ' is admitted and Side is in-cage, but Side was not discharged.
         return Certification::Withheld(WithheldReason::SideUndischarged, Some(result));
     }
     Certification::Certified(result)
@@ -161,7 +161,7 @@ mod tests {
     use super::*;
     use crate::classifier::RejectReason;
 
-    /// The original kv formula is REJECTED with a sort-graph cycle (mirrors
+    /// The original kv formula is rejected with a sort-graph cycle (mirrors
     /// `ex_kvCycle_rejected`).
     #[test]
     fn kv_original_rejected() {
@@ -171,7 +171,7 @@ mod tests {
         ));
     }
 
-    /// The rewrite applies and BOTH products are admitted in-cage (mirrors the Lean
+    /// The rewrite applies and both products are admitted in-cage (mirrors the Lean
     /// `restrat_admits` + `side_admitted`).
     #[test]
     fn rewrite_and_side_both_admitted() {
@@ -196,7 +196,7 @@ mod tests {
     }
 
     /// AC-7 — the withheld-certification discipline: certification is WITHHELD when `Side`
-    /// is undischarged (R-SIDE-1). This is the Rust mirror of `PinRestratDropSide`.
+    /// is undischarged (R-side-1). This is the Rust mirror of `PinRestratDropSide`.
     #[test]
     fn withheld_when_side_undischarged() {
         let cert = certify(&kv_example(), false);
@@ -211,7 +211,7 @@ mod tests {
     }
 
     /// A non-conjunction has no cycle-closing conjunct to excise — the rewrite does not
-    /// apply, and certification is honestly withheld.
+    /// apply, and certification is withheld.
     #[test]
     fn non_conjunction_not_restratifiable() {
         let phi = Frm::Atom(Atom::QFree);

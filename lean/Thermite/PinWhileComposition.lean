@@ -107,7 +107,7 @@ theorem skip_composition_certifies_wrong_ens :
   refine ⟨skip_reads_entry, ?_⟩
   simp only [ensWrong, denote, intVal, bindResult, baseEnv, Env.bindInt, if_pos]
 
-/-- Direction 2 (the faithful refutation): the genuine composition refutes the wrong
+/-- Direction 2 (the faithful refutation): the composition refutes the wrong
     `ens`. The faithful `whileBodyConverges` binds the exit value `result = 3`
     (`faithful_whileBodyConverges`), at which `ens: result == 0` denotes false (`3 ≠ 0`).
     The faithful loop-exit value is the one the contract is checked against (`while_compose`

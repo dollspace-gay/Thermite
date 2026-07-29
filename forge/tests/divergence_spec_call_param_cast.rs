@@ -1,5 +1,5 @@
 //! End-to-end live pin for crosslink #225 — a recursive `spec fn` over a `u32`
-//! param, named in an exec twin's contract, must certify L3 under real verus.
+//! param, named in an exec twin's contract, must certify L3 under verus.
 //!
 //! The bug (root cause `thermite-lower/src/lower.rs`, the `plain_user_spec_call`
 //! arm): the recursive call `s_dec(n - 1)` in the `spec fn` body, plus the

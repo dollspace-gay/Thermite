@@ -4,8 +4,8 @@
 //! hand-derived oracle `conformance/strengthening/cases.json` (R-CHAR-3:
 //! expected outcomes trace to §7 / the oracle, never to forge's own output).
 //!
-//! Strengthening probes issue real verus queries per candidate (a suggestion is
-//! surfaced only if it verifies against the real body and kills the #12 survivor),
+//! Strengthening probes issue verus queries per candidate (a suggestion is
+//! surfaced only if it verifies against the body and kills the #12 survivor),
 //! so every case here needs verus. The verus-needing cases skip with an eprintln
 //! when verus is absent (mirroring `mutation_conformance.rs`) rather than panic.
 //!
@@ -155,7 +155,7 @@ fn cert_for<'a>(certs: &'a [Value], item: &str) -> &'a Value {
         .unwrap_or_else(|| panic!("no `{item}` cert in {certs:?}"))
 }
 
-/// The strengthening suggestion CLAUSE strings on a cert (empty/absent → []).
+/// The strengthening suggestion clause strings on a cert (empty/absent → []).
 fn suggestion_clauses(cert: &Value) -> Vec<String> {
     cert.get("strengthening")
         .and_then(|s| s.as_array())

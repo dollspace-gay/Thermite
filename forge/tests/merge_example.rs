@@ -1,7 +1,7 @@
 //! AC-11 (`.design/stage1-forge-tier.md` REQ-7, increment 2e) — the merge example,
 //! end to end: `forge goal --proof` renders a forge-routed goal with its hypotheses in
 //! scope; `forge fill <item> ?p0 "<tactics>"` closes the goal; the resulting certificate
-//! (the Lean discharge of the forge-tier `lemma`) carries the BURN RECEIPT (the committed
+//! (the Lean discharge of the forge-tier `lemma`) carries the burn receipt (the committed
 //! proof's token count + cited lemmas).
 //!
 //! The discharge legs (`fill`'s re-check, `check --engine lean`) invoke lake against the
@@ -92,7 +92,7 @@ fn proof_view_renders_the_merge_goal_with_hypotheses() {
 }
 
 // AC-11 (live spine): `forge fill <item> ?p0 "<tactics>"` closes the merge goal end to
-// end, and the re-check certifies L3 + surfaces the BURN RECEIPT (token count + cited
+// end, and the re-check certifies L3 + surfaces the burn receipt (token count + cited
 // lemmas). SKIPs when lake is absent (the discharge needs the built spine).
 #[test]
 fn fill_closes_the_merge_goal_and_the_cert_carries_the_burn_receipt() {

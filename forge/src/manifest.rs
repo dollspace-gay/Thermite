@@ -191,11 +191,11 @@ fn scope_is_end_to_end(scope: &Option<AssuranceScope>) -> bool {
 ///   trust `solver(nlsat) + spine-lemma(kernel)`, the ℝ→ℤ bridge sound by the
 ///   kernel-checked `r_relax_sound` + `rencode_sound` (`lean/Thermite/Relax.lean`);
 /// - the **`@bv` machine-width** discharge (Stage-3 REQ-2, `--engine bv`): trust
-///   `solver(Z3 QF_BV)`, kernel-grounded by REQ-7/8 reconstruction at the SAME rung.
+///   `solver(Z3 QF_BV)`, kernel-grounded by REQ-7/8 reconstruction at the same rung.
 ///
 /// (The general Verus/Z3 cage still certifies at L3 in code pending its own promotion
 /// — a follow-up; the RFC ladder eventually places the whole decidable cage at L4.)
-/// Adding L4 is additive: the v1 conformance corpus stays at L3 (the L4 routes are NEW
+/// Adding L4 is additive: the v1 conformance corpus stays at L3 (the L4 routes are new
 /// engine routes reached only via `--engine nlsat`/`--engine bv`, never the default
 /// Verus path), so the v1 `oracle_subset` is byte-identical.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -272,7 +272,7 @@ pub struct ObligationResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verdict: Option<crate::verdict::CertVerdict>,
     /// (Schema v2, REQ-3 / AC-4 — `.design/stage3-bv-reconstruction.md`) Lock 1, the
-    /// SHADOW FLAG (RFC §9 shape): present on every `@bv`-tagged clause's obligation,
+    /// shadow FLAG (RFC §9 shape): present on every `@bv`-tagged clause's obligation,
     /// absent on every untagged / v1 clause. The machine-semantics fork is then
     /// impossible to hide — `grep bv_shadow` over the certificates ≡ exactly the set of
     /// tagged clauses, the same "`grep slag` is the complete inventory" discipline the
@@ -281,12 +281,12 @@ pub struct ObligationResult {
     /// certs — which omit it — deserialize unchanged and re-serialize byte-identically.
     /// Oracle-INCLUDED via [`Certificate::oracle_subset`] (Q-ORACLE: deterministic +
     /// verdict-relevant → included), unlike the provenance-only `engine`/`trust`: a
-    /// semantic fork changes what the clause MEANS, so the oracle pins it.
+    /// semantic fork changes what the clause means, so the oracle pins it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bv_shadow: Option<BvShadow>,
 }
 
-/// Lock 1, the bv SHADOW FLAG (`.design/stage3-bv-reconstruction.md` REQ-3 / AC-4 — the
+/// Lock 1, the bv shadow FLAG (`.design/stage3-bv-reconstruction.md` REQ-3 / AC-4 — the
 /// RFC §9 shape). Every `@bv`-tagged clause's certificate carries this block, so a
 /// fixed-width machine-semantics clause is loud and greppable at every layer `#[slag]`
 /// is (the certificate JSON, `forge review`, `forge audit`). The first of the three
@@ -560,7 +560,7 @@ pub struct Certificate {
     /// The §7 step-5 strengthening suggestions surfaced for this item (issue #14
     /// additive field; `.design/forge/strengthening-probes.md` REQ-4). Each
     /// [`Suggestion`] is an adoptable stronger-`ens` clause that verifies against
-    /// the real body and is strictly stronger than the current `ens` (it would
+    /// the body and is strictly stronger than the current `ens` (it would
     /// kill a #12 survivor / adds an equality the `ens` lacks). Advisory: a probe
     /// only adds these; it does not change the verdict (`level`/`reject`/the oracle
     /// subset). `#[serde(default, skip_serializing_if = Vec::is_empty)]` so the
@@ -631,7 +631,7 @@ pub struct Certificate {
     /// `Level` is unchanged — L3 still means "proven for all inputs"; the trust base is
     /// the auditor-visible refinement): excluded from `oracle_subset` (OQ-2 decided
     /// diagnostic-only so the golden stays stable; the project-min aggregate is
-    /// unchanged — REQ-4 "honest-min aggregation unchanged").
+    /// unchanged — REQ-4 "minimum aggregation unchanged").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub engine_attribution: Option<crate::engine::EngineAttribution>,
     /// The covenant evidence block (`.design/stage1-forge-tier.md` REQ-4, increment
@@ -665,12 +665,12 @@ pub struct Certificate {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub meaning_audit: Option<crate::meaning::MeaningAudit>,
     /// The L3 burn receipt (`.design/stage1-forge-tier.md` REQ-7, increment 2e; RFC-1
-    /// §9; Q-BURN). `Some` only on a forge-tier item whose proof closed a goal (the
+    /// §9; Q-burn). `Some` only on a forge-tier item whose proof closed a goal (the
     /// proof-view discharge path): the committed-proof lexer-token count, the optional
-    /// authoring spend, and the lemmas the proof cited. Per Q-ORACLE / Q-BURN the burn
+    /// authoring spend, and the lemmas the proof cited. Per Q-ORACLE / Q-burn the burn
     /// receipt is verdict-IRRELEVANT (re-authoring a proof legitimately changes the
     /// token count and authoring spend without changing what was proven), so it is
-    /// EXCLUDED from [`Certificate::oracle_subset`] — exactly like `solver_time_ms`.
+    /// excluded from [`Certificate::oracle_subset`] — like `solver_time_ms`.
     /// `None` for every v1 item (no forge-tier burn), and `#[serde(default,
     /// skip_serializing_if = "Option::is_none")]` so the 7 frozen v1 golden certs
     /// (which omit it) serialize BYTE-IDENTICALLY (R-SPEC-2, additive only), mirroring
@@ -680,7 +680,7 @@ pub struct Certificate {
 }
 
 impl Certificate {
-    /// Assemble a #5 certificate from the real pipeline data (REQ-2). `check.rs`
+    /// Assemble a #5 certificate from the pipeline data (REQ-2). `check.rs`
     /// derives `level`/`obligations` from verus and `effects` from the item's
     /// `fx` row; the forward-declared and reserved fields take their #5
     /// values here.
@@ -1002,7 +1002,7 @@ impl Certificate {
     }
 
     /// Build a non-certified certificate for a weak-contract reject (#12;
-    /// `.design/forge/mutation-scoring.md` REQ-5/REQ-6). The item's real body
+    /// `.design/forge/mutation-scoring.md` REQ-5/REQ-6). The item's body
     /// proved L3, but its frozen mutant set scored below the floor — the contract
     /// under-constrains the body (mutants survive). Like [`Certificate::rejected`]
     /// (`Level::L0`, the structured `reject` cause, one failed obligation naming
@@ -1094,7 +1094,7 @@ impl Certificate {
     /// goal (`.design/stage1-forge-tier.md` REQ-7, increment 2e; RFC-1 §9). Set on the
     /// proof-view discharge path: the committed-proof token count + cited lemmas (and
     /// the optional authoring spend) join the cert as auditable burn evidence. Per
-    /// Q-BURN the receipt is oracle-EXCLUDED (re-authoring a proof changes it without
+    /// Q-burn the receipt is oracle-excluded (re-authoring a proof changes it without
     /// changing the claim), so only this field changes — the verdict and the
     /// `oracle_subset` are untouched. A v1 item never calls this, so its `burn` stays
     /// `None` and its cert is byte-stable.
@@ -1107,7 +1107,7 @@ impl Certificate {
     /// Build a non-certified certificate for an over-budget definition tower
     /// (`.design/stage1-forge-tier.md` REQ-6c, increment 2d; AC-10). The forge-tier
     /// item's contract unfolds a definition tower deeper or wider than the Q2 default
-    /// budget (depth 4 / 40 definitions) — a Goodhart move (hiding the real claim
+    /// budget (depth 4 / 40 definitions) — a Goodhart move (hiding the claim
     /// behind an unreadable tower), refused at certify time. Like
     /// [`Certificate::rejected`] (`Level::L0`, the structured `DefinitionTowerBudget`
     /// cause, one failed obligation naming it), but it ALSO pins the unfolded-tower
@@ -1216,17 +1216,17 @@ impl Certificate {
     /// cert, so the v1 oracle stays byte-identical; a forge-tier item's unfolded-tower
     /// hash is oracle-visible (REQ-6c: the certified meaning cannot drift silently).
     ///
-    /// The REQ-7 `burn` receipt (increment 2e) is deliberately ABSENT from this tuple
-    /// (Q-BURN): re-authoring a proof legitimately changes its committed-token count +
+    /// The REQ-7 `burn` receipt (increment 2e) is ABSENT from this tuple
+    /// (Q-burn): re-authoring a proof legitimately changes its committed-token count +
     /// authoring spend without changing what was proven, so it is oracle-excluded like
     /// `solver_time_ms` — a forge-tier cert and the same cert with its `burn` stripped
     /// compare oracle-equal.
     ///
     /// `bv_shadows` is the Lock 1 shadow flag (stage-3 REQ-3 / AC-4, Q-ORACLE:
-    /// deterministic + verdict-relevant → included): the PRESENT `bv_shadow` blocks, in
+    /// deterministic + verdict-relevant → included): the present `bv_shadow` blocks, in
     /// obligation source order. It is FILTERED to the tagged clauses (not one slot per
     /// obligation) so a v1 / untagged cert — whatever its obligation count, including a
-    /// hand-authored golden with no `obligations` key — contributes an EMPTY vec and stays
+    /// hand-authored golden with no `obligations` key — contributes an empty vec and stays
     /// oracle-byte-identical (the obligation count was never an oracle field and must not
     /// become one). A tagged clause's machine-semantics fork is then oracle-visible (a
     /// semantic fork CHANGES what the clause means — it cannot drift silently, unlike the
@@ -1533,15 +1533,15 @@ mod tests {
 
     // REQ-1 / AC-4 (schema v2 additive — `.design/stage1-forge-tier.md`): the per-clause
     // `engine`/`trust`/`verdict` fields are additive (`#[serde(default,
-    // skip_serializing_if)]`), so the v1 oracle subset is unperturbed for ALL SEVEN
+    // skip_serializing_if)]`), so the v1 oracle subset is unperturbed for all seven
     // conformance goldens. The goldens are HAND-AUTHORED stable-subset oracles (R-CHAR-3
     // — item/level/contract_quality/effects/slag, not full forge-emitted certs), so the
     // byte-identity claim is verified two ways: (1) NONE of the seven golden FILES carries
     // any schema-v2 key (`engine`/`trust`/`verdict`) anywhere — they are pristine v1
     // oracles, untouched by this increment; (2) a v1-shape cert (a Verus-corpus discharged
-    // clause, no per-clause block) SERIALIZES with NO schema-v2 keys (the `skip_serializing_if`
+    // clause, no per-clause block) SERIALIZES with no schema-v2 keys (the `skip_serializing_if`
     // omits the absent fields), so forge's v1 output still matches those goldens byte-for-byte.
-    // A populated block (the forge-tier Lean path) DOES serialize the keys — the field works.
+    // A populated block (the forge-tier Lean path) does serialize the keys — the field works.
     #[test]
     fn schema_v2_additive_leaves_all_seven_goldens_byte_identical() {
         // Recursively assert no JSON key named `engine`/`trust`/`verdict` appears.
@@ -1580,7 +1580,7 @@ mod tests {
             );
         }
 
-        // (2) A v1-shape clause (no per-clause block) serializes with NO schema-v2 keys.
+        // (2) A v1-shape clause (no per-clause block) serializes with no schema-v2 keys.
         let v1 = Certificate::new(
             "sum",
             Level::L3,
@@ -1597,7 +1597,7 @@ mod tests {
              (skip_serializing_if), so it stays byte-identical to the v1 goldens: {v1_json}"
         );
 
-        // (3) A populated forge-tier clause DOES serialize the keys (the field is live).
+        // (3) A populated forge-tier clause does serialize the keys (the field is live).
         let forge_tier = Certificate::new(
             "isqrt",
             Level::L3,
@@ -1626,7 +1626,7 @@ mod tests {
     // for the `nowrap` spelling.
     #[test]
     fn bv_shadow_is_additive_and_serializes_the_rfc9_shape() {
-        // A v1-shape clause (no shadow) must NOT serialize a `bv_shadow` key — so the v1
+        // A v1-shape clause (no shadow) must not serialize a `bv_shadow` key — so the v1
         // goldens stay byte-identical (the `engine`/`trust`/`verdict` discipline).
         let v1 = Certificate::new(
             "sum",
@@ -1704,7 +1704,7 @@ mod tests {
     }
 
     // Stage-3 REQ-3 / AC-4: the shadow flag is ORACLE-INCLUDED (Q-ORACLE: deterministic +
-    // verdict-relevant → included) — two certs differing ONLY in an obligation's
+    // verdict-relevant → included) — two certs differing only in an obligation's
     // `bv_shadow` compare oracle-UNEQUAL, unlike the provenance-only engine/trust (which
     // are oracle-excluded). A semantic fork cannot drift silently.
     #[test]
@@ -1729,7 +1729,7 @@ mod tests {
             "the oracle must DISTINGUISH a tagged clause from an untagged one (the fork is \
              verdict-relevant — REQ-3 / AC-4)"
         );
-        // But engine/trust attribution differences alone stay oracle-EXCLUDED (provenance).
+        // But engine/trust attribution differences alone stay oracle-excluded (provenance).
         let mut attributed = bare.clone();
         attributed.obligations[0] = ObligationResult::discharged("mix64::ens#0")
             .with_clause_attribution(

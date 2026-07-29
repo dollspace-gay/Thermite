@@ -36,7 +36,7 @@ const EXTERNAL_BODY: &str = "#[verifier::external_body]";
 /// onto the AST (the parser does not stack two attributes, but a `FnItem` can
 /// carry both flags, and the production gate sees both).
 ///
-/// - `(false, false)` — a regular in-language fn with a real body.
+/// - `(false, false)` — a regular in-language fn with a body.
 /// - `(true, *)` — a `#[boundary("ext::ext_id")]` fn (foreign body, `;`).
 /// - `(false, true)` — a `#[slag(...)]` fn with a fiat body.
 fn fn_source(has_boundary: bool, has_slag: bool) -> String {
@@ -118,7 +118,7 @@ fn lower_fn_emits_external_body_iff_proved_predicate() {
 
 /// The §9 soundness corollary made observable (REQ-9): the regular fn (neither
 /// flag) takes the fully-proved-body arm — its emitted source contains no
-/// `#[verifier::external_body]` and carries the fn's real body (`{`), so the
+/// `#[verifier::external_body]` and carries the fn's body (`{`), so the
 /// lying-regular-body laundering R-DEFER-9 forbids is structurally impossible.
 #[test]
 fn regular_fn_is_fully_proved_never_external_body() {

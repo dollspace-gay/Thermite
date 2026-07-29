@@ -108,7 +108,7 @@ def wfFrm (d : Nat) : Frm → Bool
   | .all _ φ  => wfFrm (d + 1) φ
   | .ex _ φ   => wfFrm (d + 1) φ
 
-/-! ## Well-formedness of the ENCODER OUTPUT (the fresh-name + MBQI discipline)
+/-! ## Well-formedness of the ENCODER output (the fresh-name + MBQI discipline)
 
     `tokWf d Φ` checks that every binder name is `≥ d` and the body is `tokWf
     (name+1)` — so binder names strictly increase down every path (hence pairwise

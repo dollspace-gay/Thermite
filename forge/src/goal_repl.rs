@@ -81,11 +81,11 @@ pub fn render_battery(file: &Path, item: Option<&str>) -> Result<String, ForgeEr
     Ok(out)
 }
 
-/// Render the §5.1 PROOF VIEW (`.design/stage1-forge-tier.md` REQ-7 / AC-11) for the
+/// Render the §5.1 proof view (`.design/stage1-forge-tier.md` REQ-7 / AC-11) for the
 /// forge-routed goals in `file`, optionally restricted to one `item`. A forge-routed
 /// goal is a `lemma` or a `proof for f` obligation — a goal the forge discharges at L3.
 /// Unlike [`render_goal`] (the v1 exec-fn goal state) the proof view renders the goal
-/// WITH ITS HYPOTHESES IN SCOPE: the typed parameter binders + the `req` precondition
+/// with ITS HYPOTHESES IN scope: the typed parameter binders + the `req` precondition
 /// the proof may assume, then the `⊢ goal` to discharge, then any open `?pN` proof
 /// holes (the `forge fill` operands). The hypothesis context is derived structurally
 /// from the contract — the same data the Lean discharge binds (params as free inputs,
@@ -176,7 +176,7 @@ fn render_lemma_proof(l: &LemmaItem) -> String {
 /// Render the proof view for a `proof for f` item (REQ-7): one block per obligation,
 /// each resolving its `ens#k` goal against `f`'s contract and binding `f`'s
 /// params + `req` as the hypotheses in scope. A `proof for` whose target `f` is not a
-/// `fn` in the file (or whose clause selector resolves no clause) renders an honest
+/// `fn` in the file (or whose clause selector resolves no clause) renders an
 /// "unresolved" note rather than a fabricated goal (R-CODE-2 — surface the gap).
 fn render_proof_for(p: &ProofItem, program: &Program) -> String {
     let mut out = String::new();
@@ -242,7 +242,7 @@ fn render_hypotheses(params: &[Param], req: &Clause) -> String {
 
 /// Render the open `?pN` proof holes as the `forge fill` operands (REQ-7 / AC-11), or
 /// — when the proof block is non-empty with no open hole — a "proof authored"
-/// committed line. An empty hole-free proof block is an honest "no proof yet" note.
+/// committed line. An empty hole-free proof block is an "no proof yet" note.
 fn render_proof_holes(
     out: &mut String,
     holes: &[thermite_syntax::Hole],
@@ -275,10 +275,10 @@ fn clause_label(sel: &ClauseSelector) -> String {
 
 /// Resolve a [`ClauseSelector`] against a function's contract (REQ-7). `req` names the
 /// (single) precondition; `ens#k` names the `k`-th ensures clause 0-based in source
-/// order (`ens#0` is the FIRST `ens` — the convention the forge-tier proof-obligation
+/// order (`ens#0` is the first `ens` — the convention the forge-tier proof-obligation
 /// corpus already uses, `thermite-syntax/tests/forge_items.rs`: `ens#0 by { … } ens#1
 /// by { … }`). Returns `None` for an out-of-range / unknown selector (rendered as an
-/// honest "unresolved" goal rather than a fabricated one).
+/// explicit "unresolved" goal rather than a fabricated one).
 fn resolve_clause<'c>(contract: &'c Contract, sel: &ClauseSelector) -> Option<&'c Clause> {
     match sel.keyword.as_str() {
         "req" => Some(&contract.req),
@@ -373,9 +373,9 @@ pub fn edit_file(file: &Path, addr: &str, replacement: &str) -> Result<String, F
 /// splices the replacement source at the hole token's span (reusing the increment-(ii)
 /// splice machinery), re-parses, and re-checks. Two hole kinds:
 ///
-/// - a BODY hole `<fn>.?N` (#193): splices into a `fn` body, re-renders the goal state.
-/// - a PROOF hole `<lemma>.proof.?pN` / `<fn>.proof.<clause>.?pN` (stage-1 REQ-7, 2e):
-///   splices into a forge-tier proof block, re-renders the PROOF VIEW + the re-check
+/// - a body hole `<fn>.?N` (#193): splices into a `fn` body, re-renders the goal state.
+/// - a proof hole `<lemma>.proof.?pN` / `<fn>.proof.<clause>.?pN` (stage-1 REQ-7, 2e):
+///   splices into a forge-tier proof block, re-renders the proof view + the re-check
 ///   verdict (the frozen battery refuses an unlisted tactic — REQ-5/2c — and the
 ///   discharge produces the forge-tier cert with the burn receipt — REQ-7).
 ///
@@ -478,7 +478,7 @@ fn render_proof_cert_status(cert: &Certificate) -> String {
 
 /// Render one item's goal state (REQ-2; §5.1). The `given` is the `req` clause
 /// text; the `want` is the `ens` clause texts; then each obligation as discharged
-/// or failed-with-witness; a clean cert renders `ALL GOALS DISCHARGED` + the level
+/// or failed-with-witness; a clean cert renders `all goals discharged` + the level
 /// + the battery line.
 fn render_goal_item(cert: &Certificate, program: &Program) -> String {
     let mut out = String::new();
@@ -687,15 +687,15 @@ pub(crate) fn open_hole_reason(f: &thermite_syntax::FnItem) -> Option<String> {
     ))
 }
 
-/// The shared open-PROOF-hole refusal text for a forge-tier item carrying any open
+/// The shared open-proof-hole refusal text for a forge-tier item carrying any open
 /// `?pN` proof hole (`.design/stage1-forge-tier.md` REQ-3 / AC-7). Returns
 /// `Some(detail)` iff the item's proof block(s) carry any open proof hole — a
 /// `lemma`'s proof block, or any `proof for f` obligation's `by { … }` block (a
 /// `prop fn`/`witness` carries no proof block). Mirrors [`open_hole_reason`]: an
-/// item with an open proof hole is incomplete and does NOT certify and does NOT
+/// item with an open proof hole is incomplete and does not certify and does not
 /// build (the same never-ship-incomplete invariant), so `check.rs` and `build.rs`
 /// gate on this with one message. The covenant/proof-view consumers (2b/2e) own
-/// the fill loop; this gate only refuses an OPEN one. Pure function of the item's
+/// the fill loop; this gate only refuses an open one. Pure function of the item's
 /// proof holes (R-CODE-5).
 pub(crate) fn open_proof_hole_reason(forge: &thermite_syntax::ForgeItem) -> Option<String> {
     use thermite_syntax::ForgeItem;
@@ -758,7 +758,7 @@ fn span_of_address(program: &Program, addr: &str) -> Option<Span> {
     let entry_kind = address::resolve(program, addr).ok()?.kind;
 
     // A `?pN` proof hole lives on a forge-tier item (a `lemma`'s proof block or a
-    // `proof for f` obligation's block), NOT on a `fn`, so it dispatches before the
+    // `proof for f` obligation's block), not on a `fn`, so it dispatches before the
     // `fn` lookup below (stage1-forge-tier.md REQ-7, increment 2e).
     if entry_kind == AddrKind::ProofHole {
         return proof_hole_span(program, addr);
@@ -1011,7 +1011,7 @@ mod tests {
         );
     }
 
-    // REQ-2 / AC-2: a clean L3 cert renders ALL GOALS DISCHARGED + the level + the
+    // REQ-2 / AC-2: a clean L3 cert renders all goals discharged + the level + the
     // §7 battery line.
     #[test]
     fn goal_render_discharged() {
@@ -1198,7 +1198,7 @@ mod tests {
             r.contains("x : u64") && r.contains("y : u64"),
             "f's params bound: {r}"
         );
-        // `ens#1` is the SECOND ens clause (0-based), `result >= y`.
+        // `ens#1` is the second ens clause (0-based), `result >= y`.
         assert!(
             r.contains("\u{22a2} goal: result >= y"),
             "ens#1 resolves to the second ens clause: {r}"
@@ -1231,7 +1231,7 @@ mod tests {
     }
 
     // REQ-7 / R-CODE-2: a `proof for` whose clause selector is out of range renders an
-    // honest "unresolved" goal, never a fabricated one or a panic.
+    // explicit "unresolved" goal, never a fabricated one or a panic.
     #[test]
     fn proof_view_proof_for_out_of_range_clause_is_unresolved() {
         let src = "fn f(n: u32) -> u32 req true ens result == n fx pure { n }\n\

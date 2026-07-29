@@ -1,5 +1,4 @@
-//! `forge/src/lean_smt_export.rs` — the automated Rust→Lean obligation exporter
-//! for the `smt`-tactic (cvc5-reconstruction) discharge path
+//! Automated Rust→Lean export for per-clause translation-validation obligations
 //! (`.design/stage3-bv-reconstruction.md` REQ-7 / AC-8).
 //!
 //! This module closes the Tier-3 hand-translation gap that
@@ -7,9 +6,11 @@
 //! automated Rust→Lean exporter would close"). Given a per-clause equivalence
 //! obligation — the translation-validation shape `(P_production) ⟺ (P_reference)`
 //! that `thermite-tv/src/obligation.rs::equivalence_obligation` asserts — it renders
-//! BOTH predicate ASTs into Lean `Prop`s over a typed env and emits a self-contained
-//! Lean theorem discharged by the lean-smt `smt` tactic (pinned @ `7d1d8239`,
-//! `lean/lakefile.toml`, vendored cvc5 over FFI), followed by a `#print axioms` probe.
+//! both predicate ASTs into Lean `Prop`s over a typed environment and emits a
+//! self-contained theorem followed by a `#print axioms` probe. QF_LIA uses the
+//! lean-smt `smt` tactic (pinned @ `ee6d36b`, with cvc5 over FFI). QF_BV is rendered
+//! as literal `BitVec N` expressions and its normalization equivalence is proved with
+//! kernel-checked library lemmas.
 //! A theorem whose `#print axioms` stays within `{propext, Classical.choice,
 //! Quot.sound}` (no `Smt`-internal oracle, no `sorryAx`, no `Lean.ofReduceBool`) is
 //! a kernel-checked reconstruction — that axiom-cleanliness is what makes a fragment
@@ -21,51 +22,22 @@
 //!   linear integer arithmetic over `Int`. This is the PoC-proven shape
 //!   (`SmtDemo.lean`'s Tier-2/Tier-3 theorems), the contract sublanguage
 //!   `gen_comparison`/`gen_int` space. Rendered directly over Lean `Int`.
-//! - **QF_BV** ([`SmtFragment::Bv`]): the fixed-width machine-semantics clauses
-//!   [`crate::bitvector::BitVectorEngine`] produces (REQ-2). Rendered over the
-//!   **range-bounded integer machine-model** rather than Lean `BitVec N`. See the
-//!   decision note below.
+//! - **QF_BV** ([`SmtFragment::Bv`]): the full fixed-width term fragment used by
+//!   [`crate::bitvector::BitVectorEngine`] (REQ-2), rendered directly over Lean
+//!   `BitVec N`.
 //!
-//! ## Why QF_BV is rendered over a bounded-integer model, not `BitVec N`
+//! ## Literal QF_BV reconstruction
 //!
-//! `.design/verified/z3-demotion.md` records (and this increment empirically
-//! reconfirmed at the pinned lean-smt rev) that lean-smt's QF_BV proof
-//! reconstruction bit-blasts through `Smt/Reconstruct/BitVec/Bitblast.lean`, which
-//! itself `uses 'sorry'`. Every `BitVec`-typed `by smt` goal therefore pulls
-//! `sorryAx` into its `#print axioms` — it is NOT kernel-clean. (Even a pure
-//! unsigned-comparison goal over `BitVec N` bit-blasts and routes through the hole.)
+//! The exported theorem is an equivalence between the production predicate and
+//! [`reference_normalize`]. That normalization uses only total-order duals,
+//! `≠` expansion, and commutativity of addition and multiplication. Lean proves
+//! those facts directly with `simp`, including when they occur below bitwise, shift,
+//! division, or remainder operations. This covers the complete QF_BV term surface
+//! without asking lean-smt to reconstruct cvc5's bit-blasting proof and without adding
+//! `bv_decide`'s native-reflection axiom.
 //!
-//! A `@bvN` clause's fixed-width semantics are faithfully captured over `Int` by the
-//! standard machine-model: each `N`-bit variable `x` is an integer with
-//! `0 ≤ x < 2^N`, each wrapping arithmetic operation `a ⊕ b` is `(a ⊕ b) % 2^N`
-//! (Lean's `Int.emod` lands in `[0, 2^N)` for the positive modulus, matching
-//! `bvadd`/`bvsub`/`bvmul`), and each unsigned comparison is the integer comparison
-//! on the bounded operands. This goal is QF_LIA — exactly the fragment lean-smt
-//! reconstructs kernel-clean (the proven path) — so a `@bv` clause obligation rendered
-//! this way discharges within `{propext, Classical.choice, Quot.sound}`. The literal
-//! `BitVec N` render (`crate::bitvector::render_bv_prop`, the SMT-LIB2 query
-//! `--engine bv` runs) is the artifact lean-smt's literal QF_BV replay would consume,
-//! and remains blocked on the upstream bit-blasting `sorry`.
-//!
-//! **Faithfulness of the integer model is kernel-proven** (`lean/Thermite/BvModel.lean`,
-//! issue #356): the term/proposition fragment [`render_term`] / [`render_prop`] emit here
-//! corresponds arm-for-arm to `Thermite.BvModel.{Tm, Frm}`, and the metatheorem
-//! `frmInt_iff_frmBV` proves the bounded-integer denotation agrees with the genuine
-//! `BitVec N` denotation (`#print axioms` ⊆ the standard set, Mathlib/Smt-free). So with
-//! the exporter's `by smt` int-model `↔` reconstructed in the kernel AND that faithfulness
-//! theorem, a `@bv` clause's truth is kernel-grounded end to end — discharging the REQ-8
-//! `render_bv_prop` faithfulness obligation in our own spine, with no solver in the trust
-//! base for the renderable fragment and no dependency on lean-smt's literal bv
-//! reconstruction. The Rust-emitter ⟷ Lean-AST correspondence is inspection-tier (as for
-//! the whole exporter — `.design/verified/exporter-surface-correspondence.md`).
-//!
-//! ## Out of the renderable fragment
-//!
-//! Bitwise / shift operators (`&`/`|`/`^`/`<<`/`>>`) and integer division/remainder
-//! are an honest [`SmtExportError::OutOfFragment`] skip — they are the bit-blasting
-//! / division-by-zero territory the integer model does not faithfully and cleanly
-//! capture (the `z3-demotion.md` bitwise wall). A skip is never a silent wrong
-//! encoding; it names the offending construct.
+//! The Rust-emitter ↔ Lean-syntax correspondence remains inspection-tier, as described
+//! in `.design/verified/exporter-surface-correspondence.md`.
 
 use std::collections::BTreeSet;
 
@@ -79,19 +51,17 @@ pub enum SmtFragment {
     /// QF_LIA scalar: comparisons + boolean connectives + linear arithmetic over
     /// `Int` (the `SmtDemo.lean` PoC shape).
     Lia,
-    /// QF_BV at a fixed width, rendered over the range-bounded integer machine-model
-    /// (`0 ≤ x < 2^N` per variable, wrapping arithmetic as `% 2^N`).
+    /// QF_BV at a fixed width, rendered directly over `BitVec N`.
     Bv(BvWidth),
 }
 
 /// An out-of-fragment refusal (`.design/stage3-bv-reconstruction.md` REQ-7). Mirrors
-/// the honest-skip discipline of [`crate::bitvector::render_bv_prop`]: a construct
+/// the skip discipline of [`crate::bitvector::render_bv_prop`]: a construct
 /// outside the renderable fragment is named, never silently mis-encoded.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SmtExportError {
-    /// An `Expr` construct outside the renderable QF_LIA / QF_BV fragment (a bitwise
-    /// or shift operator, division/remainder, a multi-segment path, a method call,
-    /// an arithmetic operator at proposition position, …). Carries a human
+    /// An `Expr` construct outside the selected fragment, such as a multi-segment
+    /// path, method call, or arithmetic operator at proposition position. Carries a
     /// description of the offending construct.
     OutOfFragment(String),
 }
@@ -110,13 +80,12 @@ impl std::fmt::Display for SmtExportError {
 /// (`.design/stage3-bv-reconstruction.md` REQ-7). The exported theorem is the TV
 /// shape `(P_production) ⟺ (P_reference)` over the obligation's free variables — the
 /// same logical content `thermite-tv`'s `equivalence_obligation` discharges through
-/// Verus/Z3, here discharged by the kernel-checked `smt` tactic.
+/// Verus/Z3, here discharged by a kernel-checked Lean proof.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SmtEquivObligation {
     /// The item / clause name the theorem is named after (sanitized to a Lean ident).
     pub item: String,
-    /// The free variables, in binder order. All are rendered at the fragment's sort
-    /// (`Int` for both QF_LIA and the QF_BV integer machine-model).
+    /// The free variables, in binder order. QF_LIA uses `Int`; QF_BV uses `BitVec N`.
     pub vars: Vec<String>,
     /// The production-lowered predicate (the artifact under test).
     pub prod: Expr,
@@ -153,55 +122,73 @@ fn lean_ident(item: &str) -> String {
     out
 }
 
-/// Render an arithmetic TERM to a Lean `Int` expression in the given fragment
-/// (`.design/stage3-bv-reconstruction.md` REQ-7). In [`SmtFragment::Lia`] the
-/// operators are the plain integer operators; in [`SmtFragment::Bv`] each wrapping
-/// operation is reduced `% 2^N` to model fixed-width wraparound and a literal is
-/// reduced into `[0, 2^N)`.
+/// Render an arithmetic or bitwise term in the selected Lean fragment.
 fn render_term(e: &Expr, fragment: SmtFragment) -> Result<String, SmtExportError> {
     match e {
         Expr::IntLit { value, .. } => match fragment {
             SmtFragment::Lia => Ok(format!("({value} : Int)")),
-            SmtFragment::Bv(w) => Ok(format!("({} : Int)", value % modulus(w.bits()))),
+            SmtFragment::Bv(w) => Ok(format!("({}#{})", value % modulus(w.bits()), w.bits())),
         },
         Expr::Path(segs) if segs.len() == 1 => Ok(segs[0].clone()),
         Expr::Binary { op, lhs, rhs } => {
-            let sym = match op {
-                BinOp::Add => "+",
-                BinOp::Sub => "-",
-                BinOp::Mul => "*",
-                other => {
+            let sym = match (fragment, op) {
+                (_, BinOp::Add) => "+",
+                (_, BinOp::Sub) => "-",
+                (_, BinOp::Mul) => "*",
+                (SmtFragment::Bv(_), BinOp::Div) => "/",
+                (SmtFragment::Bv(_), BinOp::Rem) => "%",
+                (SmtFragment::Bv(_), BinOp::Shl) => "<<<",
+                (SmtFragment::Bv(_), BinOp::Shr) => ">>>",
+                (SmtFragment::Bv(_), BinOp::BitAnd) => "&&&",
+                (SmtFragment::Bv(_), BinOp::BitOr) => "|||",
+                (SmtFragment::Bv(_), BinOp::BitXor) => "^^^",
+                (_, other) => {
+                    let supported = match fragment {
+                        SmtFragment::Lia => "`+`, `-`, or `*`",
+                        SmtFragment::Bv(_) => {
+                            "arithmetic, division, remainder, bitwise, or shift operators"
+                        }
+                    };
                     return Err(SmtExportError::OutOfFragment(format!(
-                        "`{other:?}` is not a renderable arithmetic term operator (only \
-                         `+`/`-`/`*` lower to the integer model; `/`/`%`/`&`/`|`/`^`/`<<`/`>>` \
-                         are the bit-blasting / division residual)"
-                    )))
+                        "`{other:?}` is not a term operator in this fragment; expected {supported}"
+                    )));
                 }
             };
             let l = render_term(lhs, fragment)?;
             let r = render_term(rhs, fragment)?;
-            match fragment {
-                SmtFragment::Lia => Ok(format!("({l} {sym} {r})")),
-                // Model fixed-width wraparound: the N-bit operation is the integer
-                // operation reduced modulo 2^N (Lean `Int.emod` lands in [0, 2^N)).
-                SmtFragment::Bv(w) => Ok(format!("(({l} {sym} {r}) % {})", modulus(w.bits()))),
+            if matches!((fragment, op), (SmtFragment::Bv(_), BinOp::Div)) {
+                let SmtFragment::Bv(w) = fragment else {
+                    unreachable!("the branch fixed the fragment")
+                };
+                // SMT-LIB defines bvudiv-by-zero as all ones, while Lean's BitVec
+                // division returns zero. Spell out the SMT case so the two renderers
+                // agree even before Thermite's nonzero-divisor obligation is applied.
+                let zero = format!("(0#{})", w.bits());
+                Ok(format!(
+                    "(if {r} = {zero} then (~~~{zero}) else ({l} / {r}))"
+                ))
+            } else {
+                Ok(format!("({l} {sym} {r})"))
             }
         }
-        // A cast leaves the integer value unchanged in the model (the spine view; the
-        // `crate::bitvector::render_bv_term` precedent renders the inner term).
+        Expr::Unary {
+            op: UnaryOp::Not,
+            expr,
+        } if matches!(fragment, SmtFragment::Bv(_)) => {
+            Ok(format!("(~~~{})", render_term(expr, fragment)?))
+        }
+        // Casts in this fragment preserve the selected fixed-width representation.
         Expr::Cast { expr, .. } => render_term(expr, fragment),
         other => Err(SmtExportError::OutOfFragment(format!(
             "`{other:?}` is outside the renderable term fragment (only integer \
-             literals, single-segment variables, `+`/`-`/`*`, and casts)"
+             literals, single-segment variables, fragment operators, and casts)"
         ))),
     }
 }
 
-/// Render a PROPOSITION to a Lean `Prop` in the given fragment
-/// (`.design/stage3-bv-reconstruction.md` REQ-7). Comparisons map to the integer
-/// relations (faithful for the unsigned bit-vector relations on the bounded
-/// machine-model operands), the connectives to `∧`/`∨`/`¬`. `Err` names the
-/// out-of-fragment construct.
+/// Render a proposition to a Lean `Prop` in the given fragment
+/// (`.design/stage3-bv-reconstruction.md` REQ-7). `BitVec` comparisons are unsigned,
+/// matching the scalar types and the SMT-LIB QF_BV renderer.
 fn render_prop(e: &Expr, fragment: SmtFragment) -> Result<String, SmtExportError> {
     match e {
         Expr::BoolLit(b) => Ok(if *b { "True" } else { "False" }.to_string()),
@@ -257,47 +244,71 @@ pub fn render_goal(o: &SmtEquivObligation) -> Result<String, SmtExportError> {
     Ok(format!("{prod} ↔ {reference}"))
 }
 
-/// Export one obligation as a self-contained Lean theorem discharged by `smt`,
-/// followed by its `#print axioms` probe (`.design/stage3-bv-reconstruction.md`
+/// Lemmas needed for the commutative rewrites performed by [`reference_normalize`].
+/// Order and comparison rewrites are already handled by `simp`.
+fn bv_normalization_lemmas(e: &Expr) -> Vec<&'static str> {
+    fn walk(e: &Expr, add: &mut bool, mul: &mut bool) {
+        match e {
+            Expr::Binary { op, lhs, rhs } => {
+                *add |= *op == BinOp::Add;
+                *mul |= *op == BinOp::Mul;
+                walk(lhs, add, mul);
+                walk(rhs, add, mul);
+            }
+            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => walk(expr, add, mul),
+            _ => {}
+        }
+    }
+
+    let mut add = false;
+    let mut mul = false;
+    walk(e, &mut add, &mut mul);
+    let mut lemmas = Vec::new();
+    if add {
+        lemmas.push("BitVec.add_comm");
+    }
+    if mul {
+        lemmas.push("BitVec.mul_comm");
+    }
+    lemmas
+}
+
+/// Export one obligation as a self-contained Lean theorem followed by its
+/// `#print axioms` probe (`.design/stage3-bv-reconstruction.md`
 /// REQ-7 / AC-8). The theorem is named `thermite_smt_<item>`.
 ///
 /// - [`SmtFragment::Lia`]: `theorem T (a b … : Int) : (P_prod) ↔ (P_ref) := by smt`.
-/// - [`SmtFragment::Bv`]: each variable additionally carries its machine-domain
-///   range hypotheses `0 ≤ x` / `x < 2^N`, passed to `smt` so the bounded-integer
-///   model is sound. `theorem T (a … : Int) (h0lo : 0 ≤ a) (h0hi : a < 2^N) … :
-///   (P_prod) ↔ (P_ref) := by smt [h0lo, h0hi, …]`.
+/// - [`SmtFragment::Bv`]: `theorem T (a b … : BitVec N) :
+///   (P_prod) ↔ (P_ref) := by simp [BitVec.add_comm, BitVec.mul_comm]`.
 pub fn export_theorem(o: &SmtEquivObligation) -> Result<String, SmtExportError> {
     let name = format!("thermite_smt_{}", lean_ident(&o.item));
     let goal = render_goal(o)?;
 
-    let var_binder = if o.vars.is_empty() {
-        String::new()
-    } else {
-        format!(" ({} : Int)", o.vars.join(" "))
-    };
-
     match o.fragment {
-        SmtFragment::Lia => Ok(format!(
-            "theorem {name}{var_binder} :\n    {goal} := by smt\n#print axioms {name}\n"
-        )),
-        SmtFragment::Bv(w) => {
-            let m = modulus(w.bits());
-            let mut hyp_binders = String::new();
-            let mut hyp_names: Vec<String> = Vec::new();
-            for (i, v) in o.vars.iter().enumerate() {
-                let lo = format!("h{i}lo");
-                let hi = format!("h{i}hi");
-                hyp_binders.push_str(&format!(" ({lo} : 0 ≤ {v}) ({hi} : {v} < {m})"));
-                hyp_names.push(lo);
-                hyp_names.push(hi);
-            }
-            let tactic = if hyp_names.is_empty() {
-                "by smt".to_string()
+        SmtFragment::Lia => {
+            let binder = if o.vars.is_empty() {
+                String::new()
             } else {
-                format!("by smt [{}]", hyp_names.join(", "))
+                format!(" ({} : Int)", o.vars.join(" "))
             };
             Ok(format!(
-                "theorem {name}{var_binder}{hyp_binders} :\n    {goal} := {tactic}\n#print axioms {name}\n"
+                "theorem {name}{binder} :\n    {goal} := by smt\n#print axioms {name}\n"
+            ))
+        }
+        SmtFragment::Bv(w) => {
+            let binder = if o.vars.is_empty() {
+                String::new()
+            } else {
+                format!(" ({} : BitVec {})", o.vars.join(" "), w.bits())
+            };
+            let lemmas = bv_normalization_lemmas(&o.prod);
+            let tactic = if lemmas.is_empty() {
+                "by\n  simp".to_string()
+            } else {
+                format!("by\n  simp [{}]", lemmas.join(", "))
+            };
+            Ok(format!(
+                "theorem {name}{binder} :\n    {goal} := {tactic}\n#print axioms {name}\n"
             ))
         }
     }
@@ -313,18 +324,14 @@ const FILE_HEADER: &str = "\
   (`.design/stage3-bv-reconstruction.md` REQ-7 / AC-8). DO NOT EDIT BY HAND.
 
   Each theorem is a per-clause translation-validation obligation `(P_prod) ⟺ (P_ref)`
-  emitted by the automated Rust→Lean exporter — the step `Thermite.SmtDemo` performed
-  by hand. It is discharged by the lean-smt `smt` tactic (cvc5 reconstruction, pinned
-  @ 7d1d8239) and KERNEL-CHECKED; the `#print axioms` after each must report a subset
-  of {propext, Classical.choice, Quot.sound} (no Smt oracle, no sorryAx, no
-  Lean.ofReduceBool) for the fragment to count as reconstruction-supported.
+  emitted by the automated Rust→Lean exporter. QF_LIA uses lean-smt/cvc5. QF_BV is
+  rendered directly as `BitVec N` and proved from kernel-checked normalization lemmas.
+  The `#print axioms` after each theorem must report a subset of
+  {propext, Classical.choice, Quot.sound}.
 
-  QF_BV clauses are rendered over the range-bounded integer machine-model (bv var ->
-  Int with 0 ≤ x < 2^N, wraparound op -> `% 2^N`, unsigned cmp -> Int cmp): lean-smt's
-  literal BitVec reconstruction bit-blasts through an upstream `sorry`
-  (.design/verified/z3-demotion.md), so the integer model is the reconstruction-
-  supported QF_BV encoding. Regenerate via the `golden_file_matches_exporter` test
-  with THERMITE_REGEN_SMT_EXPORT=1.
+  The literal QF_BV renderer covers wrapping arithmetic, unsigned comparisons,
+  bitwise operations, shifts, unsigned division, and remainder. Regenerate via the
+  `golden_file_matches_exporter` test with THERMITE_REGEN_SMT_EXPORT=1.
 -/
 import Smt
 
@@ -377,9 +384,8 @@ fn not_expr(e: Expr) -> Expr {
 /// `thermite-tv/src/ref_encode.rs` plays for the Verus obligation: the second,
 /// independent rendering whose agreement with production the translation-validation
 /// obligation `(P_prod) ⟺ (P_ref)` checks. Each rewrite is equivalence-preserving
-/// over BOTH the QF_LIA `Int` model and the QF_BV bounded-integer machine-model
-/// (the unsigned comparison flips hold for a total order; `+`/`*` commute for both
-/// `Int` and the wraparound `% 2^N` operations):
+/// over QF_LIA `Int` and QF_BV `BitVec N`: the comparison flips hold for their total
+/// orders, while addition and multiplication commute in both representations.
 ///
 /// - `a ≤ b` → `¬ (b < a)`, `a < b` → `¬ (b ≤ a)` (the comparison-faithfulness flip);
 /// - `a ≥ b` → `b ≤ a`, `a > b` → `b < a`;
@@ -388,7 +394,7 @@ fn not_expr(e: Expr) -> Expr {
 /// - `=`/`∧`/`∨`/`¬`/`-`/… recurse into normalized children, operator kept.
 ///
 /// Deterministic, total (R-CODE-5): a leaf or an unhandled construct is returned
-/// unchanged, so a clause the renderer later refuses is refused honestly downstream,
+/// unchanged, so a clause the renderer later refuses is refused downstream,
 /// not mangled here.
 #[must_use]
 pub fn reference_normalize(e: &Expr) -> Expr {
@@ -410,6 +416,10 @@ pub fn reference_normalize(e: &Expr) -> Expr {
             op: UnaryOp::Not,
             expr,
         } => not_expr(reference_normalize(expr)),
+        Expr::Cast { expr, ty } => Expr::Cast {
+            expr: Box::new(reference_normalize(expr)),
+            ty: ty.clone(),
+        },
         other => other.clone(),
     }
 }
@@ -437,25 +447,17 @@ pub fn free_vars(e: &Expr) -> Vec<String> {
     acc.into_iter().collect()
 }
 
-/// Is a per-clause predicate inside the RECONSTRUCTION-SUPPORTED fragment
+/// Is a per-clause predicate inside the RECONSTRUCTION-supported fragment
 /// (`.design/stage3-bv-reconstruction.md` REQ-8 / AC-9 — the fragment-support check
 /// REQ-8's trust migration keys on)? `true` iff the exporter renders this clause's
-/// `(P_prod) ⟺ (P_ref)` translation-validation goal WITHOUT [`SmtExportError`] in the
-/// given fragment — i.e. exactly the QF_LIA scalar + arithmetic/comparison QF_BV subset
-/// (`+`/`-`/`*`, unsigned `=`/`≠`/`<`/`≤`/`>`/`≥`, logical connectives). The
-/// bitwise/shift/rotate QF_BV subset (`^`/`&`/`|`/`<<`/`>>`, rotate) and
-/// division/remainder are the [`SmtExportError::OutOfFragment`] refusal — the
-/// bit-blasting wall (`.design/verified/z3-demotion.md`) — and read `false` here, so
-/// those clauses stay solver-trusted (the F-J residual the audit names).
+/// `(P_prod) ⟺ (P_ref)` translation-validation goal without [`SmtExportError`] in the
+/// given fragment. QF_LIA covers its scalar arithmetic subset. QF_BV covers the full
+/// fixed-width term surface: wrapping arithmetic, bitwise operators, shifts, unsigned
+/// division and remainder, comparisons, and logical connectives.
 ///
 /// Renderability IS the reconstruction-support signal: a clause this returns `true` for
-/// is rendered over the bounded-integer machine-model that lean-smt reconstructs
-/// kernel-clean (`#print axioms ⊆ {propext, Classical.choice, Quot.sound}`, the AC-8
-/// committed `lean/Thermite/SmtExport.lean` proof + the kernel-checked
-/// `BvModel.frmInt_iff_frmBV` faithfulness metatheorem) — so the renderable fragment's
-/// axiom-cleanliness is discharged by REQ-7 once, statically, not re-run per clause.
-/// Total + deterministic (R-CODE-5): a leaf the renderer would refuse is refused here
-/// too, never a silent claim of support.
+/// has an axiom-clean proof shape in the committed `lean/Thermite/SmtExport.lean`.
+/// Total + deterministic (R-CODE-5): a leaf the renderer would refuse is refused here.
 #[must_use]
 pub fn clause_reconstruction_supported(prod: &Expr, fragment: SmtFragment) -> bool {
     render_goal(&obligation_for_predicate("clause", prod, fragment)).is_ok()
@@ -482,8 +484,9 @@ pub fn obligation_for_predicate(
 /// The canonical reconstruction-supported obligation set
 /// (`.design/stage3-bv-reconstruction.md` REQ-7 / AC-8) — the batch the committed
 /// `lean/Thermite/SmtExport.lean` is generated from. One QF_LIA scalar clause and two
-/// QF_BV `@bv` clauses (a comparison subfragment clause at bv64, a modular-arithmetic
-/// clause at bv8), each paired with its [`reference_normalize`] reference. The `@bv`
+/// QF_BV `@bv` clauses covering comparison, wrapping arithmetic, and the complete
+/// bitwise/shift/division term surface, each paired with its [`reference_normalize`]
+/// reference. The `@bv`
 /// fragments are assigned explicitly (not parsed from a `@bvN` tag) so this set is
 /// available in the default build, where the `bv` parse feature is off (REQ-1's
 /// structural lock).
@@ -495,11 +498,39 @@ pub fn reconstruction_demo_obligations() -> Vec<SmtEquivObligation> {
     let bv_cmp = bin(BinOp::Le, var("a"), var("b"));
     // QF_BV modular arithmetic (bv8): `a + b == c`.
     let bv_arith = bin(BinOp::Eq, bin(BinOp::Add, var("a"), var("b")), var("c"));
+    // QF_BV full term surface (bv8). The nested multiply is commuted in the
+    // independent reference encoding, so this is not a reflexivity-only fixture.
+    let bv_full = bin(
+        BinOp::Ne,
+        bin(
+            BinOp::Rem,
+            bin(
+                BinOp::Div,
+                bin(
+                    BinOp::Shr,
+                    bin(
+                        BinOp::Shl,
+                        bin(
+                            BinOp::BitOr,
+                            bin(BinOp::BitAnd, not_expr(var("a")), var("b")),
+                            bin(BinOp::BitXor, var("a"), var("b")),
+                        ),
+                        var("c"),
+                    ),
+                    var("b"),
+                ),
+                var("c"),
+            ),
+            var("b"),
+        ),
+        bin(BinOp::Add, bin(BinOp::Mul, var("a"), var("b")), var("c")),
+    );
 
     vec![
         obligation_for_predicate("lia_arith_cmp", &lia, SmtFragment::Lia),
         obligation_for_predicate("bv64_le_not_lt", &bv_cmp, SmtFragment::Bv(BvWidth::W64)),
         obligation_for_predicate("bv8_add_comm", &bv_arith, SmtFragment::Bv(BvWidth::W8)),
+        obligation_for_predicate("bv8_full_terms", &bv_full, SmtFragment::Bv(BvWidth::W8)),
     ]
 }
 
@@ -507,7 +538,7 @@ pub fn reconstruction_demo_obligations() -> Vec<SmtEquivObligation> {
 /// parsed program (`.design/stage3-bv-reconstruction.md` REQ-7 — the file-driven
 /// exporter). A clause carrying a `@bvN` tag (only present in a `bv`-feature build)
 /// exports in [`SmtFragment::Bv`]; an untagged clause exports in [`SmtFragment::Lia`].
-/// A clause outside the renderable fragment is an honest skip, named in the returned
+/// A clause outside the renderable fragment is a skip, named in the returned
 /// skip list (never a silent drop). Deterministic in source order (R-CODE-5).
 #[must_use]
 pub fn obligations_for_program(program: &Program) -> (Vec<SmtEquivObligation>, Vec<String>) {
@@ -557,7 +588,7 @@ mod tests {
     }
 
     /// Extract the parsed `ens` predicate `Expr` of a fn `name` from `src`. The
-    /// demo obligations are built from REAL parsed Thermite predicates (not
+    /// demo obligations are built from real parsed Thermite predicates (not
     /// hand-built ASTs), so the exporter is exercised on the same `thermite-syntax`
     /// nodes the production obligation carries.
     fn ens_expr(src: &str, name: &str) -> Expr {
@@ -598,27 +629,25 @@ mod tests {
         assert_eq!(reference_normalize(&var("x")), var("x"));
     }
 
-    // REQ-8 / AC-9: the per-clause fragment-support check keys on renderability — the
-    // arithmetic/comparison subset is reconstruction-supported (migrates trust), the
-    // bitwise/shift/rotate subset is refused (stays solver-trusted).
+    // REQ-8 / AC-9: the per-clause support check covers the complete QF_BV term
+    // surface, while QF_LIA retains its smaller scalar fragment.
     #[test]
     fn clause_reconstruction_supported_keys_on_the_renderable_fragment() {
-        // The mix64 split: `a + b == b + a` (arith) is supported; `a ^ b ^ b == a` (xor) is not.
         let add = ens_expr(
             "fn p(a: u64, b: u64) -> u64 req true ens a + b == b + a fx pure { a }",
             "p",
         );
         assert!(
             clause_reconstruction_supported(&add, SmtFragment::Bv(BvWidth::W64)),
-            "wraparound-add commutativity is the reconstruction-supported QF_BV subset"
+            "wrapping arithmetic is reconstruction-supported"
         );
         let xor = ens_expr(
             "fn p(a: u64, b: u64) -> u64 req true ens a ^ b ^ b == a fx pure { a }",
             "p",
         );
         assert!(
-            !clause_reconstruction_supported(&xor, SmtFragment::Bv(BvWidth::W64)),
-            "xor is the bitwise subset the exporter refuses — stays solver-trusted (F-J)"
+            clause_reconstruction_supported(&xor, SmtFragment::Bv(BvWidth::W64)),
+            "bitwise terms are reconstructed literally"
         );
         // A QF_LIA scalar comparison is supported too.
         let lia = ens_expr(
@@ -626,19 +655,19 @@ mod tests {
             "p",
         );
         assert!(clause_reconstruction_supported(&lia, SmtFragment::Lia));
-        // A shift clause (the rotl1 lemma shape) is refused.
+        // Shift terms use a BitVec shift amount, matching SMT-LIB `bvshl`.
         let shift = ens_expr(
             "fn p(a: u64, b: u64) -> u64 req true ens (a << b) == a fx pure { a }",
             "p",
         );
-        assert!(!clause_reconstruction_supported(
+        assert!(clause_reconstruction_supported(
             &shift,
             SmtFragment::Bv(BvWidth::W64)
         ));
     }
 
     // REQ-7: the file-driven exporter mints a QF_LIA obligation per renderable `ens`
-    // clause and honestly names a non-renderable (bitwise) clause in the skip list.
+    // clause and names a non-renderable (bitwise) clause in the skip list.
     #[test]
     fn program_export_skips_out_of_fragment_clauses() {
         let p = parse_one(
@@ -684,69 +713,94 @@ mod tests {
         );
     }
 
-    // REQ-7: the QF_BV integer machine-model reduces literals and wraps arithmetic
-    // `% 2^N` while comparisons stay integer comparisons on the bounded operands.
+    // REQ-7: QF_BV terms render directly as Lean `BitVec N` expressions.
     #[test]
-    fn bv_renders_modular_arithmetic() {
+    fn bv_renders_literal_bitvec_arithmetic() {
         let p = ens_expr(
             "fn p(a: u64, b: u64, c: u64) -> u64 req true ens a + b == c fx pure { a }",
             "p",
         );
         assert_eq!(
             render_prop(&p, SmtFragment::Bv(BvWidth::W8)).unwrap(),
-            "(((a + b) % 256) = c)"
+            "((a + b) = c)"
         );
-        // A literal is reduced into [0, 2^N): `300` at width 8 is `300 % 256 = 44`.
+        // Numeric syntax carries the width and reduces the value modulo 2^N.
         let lit = ens_expr(
             "fn p(a: u64) -> u64 req true ens a == 300 fx pure { a }",
             "p",
         );
         assert_eq!(
             render_prop(&lit, SmtFragment::Bv(BvWidth::W8)).unwrap(),
-            "(a = (44 : Int))"
+            "(a = (44#8))"
         );
     }
 
-    // REQ-7: bitwise / shift / division operators are an honest OutOfFragment skip
-    // (the bit-blasting / division residual), never a silent wrong encoding.
+    // REQ-7: the literal renderer covers every QF_BV term operator used by the
+    // production SMT-LIB renderer.
     #[test]
-    fn bitwise_and_division_are_out_of_fragment() {
-        for (src, clause) in [
+    fn bv_renders_bitwise_shift_division_and_remainder() {
+        for (src, lean_op) in [
             (
                 "fn p(a: u64, b: u64) -> u64 req true ens (a & b) == a fx pure { a }",
-                "&",
+                "&&&",
             ),
             (
                 "fn p(a: u64, b: u64) -> u64 req true ens (a | b) == a fx pure { a }",
-                "|",
+                "|||",
             ),
             (
                 "fn p(a: u64, b: u64) -> u64 req true ens (a ^ b) == a fx pure { a }",
-                "^",
+                "^^^",
             ),
             (
                 "fn p(a: u64, b: u64) -> u64 req true ens (a / b) == a fx pure { a }",
                 "/",
             ),
             (
+                "fn p(a: u64, b: u64) -> u64 req true ens (a % b) == a fx pure { a }",
+                "%",
+            ),
+            (
                 "fn p(a: u64, b: u64) -> u64 req true ens (a << b) == a fx pure { a }",
-                "<<",
+                "<<<",
+            ),
+            (
+                "fn p(a: u64, b: u64) -> u64 req true ens (a >> b) == a fx pure { a }",
+                ">>>",
             ),
         ] {
             let p = ens_expr(src, "p");
+            let rendered = render_prop(&p, SmtFragment::Bv(BvWidth::W64))
+                .expect("the complete QF_BV term surface renders");
             assert!(
-                matches!(
-                    render_prop(&p, SmtFragment::Bv(BvWidth::W64)),
-                    Err(SmtExportError::OutOfFragment(_))
-                ),
-                "the `{clause}` operator must be an OutOfFragment skip"
+                rendered.contains(lean_op),
+                "expected Lean operator `{lean_op}` in {rendered}"
             );
         }
+
+        let not = ens_expr(
+            "fn p(a: u64) -> u64 req true ens !a == a fx pure { a }",
+            "p",
+        );
+        assert_eq!(
+            render_prop(&not, SmtFragment::Bv(BvWidth::W8)).unwrap(),
+            "((~~~a) = a)"
+        );
+
+        let div = ens_expr(
+            "fn p(a: u64, b: u64) -> u64 req true ens (a / b) == a fx pure { a }",
+            "p",
+        );
+        assert_eq!(
+            render_prop(&div, SmtFragment::Bv(BvWidth::W8)).unwrap(),
+            "((if b = (0#8) then (~~~(0#8)) else (a / b)) = a)",
+            "Lean and SMT-LIB use different bvudiv-by-zero defaults, so the zero case \
+             must be explicit"
+        );
     }
 
-    // REQ-7 / AC-8: the QF_LIA theorem shape is the SmtDemo `by smt` form with a
-    // `#print axioms` probe; the QF_BV theorem additionally carries the machine-domain
-    // range hypotheses, passed to `smt`.
+    // REQ-7 / AC-8: QF_LIA uses `smt`; QF_BV uses literal `BitVec N` binders and
+    // kernel-checked normalization lemmas.
     #[test]
     fn theorem_shapes_are_well_formed() {
         let obs = reconstruction_demo_obligations();
@@ -757,9 +811,12 @@ mod tests {
         assert!(lia.contains("#print axioms thermite_smt_lia_arith_cmp"));
 
         let bv = export_theorem(&obs[1]).unwrap();
-        assert!(bv.contains("(h0lo : 0 ≤ a) (h0hi : a < 18446744073709551616)"));
-        assert!(bv.contains(":= by smt [h0lo, h0hi, h1lo, h1hi]"));
+        assert!(bv.contains("(a b : BitVec 64)"));
+        assert!(bv.contains(":= by\n  simp\n"));
         assert!(bv.contains("#print axioms thermite_smt_bv64_le_not_lt"));
+
+        let full = export_theorem(&obs[3]).unwrap();
+        assert!(full.contains("simp [BitVec.add_comm, BitVec.mul_comm]"));
     }
 
     // REQ-7: the committed `lean/Thermite/SmtExport.lean` IS the exporter's automated
@@ -874,8 +931,8 @@ mod tests {
             checked += 1;
         }
         assert_eq!(
-            checked, 3,
-            "all three demo obligations must be axiom-checked"
+            checked, 4,
+            "all four demo obligations must be axiom-checked"
         );
     }
 }

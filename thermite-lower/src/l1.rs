@@ -182,7 +182,7 @@ pub fn lower_l1(program: &Program) -> Result<String, LowerError> {
             // A boundary fn (ffi-boundary.md REQ-4) lowers to the L1 wrapper: a
             // `req`-check, a call to the foreign target binding `result`, then the
             // `ens`-checks; the foreign body is not lowered or verified. An
-            // in-language fn lowers with its real body.
+            // in-language fn lowers with its body.
             Item::Fn(f) if f.boundary.is_some() => lower_boundary_fn_l1(f, &variants)?,
             Item::Fn(f) => lower_fn_l1(f, &variants, &inv_structs)?,
             // Basis Stage 1c (`.design/basis/01-adts.md` REQ-8/REQ-9): a `struct`
@@ -1437,7 +1437,7 @@ pub(crate) fn lower_stmt_l1(
 /// Lower an `Expr` in exec position to plain Rust (REQ-3). `depth` bounds
 /// recursion (REQ-9-equivalent; mirrors `lower.rs`'s guard). A combinator call
 /// lowers to a call of its L1 fn (the name is unchanged; its body is emitted by
-/// `emit_combinator_l1_defs`), with a closure argument becoming a real Rust
+/// `emit_combinator_l1_defs`), with a closure argument becoming a Rust
 /// closure. Every clause is a real `bool`/value expression over real values.
 pub(crate) fn lower_expr_exec(
     expr: &Expr,
@@ -1612,7 +1612,7 @@ pub(crate) fn lower_expr_exec(
             Ok(format!("{r}.{name}"))
         }
         Expr::Closure { params, body } => {
-            // A real Rust closure (REQ-3); the corpus closures are `u32`-typed
+            // A Rust closure (REQ-3); the corpus closures are `u32`-typed
             // slice-element predicates (matching the registry `l1` `impl Fn(u32)
             // -> bool` parameter).
             let b = lower_expr_exec(body, d, span, variants)?;
@@ -1727,7 +1727,7 @@ pub(crate) fn lower_expr_exec(
         // A raw quantifier `forall`/`exists` (`.design/stage2-stratified-cage.md`
         // REQ-0) is a SPEC-only formula — it has no executable meaning, so it never
         // belongs in an L1 exec-body position. (Even its spec lowering is deferred to
-        // REQ-8.) Refuse honestly with the established "outside the v0.1 mapping"
+        // REQ-8.) Refuse with the established "outside the v0.1 mapping"
         // error rather than emit anything. No corpus places a quantifier in exec
         // position, so this path is unreachable for the existing goldens.
         Expr::Quantifier { .. } => Err(LowerError::Unsupported {

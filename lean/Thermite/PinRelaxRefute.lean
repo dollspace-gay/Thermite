@@ -52,14 +52,14 @@ theorem int_clause_holds (a : Unit → ℤ) : 0 ≤ ePoly.eval a := by
     exact mul_nonneg (by omega) (by omega)
   · exact mul_nonneg (by omega) (by omega)
 
-/-- The real relaxation FAILS: at `x = 1/2`, `e = (1/2)² − 1/2 = −1/4 < 0`. -/
+/-- The real relaxation fails: at `x = 1/2`, `e = (1/2)² − 1/2 = −1/4 < 0`. -/
 theorem real_relax_fails : ¬ ∀ x : Unit → ℝ, 0 ≤ ePoly.eval x := by
   intro h
   have hx := h (fun _ => (1 : ℝ) / 2)
   simp only [ePoly, PExpr.eval] at hx
   norm_num at hx
 
-/-- The pin: the CONVERSE of `r_relax_sound` is FALSE. A failed real relaxation does NOT
+/-- The pin: the CONVERSE of `r_relax_sound` is false. A failed real relaxation does NOT
     imply a failed integer clause — `ePoly` is valid over ℤ yet its relaxation fails over
     ℝ. So a relax route that read "real relaxation failed" as "clause false / emit a
     Counterexample" would be unsound; the integrality check + `RealWitness` escalation
@@ -70,7 +70,7 @@ theorem relax_converse_unsound :
   intro h
   exact h ePoly real_relax_fails int_clause_holds
 
-/-- For contrast: the SOUND direction `r_relax_sound` holds vacuously here — `ePoly`'s
+/-- For contrast: the sound direction `r_relax_sound` holds vacuously here — `ePoly`'s
     relaxation does not hold, so its hypothesis is unmet, confirming the gap is solely the
     illegitimate converse. (Stated as the instantiated implication.) -/
 theorem r_relax_sound_on_ePoly (a : Unit → ℤ) :

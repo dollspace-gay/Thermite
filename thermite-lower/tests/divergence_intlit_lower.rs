@@ -1,9 +1,9 @@
 //! Adversarial audit of #37 — the regression probe: lowering emits the
 //! numeric `value` in the executable expression, not the verbatim `raw`.
 //!
-//! ast.md REQ-6 CRITICAL note: "the thermite-lower lowering … continues to
-//! emit the numeric `value` (e.g. `1000000`), NOT the raw — so the
-//! `tests/golden/lower/*.verus.rs` files do NOT change". This test pins that
+//! ast.md REQ-6 critical note: "the thermite-lower lowering … continues to
+//! emit the numeric `value` (e.g. `1000000`), not the raw — so the
+//! `tests/golden/lower/*.verus.rs` files do not change". This test pins that
 //! invariant directly on a fresh `_`-bearing literal.
 //!
 //! Critic note on assertion shape: the L1 lowering also embeds the

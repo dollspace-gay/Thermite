@@ -25,7 +25,7 @@
 //!
 //! - Laws 2 & 3 — assurance + TCB aggregation (#15/#60, REQ-2/REQ-3): `forge audit`
 //!   over the file (which mixes an end_to_end part `pipeline` + a to_boundary part
-//!   `read_then_inc`) reports the project scope as the genuine min — `to_boundary`
+//!   `read_then_inc`) reports the project scope as the min — `to_boundary`
 //!   listing the `read_small` crossing, never over-claimed as end_to_end — and the
 //!   TCB enumerates `read_small`'s boundary contract ∪ the toolchain (R-DEFER-9).
 //!
@@ -34,7 +34,7 @@
 //! existing machinery shows they await their prerequisite stages (Stage 2 scheme
 //! lowering, Stage 1/4 ADT/collection lowering) — they stay NOT-STARTED.
 //!
-//! These skip with a logged note if verus is absent (a real verus proof underlies
+//! These skip with a logged note if verus is absent (a verus proof underlies
 //! each cert), mirroring `composition_conformance.rs` / `audit_conformance.rs`.
 
 use std::path::{Path, PathBuf};
@@ -68,7 +68,7 @@ fn compose_demo() -> PathBuf {
 }
 
 /// `true` iff verus can be located — mirrors `composition_conformance.rs`. The
-/// Stage-5 composition certs are real verus proofs (each step L3-proves through
+/// Stage-5 composition certs are verus proofs (each step L3-proves through
 /// the next step's contract), so the prover must be present.
 fn verus_present() -> bool {
     if let Ok(p) = std::env::var("VERUS_BIN") {
@@ -115,7 +115,7 @@ fn run_check_floor0(file: &Path) -> (Option<i32>, Vec<Value>, String) {
 /// Run `forge audit <file> --json`, returning (exit_code, manifest, stderr). The
 /// audit runs at the pinned default budget (the `--mutation-floor` lever is not
 /// exposed on `audit` by design — `forge/src/cli.rs` `run_audit`); the oracle's
-/// `project_aggregation` row pins only the project SCOPE + the TCB crossing, which
+/// `project_aggregation` row pins only the project scope + the TCB crossing, which
 /// hold at the default floor.
 fn run_audit(file: &Path) -> (Option<i32>, Value, String) {
     let out = Command::new(forge_bin())
@@ -296,7 +296,7 @@ fn boundary_composition_read_then_inc_composes_through_the_boundary() {
 // Laws 2 & 3 (assurance + TCB aggregation, #15/#60 REQ-2/REQ-3): the audit
 // manifest aggregates the project as the min over parts. compose_demo.th mixes an end_to_end
 // part (`pipeline`) and a to_boundary part (`read_then_inc`), so the project scope
-// is the genuine min — `to_boundary` listing the `read_small` crossing, never
+// is the min — `to_boundary` listing the `read_small` crossing, never
 // over-claimed as end_to_end — and the TCB enumerates `read_small`'s boundary
 // contract ∪ the toolchain (nothing fiat-trusted omitted, R-DEFER-9). Anchored to
 // the oracle's `project_aggregation` array.
@@ -333,7 +333,7 @@ fn project_aggregation_is_the_honest_min_over_parts() {
         "the stable v1 audit-manifest format tag"
     );
 
-    // The genuine min-over-parts scope: a mixed project is to_boundary (not
+    // The min-over-parts scope: a mixed project is to_boundary (not
     // over-claimed end_to_end — the no-over-claim guarantee, R-DEFER-9 / #60).
     assert_eq!(
         manifest["project_assurance"]["scope"]["kind"],

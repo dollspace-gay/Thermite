@@ -19,7 +19,7 @@
 //! AC-1/AC-2/AC-3 + the "Resolved" vacuity-first ordering, not literal-copied
 //! from forge's own output.
 //!
-//! These checks issue real verus queries, so they skip with an eprintln when verus is
+//! These checks issue verus queries, so they skip with an eprintln when verus is
 //! absent (mirroring `solver_vacuity_conformance.rs`), never panic. `unwrap`/
 //! `expect` are fine here — `tests/` is not anti-pattern-gated.
 
@@ -108,7 +108,7 @@ fn check(name: &str, program: &str) -> Value {
 
 /// Run `forge check <program> --json` and return the certificate for the named
 /// item. A program that declares an ADT emits a cert for the `struct`/`enum`
-/// before the `fn`, so the fn's cert is NOT the first one — these ADT probes must
+/// before the `fn`, so the fn's cert is not the first one — these ADT probes must
 /// look the cert up by item name (`check` returns only the first cert).
 fn check_item(name: &str, program: &str, item: &str) -> Value {
     let path = write_temp(name, program);
@@ -330,9 +330,9 @@ fn fresh_unsat_req_is_detected() {
 
 // ===========================================================================
 // Vacuity-first ordering — `.design/forge/solver-vacuity.md` "Resolved"
-// (CHECK-ORDER): an unsat `req` makes every `ensures` vacuously provable, so the
+// (check-ORDER): an unsat `req` makes every `ensures` vacuously provable, so the
 // root cause must be reported as `VacuousPrecondition`, not mislabeled
-// `SemanticTautology`. Conversely a genuine tautology with a satisfiable `req`
+// `SemanticTautology`. Conversely a tautology with a satisfiable `req`
 // must still report `SemanticTautology`.
 // ===========================================================================
 
@@ -362,7 +362,7 @@ fn unsat_req_with_tautological_ens_is_reported_as_vacuous_not_tautology() {
     );
 }
 
-/// A genuine tautology with a satisfiable `req` (`x < 100`): the vacuity check
+/// A tautology with a satisfiable `req` (`x < 100`): the vacuity check
 /// passes (req is satisfiable), so the tautology check runs and fires. Authority:
 /// the tautology check runs only on a satisfiable precondition → `SemanticTautology`.
 #[test]
@@ -390,11 +390,11 @@ fn tautology_with_satisfiable_req_is_reported_as_tautology() {
 // ===========================================================================
 // crosslink #275 — the ADT soundness hole. Before the fix, the harness builder
 // omitted the reachable `struct`/`enum` decls, so an ADT-returning / ADT-taking
-// fn's harness referenced an undeclared type and failed to COMPILE (E0425); the
+// fn's harness referenced an undeclared type and failed to compile (E0425); the
 // interpreter mapped that compile failure (`success:false, errors:0`) to the
-// clean `Failed`, so BOTH anti-Goodhart checks silently no-op'd on every ADT fn
+// clean `Failed`, so both anti-Goodhart checks silently no-op'd on every ADT fn
 // (R-CODE-4 "non-verdict read as clean"). The fix weaves the reachable ADT decls
-// into the harness AND treats a `!success && errors == 0` (never-verified)
+// into the harness and treats a `!success && errors == 0` (never-verified)
 // summary as a loud `ForgeError`, not clean. These probes pin the soundness
 // direction: a DEGENERATE ADT contract must now be CAUGHT, not silently certified.
 // Authority: `.design/forge/solver-vacuity.md` §7 steps 2-3 + AC-2/AC-3.

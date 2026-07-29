@@ -120,7 +120,7 @@ fn divergence_ens_implied_by_req_over_rejects_partial_implication() {
 }
 
 /// Companion (control): a contract whose only `ens` clause is a req conjunct is a
-/// genuine (c) reject. Pins that the fix narrows the rule to the "every clause"
+/// (c) reject. Pins that the fix narrows the rule to the "every clause"
 /// reading without regressing the true-positive. Authority:
 /// `conformance/vacuity/triage.json` `ens_conjunct_req` (cause `EnsImpliedByReq`).
 #[test]
@@ -142,7 +142,7 @@ fn ens_fully_implied_by_req_still_rejects_c() {
 /// rejected with §7.1 (c) (`ens true` matches the `req true` conjunct).
 ///
 /// Authority: `.design/forge/vacuity-triage.md` OQ-4 — "A contract `ens true` +
-/// `ens result == x` is NOT (a)-rejected (it carries a real conjunct)." REQ-3
+/// `ens result == x` is not (a)-rejected (it carries a real conjunct)." REQ-3
 /// applies the same "every clause" logic: the whole `ens` is implied by `req`
 /// only if every clause is, and `result == x` is not implied by `req true`. So
 /// this contract is non-vacuous and must not be a (c) reject.
@@ -156,7 +156,7 @@ fn divergence_redundant_true_clause_with_real_clause_not_c_rejected() {
         "multi_ens_true_plus_real",
     );
     // The whole `ens` (true && result == x) is not implied by `req true`
-    // (`result == x` is a real obligation), so (c) must not fire.
+    // (`result == x` is a obligation), so (c) must not fire.
     assert_ne!(
         reject_cause(&cert).as_deref(),
         Some("EnsImpliedByReq"),
@@ -169,7 +169,7 @@ fn divergence_redundant_true_clause_with_real_clause_not_c_rejected() {
 /// Guard (not a divergence; pins correct behavior so a fix cannot regress it):
 /// `Lt`/`Ne` identity operands (`x < x`, `x != x`) are not syntactically `true`
 /// and must not be (a)-rejected. Authority: `.design/forge/vacuity-triage.md`
-/// REQ-1 — identity is `Eq`/`Le`/`Ge` only; "`<`/`>`/`!=` are NOT identities
+/// REQ-1 — identity is `Eq`/`Le`/`Ge` only; "`<`/`>`/`!=` are not identities
 /// (`x < x` is false)". With a unit return (so (b) is exempt) and a non-implied
 /// `req`, these pass triage and reach verus.
 #[test]

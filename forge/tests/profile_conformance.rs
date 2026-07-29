@@ -14,7 +14,7 @@
 //!    the default rlimit (L3, no profile; the cert-oracle is unperturbed); a
 //!    broken contract is a counterexample (not a timeout, no profile); and a
 //!    forced low `--rlimit` run is the timeout lever. The live forced-timeout is
-//!    best-effort: empirically (OQ-1, confirmed by running the real binary) Z3
+//!    best-effort: empirically (OQ-1, confirmed by running the binary) Z3
 //!    frequently returns `unknown` fast on synthetic goals without exhausting the
 //!    rlimit, so `--profile` does not always emit a report. When a profile is
 //!    emitted the cert is a `VerusTimeout` with the profile + suggested_move

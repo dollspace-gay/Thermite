@@ -169,13 +169,13 @@ pub fn check_file(path: impl AsRef<Path>) -> Result<Vec<Certificate>, ForgeError
 }
 
 /// Run the check pipeline on the Lean engine path (`.design/stage1-forge-tier.md` REQ-7,
-/// increment 2e): the Verus base plus the forge-tier LEMMA discharge (the forge tier's
+/// increment 2e): the Verus base plus the forge-tier lemma discharge (the forge tier's
 /// self-contained goals certify here, carrying the burn receipt on `Proven`). The
 /// convenience entry `forge fill`'s proof-hole re-check uses so a closed forge-tier goal
 /// surfaces its certifying verdict + burn receipt directly (AC-11), rather than the
 /// Verus-only default `check_file` which skips a forge-tier lemma. `source_file` is the
 /// checked path (the interactive-replay artifact location, unused for an in-`.th` lemma
-/// proof). Lean-absent → the lemma is an honest non-certified skip (never a false L3).
+/// proof). If Lean is absent, the lemma is a non-certified skip (never a false L3).
 pub fn check_file_lean(path: impl AsRef<Path>) -> Result<Vec<Certificate>, ForgeError> {
     let path = path.as_ref();
     check_file_with_engine(
@@ -239,10 +239,10 @@ pub enum EngineSelection {
     /// relaxable polynomial contract is discharged by a direct Z3 nlsat (QF_NRA) query
     /// and certifies at the kernel-grounded [`Level::L4`] (`engine: nlsat`
     /// attribution); a true-over-ℤ/false-over-ℝ clause yields a `RealWitness`
-    /// escalation (never a `Counterexample`); a non-relaxable item is an honest skip.
+    /// escalation (never a `Counterexample`); a non-relaxable item is a skip.
     Nlsat,
     /// `--engine forge` (`.design/stage1-forge-tier.md` REQ-10 / AC-14 — the G1 gate
-    /// route): the PER-CLAUSE hybrid route that drives the whole forge tier end to end
+    /// route): the per-clause hybrid route that drives the whole forge tier end to end
     /// on a covenant-routed `fn`. Each `ens` clause is classified by
     /// [`crate::relax::classify_fn`]: a RELAXABLE polynomial clause routes to the
     /// [`crate::engine::NlsatEngine`] and certifies at [`Level::L4`]; a NON-relaxable
@@ -255,17 +255,17 @@ pub enum EngineSelection {
     /// its goldens stay byte-identical.
     Forge,
     /// `--engine bv` (`.design/stage3-bv-reconstruction.md` REQ-2 / AC-2 / AC-3 —
-    /// stage-3): the PER-CLAUSE bit-vector route (the RFC's `mix64` shape). Each `ens`
-    /// clause is dispatched by its `@bvN` tag: a TAGGED clause lowers to fixed-width
+    /// stage-3): the per-clause bit-vector route (the RFC's `mix64` shape). Each `ens`
+    /// clause is dispatched by its `@bvN` tag: a tagged clause lowers to fixed-width
     /// QF_BV and is decided by the [`crate::bitvector::BitVectorEngine`] (a `Proved`
     /// certifies at the caged rung [`Level::L4`] — decidable with complete bit-pattern
     /// countermodels (RFC-1 §2/§4), solver-trusted (Z3 QF_BV) until REQ-7/8 kernel-
     /// grounds it; a falsified clause yields a bit-level
     /// `Counterexample` with the bit pattern; an over-budget 64-bit multiplier yields a
-    /// `Timeout` under the dedicated budget profile, never `unknown`). An UNTAGGED
+    /// `Timeout` under the dedicated budget profile, never `unknown`). An untagged
     /// clause lowers as before — routed to the [`crate::engine::NlsatEngine`] when it is
     /// a relaxable polynomial (the unbounded side, certifying at [`Level::L4`]), else an
-    /// honest skip. One function thus carries wraparound and unbounded clauses side by
+    /// skip. One function thus carries wraparound and unbounded clauses side by
     /// side, each labeled with its engine and semantics; the item level is the MIN over
     /// the clauses. A `@bv`-tagged `lemma` is discharged directly by the bit-vector
     /// engine with no author proof block. The v1 corpus carries no `@bv` tag, so its
@@ -393,11 +393,11 @@ pub fn check_file_with_options(
     // falsify N; }` block that covenants it (a witness covenants the `fn` it follows in
     // source order). Computed once (a pure function of the program, R-CODE-5). A `fn`
     // ABSENT from this map is a plain v1 item (not covenant-routed) and burns
-    // unchanged; a `fn` PRESENT is forge-routed and must pass its covenant BEFORE the
+    // unchanged; a `fn` present is forge-routed and must pass its covenant before the
     // L3 burn (R-COV-1, covenant-before-burn). No v1 corpus item carries a `witness`
     // block, so the map is empty on the conformance corpus — a no-op on the v1 oracle.
     let covenant_bindings = crate::covenant_engine::witness_bindings(&parsed.program);
-    // Stage-1 forge tier — the per-project lemma namespace NAMES (`.design/stage1-forge-tier.md`
+    // Stage-1 forge tier — the per-project lemma namespace names (`.design/stage1-forge-tier.md`
     // REQ-9 / Q1, increment 3). The set of top-level `lemma` names, so the frozen-battery
     // gate DEFERS a `simp [ … ]` citation that names a project lemma (instead of refusing it
     // as an unlisted simp lemma): the certified-only resolution then decides it on the
@@ -472,7 +472,7 @@ pub fn check_file_with_options(
         // v1 certification consumer yet (covenant 2b, battery 2c, proof view 2e,
         // library 3): they are SKIPPED here (no v1 cert), so a hole-free forge item
         // emits no certificate. EXCEPT (AC-7): a forge item carrying any open `?pN`
-        // proof hole is incomplete and must NOT certify — it short-circuits to a
+        // proof hole is incomplete and must not certify — it short-circuits to a
         // non-certified `OpenHole` cert through the shared `open_proof_hole_reason`
         // path (the proof-tier mirror of the `?N` body-hole short-circuit above),
         // before any lowering/verus. No corpus item is forge-tier, so this is a
@@ -492,7 +492,7 @@ pub fn check_file_with_options(
             }
             // Stage-1 forge tier — the frozen battery (`.design/stage1-forge-tier.md`
             // REQ-5 / AC-9, increment 2c), the elaboration-time gate. A `lemma`/`proof`
-            // block's VERBATIM tactic content (captured by 2a) is scanned against the
+            // block's verbatim tactic content (captured by 2a) is scanned against the
             // frozen tactic allowlist + the frozen simp set; a proof citing an unlisted
             // tactic OR an unlisted simp lemma is REFUSED — named — never warned (the
             // proof-tier mirror of the `thermite_spec::validate` contract cage / the
@@ -567,18 +567,18 @@ pub fn check_file_with_options(
         }
 
         // Stage-1 forge tier — the covenant engine (`.design/stage1-forge-tier.md`
-        // REQ-4, increment 2b), gating the L3 BURN. It runs AFTER the gate_fn
+        // REQ-4, increment 2b), gating the L3 burn. It runs after the gate_fn
         // short-circuits (`#[slag]`/`#[boundary]`/`fx diverge` certify L1 by fiat and a
-        // vacuity/weak-contract reject lands its L0 cert — none of these BURN, so the
+        // vacuity/weak-contract reject lands its L0 cert — none of these burn, so the
         // covenant, which gates the burn, does not pre-empt them: a proof-exempt slag
         // item keeps `slag: true`/L1, slag.md REQ-2). A forge-routed `fn` (one carrying a
-        // `witness` block) that reaches HERE is on the L3 proof-search path and must pass
+        // `witness` block) that reaches here is on the L3 proof-search path and must pass
         // its covenant first (R-COV-1, covenant-before-burn): author `inhabit` witnesses
         // are EXECUTED against `req` (a witness not satisfying `req` is a loud covenant
         // error, never dropped), and a `falsify` run rides the SplitMix64 generator over
         // the item's executable semantics for a `req`-satisfying input the body violates
         // `ens` on. A malformed/absent covenant is REFUSED — named — and a `falsify` hit
-        // is `CovenantRefuted` (a hard fail, never degraded); BOTH short-circuit here (the
+        // is `CovenantRefuted` (a hard fail, never degraded); both short-circuit here (the
         // `continue`), so the L3 proof search below is never reached without a validated
         // covenant (the closure-instrumented `covenant_engine::covenant_gate` pins the
         // structural invariant as a unit test). A VALIDATED covenant records its evidence
@@ -636,7 +636,7 @@ pub fn check_file_with_options(
 
         // #52 §9 composition weaving (`.design/lower/boundary-composition.md`
         // REQ-2): weave the in-file `fn`s this item transitively references into
-        // its §5.3 sub-program — regular fns with their real body, boundary/slag
+        // its §5.3 sub-program — regular fns with their body, boundary/slag
         // fns as `#[verifier::external_body]` signatures — so `verus` resolves the
         // callee and the caller proves through its contract (was an undefined-callee
         // L0). Empty for a fn referencing only spec fns / combinators (the pure
@@ -793,7 +793,7 @@ pub fn check_file_with_options(
         }
 
         // Clean (or a `spec fn`, which carries no contract to check): the solver
-        // runs the real L3 proof (REQ-3). Assemble the cert exactly as the
+        // runs the real L3 proof (REQ-3). Assemble the cert as the
         // non-cached path always has.
         let verus = run_verus(&lowered, item.name(), seed, rlimit)?;
         let cert = assemble_certificate(item, &verus);
@@ -865,7 +865,7 @@ pub fn check_file_with_options(
 
         // #12 §7 step 4 — mutation scoring, after a successful L3 proof of the real
         // body (`.design/forge/mutation-scoring.md` REQ-7). Reached only on a
-        // `VerusOutcome::Proved` real body: the cert is `Level::L3` with no reject.
+        // `VerusOutcome::Proved` body: the cert is `Level::L3` with no reject.
         // A non-proving item (counterexample / timeout / a `spec fn`) is never
         // scored — §7's premise is "mutate a known-good body". Each mutant's
         // re-verify is content-addressed through the same proof cache (#8), so a
@@ -892,7 +892,7 @@ pub fn check_file_with_options(
                     // settled L3-certified + scored item (level L3, no reject, a
                     // `MutationScore` produced), so the probe runs: it generates the
                     // frozen candidate stronger-`ens` set, verifies each against the
-                    // real body via the same `run_verus` + #8 cache, keeps the
+                    // body via the same `run_verus` + #8 cache, keeps the
                     // verifying + strictly-stronger ones, and attaches them as
                     // advisory suggestions. The probe never changes the verdict
                     // (`with_strengthening` only adds the additive field + the
@@ -1056,7 +1056,7 @@ pub fn check_file_with_engine(
     }
 
     // REQ-8 relax route (`.design/stage1-forge-tier.md` REQ-8 / Q-NLSAT / AC-12,
-    // increment 2f): the `--engine nlsat` selection routes EVERY item through the
+    // increment 2f): the `--engine nlsat` selection routes every item through the
     // [`crate::engine::NlsatEngine`] (the relax fragment) instead of the Lean engine,
     // and returns early. The default Verus path and the `--engine lean|auto` paths are
     // untouched, so the v1 corpus stays byte-identical.
@@ -1066,7 +1066,7 @@ pub fn check_file_with_engine(
 
     // REQ-10 / AC-14 G1 gate route (`.design/stage1-forge-tier.md`): `--engine forge`
     // drives the whole forge tier end to end on a covenant-routed `fn` via the
-    // PER-CLAUSE hybrid route (relaxable clauses → nlsat L4, the non-relaxable clause →
+    // per-clause hybrid route (relaxable clauses → nlsat L4, the non-relaxable clause →
     // an author-proof Lean L3 with the burn receipt; item level = min over clauses).
     // Returns early like the nlsat route; the v1 Verus path and the lean/auto paths are
     // untouched, so the v1 corpus stays byte-identical.
@@ -1075,9 +1075,9 @@ pub fn check_file_with_engine(
     }
 
     // Stage-3 REQ-2 (`.design/stage3-bv-reconstruction.md` REQ-2 / AC-2 / AC-3): the
-    // `--engine bv` PER-CLAUSE bit-vector route (the `mix64` shape). `@bv`-tagged
+    // `--engine bv` per-clause bit-vector route (the `mix64` shape). `@bv`-tagged
     // clauses lower to fixed-width QF_BV via the BitVectorEngine; untagged clauses
-    // lower as before (relaxable → nlsat L4, else honest skip). Returns early like the
+    // lower as before (relaxable → nlsat L4, else skip). Returns early like the
     // nlsat/forge routes; the v1 Verus path and the lean/auto paths are untouched, so
     // the v1 corpus (which carries no `@bv` tag) stays byte-identical.
     if selection == EngineSelection::Bv {
@@ -1097,7 +1097,7 @@ pub fn check_file_with_engine(
             }
         };
         // A forge-tier item's base cert (a `lemma`/`proof for` OpenHole / Battery* reject)
-        // is NOT a fn-contract obligation — the fn-Lean re-discharge below would mint an
+        // is not a fn-contract obligation — the fn-Lean re-discharge below would mint an
         // empty forge obligation and clobber the reject with a `LeanUnverifiable` skip
         // (REQ-7, increment 2e). Keep the base reject untouched; a CLEAN forge `lemma`
         // (absent from `base`, the base path skips it) is discharged by the dedicated
@@ -1126,21 +1126,21 @@ pub fn check_file_with_engine(
         let new_cert = gate_definition_tower(new_cert, &parsed.program, &src, item);
         // REQ-6a anti-Goodhart (increment 2d): the certify-time arbitrary-result
         // re-elaboration tautology gate on the forge/Lean discharge path. A forge-tier
-        // cert whose contract's `ens` still elaborates for an ARBITRARY result (the
+        // cert whose contract's `ens` still elaborates for an arbitrary result (the
         // `ens` says nothing about the body) is refused here, at certify time — the L3
         // counterpart of the Verus §7 solver-vacuity tautology check.
         let new_cert = gate_arbitrary_result_tautology(new_cert, &lean, &obligations.contract);
         out.push(new_cert);
     }
 
-    // Stage-1 forge-tier LEMMA discharge (`.design/stage1-forge-tier.md` REQ-7, increment
-    // 2e). A `lemma` is a forge-tier item with NO Verus base cert (the base path skips a
+    // Stage-1 forge-tier lemma discharge (`.design/stage1-forge-tier.md` REQ-7, increment
+    // 2e). A `lemma` is a forge-tier item with no Verus base cert (the base path skips a
     // clean forge item, REQ-3) — it is the forge tier's self-contained goal, discharged
-    // ONLY by the Lean engine. So here, on the Lean path, each clean `lemma` is
+    // only by the Lean engine. So here, on the Lean path, each clean `lemma` is
     // discharged via `export_lemma` + `discharge_source` and its cert (carrying the burn
     // receipt on `Proven`, REQ-7 / AC-11) is appended. A holed / battery-refused lemma
     // already carries its non-certified cert from the base path (the `OpenHole` /
-    // `Battery*` reject), so it is present in `out` and NOT re-discharged here. The
+    // `Battery*` reject), so it is present in `out` and not re-discharged here. The
     // default Verus path (`check_file`) never enters this function, so a clean lemma is
     // still skipped there (the v1 oracle + the 2c default-path behavior are untouched).
     for item in &parsed.program.items {
@@ -1152,16 +1152,16 @@ pub fn check_file_with_engine(
     }
 
     // Stage-1 forge tier — the REQ-9 lemma library mechanics (`.design/stage1-forge-tier.md`
-    // REQ-9 / AC-13, increment 3), the LAST stage-1 feature increment. Runs HERE, after the
+    // REQ-9 / AC-13, increment 3), the last stage-1 feature increment. Runs here, after the
     // lemma discharge pass, because it reasons about settled certification status:
     //   1. Certified-only citation resolution (AC-13): a forge item whose proof cites a
-    //      project lemma that did NOT certify is REFUSED, named — replacing its cert with an
+    //      project lemma that did not certify is REFUSED, named — replacing its cert with an
     //      `UncertifiedLemmaCitation` reject. (A frozen-spine / certified-project / unknown
     //      citation is unaffected — `Unknown` is the frozen battery's concern, already gated.)
     //   2. Dedup-on-burn citation rewrite (AC-13): a burn receipt's `cited_lemmas` are
     //      rewritten to their canonical (first-certified, same-statement) lemma, so a
-    //      statement-hash duplicate is NOT stored as a copy — the citation points at the one
-    //      stored lemma. Oracle-excluded (the burn receipt is, Q-BURN), so this never perturbs
+    //      statement-hash duplicate is not stored as a copy — the citation points at the one
+    //      stored lemma. Oracle-excluded (the burn receipt is, Q-burn), so this never perturbs
     //      a cert's oracle subset / the v1 goldens.
     // The default Verus path never enters this function, and the v1 corpus carries no project
     // lemmas, so this is a no-op on the v1 oracle.
@@ -1170,8 +1170,8 @@ pub fn check_file_with_engine(
 
     // Stage-1 forge tier — the REQ-9 `dec wf` accessibility cache (`.design/stage1-forge-tier.md`
     // REQ-9 / Q7 / AC-13, increment 3). Write-through: for every item carrying a `dec wf <rel>`
-    // measure, cache its accessibility proof keyed by (relation, carrier), so a SUBSEQUENT
-    // `forge check` re-check on an unchanged (relation, carrier) HITS the cache (the
+    // measure, cache its accessibility proof keyed by (relation, carrier), so a subsequent
+    // `forge check` re-check on an unchanged (relation, carrier) hits the cache (the
     // cross-invocation hit the per-item proof cache uses, observable via the cache layer). The
     // accessibility verdict is whether the item's recursion was admitted — its cert reached an
     // L3 (non-rejected) rung. No v1 corpus item uses `dec wf`, so this is a no-op on the v1
@@ -1260,7 +1260,7 @@ fn uncertified_citation_for_item(
             }
             thermite_syntax::ForgeItem::Proof(p) if p.target == item => {
                 // A `proof for f` block's several `ens#k` obligations share f's local context
-                // (Q6); each obligation's proof is scanned, the FIRST uncertified citation
+                // (Q6); each obligation's proof is scanned, the first uncertified citation
                 // refuses the whole item.
                 for ob in &p.obligations {
                     if let Err(e) =
@@ -1281,7 +1281,7 @@ fn uncertified_citation_for_item(
 /// `.design/stage1-forge-tier.md` REQ-6 / AC-10). Applied to a freshly-produced cert
 /// on the forge/Lean discharge path:
 ///
-/// - a v1 / Verus-path cert (no `engine_attribution`) is returned UNCHANGED — the
+/// - a v1 / Verus-path cert (no `engine_attribution`) is returned unchanged — the
 ///   gate is a forge-tier gate, so the v1 goldens stay byte-identical;
 /// - a non-`fn` item (a `spec fn` has no contract to root a tower) is returned
 ///   unchanged;
@@ -1300,7 +1300,7 @@ fn gate_definition_tower(
     item: &Item,
 ) -> Certificate {
     // The gate is forge-tier-only: a cert with no engine attribution is the v1 Verus
-    // path (or an honest skip), left byte-identical.
+    // path (or a skip), left byte-identical.
     if cert.engine_attribution.is_none() {
         return cert;
     }
@@ -1326,10 +1326,10 @@ fn gate_definition_tower(
 /// [`gate_definition_tower`]:
 ///
 /// - a v1 / Verus-path cert (no `engine_attribution`) or an already-rejected /
-///   non-L3 cert is returned UNCHANGED — the gate is a forge-tier certify gate, so
+///   non-L3 cert is returned unchanged — the gate is a forge-tier certify gate, so
 ///   the v1 goldens stay byte-identical and an item that did not certify is not
 ///   re-judged;
-/// - otherwise the obligation is re-elaborated with an ARBITRARY result
+/// - otherwise the obligation is re-elaborated with an arbitrary result
 ///   ([`crate::engine::LeanEngine::arbitrary_result_reelaboration`]). If the `ens`
 ///   still kernel-accepts for an arbitrary result, it is a body-ignoring tautology →
 ///   the cert is REFUSED (`SemanticTautology`, the same `contract_quality.tautology`
@@ -1341,7 +1341,7 @@ fn gate_arbitrary_result_tautology(
     obligation: &crate::obligation::Obligation,
 ) -> Certificate {
     // Forge-tier-only, and only a still-certifying cert: a Verus-path cert (no
-    // attribution), an honest skip, or an already-rejected/non-L3 cert is left as-is.
+    // attribution), a skip, or an already-rejected/non-L3 cert is left as-is.
     if cert.engine_attribution.is_none() || cert.reject.is_some() || cert.level != Level::L3 {
         return cert;
     }
@@ -1371,7 +1371,7 @@ fn gate_arbitrary_result_tautology(
         }
         // Clean (the ens constrains the result) or Skipped (the check could not run —
         // export refusal / tier-(c) / lake absent): keep the cert. The gate only ever
-        // rejects a PROVEN tautology, never on an inconclusive run (R-CODE-4).
+        // rejects a proven tautology, never on an inconclusive run (R-CODE-4).
         crate::engine::ArbitraryResultOutcome::Clean
         | crate::engine::ArbitraryResultOutcome::Skipped(_) => cert,
     }
@@ -1397,8 +1397,8 @@ fn lean_package_root() -> PathBuf {
 ///   integer witness);
 /// - relaxable + `sat` real-only (true over ℤ, false over ℝ) → an L0 `RealWitness`
 ///   escalation cert carrying the raw real point (handed UP to the forge as goal
-///   metadata, NEVER a `Counterexample`);
-/// - not relaxable / z3 absent / `unknown` → an honest non-certified skip cert naming
+///   metadata, never a `Counterexample`);
+/// - not relaxable / Z3 absent / `unknown` → a non-certified skip certificate naming
 ///   the reason.
 ///
 /// A non-`fn` item (a `spec fn` / forge-tier item carries no relaxable contract)
@@ -1418,14 +1418,14 @@ fn nlsat_check(base: Vec<Certificate>, program: &Program) -> Vec<Certificate> {
 
 /// Discharge one relaxable-candidate `fn` via the nlsat engine and build its cert
 /// (`.design/stage1-forge-tier.md` REQ-8 / AC-12). The four outcomes map to the four
-/// cert shapes (L4 proved / counterexample / real-witness escalation / honest skip).
+/// cert shapes (L4 proved / counterexample / real-witness escalation / skip).
 fn nlsat_item_cert(
     engine: &crate::engine::NlsatEngine,
     f: &thermite_syntax::FnItem,
     base: Certificate,
 ) -> Certificate {
     use crate::engine::NlsatOutcome;
-    // A non-relaxable item is an honest skip naming the disqualifying construct (never
+    // A non-relaxable item is a skip naming the disqualifying construct (never
     // a false verdict) — the relax route's fragment gate (REQ-8b).
     if !engine.admits_relax(&base.item) {
         let reason = match crate::relax::classify_fn(f) {
@@ -1497,8 +1497,8 @@ fn nlsat_l4_cert(engine: &crate::engine::NlsatEngine, base: &Certificate) -> Cer
 }
 
 /// The L0 `Counterexample` cert an nlsat integer falsifier produces (`.design/
-/// stage1-forge-tier.md` REQ-8 / AC-12). The real relaxation was `sat` AND an integer
-/// point in the radius-2 ℤⁿ box genuinely falsifies the integer clause — a real
+/// stage1-forge-tier.md` REQ-8 / AC-12). The real relaxation was `sat` and an integer
+/// point in the radius-2 ℤⁿ box falsifies the integer clause — a real
 /// counterexample over ℤ. The cert is non-certified (L0) with the integer witness and
 /// the per-clause [`CertVerdict::Counterexample`].
 fn nlsat_counterexample_cert(
@@ -1544,8 +1544,8 @@ fn nlsat_counterexample_cert(
 /// The L0 `RealWitness` escalation cert (`.design/stage1-forge-tier.md` REQ-8 /
 /// AC-12 — the headline relax behavior). The real relaxation was `sat` but the
 /// countermodel is real-only: true over ℤ, false over ℝ (no nearby integer falsifies
-/// it). The clause does NOT refute — it escalates UP to the forge as goal metadata,
-/// carrying the raw real point in a [`CertVerdict::RealWitness`]; it is NEVER a
+/// it). The clause does not refute — it escalates UP to the forge as goal metadata,
+/// carrying the raw real point in a [`CertVerdict::RealWitness`]; it is never a
 /// `Counterexample`. The cert is non-certified at the nlsat tier (L0) with the
 /// `RealWitnessEscalation` cause.
 fn nlsat_realwitness_cert(
@@ -1593,31 +1593,31 @@ fn nlsat_realwitness_cert(
 // ─────────────────────────────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────────────
 // Stage-3 REQ-2 (`.design/stage3-bv-reconstruction.md` REQ-2 / AC-2 / AC-3): the
-// `--engine bv` PER-CLAUSE bit-vector route (the RFC's `mix64` shape). A `@bvN`-tagged
+// `--engine bv` per-clause bit-vector route (the RFC's `mix64` shape). A `@bvN`-tagged
 // clause lowers to fixed-width QF_BV via the BitVectorEngine (the `EngineName::
 // BitVector` route alongside stage-1's `Nlsat`); an untagged clause lowers as before
-// (relaxable polynomial → nlsat L4, else an honest skip). One function thus carries
+// (relaxable polynomial → nlsat L4, else a skip). One function thus carries
 // wraparound and unbounded clauses side by side, each labeled per engine; the item
 // level is the MIN over the clauses. A `@bv`-tagged `lemma` is discharged directly by
 // the bit-vector engine with no author proof block (AC-2).
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// The `--engine bv` per-clause bit-vector pass (`.design/stage3-bv-reconstruction.md`
-/// REQ-2). Only a `@bv`-TAGGED `fn` is rebuilt by [`bv_fn_cert`] (its `ens` clauses
+/// REQ-2). Only a `@bv`-tagged `fn` is rebuilt by [`bv_fn_cert`] (its `ens` clauses
 /// dispatched by their `@bv` tag); each `@bv`-tagged `lemma` is discharged directly by
-/// the bit-vector engine ([`bv_lemma_cert`]). An UNTAGGED `fn` — and any non-`fn`,
-/// non-bv-lemma item — keeps its base cert UNCHANGED: the bit-vector route is a per-item
+/// the bit-vector engine ([`bv_lemma_cert`]). An untagged `fn` — and any non-`fn`,
+/// non-bv-lemma item — keeps its base cert unchanged: the bit-vector route is a per-item
 /// overlay, never a wholesale re-route. This matters because the route is auto-selected
 /// by `forge audit`/`forge review` whenever a program contains *any* `@bv` tag (REQ-3 /
 /// AC-4); routing an ordinary Verus-provable `fn` through the bv route would reject its
 /// non-`@bv`, non-relaxable clauses (`BvUntaggedUnsupported`) and silently DOWNGRADE a
-/// genuine L3 function to L0 in the audit — a faithfulness bug. The v1 corpus carries no
+/// L3 function to L0 in the audit — a faithfulness bug. The v1 corpus carries no
 /// `@bv` tag, so its goldens are byte-identical.
 fn bv_check(base: Vec<Certificate>, program: &Program) -> Vec<Certificate> {
     let bv = crate::bitvector::BitVectorEngine::new();
     let nlsat = crate::engine::NlsatEngine::new(program.clone());
     // The reachable `struct`/`enum` decls the bv-semantics mutation battery (REQ-4 /
-    // AC-5) threads into `mutation::generate` for the F-STRUCT-ZERO early-return family —
+    // AC-5) threads into `mutation::generate` for the F-STRUCT-zero early-return family —
     // the same `adt_deps` shape the Verus + Lean batteries weave.
     let adt_deps: Vec<Item> = program
         .items
@@ -1664,7 +1664,7 @@ fn lemma_has_bv_tag(l: &thermite_syntax::LemmaItem) -> bool {
     l.ens.iter().any(|c| c.bv.is_some())
 }
 
-/// Does the program carry ANY `@bv`-tagged clause (`.design/stage3-bv-reconstruction.md`
+/// Does the program carry any `@bv`-tagged clause (`.design/stage3-bv-reconstruction.md`
 /// REQ-3 / AC-4)? `true` iff some `fn`'s `ens` or some `lemma`'s `ens` is `@bv`-tagged.
 /// `forge audit` / `forge review` consult this to route a bit-vector project through the
 /// bv engine (so the shadow flags surface), while a tag-free program — every v1 / non-bv
@@ -1702,7 +1702,7 @@ fn expr_mentions_result(e: &thermite_syntax::Expr) -> bool {
 /// Ground a `@bv` clause's `result` by the function body (`.design/stage3-bv-reconstruction.md`
 /// REQ-2). A clause that names `result` is rewritten with `result := body` (the
 /// forge-route precedent, [`substitute_result_with_body`]) so the QF_BV query is closed
-/// over the parameters; a clause naming `result` on a body-less `fn` is an honest skip
+/// over the parameters; a clause naming `result` on a body-less `fn` is a skip
 /// (`Err`) rather than a query with a free, unconstrained `result` (which could mint a
 /// spurious counterexample).
 fn ground_result_in_clause(
@@ -1727,14 +1727,14 @@ fn ground_result_in_clause(
 
 /// Build one `fn`'s `--engine bv` certificate (`.design/stage3-bv-reconstruction.md`
 /// REQ-2 / AC-2 / AC-3 — the `mix64` shape). Each `ens` clause is dispatched by its
-/// `@bv` tag: a TAGGED clause → the [`crate::bitvector::BitVectorEngine`] (QF_BV at the
-/// tag width); an UNTAGGED clause → the [`crate::engine::NlsatEngine`] when it is a
-/// relaxable polynomial (the unbounded side), else an honest skip. A `Proved` tagged
+/// `@bv` tag: a tagged clause → the [`crate::bitvector::BitVectorEngine`] (QF_BV at the
+/// tag width); an untagged clause → the [`crate::engine::NlsatEngine`] when it is a
+/// relaxable polynomial (the unbounded side), else a skip. A `Proved` tagged
 /// clause certifies at the caged rung [`Level::L4`] (decidable, complete bit-pattern
 /// countermodels; solver-trusted Z3 QF_BV), as does an nlsat `Proved`;
-/// the item level is the MIN. The FIRST non-certifying clause (a bit-level
+/// the item level is the MIN. The first non-certifying clause (a bit-level
 /// counterexample, an over-budget multiplier timeout, an undecided/unsupported clause)
-/// short-circuits to its honest non-certified cert.
+/// short-circuits to its non-certified certificate.
 fn bv_fn_cert(
     bv: &crate::bitvector::BitVectorEngine,
     nlsat: &crate::engine::NlsatEngine,
@@ -1760,7 +1760,7 @@ fn bv_fn_cert(
                 Err(reason) => return bv_skip_cert(&f.name, &effects, slag, k, tag, &reason),
             };
             // Anti-Goodhart vacuity gate (RFC-1 §10): a `@bv` clause is discharged as
-            // `req ⇒ clause`, so an UNSATISFIABLE `req` proves EVERY clause vacuously.
+            // `req ⇒ clause`, so an unsatisfiable `req` proves every clause vacuously.
             // The bv mutation gate only catches this for result-referencing clauses
             // (every mutant survives → WeakContract); a param-only clause would otherwise
             // certify L4 — and, post-REQ-8, carry a kernel-checked trust label — on a
@@ -1787,7 +1787,7 @@ fn bv_fn_cert(
             match bv.discharge_bv(&vars, Some(req), &clause_expr, tag.width) {
                 BvOutcome::Proved => {
                     // Lock 3 (REQ-5 / AC-6): a `nowrap` clause additionally discharges its
-                    // no-overflow side obligation in-cage. A witnessed overflow REJECTS
+                    // no-overflow side obligation in-cage. A witnessed overflow rejects
                     // (the nowrap promise is violated); a holds/undecided verdict rides the
                     // clause's `bv_shadow.nowrap_obligation`.
                     let nowrap = if tag.nowrap {
@@ -1810,7 +1810,7 @@ fn bv_fn_cert(
                         &bv_attr,
                         nowrap,
                     ));
-                    // A `@bv` clause is decidable QF_BV with COMPLETE bit-pattern
+                    // A `@bv` clause is decidable QF_BV with complete bit-pattern
                     // countermodels — the L4 (caged) refutation quality, RFC-1 §2/§4.
                     // The rung is the refutation quality; the SOLVER trust base
                     // (`solver Z3 QF_BV`) is recorded separately in the attribution and
@@ -1834,7 +1834,7 @@ fn bv_fn_cert(
             }
         } else {
             // Untagged → the unbounded side: nlsat when the clause is a relaxable
-            // polynomial, else an honest skip (this route lowers only the bit-vector
+            // polynomial, else a skip (this route lowers only the bit-vector
             // clauses and the relaxable unbounded clauses).
             let synth = single_ens_fn(f, ens);
             if crate::relax::classify_fn(&synth).is_relaxable() {
@@ -1887,14 +1887,14 @@ fn bv_fn_cert(
         .graduate_triage_clean()
         .with_engine_attribution(attribution);
     // Lock 2 (REQ-4 / AC-5, RFC-1 §10 anti-Goodhart): the bv-semantics mutation battery.
-    // Run the FROZEN mutation catalogue against this fn's `@bv` clauses with the WRAP-AWARE
+    // Run the frozen mutation catalogue against this fn's `@bv` clauses with the WRAP-AWARE
     // kill check (each mutant re-discharged at the tag width). `bv_mutation_score` returns:
     //   - `None` when the fn carries no result-referencing `@bv` clause — a tagged clause
     //     closed over the parameters only (`mix64`'s `a + b == b + a`) is a body-INVARIANT
     //     algebraic identity, not a body-constraining discriminator, so there is nothing
-    //     to pin; it is NOT gated (gating it would spuriously reject a machine-valid fn);
+    //     to pin; it is not gated (gating it would spuriously reject a machine-valid fn);
     //   - `Some(score)` when a result-referencing `@bv` clause IS mutation-discriminating.
-    //     Then the wrap-aware kill ratio GATES the cert exactly as the Verus and Lean
+    //     Then the wrap-aware kill ratio gates the cert as the Verus and Lean
     //     paths do (`meets_floor`): a below-floor score is a `WeakContract` reject, never a
     //     silent L4. Without this gate a weak/tautological result clause (`ens@bv64
     //     result + 0 == result`) would survive every mutant yet still certify — the
@@ -1917,12 +1917,12 @@ fn bv_fn_cert(
 }
 
 /// The bv-semantics mutation battery for a `@bv`-tagged `fn`
-/// (`.design/stage3-bv-reconstruction.md` REQ-4 / AC-5 — lock 2). Reuses the FROZEN
-/// mutation operator catalogue [`crate::mutation::generate`] UNCHANGED (the stage-1
-/// re-elaboration precedent — only the kill check swaps, exactly as
+/// (`.design/stage3-bv-reconstruction.md` REQ-4 / AC-5 — lock 2). Reuses the frozen
+/// mutation operator catalogue [`crate::mutation::generate`] unchanged (the stage-1
+/// re-elaboration precedent — only the kill check swaps, as
 /// [`forge_reelaboration_mutation`] swaps Verus for the Lean engine): for each mutant,
 /// every result-referencing `@bv`-tagged `ens` clause is re-discharged with `result`
-/// grounded by the mutant's effective body, over fixed-width QF_BV semantics AT THE TAG
+/// grounded by the mutant's effective body, over fixed-width QF_BV semantics AT the TAG
 /// WIDTH (the wrap-aware kill check). The classification reuses
 /// [`crate::mutation::classify_mutant`]'s oracle, now evaluated at width:
 ///
@@ -1936,7 +1936,7 @@ fn bv_fn_cert(
 ///   an unrenderable mutant) does not decide the mutant; a mutant with no decisive
 ///   clause is dropped from the denominator (the OQ-5 precedent — never a silent kill).
 ///
-/// Returns `None` when the fn carries NO result-referencing `@bv` clause: a tagged
+/// Returns `None` when the fn carries no result-referencing `@bv` clause: a tagged
 /// clause closed over the parameters (`mix64`'s `a + b == b + a`) is invariant under a
 /// body mutation, so it neither kills nor distinguishes any mutant — there is no
 /// scoreable discriminator and the cert keeps its forward-declared score (so the AC-2
@@ -1970,7 +1970,7 @@ fn bv_mutation_score(
     let vars: Vec<String> = f.params.iter().map(|p| p.name.clone()).collect();
     let req = &f.contract.req.expr;
     let mutants = crate::mutation::generate(f, 0, adt_deps);
-    // The ORIGINAL body's effective result — the reference for the observable-equivalence
+    // The original body's effective result — the reference for the observable-equivalence
     // exclusion below (#101, at width).
     let orig_result = f.body.as_ref().and_then(effective_result_expr);
     let mut killed = 0usize;
@@ -1986,7 +1986,7 @@ fn bv_mutation_score(
             continue;
         };
         // Re-discharge every result-referencing tagged clause at its width with `result`
-        // grounded by THIS mutant's body — the wrap-aware kill check.
+        // grounded by this mutant's body — the wrap-aware kill check.
         let mut decided = false; // at least one tagged clause gave a decisive verdict
         let mut caught = false; // some tagged clause refuted the mutant at width
         for (tag, clause_expr) in &result_clauses {
@@ -2019,9 +2019,9 @@ fn bv_mutation_score(
         }
         // The mutant SURVIVED at width. Apply the observable-equivalence exclusion (#101)
         // AT WIDTH before counting it: a mutant whose result is provably equal to the
-        // ORIGINAL body's result over QF_BV — mod 2^width for EVERY discriminator clause —
+        // original body's result over QF_BV — mod 2^width for every discriminator clause —
         // is not a real discriminator (it computes the same observable value), so it is
-        // netted out of `scored` rather than counted a survivor, exactly as the Verus path
+        // netted out of `scored` rather than counted a survivor, as the Verus path
         // nets out proved-equivalent mutants before the floor gate. Without this, a loose
         // but legitimate contract (`ens@bv64 result >= x` over `{ x }`, whose `return x`
         // variants are equivalent) would be spuriously gated `WeakContract`.
@@ -2062,7 +2062,7 @@ fn bv_mutation_score(
 /// REQ-2 / AC-2 — "the injectivity lemma discharges at `@bv64` with no proof block").
 /// A lemma carries no `result` and no body: each `@bv`-tagged `ens` clause is a closed
 /// QF_BV query over the parameters under the lemma's `req`. A non-tagged lemma clause is
-/// an honest skip (this route lowers only the bit-vector clauses). The lemma certifies
+/// a skip (this route lowers only the bit-vector clauses). The lemma certifies
 /// at [`Level::L4`] (the caged rung — decidable, complete bit-pattern countermodels;
 /// solver-trusted Z3 QF_BV); a counterexample / timeout short-circuits.
 fn bv_lemma_cert(
@@ -2155,21 +2155,17 @@ fn bv_lemma_cert(
 /// The per-clause [`ObligationResult`] a bit-vector `Proved` records (`.design/
 /// stage3-bv-reconstruction.md` REQ-2 / AC-2 + REQ-8 / AC-9): the engine (`bitvector`),
 /// the clause's trust base (migrated per REQ-8 — see below), the `Proved` verdict, and a
-/// name that states the engine AND the fixed-width semantics ("each clause's certificate
+/// name that states the engine and the fixed-width semantics ("each clause's certificate
 /// naming its engine and semantics").
 ///
 /// REQ-8 default-on trust migration: `clause_expr` is the `result`-grounded clause body
 /// (the same expression the QF_BV query decided). The per-clause fragment-support check
 /// [`crate::lean_smt_export::clause_reconstruction_supported`] decides the trust base:
 ///
-/// - a RECONSTRUCTION-SUPPORTED clause (the arithmetic/comparison QF_BV subset the exporter
-///   renders) migrates its `trust:` to the KERNEL-CHECKED base
-///   ([`crate::engine::bv_kernel_checked_trust_profile`] — the lean-smt reconstruction over
-///   the bounded-integer model + the kernel-checked `BvModel.frmInt_iff_frmBV` faithfulness),
-///   with Z3 no longer load-bearing — same rung (L4), smaller trust;
-/// - an UNSUPPORTED clause (the bitwise/shift/rotate subset the exporter refuses) keeps the
-///   SOLVER base `solver_attr.trust_profile` (`Z3 QF_BV`), labeled as today (the F-J residual
-///   the audit names).
+/// - a reconstruction-supported clause migrates its `trust:` to the kernel-checked
+///   literal-`BitVec N` base ([`crate::engine::bv_kernel_checked_trust_profile`]);
+/// - a clause with an expression outside the exporter's QF_BV surface keeps the solver
+///   base `solver_attr.trust_profile` (`Z3 QF_BV`).
 ///
 /// The engine tag stays `bitvector` (the bit-vector route decided the clause); only the
 /// trust base — the orthogonal axis — moves. Default-on: no flag gates the migration.
@@ -2189,14 +2185,13 @@ fn bv_proved_obl(
         (
             crate::engine::bv_kernel_checked_trust_profile().items,
             "kernel-checked (the (P_prod) ⟺ (P_ref) obligation reconstructed in the Lean kernel \
-             via lean-smt over the bounded-integer model + the kernel-checked BvModel.lean \
-             faithfulness; Z3 no longer load-bearing — REQ-8 default-on)",
+             over literal BitVec N semantics; Z3 no longer load-bearing — REQ-8 default-on)",
         )
     } else {
         (
             solver_attr.trust_profile.clone(),
-            "solver-trusted (Z3 QF_BV) — the bitwise/shift/rotate subset is outside the \
-             reconstruction-supported fragment, named honestly (F-J residual)",
+            "solver-trusted (Z3 QF_BV) — the clause expression is outside the \
+             reconstruction-supported QF_BV surface (F-J residual)",
         )
     };
     ObligationResult::discharged(format!(
@@ -2216,7 +2211,7 @@ fn bv_proved_obl(
     .with_bv_shadow(bv_shadow_for(tag, nowrap_obligation))
 }
 
-/// The outcome of a `@bvN(nowrap)` clause's no-overflow SIDE OBLIGATION (`.design/
+/// The outcome of a `@bvN(nowrap)` clause's no-overflow side obligation (`.design/
 /// stage3-bv-reconstruction.md` REQ-5 / AC-6 — lock 3), run after the main clause is
 /// `Proved`. The obligation is discharged in-cage by [`crate::bitvector::BitVectorEngine::
 /// discharge_nowrap`]; this triages the result into a verdict the certificate records.
@@ -2230,7 +2225,7 @@ enum NowrapVerdict {
     /// silently passed and never a false `nowrap` claim).
     Undecided(String),
     /// A concrete overflowing input — the `nowrap` promise is violated, so the cert is
-    /// REJECTED (a witnessed nowrap violation must not certify). The verdict + bit
+    /// rejected (a witnessed nowrap violation must not certify). The verdict + bit
     /// pattern ride the rejection cert's `bv_shadow.nowrap_obligation`.
     Overflow {
         verdict: String,
@@ -2290,7 +2285,7 @@ fn render_bv_pattern(bits: &[crate::bitvector::BvBitPattern]) -> String {
 /// The rejection cert a FAILED `@bvN(nowrap)` no-overflow side obligation produces
 /// (`.design/stage3-bv-reconstruction.md` REQ-5 / AC-6 — lock 3). The main clause was
 /// `Proved` at width, but the `nowrap` promise is violated by a concrete overflowing
-/// input, so the item does NOT certify: a witnessed nowrap violation must not pass. The
+/// input, so the item does not certify: a witnessed nowrap violation must not pass. The
 /// witness obligation records the overflowing bit pattern in `bv_shadow.nowrap_obligation`
 /// (so `grep bv_shadow` still finds this tagged clause) with the per-clause
 /// [`crate::verdict::CertVerdict::Counterexample`].
@@ -2320,7 +2315,7 @@ fn bv_nowrap_overflow_cert(
     );
     let witness_obl =
         ObligationResult::failed(format!("{item}#ens#{k}#nowrap"), None, Some(detail.clone()))
-            // Lock 1 + Lock 3: the shadow flag stays greppable AND carries the nowrap
+            // Lock 1 + Lock 3: the shadow flag stays greppable and carries the nowrap
             // verdict, so the failing side obligation is visible in the certificate.
             .with_bv_shadow(bv_shadow_for(tag, Some(verdict.to_string())));
     let cert_verdict = crate::verdict::CertVerdict::Counterexample {
@@ -2500,10 +2495,10 @@ fn bv_timeout_cert(
     cert.with_engine_attribution(attr.clone())
 }
 
-/// The honest-skip cert a non-rendering / Z3-absent `@bv` clause produces (`.design/
+/// The skip cert a non-rendering / Z3-absent `@bv` clause produces (`.design/
 /// stage3-bv-reconstruction.md` REQ-2): non-certified, naming the reason — never a false
 /// verdict (the nlsat-route `NlsatUnknown` precedent). It still carries Lock 1 — the
-/// shadow flag (REQ-3 / AC-4): a skipped clause is STILL a `@bv`-tagged clause, so the
+/// shadow flag (REQ-3 / AC-4): a skipped clause is still a `@bv`-tagged clause, so the
 /// machine-semantics fork must stay greppable even when the route could not decide it.
 /// The skip obligation records no engine/trust/verdict (nothing was discharged), only
 /// the failure diagnostic and the shadow flag.
@@ -2586,7 +2581,7 @@ fn forge_gate_check(base: Vec<Certificate>, program: &Program, src: &str) -> Vec
 /// per-clause discharge (the burn), then the meaning audit + re-elaboration mutation, then
 /// the assembled certificate. A non-certifying outcome at any gate (a refused/refuted
 /// covenant, an over-budget tower, an undecided clause, a sub-floor mutation score) lands
-/// its honest non-certified certificate.
+/// its non-certified certificate.
 #[allow(
     clippy::too_many_arguments,
     reason = "the gate threads the two engines, the \
@@ -2851,7 +2846,7 @@ fn forge_gate_item_cert(
 
 /// A synthetic single-`ens` clone of `f` (`.design/stage1-forge-tier.md` REQ-10): the
 /// same signature + `req`, but only the one `ens` clause — so `relax::classify_fn` decides
-/// THAT clause's relaxability (the gate routes per clause) and `NlsatEngine::discharge_relax`
+/// that clause's relaxability (the gate routes per clause) and `NlsatEngine::discharge_relax`
 /// proves it in isolation.
 fn single_ens_fn(
     f: &thermite_syntax::FnItem,
@@ -2955,7 +2950,7 @@ fn synth_l3_lemma(
 /// Discharge the synthesized L3-clause lemma via the Lean engine (`.design/
 /// stage1-forge-tier.md` REQ-7 / REQ-10): export the `∀ params, req → ens` theorem and run
 /// lake + the certify-time axiom gate (the same path the forge-tier `lemma` discharge
-/// uses). An export refusal is an honest `Unknown` (a skip, never a false `Proven`). The
+/// uses). An export refusal is an `Unknown` (a skip, never a false `Proven`). The
 /// clauses reference only arithmetic (no spec fns), so the closure is empty.
 fn discharge_gate_l3_clause(
     lean: &crate::engine::LeanEngine,
@@ -2974,12 +2969,12 @@ fn discharge_gate_l3_clause(
 }
 
 /// The re-elaboration mutation score of the L3 clause (`.design/stage1-forge-tier.md`
-/// REQ-6b / REQ-10 anti-Goodhart). Reuses the FROZEN mutation operator catalogue
+/// REQ-6b / REQ-10 anti-Goodhart). Reuses the frozen mutation operator catalogue
 /// [`crate::mutation::generate`] (the same catalogue the Verus + Lean batteries use): for
 /// each mutant, the L3 clause is re-discharged with `result` grounded by the mutant's
-/// effective body and the SAME author proof. A mutant the clause catches (the
+/// effective body and the same author proof. A mutant the clause catches (the
 /// decision-procedure proof no longer closes) is KILLED; one the clause still admits
-/// SURVIVES. An un-exportable mutant is excluded from the denominator (the OQ-5 precedent).
+/// survives. An un-exportable mutant is excluded from the denominator (the OQ-5 precedent).
 fn forge_reelaboration_mutation(
     lean: &crate::engine::LeanEngine,
     program: &Program,
@@ -3139,7 +3134,7 @@ fn verus_verdict_of(cert: &Certificate) -> crate::engine::Verdict {
         return Verdict::Proven(Evidence { verified: 1, key });
     }
     // A witnessed counterexample (a failing obligation carrying a `--> span`) is a
-    // genuine refutation; a witness-less failure (timeout / fast-unknown) is Unknown
+    // refutation; a witness-less failure (timeout / fast-unknown) is Unknown
     // (REQ-3.1 — refutation requires a witnessing input).
     let witnessed = cert.obligations.iter().any(|o| o.location.is_some());
     if witnessed {
@@ -3169,7 +3164,7 @@ fn lean_proven_cert(
     let attribution = crate::engine::attribution_for(lean);
     // Schema-v2 per-clause block (REQ-1/AC-4): a Lean-discharged clause records its
     // engine, named trust base, and the cert-level verdict (`Proved` — this function is
-    // reached ONLY on a Lean `Verdict::Proven`). This is a forge-tier path, never the v1
+    // reached only on a Lean `Verdict::Proven`). This is a forge-tier path, never the v1
     // Verus corpus, so the v1 golden certs stay byte-identical (their clauses carry no
     // per-clause block).
     let cert = Certificate::new(
@@ -3263,10 +3258,10 @@ fn lean_interactive_proven_cert(
 /// and emit its certificate (`.design/stage1-forge-tier.md` REQ-7, increment 2e). A
 /// `lemma` is the forge tier's self-contained goal: [`crate::lean_export::export_lemma`]
 /// emits the `∀ params, req → ens` theorem proved by the author's frozen-battery tactics,
-/// and [`crate::engine::LeanEngine::discharge_source`] runs lake + the SAME certify-time
+/// and [`crate::engine::LeanEngine::discharge_source`] runs lake + the same certify-time
 /// axiom gate every Lean path runs. On `Proven` the lemma certifies L3 (kernel-accepted,
-/// the INTERACTIVE trust profile — the proof is author-authored), and the cert carries
-/// the BURN RECEIPT (the committed proof's lexer-token count + cited lemmas, REQ-7 /
+/// the interactive trust profile — the proof is author-authored), and the cert carries
+/// the burn receipt (the committed proof's lexer-token count + cited lemmas, REQ-7 /
 /// AC-11). An export refusal (out-of-fragment / incomplete registry) or a non-`Proven`
 /// verdict (lake failure / surviving `sorry` / axiom-gate refusal / Lean absent) is an
 /// HONEST non-certified L0 cert naming the cause — never a false L3, and no burn receipt
@@ -3330,10 +3325,10 @@ fn discharge_forge_lemma(
 }
 
 /// The L3 cert a `Proven` forge-tier `lemma` produces (REQ-7, increment 2e): like
-/// [`lean_interactive_proven_cert`] (the INTERACTIVE trust profile — the proof is the
+/// [`lean_interactive_proven_cert`] (the interactive trust profile — the proof is the
 /// author's frozen-battery tactics, a reviewed step) but built directly for the lemma
-/// (no fn base cert), and carrying the BURN RECEIPT minted from the committed proof text
-/// (the lexer-token count + cited lemmas, REQ-7 / AC-11 — oracle-excluded per Q-BURN, so
+/// (no fn base cert), and carrying the burn receipt minted from the committed proof text
+/// (the lexer-token count + cited lemmas, REQ-7 / AC-11 — oracle-excluded per Q-burn, so
 /// it does not perturb the cert oracle).
 fn lean_lemma_proven_cert(
     lean: &crate::engine::LeanEngine,
@@ -3371,16 +3366,16 @@ fn lean_program(lean: &crate::engine::LeanEngine) -> &Program {
     lean.program()
 }
 
-/// The SHARED mutant catalogue the L3 re-elaboration mutation battery scores
+/// The shared mutant catalogue the L3 re-elaboration mutation battery scores
 /// (`.design/stage1-forge-tier.md` REQ-6 / AC-10, increment 2d — anti-Goodhart defense
 /// (b)). The L3 counterpart of the shipped Verus mutation gate (`mutation_score`, #12):
-/// it reuses the FROZEN mutation operator catalogue [`crate::mutation::generate`]
-/// UNCHANGED — the same operator families and the same `MUTANT_CAP` = 64 deterministic
-/// order-prefix `generate` applies internally. The catalogue is SHARED, never forked
+/// it reuses the frozen mutation operator catalogue [`crate::mutation::generate`]
+/// unchanged — the same operator families and the same `MUTANT_CAP` = 64 deterministic
+/// order-prefix `generate` applies internally. The catalogue is shared, never forked
 /// (AC-10 pins this with a test: the re-elaboration battery's mutant set IS
 /// `mutation::generate`'s, so a future fork breaks the test).
 ///
-/// Only the KILL CHECK differs from the Verus gate, exactly as REQ-6b specifies: the
+/// Only the KILL check differs from the Verus gate, as REQ-6b specifies: the
 /// Verus gate runs a per-mutant Verus SOLVER search; the L3 path RE-ELABORATES the
 /// mutant's obligation through the existing Lean discharge path
 /// ([`lean_mutation_score`] → [`crate::engine::LeanEngine::discharge`], which exports
@@ -3391,18 +3386,18 @@ fn lean_program(lean: &crate::engine::LeanEngine) -> &Program {
 /// Budd–Angluin floor gate, [`crate::engine::LeanMutationTally::meets_floor`]).
 ///
 /// Performance (the flagged REQ-6a/b risk): up to `MUTANT_CAP` = 64 re-elaborations
-/// per item. Each is ONE lake elaboration (no proof search), and the battery is a
-/// POST-proof QUALITY gate — exactly parallel to the shipped Verus `mutation_score`,
-/// which already runs up to 64 verus runs per item AFTER the L3 proof. It is NOT inside
+/// per item. Each is one lake elaboration (no proof search), and the battery is a
+/// POST-proof QUALITY gate — parallel to the shipped Verus `mutation_score`,
+/// which already runs up to 64 verus runs per item after the L3 proof. It is not inside
 /// the per-clause [`crate::engine`] `KernelBudget` (Q4 30s/clause), which bounds the
-/// discharge of ONE clause's proof, not the post-proof mutation battery. So the 64
+/// discharge of one clause's proof, not the post-proof mutation battery. So the 64
 /// re-typechecks do not exceed the per-clause budget (they are not within it); the
 /// `MUTANT_CAP` budget is the same bound the Verus gate already lives under.
 pub(crate) fn reelaboration_mutants(
     f: &thermite_syntax::FnItem,
     adt_deps: &[Item],
 ) -> Vec<crate::mutation::Mutant> {
-    // The SHARED frozen catalogue (REQ-6b / AC-10 — not a fork). `generate` applies the
+    // The shared frozen catalogue (REQ-6b / AC-10 — not a fork). `generate` applies the
     // `MUTANT_CAP` 64 order-prefix internally, so the returned set is already bounded.
     crate::mutation::generate(f, 0, adt_deps)
 }
@@ -3428,9 +3423,9 @@ fn lean_mutation_score(
     let mut tally = crate::engine::LeanMutationTally::default();
     let base_program = lean_program(lean);
     // The Lean-path caller threads the whole program's items as `adt_deps`
-    // (REQ-11) so the F-STRUCT-ZERO family resolves any struct return — the same
+    // (REQ-11) so the F-STRUCT-zero family resolves any struct return — the same
     // items the per-mutant Lean engine exports from (`program_with_mutant`). The mutant
-    // set is the SHARED frozen catalogue via `reelaboration_mutants` (REQ-6b / AC-10:
+    // set is the shared frozen catalogue via `reelaboration_mutants` (REQ-6b / AC-10:
     // the L3 re-elaboration battery reuses `mutation::generate`, never a fork) — the
     // per-mutant kill check below is the re-elaboration (export → lake type-check), not
     // a Verus solver run.
@@ -3443,7 +3438,7 @@ fn lean_mutation_score(
         let mutant_program = program_with_mutant(base_program, &mutant.item);
         let mutant_engine =
             crate::engine::LeanEngine::new(mutant_program.clone(), lean_package_root());
-        // The mutant's contract obligation (the same closure the real item carries —
+        // The mutant's contract obligation (the same closure the item carries —
         // a mutant body references the same spec-fns), over the mutant program.
         let called = reachable_spec_fn_names_full(&mutant_program, &mutant.item);
         let obligation = crate::obligation::Obligation::contract_for_fn(&mutant.item, called);
@@ -3488,8 +3483,8 @@ fn program_with_mutant(base: &Program, mutant: &thermite_syntax::FnItem) -> Prog
 }
 
 /// Build the Unverifiable-skip cert a Lean `Unknown` produces under `--engine
-/// lean` (`.design/verified/proof-backends.md` OQ-1 — "non-exportable → honest
-/// Unverifiable/skip reporting"). Level::L0 with a structured reject naming the skip
+/// lean` (`.design/verified/proof-backends.md` OQ-1). This is `Level::L0` with a
+/// structured reject naming the skip
 /// reason, never a false `Proven` and never a silent pass.
 pub(crate) fn lean_unverifiable_cert(
     base: &Certificate,
@@ -3501,10 +3496,10 @@ pub(crate) fn lean_unverifiable_cert(
         }
     };
     // Classify the non-discharge through the cert-level vocabulary (REQ-1/AC-1): a Lean
-    // elaboration/kernel-budget exhaustion is `KernelBudget` (produced UPSTREAM via the
+    // elaboration/kernel-budget exhaustion is `KernelBudget` (produced upstream via the
     // textually-distinct signal in the reason detail, Q-KBSIGNAL), never mis-labelled a
     // solver `Timeout`. The classification is recorded in the reject reason so the skip
-    // is honestly attributed (a budget exhaustion vs a plain unverifiable skip).
+    // is attributed (a budget exhaustion vs a plain unverifiable skip).
     let cert_verdict = crate::verdict::cert_verdict_for_lean(
         &detail,
         &crate::engine::Verdict::Unknown(reason.clone()),
@@ -3559,7 +3554,7 @@ pub fn check_l2_file(path: impl AsRef<Path>) -> Result<Vec<Certificate>, ForgeEr
 
     // The file's pure `spec fn`s are shared dependencies woven into every per-item
     // sub-program (so a `fn` whose `ens` references one still lowers + checks),
-    // exactly as the L3 path does (§5.3 per-item isolation).
+    // as the L3 path does (§5.3 per-item isolation).
     let spec_items: Vec<Item> = parsed
         .program
         .items
@@ -3730,7 +3725,7 @@ fn gate_fn(f: &thermite_syntax::FnItem) -> GateOutcome {
         // is met by `return 0`, so the §7 battery would mis-reject it `WeakContract`
         // at L0). The §7.1 (a)/(b)/(c) triage still applies (divergence exempts
         // proving total correctness, not stating a non-vacuous contract — a diverge
-        // fn with a vacuous `ens` is still rejected), exactly as for `#[boundary]`.
+        // fn with a vacuous `ens` is still rejected), as for `#[boundary]`.
         // The cap is built here, before any prover runs, keyed strictly on the
         // `fx diverge` declaration (R-DEFER-9): it is a structural cap, not a
         // verus-timeout degrade and not a counterexample (degrade-ladder.md REQ-9).
@@ -3819,7 +3814,7 @@ fn diverge_l1_cert(item: String, effects: Vec<String>) -> Certificate {
 /// - A `fn` is verified against itself, the file's `spec fn`s (the pure shared
 ///   dependencies its contract may reference), and the in-file `fn`s its body
 ///   transitively references (`fn_deps`, the #52 §9 composition weaving). A
-///   regular reachable fn is woven with its real body (fully lowered + proved);
+///   regular reachable fn is woven with its body (fully lowered + proved);
 ///   a `#[boundary]`/`#[slag]` reachable fn is woven as a
 ///   `#[verifier::external_body]` signature (`thermite_lower::lower`'s
 ///   composition arm), so `verus` resolves the foreign callee and the caller
@@ -3880,7 +3875,7 @@ fn item_subprogram(
         }
         // A `struct`/`enum` whose `inv`/`well_formed` predicate names a user
         // `spec fn` must weave that spec fn's definition into its sub-program —
-        // exactly as the `Item::Fn` arm weaves the file's `spec_items` (#232).
+        // as the `Item::Fn` arm weaves the file's `spec_items` (#232).
         // The stale "dead-in-1a: dies at the validator" premise was wrong: a
         // struct with an `inv` lowers to a `pub open spec fn well_formed` whose
         // body calls the named spec fn, and live `forge check` does produce a
@@ -4196,7 +4191,7 @@ fn mint_item_obligations(program: &Program, item: &Item) -> ItemObligations {
     // (its dec-check is the common registry-termination discharge path). The Verus
     // fragment admits the whole frozen subset, so this holds; a narrower future
     // engine that did not admit a class would block the conjunction (the obligation
-    // would be an honest `Unknown`, never a silent skip). `debug_assert` records the
+    // would be an `Unknown`, never a silent skip). `debug_assert` records the
     // invariant without changing the release verdict (R-CODE-2 — no panic in prod).
     let engine = crate::engine::VerusEngine;
     debug_assert!(
@@ -4544,7 +4539,7 @@ pub(crate) fn collect_expr_spec_fn_calls(
 /// (`error[E0425]: cannot find type`), verus fails, and the item degrades to L0.
 ///
 /// `referrers` is the checked item plus every woven `fn` dependency (a regular
-/// fn-dep woven with its real body may itself reference an ADT — the whole
+/// fn-dep woven with its body may itself reference an ADT — the whole
 /// dependency class must resolve, not just the checked item). The roots are
 /// collected from each referrer's signature types (param + return), contract
 /// clauses (`req`/`ens`/`dec`), and body; the closure then follows the field types
@@ -4698,7 +4693,7 @@ fn collect_type_adt_refs(
         }
         // Basis Stage 4 (`.design/basis/04-collections.md`): a bounded `Vec<T>`
         // recurses into its element type so a `Vec<Account>` reaches `Account`
-        // (the element-invariant ADT ref), exactly as `Box<List>` reaches `List`.
+        // (the element-invariant ADT ref), as `Box<List>` reaches `List`.
         thermite_syntax::Type::Box(inner)
         | thermite_syntax::Type::Slice(inner)
         | thermite_syntax::Type::Vec(inner) => {
@@ -4713,7 +4708,7 @@ fn collect_type_adt_refs(
         // Cluster C7 (`.design/basis/09-option-result.md` REQ-2): the built-in
         // `Option<T>` / `Result<T, E>` recurse into their type argument(s) so a
         // `Result<u64, ParseErr>` reaches the in-file error enum `ParseErr` (the
-        // `E` parameter is an ordinary user ADT), exactly as `Box<List>` reaches
+        // `E` parameter is an ordinary user ADT), as `Box<List>` reaches
         // `List`. `Option`/`Result` themselves are built-ins, never an in-file ADT.
         thermite_syntax::Type::Option(inner) => {
             collect_type_adt_refs(inner, adt_decls, out);
@@ -4725,7 +4720,7 @@ fn collect_type_adt_refs(
         // Cluster C12 (`.design/basis/13-map.md` REQ-5): a `Map<K, V>` reaches an
         // in-file ADT in either type argument (a `Map<u64, Account>` reaches
         // `Account` — the #68 ADT weave so the value's decl is woven into the
-        // per-item subprogram), so both the key and value are recursed, exactly as
+        // per-item subprogram), so both the key and value are recursed, as
         // `Result`'s two arguments. `Map` itself is a built-in, never an in-file ADT.
         thermite_syntax::Type::Map(k, v) => {
             collect_type_adt_refs(k, adt_decls, out);
@@ -5199,7 +5194,7 @@ fn run_verus(
     // belonging to `is_owner` (certified L3) and concluded the L3 refusal path had
     // a hole; it did not. A harness names what it checks.
     //
-    // The sub-program is deliberately not a parameter: taking the label from it
+    // The sub-program is not a parameter: taking the label from it
     // is what went wrong, and a harness that cannot see the woven set cannot name
     // one of its members by accident.
     //
@@ -5586,7 +5581,7 @@ fn ladder_for_timeout(
     // REQ-2(c): fold the engine's named trust base into a fast-`unknown` degrade
     // reason so the auditor sees which engine's base was attempted before the
     // degrade. This enriches only the REQ-3.1 incompleteness-`unknown` path (a
-    // genuine `Timeout` keeps its shipped profile-derived reject below); it is
+    // `Timeout` keeps its shipped profile-derived reject below); it is
     // oracle-free (the degrade reason is not in the cert oracle). Per-obligation
     // attribution as a cert field is REQ-4, increment (iii).
     let verdict = match verdict {
@@ -5602,12 +5597,12 @@ fn ladder_for_timeout(
     // The degrade `reason` carried onto a lower rung (REQ-4) on the `Unknown`
     // (timeout / fast-unknown) edge prefers the assembled `l3_cert`'s reject (the
     // `Certificate::timeout` `RejectReason`) so the existing `VerusTimeout` reason
-    // text is preserved byte-identically for the genuine-timeout case.
+    // text is preserved byte-identically for the timeout case.
     let timeout_reason = l3_cert.reject.clone();
     let proved_cert = l3_cert.clone();
     let cx_cert = l3_cert;
     let l3 = crate::engine::verdict_ladder_action(&verdict, obligation.role, proved_cert, cx_cert);
-    // Preserve the shipped `VerusTimeout` reason text on a genuine timeout (REQ-4
+    // Preserve the shipped `VerusTimeout` reason text on a timeout (REQ-4
     // byte-identity): `verdict_ladder_action` synthesizes a generic reason, but the
     // assembled `Certificate::timeout` reject carries the profile-derived detail —
     // splice it back so the degrade reason on a timeout is unchanged.
@@ -5615,7 +5610,7 @@ fn ladder_for_timeout(
         (crate::degrade::L3Verdict::Timeout { reason: generic }, Some(reject))
             if reject.cause == "VerusTimeout" =>
         {
-            // A genuine timeout: keep the shipped profile-derived reject text.
+            // A timeout: keep the shipped profile-derived reject text.
             let _ = generic;
             crate::degrade::L3Verdict::Timeout { reason: reject }
         }
@@ -5664,7 +5659,7 @@ fn ladder_for_timeout(
 
 /// Score the frozen mutant set of `f` against its own (unchanged) contract (#12
 /// §7 step 4; `.design/forge/mutation-scoring.md` REQ-3/REQ-4/REQ-5/REQ-7).
-/// Called from the per-item L3 path only after `f`'s real body proved L3 (the
+/// Called from the per-item L3 path only after `f`'s body proved L3 (the
 /// caller gates on `cert.level == L3 && reject.is_none()`).
 ///
 /// For each mutant (`mutation::generate`, the frozen + ordered + capped set):
@@ -5712,7 +5707,7 @@ fn mutation_score(
 
     for mutant in mutants {
         // Keep the mutant's `FnItem` so a survivor can be equivalence-checked
-        // against the real body (#101); clone what the obligation needs before
+        // against the body (#101); clone what the obligation needs before
         // moving the item into the sub-program.
         let mutant_item = mutant.item.clone();
         let item = Item::Fn(mutant.item);
@@ -5729,7 +5724,7 @@ fn mutation_score(
             Err(_) => continue,
         };
 
-        // Content-address the mutant exactly as the L3 path does (#8). A mutant's
+        // Content-address the mutant as the L3 path does (#8). A mutant's
         // verdict is a deterministic function of its lowered source + seed +
         // versions, so it caches like any item.
         let key = cache::cache_key(&lowered, seed, verus_version, THERMITE_VERSION);
@@ -5757,7 +5752,7 @@ fn mutation_score(
 
         // The mutant survived (verus proved it against the unchanged contract).
         // Issue the per-survivor equivalence query (#101 REQ-1; #269 REQ-7): is the
-        // mutant body observably equal to the real body under `f`'s `req`, for all
+        // mutant body observably equal to the body under `f`'s `req`, for all
         // inputs (modulo callee contracts when the body is call-bearing — the same
         // `fn_deps` closure woven above)? A verified query is a proof of
         // equivalence → the survivor is a true equivalent mutant (not contract
@@ -5920,8 +5915,8 @@ fn equivalence_proves_equal(
 /// call-bearing harness's `eq`). Every other outcome keeps the survivor counted;
 /// the variants distinguish "the prover found a distinguishing input / timed out"
 /// (`NotProved`) from "the probe could not even ask the question" (`Unsupported`,
-/// carrying the structured reason — REQ-9, so an operator can tell a genuine
-/// contract weakness from an out-of-scope obligation shape, R-HONEST-3).
+/// carrying the structured reason — REQ-9, so an operator can tell a contract
+/// weakness from an out-of-scope obligation shape, R-HONEST-3).
 #[derive(Debug, Clone)]
 enum EquivOutcome {
     /// Verus proved equivalence (modulo callee contracts for a call-bearing body)
@@ -5937,7 +5932,7 @@ enum EquivOutcome {
 
 /// Run the #14 §7 step-5 strengthening probe for `f`
 /// (`.design/forge/strengthening-probes.md` REQ-2/REQ-3/REQ-4). Called from the
-/// per-item L3 path only after `f`'s real body proved L3 and its mutant set met
+/// per-item L3 path only after `f`'s body proved L3 and its mutant set met
 /// the floor (the caller gates on `cert.level == L3 && reject.is_none()` + a
 /// produced `MutationScore`, REQ-5). It delegates the candidate template +
 /// verify/filter pipeline to `strengthen::probe`, threading two verify closures
@@ -5947,7 +5942,7 @@ enum EquivOutcome {
 ///   unchanged, `strengthen::candidate_fn`), build the same per-item sub-program
 ///   (`item_subprogram`), lower (`thermite_lower::lower`), content-address (the #8
 ///   cache), and `run_verus`. Returns `Ok(true)` iff verus proved the candidate
-///   against the real body (the §7 "proves with no body change"); `Ok(false)` on a
+///   against the body (the §7 "proves with no body change"); `Ok(false)` on a
 ///   non-`Proved` outcome or an un-lowerable woven fn (parallel to #12's drop), and
 ///   `Err` on an environment failure (R-CODE-4).
 /// - `verify_survivor` — verify the candidate `ens` against the survivor body (the
@@ -6023,7 +6018,7 @@ fn strengthen_certificate(
         f,
         spec_items,
         score,
-        // verify_body: the candidate `ens` over the real body.
+        // verify_body: the candidate `ens` over the body.
         |woven| verify_woven(woven),
         // verify_survivor: the candidate `ens` over the survivor body. If the
         // survivor body could not be resolved (no recorded survivor), the candidate
@@ -6059,8 +6054,8 @@ mod tests {
     use crate::manifest::ObligationStatus;
 
     // REQ-6 / AC-10 (increment 2d, anti-Goodhart defense (b)): the L3 re-elaboration
-    // mutation battery reuses the FROZEN mutation operator catalogue
-    // `mutation::generate` — the catalogue is SHARED, not forked. This test pins that
+    // mutation battery reuses the frozen mutation operator catalogue
+    // `mutation::generate` — the catalogue is shared, not forked. This test pins that
     // contract: the mutant set the re-elaboration seam (`reelaboration_mutants`, the
     // set `lean_mutation_score` re-elaborates per mutant) scores is byte-for-byte
     // `mutation::generate`'s — same families, same order, same descriptions, same
@@ -6087,7 +6082,7 @@ fn to_1based(x: u32) -> u32
             })
             .expect("fixture has fn to_1based");
 
-        // The re-elaboration battery's catalogue IS `mutation::generate` (the SHARED
+        // The re-elaboration battery's catalogue IS `mutation::generate` (the shared
         // frozen set), not a fork.
         let shared = reelaboration_mutants(&f, &parsed.program.items);
         let frozen = crate::mutation::generate(&f, 0, &parsed.program.items);
@@ -6429,7 +6424,7 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
     //
     // These exercise the check.rs glue HERMETICALLY (no lake / no verus): they feed
     // `apply_lemma_library` a synthesized settled cert collection + a parsed program and
-    // assert the AC-13 transforms, exactly as the forge/Lean path applies them after the
+    // assert the AC-13 transforms, as the forge/Lean path applies them after the
     // lemma discharge pass. The live end-to-end path is covered by the lake-guarded
     // engine::tests; the pure resolution logic by lemma_library::tests.
 
@@ -6453,7 +6448,7 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
                    lemma user(n: u32) req n > 0 ens n >= 1 proof { simp [melems_cons]; omega }";
         let parsed = thermite_syntax::parse(src);
         assert!(parsed.is_clean(), "fixture parses: {:?}", parsed.errors);
-        // `melems_cons` did NOT certify; `user` carries some placeholder cert.
+        // `melems_cons` did not certify; `user` carries some placeholder cert.
         let certs = vec![
             Certificate::rejected(
                 "melems_cons".to_string(),
@@ -6532,13 +6527,10 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
     // fragment-support check, so the migration is unit-testable without z3.
     // ───────────────────────────────────────────────────────────────────────────
 
-    /// REQ-8 / AC-9: a reconstruction-supported (arith/cmp) `@bv` clause migrates its
-    /// `trust:` to the kernel-checked base while a bitwise (xor) clause on the SAME item
-    /// stays solver-trusted — the mix64 split, the actual trust flip. Default-on: no flag
-    /// gates the migration. Same rung (the obligation is `Proved` either way); only the
-    /// trust base moves.
+    /// REQ-8 / AC-9: arithmetic and bitwise `@bv` clauses both migrate to the
+    /// literal-`BitVec N` kernel-checked trust base.
     #[test]
-    fn req8_supported_clause_migrates_to_kernel_checked_bitwise_stays_solver() {
+    fn req8_arithmetic_and_bitwise_clauses_migrate_to_kernel_checked() {
         use thermite_syntax::{BinOp, BvTag, BvWidth, Expr};
         fn var(s: &str) -> Expr {
             Expr::Path(vec![s.to_string()])
@@ -6557,7 +6549,7 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
         };
         let attr = bv_attribution();
 
-        // mix64::ens#0 — `a + b == b + a` (wraparound-add commutativity): SUPPORTED.
+        // mix64::ens#0 — `a + b == b + a` (wraparound-add commutativity): supported.
         let add = bin(
             BinOp::Eq,
             bin(BinOp::Add, var("a"), var("b")),
@@ -6569,15 +6561,18 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
             "the arith clause's trust migrates to the kernel-checked base (REQ-8)"
         );
         assert!(
-            supported.trust.iter().any(|t| t.contains("BvModel")),
-            "the migrated trust cites the BvModel faithfulness metatheorem"
+            supported
+                .trust
+                .iter()
+                .any(|t| t.contains("literal BitVec N")),
+            "the migrated trust names literal BitVec semantics"
         );
         assert!(
             !supported.trust.iter().any(|t| t.contains("Z3 QF_BV")),
             "Z3 is no longer load-bearing for the reconstruction-supported clause"
         );
 
-        // mix64::ens#1 — `a ^ b ^ b == a` (xor self-inverse): UNSUPPORTED, stays solver.
+        // mix64::ens#1 — `a ^ b ^ b == a` (xor self-inverse): supported literally.
         let xor = bin(
             BinOp::Eq,
             bin(
@@ -6587,29 +6582,29 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
             ),
             var("a"),
         );
-        let solver = bv_proved_obl("mix64", 1, &tag, &xor, &attr, None);
+        let bitwise = bv_proved_obl("mix64", 1, &tag, &xor, &attr, None);
         assert!(
-            !crate::engine::trust_is_kernel_checked(&solver.trust),
-            "the bitwise clause stays solver-trusted (F-J — the exporter refuses xor)"
+            crate::engine::trust_is_kernel_checked(&bitwise.trust),
+            "the bitwise clause migrates to the literal BitVec kernel path"
         );
         assert!(
-            solver.trust.iter().any(|t| t.contains("Z3 QF_BV")),
-            "the unsupported clause names the Z3 QF_BV solver base, as today"
+            !bitwise.trust.iter().any(|t| t.contains("Z3 QF_BV")),
+            "the bitwise clause no longer names the solver base"
         );
 
         // Both invariants hold across the split: the engine tag stays `bitvector` (only the
         // orthogonal trust axis moved) and Lock 1's shadow flag rides both obligations.
         assert_eq!(supported.engine.as_deref(), Some("bitvector"));
-        assert_eq!(solver.engine.as_deref(), Some("bitvector"));
-        assert!(supported.bv_shadow.is_some() && solver.bv_shadow.is_some());
+        assert_eq!(bitwise.engine.as_deref(), Some("bitvector"));
+        assert!(supported.bv_shadow.is_some() && bitwise.bv_shadow.is_some());
     }
 
     // ───────────────────────────────────────────────────────────────────────────
     // REQ-4 / AC-5 (stage-3 lock 2 — bv-semantics mutation). The bv-semantics mutation
-    // battery reuses the FROZEN catalogue UNCHANGED; only the kill check swaps to a
+    // battery reuses the frozen catalogue unchanged; only the kill check swaps to a
     // WRAP-AWARE discharge at the tag width. These tests need the `bv` parse-gate (to
     // build a `@bv`-tagged clause) and z3 (the live QF_BV / QF_NRA queries); a shard
-    // without z3 SKIPS, mirroring `bitvector.rs`'s live tests.
+    // without z3 skips, mirroring `bitvector.rs`'s live tests.
     // ───────────────────────────────────────────────────────────────────────────
 
     /// The single `@bv`-tagged `fn` of the AC-5 fixture (the `bv_wrap_mutation.th`
@@ -6631,9 +6626,9 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
     }
 
     /// AC-5: a wrap-exploiting mutant is killed by the bv-semantics mutation run AT WIDTH
-    /// while the SAME mutant survives the unbounded check. The frozen off-by-one mutator
+    /// while the same mutant survives the unbounded check. The frozen off-by-one mutator
     /// turns the body `x + 0`'s literal `0` into `1`, so its grounded clause is
-    /// `x + 1 >= x` — valid over unbounded integers (it SURVIVES the nlsat unbounded
+    /// `x + 1 >= x` — valid over unbounded integers (it survives the nlsat unbounded
     /// route) but false over QF_BV64 at `x = 2^64 - 1` (the wrap-aware kill finds a
     /// bit-level counterexample). The contrast is the lock 2 invariant: the kill check is
     /// width-aware, not unbounded.
@@ -6650,7 +6645,7 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
         }
 
         let f = parse_succ_ge();
-        // The frozen catalogue (UNCHANGED) produces the wrap-exploiting mutant: the
+        // The frozen catalogue (unchanged) produces the wrap-exploiting mutant: the
         // off-by-one `0->1` on the body literal, giving the mutant body `x + 1`.
         let mutants = crate::mutation::generate(&f, 0, &[]);
         let wrap = mutants
@@ -6687,7 +6682,7 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
 
         // (2) UNBOUNDED survival: the same grounded clause `x + 1 >= x` is valid over
         // unbounded integers, so the nlsat real-relaxation route (the codebase's
-        // unbounded path) PROVES it → the mutant SURVIVES the unbounded check.
+        // unbounded path) proves it → the mutant survives the unbounded check.
         let synth = thermite_syntax::FnItem {
             contract: thermite_syntax::Contract {
                 ens: vec![thermite_syntax::Clause {
@@ -6714,7 +6709,7 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
         );
     }
 
-    /// AC-5: the bv-semantics mutation RUN (`bv_mutation_score`) kills the wrap-exploiting
+    /// AC-5: the bv-semantics mutation run (`bv_mutation_score`) kills the wrap-exploiting
     /// mutant — its certificate carries a non-trivial kill ratio with the off-by-one
     /// `x + 1` mutant among the killed (and the early-return `0` mutant too). The
     /// survivors are the body-equivalent mutants (`return x`, `x - 0`), which the bv
@@ -6755,7 +6750,7 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
             score.meets_floor(crate::mutation::MUTATION_FLOOR),
             "with equivalents excluded the kill ratio (2/2) meets the floor: {score:?}"
         );
-        // The first survivor is a body-equivalent mutant, NOT the wrap-exploiting one
+        // The first survivor is a body-equivalent mutant, not the wrap-exploiting one
         // (which was killed) — the wrap mutant never reaches the survivor slot.
         let survivor = score.survivor.as_deref().unwrap_or("");
         assert!(
@@ -6765,7 +6760,7 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
     }
 
     /// REQ-4 regression: a `@bv` clause closed over the parameters (no `result`) is
-    /// invariant under a body mutation, so it is NOT a body-constraining discriminator —
+    /// invariant under a body mutation, so it is not a body-constraining discriminator —
     /// `bv_mutation_score` returns `None` and the cert keeps its forward-declared score.
     /// This is why the AC-2 `mix64` golden (whose `@bv` clauses are `a + b == b + a` and
     /// `a ^ b ^ b == a`) is unperturbed by lock 2.
@@ -6795,8 +6790,8 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
 
     // ───────────────────────────────────────────────────────────────────────────
     // REQ-5 / AC-6 (stage-3 lock 3 — the `nowrap` side obligation). A `@bvN(nowrap)`
-    // clause additionally discharges a no-overflow side obligation IN-CAGE; its verdict
-    // rides `bv_shadow.nowrap_obligation`. A body that can overflow FAILS the obligation
+    // clause additionally discharges a no-overflow side obligation in-cage; its verdict
+    // rides `bv_shadow.nowrap_obligation`. A body that can overflow fails the obligation
     // with a concrete overflowing input (the cert is rejected); a body that cannot
     // overflow records the discharged verdict and certifies. These drive the full cert
     // through `bv_fn_cert`.
@@ -6829,7 +6824,7 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
         bv_fn_cert(&bv, &nlsat, &f, &base, &[])
     }
 
-    /// AC-6: a `@bv64(nowrap)` clause whose body can overflow FAILS its side obligation
+    /// AC-6: a `@bv64(nowrap)` clause whose body can overflow fails its side obligation
     /// with a concrete overflowing input, and the verdict is recorded in
     /// `bv_shadow.nowrap_obligation`. The clause `result == a + b` is machine-valid at
     /// width (result is DEFINED as `a + b` mod 2^64, so the equality is tautological),
@@ -6848,7 +6843,7 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
              fx pure { a + b }",
             "add_nowrap",
         );
-        // A witnessed nowrap overflow must NOT certify (the promise is violated).
+        // A witnessed nowrap overflow must not certify (the promise is violated).
         let reject = cert
             .reject
             .as_ref()
@@ -6879,7 +6874,7 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
     }
 
     /// AC-6 (the holds side): a `@bv64(nowrap)` clause whose body carries no wrap-prone
-    /// arithmetic discharges the no-overflow obligation VACUOUSLY (no operation can
+    /// arithmetic discharges the no-overflow obligation vacuously (no operation can
     /// overflow), certifies at L4, and records the discharged verdict in
     /// `bv_shadow.nowrap_obligation`. `result == a` over body `{ a }` needs no z3 (the
     /// obligation is vacuous — there is nothing that could overflow).
@@ -6920,7 +6915,7 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
         );
     }
 
-    /// A bare `@bv64` (NO `nowrap`) clause runs NO side obligation, so its
+    /// A bare `@bv64` (no `nowrap`) clause runs no side obligation, so its
     /// `bv_shadow.nowrap_obligation` stays `None` — the slot is filled only for the
     /// `nowrap` spelling (REQ-5). Guards against the lock firing on every tagged clause.
     #[cfg(feature = "bv")]

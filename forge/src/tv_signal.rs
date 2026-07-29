@@ -65,19 +65,19 @@ pub(crate) fn is_rlimit_signal(output: &str) -> bool {
 /// signal above (`.design/stage1-forge-tier.md` REQ-1b / AC-2, Q-KBSIGNAL). This is the
 /// second discriminator in the same one-shared-helper pattern: a budget-exhausted Lean
 /// discharge is the cert verdict `KernelBudget` (the forge tier's Q4 30s/clause
-/// elaboration budget), NOT a solver `Timeout` and NOT a meaning mismatch / `Stuck`.
+/// elaboration budget), not a solver `Timeout` and not a meaning mismatch / `Stuck`.
 ///
 /// ## Q-KBSIGNAL probe result (recorded in the increment commit)
 ///
 /// The probe asked whether Lean emits a textually-distinct budget signal vs the Z3
-/// rlimit text. It DOES — `lake env lean` was driven to each budget edge and emits:
+/// rlimit text. It does — `lake env lean` was driven to each budget edge and emits:
 /// - `(deterministic) timeout at <op>, maximum number of heartbeats (N) has been reached`
 ///   — the elaboration HEARTBEAT budget (`set_option maxHeartbeats`);
 /// - `maximum recursion depth has been reached` — the elaboration/kernel RECURSION
 ///   budget (`set_option maxRecDepth`).
 ///
 /// So the probe selected the DISCRIMINATOR path (AC-2's "a distinct signal exists"
-/// branch), NOT the wall-clock-wrapper fallback. The phrase set is mutually exclusive
+/// branch), not the wall-clock-wrapper fallback. The phrase set is mutually exclusive
 /// with [`is_rlimit_signal`]'s (neither carries `rlimit`/`resource limit`; the rlimit
 /// phrases carry no `timeout`/`heartbeats`/`recursion depth`), proven by the
 /// `kernel_budget_and_rlimit_cannot_be_confused` negative test.
@@ -88,7 +88,7 @@ pub(crate) fn is_kernel_budget_signal(output: &str) -> bool {
         || lower.contains("maximum recursion depth")
 }
 
-// ---- the discriminator teeth (the shared-helper unit coverage) --------------
+// ---- discriminator regression tests ----------------------------------------
 //
 // Both directions, hand-derived (R-CHAR-3): each rlimit phrase is detected; a
 // counterexample diagnostic (`postcondition not satisfied` / `assertion
@@ -148,14 +148,14 @@ mod discriminator {
     }
 
     /// The negative test (REQ-1b / AC-2): the kernel-budget and solver-rlimit
-    /// discriminators CANNOT be confused. The canonical rlimit signals are NOT detected
-    /// as a kernel budget, and the canonical kernel-budget signals are NOT detected as an
+    /// discriminators CANNOT be confused. The canonical rlimit signals are not detected
+    /// as a kernel budget, and the canonical kernel-budget signals are not detected as an
     /// rlimit — the two phrase sets are mutually exclusive, so a solver timeout is never
     /// mis-classed `KernelBudget` and a Lean budget exhaustion is never mis-classed
     /// `Timeout`.
     #[test]
     fn kernel_budget_and_rlimit_cannot_be_confused() {
-        // The rlimit signals are NOT kernel-budget.
+        // The rlimit signals are not kernel-budget.
         for rlimit in [
             "error: rlimit exceeded; consider raising the budget",
             "error: Resource limit (rlimit) exceeded\n0 verified, 1 errors",
@@ -170,7 +170,7 @@ mod discriminator {
                 "an rlimit signal must NOT be detected as a kernel/elaboration budget: {rlimit:?}"
             );
         }
-        // The kernel-budget signals are NOT rlimit.
+        // The kernel-budget signals are not rlimit.
         for budget in [
             "error: (deterministic) timeout at `whnf`, maximum number of heartbeats (1) has been \
              reached",
@@ -189,7 +189,7 @@ mod discriminator {
 
     /// A counterexample diagnostic is not detected — it stays in the
     /// Divergent class (the discriminator's negative direction). Neither the rlimit nor
-    /// the kernel-budget discriminator fires on a genuine counterexample.
+    /// the kernel-budget discriminator fires on a counterexample.
     #[test]
     fn genuine_counterexample_is_not_detected() {
         assert!(

@@ -1,44 +1,15 @@
 #!/usr/bin/env python3
-"""
-spec-discipline hook (greenfield, spec-driven variant of the vibe-fork
-translate-discipline gate).
+"""Require the relevant design material to be read before source edits.
 
-Thermite has no upstream codebase to translate. The authority is the
-design layer, not a foreign source tree. This hook enforces:
+The PostToolUse hook records reads in ``.crosslink/.spec-reads.json``. The
+PreToolUse hook checks Write and Edit requests against ``spec-routes.toml``.
+Each routed edit requires ``goal.md``, its design document, and at least one
+declared conformance or golden reference when the route specifies references.
 
-  "read goal.md, read the component's design doc, read any golden/
-   conformance reference the route declares; THEN edit the toolchain."
+Missing routes or design documents block the edit with a corrective message.
+See the R-XLATE and R-INJECT rules in ``goal.md`` for the policy.
 
-as a deterministic per-edit gate.
-
-Two invocations in .claude/settings.json:
-
-  - PostToolUse on Read       -> records the Read in session state
-  - PreToolUse  on Write|Edit -> gates writes to gated toolchain files
-
-State is persisted at .crosslink/.spec-reads.json (per-worktree).
-
-Required source classes for any gated edit:
-  1. goal.md                         (always; the binding contract)
-  2. .design/<area>/<doc>.md         (per route; must exist on disk + Read)
-  3. route.reference[*]              (per route; ONLY if the route declares a
-                                      non-empty `reference` list — then >=1
-                                      reference path must be Read. These are
-                                      conformance/ corpus entries or
-                                      tests/golden/ files: the external truth.)
-
-If a route is missing, the hook BLOCKS with instructions to add one.
-If a design doc is missing, the hook BLOCKS with instructions to
-dispatch acto-doc-author.
-
-See:
-  goal.md - "Spec-discipline rules" (R-XLATE-*)
-  goal.md - "Injected-instructions rules" (R-INJECT-*)
-  tooling/spec-routes.toml
-
-PROJECT CUSTOMIZATION:
-  Edit TARGET_CRATE_PREFIXES, TARGET_CRATE_EXACT, EXCLUDED_CRATES,
-  TARGET_EXTENSION, REFERENCE_PREFIXES below.
+Customize the ``TARGET_*`` and ``REFERENCE_PREFIXES`` settings below.
 """
 
 import json
@@ -54,9 +25,7 @@ except ImportError:
     tomllib = None
 
 
-# =====================================================================
-# PROJECT CUSTOMIZATION — edit these constants for your project
-# =====================================================================
+# Project settings
 
 # Workspace crate name prefixes gated by this hook. Files outside these
 # crates are not gated.
@@ -77,9 +46,7 @@ TARGET_EXTENSION = ".rs"
 # the read path starts with one of the route's declared reference paths.
 REFERENCE_PREFIXES = ("conformance/", "tests/golden/")
 
-# =====================================================================
-# Implementation — generally no edits needed below this line
-# =====================================================================
+# Implementation
 
 
 # --- repo-root + state file paths --------------------------------------

@@ -14,7 +14,7 @@
 //!   * The emitted `TMapU64U64` wrapper (Vec-of-pairs backing + spec view + the
 //!     ops) + the insert-then-get round-trip (`insert(k,v)` then `get(k) ==
 //!     Some(v)`) + the absent→None refusal (`get(absent) == None`) + `contains_key`
-//!     true/false verify under real verus `verified, 0 errors` (AC-1/AC-2/AC-3).
+//!     true/false verify under verus `verified, 0 errors` (AC-1/AC-2/AC-3).
 //!   * Non-vacuity (R-DEFER-9): a crafted `get` returning `Some(0)` for an absent
 //!     key fails verus (the `None => !spec_contains_key(k)` arm bites) (AC-2).
 //!   * The `map_kv.th` corpus program parses (the two-arg `Map<u64,u64>`),
@@ -164,12 +164,12 @@ fn cert_for<'a>(certs: &'a [Value], item: &str) -> &'a Value {
         .unwrap_or_else(|| panic!("no cert for `{item}` in {certs:?}"))
 }
 
-/// `true` iff the `forge build --entry` runnable artifact can LINK + RUN here. The
+/// `true` iff the `forge build --entry` runnable artifact can link + run here. The
 /// #57 runtime seccomp sandbox (`forge/src/sandbox.rs`) is native Linux only, with
 /// generated filters for x86_64 and aarch64. The emitted runner does not link off
 /// Linux (`Undefined symbols: _prctl` on macOS).
 /// The build+run tests SKIP with an explicit warning on any non-Linux platform —
-/// FULL ACCEPTANCE OF THE BUILD+RUN PATH REQUIRES LINUX CI. Mirrors the
+/// full acceptance OF the build+run PATH requires LINUX CI. Mirrors the
 /// `verus_present()` skip precedent (a missing capability is a logged skip, not a
 /// panic, R-CODE-4).
 fn linux_build_run_supported(test: &str) -> bool {
@@ -295,7 +295,7 @@ fn main() {}
 
 /// AC-1 / AC-2 / AC-3 (grounded): the `TMapU64U64` wrapper + the insert-then-get
 /// round-trip (`insert(k,v)` then `get(k) == Some(v)`) + the absent→None refusal
-/// (`get(absent) == None`) + `contains_key` both branches verify under real verus
+/// (`get(absent) == None`) + `contains_key` both branches verify under verus
 /// `verified, 0 errors`.
 ///
 /// Authority: `.design/basis/13-map.md` AC-1/AC-2/AC-3 — the grounded `TMapU64U64`
@@ -319,7 +319,7 @@ fn ac1_2_3_map_wrapper_roundtrip_and_absent_none_verify_l3() {
 }
 
 /// AC-2 non-vacuity (R-DEFER-9): a crafted `get` returning `Some(0)` for an absent
-/// key fails verus. The `None => !spec_contains_key(k)` arm has real teeth: a body
+/// key fails verus. The `None => !spec_contains_key(k)` arm rejects a body
 /// returning `Some(0)` for a key not in the map does not satisfy the Some arm's
 /// `spec_contains_key(k)`, so the postcondition is undischarged.
 ///
@@ -351,7 +351,7 @@ fn ac2_broken_get_some_for_absent_fails_real_verus() {
 }
 
 /// AC-1: the `map_kv.th` corpus program parses (the two-arg `Map<u64,u64>`) and
-/// its emitted lowering verifies under real verus `verified, 0 errors` (the `TMap`
+/// its emitted lowering verifies under verus `verified, 0 errors` (the `TMap`
 /// wrapper is woven + the spec-position `contains_key`/`len` rewrites + the
 /// `Map::new()` reachability all compose).
 ///
@@ -383,12 +383,12 @@ fn ac1_map_kv_corpus_lowering_verifies_under_real_verus() {
 /// killed). This is the L3 cert anchor for the contains_key cage admission.
 ///
 /// `build_one` (`ens result.contains_key(k)`) and `lookup_absent`
-/// (`ens result is None`) verify under real verus (the `ac1_..._lowering` test:
+/// (`ens result is None`) verify under verus (the `ac1_..._lowering` test:
 /// the round-trip membership + the absent→None refusal), but their thin partial
 /// contracts do not meet the §7 anti-Goodhart mutation floor (a `Map`-returning
 /// fn has no scoreable scalar-zero mutant; a `None`-returning partial contract is
 /// satisfied by an always-`None` body — the #101 partial-`None` class). The
-/// round-trip / absent→None teeth are pinned at the verus codegen-grounding level
+/// round-trip and absent→None cases are pinned at the verus codegen-grounding level
 /// (`ac1_2_3` + `ac2_broken_..`), R-HONEST-3: the L3 forge cert is anchored on the
 /// mutation-strong accessor rather than a thin contract.
 ///
@@ -417,10 +417,10 @@ fn ac3_map_kv_contains_key_accessor_certifies_l3() {
 /// local `Map<u64,u64>`, `insert(7, 42)`, `get(7)`, and returns `42` (the L1 `TMap`
 /// runtime — `emit_map_runtime_l1`'s plain-Rust Vec-of-pairs newtype with the
 /// `thermite_check!` capacity/uniqueness guards + `get -> Option<V>`). The build
-/// uses real `rustc` + a real process run; `rustc` is always present, so it does not skip.
+/// uses real `rustc` + a process run; `rustc` is always present, so it does not skip.
 ///
 /// Authority: `.design/basis/13-map.md` AC-1 ("`forge build` a Map program →
-/// COMPILES + RUNS (insert + get → the value)").
+/// compiles + runs (insert + get → the value)").
 #[test]
 fn ac1_map_kv_builds_and_runs_insert_get_yields_value() {
     if !linux_build_run_supported("ac1_map_kv_builds_and_runs_insert_get_yields_value") {

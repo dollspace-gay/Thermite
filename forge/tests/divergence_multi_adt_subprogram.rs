@@ -180,7 +180,7 @@ fn spare_adt_decl_does_not_break_its_siblings() {
     let certs = check_program("spare", SPARE_DECL_PROGRAM);
 
     // .design/forge/check.md REQ-5 + thermite-design.md §6: a correct source
-    // certifies L3. `Unused` carries no contract to discharge, exactly as `Role`
+    // certifies L3. `Unused` carries no contract to discharge, as `Role`
     // does; both are enum decls lowering to a Verus enum (01-adts REQ-9).
     assert_eq!(
         level_of(&certs, "Role"),

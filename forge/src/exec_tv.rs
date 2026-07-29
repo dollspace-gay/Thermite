@@ -16,7 +16,7 @@
 //! <reference> { <P_production> }` (`thermite_tv::exec_equivalence_obligation`), and
 //! discharges it through `verus`. Verified ⟺ the exec lowering of that expr is
 //! faithful (it computes the bounded reference value for all inputs); a
-//! `postcondition not satisfied` / type / parse error ⟺ a real exec-lowering
+//! `postcondition not satisfied` / type / parse error ⟺ a exec-lowering
 //! infidelity (the off-corpus #122/#146/overflow/off-by-one classes). It is exposed
 //! as `forge exec-tv <file>`, a separate opt-in deeper audit (like `forge tv`), not
 //! folded into `forge check`.
@@ -840,7 +840,7 @@ fn discharge(program: &str, label: &str, seed: u64, rlimit: f64) -> ExecVerdict 
 }
 
 /// Parse the `N verified, M errors` summary line from verus output (mirrors
-/// `contract_tv`'s parser / the teeth-test). `None` if no summary line is present.
+/// `contract_tv`'s parser and the negative test). `None` if no summary line is present.
 fn parse_results(output: &str) -> Option<(u32, u32)> {
     let line = output
         .lines()
@@ -928,15 +928,15 @@ pub const EXEC_TV_DEFAULT_RLIMIT: f64 = DEFAULT_RLIMIT;
 /// AC-7).
 pub const EXEC_TV_GENERATED_DEFAULT_N: usize = 200;
 
-// ---- the forge-level Divergent teeth (REQ-5; blocker #157) -----------------
+// ---- forge-level Divergent regression tests (REQ-5; blocker #157) ----------
 //
-// The obligation-layer teeth (`thermite-tv/tests/exec_teeth.rs` E1-E4) prove a
-// wrong `P_production` -> a real verus error. They do not exercise the forge-level
+// The obligation-layer tests (`thermite-tv/tests/exec_teeth.rs` E1-E4) prove a
+// wrong `P_production` -> a verus error. They do not exercise the forge-level
 // step that maps that verus error to `ExecVerdict::Divergent`: `discharge`'s
 // four-way classification. Over the generated/corpus space the faithful lowerer
 // never produces a Divergent, so the Divergent arm had no direct test coverage.
 //
-// This module is the end-to-end teeth for the forge classification: it builds a
+// This module tests the forge classification end to end. It builds a
 // real exec obligation with a wrong production (the same E1/E3 infidelity shapes
 // the obligation layer pins), discharges it through the actual `discharge` fn, and
 // asserts the verdict. It covers both Divergent triggers (postcondition-
@@ -946,7 +946,7 @@ pub const EXEC_TV_GENERATED_DEFAULT_N: usize = 200;
 //
 // Test-only: no production-logic change. `discharge` is a private sibling fn,
 // reachable here via `super::` (a child mod sees the parent's private items), so no
-// visibility tweak is needed either. The teeth run a real wrong production -> a real
+// visibility tweak is needed either. The tests run a wrong production through a
 // verus error -> the real `discharge` mapping, not a mocked verdict. Mirrors
 // `thermite-tv/tests/exec_teeth.rs`'s verus gate -- `discharge` spawns a
 // bare `verus`, so the test gates on the same PATH-resolvable binary and reports a
@@ -958,7 +958,7 @@ mod divergent_teeth {
 
     /// `true` iff a bare `verus` is spawnable (the same resolution `discharge`
     /// uses -- `Command::new("verus")`, i.e. PATH). Skip otherwise so the
-    /// teeth do not pass when the discharge cannot reach a solver.
+    /// tests do not pass when the discharge cannot reach a solver.
     fn verus_on_path() -> bool {
         Command::new("verus").arg("--version").output().is_ok()
     }

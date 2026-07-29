@@ -5,7 +5,7 @@
 //! mandates, as the external truth the toolchain does not author for itself (goal.md
 //! verification model (A)/(B); R-CHAR-3):
 //!
-//!   > The orchestrator authors a NEW corpus program — `conformance/map_kv.th` [...]
+//!   > The orchestrator authors a new corpus program — `conformance/map_kv.th` [...]
 //!   > and its golden lowering at `tests/golden/lower/map_kv.verus.rs`, hand-authored
 //!   > from the GROUNDED form below and confirmed to pass `verus`. The cert golden
 //!   > lives at `conformance/map_kv.cert.json`.

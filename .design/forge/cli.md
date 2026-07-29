@@ -58,9 +58,10 @@ What the old doc never saw, grouped (each verb cites its issue in the code):
 - **SMT-tactic obligation export** — `forge smt-export [<file>] [--out <path>]`
   (stage-3 REQ-7 / AC-8, #349): the automated Rust→Lean obligation exporter
   (`Command::SmtExport` → `run_smt_export`, driving `lean_smt_export.rs`). Emits a
-  `(P_prod) ⟺ (P_ref)` `by smt`-discharged Lean theorem + `#print axioms` probe per
-  renderable contract clause (QF_LIA, or QF_BV over the bounded-integer model for a
-  `@bvN` clause in a `bv` build); no file emits the canonical demo batch.
+  `(P_prod) ⟺ (P_ref)` Lean theorem + `#print axioms` probe per renderable contract
+  clause. QF_LIA uses `smt`; `@bvN` clauses use literal `BitVec N` terms and
+  kernel-checked normalization lemmas. With no file, the command emits the canonical
+  demo batch.
 
 ## Requirements
 

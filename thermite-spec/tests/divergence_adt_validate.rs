@@ -65,7 +65,7 @@ fn parse_clean(src: &str) -> thermite_syntax::Program {
 /// the declaration pre-pass, before any match is considered. So the program no
 /// longer validates clean — the false accept is gone, with an earlier, more
 /// precise error. Authority: `.design/basis/01-adts.md` REQ-2 ("variant names
-/// MUST be UpperCamelCase … the validator rejects a lowercase-initial variant
+/// must be UpperCamelCase … the validator rejects a lowercase-initial variant
 /// declaration with `SpecError::InvalidVariantCasing { name, span }`"). The
 /// core pin holds: the program must not validate clean.
 ///

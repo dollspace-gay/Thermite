@@ -33,7 +33,7 @@ inductive Two where
   | t1 : Two
   deriving DecidableEq, Repr
 
-/-- The genuine carrier: its `enum` lists BOTH elements, and `complete` is
+/-- The carrier: its `enum` lists both elements, and `complete` is
     discharged by `decide` — the hand-rolled finiteness witness. -/
 def twoCarrier : CarrierAssign where
   C := Two
@@ -67,14 +67,14 @@ theorem finiteEscape_pinned :
     incompleteEnum.all isT0 = true ∧ twoCarrier.enum.all isT0 = false := by
   decide
 
-/-- The escape, stated against the genuine `∀`: the incomplete fold certifies
+/-- The escape, stated against the `∀`: the incomplete fold certifies
     `true` even though `∀ x, isT0 x` is FALSE (it fails at `t1`). -/
 theorem incompleteEnum_escapes :
     incompleteEnum.all isT0 = true ∧ ¬ (∀ x : Two, isT0 x = true) := by
   refine ⟨by decide, ?_⟩
   intro h; have := h Two.t1; revert this; decide
 
-/-! ## Tied back to `sdenote` on the genuine carrier
+/-! ## Tied back to `sdenote` on the carrier
 
     On the real (complete) carrier, the `all` fold and the genuine `∀` agree —
     both `false` for the false claim `∀ x, x = ρ(0)`. `sdenote_all_iff` is the

@@ -9,11 +9,11 @@
 //! Why the production boundary (not always the full binary): the relax route's
 //! `Proved`/`Counterexample`/`RealWitness` are produced by [`crate::engine::NlsatEngine`]
 //! (z3-gated — they run in CI where z3 is present); `CovenantRefuted` is produced by the
-//! verus-FREE covenant engine (ungated); `Stuck`/`KernelBudget`/`Timeout` are produced
-//! UPSTREAM by [`crate::verdict::cert_verdict_for_lean`] from the lean transcript (a LIVE
+//! verus-free covenant engine (ungated); `Stuck`/`KernelBudget`/`Timeout` are produced
+//! upstream by [`crate::verdict::cert_verdict_for_lean`] from the lean transcript (a live
 //! kernel-budget exhaustion is inherently non-deterministic, so the hermetic exercise is
 //! the deterministic transcript→verdict→cert production the live path funnels through —
-//! `KernelBudget` additionally drives the real cert builder [`crate::check::
+//! `KernelBudget` additionally drives the cert builder [`crate::check::
 //! lean_unverifiable_cert`]). Together: every one of the seven verdicts has a named,
 //! hermetic, CI-run test. The closure-instrumented never-degrades tests
 //! (`crate::degrade`) are unchanged.
@@ -61,7 +61,7 @@ fn verdict_proved() {
     );
 }
 
-/// VERDICT 2/7 — **Counterexample**: a relaxable clause with a genuine INTEGER falsifier
+/// VERDICT 2/7 — **Counterexample**: a relaxable clause with a INTEGER falsifier
 /// (the real relaxation is `sat` and an integer point in the radius-2 box falsifies it) is
 /// a `Counterexample` carrying the integer witness — never escalated. z3-gated.
 #[test]
@@ -85,8 +85,8 @@ fn verdict_counterexample() {
 
 /// VERDICT 3/7 — **RealWitness**: a clause true over ℤ but false over ℝ (`∀ n, n·n ≠ 2`)
 /// yields a `RealWitness` carrying the raw real point (√2), escalated UP to the forge —
-/// NEVER a `Counterexample`. This is the relax PRODUCER path the AC-14 audit flagged; it is
-/// z3-gated, so it runs in the CI lean job (z3 ships with verus). The matching UNGATED
+/// never a `Counterexample`. This is the relax producer path the AC-14 audit flagged; it is
+/// z3-gated, so it runs in the CI lean job (z3 ships with verus). The matching ungated
 /// structural producer test lives in `engine.rs`
 /// (`classify_sat_real_only_model_is_real_witness`).
 #[test]
@@ -112,7 +112,7 @@ fn verdict_real_witness() {
 }
 
 /// VERDICT 4/7 — **CovenantRefuted**: a planted-bug `fn` whose body violates its `ens` on a
-/// `req`-satisfying input is refuted by the verus-FREE covenant `falsify` run (a hard fail,
+/// `req`-satisfying input is refuted by the verus-free covenant `falsify` run (a hard fail,
 /// never degraded). Ungated — the covenant engine is pure executable evaluation, no prover.
 #[test]
 fn verdict_covenant_refuted() {
@@ -142,7 +142,7 @@ fn verdict_covenant_refuted() {
 
 /// VERDICT 5/7 — **Stuck**: a lean proof that ELABORATED but left a residual goal
 /// ("unsolved goals") is `Stuck` (the frozen-battery residual + missing-bridge hint),
-/// produced UPSTREAM by [`cert_verdict_for_lean`] — never silently `Proved` and never the
+/// produced upstream by [`cert_verdict_for_lean`] — never silently `Proved` and never the
 /// solver `Timeout` the 3-arm engine map would assign. Ungated (a transcript→verdict
 /// producer test; the live discharge that emits such a transcript is exercised by
 /// `battery_conformance.rs`).
@@ -162,10 +162,10 @@ fn verdict_stuck() {
 
 /// VERDICT 6/7 — **KernelBudget**: a lean elaboration/kernel-budget exhaustion (the
 /// textually-distinct `(deterministic) timeout … maximum number of heartbeats` signal) is
-/// `KernelBudget`, produced UPSTREAM — NEVER mis-mapped to the solver `Timeout`. This is the
-/// AC-14 e2e gap: a LIVE budget exhaustion is non-deterministic, so the hermetic exercise
+/// `KernelBudget`, produced upstream — never mis-mapped to the solver `Timeout`. This is the
+/// AC-14 e2e gap: a live budget exhaustion is non-deterministic, so the hermetic exercise
 /// drives the deterministic production path the live discharge funnels through — both the
-/// verdict producer ([`cert_verdict_for_lean`]) AND the real cert builder
+/// verdict producer ([`cert_verdict_for_lean`]) and the cert builder
 /// ([`crate::check::lean_unverifiable_cert`]), asserting the produced certificate is
 /// classified `KernelBudget`.
 #[test]
@@ -182,7 +182,7 @@ fn verdict_kernel_budget() {
         "KernelBudget",
         "a heartbeat-timeout transcript is KernelBudget"
     );
-    // (b) the real cert builder produces a certificate that honestly attributes the
+    // (b) the cert builder produces a certificate that attributes the
     // budget exhaustion (end-to-end through the production cert path).
     let base = Certificate::new(
         "kb_item",
@@ -207,7 +207,7 @@ fn verdict_kernel_budget() {
 }
 
 /// VERDICT 7/7 — **Timeout**: a solver resource-limit (rlimit) exhaustion is the
-/// `Verdict::Unknown` image under the TOTAL engine map — a `Timeout`, the only non-kernel,
+/// `Verdict::Unknown` image under the total engine map — a `Timeout`, the only non-kernel,
 /// non-residual incompleteness. Ungated (the engine-map producer; the live forced-timeout
 /// run is exercised by `profile_conformance.rs`).
 #[test]

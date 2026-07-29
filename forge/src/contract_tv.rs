@@ -198,7 +198,7 @@ fn tv_fn(
     // path emits). Slice params are bound view-consistently as `&[elem]` (#149) and
     // threaded as production's `slices` (per clause, in `tv_clause`), so production
     // emits `xs@` for every slice use (bare `spec_sum(xs@)` and indexed
-    // `xs@.subrange(..)`), mirroring the real fn signature path, and the reference
+    // `xs@.subrange(..)`), mirroring the fn signature path, and the reference
     // emits the matching `xs@`; both columns typecheck under the one binding.
     let nat_fns = nat_fn_names(f);
 
@@ -442,7 +442,7 @@ fn tv_clause(
     // P_production — the production lowering of this clause. The frame's
     // slice params (bound `&[elem]`, #149) are passed as production's `slices` so a
     // slice use takes its `@`-view (`spec_sum(xs@)` / `xs@.subrange(..)`), mirroring
-    // the real fn signature path (`tests/golden/lower/sum.verus.rs`), and typechecks
+    // the fn signature path (`tests/golden/lower/sum.verus.rs`), and typechecks
     // against the `&[elem]` binding. nat_fns drive the `as nat` coercion.
     let slice_params = slice_param_names(base_frame);
     let slices: Vec<&str> = slice_params.iter().map(String::as_str).collect();
@@ -650,7 +650,7 @@ fn touch(xs: &[u32], ys: &[u32], n: usize) -> bool
 // #150 gap #2: a `String`-param fn so `emit_string_wrapper` materializes the
 // `TString` wrapper (its `spec_len`/`spec_byte_at` spec fns) into the preamble —
 // the off-corpus String byte-view obligation binds `t: &TString` and dispatches
-// `t.byte_at(i)`/`t.len()` to those spec fns on BOTH columns.
+// `t.byte_at(i)`/`t.len()` to those spec fns on both columns.
 fn touch_string(t: String) -> u64
   req t.len() > 0
   ens result == t.byte_at(0)
@@ -946,7 +946,7 @@ impl SpecType {
     /// typechecks: `xs@` is the `Seq<elem>` view of `xs: &[elem]`. Under a bare
     /// `Seq<elem>` binding, `xs@` is a type error (`Seq` has no `view`), so the
     /// indexed clause `acc == spec_sum(&xs[..i])` could not discharge (Unverifiable).
-    /// This mirrors the real fn lowering (`tests/golden/lower/sum.verus.rs`:
+    /// This mirrors the fn lowering (`tests/golden/lower/sum.verus.rs`:
     /// `fn sum(xs: &[u32])` emits `xs@` everywhere); the reference encoder then
     /// emits the matching `xs@` form (the param is not seq-bound), so both columns
     /// typecheck under one binding and Z3 proves them equivalent.
@@ -1132,7 +1132,7 @@ fn discharge(program: &str, label: &str, seed: u64, rlimit: f64) -> ClauseVerdic
 
     // No `--output-json` here — verus then emits the plain-text
     // `verification results:: N verified, M errors` summary line that
-    // [`parse_results`] reads (the same form the `thermite-tv` teeth-test parses).
+    // [`parse_results`] reads (the same form parsed by the `thermite-tv` negative test).
     // The pinned `--rlimit` + `smt.random_seed` keep the discharge deterministic
     // (R-CODE-5), matching `forge check`'s verus invocation config.
     let output = Command::new("verus")
@@ -1192,7 +1192,7 @@ fn discharge(program: &str, label: &str, seed: u64, rlimit: f64) -> ClauseVerdic
 }
 
 /// Parse the `N verified, M errors` summary line from verus output (mirrors the
-/// teeth-test parser). `None` if no summary line is present.
+/// negative-test parser). `None` if no summary line is present.
 fn parse_results(output: &str) -> Option<(u32, u32)> {
     let line = output
         .lines()
@@ -1268,17 +1268,17 @@ pub fn render_report(report: &TvReport, header: &str) -> String {
 pub const TV_DEFAULT_SEED: u64 = DEFAULT_SOLVER_SEED;
 pub const TV_DEFAULT_RLIMIT: f64 = DEFAULT_RLIMIT;
 
-// ---- the forge-level contract Divergent teeth (REQ-5; blocker #166) ---------
+// ---- forge-level contract Divergent regression tests (REQ-5; blocker #166) -
 //
-// The obligation-layer teeth (`thermite-tv/tests/teeth.rs` F1–F4) prove a wrong
-// `P_production` -> a real verus error. They do not exercise the forge-level step
+// The obligation-layer tests (`thermite-tv/tests/teeth.rs` F1–F4) prove a wrong
+// `P_production` -> a verus error. They do not exercise the forge-level step
 // that maps that verus signal to a `ClauseVerdict`: `discharge`'s four-way
 // classification. Over the corpus/off-corpus space the faithful lowerer never
 // produces a Divergent, so the Divergent arm (and the Unverifiable boundary) had no
 // direct test coverage. This is the #166 analog of the #157 (`exec_tv`) / #189
 // (`body_tv`) gap — the same parallel seam.
 //
-// This module is the end-to-end teeth for the forge classification, mirroring
+// This module tests the forge classification end to end, mirroring
 // `exec_tv::divergent_teeth` and `body_tv::divergent_teeth`: it builds a real
 // per-clause equivalence obligation, discharges it through the actual `discharge`
 // fn, and asserts the verdict. It covers the positive control (faithful ->
@@ -1294,11 +1294,11 @@ pub const TV_DEFAULT_RLIMIT: f64 = DEFAULT_RLIMIT;
 // including an rlimit-exhausted run (a results line counting the exhausted obligation
 // as an error). That is the same #189-class bug: a solver-budget timeout fabricated
 // into a contract infidelity. The minimal fix added `is_rlimit_signal` + an
-// rlimit-hit arm ahead of the Divergent arm. The `rlimit_signal_*` teeth pin it.
+// rlimit-hit arm ahead of the Divergent arm. The `rlimit_signal_*` tests pin it.
 //
 // Test-only: no further production-logic change. `discharge`/`is_rlimit_signal` are
-// private sibling fns, reachable here via `super::`. The teeth drive a real
-// wrong production -> a real verus counterexample -> the real `discharge` mapping,
+// private sibling fns, reachable here via `super::`. The tests drive a
+// wrong production -> a verus counterexample -> the real `discharge` mapping,
 // never a mocked verdict. Skips with a logged message when `verus` is absent.
 #[cfg(test)]
 mod divergent_teeth {
@@ -1307,7 +1307,7 @@ mod divergent_teeth {
 
     /// `true` iff a bare `verus` is spawnable (the same resolution `discharge` uses —
     /// `Command::new("verus")`, i.e. PATH). Skip with a logged message otherwise so
-    /// the teeth never silently pass when the discharge cannot reach a solver.
+    /// the tests do not pass without reaching a solver.
     fn verus_on_path() -> bool {
         Command::new("verus").arg("--version").output().is_ok()
     }
@@ -1439,8 +1439,8 @@ mod divergent_teeth {
     /// pin this — contract_tv's first arm is `errors == 0 && status.success()` without a
     /// `verified >= 1` guard, so a vacuous success classifies Faithful; the no-results
     /// abort is the malformed-outcome the `_` arm catches.) The #166 audit
-    /// confirmed `discharge` already classified this arm as Unverifiable; this teeth
-    /// pins it so a future regression to Divergent fails.
+    /// confirmed `discharge` already classified this arm as Unverifiable; this test
+    /// prevents a regression to Divergent.
     #[test]
     fn frame_abort_classifies_unverifiable_not_divergent() {
         if !verus_on_path() {
@@ -1532,7 +1532,7 @@ mod divergent_teeth {
     /// on the rlimit text; the `discharge` source then routes `errors >= 1 && rlimit_hit`
     /// to Unverifiable ahead of the `errors >= 1` Divergent arm. Together they pin the
     /// full #189-class mapping (rlimit -> Unverifiable) by inspection + execution of the
-    /// discriminator, as `body_tv`'s `is_rlimit_signal` unit teeth do.
+    /// discriminator, as `body_tv`'s `is_rlimit_signal` unit tests do.
     #[test]
     fn rlimit_output_text_is_not_a_divergence() {
         use crate::tv_signal::is_rlimit_signal;

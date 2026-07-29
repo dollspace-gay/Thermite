@@ -7,7 +7,7 @@
 //!     (… the latter over Stage 7 `String`), `os::write`/`os::print`
 //!     (`std::io::stdout().write_all`, Stage 7 `String` arg). Each wrapper's
 //!     signature MATCHES the `#[boundary]` primitive it backs (params + return)."
-//!   - REQ-3: "a verified program using an effect primitive COMPILES + RUNS + does
+//!   - REQ-3: "a verified program using an effect primitive compiles + runs + does
 //!     real I/O".
 //!   - the wrapper-set table: rows `os::write` / `os::print` (`write(output)`,
 //!     Stage-7 `String` arg) + `os::read_line` (Stage-7 `String` return).
@@ -86,12 +86,12 @@ fn write_fixture(name: &str, src: &str) -> PathBuf {
     p
 }
 
-/// `true` iff the `forge build --entry` runnable artifact can LINK + RUN here. The
+/// `true` iff the `forge build --entry` runnable artifact can link + run here. The
 /// #57 runtime seccomp sandbox (`forge/src/sandbox.rs`) is native Linux only, with
 /// generated filters for x86_64 and aarch64. The emitted runner does not link off
 /// Linux (`Undefined symbols: _prctl` on macOS).
 /// The build+run tests SKIP with an explicit warning on any non-Linux platform —
-/// FULL ACCEPTANCE OF THE BUILD+RUN PATH REQUIRES LINUX CI. Mirrors the
+/// full acceptance OF the build+run PATH requires LINUX CI. Mirrors the
 /// `verus_present()` skip precedent (a missing capability is a logged skip, not a
 /// panic, R-CODE-4).
 fn linux_build_run_supported(test: &str) -> bool {
@@ -113,9 +113,9 @@ fn print_wrapper_builds_and_runs() {
     if !linux_build_run_supported("print_wrapper_builds_and_runs") {
         return;
     }
-    // AUTHORITY (08-runnable-effect-link.md REQ-1): "os::write/os::print
+    // authority (08-runnable-effect-link.md REQ-1): "os::write/os::print
     // (std::io::stdout().write_all, Stage 7 String arg). Each wrapper's signature
-    // MATCHES the #[boundary] primitive it backs"; REQ-3: it COMPILES + RUNS.
+    // MATCHES the #[boundary] primitive it backs"; REQ-3: it compiles + runs.
     let fixture = write_fixture("print", PRINT_DEMO);
     let (ok, stdout, stderr) =
         run_forge_build(&[fixture.to_str().unwrap(), "--entry", "greet", "--json"]);
@@ -144,7 +144,7 @@ fn read_line_wrapper_builds() {
     if !linux_build_run_supported("read_line_wrapper_builds") {
         return;
     }
-    // AUTHORITY (08-runnable-effect-link.md REQ-1): "os::read_byte/os::read_line
+    // authority (08-runnable-effect-link.md REQ-1): "os::read_byte/os::read_line
     // (std::io::stdin().read/read_line, the latter over Stage 7 String)".
     let fixture = write_fixture("read_line", READ_LINE_DEMO);
     let (ok, stdout, stderr) =

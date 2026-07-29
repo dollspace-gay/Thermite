@@ -2,11 +2,13 @@
 
 ## What the ladder rungs mean
 
-L3, the top rung, is a machine-checked proof that a clause holds for every
-input, discharged by the Verus prover emitting verification conditions to the
-Z3 solver. L2 is bounded model checking (Kani/CBMC) up to a stated size. L1 is
-runtime contract monitoring. L0 is a trusted-by-fiat `#[slag]` annotation.
-[Overview](overview.md) has the full table.
+L4 is a kernel-grounded proof. The shipped nonlinear-arithmetic route asks Z3's
+nlsat procedure to discharge a relaxation over the reals, then uses
+Lean-checked soundness lemmas to connect that result back to integer semantics.
+L3 is a machine-checked proof for every input, normally discharged by Verus and
+Z3. L2 is bounded model checking (Kani/CBMC) up to a stated size. L1 is runtime
+contract monitoring. L0 is the trusted-by-fiat `#[slag]` annotation.
+[Overview](overview.md) summarizes the ladder.
 
 ## Grading the contract, not only the proof
 

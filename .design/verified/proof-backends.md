@@ -2110,11 +2110,12 @@ enumeration (R-CHAR-3), never regenerated from the exporter.
   ACTUAL SHAPE is FUEL-FREE shallow goals** (the #216 reconciliation, §6 tiers (a)/(b)): the exporter
   emits `denote 0 e env`-style statements for specCall-free obligations (via the fuel-irrelevance
   lemma) or statically-unfolded goals for non-recursive registries — exactly the QF shape the PoC's
-  `tv_obligation_*` theorems are, NOT raw `∃N∀fuel` goals. OUT of auto today: the
-  QF_BV bitwise fragment (blocked by an upstream `sorry` in Lean-SMT's `Bitblast.lean`), the bounded
-  quantifier combinators (~30% cvc5-rule reconstruction coverage — may FAIL, i.e. `Unknown`, never
-  unsound), and recursive spec-fns / `permutation_of` (need the `∃N∀fuel` stabilization form + an
-  induction on the per-env depth — INTERACTIVE only, §6 tier (c)). So the
+  `tv_obligation_*` theorems are, NOT raw `∃N∀fuel` goals. The stage-3 exporter also
+  handles the complete QF_BV term surface with literal `BitVec N` normalization proofs.
+  OUT of auto today: bounded quantifier combinators (~30% cvc5-rule reconstruction
+  coverage — may fail as `Unknown`) and recursive spec-fns / `permutation_of` (need the
+  `∃N∀fuel` stabilization form + induction on the per-env depth — INTERACTIVE only,
+  §6 tier (c)). So the
   Lean-auto FRAGMENT (REQ-2(a)) is precisely the scalar/linear contract clause exported FUEL-FREE —
   the "cheapest real win" (increment (ii)).
 - **(ii) INTERACTIVE** — an agent authors a proof file checked in NEXT TO the source, replayed in CI.

@@ -4,7 +4,7 @@
 //! R-DEFER-9 (R-CHAR-3 — expected values hand-derived or from the corpus, never
 //! copied from toolchain output). These are not in the builder's
 //! `l1_conformance.rs`; they probe corners that file may have missed:
-//! a real runtime violation on a fresh program (not the corpus corrupted body),
+//! a runtime violation on a fresh program (not the corpus corrupted body),
 //! release-profile (`-O`) check survival, generality on a renamed program, and
 //! combinator edge cases (`exists_in` short-circuit, `n > len`, `permutation_of`
 //! duplicates).
@@ -78,7 +78,7 @@ fn lower_str(src: &str) -> String {
 // program (not the corpus corrupted-body). Authority: l1-runtime-checks.md
 // REQ-2 / AC-1 ("a violating body fires the violation handler … observable, not
 // silent"); §6 ("Violations detected at the call site"); R-DEFER-9 (the check
-// must be a real obligation, not a no-op).
+// must be a obligation, not a no-op).
 //
 // Program: a fn whose `ens result == 0` is violated by a body returning its
 // input. (Clause order req-before-ens satisfied with a trivially-true `req`.)

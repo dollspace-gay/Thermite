@@ -232,7 +232,7 @@ pub struct ReviewArtifact {
     /// source order (REQ-2; R-DEFER-9).
     pub battery_failing: Vec<BatteryFailing>,
     /// The BURNED forge-tier lemmas (`.design/stage1-forge-tier.md` REQ-9, increment 3):
-    /// each certified `lemma` surfaced with its burn receipt — exactly as a certified item
+    /// each certified `lemma` surfaced with its burn receipt — as a certified item
     /// surfaces, so a reviewer sees the project's proven lemma library alongside the
     /// reviewed fns. In source order. Omitted (empty) on the default Verus path / the v1
     /// corpus (which discharge no forge lemma), and `#[serde(default,
@@ -240,7 +240,7 @@ pub struct ReviewArtifact {
     /// only, mirroring the cert layer's additive discipline).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub burned_lemmas: Vec<BurnedLemma>,
-    /// The `@bv`-tagged clauses' SHADOW FLAGS (`.design/stage3-bv-reconstruction.md`
+    /// The `@bv`-tagged clauses' shadow flags (`.design/stage3-bv-reconstruction.md`
     /// REQ-3 / AC-4 — Lock 1): every machine-semantics clause surfaced for review, so a
     /// reviewer sees the project's semantic forks alongside the contracts. One entry per
     /// tagged clause (read from each obligation's `bv_shadow`), in cert/obligation order.
@@ -251,7 +251,7 @@ pub struct ReviewArtifact {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bv_shadows: Vec<BvShadowClause>,
     /// The "semantic forks and definition towers" section
-    /// (`.design/stage3-bv-reconstruction.md` REQ-6 / AC-7): the AGGREGATE legibility
+    /// (`.design/stage3-bv-reconstruction.md` REQ-6 / AC-7): the aggregate legibility
     /// surface a reviewer reads alongside the per-clause `bv_shadows` + `burned_lemmas`
     /// above — bv-shadow density per module, every burned lemma's definition-tower depth,
     /// and the post-ship **F-F density tripwire**. A pure projection
@@ -286,7 +286,7 @@ pub struct BvShadowClause {
 pub struct BurnedLemma {
     /// The lemma name (the certified item).
     pub item: String,
-    /// The committed-proof lexer-token count from the burn receipt (REQ-7 / Q-BURN).
+    /// The committed-proof lexer-token count from the burn receipt (REQ-7 / Q-burn).
     pub proof_tokens: usize,
     /// The lemmas this lemma's proof cited (post-dedup-rewrite, REQ-9) — empty if it cited
     /// none. Omitted when empty (mirrors the burn receipt's own field discipline).
@@ -345,7 +345,7 @@ pub fn review_file(
 ) -> Result<ReviewArtifact, ForgeError> {
     let path = path.as_ref();
 
-    // Parse the file once for the contract surface (REQ-1) AND to decide the route
+    // Parse the file once for the contract surface (REQ-1) and to decide the route
     // below. A re-parse of a file `check_file` re-validates (deterministic, R-CODE-5),
     // never a re-verification — the `audit` precedent.
     let src = std::fs::read_to_string(path).map_err(|e| ForgeError::Io {
@@ -489,7 +489,7 @@ fn project_artifact(
 
 /// Project a certified forge-tier `lemma` cert into a [`BurnedLemma`] (REQ-9, increment 3),
 /// or `None` if `cert` is not a burned lemma. A burned lemma is a `cert` whose item is a
-/// top-level `lemma` in `program`, that CERTIFIED ([`is_intent_reviewable`] — L3, no reject),
+/// top-level `lemma` in `program`, that certified ([`is_intent_reviewable`] — L3, no reject),
 /// and that carries a burn receipt (the proof closed a goal). The projection reads the
 /// receipt's auditable figures verbatim — pure, never fabricated (R-CODE-5).
 fn burned_lemma_projection(program: &Program, cert: &Certificate) -> Option<BurnedLemma> {
@@ -1057,9 +1057,9 @@ mod tests {
         assert_eq!(artifact.intent_reviewable[0].item, "sum");
     }
 
-    // REQ-9 (increment 3): a CERTIFIED forge-tier `lemma` carrying a burn receipt surfaces
+    // REQ-9 (increment 3): a certified forge-tier `lemma` carrying a burn receipt surfaces
     // in the review artifact's `burned_lemmas` partition — "like any certified item" — with
-    // its proof-token count + cited lemmas; it is NOT mis-filed as a battery-failing fn (a
+    // its proof-token count + cited lemmas; it is not mis-filed as a battery-failing fn (a
     // lemma has no fn contract). A v1 program (no lemma) carries an empty partition.
     #[test]
     fn burned_lemma_surfaces_in_review() {
@@ -1106,7 +1106,7 @@ mod tests {
         );
     }
 
-    // REQ-9: an UNcertified lemma (a `reject` cert) does NOT surface as a burned lemma — only
+    // REQ-9: an UNcertified lemma (a `reject` cert) does not surface as a burned lemma — only
     // a certified item does (the "like any certified item" rule).
     #[test]
     fn uncertified_lemma_does_not_surface_as_burned() {

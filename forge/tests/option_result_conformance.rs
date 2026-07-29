@@ -3,7 +3,7 @@
 //! payload-in-contract projection (the spec-`match`-in-`ens`) + the deferred
 //! `parse_u64` (the C4 `07-strings.md` REQ-9 payoff). These run against the two
 //! external truths the toolchain does not author for itself: the built `forge`
-//! binary's certificate ladder (`forge check`, real verus) and — for the generated
+//! binary's certificate ladder (`forge check`, verus) and — for the generated
 //! `parse_u64` whose round-trip cannot be a thin caller's mutation-scored cert —
 //! the `verus` binary on the emitted lowering of a `parse_u64`-calling
 //! program (R-CODE-4: the subprocess status is checked, never swallowed).
@@ -276,7 +276,7 @@ fn ac4_parse_u64_lowering_verifies_under_real_verus() {
 }
 
 /// AC-4 non-vacuity (R-DEFER-9): a hand-broken `parse_u64` whose body returns
-/// `Some(0)` unconditionally fails verus. The round-trip success `ens` has real teeth:
+/// `Some(0)` unconditionally fails verus. The round-trip success `ens` rejects this body:
 /// a body that returns `Some(0)` for a non-"0" input does not satisfy `parse_be(s) ==
 /// 0`, so the postcondition is undischarged.
 ///
@@ -284,7 +284,7 @@ fn ac4_parse_u64_lowering_verifies_under_real_verus() {
 /// fails (`3 verified, 1 errors`). `thermite-design.md` §7: the battery catches a
 /// false claim. The break is injected into a standalone verus probe of the generated
 /// contract (the surface cannot mutate the generated fn body), confirming the round-
-/// trip `ens` is a real proof, not vacuous.
+/// trip `ens` is a proof, not vacuous.
 #[test]
 fn ac4_broken_parse_u64_body_fails_real_verus() {
     if !verus_present() {

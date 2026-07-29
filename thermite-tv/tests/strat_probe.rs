@@ -216,7 +216,7 @@ fn hit_rates_match_the_readme_record() {
 
     assert_eq!(ct, 4, "corpus-only n must be 4 (AC-7 small-n number)");
 
-    // The two rate lines, formatted exactly as the README writes them.
+    // The two rate lines, formatted as the README writes them.
     let corpus_line = format!(
         "(n={ct}, **small-n**, NOT threshold-bearing on its own): **{ch}/{ct} = {:.1}%**",
         pct(ch, ct)

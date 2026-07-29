@@ -7,15 +7,15 @@
 //! covenant-before-burn — which is why the record is a NON-OPTIONAL parameter of
 //! [`crate::engine::Engine::discharge`] (a type-level seam, not a runtime convention).
 //!
-//! ## What the FOUNDATION ships vs what 2b builds
+//! ## What the foundation ships vs what 2b builds
 //!
-//! This increment (the foundation) introduces the record TYPE and threads it through
+//! This increment (the foundation) introduces the record type and threads it through
 //! the `Engine::discharge` signature and every call site, so the cross-cutting signature
-//! ripple happens ONCE. It does NOT build the covenant LOGIC (the `inhabit` type-check +
+//! ripple happens ONCE. It does not build the covenant logic (the `inhabit` type-check +
 //! execute, the `falsify` generator run, the covenant-before-burn enforcement) — that is
-//! increment 2b. Today the `witness` SURFACE SYNTAX is REQ-3 and not present in the
+//! increment 2b. Today the `witness` surface SYNTAX is REQ-3 and not present in the
 //! parser, so every program legitimately carries a [`CovenantRecord::none`] — a truthful
-//! "no covenant declared" record, NOT a stub: there is nothing to declare yet, and 2b
+//! "no covenant declared" record, not a stub: there is nothing to declare yet, and 2b
 //! both adds the syntax and fills in the producing logic at the seam this record marks.
 //!
 //! The Q3 defaults (a fixed-seed `falsify 50_000` when a covenant is declared without an
@@ -47,7 +47,7 @@ pub const DEFAULT_FALSIFY_SEED: u64 = 0x5EED_0000_0000_C0DE;
 /// covenant-before-burn — no call site changes, because the seam already threads this.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CovenantRecord {
-    /// Whether a `witness` block was DECLARED for this item. `false` for every program
+    /// Whether a `witness` block was declared for this item. `false` for every program
     /// today (the surface syntax is REQ-3, not yet present), so [`CovenantRecord::none`]
     /// is the truthful record, not a placeholder.
     pub declared: bool,
@@ -64,7 +64,7 @@ pub struct CovenantRecord {
 impl CovenantRecord {
     /// The truthful "no covenant declared" record (REQ-4): the record every program
     /// carries today, because the `witness` surface syntax (REQ-3) is not present yet.
-    /// NOT a stub — there is nothing to declare, so no witnesses, no falsification owed.
+    /// not a stub — there is nothing to declare, so no witnesses, no falsification owed.
     #[must_use]
     pub fn none() -> Self {
         CovenantRecord {

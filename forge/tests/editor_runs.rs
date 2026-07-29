@@ -2,7 +2,7 @@
 //! max-verified interactive multi-line editor that runs. This integration test
 //! grounds `examples/editor/editor.th` end-to-end against the external truths the
 //! toolchain does not author for itself — the real `verus` SMT prover (the cert
-//! levels) and the real `rustc` compiler + a real process run (the build + the
+//! levels) and the real `rustc` compiler + a process run (the build + the
 //! piped-keystroke session).
 //!
 //! The #125 multi-line extension: on top of the shipped edit core, the editor adds
@@ -59,7 +59,7 @@
 //!     the total corpus).
 //!
 //! Driving the built `forge` binary (not a library API) keeps `forge` a pure `bin`
-//! crate and exercises the real CLI surface. The cert-level checks run verus; if
+//! crate and exercises the CLI surface. The cert-level checks run verus; if
 //! verus is absent they skip with a logged reason (the `check_conformance.rs`
 //! precedent) — never panic on a missing solver. `tests/` is not anti-pattern-gated,
 //! so `unwrap`/`expect`/`panic!` are fine here (R-APG-2). Expected levels trace to
@@ -179,12 +179,12 @@ fn write_fixture(name: &str, body: &str) -> PathBuf {
     path
 }
 
-/// `true` iff the `forge build --entry` runnable artifact can LINK + RUN here. The
+/// `true` iff the `forge build --entry` runnable artifact can link + run here. The
 /// #57 runtime seccomp sandbox (`forge/src/sandbox.rs`) is native Linux only, with
 /// generated filters for x86_64 and aarch64. The emitted runner does not link off
 /// Linux (`Undefined symbols: _prctl` on macOS).
 /// The build+run tests SKIP with an explicit warning on any non-Linux platform —
-/// FULL ACCEPTANCE OF THE BUILD+RUN PATH REQUIRES LINUX CI. Mirrors the
+/// full acceptance OF the build+run PATH requires LINUX CI. Mirrors the
 /// `verus_present()` skip precedent (a missing capability is a logged skip, not a
 /// panic, R-CODE-4).
 fn linux_build_run_supported(test: &str) -> bool {
@@ -410,7 +410,7 @@ fn editor_content_pins_present_in_source() {
     // The editor's three content-bearing edit ops carry the exact `bytes_eq` pin
     // shapes the manifest / 07-strings REQ-18 spell — over the field-access operand
     // (`&result.text`/`&b.text`, the editor's Buffer-wrapped String, #279). These
-    // are content teeth, not the length pins (which remain): the bytes are certified
+    // check content in addition to the existing length pins: the bytes are certified
     // byte-for-byte. A reviewer reading the source must see the windows verbatim, so
     // a silent regression to a length-only pin (the O-5 cheat) is caught here.
     let src = std::fs::read_to_string(editor_th()).expect("read editor.th");
@@ -464,7 +464,7 @@ fn editor_content_pinned_ops_still_certify_l3() {
         eprintln!("SKIP: verus not available — editor content-pin cert-oracle not run.");
         return;
     }
-    // The content pins discharge at real verus (the #277 slice/concat byte-content
+    // The content pins discharge at verus (the #277 slice/concat byte-content
     // ens + the #278 `lemma_bytes_eq_bridge` + the #279 field-access operand view all
     // landed): each content-pinned op still certifies L3 — the windows are proven,
     // not asserted (R-DEFER-9). The whole editor exits 0 (O-1). Expected = L3 from
@@ -483,7 +483,7 @@ fn editor_content_pinned_ops_still_certify_l3() {
             "the `bytes_eq`-content-pinned `{op}` must certify L3 — the byte windows \
              discharge via the prove-once bridge (AC-14/AC-15):\n{cert:#?}"
         );
-        // O-2/O-3: no new survivor. The content pins add content teeth on top of the
+        // O-2/O-3: no new survivor. The content pins add byte-level checks to the
         // length pins; the §7 scored ratio is unperturbed and carries no survivor.
         let survivor = cert["contract_quality"]["survivor"].as_str().unwrap_or("");
         assert!(

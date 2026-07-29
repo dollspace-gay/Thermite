@@ -3,18 +3,14 @@
   (`.design/stage3-bv-reconstruction.md` REQ-7 / AC-8). DO NOT EDIT BY HAND.
 
   Each theorem is a per-clause translation-validation obligation `(P_prod) ⟺ (P_ref)`
-  emitted by the automated Rust→Lean exporter — the step `Thermite.SmtDemo` performed
-  by hand. It is discharged by the lean-smt `smt` tactic (cvc5 reconstruction, pinned
-  @ 7d1d8239) and KERNEL-CHECKED; the `#print axioms` after each must report a subset
-  of {propext, Classical.choice, Quot.sound} (no Smt oracle, no sorryAx, no
-  Lean.ofReduceBool) for the fragment to count as reconstruction-supported.
+  emitted by the automated Rust→Lean exporter. QF_LIA uses lean-smt/cvc5. QF_BV is
+  rendered directly as `BitVec N` and proved from kernel-checked normalization lemmas.
+  The `#print axioms` after each theorem must report a subset of
+  {propext, Classical.choice, Quot.sound}.
 
-  QF_BV clauses are rendered over the range-bounded integer machine-model (bv var ->
-  Int with 0 ≤ x < 2^N, wraparound op -> `% 2^N`, unsigned cmp -> Int cmp): lean-smt's
-  literal BitVec reconstruction bit-blasts through an upstream `sorry`
-  (.design/verified/z3-demotion.md), so the integer model is the reconstruction-
-  supported QF_BV encoding. Regenerate via the `golden_file_matches_exporter` test
-  with THERMITE_REGEN_SMT_EXPORT=1.
+  The literal QF_BV renderer covers wrapping arithmetic, unsigned comparisons,
+  bitwise operations, shifts, unsigned division, and remainder. Regenerate via the
+  `golden_file_matches_exporter` test with THERMITE_REGEN_SMT_EXPORT=1.
 -/
 import Smt
 
@@ -24,12 +20,19 @@ theorem thermite_smt_lia_arith_cmp (a b c : Int) :
     ((a - b) ≤ c) ↔ (¬ (c < (a - b))) := by smt
 #print axioms thermite_smt_lia_arith_cmp
 
-theorem thermite_smt_bv64_le_not_lt (a b : Int) (h0lo : 0 ≤ a) (h0hi : a < 18446744073709551616) (h1lo : 0 ≤ b) (h1hi : b < 18446744073709551616) :
-    (a ≤ b) ↔ (¬ (b < a)) := by smt [h0lo, h0hi, h1lo, h1hi]
+theorem thermite_smt_bv64_le_not_lt (a b : BitVec 64) :
+    (a ≤ b) ↔ (¬ (b < a)) := by
+  simp
 #print axioms thermite_smt_bv64_le_not_lt
 
-theorem thermite_smt_bv8_add_comm (a b c : Int) (h0lo : 0 ≤ a) (h0hi : a < 256) (h1lo : 0 ≤ b) (h1hi : b < 256) (h2lo : 0 ≤ c) (h2hi : c < 256) :
-    (((a + b) % 256) = c) ↔ (((b + a) % 256) = c) := by smt [h0lo, h0hi, h1lo, h1hi, h2lo, h2hi]
+theorem thermite_smt_bv8_add_comm (a b c : BitVec 8) :
+    ((a + b) = c) ↔ ((b + a) = c) := by
+  simp [BitVec.add_comm]
 #print axioms thermite_smt_bv8_add_comm
+
+theorem thermite_smt_bv8_full_terms (a b c : BitVec 8) :
+    (((if c = (0#8) then (~~~(0#8)) else ((((((~~~a) &&& b) ||| (a ^^^ b)) <<< c) >>> b) / c)) % b) ≠ ((a * b) + c)) ↔ (¬ (((if c = (0#8) then (~~~(0#8)) else ((((((~~~a) &&& b) ||| (a ^^^ b)) <<< c) >>> b) / c)) % b) = (c + (b * a)))) := by
+  simp [BitVec.add_comm, BitVec.mul_comm]
+#print axioms thermite_smt_bv8_full_terms
 
 end Thermite.SmtExport

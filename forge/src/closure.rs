@@ -65,7 +65,7 @@
 //! reachable_in_file_fns` reuses the same walker (a new `CallGraph::reachable_fns`
 //! DFS sibling of `reach_crossing`) to return every in-file `Item::Fn` a caller
 //! transitively references, which `check::item_subprogram` weaves into the
-//! caller's §5.3 sub-program (regular fns with their real body, boundary/slag fns
+//! caller's §5.3 sub-program (regular fns with their body, boundary/slag fns
 //! as `#[verifier::external_body]` signatures). No walker is duplicated.
 //!
 //! ## Cluster C10 — ergonomics ripple (`.design/basis/11-ergonomics.md`, #112)
@@ -176,7 +176,7 @@ impl CallGraph {
     /// referenced from `start`'s body, excluding `start` itself: a cycle-safe,
     /// bounded DFS over the same out-edges [`reach_crossing`] walks (#52
     /// composition weaving). Used by `check::item_subprogram` to weave a caller's
-    /// regular-fn dependencies (real body) and boundary/slag dependencies
+    /// regular-fn dependencies (body) and boundary/slag dependencies
     /// (external_body signature) into its §5.3 sub-program so `lower`/`verus`
     /// resolve every referenced callee.
     ///
@@ -282,7 +282,7 @@ pub fn classify(program: &Program) -> BTreeMap<String, AssuranceScope> {
 /// weaving (`.design/lower/boundary-composition.md` REQ-2, crosslink #52).
 ///
 /// `check::item_subprogram` consumes this to build a caller `f`'s isolated §5.3
-/// sub-program: every regular reachable fn is woven with its real body (proved),
+/// sub-program: every regular reachable fn is woven with its body (proved),
 /// and every `#[boundary]`/`#[slag]` reachable fn is woven as a
 /// `#[verifier::external_body]` signature (`thermite_lower::lower`), so `verus`
 /// resolves the foreign callee and `f` proves through its contract (was an
@@ -627,7 +627,7 @@ fn caller(x: u32) -> u32 req x < 100 ens result == x fx pure { ext_id(x) }";
         );
     }
 
-    // #52 REQ-2 (transitive): h's sub-program weaves both g (real body) and
+    // #52 REQ-2 (transitive): h's sub-program weaves both g (body) and
     // ext_id (external_body); both are reachable `fn`s.
     #[test]
     fn reachable_fns_is_transitive_through_an_intermediary() {

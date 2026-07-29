@@ -57,7 +57,7 @@ def sencodeFlipAt (d : Nat) : Frm → Tok
 
 def sencodeFlip (φ : Frm) : Tok := sencodeFlipAt 0 φ
 
-/-- The witness sentence `∃x:usize. x = c0` — TRUE over `dom` (`c0 ∈ dom`). -/
+/-- The witness sentence `∃x:usize. x = c0` — true over `dom` (`c0 ∈ dom`). -/
 def phiFlip : Frm := .ex usizeS (.atom (.rel .eq (.var usizeS 0) c0))
 
 /-! ## The pin -/
@@ -68,7 +68,7 @@ theorem flip_counterexample :
     tokDenote qEq dom (sencodeFlip phiFlip) σ0 = false
       ∧ fdenote qEq dom phiFlip σ0 = true := by decide
 
-/-- The pin: encoder soundness is FALSE for the flipped encoder — there is a
+/-- The pin: encoder soundness is false for the flipped encoder — there is a
     formula on a concrete domain where its token disagrees with the source. -/
 theorem flip_breaks_soundness :
     ¬ ∀ (φ : Frm) (σ ρ : Subst),

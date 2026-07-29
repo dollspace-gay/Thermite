@@ -19,11 +19,12 @@ the resulting certificates; the agent writes the proofs.
 
 ## The assurance ladder
 
-Each contract clause is graded on a four-rung ladder. `forge`, the toolchain,
+Each contract clause is graded on a five-rung ladder. `forge`, the toolchain,
 aims for the top rung and records where each clause landed.
 
 | Rung | Meaning |
 |---|---|
+| **L4** | A kernel-grounded proof. The nonlinear-arithmetic route combines a Z3 nlsat result with Lean-checked soundness lemmas that connect the real relaxation back to integer semantics. |
 | **L3** | A machine-checked proof that the clause holds for every input. (SMT-backed deductive verification via the Verus prover and the Z3 solver.) |
 | **L2** | Proven for all inputs up to a stated size. (Bounded model checking, via Kani/CBMC.) |
 | **L1** | Checked while the program runs; a violation stops it. (Runtime contract monitoring.) |
@@ -33,6 +34,5 @@ A function's level is the minimum over its clauses. A counterexample — a
 concrete input where a clause fails — is a hard failure; it is never recorded
 as a lower grade.
 
-The rungs correspond to four established verification techniques. [Verification](verification.md)
-covers how L3 is discharged and re-checked; [Trust](trust.md) covers what
-remains trusted after a clean run.
+[Verification](verification.md) explains how the upper rungs are discharged and
+re-checked. [Trust](trust.md) lists what remains trusted after a clean run.

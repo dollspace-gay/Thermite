@@ -71,7 +71,7 @@ def sdenote (𝓒 : CarrierAssign) (q : QOracle) : Frm → Env 𝓒.C → Bool
     finiteness datum in the semantics. They would FAIL if the carrier were not
     finite (or if `enum` were incomplete); `PinFiniteEscape` pins exactly that. -/
 
-/-- The `all` fold upgrades to a genuine `∀` through the completeness witness. -/
+/-- The `all` fold upgrades to a `∀` through the completeness witness. -/
 theorem sdenote_all_iff (𝓒 : CarrierAssign) (q : QOracle) (φ : Frm) (ρ : Env 𝓒.C) :
     sdenote 𝓒 q (Frm.all φ) ρ = true ↔ ∀ x : 𝓒.C, sdenote 𝓒 q φ (cons x ρ) = true := by
   simp only [sdenote, List.all_eq_true]
@@ -79,7 +79,7 @@ theorem sdenote_all_iff (𝓒 : CarrierAssign) (q : QOracle) (φ : Frm) (ρ : En
   · intro h x; exact h x (𝓒.complete x)
   · intro h x _; exact h x
 
-/-- The `ex` fold upgrades to a genuine `∃` through the completeness witness. -/
+/-- The `ex` fold upgrades to a `∃` through the completeness witness. -/
 theorem sdenote_ex_iff (𝓒 : CarrierAssign) (q : QOracle) (φ : Frm) (ρ : Env 𝓒.C) :
     sdenote 𝓒 q (Frm.ex φ) ρ = true ↔ ∃ x : 𝓒.C, sdenote 𝓒 q φ (cons x ρ) = true := by
   simp only [sdenote, List.any_eq_true]

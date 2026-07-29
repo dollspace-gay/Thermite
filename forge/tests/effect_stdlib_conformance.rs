@@ -56,7 +56,7 @@ fn cases() -> Value {
 }
 
 /// `true` iff verus can be located — mirrors `composition_conformance.rs`. The
-/// compose-through L3 is a real verus proof, so the prover must be present; the
+/// compose-through L3 is a verus proof, so the prover must be present; the
 /// boundary L1 cert resolves the verus version up front for the proof cache.
 fn verus_present() -> bool {
     if let Ok(p) = std::env::var("VERUS_BIN") {
@@ -630,7 +630,7 @@ fn sandbox_derives_fx_time_allowlist_and_kills_off_allowlist() {
 
     // The kill case: a pure filter (fx pure, 23 syscalls) denies the openat probe →
     // SIGSYS, exit 159. This is the shipped #57 `pure_probe_killed` precedent, run
-    // here to confirm the per-effect confinement teeth (a syscall outside the declared
+    // here to confirm per-effect confinement (a syscall outside the declared
     // fx is killed at the boundary).
     let sum = conformance_dir().join("sum.th");
     let (ok2, stdout2, stderr2) = run_forge_build(&[

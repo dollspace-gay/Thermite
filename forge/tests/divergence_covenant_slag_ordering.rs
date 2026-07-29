@@ -1,32 +1,32 @@
 //! Divergence test (acto-critic): the covenant pre-stage in `forge/src/check.rs`
-//! runs BEFORE the `#[slag]` gate, so a `#[slag]` item that also carries a `witness`
+//! runs before the `#[slag]` gate, so a `#[slag]` item that also carries a `witness`
 //! block is covenant-falsified against its (proof-exempt) stub body and emitted as a
 //! `CovenantRefuted` cert with `slag: false` — losing the slag flag/metadata and
 //! manufacturing a hard-fail on a proof-exempt item.
 //!
 //! Authority:
 //!   - `.design/forge/slag.md` REQ-2: a VALID `#[slag]` item is "exempt from the L3
-//!     proof obligation: `forge check` does NOT invoke `verus` on it ... The
+//!     proof obligation: `forge check` does not invoke `verus` on it ... The
 //!     certificate level is `Level::L1` ... with `slag: true`." The body content is
 //!     explicitly "irrelevant to slag certification" (slag.md §"Exact ... fixture
 //!     programs": "the body is proof-exempt, so its content is irrelevant").
 //!   - `.design/forge/slag.md` REQ-4 (audit visibility): "a slag item is visible in
 //!     the certificate ... the existing `Certificate.slag: bool` is set `true`."
-//!   - `.design/forge/slag.md` REQ-5: the slag gate runs PER ITEM with
+//!   - `.design/forge/slag.md` REQ-5: the slag gate runs per ITEM with
 //!     validate -> triage(a/b/c) -> emit L1 `slag: true`; "a non-slag item ... is
 //!     untouched."
 //!
 //! Divergence: `check::check_file`'s per-item loop runs the covenant pre-stage
 //! (`covenant_gate(analyze_covenant(...))`, the `Item::Fn` block ~check.rs L446) and
-//! `continue`s on a `CovenantGate::Refuted` BEFORE ever reaching the `gate_fn` slag
+//! `continue`s on a `CovenantGate::Refuted` before ever reaching the `gate_fn` slag
 //! short-circuit (~check.rs L509). So a `#[slag]` item carrying a `witness` block:
 //!   (1) has its DELIBERATE-STUB body executed by the `falsify` driver, and
 //!   (2) is emitted as `CovenantRefuted` with `slag: false`,
-//! even though the SAME `#[slag]` item WITHOUT the witness certifies `L1`, `slag:true`
+//! even though the same `#[slag]` item without the witness certifies `L1`, `slag:true`
 //! (the stub body is proof-exempt). The covenant pre-stage produces a false verdict
 //! shape on a slag item and drops its audit-visibility flag.
 //!
-//! Control: the same `#[slag]` item with NO witness block certifies `L1`, `slag:true`
+//! Control: the same `#[slag]` item with no witness block certifies `L1`, `slag:true`
 //! (verified against the live binary in this test), isolating the divergence to the
 //! covenant-before-slag ordering.
 //!
@@ -95,8 +95,8 @@ fn first_cert(program: &str, name: &str) -> Value {
 }
 
 /// A valid `#[slag]` item (all three fields present, non-empty) whose stub body `{ 0 }`
-/// does NOT satisfy `ens result == x` — but per slag.md REQ-2 the body is PROOF-EXEMPT,
-/// so the item certifies L1 `slag: true` regardless. Adding a `witness` block must NOT
+/// does not satisfy `ens result == x` — but per slag.md REQ-2 the body is proof-EXEMPT,
+/// so the item certifies L1 `slag: true` regardless. Adding a `witness` block must not
 /// turn the proof-exempt stub into a covenant hard-fail nor drop the slag flag.
 const SLAG_WITH_WITNESS: &str = "\
 #[slag(reason = \"vendored\", owner = \"agent:forge-7\", review = \"required\")]
@@ -109,7 +109,7 @@ fn f(x: u32) -> u32
 witness { inhabit (5); falsify 10; }
 ";
 
-/// The control: the SAME `#[slag]` item with NO witness block. It certifies L1,
+/// The control: the same `#[slag]` item with no witness block. It certifies L1,
 /// `slag: true` (the proof-exempt stub body is irrelevant — slag.md REQ-2/REQ-4).
 const SLAG_NO_WITNESS: &str = "\
 #[slag(reason = \"vendored\", owner = \"agent:forge-7\", review = \"required\")]
@@ -147,7 +147,7 @@ fn slag_item_keeps_its_slag_flag_under_a_covenant_block() {
     // Authority (slag.md REQ-2/REQ-4/REQ-5): a #[slag] item is proof-exempt and its
     // certificate carries slag:true. Adding a `witness` block does not strip the slag
     // identity. The covenant pre-stage (check.rs, the Item::Fn covenant block that runs
-    // BEFORE the gate_fn slag short-circuit) executes the proof-exempt stub body, emits
+    // before the gate_fn slag short-circuit) executes the proof-exempt stub body, emits
     // a CovenantRefuted, and `continue`s — so the cert reports slag:false (the slag
     // flag/metadata are lost) on an item that IS slag.
     let cert = first_cert(SLAG_WITH_WITNESS, "withwitness");

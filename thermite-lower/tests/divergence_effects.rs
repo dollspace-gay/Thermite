@@ -2,7 +2,7 @@
 //! (`thermite-lower/src/effects.rs`, commit 5b0967f).
 //!
 //! Authority: `thermite-design.md` §4.1 — "Effect rows compose: a caller's row
-//! must subsume EVERY callee's row, checked at compile time"; and §9 (trust
+//! must subsume every callee's row, checked at compile time"; and §9 (trust
 //! invariant under composition). Governing contract:
 //! `.design/lower/effect-subsumption.md` REQ-2/REQ-3 + OQ-2 (direct per-call-site
 //! checking composes to transitive correctness only if every reachable call site
@@ -67,7 +67,7 @@ fn fn_with_body(name: &str, fx: EffectRow, body: Block) -> Item {
 // Divergence 1 (crosslink #38): a callee invoked in a `while` loop condition
 // escapes the subsumption check.
 //
-// §4.1: "a caller's row must subsume EVERY callee's row". A `while <cond> { }`
+// §4.1: "a caller's row must subsume every callee's row". A `while <cond> { }`
 // evaluates `<cond>` at runtime before each iteration; a `Call` inside it is a
 // reachable callee. `ast.rs` models this as `LoopKind::While(Box<Expr>)`, and
 // `lower.rs` itself lowers the condition (`LoopKind::While(c)` arm). But

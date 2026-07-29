@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-REQ-status inventory + contradiction lint for source-level `//!` status rows.
+REQ-status inventory and contradiction lint for source-level `//!` status rows.
 
 The pinned-SHA doc-drift gate catches routed design docs that are stale relative
 to governed files. It does not catch semantic contradictions inside the long
@@ -11,7 +11,7 @@ This gate parses markdown table rows of the form:
 
     //! | REQ-... | SHIPPED|NOT-STARTED | evidence |
 
-and applies three deliberately mechanical checks:
+and applies three checks:
 
   * exact requirement labels must not carry conflicting statuses;
   * NOT-STARTED rows must cite a blocker or explicit future/deferred scope;

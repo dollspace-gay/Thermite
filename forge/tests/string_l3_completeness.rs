@@ -5,7 +5,7 @@
 //! Stage 7 Strings shipped (#79), but two reachable lowering paths were never
 //! exercised by `conformance/string_demo.th`:
 //!
-//!   GAP 1 — `slice`'s exec-position arg coercion. The `TString` wrapper's index
+//!   gap 1 — `slice`'s exec-position arg coercion. The `TString` wrapper's index
 //!   accessor `slice(lo: usize, hi: usize)` takes `usize`, but a Thermite surface
 //!   index is commonly a `u64` (`s.slice(0, k)` with `k: u64`). Verus does no
 //!   implicit `u64 -> usize` narrowing, so the un-coerced arg produced
@@ -13,7 +13,7 @@
 //!   index arg of both string index intrinsics (`byte_at`/`slice`) with `as usize`
 //!   (`thermite-lower::lower` `lower_expr` MethodCall exec arm + `is_usize_cast`).
 //!
-//!   GAP 2 — the `TString` wrapper def woven into the per-item sub-program when a
+//!   gap 2 — the `TString` wrapper def woven into the per-item sub-program when a
 //!   `String`/`Type::String` is reachable as a struct/enum field type (not just a
 //!   fn param/return). `struct Buf { text: String, .. }`'s field lowered to `pub
 //!   text: TString` but the per-item sub-program did not emit the wrapper def
@@ -24,7 +24,7 @@
 //!   fns in spec position (the fn-signature `Ctx::string_fields` + the struct-`inv`
 //!   `lower_inv_expr` MethodCall arm for `inv cursor <= text.len()`).
 //!
-//! These run the built `forge` binary end-to-end (real verus). If verus is absent
+//! These run the built `forge` binary end-to-end (verus). If verus is absent
 //! they skip with an eprintln (rather than panic on a missing solver), matching
 //! `divergence_strings.rs`.
 //!
@@ -102,7 +102,7 @@ fn cert_for<'a>(certs: &'a [Value], item: &str) -> &'a Value {
         .unwrap_or_else(|| panic!("no cert for `{item}` in {certs:?}"))
 }
 
-/// GAP 1 — a `String` `slice(lo, hi)` whose `hi` is a `u64` parameter certifies
+/// gap 1 — a `String` `slice(lo, hi)` whose `hi` is a `u64` parameter certifies
 /// L3: the exec arg lowering coerces `k as usize` for the `usize` accessor (was
 /// `error[E0308]: expected usize, found u64` -> L0).
 ///
@@ -138,10 +138,10 @@ fn gap1_slice_u64_arg_coerces_and_certifies_l3() {
     );
 }
 
-/// GAP 1 (the editor op the gap blocked) — a bounded mid-string insert via
+/// gap 1 (the editor op the gap blocked) — a bounded mid-string insert via
 /// slice+concat certifies L3. `s.slice(0, p).concat(ins).concat(s.slice(p,
 /// s.len()))`: the `s.len()` arg is a non-literal `u64`, so it coerces `as
-/// usize` for the second `slice` (the GAP-1 fix applied to the realistic editor
+/// usize` for the second `slice` (the gap-1 fix applied to the realistic editor
 /// path, not just the single triggering site).
 ///
 /// Authority: `.design/basis/07-strings.md` REQ-4 — `slice`'s `ens result.len() ==
@@ -169,7 +169,7 @@ fn gap1_mid_string_insert_via_slice_concat_certifies_l3() {
     );
 }
 
-/// GAP 2 — a `struct Buf { text: String, cursor: u64 }` with a String-field
+/// gap 2 — a `struct Buf { text: String, cursor: u64 }` with a String-field
 /// type-invariant (`inv cursor <= text.len()`) and a constructing `fn mk(t: String)
 /// -> Buf` both certify L3: the `TString` wrapper def is woven into the per-item
 /// sub-program because `String` is reachable as a struct field type (was
@@ -216,7 +216,7 @@ fn gap2_buf_struct_with_string_field_certifies_l3() {
     );
 }
 
-/// GAP 2 (the second reachable form) — a `fn` reading `b.text.len()` from a `&Buf`
+/// gap 2 (the second reachable form) — a `fn` reading `b.text.len()` from a `&Buf`
 /// parameter certifies L3: the String-field receiver `b.text`'s `.len()` rewrites
 /// to `b.text.spec_len()` in the `ens` contract (the field analog of the bare
 /// `String`-value rewrite), and the wrapper is woven because `Buf`'s field reaches
@@ -251,12 +251,12 @@ fn gap2_fn_reading_string_field_len_certifies_l3() {
     );
 }
 
-/// Non-vacuity (R-DEFER-9) — the GAP-1 coercion does not launder an unsound slice:
-/// `slice`'s `req self.well_formed() && lo <= hi && hi <= len` is load-bearing. A
+/// Non-vacuity (R-DEFER-9) — the gap-1 coercion does not launder an unsound slice:
+/// `slice`'s `req self.well_formed() && lo <= hi && hi <= len` is required. A
 /// contract that does not establish `s.well_formed()` (no CAP bound on `s.len()`)
 /// leaves `slice`'s `self.well_formed()` precondition undischarged -> verus fails
 /// -> L0. The `as usize` coercion fixes the type mismatch only; it never weakens
-/// the bound (the same way `byte_at`'s `i < len` stays load-bearing).
+/// the bound (the same way `byte_at`'s `i < len` stays required).
 ///
 /// Authority: `.design/basis/07-strings.md` REQ-4 (slice requires
 /// `self.well_formed()`) + AC-4 / R-DEFER-9 (a missing bound is caught, not

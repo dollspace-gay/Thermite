@@ -166,7 +166,7 @@ fn string_demo_lowers_wrapper_and_verifies_l3() {
     );
     assert_no_cheats(&emitted, "string_demo");
 
-    // The external truth: real verus verifies the emitted output (R-CODE-4 — exit
+    // The external truth: verus verifies the emitted output (R-CODE-4 — exit
     // status checked, never swallowed).
     match verify("string_demo_strings", &emitted) {
         Some((ok, output)) => {

@@ -193,7 +193,7 @@ fn divergence_interactive_notation_poison_reelaborates_obligation_to_true() {
     // `Thermite.stabilizesProp` to the constant-`True` predicate, so the obligation's
     // conclusion re-elaborates to `True`. A proof of `True` is not a discharge of the
     // obligation, and the enumerable trusted base the cert would list (it lists none —
-    // `True` rests on no axioms) is a fiction: the real obligation was never proven.
+    // `True` rests on no axioms) is a fiction: the obligation was never proven.
     // Such a re-elaboration cheat is never Proven → item `f` does not certify at L3.
     // forge (commit 2367628c) emits "L3" — the divergence.
     assert_ne!(

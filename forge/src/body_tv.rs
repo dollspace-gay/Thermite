@@ -111,7 +111,7 @@ pub struct BodyResult {
 }
 
 /// The aggregate body-TV report for one file (REQ-5). `divergent` is the headline:
-/// any divergent body is a real body-lowering state-transformation finding, which
+/// any divergent body is a body-lowering state-transformation finding, which
 /// drives a non-zero exit (the meaning-mismatch verdict).
 #[derive(Debug, Clone, Default)]
 pub struct BodyTvReport {
@@ -969,7 +969,7 @@ fn run_obligation(program: &str, label: &str, seed: u64, rlimit: f64) -> Dischar
 }
 
 /// Parse the `N verified, M errors` summary line from verus output (mirrors
-/// `exec_tv`'s parser / the teeth-test). `None` if no summary line is present.
+/// `exec_tv`'s parser and the negative test). `None` if no summary line is present.
 fn parse_results(output: &str) -> Option<(u32, u32)> {
     let line = output
         .lines()
@@ -1046,9 +1046,9 @@ pub fn render_report(report: &BodyTvReport, header: &str) -> String {
 pub const BODY_TV_DEFAULT_SEED: u64 = DEFAULT_SOLVER_SEED;
 pub const BODY_TV_DEFAULT_RLIMIT: f64 = DEFAULT_RLIMIT;
 
-// ---- the forge-level Divergent teeth (REQ-5; blocker #189) -----------------
+// ---- forge-level Divergent regression tests (REQ-5; blocker #189) ----------
 //
-// The obligation-layer teeth (`thermite-tv/tests/body_teeth.rs` / `loop_teeth.rs`)
+// The obligation-layer tests (`thermite-tv/tests/body_teeth.rs` / `loop_teeth.rs`)
 // prove a wrong `P_production` -> a verus error. They do not exercise the
 // forge-level step that maps that verus signal to a `BodyVerdict`: `discharge`'s
 // four-way classification. Over the corpus the faithful lowerer never produces a
@@ -1057,7 +1057,7 @@ pub const BODY_TV_DEFAULT_RLIMIT: f64 = DEFAULT_RLIMIT;
 // Unverifiable, a counterexample -> Divergent) had no direct test coverage.
 // This is the divergence #189 pinned: a frame abort fabricated a Divergent.
 //
-// This module is the end-to-end teeth for the forge classification, mirroring
+// This module tests the forge classification end to end, mirroring
 // `exec_tv::divergent_teeth`: it builds a body obligation, discharges it through
 // the `discharge` fn, and asserts the verdict. It covers the positive control
 // (faithful -> Faithful), the counterexample Divergent trigger (a wrong-value
@@ -1066,7 +1066,7 @@ pub const BODY_TV_DEFAULT_RLIMIT: f64 = DEFAULT_RLIMIT;
 // zero-obligation program each classify Unverifiable, not Divergent.
 //
 // Test-only: no production-logic change. `discharge` is a private sibling fn,
-// reachable here via `super::`. The teeth drive a wrong production / a
+// reachable here via `super::`. The tests drive a wrong production or a
 // frame abort -> a verus signal -> the `discharge` mapping, not a
 // mocked verdict. Skips with a printed reason when `verus` is absent.
 #[cfg(test)]
@@ -1075,7 +1075,7 @@ mod divergent_teeth {
     use thermite_syntax::ast::{BinOp, Expr};
 
     /// `true` iff a bare `verus` is spawnable (the same resolution `discharge` uses).
-    /// Skips with a printed reason otherwise so the teeth never silently pass.
+    /// Skips with a printed reason when the solver cannot be reached.
     fn verus_on_path() -> bool {
         Command::new("verus").arg("--version").output().is_ok()
     }

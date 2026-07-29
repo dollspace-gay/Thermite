@@ -1,13 +1,13 @@
 //! `forge/src/mutation.rs` — §7 step 4 of the vacuity battery: mutation scoring
 //! (`thermite-design.md` §7 line 224, "operator flips, off-by-ones, early
 //! returns, branch swaps — fixed deterministic mutator set"). Given a `fn` whose
-//! real body already verifies L3, this module generates a frozen, deterministic
+//! body already verifies L3, this module generates a frozen, deterministic
 //! set of mutants of that body (the contract untouched), re-lowers + re-verifies
 //! each against the same contract through the existing verus driver + proof
 //! cache, and scores the kill ratio (`killed / scored`). A mutant verus
 //! rejects is killed (the contract caught the wrong body — good); a mutant
 //! verus proves is a survivor (the contract cannot tell the mutant from the
-//! real body — too weak). A configurable floor (default 60%, §7) gates
+//! body — too weak). A configurable floor (default 60%, §7) gates
 //! certification: below the floor the item does not certify and the surviving
 //! mutants are the precise strengthening prompt.
 //!
@@ -120,12 +120,12 @@ pub struct MutationScore {
     pub killed: usize,
     /// Mutants that lowered + ran and were not proved equivalent (the kill-ratio
     /// denominator). Excludes un-lowerable mutants (OQ-5) and mutants Verus proved
-    /// observably equivalent to the real body under the precondition
+    /// observably equivalent to the body under the precondition
     /// (`.design/forge/equivalent-mutants.md` REQ-2/REQ-4, #101 — a true
     /// equivalent mutant is not contract weakness, so it drops from the
     /// denominator rather than depressing the ratio).
     pub scored: usize,
-    /// The count of survivors Verus proved observably equivalent to the real body
+    /// The count of survivors Verus proved observably equivalent to the body
     /// under `req` (`.design/forge/equivalent-mutants.md` REQ-2/REQ-4, #101). A
     /// proved-equivalent mutant is excluded from both the survivor set and
     /// `scored`; this field records how many were so excluded (a transparency
@@ -205,7 +205,7 @@ impl MutationScore {
 ///
 /// `adt_deps` carries the program's ADT items (the same `&[Item]` every
 /// production caller already threads into `check::item_subprogram`) so the
-/// F-STRUCT-ZERO family (REQ-10/REQ-11) can resolve a `Type::Named` struct
+/// F-STRUCT-zero family (REQ-10/REQ-11) can resolve a `Type::Named` struct
 /// return's field list — the early-return zero ladder needs the `StructItem`
 /// definitions. A def-free `fn` (no struct return) passes `&[]` and the family
 /// is inert. The Lean-path caller threads its full program's items here too.
@@ -283,7 +283,7 @@ pub fn generate(f: &FnItem, _seed: u64, adt_deps: &[Item]) -> Vec<Mutant> {
 fn mutant_with_body(f: &FnItem, body: Block, desc: String) -> Mutant {
     let mut item = f.clone();
     // A mutant is always a bodied in-language fn (its source `f` proved L3, so it
-    // had a real body); the field is `Option<Block>` since #16, so wrap in `Some`.
+    // had a body); the field is `Option<Block>` since #16, so wrap in `Some`.
     item.body = Some(body);
     Mutant { item, desc }
 }
@@ -559,7 +559,7 @@ fn zero_value_for(ret: &Type) -> Option<Expr> {
     }
 }
 
-/// The F-STRUCT-ZERO early-return value for a `Type::Named(name)` struct return
+/// The F-STRUCT-zero early-return value for a `Type::Named(name)` struct return
 /// (REQ-10/REQ-11): the field-zero struct literal `name { field: <zero>, … }`,
 /// resolved against the threaded `adt_deps`. Each field's zero comes from the
 /// same synthesis ladder the early-return family owns (`zero_value_with_defs`:
@@ -578,7 +578,7 @@ fn zero_value_for(ret: &Type) -> Option<Expr> {
 ///
 /// Type-invariant interaction (REQ-10): a struct `inv` is contract — if the
 /// field-zero literal violates it, Verus fails the construction obligation and
-/// the mutant is killed (the honest polarity). For the corpus structs the zeros
+/// the mutant is killed (the polarity). For the corpus structs the zeros
 /// satisfy the `inv` (`Account { balance: 0 }`: `0 <= 1_000_000`;
 /// `Buffer { text: <empty>, cursor: 0 }`: `0 <= 0 && 0 <= 1_000_000`), so the
 /// mutant is scored against the `ens`.
@@ -599,7 +599,7 @@ fn struct_zero_value(name: &str, adt_deps: &[Item]) -> Option<(Expr, String)> {
 }
 
 /// Resolve a `struct name` definition among the threaded ADT items (REQ-11). An
-/// `Item::Enum` of the same name resolves to `None` here (F-STRUCT-ZERO is a
+/// `Item::Enum` of the same name resolves to `None` here (F-STRUCT-zero is a
 /// struct-only family — an enum has no canonical variant, the OQ-5 drop).
 fn find_struct<'a>(name: &str, adt_deps: &'a [Item]) -> Option<&'a StructItem> {
     adt_deps.iter().find_map(|i| match i {
@@ -1213,7 +1213,7 @@ impl Applier<'_> {
             Expr::Path(p) => Expr::Path(p.clone()),
             // A string literal (`.design/basis/07-strings.md` REQ-1) is a leaf with
             // no mutation site (text, not an off-by-one target) — the rewriter
-            // rebuilds it by identity, exactly as for `BoolLit`/`Path`.
+            // rebuilds it by identity, as for `BoolLit`/`Path`.
             Expr::StrLit(s) => Expr::StrLit(s.clone()),
         }
     }
@@ -1249,7 +1249,7 @@ mod tests {
             .expect("fixture has a fn")
     }
 
-    /// Parse a program and return all its items so the F-STRUCT-ZERO family
+    /// Parse a program and return all its items so the F-STRUCT-zero family
     /// (REQ-10/REQ-11) can be exercised with the struct defs threaded as
     /// `adt_deps` (the same items a production caller weaves). Pair with `parse_fn`
     /// (or a name filter) to pull the fn under test.
@@ -1388,7 +1388,7 @@ mod tests {
         );
     }
 
-    // REQ-10 (F-STRUCT-ZERO): a named-struct return synthesizes the field-zero
+    // REQ-10 (F-STRUCT-zero): a named-struct return synthesizes the field-zero
     // struct literal early-return mutant, resolved against the threaded defs. The
     // corpus `Account { balance: u64 }` -> `Account { <field zeros> }`. AC-8 also
     // checks the F-IDENT `return a`. Expected trace: REQ-10's table (R-CHAR-3).
@@ -1421,7 +1421,7 @@ mod tests {
     }
 
     // REQ-10 / AC-10 (the OQ-5 drop): a struct return with a zero-less field (a
-    // `Box`-typed field) generates no F-STRUCT-ZERO mutant — never an error.
+    // `Box`-typed field) generates no F-STRUCT-zero mutant — never an error.
     #[test]
     fn struct_zero_drops_when_a_field_has_no_zero() {
         let items = parse_items(
@@ -1440,7 +1440,7 @@ mod tests {
         );
     }
 
-    // REQ-10: an enum-named return gets no F-STRUCT-ZERO mutant (no canonical
+    // REQ-10: an enum-named return gets no F-STRUCT-zero mutant (no canonical
     // variant — the OQ-5 drop), but the F-IDENT identity is still generated.
     #[test]
     fn struct_zero_drops_for_enum_named_return() {
@@ -1671,7 +1671,7 @@ mod tests {
     // cross-multiply; the f64↔integer agreement is this test's job (OQ-E).
     //
     // OQ-E (the f64 boundary subtlety): f64 `0.60` is not exactly 3/5, so a ratio
-    // exactly on the boundary (e.g. 12/20 == 0.60) could in principle diverge by a
+    // on the boundary (e.g. 12/20 == 0.60) could in principle diverge by a
     // rounding ULP between the f64 `>=` and the integer cross-multiply. The grid is
     // run here (not assumed); if any cell diverges it is reported, not masked
     // (R-DEFER-9). The empirical expectation (from the cross-multiply being the

@@ -1,7 +1,7 @@
-//! `forge/src/covenant_engine.rs` — the covenant PRODUCER + the `falsify` driver +
+//! `forge/src/covenant_engine.rs` — the covenant producer + the `falsify` driver +
 //! the covenant-before-burn gate (REQ-4; `.design/stage1-forge-tier.md`, increment 2b).
 //!
-//! This is the LOGIC the foundation (#20) and the 2a surface (#29) set up for. The
+//! This is the logic the foundation (#20) and the 2a surface (#29) set up for. The
 //! foundation threaded a non-optional [`CovenantRecord`] through
 //! [`crate::engine::Engine::discharge`] and wired [`crate::verdict::CertVerdict::
 //! CovenantRefuted`] as a `Counterexample`-class hard fail in the degrade ladder; 2a
@@ -19,9 +19,9 @@
 //!    [`CertVerdict::CovenantRefuted`](crate::verdict::CertVerdict::CovenantRefuted)
 //!    hard-fail material). Q3 default: a fixed-seed `falsify 50_000` when the budget is
 //!    unstated.
-//! 3. [`covenant_gate`] enforces covenant-before-burn STRUCTURALLY (R-COV-1): the burn
-//!    closure (the L3 proof search) is invoked ONLY when the covenant validated; a
-//!    refuted or malformed covenant returns WITHOUT invoking burn. This is the
+//! 3. [`covenant_gate`] enforces covenant-before-burn structurally (R-COV-1): the burn
+//!    closure (the L3 proof search) is invoked only when the covenant validated; a
+//!    refuted or malformed covenant returns without invoking burn. This is the
 //!    closure-instrumented invariant (the `degrade.rs` style), not a convention.
 //!
 //! ## Binding: a witness covenants the preceding `fn`
@@ -66,10 +66,10 @@ pub struct CovenantEvidence {
     pub seed: u64,
 }
 
-/// A malformed or absent covenant on a covenant-routed item (REQ-4): refused BEFORE
+/// A malformed or absent covenant on a covenant-routed item (REQ-4): refused before
 /// burn, named (R-COV-1, AC-8). Distinct from a [`CovenantCounterexample`] (a
 /// `falsify` refutation of a well-formed covenant) — these are author errors in the
-/// covenant declaration itself, surfaced loudly rather than silently dropped.
+/// covenant declaration itself, surfaced rather than silently dropped.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CovenantError {
     /// A `witness` block with no author-stated `inhabit` witness (REQ-4: a covenant
@@ -99,8 +99,8 @@ pub enum CovenantError {
         /// The rendered offending witness tuple + the mismatch detail.
         detail: String,
     },
-    /// An `inhabit` witness that does NOT satisfy `req` (REQ-4: a covenant error,
-    /// surfaced loudly — the author claims an inhabitant of the precondition that is
+    /// An `inhabit` witness that does not satisfy `req` (REQ-4: a covenant error,
+    /// surfaced — the author claims an inhabitant of the precondition that is
     /// not one). Refused before burn.
     WitnessRefutesReq {
         /// The covenanted item's name.
@@ -179,7 +179,7 @@ impl CovenantError {
     }
 }
 
-/// The result of analyzing a covenant-routed item (REQ-4), BEFORE the burn gate. The
+/// The result of analyzing a covenant-routed item (REQ-4), before the burn gate. The
 /// pure analysis: the `inhabit` witnesses are validated against `req` and the
 /// `falsify` run has executed against the body → `ens`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -194,7 +194,7 @@ pub enum CovenantAnalysis {
     },
     /// A `falsify` input satisfied `req` but the body violated `ens` —
     /// [`CertVerdict::CovenantRefuted`](crate::verdict::CertVerdict::CovenantRefuted).
-    /// The burn is NOT entered (R-COV-1 / the never-degrades treatment).
+    /// The burn is not entered (R-COV-1 / the never-degrades treatment).
     Refuted {
         /// The concrete falsifying input + the seed.
         counterexample: CovenantCounterexample,
@@ -207,7 +207,7 @@ pub enum CovenantAnalysis {
 
 /// The outcome of [`covenant_gate`]: the covenant analysis composed with the burn
 /// closure (R-COV-1). On a validated covenant the burn ran (its result `T` is carried
-/// with the evidence); on a refutation/refusal the burn did NOT run.
+/// with the evidence); on a refutation/refusal the burn did not run.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CovenantGate<T> {
     /// The covenant validated and the burn closure ran. Carries the burn result + the
@@ -218,7 +218,7 @@ pub enum CovenantGate<T> {
         /// The covenant evidence for the certificate.
         evidence: CovenantEvidence,
     },
-    /// A `falsify` refutation — the burn did NOT run (covenant-before-burn / the
+    /// A `falsify` refutation — the burn did not run (covenant-before-burn / the
     /// never-degrades treatment, R-COV-1).
     Refuted {
         /// The concrete falsifying input + the seed.
@@ -226,16 +226,16 @@ pub enum CovenantGate<T> {
         /// The covenant evidence (`falsify_refuted == 1`).
         evidence: CovenantEvidence,
     },
-    /// A malformed/absent covenant — the burn did NOT run; the refusal is named.
+    /// A malformed/absent covenant — the burn did not run; the refusal is named.
     Refused {
         /// The named covenant error.
         error: CovenantError,
     },
 }
 
-/// Enforce covenant-before-burn STRUCTURALLY (R-COV-1, AC-8): invoke the `burn` closure
-/// (the L3 proof search) ONLY when the covenant validated; on a refutation or a
-/// malformed/absent covenant return WITHOUT invoking it. This is the closure-instrumented
+/// Enforce covenant-before-burn structurally (R-COV-1, AC-8): invoke the `burn` closure
+/// (the L3 proof search) only when the covenant validated; on a refutation or a
+/// malformed/absent covenant return without invoking it. This is the closure-instrumented
 /// invariant in the [`crate::degrade`] style — the proof-search path cannot start
 /// without a valid covenant record, proven by the closure never being called on the
 /// non-`Validated` arms (the `covenant_gate_never_burns_without_covenant` test).
@@ -249,7 +249,7 @@ where
 {
     match analysis {
         CovenantAnalysis::Validated { record, evidence } => {
-            // The ONLY arm that invokes burn — the covenant is in hand (R-COV-1).
+            // The only arm that invokes burn — the covenant is in hand (R-COV-1).
             let result = burn(&record);
             CovenantGate::Burned { result, evidence }
         }
@@ -347,7 +347,7 @@ fn bind_params(
             (ParamKind::Int(width), Value::Int(n)) => {
                 // Width-check the witness against the parameter's integer type: a value
                 // outside `0..=width.max` is not an inhabitant of the parameter type, so
-                // it is an ill-typed witness, NOT a `req`-satisfying input (without this,
+                // it is an ill-typed witness, not a `req`-satisfying input (without this,
                 // an out-of-range author witness like `inhabit (4294967296)` for a `u32`
                 // truncates and manufactures a false CovenantRefuted on a sound item).
                 // Generated inputs are always in-range (`gen_value` caps at the max), so
@@ -381,7 +381,7 @@ fn bind_params(
 }
 
 /// Evaluate the `inhabit` argument tuple to concrete values (REQ-4): the witness
-/// expressions are evaluated in the EMPTY environment (an `inhabit` tuple is a closed
+/// expressions are evaluated in the empty environment (an `inhabit` tuple is a closed
 /// constant tuple). A non-constant or out-of-fragment witness expression is a
 /// [`CovenantError::UnsupportedItem`].
 fn eval_inhabit(
@@ -449,7 +449,7 @@ fn gen_value(rng: &mut Rng, kind: ParamKind) -> Value {
 
 /// Analyze a covenant-routed item (REQ-4): bind the `witness` block to `fn` `f`,
 /// validate each `inhabit` witness against `req`, then drive the `falsify` run against
-/// the executable body → `ens`. The pure analysis BEFORE the burn gate — see
+/// the executable body → `ens`. The pure analysis before the burn gate — see
 /// [`covenant_gate`].
 #[must_use]
 pub fn analyze_covenant(f: &FnItem, witness: &WitnessBlock) -> CovenantAnalysis {
@@ -567,7 +567,7 @@ pub fn analyze_covenant(f: &FnItem, witness: &WitnessBlock) -> CovenantAnalysis 
         let env = match bind_params(&item, &f.params, &kinds, &vals) {
             Ok(e) => e,
             // Arity/kind cannot mismatch here (we built `vals` from `kinds`), but map it
-            // honestly rather than unwrap.
+            // rather than unwrap.
             Err(e) => return CovenantAnalysis::Error(e),
         };
         // Only `req`-satisfying inputs are candidates (REQ-4).
@@ -776,7 +776,7 @@ mod tests {
     #[test]
     fn out_of_range_author_witness_is_a_type_mismatch_not_a_refutation() {
         // `inhabit (4294967296)` (= 2^32) for a `u32` param is not a `u32` inhabitant —
-        // an ill-typed witness (WitnessTypeMismatch), NOT a `req`-satisfying input. Without
+        // an ill-typed witness (WitnessTypeMismatch), not a `req`-satisfying input. Without
         // the width check the truncating model would compute result 0 and manufacture a
         // false CovenantRefuted on a sound item (#300).
         let src = "fn idu(x: u32) -> u32 req true ens result == x fx pure { x } \
@@ -799,8 +799,8 @@ mod tests {
     }
 
     // R-COV-1, the closure-instrumented covenant-before-burn invariant (the degrade.rs
-    // style): the burn closure is invoked ONLY on a validated covenant. On a refutation
-    // and on a refusal the closure must NOT run (a Cell records invocation).
+    // style): the burn closure is invoked only on a validated covenant. On a refutation
+    // and on a refusal the closure must not run (a Cell records invocation).
     #[test]
     fn covenant_gate_never_burns_without_covenant() {
         // (a) Validated → burn runs, gets the record.
@@ -833,7 +833,7 @@ mod tests {
             }
         ));
 
-        // (b) Refuted → burn must NOT run.
+        // (b) Refuted → burn must not run.
         let refuted = CovenantAnalysis::Refuted {
             counterexample: CovenantCounterexample {
                 input: "(3, 7)".to_string(),
@@ -857,7 +857,7 @@ mod tests {
         );
         assert!(matches!(gate_r, CovenantGate::Refuted { .. }));
 
-        // (c) Error (no author witness) → burn must NOT run; the refusal is named.
+        // (c) Error (no author witness) → burn must not run; the refusal is named.
         let refused = CovenantAnalysis::Error(CovenantError::NoAuthorWitness {
             item: "f".to_string(),
         });

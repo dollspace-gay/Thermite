@@ -101,7 +101,7 @@ pub enum RepairVerdict {
 /// not in the repair set).
 #[derive(Debug, Clone)]
 pub enum SubL3Status {
-    /// A genuine inconclusiveness: a verus timeout (`VerusTimeout` reject, or a
+    /// A inconclusiveness: a verus timeout (`VerusTimeout` reject, or a
     /// `lowered_assurance` cert carrying a `VerusTimeout` degrade). This is the
     /// sole status [`escalate`] retries (REQ-2). Carries the #11 prompt material
     /// off the timed-out cert for the still-sub-L3 report.
@@ -139,7 +139,7 @@ pub enum SubL3Status {
 ///   REQ-6 / AC-1): `Level::L3` (proved), or a certified `L1`/`L2` with no reject
 ///   (a `#[slag]`/boundary/explicit/degraded rung; repair drives the L3 verus
 ///   budget, and a non-degraded certified lower rung was a chosen level).
-/// - `Some(Timeout)` — a genuine inconclusiveness the ladder retries: a
+/// - `Some(Timeout)` — a inconclusiveness the ladder retries: a
 ///   `VerusTimeout` reject, or a `lowered_assurance` cert whose `degrade_reason`
 ///   is a `VerusTimeout` (the #10 down-ladder's record of the very timeout repair
 ///   re-attempts). This is the only status [`escalate`] runs for.
@@ -430,7 +430,7 @@ where
             cause: cause.clone(),
             detail: detail.clone(),
         }),
-        // A genuine timeout (inconclusiveness) → the only status that escalates.
+        // A timeout (inconclusiveness) → the only status that escalates.
         SubL3Status::Timeout { .. } => escalate(status, verify),
     }
 }

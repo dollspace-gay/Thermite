@@ -12,7 +12,7 @@
 //!   `ens`) is a hard fail: non-certifying, not a degraded L1/L2 cert, no
 //!   `lowered_assurance` flag. The determinism of this is pinned by
 //!   `degrade::tests::counterexample_never_degrades`; this asserts it end-to-end
-//!   against real verus.
+//!   against verus.
 //! - AC-2 (forced degrade → L2): a forced low `--rlimit` is the L3-timeout
 //!   lever; best-effort skip with a logged reason (OQ-1: provoking a live resourceout is
 //!   timing-fragile). When a live degrade is provoked, the cert is a certified
@@ -192,13 +192,13 @@ fn golden_cert_deserializes_with_additive_degrade_fields() {
 // ===== AC-4: the key anti-cheat AC — a counterexample does not degrade =======
 
 // AC-4: a broken contract (a provably-false `ens` for the
-// body) is a hard failure end-to-end against real verus: nonzero exit,
+// body) is a hard failure end-to-end against verus: nonzero exit,
 // non-certifying (not L3/L2/L1), no `lowered_assurance` flag, no `degrade_reason`.
 // The ladder does not "certify L1" or degrade a disproved contract: that would
 // hide a bug behind a lowered-assurance stamp (§12, R-DEFER-9). The
 // determinism of the short-circuit is pinned by
 // `degrade::tests::counterexample_never_degrades`; this is the end-to-end
-// witness against real verus. Expected: a false `ens` is a counterexample, not a
+// witness against verus. Expected: a false `ens` is a counterexample, not a
 // degrade (degrade-ladder.md REQ-2 / "The anti-cheat distinction is real"), not
 // forge's output.
 #[test]

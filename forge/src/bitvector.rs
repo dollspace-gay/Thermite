@@ -4,7 +4,7 @@
 //! A `@bvN`-tagged clause is interpreted over fixed-width wraparound (machine)
 //! semantics: every variable is an `N`-bit bit-vector and every operator is its
 //! `2`'s-complement / unsigned machine counterpart, so addition, multiplication
-//! and the bitwise/shift operators all overflow exactly as the hardware does. The
+//! and the bitwise/shift operators all overflow as the hardware does. The
 //! clause is decided by Verus's `by(bit_vector)` mode — which is, mechanically, a
 //! QF_BV solver query (Z3's bit-blaster). Following the stage-1 [`crate::engine::
 //! NlsatEngine`] precedent (which reaches Z3's nlsat tactic *directly* for QF_NRA
@@ -27,20 +27,20 @@
 //! - **The dedicated 64-bit multiplier budget profile.** A 64-bit bit-vector
 //!   *multiplication between two non-constant terms* is the known QF_BV cost cliff
 //!   (full 64×64 bit-blasting). [`BvBudgetProfile::for_query`] routes such a query
-//!   through a deliberately bounded `rlimit`/timeout profile so an over-budget
+//!   through a bounded `rlimit`/timeout profile so an over-budget
 //!   multiplier query is reported as [`BvOutcome::Timeout`] under the named profile —
 //!   **never** a silent `unknown` and never a silent downgrade (REQ-2 / AC-3).
 //! - **The verdict plumbing.** The engine implements the four-slot [`crate::engine::
 //!   Engine`] interface; the rich [`BvOutcome`] (which the three-arm `Verdict` cannot
 //!   represent — a budget `Timeout` is distinct from an undecided `Unknown`) is the
-//!   route's real entry point, mapped down for the generic trait caller.
+//!   route's entry point, mapped down for the generic trait caller.
 //!
 //! A `@bv` clause certifies at the caged rung [`crate::manifest::Level::L4`]: it is
 //! decidable QF_BV with complete bit-pattern countermodels — the L4 refutation quality
 //! (RFC-1 §2/§4), never degraded. Rung and trust base are orthogonal: the rung records
 //! refutation quality, while the trust base (the QF_BV decision procedure, SOLVER) is
 //! recorded separately in the attribution. Kernel-grounding the bit-vector discharge
-//! (proof reconstruction) is REQ-7/REQ-8, which shrinks that trust base at the SAME
+//! (proof reconstruction) is REQ-7/REQ-8, which shrinks that trust base at the same
 //! rung; this module is the lowering only.
 
 use std::collections::BTreeMap;
@@ -50,7 +50,7 @@ use thermite_syntax::{BinOp, BvWidth, Expr, UnaryOp};
 /// The outcome of a `@bv` clause discharge over fixed-width QF_BV semantics
 /// (`.design/stage3-bv-reconstruction.md` REQ-2). Richer than the three-arm
 /// [`crate::engine::Verdict`]: a budget [`BvOutcome::Timeout`] (the 64-bit multiplier
-/// cost cliff) is held DISTINCT from an honest [`BvOutcome::Unknown`] skip (Z3 absent
+/// cost cliff) is held distinct from an [`BvOutcome::Unknown`] skip (Z3 absent
 /// / the clause outside the renderable fragment), so the route never launders the
 /// multiplier cliff into a silent `unknown` (AC-3).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -69,15 +69,15 @@ pub enum BvOutcome {
     },
     /// The query exhausted its dedicated budget (the 64-bit multiplier cost cliff,
     /// AC-3). Carries the named budget profile and the Z3 detail; reported as
-    /// `Timeout`, NEVER `unknown` and never a silent downgrade.
+    /// `Timeout`, never `unknown` and never a silent downgrade.
     Timeout {
         /// The budget profile that bounded the query (e.g. `bv64-multiplier`).
         profile: String,
         /// The Z3 rlimit/timeout detail (the captured signal head).
         detail: String,
     },
-    /// An honest skip: Z3 is absent, the clause is outside the renderable QF_BV
-    /// fragment, or the query did not render. NEVER a false verdict — and NEVER the
+    /// A skip: Z3 is absent, the clause is outside the renderable QF_BV
+    /// fragment, or the query did not render. It is never a false verdict or the
     /// image of a budget exhaustion (that is [`BvOutcome::Timeout`]).
     Unknown(String),
 }
@@ -118,7 +118,7 @@ impl BvBitPattern {
 /// A QF_BV budget profile (`.design/stage3-bv-reconstruction.md` REQ-2 — the
 /// dedicated 64-bit multiplier profile). The `rlimit` bounds Z3's bit-blasting work
 /// and `timeout_secs` is the wall-clock cap; an over-budget query returns `unknown`
-/// from Z3 WITH a budget set, which the engine reports as [`BvOutcome::Timeout`]
+/// from Z3 with a budget set, which the engine reports as [`BvOutcome::Timeout`]
 /// (never a bare `unknown`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BvBudgetProfile {
@@ -147,12 +147,12 @@ impl BvBudgetProfile {
     /// the QF_BV cost cliff, so a 64-bit multiplication between two non-constant
     /// terms is bounded by a tight `rlimit` and a short wall cap. An over-budget
     /// multiplier query then returns `unknown` (rlimit/timeout) and is reported as
-    /// [`BvOutcome::Timeout`] under THIS profile — the loud, non-silent failure REQ-2
+    /// [`BvOutcome::Timeout`] under this profile — the loud, non-silent failure REQ-2
     /// requires.
     #[must_use]
     pub fn multiplier64_profile() -> Self {
         BvBudgetProfile {
-            // A deliberately bounded resource budget. 64×64 multiplication
+            // A bounded resource budget. 64×64 multiplication
             // bit-blasts into a quadratic adder network whose validity queries
             // routinely exceed a modest rlimit; the bound makes the cliff a
             // deterministic `Timeout` rather than an unbounded hang.
@@ -164,8 +164,8 @@ impl BvBudgetProfile {
 
     /// Select the budget profile for a clause query (`.design/stage3-bv-reconstruction.md`
     /// REQ-2). The dedicated 64-bit multiplier profile applies iff the tag width is 64
-    /// AND the clause contains a multiplication whose two operands are both
-    /// non-constant (a genuine 64-bit multiplier, the cost cliff); every other query
+    /// and the clause contains a multiplication whose two operands are both
+    /// non-constant (a 64-bit multiplier, the cost cliff); every other query
     /// — including a multiply by a literal, which bit-blasts as a cheap shift/add —
     /// takes the default profile.
     #[must_use]
@@ -178,10 +178,10 @@ impl BvBudgetProfile {
     }
 }
 
-/// Does `e` contain a multiplication whose BOTH operands are non-constant
+/// Does `e` contain a multiplication where both operands are non-constant
 /// (`.design/stage3-bv-reconstruction.md` REQ-2 — the 64-bit multiplier cost-cliff
 /// detector)? A `var * var` (or `var * (expr-with-a-var)`) is the expensive 64×64
-/// bit-blast; a `var * 8` is a cheap shift/add and does NOT trip the dedicated
+/// bit-blast; a `var * 8` is a cheap shift/add and does not trip the dedicated
 /// profile.
 #[must_use]
 pub fn contains_variable_multiply(e: &Expr) -> bool {
@@ -223,7 +223,7 @@ fn is_constant(e: &Expr) -> bool {
 /// `<<`→`bvshl`, `>>`→`bvlshr` (unsigned — the scalar types are all unsigned), the
 /// bitwise ops to `bvand`/`bvor`/`bvxor`, and prefix `!` (on a term) to `bvnot`. An
 /// integer literal renders as the width-`N` bit-vector constant. `Err` names the
-/// out-of-fragment construct (an honest skip reason, never a silent mis-render).
+/// out-of-fragment construct (a skip reason, never a silent mis-render).
 pub fn render_bv_term(e: &Expr, width: u32) -> Result<String, String> {
     match e {
         Expr::IntLit { value, .. } => Ok(format!("(_ bv{} {width})", value % (modulus(width)))),
@@ -263,11 +263,11 @@ pub fn render_bv_term(e: &Expr, width: u32) -> Result<String, String> {
     }
 }
 
-/// Render a PROPOSITION to an SMT-LIB2 `Bool` over fixed-width bit-vectors
+/// Render a proposition to an SMT-LIB2 `Bool` over fixed-width bit-vectors
 /// (`.design/stage3-bv-reconstruction.md` REQ-2). Comparisons over the unsigned
 /// scalar types map to the unsigned bit-vector relations (`<`→`bvult`, `<=`→`bvule`,
 /// `>`→`bvugt`, `>=`→`bvuge`); `==`→`=`, `!=`→`(not (= …))`; the connectives to
-/// `and`/`or`/`not`. `Err` names the out-of-fragment construct (an honest skip).
+/// `and`/`or`/`not`. `Err` names the out-of-fragment construct (a skip).
 pub fn render_bv_prop(e: &Expr, width: u32) -> Result<String, String> {
     match e {
         Expr::BoolLit(b) => Ok(if *b { "true" } else { "false" }.to_string()),
@@ -363,14 +363,14 @@ impl BitVectorEngine {
 
     /// Discharge one `@bvN` clause over fixed-width QF_BV semantics
     /// (`.design/stage3-bv-reconstruction.md` REQ-2 / AC-2 / AC-3). The query asserts
-    /// the precondition (if any) and the NEGATION of the clause over width-`N`
+    /// the precondition (if any) and the negation of the clause over width-`N`
     /// bit-vectors, then asks Z3:
     ///
     /// - `unsat` → [`BvOutcome::Proved`] (machine-valid at width `N`);
     /// - `sat` → [`BvOutcome::Counterexample`] carrying the witnessing bit pattern;
-    /// - `unknown` WITH a budget set → [`BvOutcome::Timeout`] under the named profile
+    /// - `unknown` with a budget set → [`BvOutcome::Timeout`] under the named profile
     ///   (the 64-bit multiplier cliff — never a bare `unknown`);
-    /// - Z3 absent / unrenderable clause → [`BvOutcome::Unknown`] (an honest skip).
+    /// - Z3 absent / unrenderable clause → [`BvOutcome::Unknown`] (a skip).
     ///
     /// `vars` are the variables in scope (parameters, plus `result` for a function
     /// whose clause has already had `result` grounded by the body); `req` is the
@@ -384,7 +384,7 @@ impl BitVectorEngine {
         width: BvWidth,
     ) -> BvOutcome {
         let n = width.bits();
-        // Render the clause first — an unrenderable clause is an honest skip, never a
+        // Render the clause first — an unrenderable clause is a skip, never a
         // false verdict (and never a spurious counterexample from a dropped guard).
         let clause_smt = match render_bv_prop(clause, n) {
             Ok(s) => s,
@@ -425,9 +425,9 @@ impl BitVectorEngine {
                     bits: parse_bv_model(&model, vars, n),
                 },
                 // `unknown` under a bounded profile is the budget cliff (AC-3): a
-                // resource-limited multiplier query. Reported as `Timeout`, NEVER a
+                // resource-limited multiplier query. Reported as `Timeout`, never a
                 // bare `unknown`. The default profile is unbounded, so an `unknown`
-                // there is a genuine (rare for decidable QF_BV) solver event we still
+                // there is a (rare for decidable QF_BV) solver event we still
                 // surface as a wall-timeout rather than a false verdict.
                 "unknown" => BvOutcome::Timeout {
                     profile: profile.name.clone(),
@@ -446,8 +446,8 @@ impl BitVectorEngine {
         }
     }
 
-    /// Is the precondition `req` SATISFIABLE at width `N`? Anti-Goodhart vacuity check
-    /// (RFC-1 §10): a `@bv` clause is discharged as `req ⇒ clause`, so an UNSATISFIABLE
+    /// Is the precondition `req` satisfiable at width `N`? Anti-Goodhart vacuity check
+    /// (RFC-1 §10): a `@bv` clause is discharged as `req ⇒ clause`, so an unsatisfiable
     /// `req` proves *every* clause vacuously — the gaming vector the v1 cage rejects as
     /// `VacuousPrecondition`. The bv route's mutation gate only catches this for
     /// result-referencing clauses (every mutant survives); a param-only clause or a
@@ -456,10 +456,10 @@ impl BitVectorEngine {
     /// rendering the discharge uses (`req` at width `N`), so the verdict is consistent
     /// with the discharge and never a width artifact.
     ///
-    /// `Some(true)` = satisfiable (non-vacuous); `Some(false)` = UNSAT (vacuous — reject);
+    /// `Some(true)` = satisfiable (non-vacuous); `Some(false)` = unsatisfiable (vacuous — reject);
     /// `None` = cannot decide (`req` absent/unrenderable, Z3 absent, or `unknown`), so the
-    /// caller does NOT flag vacuity and falls through to the normal discharge —
-    /// conservative, never a FALSE vacuity rejection.
+    /// caller does not flag vacuity and falls through to the normal discharge —
+    /// conservative, never a false vacuity rejection.
     #[must_use]
     pub fn req_satisfiable(&self, vars: &[String], req: &Expr, width: BvWidth) -> Option<bool> {
         let n = width.bits();
@@ -479,15 +479,15 @@ impl BitVectorEngine {
         }
     }
 
-    /// Discharge the `@bvN(nowrap)` no-overflow SIDE OBLIGATION over fixed-width QF_BV
+    /// Discharge the `@bvN(nowrap)` no-overflow side obligation over fixed-width QF_BV
     /// semantics (`.design/stage3-bv-reconstruction.md` REQ-5 / AC-6 — lock 3). A
     /// `nowrap` tag declares that, although the clause is interpreted at machine width,
-    /// wrap is NOT the author's intent: every wrap-prone arithmetic operation in the
+    /// wrap is not the author's intent: every wrap-prone arithmetic operation in the
     /// clause body (`+`, `-`, `*`) must stay within `N` bits for every input satisfying
     /// the precondition. The obligation is itself a QF_BV query — "does some operation
     /// overflow at width `N`?" — asked the OPPOSITE way round to the main clause: it
-    /// asserts the precondition AND the disjunction of the per-operation overflow
-    /// conditions (NOT negated, since we are hunting for an overflowing assignment).
+    /// asserts the precondition and the disjunction of the per-operation overflow
+    /// conditions (not negated, since we are hunting for an overflowing assignment).
     ///
     /// - `unsat` → no input overflows → [`BvOutcome::Proved`] (the obligation holds);
     /// - `sat` → a concrete overflowing input → [`BvOutcome::Counterexample`] carrying
@@ -495,10 +495,10 @@ impl BitVectorEngine {
     /// - `unknown` under a bounded profile → [`BvOutcome::Timeout`] (the multiplier
     ///   cliff — the overflow query zero-extends a 64-bit multiply to 128 bits, so it
     ///   inherits the same dedicated budget; never a bare `unknown`);
-    /// - Z3 absent / an out-of-fragment operand → [`BvOutcome::Unknown`] (an honest skip).
+    /// - Z3 absent / an out-of-fragment operand → [`BvOutcome::Unknown`] (a skip).
     ///
-    /// A clause whose body carries NO wrap-prone operation (a pure comparison such as
-    /// `result == a`) has nothing that could overflow, so the obligation holds VACUOUSLY
+    /// A clause whose body carries no wrap-prone operation (a pure comparison such as
+    /// `result == a`) has nothing that could overflow, so the obligation holds vacuously
     /// ([`BvOutcome::Proved`]) without a solver round-trip. `vars` / `req` mirror
     /// [`BitVectorEngine::discharge_bv`] (the `result`-grounded clause closed over the
     /// parameters).
@@ -512,7 +512,7 @@ impl BitVectorEngine {
     ) -> BvOutcome {
         let n = width.bits();
         // Collect the per-operation overflow conditions. An out-of-fragment operand is an
-        // honest skip (never a silent pass) — the obligation is not quietly dropped.
+        // skip (never a silent pass) — the obligation is not quietly dropped.
         let mut conds = Vec::new();
         if let Err(reason) = collect_overflow_conditions(clause, n, &mut conds) {
             return BvOutcome::Unknown(format!(
@@ -547,7 +547,7 @@ impl BitVectorEngine {
         };
         // The overflow query reuses the clause's budget profile: a 64-bit variable
         // multiply zero-extends to a 128-bit `bvmul` here, an even costlier bit-blast, so
-        // it deserves the dedicated multiplier budget exactly as the main query does.
+        // it deserves the dedicated multiplier budget as the main query does.
         let profile = BvBudgetProfile::for_query(
             width,
             &req.into_iter()
@@ -560,7 +560,7 @@ impl BitVectorEngine {
             Ok((result, model)) => match result.as_str() {
                 // No assignment overflows → the no-overflow obligation holds.
                 "unsat" => BvOutcome::Proved,
-                // A concrete overflowing input → the obligation FAILS, witnessed by the
+                // A concrete overflowing input → the obligation fails, witnessed by the
                 // bit pattern (AC-6).
                 "sat" => BvOutcome::Counterexample {
                     bits: parse_bv_model(&model, vars, n),
@@ -585,7 +585,7 @@ impl BitVectorEngine {
     }
 
     /// Run Z3 over an SMT-LIB2 `query` (fed on stdin), returning `(result, model)`.
-    /// `Err` on Z3 absent / spawn failure / no result token (an honest skip reason,
+    /// `Err` on Z3 absent / spawn failure / no result token (a skip reason,
     /// never a silent success — R-CODE-4). Mirrors [`crate::engine::NlsatEngine`]'s
     /// `run_z3`, parameterized by the budget profile's wall timeout.
     fn run_z3(query: &str, timeout_secs: u64) -> Result<(String, String), String> {
@@ -637,7 +637,7 @@ impl BitVectorEngine {
 /// Build the SMT-LIB2 `QF_BV` query whose satisfiability decides a `@bvN` clause
 /// (`.design/stage3-bv-reconstruction.md` REQ-2). Declares each variable as an
 /// `N`-bit bit-vector, sets the budget profile's `rlimit` (when bounded — the 64-bit
-/// multiplier cliff), asserts the precondition and the NEGATION of the clause, and
+/// multiplier cliff), asserts the precondition and the negation of the clause, and
 /// asks for a model (the bit-pattern witness on `sat`).
 #[must_use]
 pub fn build_bv_query(
@@ -674,13 +674,13 @@ pub fn build_bv_query(
 /// Collect the per-operation no-overflow side conditions of a `@bvN(nowrap)` clause
 /// body (`.design/stage3-bv-reconstruction.md` REQ-5 / AC-6). For every wrap-prone
 /// arithmetic operation in `e` — addition, subtraction, multiplication — push the
-/// SMT-LIB2 `Bool` that is TRUE exactly when THAT operation overflows `width` bits, with
+/// SMT-LIB2 `Bool` that is true exactly when that operation overflows `width` bits, with
 /// its operands rendered as the actual width-`N` machine terms fed into it. The walk
 /// recurses through the whole expression (propositions, connectives, comparisons, and
 /// the operand sub-terms), so a nested `(a + b) * c` emits a condition for both the
 /// inner add and the outer multiply. The disjunction of the collected conditions is
 /// satisfiable iff some input overflows. `Err` names an out-of-fragment operand — an
-/// honest skip, so the obligation is never silently dropped. Pure (R-CODE-5).
+/// skip, so the obligation is never silently dropped. Pure (R-CODE-5).
 fn collect_overflow_conditions(e: &Expr, width: u32, out: &mut Vec<String>) -> Result<(), String> {
     match e {
         Expr::Binary { op, lhs, rhs } => {
@@ -741,7 +741,7 @@ fn overflow_condition(
 /// Build the SMT-LIB2 `QF_BV` query whose satisfiability decides a `@bvN(nowrap)`
 /// no-overflow side obligation (`.design/stage3-bv-reconstruction.md` REQ-5 / AC-6).
 /// Unlike [`build_bv_query`] (which asserts the NEGATED clause to seek a falsifying
-/// model), this asserts the precondition and the overflow disjunction DIRECTLY — a `sat`
+/// model), this asserts the precondition and the overflow disjunction directly — a `sat`
 /// model is a concrete OVERFLOWING input (the obligation fails), `unsat` means no input
 /// overflows (the obligation holds). Sets the budget profile's `rlimit` when bounded
 /// (the 64-bit multiplier cliff, now widened to a 128-bit `bvmul`).
@@ -764,8 +764,8 @@ pub fn build_nowrap_query(
     if let Some(req) = req_smt {
         s.push_str(&format!("(assert {req})\n"));
     }
-    // The obligation FAILS iff `req ∧ (some operation overflows)` is satisfiable — so the
-    // overflow disjunction is asserted directly (NOT negated, unlike the main clause).
+    // The obligation fails iff `req ∧ (some operation overflows)` is satisfiable — so the
+    // overflow disjunction is asserted directly (not negated, unlike the main clause).
     s.push_str(&format!("(assert {overflow_smt})\n"));
     s.push_str("(check-sat)\n");
     s.push_str("(get-model)\n");
@@ -774,7 +774,7 @@ pub fn build_nowrap_query(
 
 /// Parse Z3's `(get-model)` output into the falsifying bit pattern per variable
 /// (`.design/stage3-bv-reconstruction.md` REQ-2 / AC-3). Extracts each `(define-fun
-/// NAME () (_ BitVec W) VALUE)` and decodes VALUE — a hex `#x…`, a binary `#b…`, or a
+/// NAME () (_ BitVec W) value)` and decodes value — a hex `#x…`, a binary `#b…`, or a
 /// `(_ bvK W)` literal — into a [`BvBitPattern`]. A variable Z3 omits (unconstrained)
 /// is recorded as all-zeros (a concrete representative of the free choice).
 #[must_use]
@@ -793,7 +793,7 @@ pub fn parse_bv_model(model: &str, vars: &[String], width: u32) -> Vec<BvBitPatt
         .collect()
 }
 
-/// Collect the `(define-fun NAME () (_ BitVec W) VALUE)` bindings of a Z3 model into a
+/// Collect the `(define-fun NAME () (_ BitVec W) value)` bindings of a Z3 model into a
 /// `name → value` map. The value decoder handles the three Z3 bit-vector renderings
 /// (`#x…` hex, `#b…` binary, `(_ bvK W)` literal). A binding whose value does not
 /// decode is skipped (the variable then reads as all-zeros — a conservative concrete
@@ -824,8 +824,8 @@ fn collect_define_funs(model: &str) -> BTreeMap<String, u128> {
     out
 }
 
-/// Decode the VALUE of a `(define-fun NAME () (_ BitVec W) VALUE)` body into a
-/// numeric bit pattern. The body is `NAME () (_ BitVec W) VALUE`; the value is the
+/// Decode the value of a `(define-fun NAME () (_ BitVec W) value)` body into a
+/// numeric bit pattern. The body is `NAME () (_ BitVec W) value`; the value is the
 /// trailing token(s) after the `(_ BitVec W)` sort. Handles `#x…`, `#b…`, and the
 /// `(_ bvK W)` literal form.
 fn decode_bv_value(inner: &str) -> Option<u128> {
@@ -982,7 +982,7 @@ mod tests {
             var("a"),
             var("b")
         )));
-        // var * 8 → cheap shift/add, does NOT trip.
+        // var * 8 → cheap shift/add, does not trip.
         assert!(!contains_variable_multiply(&bin(
             BinOp::Mul,
             var("a"),
@@ -1029,7 +1029,7 @@ mod tests {
         assert!(q.contains("(declare-const a (_ BitVec 64))"));
         assert!(q.contains("(assert (not (= (bvmul a b) (bvmul b a))))"));
         assert!(q.contains("(check-sat)"));
-        // The default (unbounded) profile sets NO rlimit.
+        // The default (unbounded) profile sets no rlimit.
         let q = build_bv_query(
             &["a".to_string()],
             None,
@@ -1079,7 +1079,7 @@ mod tests {
     }
 
     // ── Live QF_BV tests (REQ-2 / AC-2 / AC-3). z3 ships beside the verus
-    // distribution; a CI shard without z3 SKIPS rather than fails (the nlsat-route
+    // distribution; a CI shard without z3 skips rather than fails (the nlsat-route
     // precedent). These exercise `discharge_bv` directly against the real solver.
 
     fn bv_skip() -> bool {
@@ -1122,7 +1122,7 @@ mod tests {
             return;
         }
         let engine = BitVectorEngine::new();
-        // req x != y ; ens@bv64 (x << 1) != (y << 1)  — FALSE (shl-by-1 is not injective).
+        // req x != y ; ens@bv64 (x << 1) != (y << 1)  — false (shl-by-1 is not injective).
         let req = bin(BinOp::Ne, var("x"), var("y"));
         let clause = bin(
             BinOp::Ne,
@@ -1139,7 +1139,7 @@ mod tests {
             BvOutcome::Counterexample { bits } => {
                 assert_eq!(bits.len(), 2, "a bit pattern per variable");
                 assert!(bits.iter().all(|b| b.width == 64));
-                // The witness genuinely falsifies: x != y but x<<1 == y<<1.
+                // The witness falsifies: x != y but x<<1 == y<<1.
                 assert_ne!(bits[0].value, bits[1].value, "x != y in the witness");
                 assert_eq!(
                     (bits[0].value << 1) & u64::MAX as u128,
@@ -1152,7 +1152,7 @@ mod tests {
     }
 
     /// AC-3 (engine level): an over-budget 64-bit multiplier query is reported under the
-    /// dedicated budget profile and is NEVER a silent `unknown`. A factoring-style
+    /// dedicated budget profile and is never a silent `unknown`. A factoring-style
     /// validity (`a * b != <prime>` with non-trivial bounded factors) forces the full
     /// 64×64 bit-blast — the cost cliff — so the bounded profile reports `Timeout`. The
     /// robust invariant asserted here (across z3 versions): the outcome is never
@@ -1231,7 +1231,7 @@ mod tests {
 
     #[test]
     fn overflow_conditions_recurse_into_nested_operations() {
-        // (a + b) * c emits BOTH the inner add overflow and the outer multiply overflow,
+        // (a + b) * c emits both the inner add overflow and the outer multiply overflow,
         // with the outer multiply's left operand the wrapped `(bvadd a b)` machine value.
         let e = bin(BinOp::Mul, bin(BinOp::Add, var("a"), var("b")), var("c"));
         let conds = overflow_conds(&e, 64);
@@ -1291,7 +1291,7 @@ mod tests {
             q.contains("(assert (bvult a (_ bv100 64)))"),
             "the precondition is a hypothesis"
         );
-        // The overflow disjunction is asserted DIRECTLY (not wrapped in `(not …)`), so a
+        // The overflow disjunction is asserted directly (not wrapped in `(not …)`), so a
         // model is an overflowing input.
         assert!(q.contains("(assert (bvult (bvadd a b) a))"));
         assert!(
@@ -1330,7 +1330,7 @@ mod tests {
     }
 
     /// AC-6 (engine level): an unconstrained `@bv64(nowrap)` `a + b` CAN overflow — the
-    /// obligation fails with a concrete overflowing bit pattern (the witness genuinely
+    /// obligation fails with a concrete overflowing bit pattern (the witness
     /// carries out of 64 bits).
     #[test]
     fn live_unbounded_sum_fails_with_a_concrete_overflowing_input() {
@@ -1348,7 +1348,7 @@ mod tests {
         match out {
             BvOutcome::Counterexample { bits } => {
                 assert_eq!(bits.len(), 2, "a bit pattern per variable");
-                // The witness genuinely overflows: a + b wraps below an operand at width 64.
+                // The witness overflows: a + b wraps below an operand at width 64.
                 let mask = u64::MAX as u128;
                 let wrapped = (bits[0].value + bits[1].value) & mask;
                 assert!(
@@ -1413,7 +1413,7 @@ mod tests {
         }
     }
 
-    /// AC-6 (engine level): a non-arithmetic `nowrap` body holds VACUOUSLY without a
+    /// AC-6 (engine level): a non-arithmetic `nowrap` body holds vacuously without a
     /// solver round-trip (so it passes even with z3 absent — no skip guard needed).
     #[test]
     fn nowrap_obligation_is_vacuous_for_a_non_arithmetic_body() {

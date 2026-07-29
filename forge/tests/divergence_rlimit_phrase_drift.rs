@@ -14,7 +14,7 @@
 //! phases (the per-phase copies deleted). With one shared discriminator the phrase set
 //! cannot drift again, and the z3-phrased resourceout is caught in every phase.
 //!
-//! The z3 phrase is load-bearing rather than defensive padding: the distributed z3
+//! The z3 phrase is required rather than defensive padding: the distributed z3
 //! binary (verus 0.2026.05.24.ecee80a toolchain, `~/.local/share/verus/verus-x86-linux/z3`)
 //! contains the literal diagnostic `max. resource limit exceeded`, Z3's own
 //! resourceout message (its `:reason-unknown` text on an rcounts exhaustion). That

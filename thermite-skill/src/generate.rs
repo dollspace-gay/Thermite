@@ -13,15 +13,15 @@
 //! Forge command set, (4) the ladder semantics, (5) the slag rules, (6) the
 //! Stage-1 forge tier (the seven verdicts, per-clause routing, covenant authoring,
 //! and the forge-tier verbs + burn receipt; `.design/stage1-forge-tier.md`) — into
-//! one deterministic `String`. The SURFACE INVENTORY is DYNAMIC by two
+//! one deterministic `String`. The surface INVENTORY is DYNAMIC by two
 //! compiler-backed mechanisms (REQ-8): (i) **registry-driven** — section (2)
 //! iterates `thermite_spec::all()` and (2b) iterates
 //! `thermite_spec::schemes::all()`, so a new registry entry auto-appears (REQ-2,
 //! REQ-9); (ii) **exhaustive-match-driven** — section (1)'s construct inventory
-//! is rendered by an EXHAUSTIVE `match` (no `_` wildcard) over the definitional
+//! is rendered by an exhaustive `match` (no `_` wildcard) over the definitional
 //! enums `thermite_syntax::{Type,Expr,Item,Pattern,Effect}` (+ `BinOp`/
-//! `PrimType`), so a NEW variant FAILS TO COMPILE until its skill arm is added
-//! (REQ-10 — the compiler is the freshness enforcer). The explanatory PROSE (the
+//! `PrimType`), so a new variant fails TO compile until its skill arm is added
+//! (REQ-10 — the compiler is the freshness enforcer). The explanatory prose (the
 //! framing, the ladder, the slag rules, the forge verb table) stays curated,
 //! guarded by the freshness + budget tests (REQ-11). No I/O, no env, no
 //! wall-clock, no RNG — a pure function of the compiled-in text, the static
@@ -95,7 +95,7 @@ pub fn token_count(s: &str) -> usize {
 /// The sections appear in `thermite-design.md` §10 order: (1) surface grammar,
 /// (2) the SpecTherm combinator library, (2b) the recursion-scheme library, (3)
 /// the Forge command set, (4) the ladder semantics, (5) the slag rules, (6) the
-/// Stage-1 forge tier. Section (1)'s construct inventory is EXHAUSTIVE-MATCH-driven
+/// Stage-1 forge tier. Section (1)'s construct inventory is exhaustive-MATCH-driven
 /// over the `thermite_syntax` enums (REQ-10), (2) is registry-driven from
 /// `thermite_spec::all()` (REQ-2), (2b) is registry-driven from
 /// `thermite_spec::schemes::all()` (REQ-9); the curated prose (the framing, ladder,
@@ -149,7 +149,7 @@ forge tier (verdicts, routing, covenants, proofs).
 /// One rendered surface-construct entry (REQ-10): the per-variant fragment an
 /// exhaustive-`match` renderer emits for a single language construct — a concise
 /// grammar `fragment`, a one-line `description`, and a tiny `example`. The text
-/// is a deterministic function of the VARIANT (not of any payload value), so the
+/// is a deterministic function of the variant (not of any payload value), so the
 /// rendered inventory is pure (R-CODE-5, AC-6).
 struct SkillFragment {
     /// The grammar fragment for this construct (e.g. `&[T]`, `match e { … }`).
@@ -161,10 +161,10 @@ struct SkillFragment {
 }
 
 impl SkillFragment {
-    /// Render this fragment as one markdown bullet WITH its example (the per-construct
+    /// Render this fragment as one markdown bullet with its example (the per-construct
     /// row of the REQ-10 inventory): the grammar fragment + description, then a tiny
     /// example. Used (via [`render_inventory_complete_examples`]) for the `Type` arms
-    /// whose example is a COMPLETE, copy-pasteable item — chiefly the `fn log() -> ()
+    /// whose example is a complete, copy-pasteable item — chiefly the `fn log() -> ()
     /// req true ens true fx pure { }` that the §10 parse-clean pin guards. Every other
     /// inventory (items, expressions, primitive scalars, operators, patterns, effects)
     /// renders via [`to_bullet_terse`](SkillFragment::to_bullet_terse) to stay under
@@ -178,7 +178,7 @@ impl SkillFragment {
         )
     }
 
-    /// Render this fragment as one markdown bullet WITHOUT its example — the
+    /// Render this fragment as one markdown bullet without its example — the
     /// fragment + description only. The budget-tightening form (`thermite-design.md`
     /// §2.2: the ≤ 6,000-token hard gate) for the leaf inventories whose `fragment`
     /// already shows the surface syntax (`a + b`, `read(path)`, `[head, ..tail]`), so
@@ -194,14 +194,14 @@ impl SkillFragment {
     }
 }
 
-/// Render ONE `Type` variant's surface fragment (REQ-10).
+/// Render one `Type` variant's surface fragment (REQ-10).
 ///
-/// EXHAUSTIVE `match` over `thermite_syntax::ast::Type` with NO `_` wildcard arm:
+/// exhaustive `match` over `thermite_syntax::ast::Type` with no `_` wildcard arm:
 /// adding a new `Type` variant (e.g. the deferred `Type::Map`, ast.rs REQ-2)
-/// makes this `match` non-exhaustive, a HARD `rustc` `E0004` compile error in
+/// makes this `match` non-exhaustive, a hard `rustc` `E0004` compile error in
 /// `thermite-skill`, until its arm is added — the compiler is the freshness
 /// enforcer (REQ-8, AC-10(i)). Payload is field-elided (`{ .. }` / `(_)`); the
-/// elision does not weaken exhaustiveness (the compiler checks the VARIANT set).
+/// elision does not weaken exhaustiveness (the compiler checks the variant set).
 fn render_type_arm(ty: &Type) -> SkillFragment {
     match ty {
         Type::Prim(_) => SkillFragment {
@@ -230,8 +230,8 @@ fn render_type_arm(ty: &Type) -> SkillFragment {
             example: "-> Wrapper<usize>",
         },
         // Cluster C7 (`.design/basis/09-option-result.md` REQ-1/REQ-2): the built-in
-        // optional / fallible primitives are dedicated `Type` nodes (NOT a
-        // string-named `Generic`), so each renders ITS OWN surface fragment — the
+        // optional / fallible primitives are dedicated `Type` nodes (not a
+        // string-named `Generic`), so each renders ITS own surface fragment — the
         // construct + payload-in-contract surface an agent reads.
         Type::Option(_) => SkillFragment {
             fragment: "Option<T>",
@@ -244,9 +244,9 @@ fn render_type_arm(ty: &Type) -> SkillFragment {
             example: "-> Result<u64, ParseErr>",
         },
         // Cluster C12 (`.design/basis/13-map.md` REQ-1/REQ-5): the bounded verified
-        // key-value primitive `Map<K, V>` — the SECOND two-type-arg node. insert/get/
-        // contains_key/len; get returns Option<V> (absent key -> None, NOT a wrong
-        // value); insert carries fx alloc. Renders its OWN surface fragment.
+        // key-value primitive `Map<K, V>` — the second two-type-arg node. insert/get/
+        // contains_key/len; get returns Option<V> (absent key -> None, not a wrong
+        // value); insert carries fx alloc. Renders its own surface fragment.
         Type::Map(_, _) => SkillFragment {
             fragment: "Map<K, V>",
             description: "a bounded verified key-value map (insert/get/contains_key/len; get -> Option<V>, absent -> None; fx alloc)",
@@ -283,8 +283,8 @@ fn render_type_arm(ty: &Type) -> SkillFragment {
     }
 }
 
-/// Render ONE `PrimType` leaf's surface fragment (REQ-10): the exhaustive `match`
-/// over the closed primitive set so a NEW primitive also compile-forces an entry.
+/// Render one `PrimType` leaf's surface fragment (REQ-10): the exhaustive `match`
+/// over the closed primitive set so a new primitive also compile-forces an entry.
 fn render_prim_arm(prim: PrimType) -> SkillFragment {
     match prim {
         PrimType::U32 => SkillFragment {
@@ -310,8 +310,8 @@ fn render_prim_arm(prim: PrimType) -> SkillFragment {
     }
 }
 
-/// Render ONE `Item` variant's surface fragment (REQ-10): exhaustive `match` over
-/// `thermite_syntax::ast::Item`, NO `_` arm — a new top-level item kind
+/// Render one `Item` variant's surface fragment (REQ-10): exhaustive `match` over
+/// `thermite_syntax::ast::Item`, no `_` arm — a new top-level item kind
 /// compile-forces a skill entry (REQ-8, AC-10).
 fn render_item_arm(item: &Item) -> SkillFragment {
     match item {
@@ -346,8 +346,8 @@ fn render_item_arm(item: &Item) -> SkillFragment {
     }
 }
 
-/// Render ONE `Expr` variant's surface fragment (REQ-10): exhaustive `match` over
-/// `thermite_syntax::ast::Expr`, NO `_` arm — a new expression form compile-forces
+/// Render one `Expr` variant's surface fragment (REQ-10): exhaustive `match` over
+/// `thermite_syntax::ast::Expr`, no `_` arm — a new expression form compile-forces
 /// a skill entry (REQ-8, AC-10).
 fn render_expr_arm(expr: &Expr) -> SkillFragment {
     match expr {
@@ -443,8 +443,8 @@ fn render_expr_arm(expr: &Expr) -> SkillFragment {
             example: "let s: String = \"hello\";",
         },
         // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-5/REQ-8): the
-        // tuple construction + the projection access form. Projection (NOT
-        // destructuring) is the v1 tuple access; it reads in BOTH exec and contract
+        // tuple construction + the projection access form. Projection (not
+        // destructuring) is the v1 tuple access; it reads in both exec and contract
         // (`ens result.0 == b`).
         Expr::Tuple(_) => SkillFragment {
             fragment: "(a, b, ..)",
@@ -468,8 +468,8 @@ fn render_expr_arm(expr: &Expr) -> SkillFragment {
     }
 }
 
-/// Render ONE `BinOp` leaf's surface fragment (REQ-10): exhaustive `match` so a
-/// NEW operator compile-forces a skill entry. Comparisons are non-associative
+/// Render one `BinOp` leaf's surface fragment (REQ-10): exhaustive `match` so a
+/// new operator compile-forces a skill entry. Comparisons are non-associative
 /// (`a < b < c` is a parse error).
 fn render_binop_arm(op: BinOp) -> SkillFragment {
     match op {
@@ -566,8 +566,8 @@ fn render_binop_arm(op: BinOp) -> SkillFragment {
     }
 }
 
-/// Render ONE `UnaryOp` leaf's surface fragment (REQ-10, #92): exhaustive `match`
-/// so a NEW prefix operator compile-forces a skill entry. There is ONE
+/// Render one `UnaryOp` leaf's surface fragment (REQ-10, #92): exhaustive `match`
+/// so a new prefix operator compile-forces a skill entry. There is one
 /// `UnaryOp::Not` (the prefix `!`), whose meaning is per the operand type
 /// (logical-not on `bool`, bitwise-not on an integer; ast.md OQ-4); it binds
 /// tighter than every binary operator (`surface-grammar.md` REQ-10).
@@ -586,8 +586,8 @@ fn unaryop_inventory() -> [UnaryOp; 1] {
     [UnaryOp::Not]
 }
 
-/// Render ONE `Pattern` variant's surface fragment (REQ-10): exhaustive `match`
-/// over `thermite_syntax::ast::Pattern`, NO `_` arm.
+/// Render one `Pattern` variant's surface fragment (REQ-10): exhaustive `match`
+/// over `thermite_syntax::ast::Pattern`, no `_` arm.
 fn render_pattern_arm(pat: &Pattern) -> SkillFragment {
     match pat {
         Pattern::Wildcard => SkillFragment {
@@ -631,8 +631,8 @@ fn render_pattern_arm(pat: &Pattern) -> SkillFragment {
     }
 }
 
-/// Render ONE `Effect` atom's surface fragment (REQ-10): exhaustive `match` over
-/// `thermite_syntax::ast::Effect`, NO `_` arm — a new effect atom compile-forces
+/// Render one `Effect` atom's surface fragment (REQ-10): exhaustive `match` over
+/// `thermite_syntax::ast::Effect`, no `_` arm — a new effect atom compile-forces
 /// a skill entry (REQ-8, AC-10). A caller's row must subsume every callee's row.
 fn render_effect_arm(effect: &Effect) -> SkillFragment {
     match effect {
@@ -684,11 +684,11 @@ fn render_effect_arm(effect: &Effect) -> SkillFragment {
     }
 }
 
-/// The representative `Type` variants the REQ-10 inventory enumerates. ONE value
+/// The representative `Type` variants the REQ-10 inventory enumerates. one value
 /// per `Type` variant — the `match` in `render_type_arm` is what the compiler
-/// checks for exhaustiveness; this list is what the OUTPUT covers. Payload is the
+/// checks for exhaustiveness; this list is what the output covers. Payload is the
 /// cheapest legal filler (the arm text is payload-independent, AC-6). If a new
-/// `Type` variant is added, `render_type_arm`'s `match` fails to compile FIRST
+/// `Type` variant is added, `render_type_arm`'s `match` fails to compile first
 /// (REQ-8); this list is then extended to render it.
 fn type_inventory() -> Vec<Type> {
     vec![
@@ -710,19 +710,19 @@ fn type_inventory() -> Vec<Type> {
         // Cluster C7 (`.design/basis/09-option-result.md` REQ-1/REQ-2): one
         // representative each of the built-in `Option<T>` / `Result<T, E>` nodes so
         // the REQ-10 inventory renders their fragments (the `match` in
-        // `render_type_arm` is the exhaustiveness oracle; this list is the OUTPUT
+        // `render_type_arm` is the exhaustiveness oracle; this list is the output
         // cover). The payload is the cheapest legal filler.
         Type::Option(Box::new(Type::Unit)),
         Type::Result(Box::new(Type::Unit), Box::new(Type::Unit)),
         // Cluster C12 (`.design/basis/13-map.md` REQ-1/REQ-5): a representative
         // `Map<K, V>` node so the REQ-10 inventory renders its fragment (the `match`
-        // in `render_type_arm` is the exhaustiveness oracle; this list is the OUTPUT
+        // in `render_type_arm` is the exhaustiveness oracle; this list is the output
         // cover). The two args are the cheapest legal filler.
         Type::Map(Box::new(Type::Unit), Box::new(Type::Unit)),
         // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-5/REQ-7): a
         // representative n-tuple type so the REQ-10 inventory renders its fragment
         // (the `match` in `render_type_arm` is the exhaustiveness oracle; this list
-        // is the OUTPUT cover). Arity 2 — the minimal legal tuple.
+        // is the output cover). Arity 2 — the minimal legal tuple.
         Type::Tuple(vec![Type::Unit, Type::Unit]),
     ]
 }
@@ -770,7 +770,7 @@ fn item_inventory() -> Vec<Item> {
             // representative non-recursive item (the additive-field ripple).
             dec: None,
             body: Some(empty_block()),
-            // #193 (`.design/forge/goal-repl.md` REQ-4): the open body holes. EMPTY
+            // #193 (`.design/forge/goal-repl.md` REQ-4): the open body holes. empty
             // for this representative complete skill-inventory item (the additive
             // `FnItem.holes` ripple — a skill example is never a holed item).
             holes: Vec::new(),
@@ -875,7 +875,7 @@ fn expr_inventory() -> Vec<Expr> {
         // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-5/REQ-8): one
         // representative each of the tuple construction + the projection node so the
         // REQ-10 inventory renders their fragments (the `match` in `render_expr_arm`
-        // is the exhaustiveness oracle; this list is the OUTPUT cover).
+        // is the exhaustiveness oracle; this list is the output cover).
         Expr::Tuple(vec![*unit(), *unit()]),
         Expr::TupleProj {
             receiver: unit(),
@@ -946,7 +946,7 @@ fn effect_inventory() -> Vec<Effect> {
 }
 
 /// Render a labelled construct sub-section in the TERSE form — a heading + one
-/// fragment+description bullet per construct, NO worked example
+/// fragment+description bullet per construct, no worked example
 /// ([`SkillFragment::to_bullet_terse`]). The budget-tightening renderer
 /// (`thermite-design.md` §2.2) for the leaf inventories (primitive scalars,
 /// expressions, operators, patterns, effect atoms) whose `fragment` already shows
@@ -959,8 +959,8 @@ fn render_inventory_terse(label: &str, fragments: &[SkillFragment]) -> String {
     s
 }
 
-/// Render a labelled inventory that keeps a fragment's worked example ONLY when the
-/// example is a COMPLETE, standalone item — a `fn`/`spec fn` with a body and no `..`
+/// Render a labelled inventory that keeps a fragment's worked example only when the
+/// example is a complete, standalone item — a `fn`/`spec fn` with a body and no `..`
 /// placeholder ([`is_complete_example`]) — and renders every other (snippet) example
 /// terse. This is the budget-aware middle ground for the `Type` inventory: it keeps
 /// the copy-pasteable, parse-clean `fn log() -> () req true ens true fx pure { }`
@@ -980,7 +980,7 @@ fn render_inventory_complete_examples(label: &str, fragments: &[SkillFragment]) 
     s
 }
 
-/// Is `example` a COMPLETE, standalone item — a `fn`/`spec fn` with a body and no
+/// Is `example` a complete, standalone item — a `fn`/`spec fn` with a body and no
 /// `..` placeholder? Mirrors the §10 parse-clean pin's `is_complete_item`
 /// (`thermite-skill/tests/divergence_unit_arm_example.rs`): only such examples are
 /// standalone-parseable programs worth a full worked bullet; signature snippets and
@@ -992,14 +992,14 @@ fn is_complete_example(example: &str) -> bool {
 
 /// Section (1) — the surface grammar. The narrative SCAFFOLDING (the
 /// contract-first framing, the mandatory clause order, the loop `inv`/`dec`
-/// rule, the one-call-syntax rule, the "removed from Rust" motivation) is CURATED
-/// PROSE (REQ-11, sourced from `thermite-design.md` §4/§4.2/§4.4). The CONSTRUCT
+/// rule, the one-call-syntax rule, the "removed from Rust" motivation) is curated
+/// prose (REQ-11, sourced from `thermite-design.md` §4/§4.2/§4.4). The CONSTRUCT
 /// INVENTORY — the type / item / expression / operator / pattern / effect forms —
-/// is rendered by EXHAUSTIVE `match`es over the definitional enums (REQ-10), so a
+/// is rendered by exhaustive `match`es over the definitional enums (REQ-10), so a
 /// new language construct compile-forces a skill entry (REQ-8). The exact set is
 /// `render_*_arm` over [`type_inventory`]/[`item_inventory`]/[`expr_inventory`]/
 /// [`binop_inventory`]/[`pattern_inventory`]/[`prim_inventory`]/
-/// [`effect_inventory`] — the OUTPUT covers every current variant, the COMPILER
+/// [`effect_inventory`] — the output covers every current variant, the COMPILER
 /// guarantees no variant can be added without an arm.
 fn render_grammar() -> String {
     let mut s = String::from(
@@ -1169,7 +1169,7 @@ fn render_result_kind(kind: ResultKind) -> &'static str {
 /// (`sorted`/`forall_in`/`forall_below`/`forall_from`) take their examples from
 /// the `binary_search` contract (`thermite-design.md` §4.1); the §4.2-named four
 /// (`exists_in`/`count_where`/`permutation_of`/`disjoint`) take a hand-written
-/// illustrative example. Examples are a SKILL concern, not a registry field, so
+/// illustrative example. Examples are a skill concern, not a registry field, so
 /// they live here, not in `CombinatorSig`. A combinator added to the registry
 /// without a mapping falls back to a generic example (so the renderer never
 /// panics — R-CODE-2) and the coverage test still pins its name + the example
@@ -1189,11 +1189,11 @@ fn example_for(name: &str) -> &'static str {
 }
 
 /// Section (2) — the SpecTherm combinator library. MACHINE-RENDERED from
-/// `thermite_spec::all()` (REQ-2): for EVERY entry and ONLY those entries, the
+/// `thermite_spec::all()` (REQ-2): for every entry and only those entries, the
 /// surface signature (name + arg-kinds + result) + one usage example. Adding a
 /// combinator to the frozen registry makes it auto-appear here; removing one
 /// auto-drops it (§10 anti-drift). The verbose Verus(L3)/L1 bodies the registry
-/// also carries are NOT rendered — the skill teaches the surface signature, not
+/// also carries are not rendered — the skill teaches the surface signature, not
 /// the lowering bodies.
 fn render_combinators() -> String {
     let mut s = String::from(
@@ -1240,7 +1240,7 @@ fn render_one_combinator(sig: &CombinatorSig) -> String {
 }
 
 /// The generator-side example table for the recursion schemes (REQ-9 / OQ-2):
-/// one tiny usage example per scheme name, keyed by `name`. Examples are a SKILL
+/// one tiny usage example per scheme name, keyed by `name`. Examples are a skill
 /// concern, not a registry field, so they live here, not in `SchemeSig` (the
 /// `example_for` combinator precedent). A scheme added to the registry without a
 /// mapping falls back to a generic example (so the renderer never panics —
@@ -1297,12 +1297,12 @@ fn render_one_scheme(sig: &SchemeSig) -> String {
 }
 
 /// Section (2b) — the recursion-scheme library. MACHINE-RENDERED from
-/// `thermite_spec::schemes::all()` (REQ-9): for EVERY entry and ONLY those
+/// `thermite_spec::schemes::all()` (REQ-9): for every entry and only those
 /// entries, the surface call shape (name + positional args + the trailing step
 /// closure) + result kind + one example. Adding a scheme to the frozen registry
 /// makes it auto-appear; removing one auto-drops it (§10 anti-drift — the
 /// `render_combinators` precedent, REQ-2). The generated lowering symbols
-/// (`fold_<e>` etc.) are NOT rendered — the skill teaches the surface call.
+/// (`fold_<e>` etc.) are not rendered — the skill teaches the surface call.
 fn render_schemes() -> String {
     let mut s = String::from(
         "\n\
@@ -1324,7 +1324,7 @@ The schemes (call shape, result, then one example each):
     s
 }
 
-/// Section (3) — the Forge command set. CURATED from `thermite-design.md`
+/// Section (3) — the Forge command set. curated from `thermite-design.md`
 /// Appendix B (the v0.1 command surface) + §5.1 framing (REQ-3).
 fn render_forge() -> String {
     String::from(
@@ -1366,7 +1366,7 @@ a hole is `<fn>.?N`); `edit`/`fill` take addresses, not string matches.
     )
 }
 
-/// Section (4) — the ladder semantics. CURATED from `thermite-design.md` §6
+/// Section (4) — the ladder semantics. curated from `thermite-design.md` §6
 /// (REQ-3), INCLUDING the L0/slag clarification (slag → L1 with `slag: true`;
 /// L0 is the body-proof aspect).
 fn render_ladder() -> String {
@@ -1404,7 +1404,7 @@ boundary.
     )
 }
 
-/// Section (5) — the slag rules. CURATED from `thermite-design.md` §8 (REQ-3):
+/// Section (5) — the slag rules. curated from `thermite-design.md` §8 (REQ-3):
 /// mandatory non-empty `reason`/`owner`/`review`, contract still enforced at L1,
 /// `grep slag` as the complete inventory, the polarity inversion.
 fn render_slag() -> String {
@@ -1441,7 +1441,7 @@ non-verification is the exotic add-on that costs more keystrokes and visibility.
     )
 }
 
-/// Section (6) — the Stage-1 forge tier. CURATED from the SHIPPED forge code
+/// Section (6) — the Stage-1 forge tier. curated from the SHIPPED forge code
 /// (`.design/stage1-forge-tier.md`): the seven cert-level verdicts
 /// ([`forge::verdict::CertVerdict`]) + the agent action per verdict; the per-clause
 /// relax/in-cage/lemma routing ([`forge::relax::classify_fn`], the `nlsat`/`verus`/
@@ -1449,7 +1449,7 @@ non-verification is the exotic add-on that costs more keystrokes and visibility.
 /// `witness { inhabit; falsify N }` covenant-before-burn gate,
 /// [`forge::covenant_engine`]); and the forge-tier verbs + the L3/L4 burn receipt
 /// ([`forge::burn::BurnReceipt`]). Curated prose (REQ-11), guarded by the budget +
-/// the v2 coverage test (`forge_tier_markers_present`). The seven verdict NAMES are
+/// the v2 coverage test (`forge_tier_markers_present`). The seven verdict names are
 /// the closed `CertVerdict` set — a new verdict there is caught by that test.
 fn render_forge_tier() -> String {
     String::from(
@@ -1556,7 +1556,7 @@ mod tests {
 
     #[test]
     fn combinator_coverage() {
-        // AC-2: every entry in the frozen registry appears by name AND has an
+        // AC-2: every entry in the frozen registry appears by name and has an
         // example marker. Expected source is the registry itself (R-CHAR-3 — the
         // anti-drift contract is "the skill mirrors all()").
         let skill = generate();
@@ -1578,7 +1578,7 @@ mod tests {
 
     #[test]
     fn scheme_coverage() {
-        // AC-9: every entry in the frozen scheme registry appears by name AND
+        // AC-9: every entry in the frozen scheme registry appears by name and
         // has a call-shape marker (the registry IS the oracle — R-CHAR-3).
         let skill = generate();
         for sig in thermite_spec::schemes::all() {
@@ -1592,16 +1592,16 @@ mod tests {
 
     #[test]
     fn renderers_are_exhaustive_no_wildcard() {
-        // AC-10(i) — the STRUCTURAL no-staleness invariant. The renderer
+        // AC-10(i) — the structural no-staleness invariant. The renderer
         // functions `render_{type,expr,item,pattern,effect,binop,prim}_arm` are
-        // EXHAUSTIVE `match`es with NO `_` wildcard arm over their definitional
+        // exhaustive `match`es with no `_` wildcard arm over their definitional
         // enums. Rust's exhaustiveness check (E0004) makes adding a new variant a
-        // HARD compile error in THIS crate until the matching arm is added — so
+        // hard compile error in this crate until the matching arm is added — so
         // the skill cannot silently fall behind the language (REQ-8).
         //
         // This is enforced by the compiler, not by a runtime assertion: if a
         // future variant were added without a renderer arm, this whole crate
-        // (and thus this test) would FAIL TO BUILD. A green build is the proof.
+        // (and thus this test) would fail TO build. A green build is the proof.
         // We exercise the renderers over the full per-variant inventories so the
         // arms are reached, and assert each inventory is non-empty (a sanity
         // floor — the inventories must cover at least the shipped variants).

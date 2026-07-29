@@ -5,7 +5,7 @@
 //! hand-derived oracle `conformance/solver-vacuity/cases.json` (R-CHAR-3: expected
 //! verdicts trace to the oracle, never to forge's own output).
 //!
-//! These checks issue real verus queries (the harness must prove for a detection),
+//! These checks issue verus queries (the harness must prove for a detection),
 //! so every case here needs verus. The verus-needing cases skip with an eprintln
 //! when verus is absent (mirroring `lower_conformance.rs` /
 //! `vacuity_slag_conformance.rs`) rather than panic.

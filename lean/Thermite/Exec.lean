@@ -488,7 +488,7 @@ theorem exec_ref_sound : ∀ (e : ExecExpr) (env : ExecEnv),
 theorem exec_ref_sound_eq (e : ExecExpr) (env : ExecEnv) :
     execRefValue e env = execDenote e env := exec_ref_sound e env
 
-/-! ## The overflow-obligation treatment is genuine (not silently unbounded)
+/-! ## The overflow-obligation treatment is (not silently unbounded)
 
   These witness that the bounded model is real: an arithmetic op that overflows its type's
   bound has no value (`execDenote = none`, the obligation fails), while the same op stays
@@ -505,7 +505,7 @@ def envOverflow : ExecEnv :=
       else .int ⟨.u64, 0⟩
     slices := fun s => if s = "xs" then [⟨.u64, 10⟩, ⟨.u64, 20⟩, ⟨.u64, 30⟩] else [] }
 
-/-- Overflow obligation is genuine. `a + b` with `a = 2^64 - 1`, `b = 1` (both `u64`)
+/-- Overflow is represented as an obligation. `a + b` with `a = 2^64 - 1`, `b = 1` (both `u64`)
     overflows: `execDenote` is `none` (the no-overflow obligation fails, the value is not
     defined; a Verus exec `+` rejected because overflow is possible). A silently-
     unbounded model would return `some (2^64)` here, so this proves the model is bounded. -/

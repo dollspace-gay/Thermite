@@ -126,7 +126,7 @@ fn divergence_push_one_l3_not_mutation_gated_l0() {
 
 /// Confirmation (not a divergence — this passes today): `checked_get` is the
 /// no-OOB accessor. It certifies L3 / pure, and the `req i < v.len()` is
-/// load-bearing. An off-by-one bound `req i <= v.len()` leaves `get`'s
+/// required. An off-by-one bound `req i <= v.len()` leaves `get`'s
 /// index precondition undischarged → L0 (not laundered). This test asserts both
 /// the L3 and the bound; it pins that the accessor is not a no-op. It is
 /// un-ignored because it passes against `a48d2a1`; if a future change launders
@@ -151,7 +151,7 @@ fn confirm_checked_get_bound_is_load_bearing() {
     );
     assert_eq!(cg["effects"], serde_json::json!(["pure"]));
 
-    // (2) the bound is load-bearing: an off-by-one `req i <= v.len()`
+    // (2) the bound is required: an off-by-one `req i <= v.len()`
     // (the design's `oob_get_no_req`-class negative, R-DEFER-9 non-vacuity) leaves
     // get's `i < len` precondition undischarged -> L0 (caught, not laundered).
     let fixture =

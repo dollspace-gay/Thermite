@@ -1,7 +1,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: 7fd2a7ef2df1f575e3be0f688d5c884f3e52e60902785e2ca7205ed5d218c9a3
+audited-content-sha256: 27534142b8bb69883f47d46d89efb63bbc333d55e171530b5e07bc12f3615617
 governs: thermite-spec/src/classifier.rs (the Rust admission classifier) ↔
          lean/Thermite/Strat/{Nnf,Graph,Fragment}.lean (Thermite.Strat.Cls.admitted,
          T3-C classifier_correct);

@@ -70,7 +70,7 @@ fn run_verus(file: &Path) -> Option<(bool, String)> {
     Some((out.status.success(), combined))
 }
 
-/// A `Vec<u64>` program that pushes two values, lowered by the real toolchain. The
+/// A `Vec<u64>` program that pushes two values, lowered by the toolchain. The
 /// emitted `TVecU64` wrapper carries whatever `push` ens the lowerer produces.
 const VEC_TWO_PUSH: &str = r#"
 fn two(x: u64, y: u64) -> u64

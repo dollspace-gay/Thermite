@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft (v-next architecture — the obligation/engine interface; most REQs NOT-STARTED
-audited-content-sha256: 831c0ced80f6072a740c22b3356cdeccb5cc22def9928431891e4391abf6bfe3 (migrated from legacy audited-sha commit pin to a squash-stable content digest; doc-drift-tripwire.md REQ-2 — content pin is primary, commit pin is a migration fallback)
+audited-content-sha256: eeef677e8ac5ea5b0f6fd0b6cb383b09530d6164f60e6410ba21d19cdbbbae2d (migrated from legacy audited-sha commit pin to a squash-stable content digest; doc-drift-tripwire.md REQ-2 — content pin is primary, commit pin is a migration fallback)
         behind build blockers. The SHIPPED substrates this builds on are quoted-code-grounded.)
 governs: forge/src/check.rs + forge/src/degrade.rs + forge/src/manifest.rs (the discharge
          pipeline, the ladder, the certificate this interface generalizes) and
@@ -2110,11 +2110,12 @@ enumeration (R-CHAR-3), never regenerated from the exporter.
   ACTUAL SHAPE is FUEL-FREE shallow goals** (the #216 reconciliation, §6 tiers (a)/(b)): the exporter
   emits `denote 0 e env`-style statements for specCall-free obligations (via the fuel-irrelevance
   lemma) or statically-unfolded goals for non-recursive registries — exactly the QF shape the PoC's
-  `tv_obligation_*` theorems are, NOT raw `∃N∀fuel` goals. OUT of auto today: the
-  QF_BV bitwise fragment (blocked by an upstream `sorry` in Lean-SMT's `Bitblast.lean`), the bounded
-  quantifier combinators (~30% cvc5-rule reconstruction coverage — may FAIL, i.e. `Unknown`, never
-  unsound), and recursive spec-fns / `permutation_of` (need the `∃N∀fuel` stabilization form + an
-  induction on the per-env depth — INTERACTIVE only, §6 tier (c)). So the
+  `tv_obligation_*` theorems are, NOT raw `∃N∀fuel` goals. The stage-3 exporter also
+  handles the complete QF_BV term surface with literal `BitVec N` normalization proofs.
+  OUT of auto today: bounded quantifier combinators (~30% cvc5-rule reconstruction
+  coverage — may fail as `Unknown`) and recursive spec-fns / `permutation_of` (need the
+  `∃N∀fuel` stabilization form + induction on the per-env depth — INTERACTIVE only,
+  §6 tier (c)). So the
   Lean-auto FRAGMENT (REQ-2(a)) is precisely the scalar/linear contract clause exported FUEL-FREE —
   the "cheapest real win" (increment (ii)).
 - **(ii) INTERACTIVE** — an agent authors a proof file checked in NEXT TO the source, replayed in CI.

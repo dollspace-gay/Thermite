@@ -83,7 +83,7 @@ theorem divergent_call_NB_is_none :
       simp only [Option.bind]
       exact ih _ (by simp [Env.bindParams, Env.bindInt, h])
 
-/-! ## E.2 — the divergent registry fails the new hypothesis (the load-bearing
+/-! ## E.2 — the divergent registry fails the new hypothesis (the required
     reversal: the cycle-4 divergence is closed). -/
 
 /-- The pin (E.2): the divergent registry does not satisfy `RegistryTerminating`;
@@ -117,7 +117,7 @@ theorem stabilization_exists_unreachable_on_divergence :
   rintro ⟨h, _⟩
   exact divergent_registry_fails_the_hypothesis h
 
-/-! ## E.4 — a genuine (convergent) registry still discharges (no over-rejection):
+/-! ## E.4 — a (convergent) registry still discharges (no over-rejection):
     `g(x) = 5` converges to 5 and stabilizes to 5. -/
 
 def Rgood : Registry := fun n =>
@@ -131,7 +131,7 @@ def envG : Env :=
 
 def gCall : Expr := Expr.specCall "g" [Expr.var "x"]
 
-/-- The genuine call's none-propagating denotation reaches `some 5` at every fuel ≥ 1
+/-- The call's none-propagating denotation reaches `some 5` at every fuel ≥ 1
     (the body `5` is spec-call-free, so it converges immediately on resolution). -/
 theorem genuine_call_NB (fuel : Nat) :
     intValNB (fuel + 1) gCall envG = some 5 := by
@@ -141,20 +141,20 @@ theorem genuine_call_NB (fuel : Nat) :
     simp only [envG, Rgood, if_pos]
   simp only [gCall, intValNB, hres, hargs, Option.bind, intValNB]
 
-/-- The pin (E.4a): the genuine registry converges to 5; the fix did not
+/-- The pin (E.4a): the registry converges to 5; the fix did not
     over-reject, and a real dec-valid item still supplies `RegistryTerminating`. -/
 theorem genuine_registry_converges : Converges gCall envG 5 :=
   ⟨1, fun fuel hfuel => by
     obtain ⟨k, rfl⟩ := Nat.exists_eq_add_of_le hfuel
     rw [Nat.add_comm]; exact genuine_call_NB k⟩
 
-/-- The pin (E.4b): so the genuine registry satisfies `RegistryTerminating`, and
+/-- The pin (E.4b): so the registry satisfies `RegistryTerminating`, and
     `stabilization_exists` discharges it to a genuine stabilized value (5, by the
     agreement lemma) rather than a bottom-poisoned artifact. -/
 theorem genuine_registry_stabilizes : stabilizes gCall envG 5 :=
   converges_imp_stabilizes genuine_registry_converges
 
-/-- The pin (E.4c): the genuine value is 5, by uniqueness; the contract
+/-- The pin (E.4c): the value is 5, by uniqueness; the contract
     `ens: result == g(x)` is now about 5, not a bottom. -/
 theorem genuine_registry_value_is_five :
     ∀ v, stabilizes gCall envG v → v = 5 := fun _ hv =>

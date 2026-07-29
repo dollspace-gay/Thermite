@@ -18,7 +18,7 @@
 //!
 //! Expected values trace to the golden `conformance/composition/cases.json` and
 //! `thermite-design.md` §9 (R-CHAR-3), never copied from forge's own output.
-//! These skip with a logged note if verus is absent — the §9 composition proof is a real verus
+//! These skip with a logged note if verus is absent — the §9 composition proof is a verus
 //! run (the boundary caller L3-proves against the assumed contract).
 
 use std::path::{Path, PathBuf};
@@ -44,7 +44,7 @@ fn cases() -> Value {
 }
 
 /// `true` iff verus can be located — mirrors `e2e_conformance.rs`. The §9
-/// composition cases run a real verus proof (the boundary caller L3-proves
+/// composition cases run a verus proof (the boundary caller L3-proves
 /// against the boundary fn's assumed contract), so the prover must be present.
 fn verus_present() -> bool {
     if let Ok(p) = std::env::var("VERUS_BIN") {
@@ -163,7 +163,7 @@ fn direct_boundary_caller_verifies_through_the_contract() {
 }
 
 // AC-2 (transitive caller → L3 + to_boundary): the `transitive_boundary_caller`
-// case — `h → g → ext_id` — `h`'s sub-program weaves both `g` (real body, proved)
+// case — `h → g → ext_id` — `h`'s sub-program weaves both `g` (body, proved)
 // and `ext_id` (external_body signature), so `h` proves L3 through the contracts;
 // scope to_boundary via ext_id. Anchored to `cases.json` `transitive`.
 #[test]
@@ -264,8 +264,8 @@ fn req_violating_caller_is_a_counterexample_not_a_false_l3() {
 // AC-4 + the honesty gate: the pure corpus references only spec fns / combinators,
 // so no external_body is woven and the cert stays L3 end-to-end, byte-stable. The
 // lowered string for a pure sub-program contains no `external_body` substring
-// (the load-bearing OQ-1 invariant): external_body appears iff a woven dependency
-// is `#[boundary]`/`#[slag]`. We exercise the corpus through the real pipeline.
+// (the required OQ-1 invariant): external_body appears iff a woven dependency
+// is `#[boundary]`/`#[slag]`. We exercise the corpus through the pipeline.
 #[test]
 fn corpus_unaffected_stays_l3_end_to_end() {
     if !verus_present() {
@@ -305,7 +305,7 @@ fn corpus_unaffected_stays_l3_end_to_end() {
 // caller's own contract (`x < 100 ⟹ x <= 100`) → survivor; but the call-bearing
 // equivalence harness cannot prove `real == mutant` (ext_weak's `ens` does not pin
 // `real == x`) → not excluded → the survivor stays counted → `wcaller` gates
-// `WeakContract`. The genuine #101 anti-launder line, one level up: a mutant the
+// `WeakContract`. The #101 anti-launder line, one level up: a mutant the
 // callee contracts cannot prove equivalent is conservatively counted (R-DEFER-9).
 // Expected from §9 + equivalent-mutants.md REQ-8 (hand-derived), not forge output.
 #[test]

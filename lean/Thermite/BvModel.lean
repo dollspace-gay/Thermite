@@ -3,36 +3,27 @@
   metatheorem (`.design/stage3-bv-reconstruction.md` REQ-7/REQ-8; issue #356).
 
   ─────────────────────────────────────────────────────────────────────────────
-  What this closes.
+  What this proves.
   ─────────────────────────────────────────────────────────────────────────────
-  `forge/src/lean_smt_export.rs` renders a `@bvN` machine-semantics clause NOT over
-  Lean `BitVec N` (lean-smt's literal BitVec `smt` reconstruction bit-blasts through an
-  upstream `sorry`; see `.design/verified/z3-demotion.md`) but over the **bounded-integer
-  machine-model**: each `N`-bit variable is an `Int`, each wrapping op `a ⊕ b` is
-  `(a ⊕ b) % 2^N`, and each unsigned comparison is the integer comparison. That model
-  is QF_LIA, which `smt` reconstructs kernel-clean.
+  This module relates `BitVec N` to the bounded-integer machine model used by an
+  earlier exporter path: each variable is an `Int` in `[0, 2^N)`, wrapping arithmetic
+  reduces modulo `2^N`, and unsigned comparisons use the integer order.
 
-  The residual trust question (the `render_bv_prop` faithfulness obligation REQ-8 names):
-  IS the bounded-integer model a faithful rendering of the fixed-width bit-vector
-  semantics? This module answers YES with a KERNEL-CHECKED theorem — not by replaying
-  the literal SMT-LIB2 query (which needs the stalled lean-smt bv reconstruction), but by
-  proving the two denotations agree. With cvc5/Z3's int-model `↔` reconstructed in the
-  kernel (the exporter's `by smt` goal) AND this faithfulness theorem, a `@bv` clause's
-  truth is kernel-grounded end to end, with no solver in the trust base for the fragment.
+  The main result is a kernel-checked proof that the two denotations agree. The active
+  exporter now emits literal `BitVec N`, so this is a supplementary semantic cross-check
+  rather than a bridge in the reconstruction path.
 
   Mathlib-free / Smt-free: rests only on Lean-core `BitVec` lemmas, so it builds in the
   core spine and is covered by `scripts/lean-axiom-probe.sh` (CI, no cvc5 needed) — a
-  strictly stronger trust position than the `Smt`-importing `Thermite.SmtExport`.
+  small independent check beside the `Smt`-importing `Thermite.SmtExport`.
 
-  The fragment below mirrors `lean_smt_export.rs`'s `render_term` / `render_prop` arms
-  (the Rust-emitter ⟷ Lean-AST correspondence is inspection-tier, as for the whole
-  exporter — `.design/verified/exporter-surface-correspondence.md` scope/limits).
+  The fragment covers wrapping `+`/`-`/`*`, unsigned comparisons, and boolean
+  connectives.
 -/
 
 namespace Thermite.BvModel
 
-/-- The renderable QF_BV TERM fragment — mirrors `render_term` in `lean_smt_export.rs`
-    (single-segment variables, integer literals, `+`/`-`/`*`). -/
+/-- The arithmetic term fragment: variables, literals, and wrapping `+`/`-`/`*`. -/
 inductive Tm where
   | var (i : Nat)
   | lit (n : Nat)
@@ -41,8 +32,7 @@ inductive Tm where
   | mul (a b : Tm)
   deriving Repr
 
-/-- The renderable QF_BV PROPOSITION fragment — mirrors `render_prop` (comparisons +
-    boolean connectives). -/
+/-- Comparisons and boolean connectives over the arithmetic term fragment. -/
 inductive Frm where
   | tt
   | ff
@@ -59,7 +49,7 @@ inductive Frm where
 
 variable {w : Nat}
 
-/-! ## The fixed-width bit-vector semantics (what a `@bvN` clause MEANS, REQ-2).
+/-! ## The fixed-width bit-vector semantics (what a `@bvN` clause means, REQ-2).
 
   Every operator is its `BitVec w` (2's-complement / unsigned) machine counterpart; the
   comparisons are the unsigned bit-vector relations (`BitVec`'s `<`/`≤` are `ult`/`ule`). -/
@@ -84,7 +74,7 @@ def frmBV (ρ : Nat → BitVec w) : Frm → Prop
   | .or a b => frmBV ρ a ∨ frmBV ρ b
   | .not a => ¬ frmBV ρ a
 
-/-! ## The bounded-integer machine-model (what `lean_smt_export.rs` EMITS to `smt`).
+/-! ## The bounded-integer machine model.
 
   Each variable is an `Int` (range `[0, 2^w)` in the emitted goal's hypotheses); each
   wrapping operation reduces `% 2^w` (Lean `Int.emod` lands in `[0, 2^w)`); comparisons
@@ -160,9 +150,8 @@ theorem tmInt_eq_toNat (ρ : Nat → BitVec w) (t : Tm) :
     -- goal: (↑p - ↑q) % ↑(2^w) = (↑(2^w) - ↑q + ↑p) % ↑(2^w)
     exact (emod_sub_bridge _ _ _).symm
 
-/-- PROPOSITION faithfulness (the `render_bv_prop` obligation): the bounded-integer model
-    of a clause, at the `toNat` valuation, holds IFF its bit-vector denotation holds. So
-    the exporter's `by smt`-discharged int-model goal certifies the genuine `@bv` clause. -/
+/-- Proposition faithfulness: at the `toNat` valuation, the bounded-integer model
+    agrees with the bit-vector denotation. -/
 theorem frmInt_iff_frmBV (ρ : Nat → BitVec w) (f : Frm) :
     frmInt w (toNatσ ρ) f ↔ frmBV ρ f := by
   induction f with
@@ -190,10 +179,7 @@ theorem frmInt_iff_frmBV (ρ : Nat → BitVec w) (f : Frm) :
   | or a b iha ihb => simp only [frmInt, frmBV]; rw [iha, ihb]
   | not a ih => simp only [frmInt, frmBV]; rw [ih]
 
-/-- The corollary the exporter relies on (REQ-8): if the bounded-integer model proves the
-    translation-validation equivalence `(P_prod) ⟺ (P_ref)` (the `by smt` goal), then the
-    genuine bit-vector clauses are equivalent too — the int-model `↔` is faithful to the
-    `@bv` semantics. -/
+/-- A bounded-integer production/reference equivalence transfers to `BitVec`. -/
 theorem tv_equiv_faithful (ρ : Nat → BitVec w) (prod ref : Frm)
     (h : frmInt w (toNatσ ρ) prod ↔ frmInt w (toNatσ ρ) ref) :
     frmBV ρ prod ↔ frmBV ρ ref := by
@@ -204,9 +190,8 @@ theorem tv_equiv_faithful (ρ : Nat → BitVec w) (prod ref : Frm)
 
   The faithfulness theorems must rest only on the standard axiom set
   `{propext, Classical.choice, Quot.sound}` — no `sorryAx`, no custom axiom. This is
-  the kernel-checked discharge of the `render_bv_prop` faithfulness obligation for the
-  renderable fragment. Probed in-file (and built by `scripts/lean-axiom-probe.sh`);
-  NOT added to the fixed universal-pillar THEOREM list (that is a gate action). -/
+  an independent check of the bounded-integer reference model. Probed in-file and built
+  by `scripts/lean-axiom-probe.sh`; not added to the fixed universal-pillar theorem list. -/
 #print axioms tmInt_eq_toNat
 #print axioms frmInt_iff_frmBV
 #print axioms tv_equiv_faithful

@@ -102,7 +102,7 @@ def idxGrammar (φ : Frm) : Bool := idxGrammarAt 0 φ
 
 /-! ## The executable classifier and the declarative fragment -/
 
-/-- The admission classifier (metatheory §3.1). Computed on the NEGATION NORMAL FORM so
+/-- The admission classifier (metatheory §3.1). Computed on the negation NORMAL FORM so
     every binder's polarity — and hence the E1 edges — is syntactic (`Strat/Nnf.lean`). -/
 def admitted (φ : Frm) : Bool :=
   finCarrier φ && idxGrammar φ && acyclic (sortGraph (nnf φ))

@@ -142,7 +142,7 @@ fn divergence_deep_enum_pattern_no_panic() {
 /// `parse_block`), which calls `parse_block` for the branches; their tails
 /// re-enter the `If`-token arm of `parse_block` → `parse_if_parts` again. This
 /// `parse_block`/`parse_if_parts` cycle never increments `expr_depth` (only the
-/// `if` CONDITION goes through `parse_expr`), so a 1500-deep nest of
+/// `if` condition goes through `parse_expr`), so a 1500-deep nest of
 /// `if x == 0 { <nest> } else { 0 }` as the function-body tail drives unbounded
 /// native recursion and SIGABRTs.
 ///

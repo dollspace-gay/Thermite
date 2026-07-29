@@ -82,7 +82,7 @@ pub enum L3Verdict {
     /// fully superseded: on this edge a lower rung produces the cert (L2
     /// verified / L2 counterexample hard-fail / L1 recorded), or a subprocess
     /// failure propagates as an `Err` (REQ-8). The L0 timeout cert is not the
-    /// final word on the default path (that was the v0.1 STOP #10 removes).
+    /// final word on the default path (that was the v0.1 stop #10 removes).
     Timeout {
         /// The structured degrade reason carried onto the L2/L1 cert (REQ-4): the
         /// #11 `VerusTimeout` reason.
@@ -93,9 +93,9 @@ pub enum L3Verdict {
     Counterexample(Certificate),
     /// the covenant `falsify` run hit a counterexample (REQ-4, the cert verdict
     /// [`crate::verdict::CertVerdict::CovenantRefuted`]) → hard fail, never a degrade —
-    /// the SAME never-degrades treatment as `Counterexample` (a refuted covenant is a
+    /// the same never-degrades treatment as `Counterexample` (a refuted covenant is a
     /// disproof of the item against its own declared meaning, not an inconclusive run).
-    /// Carries the non-certifying covenant-refuted cert. The `falsify` PRODUCER is 2b;
+    /// Carries the non-certifying covenant-refuted cert. The `falsify` producer is 2b;
     /// the foundation wires the ladder arm so the verdict routes hard the moment 2b
     /// produces it (and the `covenant_refuted_never_degrades` test pins the routing now).
     #[allow(
@@ -505,7 +505,7 @@ mod tests {
 
     // REQ-4 / AC-3, the covenant anti-cheat (the `counterexample_never_degrades`
     // pattern, instrumented closures): a covenant refutation (`L3Verdict::
-    // CovenantRefuted`) is a counterexample-class hard fail — the L2/L1 closures PANIC
+    // CovenantRefuted`) is a counterexample-class hard fail — the L2/L1 closures panic
     // if invoked (they must not be), and the returned cert is the non-certifying L0
     // cert, never lowered-assurance, never L1/L2. A covenant `falsify` hit is a disproof
     // of the item against its own declared meaning; it must never hide behind a lowered

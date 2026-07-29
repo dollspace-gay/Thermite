@@ -6,7 +6,7 @@
 //! > false) — GROUNDED: Verus rejects a guarded-only `Some` arm as
 //! > non-exhaustive.
 //!
-//! and AC-3b: "a guard does NOT complete a match ... The validator MUST reject
+//! and AC-3b: "a guard does not complete a match ... The validator must reject
 //! it (matching Verus's `error[E0004]: non-exhaustive patterns`)."
 //!
 //! Divergence: `validator::check_match_exhaustiveness` identifies the matched
@@ -26,7 +26,7 @@
 //! REQ-3 rule (the toolchain should pre-empt with a structured
 //! `NonExhaustiveMatch`, not defer to an opaque verus L0).
 //!
-//! Authority: `.design/basis/11-ergonomics.md` REQ-3 / AC-3b ("a guard does NOT
+//! Authority: `.design/basis/11-ergonomics.md` REQ-3 / AC-3b ("a guard does not
 //! complete a match"). The expected outcome (`NonExhaustiveMatch`) is
 //! hand-derived from the design rule (R-CHAR-3 — not copied from the toolchain;
 //! the toolchain currently returns `Ok(())`, the opposite).

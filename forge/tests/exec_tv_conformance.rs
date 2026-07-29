@@ -1,6 +1,6 @@
 //! Conformance for the exec-position (body) translation-validation phase
 //! (`.design/verified/exec-tv.md` REQ-5 / REQ-3; epic crosslink #151, blockers
-//! #154 / #156). Two load-bearing properties, both through the real `verus` binary
+//! #154 / #156). Two required properties, both through the real `verus` binary
 //! (skip with a diagnostic if absent, mirroring `contract_tv_conformance.rs`):
 //!
 //! The generated run (primary — the off-corpus #122/#146 regression guard):
@@ -8,7 +8,7 @@
 //! exec expr via `thermite_lower::lower_exec_expr` and discharges the exec-fn
 //! obligation `result == <bounded exec reference>`. The faithful lowerer + the
 //! adequate carried frames make every checked expr `faithful` (0 divergent, 0
-//! unverifiable, 0 skipped). A `divergent` is a real off-corpus exec-lowering
+//! unverifiable, 0 skipped). A `divergent` is a off-corpus exec-lowering
 //! infidelity (the point — file it `-l blocker`). The construct coverage
 //! (cast-`<` / arith / cast / index) is asserted non-vacuous (the #122/#146 classes
 //! are exercised in real numbers).
@@ -90,7 +90,7 @@ fn run_exec_tv_json(file: &Path, generated: Option<usize>) -> Value {
 
 /// REQ-3 / AC-7: the 200-expr off-corpus generated exec run. The faithful lowerer +
 /// the adequate carried frames make every checked expr `faithful` (0 divergent, 0
-/// unverifiable, 0 skipped). A `divergent` here is a real off-corpus exec-lowering
+/// unverifiable, 0 skipped). A `divergent` here is a off-corpus exec-lowering
 /// infidelity finding (the point — surfaced with a diagnostic). Also asserts the run is
 /// substantive and the #122/#146 construct classes are exercised (else the guard is
 /// vacuous).

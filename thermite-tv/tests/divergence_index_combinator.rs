@@ -19,7 +19,7 @@
 //! a Verus type error (`no method named view found for int`). A faithful clause
 //! `forall_below(xs, n as int, |x| x <= 7)` cannot even be validated by the
 //! reference side, so TV is blind on these two combinators (an `Unsupported`
-//! would at least be honest; this is a silent wrong encoding, worse — R-CHAR-3 /
+//! would at least report an error; this is a silent wrong encoding, worse — R-CHAR-3 /
 //! contract-tv.md REQ-1 "never a silent wrong encoding").
 //!
 //! Expected value source: the registry `verus_l3` body of `forall_below`

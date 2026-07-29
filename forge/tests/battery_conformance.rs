@@ -1,7 +1,7 @@
 //! The live cert-oracle for the forge-tier frozen battery (`.design/stage1-forge-tier.md`
 //! REQ-5 + AC-9, increment 2c). It drives the built `forge` binary with `check --json`
 //! over the `conformance/battery/` fixtures and asserts the elaboration-time refusal —
-//! a proof citing an unlisted tactic OR an unlisted simp lemma is REFUSED, NAMED.
+//! a proof citing an unlisted tactic OR an unlisted simp lemma is REFUSED, named.
 //!
 //! AC-9 is exercised here at the certificate level (the battery's verus-free logic — the
 //! frozen registry, the citation scanner, the gate, the `Stuck` producer — is pinned by
@@ -16,7 +16,7 @@
 //!     discharge is 2e), so it emits no certificate.
 //!
 //! `forge check` resolves the verus version before the per-item loop, so these checks
-//! need verus present even though the battery short-circuits BEFORE any lowering/verus
+//! need verus present even though the battery short-circuits before any lowering/verus
 //! run; they skip with a logged note when verus is absent (mirroring
 //! `covenant_conformance.rs`), never panicking on a missing solver. `tests/` is not
 //! anti-pattern-gated, so `unwrap`/`expect` are fine here.
@@ -87,7 +87,7 @@ fn skip_note() {
     );
 }
 
-/// AC-9: a proof citing an unlisted TACTIC is refused, NAMED, before any discharge.
+/// AC-9: a proof citing an unlisted tactic is refused, named, before any discharge.
 #[test]
 fn unlisted_tactic_is_refused_with_name() {
     if !verus_present() {
@@ -116,7 +116,7 @@ fn unlisted_tactic_is_refused_with_name() {
     );
 }
 
-/// AC-9: a proof citing an unlisted SIMP LEMMA is refused, NAMED, before any discharge.
+/// AC-9: a proof citing an unlisted SIMP lemma is refused, named, before any discharge.
 #[test]
 fn unlisted_simp_lemma_is_refused_with_name() {
     if !verus_present() {

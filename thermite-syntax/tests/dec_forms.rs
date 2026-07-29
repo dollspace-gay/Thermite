@@ -9,7 +9,7 @@
 
 use thermite_syntax::{parse, Expr, Item};
 
-/// Parse `src` cleanly and return the single spec fn's `dec` clause.
+/// Parse `src` and return the single spec fn's `dec` clause.
 fn spec_fn_dec(src: &str) -> thermite_syntax::Clause {
     let result = parse(src);
     assert!(

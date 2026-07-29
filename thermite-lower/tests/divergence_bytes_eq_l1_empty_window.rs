@@ -4,7 +4,7 @@
 //!
 //! Authority — `.design/basis/07-strings.md` REQ-20 (the L1 exec twin): the twin
 //! is "a bounds-checked byte-compare loop over the runtime `TString`s computing
-//! the **SAME value as the spec body**"; the sanctioned exception is that "an
+//! the **same value as the spec body**"; the sanctioned exception is that "an
 //! out-of-bounds runtime **index** is a check failure, not UB". The spec body
 //! (REQ-18, emitted verbatim by `emit_bytes_eq_defs`) is
 //!
@@ -24,7 +24,7 @@
 //! `forge build` binary panics at runtime on that very same certified `ens`
 //! ("thermite L1 contract violation [ens]"). A verus-proven postcondition
 //! failing its own always-active runtime check is the check/build
-//! value-divergence REQ-20's "SAME value" clause exists to forbid (distinct
+//! value-divergence REQ-20's "same value" clause exists to forbid (distinct
 //! from #280, which is a compile failure on the `&`-field spelling).
 //!
 //! Expected value derivation (R-CHAR-3): `bytes_eq(_, _, 5, 5, 0)` = `true` is

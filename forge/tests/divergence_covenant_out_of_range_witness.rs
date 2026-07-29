@@ -1,13 +1,13 @@
 //! Divergence test (acto-critic): the covenant engine accepts an `inhabit` witness
-//! whose integer value is OUTSIDE the declared parameter width, then uses that
-//! out-of-domain value to manufacture a FALSE `CovenantRefuted` on a sound item.
+//! whose integer value is outside the declared parameter width, then uses that
+//! out-of-domain value to manufacture a false `CovenantRefuted` on a sound item.
 //!
 //! Authority: `.design/stage1-forge-tier.md` REQ-4 — "`inhabit` witnesses are
 //! type-checked and *executed* against `req`" and a `falsify` hit is "the hard-fail
 //! verdict `CovenantRefuted` with the counterexample attached". A `CovenantRefuted`
-//! is owed ONLY for "a `req`-satisfying input the body violates `ens` on" (REQ-4 /
+//! is owed only for "a `req`-satisfying input the body violates `ens` on" (REQ-4 /
 //! AC-8). An input is a value of the parameter's declared type; `4294967296` (= 2^32)
-//! is NOT a `u32`, so it is not an input of `fn f(x: u32)` at all and cannot witness a
+//! is not a `u32`, so it is not an input of `fn f(x: u32)` at all and cannot witness a
 //! refutation.
 //!
 //! Divergence: `forge/src/covenant_engine.rs` `bind_params` checks only the value KIND
@@ -18,15 +18,15 @@
 //! parameter is accepted as a valid `req`-satisfying witness, then run through the body
 //! → `ens`: the body `x as u32` truncates to `0` (the correct truncating-cast model),
 //! `ens result == x` becomes `0 == 4294967296` → false → `CovenantRefuted`. The item is
-//! SOUND for every actual `u32` input (`x as u32 == x` holds for all `x: u32`); only the
+//! sound for every actual `u32` input (`x as u32 == x` holds for all `x: u32`); only the
 //! out-of-domain witness manufactures the refutation. The author witness must be
 //! width-checked against the parameter type (a `WitnessTypeMismatch`/`ArityMismatch`-
 //! class covenant error — an out-of-range literal is ill-typed, Verus rejects
-//! `4294967296u32`), NOT silently widened and used to refute a correct item.
+//! `4294967296u32`), not silently widened and used to refute a correct item.
 //!
-//! Concrete divergence (`OOB_WITNESS`) vs control (`INRANGE_WITNESS`): the ONLY textual
+//! Concrete divergence (`OOB_WITNESS`) vs control (`INRANGE_WITNESS`): the only textual
 //! difference is the witness value `4294967296` (out of `u32` range) vs `5` (in range).
-//! The in-range control validates cleanly; the out-of-range version is refuted.
+//! The in-range control validates; the out-of-range version is refuted.
 //!
 //! Tracking: #300 (filed by the critic).
 //!
@@ -93,7 +93,7 @@ fn first_cert(program: &str, name: &str) -> Value {
         .unwrap_or_else(|| panic!("forge --json must emit at least one cert: {value}"))
 }
 
-/// The DIVERGENCE input: the witness `4294967296` (= 2^32) is OUTSIDE the `u32` range of
+/// The divergence input: the witness `4294967296` (= 2^32) is outside the `u32` range of
 /// the parameter `x`, so it is not an input of `f` at all. The item is sound for every
 /// real `u32` (`x as u32 == x`), yet the out-of-domain witness manufactures a refutation.
 const OOB_WITNESS: &str = "\
@@ -106,7 +106,7 @@ fn f(x: u32) -> u32
 witness { inhabit (4294967296); falsify 100; }
 ";
 
-/// The control: the SAME program with an IN-RANGE witness `5`. This validates cleanly
+/// The control: the same program with an IN-RANGE witness `5`. This validates
 /// (no refutation). The only textual difference from `OOB_WITNESS` is the witness value,
 /// isolating the divergence to the missing parameter-width check in `bind_params`.
 const INRANGE_WITNESS: &str = "\
@@ -129,7 +129,7 @@ fn out_of_range_witness_must_not_manufacture_a_false_covenant_refutation() {
         return;
     }
 
-    // Control: the in-range witness validates cleanly (no covenant reject). This proves
+    // Control: the in-range witness validates (no covenant reject). This proves
     // the item is sound and the refutation below is an artifact of the out-of-range
     // witness, not of the contract or the body.
     let control = first_cert(INRANGE_WITNESS, "inrange");
@@ -139,9 +139,9 @@ fn out_of_range_witness_must_not_manufacture_a_false_covenant_refutation() {
          rejected, got {control}"
     );
 
-    // Authority (REQ-4 / AC-8): a `CovenantRefuted` is owed ONLY for a `req`-satisfying
+    // Authority (REQ-4 / AC-8): a `CovenantRefuted` is owed only for a `req`-satisfying
     // INPUT the body violates `ens` on. `4294967296` is not a `u32`, so it is not an input
-    // of `f`; the author witness must be width-checked and refused as ill-typed, NEVER
+    // of `f`; the author witness must be width-checked and refused as ill-typed, never
     // used to refute a sound item. The divergence: `bind_params` checks only Int-vs-Bool
     // (not the u32 width), accepts the out-of-range literal, and the truncating-cast body
     // (`x as u32` -> 0) makes `ens result == x` (0 == 2^32) false, manufacturing a

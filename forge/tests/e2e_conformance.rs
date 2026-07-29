@@ -198,7 +198,7 @@ fn to_boundary_cases_classify_via_the_crossing() {
             Value::from(via),
             "`{item}` (case {name}) records the oracle crossing `via`"
         );
-        // PROJECT claim (REQ-4): a file with any to-boundary fn is TO-THE-BOUNDARY.
+        // project claim (REQ-4): a file with any to-boundary fn is TO-the-BOUNDARY.
         assert!(
             !project_is_end_to_end(&certs),
             "case `{name}` has a to-boundary fn → project TO-THE-BOUNDARY"

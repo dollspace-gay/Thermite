@@ -714,7 +714,7 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
     // program calls `parse_u64` / names `all_digits`/`is_digit` (`program_uses_-
     // parse`), before any fn references it. Empty otherwise (byte-stable). The
     // emitted form is the grounded `5 verified, 0 errors` parse (no
-    // `assume`/`external_body`/`admit`, R-DEFER-9 — the round-trip is a real proof;
+    // `assume`/`external_body`/`admit`, R-DEFER-9 — the round-trip is a proof;
     // a broken `Some(0)` fails). `parse_be` is shared with the numfmt round-trip; it
     // is emitted here only when numfmt did not already emit it (dedup).
     let parse_defs = emit_parse_defs(program)?;
@@ -763,7 +763,7 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
     // Cluster C4 (`.design/basis/07-strings.md` REQ-8, issue #94): the generated
     // round-trip spec fns `parse_le`/`pow10` return `nat`, so when the program names
     // them they join `nat_fns` — an `Eq` against `parse_le(...)` (the round-trip
-    // `ens parse_le(result) == n`) coerces the scalar `u64` side `as nat` exactly as
+    // `ens parse_le(result) == n`) coerces the scalar `u64` side `as nat` as
     // a hand-written ADT-fold-sum does. Added only when numfmt is in use (byte-stable
     // for the non-numfmt corpus).
     if program_uses_numfmt(program) {
@@ -774,7 +774,7 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
     // Cluster C5 (`.design/basis/07-strings.md` REQ-15, issue #102): the generated
     // `count_sep` spec fn returns `nat`, so when the program uses a C5 op it joins
     // `nat_fns` — `split`'s `ens result.len() == 1 + count_sep(s@, sep)` coerces the
-    // scalar `result.len()` side `as nat` exactly as a hand-written ADT-fold-sum does.
+    // scalar `result.len()` side `as nat` as a hand-written ADT-fold-sum does.
     // (The other C5 spec fns — `occurs_at`/`contains_sub`/`sep_free`/`is_space` —
     // return `bool`, so they do not join `nat_fns`.) Added only when a C5 op is in use
     // (byte-stable for the non-C5 corpus).
@@ -2945,7 +2945,7 @@ fn lower_external_body_fn(
 
 /// Lower the §7 equivalent-mutant equivalence obligation for one survivor
 /// (`.design/forge/equivalent-mutants.md` REQ-1): given a fn `f` (its `req`,
-/// params, return type, and real body `f.body`) and a surviving mutant's body
+/// params, return type, and body `f.body`) and a surviving mutant's body
 /// `mutant_body`, emit a complete Verus source file that asks Verus to prove
 /// that, under `f`'s `req`, the mutant body's observable result equals the real
 /// body's result for all inputs. A `verus` run that verifies (`0 errors`) is a
@@ -3110,7 +3110,7 @@ pub fn lower_equivalence_obligation(
 /// ```
 ///
 /// A verified harness (`ensures eq` proved, `0 errors`) proves that no input
-/// satisfying `req` distinguishes the mutant from the real body given the callee
+/// satisfying `req` distinguishes the mutant from the body given the callee
 /// contracts, so the survivor is a true equivalent (modulo the contracts the §9
 /// edifice already trusts) and is excluded (REQ-2 polarity, unchanged). A weak callee
 /// contract that cannot pin `real == mutant` leaves `eq` unprovable, so the survivor
@@ -4799,7 +4799,7 @@ fn emit_map_wrappers(program: &Program) -> Result<String, LowerError> {
 /// `contains_key` (`ens result == spec_contains_key(k)`), the no-OOB
 /// `get -> Option<V>` (absent → `None`, not a wrong value), and the
 /// append-under-`!contains_key` `insert` with the `final(self)` &mut postcondition.
-/// No `assume`/`external_body` (R-DEFER-9): every contract is real verus map
+/// No `assume`/`external_body` (R-DEFER-9): every contract is verus map
 /// reasoning threaded over vstd's verified `Vec::push`/`Vec::index`/`Vec::len`. v1
 /// grounds Copy keys (`Map<u64,u64>`, OQ-4); a non-Copy key is the existing
 /// `LowerError::Unsupported` via `tmap_name`.
@@ -5063,7 +5063,7 @@ fn ty_reaches_string(ty: &Type) -> bool {
 /// For the per-item sub-program weave (forge `#86`): a `forge check`
 /// per-item sub-program may be a struct decl alone (`struct Buf { text: String,
 /// cursor: u64 }`) whose only `String` reference is a field type, so the struct
-/// and enum field arms below are load-bearing, not a `continue`. Mirrors the way
+/// and enum field arms below are required, not a `continue`. Mirrors the way
 /// `reachable_adt_deps` weaves the struct decls a String-bearing item reaches.
 fn program_uses_string(program: &Program) -> bool {
     for item in &program.items {
@@ -6040,7 +6040,7 @@ const GENERATED_NUMFMT_SPEC_FNS: &[&str] = &["parse_le", "parse_be", "pow10"];
 /// == n`; the loop invariant is the round-trip partial accumulator `parse_le(data@)
 /// + m*pow10(data.len()) == n` with `decreases m`; the per-iteration step is
 /// discharged by `lemma_parse_push` + `by(nonlinear_arith)`. no `assume`/
-/// `external_body`/`admit` (R-DEFER-9) — the round-trip is a real proof.
+/// `external_body`/`admit` (R-DEFER-9) — the round-trip is a proof.
 fn emit_numfmt_defs(program: &Program) -> Result<String, LowerError> {
     if !program_uses_numfmt(program) {
         return Ok(String::new());
@@ -6196,15 +6196,15 @@ fn emit_numfmt_defs(program: &Program) -> Result<String, LowerError> {
     // data.len() - i`), and `lemma_parse_be_reverse` closes the contract.
     out.push('\n');
     out.push_str("pub fn u64_to_string(n: u64) -> (result: TString)\n");
-    // The round-trip is the gold standard; `result.data.len() >= 1` is the honest
+    // The round-trip is the gold standard; `result.data.len() >= 1` is the
     // floor that contractually forbids the empty string (every decimal has at least
     // one digit, including 0 -> "0"). The round-trip alone admits "" for 0
     // (`parse_be([]) == 0`), so the len floor is what catches a dropped zero-guard
-    // (blocker #97; without the guard this `ens` fails verus, R-DEFER-9 — real teeth).
+    // (blocker #97; without the guard this `ens` fails verus, R-DEFER-9).
     out.push_str("    ensures\n");
     out.push_str("        parse_be(result.data@) == n as nat,\n");
     out.push_str("        result.data.len() >= 1,\n");
-    // `result.data.len() <= 20` — the honest upper floor (REQ-8): a u64 is < 10^20
+    // `result.data.len() <= 20` — the upper floor (REQ-8): a u64 is < 10^20
     // (pow10(20) > u64::MAX), so its decimal has at most 20 digits. This bounds the
     // formatted-number length from above so a caller's bounded `concat` (the §4.2 cage
     // CAP precondition `self.len() + b.len() <= CAP`) discharges when one operand is
@@ -6495,7 +6495,7 @@ fn reserve_generated_names(src: &str) -> String {
 /// `parse_u64` call (the surface `parse_u64(s)`) or an `all_digits`/`is_digit`
 /// reference in a contract. Either requires the generated parse definitions in
 /// scope. empty otherwise (byte-stable for the non-parse corpus). The walk reuses
-/// the `each_subexpr` full-tree traversal exactly as `program_uses_numfmt`.
+/// the `each_subexpr` full-tree traversal as `program_uses_numfmt`.
 pub(crate) fn program_uses_parse(program: &Program) -> bool {
     // #127 — shape key: a call whose name is a generated parse def name but which
     // resolves to a user `spec fn` (declared with a `String`/`&String` param, the
@@ -6853,7 +6853,7 @@ fn expr_uses_bytes_eq(expr: &Expr, shadow: &[&str]) -> bool {
 /// `bytes_eq` (`program_uses_bytes_eq`). The exact forms are grounded verbatim
 /// (real `verus 0.2026.05.24`): the `Seq<u8>` low-peel recursion `bytes_eq` + the
 /// core induction `lemma_bytes_eq_from_pointwise` (the explicit `#[trigger] a[ai +
-/// k]` is load-bearing — auto-inference fails on the arithmetic index), the cheap
+/// k]` is required — auto-inference fails on the arithmetic index), the cheap
 /// converse `lemma_bytes_eq_to_pointwise`, the subrange corollary
 /// `lemma_bytes_eq_from_subrange`, and the no-arg quantified-equivalence
 /// `lemma_bytes_eq_bridge` (the one-call citation form: its `=~=` plants the
@@ -6873,7 +6873,7 @@ fn expr_uses_bytes_eq(expr: &Expr, shadow: &[&str]) -> bool {
 /// verified, 1 errors`) — the subrange-index equality needs the manual trigger.
 /// This is a body-fill within the pinned signature, not a change to any pinned
 /// statement shape; all four lemmas + the `slice_id`/`insert_str` pins verify (`14
-/// verified, 0 errors`), the head/tail-swap mutant FAILS (`13 verified, 1 errors`).
+/// verified, 0 errors`), the head/tail-swap mutant fails (`13 verified, 1 errors`).
 fn emit_bytes_eq_defs(program: &Program) -> Result<String, LowerError> {
     if !program_uses_bytes_eq(program) {
         return Ok(String::new());
@@ -6891,7 +6891,7 @@ fn emit_bytes_eq_defs(program: &Program) -> Result<String, LowerError> {
     );
     out.push_str("}\n");
     // the core induction: pointwise window equality ==> bytes_eq. The explicit
-    // `#[trigger] a[ai + k]` is load-bearing (auto-inference fails on the arith index).
+    // `#[trigger] a[ai + k]` is required (auto-inference fails on the arith index).
     out.push_str(
         "pub proof fn lemma_bytes_eq_from_pointwise(a: Seq<u8>, b: Seq<u8>, ai: int, bi: int, n: int)\n",
     );
@@ -7163,7 +7163,7 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
             // built-in spec predicate. Args 0/1 are the `String` byte-views (`a -> a.data@`,
             // the `string_as_byteview` / `is_string` `.data@` rule); args 2/3/4 are the
             // surface integer offsets/length (`ai`/`bi`/`n`, each a `u64`-shaped surface
-            // expression — `0`, `b.cursor`, `a.len()`), cast `as int` exactly as
+            // expression — `0`, `b.cursor`, `a.len()`), cast `as int` as
             // `occurs_at`'s arg 2 (Verus does no implicit `u64 -> int` in a spec-fn arg
             // position). Keyed on the callee name `bytes_eq` + the arg index (>= 2). A
             // literal / already-`as int` arg passes through (`lower_index_arg` avoids the
@@ -7342,7 +7342,7 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
             // `spec fn len(&self) -> nat` unchanged (`r.len()`). Keyed on the method
             // name `get` in spec position only; exec `get`/`push`/`len` (a fn body)
             // lower verbatim to the verified vstd-backed exec methods. The index
-            // cast `as int` is appended exactly as `lower_index_arg` does for a
+            // cast `as int` is appended as `lower_index_arg` does for a
             // combinator index, avoiding a double-cast on an already-`as int` arg.
             if ctx.is_spec() && name == "get" && args.len() == 1 {
                 let idx = lower_index_arg(&args[0], ctx, d, span)?;
@@ -7378,7 +7378,7 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
             // the `Vec` wrapper, so the existing pass-through covers it). `m.get(k)`
             // is not spec-rewritten: the exec `get -> Option<V>` is named in a
             // contract only via the C7 spec-`match`-in-`ens` over the result (the
-            // `match result { Some(v) => …, None => … }` form), exactly as the
+            // `match result { Some(v) => …, None => … }` form), as the
             // grounded `insert_then_get` round-trip threads — not a spec-fn rewrite.
             if ctx.is_spec() && name == "contains_key" && args.len() == 1 {
                 let arg = lower_expr(&args[0], ctx, d, span)?;
@@ -7570,7 +7570,7 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
             // (`(n - 1) as nat`) must parenthesize the inner — without the parens
             // `n - 1 as nat` parses as `n - (1 as nat)`, an `int`/`nat`
             // (or `u64`/`usize`) type mismatch → L0. The hand-authored golden
-            // reference uses exactly this form (`tests/golden/lower/parse_u64.verus.rs`
+            // reference uses this form (`tests/golden/lower/parse_u64.verus.rs`
             // `(k - 1) as nat`, `(s.len() - 1) as int`). A non-binary/unary inner
             // (`i as int`, `acc as nat`, the literal `0 as usize`) never mis-binds,
             // so the paren is added only for a `Binary`/`Unary` inner — the simple
@@ -7663,8 +7663,8 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
         }
         // A raw quantified formula `forall (x : S) in <dom>. φ` / `exists (x : S) in
         // <dom>. φ` (`.design/stage2-stratified-cage.md` REQ-0/REQ-8). This is the
-        // PRODUCTION quantifier emission REQ-8 owns ("production quantifier emission in
-        // thermite-lower (the real Rust lowering of stratified clauses to the SMT
+        // production quantifier emission REQ-8 owns ("production quantifier emission in
+        // thermite-lower (the Rust lowering of stratified clauses to the SMT
         // surface)"). The faithfulness of this emission against the independent
         // stratified reference encoder (`thermite_tv::strat_ref_encode`) is the
         // two-phase TV's job (REQ-8); soundness of the encoded surface is the kernel
@@ -7675,7 +7675,7 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
         // membership guard `0 <= x < <dom>.len()` (the Verus bounded-quantifier idiom
         // the combinator expansions also use, `Ast.lean` `forall_in(s,p) = ∀ i, 0 ≤ i
         // < s.len() → p(s[i])`). `forall` guards with `==>`, `exists` with `&&` (the
-        // standard bounded forms). It is TRIGGER-FREE (the MBQI surface T1-S's
+        // standard bounded forms). It is TRIGGER-free (the MBQI surface T1-S's
         // `strat_ref_wf` certifies: no `#[trigger]` pattern restricting instantiation)
         // — matching `Strat/RefEncode.lean`'s `sencode`, which sets every quantifier
         // `triggerFree := true`. The body lowers in the same ctx with `x` in scope.
@@ -8176,7 +8176,7 @@ fn binop(op: BinOp) -> &'static str {
 /// pinned standard-Rust precedence (`surface-grammar.md` REQ-10) closely enough to
 /// decide parenthesization of nested binaries during emission (REQ-3 — preserve
 /// the AST's grouping). The #92 tiers (modulo at `* /`, shifts, `&`, `^`, `|`)
-/// slot between `+ -` and comparison exactly as the parser threads them.
+/// slot between `+ -` and comparison as the parser threads them.
 fn precedence(op: BinOp) -> u8 {
     match op {
         BinOp::Or => 1,
@@ -8219,7 +8219,7 @@ fn lower_binary_operand(
     // of a generic argument list (`u32<33, …>`), a hard parse error ("expected
     // `,`"). The fix is the dual of the #122 cast-inner paren: parenthesize the
     // whole cast when it is the left operand of a `<`-leading op (`(x as u32) <
-    // 33`). Keyed on (left operand is a `Cast`) AND (parent op begins with `<`), so
+    // 33`). Keyed on (left operand is a `Cast`) and (parent op begins with `<`), so
     // the corpus/goldens — whose casts feed `==`/`*`/`+`/`-`/`>`(`acc as nat ==`,
     // `i as u64 * …`, `xs.len() as u64 * …`) — stay byte-identical (no churn). The
     // independent `thermite_tv::ref_encode` already parenthesizes every cast, so
@@ -8338,7 +8338,7 @@ fn lower_fn_body(
 /// exactly req conjuncts (no invented bound — the `requires` is itself
 /// discharged from the fn's `req` at the assert site). A product whose
 /// variables are not all req-bounded params is skipped (`req_expr_upper_bound`
-/// returns `None`), so the honest obligation stands — no fabricated assert. A
+/// returns `None`), so the obligation stands — no fabricated assert. A
 /// variable shadowed by a `let`/assignment in the body is also skipped (the
 /// req conjunct would refer to the param, not the rebound local — `is_rebound`).
 ///
@@ -8361,7 +8361,7 @@ fn req_bounded_mul_asserts(f: &FnItem, body: &Block) -> Result<Vec<String>, Lowe
     // Drop any bound whose variable is rebound (shadowed/mutated) anywhere in
     // the body: the `req v <= C` refers to the immutable param, but a rebound
     // local of the same name would make the emitted `requires v <= C` refer to
-    // the local — an honest verus failure, but a spurious one. Skip such names.
+    // the local — an verus failure, but a spurious one. Skip such names.
     bounds.retain(|name, _| !block_rebinds(body, name));
     if bounds.is_empty() {
         return Ok(vec![]);
@@ -8781,7 +8781,7 @@ fn lower_stmt(stmt: &Stmt, ctx: Ctx, indent: usize) -> Result<String, LowerError
 ///    `acc as nat == specfn(slice@.subrange(0, idx as int))`, emit + call the
 ///    auto-generated push lemma for `specfn`;
 ///  - template (overflow): if the body assigns `acc = acc + slice[idx] ...` and
-///    an invariant bounds `acc <= idx * BOUND`, emit the `by(nonlinear_arith)`
+///    an invariant bounds `acc <= idx * bound`, emit the `by(nonlinear_arith)`
 ///    overflow discharge;
 ///  - template (e): if a `None`/false-postcondition `forall_in(s, p)` is
 ///    provable from `forall_below(s,k,p1)` + `forall_from(s,k',p2)`, emit the
@@ -8851,7 +8851,7 @@ fn lower_loop(
     // `decreases` would force Verus to prove a termination measure that
     // does not exist. The enclosing fn carries `#[verifier::exec_allows_no_
     // decreases_clause]` (see `lower_fn`), so Verus verifies the loop's
-    // invariants (partial correctness) without a termination claim — the honest
+    // invariants (partial correctness) without a termination claim — the
     // L1 verdict. A non-diverge fn always emits its `decreases` (sum/binary_search
     // still prove termination → L3): the exemption is diverge-only and is not a
     // termination-proof escape hatch.
@@ -9077,7 +9077,7 @@ fn expr_mentions(expr: &Expr, name: &str) -> bool {
         }
         Expr::Cast { expr, .. } | Expr::Ref { expr, .. } => expr_mentions(expr, name),
         // Basis Stage 1a (`.design/basis/01-adts.md`): dead-in-1a ADT
-        // expressions, but the honest predicate value is to descend — a name
+        // expressions, but the predicate value is to descend — a name
         // could be mentioned in a struct-literal field value, an `is`
         // scrutinee, or a deref operand, so we must not silently answer `false`.
         Expr::StructLit { fields, .. } => fields.iter().any(|(_, v)| expr_mentions(v, name)),
@@ -9163,7 +9163,7 @@ fn push_lemma_for(specfn: &str) -> String {
 }
 
 /// template (overflow): if the loop body assigns `acc = acc + slice[idx] as T`
-/// and an invariant bounds `acc <= idx as T * BOUND`, emit the
+/// and an invariant bounds `acc <= idx as T * bound`, emit the
 /// `by(nonlinear_arith)` discharge with the in-scope invariant/precondition
 /// hypotheses as `requires`. Keys on shape: an `Assign` whose value is
 /// `acc + (slice[idx] cast)`, plus a product-bound invariant on the same `acc`.
@@ -9177,7 +9177,7 @@ fn nonlinear_overflow_assert(
     let Some((accvar, idxvar)) = find_accumulator_growth(body) else {
         return Ok(None);
     };
-    // Find the product-bound invariant `acc <= idx as T * BOUND`.
+    // Find the product-bound invariant `acc <= idx as T * bound`.
     let Some((bound_factor, bound_ty)) =
         find_product_bound(invs, &accvar, &idxvar, spec_fn_param_types)
     else {
@@ -9628,13 +9628,14 @@ fn spec_dec(dec: &Clause, params: &[Param], spec_fn_param_types: &[(&str, &[Prim
 mod exec_expr_tests {
     //! `lower_exec_expr` per-expr exec lowering (`.design/verified/exec-tv.md`
     //! REQ-2 prerequisite, blocker #152). These pin the faithful production exec
-    //! shapes the exec-TV teeth (`thermite-tv/tests/exec_teeth.rs` E1–E4) wrap as
+    //! shapes that the exec-TV negative tests (`thermite-tv/tests/exec_teeth.rs`
+    //! E1–E4) wrap as
     //! `P_production` — proving the exec `Ctx` is reachable for a standalone expr
     //! (the #1 feasibility unknown) and that the #122 inner-paren + #146 cast-`<`
-    //! outer-paren disciplines fire in exec position. The teeth-test (in the
+    //! outer-paren disciplines fire in exec position. The negative test (in the
     //! independent `thermite-tv`, no `thermite-lower` dep) cannot import this, so
     //! these tests are the cross-crate bridge that the faithful strings it hardcodes
-    //! do match the real production lowering (R-CHAR-3 — the faithful column traces
+    //! do match the production lowering (R-CHAR-3 — the faithful column traces
     //! to production here, the reference to `exec_encode`).
     use super::*;
     use thermite_syntax::ast::{BinOp, Expr, IndexArg, PrimType, Type};
@@ -9705,17 +9706,17 @@ mod exec_expr_tests {
 mod exec_body_tests {
     //! `lower_exec_body` per-body straight-line exec lowering
     //! (`.design/verified/exec-stmt-tv.md` REQ-3, blocker #161; epic #158). These
-    //! pin the faithful production exec body shapes the body-TV teeth
+    //! pin the faithful production exec body shapes that the body-TV negative tests
     //! (`thermite-tv/tests/body_teeth.rs` B1-B4) wrap as `P_production` - proving
     //! the body exec `Ctx` is reachable for a standalone straight-line `Block` (the
     //! #161 feasibility unknown: `lower_block_inner` is private + fn-context-bound,
     //! reached here through the minimal `Ctx::exec()` frame) and that the
     //! `let`/`mut`-let / assignment / `if`-statement / tail thread the same exec
-    //! path the fn body uses. The teeth-test (in the independent `thermite-tv`, no
+    //! path the fn body uses. The negative test (in the independent `thermite-tv`, no
     //! `thermite-lower` dep) cannot import this, so these tests are the cross-crate
-    //! bridge that the faithful strings it hardcodes do match the real production
+    //! bridge that the faithful strings it hardcodes do match the production
     //! lowering (R-CHAR-3 - the faithful column traces to production here, the
-    //! reference to `exec_stmt_encode`). A loop body is an honest `Err` (the frozen
+    //! reference to `exec_stmt_encode`). A loop body is an `Err` (the frozen
     //! 2.2.1-vs-2.2.2 boundary), never a silent lowering.
     use super::*;
     use thermite_syntax::ast::{BinOp, Block, Clause, Expr, LoopKind, LoopNode, Stmt};
@@ -9829,7 +9830,7 @@ mod exec_body_tests {
     }
 
     // frozen-subset honesty (REQ-1): a body containing a `Stmt::Loop` is out of the
-    // 2.2.1 straight-line slice (step 2.2.2). `lower_exec_body` returns an honest
+    // 2.2.1 straight-line slice (step 2.2.2). `lower_exec_body` returns an
     // `Err` (via `lower_stmt`'s `Stmt::Loop` arm), never a silent / wrong lowering.
     #[test]
     fn loop_body_is_err_not_silent() {

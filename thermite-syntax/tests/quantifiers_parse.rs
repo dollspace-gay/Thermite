@@ -3,16 +3,16 @@
 //! REQ-0, AC-0): the surface binder grammar over a named sorted carrier the (R2)
 //! index grammar admits, plus the binder/scope corner-case pins.
 //!
-//! REQ-0 is the FOUNDATION increment blocking REQ-1 (the Lean `Strat/Syntax`
-//! denote path) and REQ-4 (the Rust classifier). It is deliberately DISTINCT from
+//! REQ-0 is the foundation increment blocking REQ-1 (the Lean `Strat/Syntax`
+//! denote path) and REQ-4 (the Rust classifier). It is distinct from
 //! the registry-free `forall_in`/`forall_below`/`forall_from`/`sorted` COMBINATOR
 //! calls, which stay ordinary `Expr::Call` nodes — the combinator registry is
-//! untouched (the registry-unchanged pins below assert exactly this). R-CHAR-3:
+//! untouched (the registry-unchanged pins below assert this). R-CHAR-3:
 //! shapes hand-derived from the grammar; `tests/` is ungated.
 
 use thermite_syntax::{parse, BinOp, Expr, ForgeItem, Item, Quant};
 
-/// Parse `src` cleanly and return the body tail `Expr` of the single `prop fn`
+/// Parse `src` and return the body tail `Expr` of the single `prop fn`
 /// (its `{ <expr> }` body is a bool-valued expression — a convenient quantifier
 /// carrier needing no contract scaffolding).
 fn prop_body(src: &str) -> Expr {
@@ -30,7 +30,7 @@ fn prop_body(src: &str) -> Expr {
     }
 }
 
-/// Parse `src` cleanly and return the `req` clause of the single `fn` (both its
+/// Parse `src` and return the `req` clause of the single `fn` (both its
 /// parsed `expr` and its verbatim `text`, for the round-trip assertion).
 fn fn_req(src: &str) -> (Expr, String) {
     let result = parse(src);
@@ -118,7 +118,7 @@ fn quantifier_req_clause_preserves_verbatim_text() {
 
 #[test]
 fn body_is_greedy_lowest_precedence() {
-    // `forall …. a && b` reads the WHOLE `a && b` as the body, not just `a`
+    // `forall …. a && b` reads the whole `a && b` as the body, not just `a`
     // (the binder body extends greedily to the right).
     let e = prop_body(&prop_with_body(
         "forall (i : Idx) in xs. xs[i] != 0 && xs[i] != 1",
@@ -203,7 +203,7 @@ fn quantifiers_nest_in_the_body() {
 
 #[test]
 fn domain_may_be_an_indexed_slice_before_the_dot_separator() {
-    // `in xs[..n].` — the domain is an index expression; the `.` AFTER the `]`
+    // `in xs[..n].` — the domain is an index expression; the `.` after the `]`
     // (not a field access) separates the domain from the body. The `[..n]` slice
     // uses `..` (DotDot), distinct from the body-separator `.` (Dot).
     let e = prop_body(&prop_with_body("forall (i : Idx) in xs[..3]. xs[i] != 0"));
@@ -222,7 +222,7 @@ fn domain_may_be_an_indexed_slice_before_the_dot_separator() {
 #[test]
 fn a_parenthesized_domain_reenables_field_dots() {
     // Inside a parenthesised domain the postfix `.` is RE-ENABLED, so `(a.b)` is a
-    // field access and the FIRST `.` after the `)` is the body separator.
+    // field access and the first `.` after the `)` is the body separator.
     let e = prop_body(&prop_with_body("forall (i : Idx) in (xs.foo). xs[i] != 0"));
     match e {
         Expr::Quantifier { domain, body, .. } => {
@@ -240,9 +240,9 @@ fn a_parenthesized_domain_reenables_field_dots() {
 
 #[test]
 fn forall_in_combinator_stays_a_plain_call_not_a_binder() {
-    // `forall_in` is a DISTINCT identifier from the `forall` keyword (the lexer
+    // `forall_in` is a distinct identifier from the `forall` keyword (the lexer
     // keys on the full word), so the registry-free combinator call is unchanged:
-    // it parses as an ordinary `Expr::Call`, NOT an `Expr::Quantifier`.
+    // it parses as an ordinary `Expr::Call`, not an `Expr::Quantifier`.
     let e = prop_body(&prop_with_body("forall_in(xs, |x| x != 0)"));
     match e {
         Expr::Call { callee, args } => {

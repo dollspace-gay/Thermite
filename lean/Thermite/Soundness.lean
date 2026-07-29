@@ -227,9 +227,9 @@ theorem refIntValArgs_eq : ∀ (fuel : Nat) (args : List Expr) (env : Env),
   and the integer-operand equality `refIntVal_eq_intVal`, which itself carries the #176
   arithmetic round-trip, the #177 cast round-trip, and the #178 `@`-view/`subrange`/
   byte-view rewrites (via `refVal_eq`), not a definitional collapse. See
-  `eq_le_infidelity_*` (the `==`-vs-`<=` teeth), `cast_paren_drop_breaks_soundness` (the
-  #122/#146 cast-paren teeth), and `byteview_misdispatch_breaks_soundness` (the #127
-  byte-view-dispatch teeth) below.
+  `eq_le_infidelity_*` (the `==`-versus-`<=` case),
+  `cast_paren_drop_breaks_soundness` (the #122/#146 cast-parentheses case), and
+  `byteview_misdispatch_breaks_soundness` (the #127 byte-view dispatch case) below.
 -/
 theorem ref_sound : ∀ (fuel : Nat) (e : Expr) (env : Env), refDenote fuel e env ↔ denote fuel e env
   -- `Expr` is mutually inductive (with `RangeArg`/`MatchArm`), and #181 adds a `specCall` that
@@ -379,8 +379,8 @@ theorem ref_sound_arms : ∀ (fuel : Nat) (scrut : OptResVal) (arms : List Match
       | (apply Prod.Lex.right; omega)
 end
 
-/-- The integer-term meanings coincide (the projection of `refVal_eq` used by the teeth/positive
-    lemmas below). -/
+/-- The integer-term meanings coincide (the projection of `refVal_eq` used by the
+    negative and positive lemmas below). -/
 theorem refIntVal_eq_intVal (fuel : Nat) (e : Expr) (env : Env) :
     refIntVal fuel e env = intVal fuel e env := (refVal_eq fuel e env).1
 
@@ -393,9 +393,9 @@ theorem refSeqVal_eq_seqVal (fuel : Nat) (e : Expr) (env : Env) :
 theorem ref_sound_eq (fuel : Nat) (e : Expr) (env : Env) : refDenote fuel e env = denote fuel e env :=
   propext (ref_sound fuel e env)
 
-/-! ## Negative sanity lemma 1 — the comparison teeth (`==` ≠ `<=`)
+/-! ## Negative sanity lemma 1: `==` encoded as `<=`
 
-  The #170 teeth, retained: an encoder that mapped `Eq → "<="` (the
+  The #170 regression case: an encoder that mapped `Eq → "<="` (the
   `==`-vs-`<=` infidelity) would not satisfy soundness at a concrete `env`. -/
 
 /-- A faulty encoder operator map: `Eq` mis-mapped to the `<=` token (the
@@ -416,7 +416,7 @@ def refDenoteFaultyCmp (fuel : Nat) (op : CmpOp) (a b : Expr) (env : Env) : Prop
 
 /-- A concrete environment: integer names `a := 1`, `b := 2`, `n := -1` (everything
     else `0`); sequence name `s := [10, 20, 30]` (a `String`'s bytes; everything else
-    the empty sequence) — the witness sequence for the #127 byte-view-dispatch teeth
+    the empty sequence). This is the witness sequence for the #127 byte-view-dispatch case
     (its bytes differ at adjacent indices, so a wrong index / wrong method is observable). -/
 def envAB : Env :=
   { ints := fun s => if s = "a" then 1 else if s = "b" then 2
@@ -426,7 +426,7 @@ def envAB : Env :=
     -- a `Some`-valued result carrying the integer payload 7; everything else `None`).
     optres := fun s => if s = "result" then OptResVal.some_ 7 else OptResVal.none_
     -- The spec-fn registry slot (#181): `envAB` carries no spec fn (the comparison/cast/byte-view/
-    -- combinator/match teeth do not call one). The #181 spec-fn teeth use `envSpec` below.
+    -- combinator and match cases do not call one). The #181 spec-fn cases use `envSpec` below.
     specs := fun _ => none }
 
 /-- **Teeth (negative sanity, the `==`-vs-`<=` case, #170).** At `envAB` the faulty
@@ -438,7 +438,7 @@ theorem eq_le_infidelity_breaks_soundness :
         ↔ denote 0 (Expr.cmp CmpOp.eq (Expr.var "a") (Expr.var "b")) envAB) := by
   simp [refDenoteFaultyCmp, encOpFaulty, tokRel, denote, intVal, refIntVal, envAB]
 
-/-! ## Negative sanity lemma 2 — the #122/#146 cast-paren teeth (the retired class)
+/-! ## Negative sanity lemma 2: dropped cast parentheses (#122/#146)
 
   The dispatch's explicit requirement: demonstrate that an encoder that drops the
   cast paren — emitting `(n - 1) as nat` as the bare `n - 1 as nat`, which Verus/Rust
@@ -484,23 +484,22 @@ theorem cast_paren_drop_breaks_soundness :
   simp [castInnerFaithful, castInnerParenDropped, refIntVal, tokCast, tokArith,
         encCast, encArith, castDenote, arithDenote, envAB]
 
-/-- The faithful counterpart, for contrast: with the real `refIntVal` (the
+/-- With the faithful `refIntVal` (the
     parenthesized cast) the `(n - 1) as nat` clause is sound — it equals the source
-    `intVal` (the whole-inner cast), by `refIntVal_eq_intVal`. Confirms the teeth bite
-    only the paren-drop, not the faithful encoder. -/
+    `intVal` (the whole-inner cast), by `refIntVal_eq_intVal`. -/
 theorem cast_faithful_intval_matches_source :
     refIntVal 0 (Expr.cast (Expr.arith ArithOp.sub (Expr.var "n") (Expr.intLit 1)) CastTy.nat) envAB
       = intVal 0 (Expr.cast (Expr.arith ArithOp.sub (Expr.var "n") (Expr.intLit 1)) CastTy.nat) envAB :=
   refIntVal_eq_intVal _ _ _
 
-/-- The faithful counterpart for the comparison teeth, retained from #170: with the
-    real `encOp` the `a == b` clause is sound (both `1 = 2`, false), by `ref_sound`. -/
+/-- The faithful comparison case retained from #170: with `encOp`, the `a == b`
+    clause is sound (both `1 = 2`, false), by `ref_sound`. -/
 theorem eq_faithful_is_sound :
     refDenote 0 (Expr.cmp CmpOp.eq (Expr.var "a") (Expr.var "b")) envAB
       ↔ denote 0 (Expr.cmp CmpOp.eq (Expr.var "a") (Expr.var "b")) envAB :=
   ref_sound _ _ _
 
-/-! ## Negative sanity lemma 3 — the #127 byte-view-dispatch teeth (the retired class)
+/-! ## Negative sanity lemma 3: byte-view misdispatch (#127)
 
   The dispatch's explicit requirement (the #178 point): demonstrate that an encoder
   that mis-dispatches the byte-view — the #127 name-collision bug, where the encoder
@@ -563,10 +562,9 @@ theorem byteview_misdispatch_breaks_soundness :
   simp [byteAtFaithful, byteAtWrongMethod, refIntVal, refSeqVal, byteView, seqIdx,
         encByteAt, encLen, envAB]
 
-/-- The faithful counterpart, for contrast: with the real byte-view dispatch the
+/-- With the faithful byte-view dispatch, the
     `s.byte_at(0)` clause is sound — its encoder meaning equals the source `intVal`
-    (the 0-th byte), by `refIntVal_eq_intVal`. Confirms the teeth bite only the
-    misdispatch, not the faithful encoder. -/
+    (the 0-th byte), by `refIntVal_eq_intVal`. -/
 theorem byteat_faithful_intval_matches_source :
     refIntVal 0 (Expr.byteAt (Expr.strVar "s") (Expr.intLit 0)) envAB
       = intVal 0 (Expr.byteAt (Expr.strVar "s") (Expr.intLit 0)) envAB :=
@@ -586,15 +584,15 @@ theorem subrange_index_faithful_matches_source :
           (Expr.intLit 1)) envAB :=
   refIntVal_eq_intVal _ _ _
 
-/-! ## Negative sanity lemma 4 — the wrong-combinator teeth (#179)
+/-! ## Negative sanity lemma 4: wrong combinator (#179)
 
   The dispatch's explicit requirement (a): demonstrate that an encoder that emitted the
   wrong combinator — `forall_in` (a bounded `∀`) lowered as `exists_in` (a bounded `∃`)
   — does not satisfy soundness at a concrete sequence. The two quantifier forms differ
   (`∀ i, .. → p(s[i])` vs `∃ i, .. ∧ p(s[i])`) precisely when some element satisfies the
-  predicate and some does not. This is the combinator analogue of the `==`-vs-`<=` teeth:
+  predicate and some does not. As in the `==`-versus-`<=` case,
   the encoder's choice of which frozen `verus_l3` quantifier (`encode_call`'s
-  `lookup(name)` dispatch, referencing the right combinator) is load-bearing.
+  `lookup(name)` dispatch must reference the right combinator.
 
   Source clause: `forall_in(s, |x| x ≤ 15)`, i.e.
     `Expr.comb forallIn (strVar "s") none none (some (Pred.mk "x" (x ≤ 15)))`.
@@ -643,7 +641,7 @@ theorem wrong_combinator_breaks_soundness :
     simpa [predLe15Body, denote, intVal, Env.bindInt, seqVal] using this
   simp [seqIdx, envAB] at hAt1
 
-/-! ## Negative sanity lemma 5 — the #145 arg-kind teeth (the retired class)
+/-! ## Negative sanity lemma 5: wrong argument kind (#145)
 
   The dispatch's explicit requirement (b): demonstrate the #145 (`divergence_index_
   combinator`) bug — `forall_below`/`forall_from`'s `ArgKind::Index` bound `n` (a scalar
@@ -665,7 +663,7 @@ theorem wrong_combinator_breaks_soundness :
   threading `ArgKind::Index` as a scalar (not a `@`-view) is what `ref_sound`'s
   `comb` case pins (its `forallBelow` arm uses `refIntVal_eq_intVal` on the scalar index). -/
 
-/-- A concrete env for the #145 teeth: the index var `n` is the scalar `1`, while `n`'s
+/-- A concrete environment for #145: the index variable `n` is the scalar `1`, while `n`'s
     slice `@`-view (the buggy reading) is `[10, 20, 30]` (length `3`); `s := [10, 20, 30]`.
     The scalar value (1) and the view-length (3) differ, so a slice-`@`-viewed index is
     observable. -/
@@ -722,8 +720,7 @@ theorem index_argkind_slice_view_breaks_soundness :
 
 /-- The faithful positive counterpart, for contrast: with the real combinator dispatch +
     the scalar index threading the `forall_below(s, n, |x| x ≤ 15)` clause is sound — its
-    encoder meaning is equivalent to the source, by `ref_sound`. Confirms the #179/#145
-    teeth bite only the wrong-combinator / slice-viewed-index, not the faithful encoder. -/
+    encoder meaning is equivalent to the source, by `ref_sound`. -/
 theorem forall_below_faithful_is_sound :
     refDenote 0
         (Expr.comb CombName.forallBelow (Expr.strVar "s")
@@ -733,14 +730,13 @@ theorem forall_below_faithful_is_sound :
           none (some (Expr.var "n")) (some predLe15)) envIdx :=
   ref_sound _ _ _
 
-/-! ## Negative sanity lemma 6 — the #180 match-arm-swap teeth (the C7 match-in-ens class)
+/-! ## Negative sanity lemma 6: swapped match arms (#180)
 
   The dispatch's explicit requirement (a): demonstrate that an encoder that swapped the match
   arm bodies (the `Some`/`None` bodies exchanged — `encode_match` emitting each arm's body
   under the wrong pattern) does not satisfy soundness at a concrete `OptResVal`. This is the
-  match-in-ens analogue of the `==`-vs-`<=` / wrong-combinator teeth: which arm body goes under
-  which pattern (`encode_match` pairing `encode_pattern(arm.pattern)` with `encode(arm.body)`) is
-  load-bearing.
+  match-in-ens analogue of the comparison and wrong-combinator cases. `encode_match`
+  must pair `encode_pattern(arm.pattern)` with `encode(arm.body)`.
 
   Source clause: `match result { Some(v) => v == 7, None => false }`, i.e.
     `Expr.match_ (optResVar "result")
@@ -781,15 +777,14 @@ theorem match_arm_swap_breaks_soundness :
         refDenoteArms, denoteArms, scrutVal, OptResVal.variant, OptResVal.payload,
         Env.bindInt, intVal, envAB]
 
-/-- The faithful positive counterpart, for contrast: with the real `encode_match` (each body under
+/-- With the faithful `encode_match` (each body under
     its own pattern) the `match result { Some(v) => v == 7, None => false }` clause is sound — its
-    encoder meaning is equivalent to the source, by `ref_sound`. Confirms the teeth bite only the
-    arm-swap, not the faithful encoder. -/
+    encoder meaning is equivalent to the source, by `ref_sound`. -/
 theorem match_faithful_is_sound :
     refDenote 0 matchSomeClause envAB ↔ denote 0 matchSomeClause envAB :=
   ref_sound _ _ _
 
-/-! ## Negative sanity lemma 7 — the #180 wrong-`is`-variant teeth (the C7 `is` class)
+/-! ## Negative sanity lemma 7: wrong `is` variant (#180)
 
   The dispatch's explicit requirement (b): demonstrate that an encoder that emitted the wrong
   `is`-variant — `result is Some` lowered as `result is None` (`ref_encode.rs`'s `Expr::Is` arm
@@ -819,9 +814,8 @@ theorem is_wrong_variant_breaks_soundness :
   simp [isSomeClause, isNoneWrong, refDenote, denote, scrutVal,
         OptResVal.isVariant, OptResVal.variant, envAB]
 
-/-- The faithful positive counterpart, for contrast: with the real `is`-variant the `result is
-    Some` clause is sound (both `(Some 7).isVariant Some = true`), by `ref_sound`. Confirms the
-    teeth bite only the wrong variant, not the faithful encoder. -/
+/-- With the faithful `is` variant, the `result is Some` clause is sound
+    (both `(Some 7).isVariant Some = true`), by `ref_sound`. -/
 theorem is_faithful_is_sound :
     refDenote 0 isSomeClause envAB ↔ denote 0 isSomeClause envAB :=
   ref_sound _ _ _
@@ -843,12 +837,11 @@ theorem match_result_faithful_is_sound :
         envAB :=
   ref_sound _ _ _
 
-/-! ## Negative sanity lemma 8 — the #181 wrong-arg-order teeth (the spec-fn-call class)
+/-! ## Negative sanity lemma 8: wrong spec-function argument order (#181)
 
   The dispatch's explicit requirement (a): demonstrate that an encoder that emitted a spec-fn call's
   args in the wrong order — `foo(a, b)` lowered as `foo(b, a)` for a non-commutative body — does not
-  satisfy soundness. The spec-fn-call analogue of the `==`-vs-`<=` teeth: the per-arg `encode_call_arg`
-  pairing (which encoded arg goes to which param position) is load-bearing.
+  satisfy soundness. The per-argument `encode_call_arg` pairing must preserve parameter order.
 
   Registry: `sub_fn(p, q) -> int { p - q }` — a non-commutative body (`p - q ≠ q - p` in general).
   Source clause `sub_fn(a, b)` at `a := 1, b := 2` denotes `1 - 2 = -1`; the wrong `sub_fn(b, a)`
@@ -858,7 +851,7 @@ theorem match_result_faithful_is_sound :
     is what makes the arg order observable). -/
 def subFn : SpecFn := SpecFn.mk ["p", "q"] (Expr.arith ArithOp.sub (Expr.var "p") (Expr.var "q"))
 
-/-- A second spec fn `add_fn(p, q) = p + q` — used for the wrong-resolution teeth (a call that
+/-- A second spec fn `add_fn(p, q) = p + q`, used for the wrong-resolution case (a call that
     resolves to `add_fn` where the source resolves to `sub_fn` is a different meaning). -/
 def addFn : SpecFn := SpecFn.mk ["p", "q"] (Expr.arith ArithOp.add (Expr.var "p") (Expr.var "q"))
 
@@ -904,7 +897,7 @@ theorem specfn_arg_order_breaks_soundness :
   simp [subCallFaithful, subCallArgSwapped, intVal, refIntVal, refIntValArgs, intValArgs,
         envSpec, subFn, Env.bindParams, Env.bindInt, arithDenote, tokArith, encArith]
 
-/-! ## Negative sanity lemma 9 — the #181 wrong-registry-resolution teeth (the spec-fn-call class)
+/-! ## Negative sanity lemma 9: wrong spec-function registry resolution (#181)
 
   The dispatch's explicit requirement (b): demonstrate that an encoder that resolved a spec-fn call
   to the wrong spec fn — emitting `add_fn(a, b)` where the source calls `sub_fn(a, b)` (the
@@ -945,18 +938,18 @@ theorem specfn_nested_resolution_value :
     specialized to a `specCall`. Stated `∀ fuel` (the fuel-uniform statement, not a fuel-cap dodge):
     at the nested-resolution witness `g(p)` it holds at fuel `2` (where it unfolds to `4`) and at
     fuel `0` (where both bottom to `True`), because the source and encoder share the fuel + registry.
-    Confirms the faithful spec-fn-call encoder (args in order, name resolved correctly) is sound; the
-    teeth above bite only the arg-swap / wrong-resolution. -/
+    This confirms that the faithful spec-function encoder (arguments in order, name
+    resolved correctly) is sound. -/
 theorem specfn_call_faithful_is_sound (fuel : Nat) :
     refDenote fuel (Expr.specCall "g" [Expr.var "p"]) envSpec
       ↔ denote fuel (Expr.specCall "g" [Expr.var "p"]) envSpec :=
   ref_sound _ _ _
 
-/-! ## Negative sanity lemma 10 — the #182 `count_where` teeth (wrong-predicate + off-by-one count)
+/-! ## Negative sanity lemma 10: `count_where` wrong predicate and off-by-one count (#182)
 
   The dispatch's explicit requirement (a): demonstrate that a `count_where` encoded with a wrong
   predicate or an off-by-one count fails soundness. `count_where` is a value-combinator (`intVal`),
-  so the teeth are an inequality of counts (not an `Iff` of `Prop`s).
+  so the negative result is an inequality of counts rather than an `Iff` of `Prop`s.
 
   Source clause: `count_where(s, |x| x ≤ 15)` at `envAB` (`s := [10, 20, 30]`) — exactly one element
   (`10`) is ≤ 15, so the faithful count is `1`.
@@ -997,10 +990,9 @@ theorem count_where_off_by_one_breaks_soundness :
           countWhereVal, countWhereVal_cons, denote, Env.bindInt, envAB]
   rw [h]; decide
 
-/-- The faithful positive counterpart, for contrast (#182): with the real `count_where` encoding the
+/-- With the faithful `count_where` encoding (#182), the
     `count_where(s, |x| x ≤ 15)` clause's encoder meaning equals the source count (`1`), by
-    `refIntVal_eq_intVal`. Confirms the teeth bite only the corrupted predicate / off-by-one, not the
-    faithful encoder; and that the recursive count is non-vacuous (the value `1`, not a bottom). -/
+    `refIntVal_eq_intVal`. The recursive count is non-vacuous (the value `1`, not a bottom). -/
 theorem count_where_faithful_intval_matches_source :
     refIntVal 0 countWhereClause envAB = intVal 0 countWhereClause envAB :=
   refIntVal_eq_intVal _ _ _
@@ -1012,7 +1004,7 @@ theorem count_where_value_is_one :
   simp [countWhereClause, predLe15, predLe15Body, intVal, seqVal,
         countWhereVal, countWhereVal_cons, denote, Env.bindInt, envAB]
 
-/-! ## Negative sanity lemma 11 — the #182 `permutation_of` multiset-vs-set teeth (the key fidelity)
+/-! ## Negative sanity lemma 11: `permutation_of` multiset versus set semantics (#182)
 
   The dispatch's explicit requirement (b): demonstrate that `permutation_of` mis-modelled as set
   equality (membership) instead of multiset (counts) fails. The canonical witness: `a := [1,1,2]`,
@@ -1021,7 +1013,8 @@ theorem count_where_value_is_one :
   `permEq` — `a.to_multiset() ≠ b.to_multiset()`), while a set-based model wrongly says true. This is
   the fidelity check that `permutation_of`'s `verus_l3` is `to_multiset()` equality, not set equality. -/
 
-/-- A fresh env for the `permutation_of` multiset-vs-set teeth (#182): `a := [1,1,2]`, `b := [1,2,2]`
+/-- An environment for the `permutation_of` multiset-versus-set case (#182):
+    `a := [1,1,2]`, `b := [1,2,2]`
     (the canonical same-set / different-multiset witness). Everything else empty / `None` / no spec. -/
 def envPerm : Env :=
   { ints := fun _ => 0
@@ -1040,7 +1033,7 @@ def permClause : Expr :=
 /-- The (wrong) set-equality model of `permutation_of` — membership, not counts: `∀ x, (x ∈ a ↔ x ∈ b)`.
     This is the infidelity the dispatch names: modelling `to_multiset()` equality as set equality. At
     `a := [1,1,2]`, `b := [1,2,2]` it is true (both have set `{1,2}`), whereas the faithful `permEq`
-    (counts) is false — the multiset-vs-set teeth. -/
+    (counts) is false. -/
 def permSetModel (a b : List Int) : Prop :=
   ∀ x : Int, (x ∈ a ↔ x ∈ b)
 
@@ -1069,15 +1062,14 @@ theorem permutation_set_model_breaks_soundness :
   rw [envPerm_a, envPerm_b] at h1
   simp at h1
 
-/-- The faithful positive counterpart, for contrast (#182): with the real `permutation_of` (the
-    multiset `permEq`) the clause is sound — its encoder meaning is equivalent to the source, by
-    `ref_sound`. Confirms the teeth bite only the set-model infidelity, not the faithful encoder. -/
+/-- With the faithful `permutation_of` (the multiset `permEq`), the
+    clause is sound: its encoder meaning is equivalent to the source by `ref_sound`. -/
 theorem permutation_faithful_is_sound :
     refDenote 0 permClause envPerm ↔ denote 0 permClause envPerm :=
   ref_sound _ _ _
 
-/-- A faithful positive witness that `permutation_of` is non-vacuous and is satisfied by a genuine
-    permutation (#182): `[1,2,3]` is a permutation of `[3,1,2]` (same multiset) — the source
+/-- A positive witness that `permutation_of` is non-vacuous (#182): `[1,2,3]` is a
+    permutation of `[3,1,2]` (the same multiset), so the source
     `permutation_of` is true here (every count agrees), showing `permEq` is not trivially false. -/
 def envPermTrue : Env :=
   { ints := fun _ => 0

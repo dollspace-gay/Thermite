@@ -1,9 +1,9 @@
 //! Divergence pin (critic audit of #162, commit 540cea0d): `forge body-tv`
-//! classifies a FAITHFUL, in-subset body as **Divergent** ("a real body-lowering
+//! classifies a faithful, in-subset body as **Divergent** ("a body-lowering
 //! infidelity", nonzero exit) when the obligation frame fails to compile — i.e.
 //! when the source `req` references a `spec fn` helper (the design's central
 //! contract idiom, `thermite-design.md` §3/§4: `req sorted(haystack)`), because
-//! `body_tv::corpus_req` threads the `req` text VERBATIM into a
+//! `body_tv::corpus_req` threads the `req` text verbatim into a
 //! `BodyObligationFrame`/`LoopObligationFrame` whose `spec_defs` is empty
 //! (`spec_defs: Vec::new()` in `straight_line_body_tv` / `build_loop_frame`),
 //! so verus aborts with an undefined-function compile error and `run_obligation`
@@ -17,7 +17,7 @@
 //!   `Skipped` class, "never masking an infidelity" — and symmetrically never
 //!   fabricating one (R-HONEST-3).
 //! - `.design/verified/loop-tv.md` § "The four-way reporting": `Divergent` —
-//!   "any obligation's PRODUCTION side fails `postcondition not satisfied` (a
+//!   "any obligation's production side fails `postcondition not satisfied` (a
 //!   counterexample)". The loop entry obligation (`loop-tv.md` REQ-2: entry =
 //!   `proof fn { assert(inv[cells:=entry]); }`) contains no production text at
 //!   all, so its compile abort can never be "the production loop text did not
@@ -28,12 +28,12 @@
 //!   failure, not an infidelity". `body_tv::corpus_req` has no such gate.
 //!
 //! Observed (live, verus 0.2026.05.24): both fixtures below report
-//! `1 DIVERGENT` ("verus ABORTED (compile/parse) … a real body-lowering /
+//! `1 DIVERGENT` ("verus ABORTED (compile/parse) … a body-lowering /
 //! loop-lowering infidelity") and exit 1, although the production lowering of
-//! each body is exactly faithful.
+//! each body is faithful.
 //!
 //! These tests assert the authority's behavior (a faithful in-subset body is
-//! never Divergent; the honest classes for an uncompilable frame are
+//! never Divergent; the classes for an uncompilable frame are
 //! Skipped/Unverifiable) and therefore fail against the current toolchain.
 //! Tracking: crosslink blocker (see issue filed with this commit).
 
@@ -106,14 +106,14 @@ fn run_body_tv_json(file: &Path) -> (Value, bool) {
     (doc, out.status.success())
 }
 
-/// Divergence (straight-line arm): a FAITHFUL `{ let v: u32 = xs[0]; v }` body —
-/// squarely inside the frozen 2.2.1 subset, production lowering exactly faithful —
+/// Divergence (straight-line arm): a faithful `{ let v: u32 = xs[0]; v }` body —
+/// squarely inside the frozen 2.2.1 subset, production lowering faithful —
 /// whose `req` references a `spec fn` helper (`all_small(xs)`, the
 /// `req sorted(haystack)` corpus idiom) must never be `divergent`
 /// (exec-stmt-tv.md REQ-5: Divergent ⟺ the lowering and the reference disagree;
 /// an uncompilable frame is "a framing failure, not an infidelity" — the
 /// exec_tv req-gate authority). The current toolchain reports `1 divergent`
-/// ("a real body-lowering infidelity") + exit 1: a fabricated infidelity.
+/// ("a body-lowering infidelity") + exit 1: a fabricated infidelity.
 #[test]
 fn spec_helper_req_straight_line_body_is_not_divergent() {
     if verus_bin().is_none() {
@@ -157,7 +157,7 @@ fn spec_helper_req_straight_line_body_is_not_divergent() {
     );
 }
 
-/// Divergence (loop arm): a FAITHFUL v1 `while lo < n inv lo <= n dec n - lo`
+/// Divergence (loop arm): a faithful v1 `while lo < n inv lo <= n dec n - lo`
 /// loop whose fn `req` references a `spec fn` helper must never be `divergent`.
 /// The entry obligation (`loop-tv.md` REQ-2: `proof fn { assert(inv[cells:=entry]) }`)
 /// contains no production text, so its compile abort cannot be "the production

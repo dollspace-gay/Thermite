@@ -1,12 +1,12 @@
 //! Divergence: the lowering golden oracle for `sum.th` is stale with respect to
 //! the current emitter on the `1_000_000` literal.
 //!
-//! Authority (goal.md §B / "Why the critic still has teeth"): the Verus/L1
+//! Authority: goal.md §B. The Verus/L1
 //! golden files under `tests/golden/` are the external lowering oracle — the
-//! emitted source must match the golden. ast.md REQ-6 CRITICAL note pins the
+//! emitted source must match the golden. ast.md REQ-6 critical note pins the
 //! intended form: lowering "continues to emit the numeric `value` (e.g.
-//! `1000000`), NOT the raw — so the `tests/golden/lower/*.verus.rs` files do
-//! NOT change". So the authority says both (a) the emitter emits `1000000` and
+//! `1000000`), not the raw — so the `tests/golden/lower/*.verus.rs` files do
+//! not change". So the authority says both (a) the emitter emits `1000000` and
 //! (b) the golden contains `1000000`.
 //!
 //! Reality (a2c0f73): the emitter emits `1000000` (correct, AC-1b), but the
@@ -23,10 +23,10 @@
 //! divergence on `main` is ours, no "pre-existing safe to defer"). The fix is
 //! the generator's: either regenerate the golden's executable expression to
 //! the emitted `1000000`, or, if the design intends the golden to keep the
-//! verbatim separators, amend ast.md's CRITICAL note (R-SPEC-4). The critic
+//! verbatim separators, amend ast.md's critical note (R-SPEC-4). The critic
 //! does not choose; it pins the disagreement.
 //!
-//! Expected values are hand-derived from ast.md REQ-6 CRITICAL note (`1000000`,
+//! Expected values are hand-derived from ast.md REQ-6 critical note (`1000000`,
 //! the `_`-stripped value), never copied from the emitter (R-CHAR-3).
 
 use std::path::PathBuf;

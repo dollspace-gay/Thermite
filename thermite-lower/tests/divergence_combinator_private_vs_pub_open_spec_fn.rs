@@ -17,7 +17,7 @@
 //! real-verus proof, so the emitted sub-program for a validator-legal item
 //! must verify; plus `.design/lower/verus-lowering.md` REQ-8's own grounding
 //! finding (cited by 2f327b63 itself): "a `pub open` body may refer only to
-//! `pub` items". The assertion is outcome-anchored (real verus on the emitted
+//! `pub` items". The assertion is outcome-anchored (verus on the emitted
 //! unit, the conformance-harness pattern), not anchored to any particular fix
 //! direction; never copied from lowerer output.
 //!

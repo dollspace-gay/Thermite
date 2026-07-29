@@ -5,11 +5,11 @@
 //!
 //! It runs the shipped `forge strat-tv` command (the same path the scheduled rotating-seed
 //! job and the audit check [8] gate drive), which spawns `lake env lean --run
-//! Thermite/Strat/Cls/Wire.lean`. When `lake` is absent (a non-Lean machine) it SELF-SKIPS
+//! Thermite/Strat/Cls/Wire.lean`. When `lake` is absent (a non-Lean machine) it SELF-skips
 //! (the `forge strat-tv` command itself reports a skip and exits 0); this test additionally
 //! guards so it only asserts the live agreement where the Lean toolchain exists — the
 //! `lean` CI job, where `cargo nextest run -p forge` runs with the spine built. There the
-//! `lake_present()` branch is taken and the differential is genuinely exercised.
+//! `lake_present()` branch is taken and the differential is exercised.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -33,7 +33,7 @@ fn lake_present() -> bool {
         .unwrap_or(false)
 }
 
-/// AC-4 (the headline): the Rust classifier returns the SAME verdict as the Lean
+/// AC-4 (the headline): the Rust classifier returns the same verdict as the Lean
 /// `admitted` on N generated formulas, with zero disagreements. Run at the pinned default
 /// seed (reproducible); a disagreement exits the `forge strat-tv` command non-zero (the
 /// hard CI failure check [8] raises), failing this test with the verbatim finding.
@@ -90,7 +90,7 @@ fn rust_classifier_matches_lean_admitted_on_generated_formulas() {
     );
 }
 
-/// AC-4 (the watchdog dimension): a DIFFERENT seed walks a different slice of the clause
+/// AC-4 (the watchdog dimension): a different seed walks a different slice of the clause
 /// space and must also agree completely — the rotating-seed property the scheduled CI job
 /// relies on (a seed-dependent classifier divergence would surface as a red build).
 #[test]

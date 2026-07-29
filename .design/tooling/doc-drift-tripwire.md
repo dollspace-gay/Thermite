@@ -9,7 +9,7 @@ governs: tooling/doc-drift.py + the `audited-content-sha256:` / `audited-sha:`
          REQ-10). Explicitly NOT `scripts/audit.sh`, which this component
          leaves byte-identical (decision 5).
 audited-sha: 1523b7edd09d5fe614f2950b5d9ba16ef5639f14 (re-pinned at the #258 gauntlet HEAD; governed file last touched 1523b7ed)
-audited-content-sha256: c98e931347510c2fcca397acb36199ec0a43f8d466ecba551f7ca17a0ce51467
+audited-content-sha256: 7b5d98596a791fe3ab1e6fb08886d647ca19740da2623ce858debcc3492ec9e6
 thesis-refs:
   - thermite-design.md §1 (trust relocated: "a skeptical third party can audit in minutes")
   - thermite-design.md §8 (#[slag]: the unverified residue is LOUD, never silent)

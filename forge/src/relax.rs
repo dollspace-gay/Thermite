@@ -25,7 +25,7 @@
 //!   kernel-checked `r_relax_sound` the integer clause holds → certify at **L4**.
 //! - `sat` → a real countermodel → the **integrality check** ([`eval_contract_negation_over_ints`]):
 //!   round the real point into a radius-2 ℤⁿ box and test whether any integer point
-//!   genuinely falsifies the integer clause. An integer falsifier is a real
+//!   falsifies the integer clause. An integer falsifier is a real
 //!   `Counterexample`; if none does, the countermodel is real-only (true over ℤ,
 //!   false over ℝ) → a `RealWitness` escalation (never a `Counterexample`).
 //!
@@ -40,7 +40,7 @@ use thermite_syntax::{BinOp, Clause, Expr, FnItem, PrimType, Type, UnaryOp};
 /// AC-12). [`Relaxable`](RelaxVerdict::Relaxable) means the whole contract is in the
 /// relax fragment (the nlsat route may attempt it); [`NotRelaxable`](RelaxVerdict::NotRelaxable)
 /// names the first construct that put it out of fragment (a div/mod/shift/cast atom,
-/// a non-integer parameter, a non-polynomial call), so the route's skip is honest and
+/// a non-integer parameter, a non-polynomial call), so the route's skip is explicit and
 /// the auditor sees *why* (R-CODE-4 — never a bare boolean).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RelaxVerdict {
@@ -129,7 +129,7 @@ pub fn classify_clause(c: &Clause) -> RelaxVerdict {
     }
 }
 
-/// Is `e` a relaxable PROPOSITION (a boolean-valued clause expression)? A
+/// Is `e` a relaxable proposition (a boolean-valued clause expression)? A
 /// comparison of polynomial terms, a boolean connective of relaxable propositions,
 /// or a boolean literal. Anything else (notably a div/mod/shift/cast/bitwise atom,
 /// reached through a term) is out of fragment, with the reason named.
@@ -252,7 +252,7 @@ fn expr_kind(e: &Expr) -> &'static str {
 /// The integer-scalar variables of a relaxable `fn`, in a deterministic order
 /// (parameters in signature order, then `result`). The relax encoding declares each
 /// as a `Real`; the integrality check assigns each an integer. Pre: `f` is relaxable
-/// (`classify_fn(f).is_relaxable()`), so every name here is a genuine integer
+/// (`classify_fn(f).is_relaxable()`), so every name here is an integer
 /// variable.
 #[must_use]
 pub fn integer_vars(f: &FnItem) -> Vec<String> {
@@ -289,7 +289,7 @@ pub fn render_term_smt(e: &Expr) -> Option<String> {
     }
 }
 
-/// Render a relaxable PROPOSITION to an SMT-LIB(QF_NRA) `Bool` expression. Pre:
+/// Render a relaxable proposition to an SMT-LIB(QF_NRA) `Bool` expression. Pre:
 /// `classify_prop` accepted `e`. `≠` renders as `(not (= …))`; the comparisons map to
 /// their SMT relations; the connectives to `and`/`or`/`not`.
 #[must_use]
@@ -360,7 +360,7 @@ pub fn negated_contract_query(f: &FnItem) -> Option<String> {
     // Domain guard: every relax variable is an UNSIGNED integer scalar (u32/u64/
     // usize), so the faithful real relaxation restricts each to the non-negative
     // reals. This keeps the route sound (ℤ≥0 ⊆ ℝ≥0, so real-validity-on-the-guarded-
-    // domain still implies integer-validity per r_relax_sound) AND avoids a spurious
+    // domain still implies integer-validity per r_relax_sound) and avoids a spurious
     // countermodel at a negative real the unsigned domain never reaches.
     for v in integer_vars(f) {
         s.push_str(&format!("(assert (>= {v} 0.0))\n"));
@@ -411,7 +411,7 @@ pub fn eval_term_int(e: &Expr, assign: &BTreeMap<String, i128>) -> Option<i128> 
     }
 }
 
-/// Evaluate a relaxable PROPOSITION over an integer assignment. Returns `None` if any
+/// Evaluate a relaxable proposition over an integer assignment. Returns `None` if any
 /// sub-term is inconclusive (unbound / overflow). The comparisons and connectives
 /// fold over [`eval_term_int`] / themselves.
 #[must_use]
@@ -446,7 +446,7 @@ pub fn eval_prop_int(e: &Expr, assign: &BTreeMap<String, i128>) -> Option<bool> 
 
 /// The integrality check (`.design/stage1-forge-tier.md` REQ-8c / Q8): does the
 /// contract negation `req ∧ ¬(⋀ ens)` hold at the integer point `assign`? `true`
-/// means `assign` is a genuine **integer counterexample** to the contract (a real
+/// means `assign` is a **integer counterexample** to the contract (a real
 /// `Counterexample`); `false` means the contract holds there. `None` is inconclusive
 /// (unbound / overflow). Used to test the radius-2 ℤⁿ box rounded from a real
 /// countermodel: if no integer point in the box returns `true`, the real countermodel
@@ -490,7 +490,7 @@ mod tests {
             .expect("fn present")
     }
 
-    // AC-12: `relaxable` ADMITS the isqrt postconditions — a polynomial contract
+    // AC-12: `relaxable` admits the isqrt postconditions — a polynomial contract
     // (`result*result <= n` ∧ `n < (result+1)*(result+1)`), integer-scalar params +
     // result, no div/mod/shifts/casts.
     #[test]
@@ -512,7 +512,7 @@ mod tests {
         }
     }
 
-    // AC-12: `relaxable` REJECTS a div-containing clause (`%`, `<<`, casts likewise).
+    // AC-12: `relaxable` rejects a div-containing clause (`%`, `<<`, casts likewise).
     #[test]
     fn relaxable_rejects_div_mod_shift_cast() {
         let div =
@@ -577,7 +577,7 @@ mod tests {
     }
 
     // The integer evaluator + the integrality check: at the real point √2 the
-    // negation `n*n = 2` holds over ℝ, but NO nearby integer (the radius-2 box
+    // negation `n*n = 2` holds over ℝ, but no nearby integer (the radius-2 box
     // {-1,0,1,2,3} around 1.41) satisfies `n*n = 2` → real-only (a RealWitness, not a
     // Counterexample).
     #[test]
@@ -596,7 +596,7 @@ mod tests {
         }
     }
 
-    // A genuine integer counterexample IS caught: `ens result == n + 1` with the body
+    // An integer counterexample IS caught: `ens result == n + 1` with the body
     // returning n is false at, e.g., result=n → the negation holds over ℤ.
     #[test]
     fn integrality_check_catches_integer_counterexample() {

@@ -10,7 +10,7 @@
 //!
 //! The struct type-invariant path (`lower_inv_expr` → `lower_inv_operand`, the
 //! REQ-8 `well_formed()` predicate, `.design/lower/...` struct invariants) has its
-//! own operand-parenthesizer, which #148 extended with the SAME cast-`<` guard
+//! own operand-parenthesizer, which #148 extended with the same cast-`<` guard
 //! (`lower_inv_operand` in `thermite-lower/src/lower.rs`: a `Cast` left operand of
 //! an `is_lt_leading` parent is parenthesized — R-DEFER-8, the convention is now
 //! uniform across every emission site). So `} inv (x as u32) < cap` lowers to the

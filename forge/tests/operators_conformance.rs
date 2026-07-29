@@ -221,7 +221,7 @@ fn unary_not_certifies_l3_per_type() {
 // ---------------------------------------------------------------------------
 
 /// `%` without `req b != 0` is L0; the divide-by-zero obligation bites (ast.md
-/// REQ-11; AC-6). The same teeth as the existing `/`.
+/// REQ-11; AC-6). This matches the existing `/` check.
 #[test]
 fn rem_without_nonzero_req_is_l0() {
     if !verus_present() {
@@ -303,7 +303,7 @@ fn char_hex_binary_literals_certify_exact_value_l3() {
     );
 }
 
-/// Non-vacuity (R-DEFER-9): the char byte is load-bearing. A contract claiming the
+/// Non-vacuity (R-DEFER-9): the char byte is required. A contract claiming the
 /// wrong code (`'A'` == 66 instead of 65) does not certify L3 (lexer.md AC-8).
 #[test]
 fn char_literal_value_is_load_bearing_wrong_code_not_l3() {

@@ -4,7 +4,7 @@
 tier: 3-component
 status: draft
 audited-sha: 80074948185b77b95006d034e461a338b1ce6b37 (re-pinned 2026-06-16: forge quality status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: 488103d4382815b85141d17bc01b60917ba744e7 (re-audited 2026-06-12: amended — shipped-status Summary + the #101 survivor-input and render_expr surface notes, #262))
-audited-content-sha256: 01965bb2b97997c7fd69220b232f122cb8d7d5fe9852434b20b9d615d96c28cc
+audited-content-sha256: d035a3cc17689d46da02e8b1a6ac24b7b8cc2816e38df6474978c02783c9a5bf
 governs: forge/src/strengthen.rs
 thesis-refs:
   - thermite-design.md §7

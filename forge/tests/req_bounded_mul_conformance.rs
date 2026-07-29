@@ -79,8 +79,8 @@ fn level_of<'a>(certs: &'a [Value], item: &str) -> &'a str {
 }
 
 /// The user's exact `/goal` case: `sq(n) req n <= 30 ens result == n * n`
-/// certifies L3 — the var*var overflow discharge bites (#196). WITHOUT the
-/// aid this fails "possible arithmetic underflow/overflow"; WITH it, verus
+/// certifies L3 — the var*var overflow discharge bites (#196). without the
+/// aid this fails "possible arithmetic underflow/overflow"; with it, verus
 /// proves the bound via `nonlinear_arith` and the body's `n * n` overflow
 /// obligation discharges.
 #[test]

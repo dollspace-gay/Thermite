@@ -1,5 +1,5 @@
 //! The compose-any-program proof (crosslink #103): three acceptance programs
-//! that show the verified-primitive basis (C1–C7) composes into real programs.
+//! that show the verified-primitive basis (C1–C7) composes into programs.
 //! A `u64` decimal formatter (`examples/formatter/format.th`), a calculator core
 //! (`examples/calculator/calc.th`), and a line/CSV parser
 //! (`examples/parser/parse_lines.th`). Each is grounded against the two external
@@ -28,7 +28,7 @@
 //!   * Parser — `has_sep(s, sep) ens result == contains_sub(s, sep)` certifies L3
 //!     via the full §7-mutation-scored `forge check` ladder; `fields(s, sep) ens
 //!     result.len() == 1 + count_sep(s, sep)` (the C5 split count-bound) certifies L3
-//!     under real verus on the lowering (the thin `{ s.split(sep) }` caller is not
+//!     under verus on the lowering (the thin `{ s.split(sep) }` caller is not
 //!     §7-mutation-scoreable, the documented split-caller precedent). The runnable
 //!     `split_abc` builds + runs → 3 pieces ([97],[98],[99] == "a","b","c") for
 //!     "a,b,c" split on ',' (byte 44). The full file (incl. the `fields` count-bound
@@ -52,7 +52,7 @@
 //! missing solver (R-CODE-4). The build + run uses `rustc`, but the `--entry`
 //! runner carries the #57 native-Linux seccomp prelude (raw `prctl`), so the
 //! build+run tests SKIP with an explicit warning on any non-Linux platform
-//! (`linux_build_run_supported`): FULL ACCEPTANCE OF THE BUILD+RUN PATH REQUIRES
+//! (`linux_build_run_supported`): full acceptance OF the build+run PATH requires
 //! LINUX CI — `cargo test` on macOS/Windows exercises `forge check` / verus /
 //! lowering but not the runnable seccomp twin. To run the build+run path locally on
 //! Apple Silicon, use a native **aarch64 Linux container** or an **x86_64 Linux
@@ -113,7 +113,7 @@ fn verus_present() -> bool {
     false
 }
 
-/// `true` iff the `forge build --entry` runnable artifact can LINK + RUN on this
+/// `true` iff the `forge build --entry` runnable artifact can link + run on this
 /// platform. The #57 runtime effect sandbox (`forge/src/sandbox.rs`) is native Linux
 /// only: `synthesize_entry_main` injects a raw `extern "C" { fn prctl }` seccomp-bpf
 /// prelude with x86_64/aarch64 BPF arch guards, so the emitted runner does not link
@@ -486,8 +486,8 @@ fn calculator_string_parse_builds_and_runs_end_to_end() {
 // ============================================================================
 
 /// (a.1) `has_sep(s, sep) ens result == contains_sub(s, sep)` certifies L3 via the
-/// full §7-mutation-scored `forge check` ladder (the C5 substring predicate is real
-/// teeth). Authority: `.design/basis/07-strings.md` REQ-13 (grounded `14 verified,
+/// full §7-mutation-scored `forge check` ladder. Authority:
+/// `.design/basis/07-strings.md` REQ-13 (grounded `14 verified,
 /// 0 errors`; a broken predicate fails); `thermite-design.md` §6.
 #[test]
 fn parser_contains_predicate_certifies_l3() {
@@ -505,7 +505,7 @@ fn parser_contains_predicate_certifies_l3() {
     );
 }
 
-/// (a.2) the `fields` split count-bound certifies L3 under real verus on the
+/// (a.2) the `fields` split count-bound certifies L3 under verus on the
 /// lowering. The thin `{ s.split(sep) }` caller is not §7-mutation-scoreable by
 /// `forge check` (no scoreable body mutant — the documented split-caller precedent,
 /// `string_search_conformance.rs`), so its L3 is established by verus directly.
@@ -551,7 +551,7 @@ fn parser_split_core_builds_and_runs_three_pieces() {
         "\"a,b,c\" split on ',' (44) must RUN → 3 pieces [97],[98],[99] (== \"a\",\"b\",\"c\"):\nstdout:{out}"
     );
     // Count the piece elements: each piece renders `TString { data: [<byte>] }`
-    // INSIDE the outer `TVecTString { data: [ ... ] }`. The outer wrapper name
+    // inside the outer `TVecTString { data: [ ... ] }`. The outer wrapper name
     // `TVecTString` itself contains the substring `TString`, so we count on the
     // element pattern `data: [9` (every piece byte 97/98/99 starts with '9'),
     // which the outer wrapper's `data: [TString...` does not match.

@@ -87,7 +87,7 @@ theorem cond_true_at_s0 : condBool l1Cond s0 = some true := by
   simp only [condBool, l1Cond, s0, execDenote, asInt, cmpVal, bind, Option.bind]
   decide
 
-/-- The genuine `lo = lo + 1` step from `s0` lands at a state whose `lo` cell is `1`
+/-- The `lo = lo + 1` step from `s0` lands at a state whose `lo` cell is `1`
     (the concrete decode, the `Exec/Loop.lean` L2-witness pattern). -/
 theorem step_lo_cell :
     (blockThread l1Body s0).map (fun s => s.env.vars "lo") = some (.int ⟨.usize, 1⟩) := by

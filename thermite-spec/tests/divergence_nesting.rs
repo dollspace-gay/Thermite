@@ -103,7 +103,7 @@ fn nested_combinator_under_three_arg_outer_rejects() {
     );
 }
 
-/// A nested combinator inside a `spec fn` BODY's combinator closure. A spec-fn
+/// A nested combinator inside a `spec fn` body's combinator closure. A spec-fn
 /// body is itself a fully-caged contract position (REQ-3); REQ-6's flag must be
 /// set when descending its combinator closures too. Expected: Err with
 /// `NestedCombinator`.

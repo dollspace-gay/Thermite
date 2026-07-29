@@ -17,7 +17,7 @@ use thermite_syntax::ast::{BinOp, Expr, Item, UnaryOp};
 use thermite_syntax::{parse, tokenize, TokKind};
 
 // ---------------------------------------------------------------------------
-// Lexer: char / hex / binary literals → the SAME Int token (lexer.md REQ-3/REQ-9).
+// Lexer: char / hex / binary literals → the same Int token (lexer.md REQ-3/REQ-9).
 // ---------------------------------------------------------------------------
 
 /// The single `Int` token a one-literal source lexes to, asserting zero
@@ -36,7 +36,7 @@ fn lex_int_literal(src: &str) -> (u128, String) {
 
 #[test]
 fn char_literal_lexes_to_byte_value_int_token() {
-    // AC-8: `'A'` is the byte value 65 (the u8 char model), carried by the SAME
+    // AC-8: `'A'` is the byte value 65 (the u8 char model), carried by the same
     // `Int` token as a numeric literal; raw is the verbatim `"'A'"`.
     assert_eq!(lex_int_literal("'A'"), (65, "'A'".to_string()));
     // `'\n'` == 10, `'\x1b'` == 27 (the shared escape table).
@@ -46,7 +46,7 @@ fn char_literal_lexes_to_byte_value_int_token() {
 
 #[test]
 fn hex_and_binary_literals_lex_to_decimal_value() {
-    // AC-7: a hex/binary literal carries the SAME integer value as the decimal,
+    // AC-7: a hex/binary literal carries the same integer value as the decimal,
     // with the verbatim raw (prefix preserved, #37).
     assert_eq!(lex_int_literal("0x1b"), (27, "0x1b".to_string()));
     assert_eq!(lex_int_literal("0b101"), (5, "0b101".to_string()));
@@ -229,7 +229,7 @@ fn binary_pipe_distinct_from_closure_pipe() {
 #[test]
 fn char_hex_binary_parse_to_intlit_no_new_variant() {
     // AC-7 / ast.md AC-1c: `'A'`/`0x1b`/`0b101` each parse to `Expr::IntLit` (the
-    // SAME node as a decimal), carrying the byte/radix value + verbatim raw.
+    // same node as a decimal), carrying the byte/radix value + verbatim raw.
     for (src, value, raw) in [
         ("'A'", 65u128, "'A'"),
         ("0x1b", 27, "0x1b"),

@@ -26,7 +26,7 @@ fn main() -> ExitCode {
 
 /// The result of a single bin invocation. A plain two-state enum (not `ExitCode`,
 /// which is not comparable) so the bin's logic is unit-testable (R-CHAR-3) while
-/// `main` maps it to a real process exit code.
+/// `main` maps it to a process exit code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Outcome {
     Success,

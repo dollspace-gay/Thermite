@@ -1,8 +1,8 @@
 //! The G1 gate cert-oracle (`.design/stage1-forge-tier.md` REQ-10 / AC-14): the
 //! `isqrt_class` example, end to end. `forge check --engine forge
-//! conformance/forge/isqrt_class.th` drives the PER-CLAUSE hybrid route — two NON-TRIVIAL
+//! conformance/forge/isqrt_class.th` drives the per-clause hybrid route — two NON-TRIVIAL
 //! relaxable consequences of the integer-sqrt characterization (`r*r <= n < (r+1)^2`)
-//! discharged by the nlsat relax route at L4 (the real-arithmetic squeeze, NOT a restatement
+//! discharged by the nlsat relax route at L4 (the real-arithmetic squeeze, not a restatement
 //! of `req`), one non-relaxable (`%`) clause discharged at L3 by the author's `proof for`
 //! block — so the certificate exhibits clauses at **L4, L4, L3**, the item level is the MIN
 //! (**L3**), and all four forge-tier evidence blocks are populated:
@@ -13,7 +13,7 @@
 //!   * `burn` — the L3 clause's proof tokens + cited frozen simp-lemmas.
 //!
 //! The route invokes z3 (nlsat, bundled with verus) and lake (the built Lean spine), so the
-//! test SKIPS when either is absent (mirroring the sibling live-spine tests); the CI lean
+//! test skips when either is absent (mirroring the sibling live-spine tests); the CI lean
 //! job is the authoritative gate. The deterministic oracle fields are pinned against the
 //! committed golden `conformance/forge/isqrt_class.cert.json` (R-CHAR-3).
 
@@ -55,7 +55,7 @@ fn verus_present() -> bool {
 }
 
 /// `lake` on PATH / under `~/.elan` — the L3 clause + the re-elaboration mutation need it
-/// (the built spine). Absent → the gate route cannot discharge, so the test SKIPS.
+/// (the built spine). Absent → the gate route cannot discharge, so the test skips.
 fn lake_present() -> bool {
     if let Ok(home) = std::env::var("HOME") {
         if PathBuf::from(home).join(".elan/bin/lake").exists() {

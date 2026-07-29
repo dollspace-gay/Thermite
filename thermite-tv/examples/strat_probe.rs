@@ -106,7 +106,7 @@ struct Instance {
 /// chosen disjoint from the generator's free-variable vocabulary (`gen.rs` draws
 /// slices `xs`/`ys` and indices from `n`/`m`/`k`), and the production-style
 /// binders (`i`/`j`) likewise. A binder that coincided with a free index variable
-/// (`forall k . … k < k …` when the index is `k`) would be a genuine capture (the
+/// (`forall k . … k < k …` when the index is `k`) would be a capture (the
 /// two spellings would then not be equivalent), so the probe avoids it.
 fn templates(inst: &Instance) -> (String, String) {
     let s = &inst.slice_a;

@@ -108,7 +108,7 @@ theorem omission_forces_r_zero : ∀ r, stabilizes hCall envO r → r = 0 := by
   rw [body_bottoms_at_every_fuel N] at this
   exact this.symm
 
-/-- `ens: result == 0`, a contract the real item (h(x) = 5, result 5) violates. -/
+/-- `ens: result == 0`, a contract the item (h(x) = 5, result 5) violates. -/
 def ensWrong : Expr := Expr.cmp CmpOp.eq (Expr.var "result") (Expr.intLit 0)
 
 /-- The pin: the §4 exported obligation (the #214 ∀r form, req = true),

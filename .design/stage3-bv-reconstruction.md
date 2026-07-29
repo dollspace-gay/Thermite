@@ -12,7 +12,7 @@
 |---|---|---|
 | Gate G2 (stage 2 complete, trust flip done) | The per-clause `trust:` migration mechanics this stage reuses; stable schema-v2 certificates | RESOLVED: schema-v2 live (`forge/src/manifest.rs:226-316`); `with_clause_attribution(engine, trust, verdict)` is the migration seam |
 | Stage-1/2 review telemetry (`forge review`) | Q-BVSCOPE: full / `nowrap`-only / lemma-only | RESOLVED → **full tag + 3 locks**. The "bv-density telemetry" input is circular (no bv corpus can exist pre-ship), so REQ-6's density report becomes the *post-ship* F-F tripwire, not a precondition |
-| Lean-SMT / cvc5 replay ecosystem assessment at G2 | Q-RECON: reconstruction engine + fragment support; default-on viability | RESOLVED → **build the Rust→Lean exporter; default-on for QF_LIA + QF_BV**. lean-smt pinned @ `7d1d8239` (vendored cvc5 FFI); `SmtDemo.lean` proves QF_LIA kernel-replay axiom-clean; cvc5 supports QF_BV. The gap was never ecosystem maturity — it is the automated obligation exporter (PoC Tier-3 hand-translation) |
+| Lean-SMT / cvc5 replay ecosystem assessment at G2 | Q-RECON: reconstruction engine + fragment support; default-on viability | RESOLVED → **build the Rust→Lean exporter; default-on for QF_LIA + QF_BV**. lean-smt pinned @ `ee6d36b` (vendored cvc5 FFI); `SmtDemo.lean` proves QF_LIA kernel-replay axiom-clean; cvc5 supports QF_BV. The remaining work is the automated obligation exporter and reconstruction coverage. |
 | `KernelBudget`/`Timeout` telemetry on bv-shaped queries | Whether 64-bit multiplier instances need a dedicated budget profile | RESOLVED → folded into REQ-2: QF_BV 64-bit multiplication is the known cost cliff; it gets a dedicated budget profile and the `Timeout` verdict, never `unknown` |
 
 ## Summary
@@ -117,15 +117,17 @@ locks shipping inside the same gate as the feature. Umbrella:
   (full → `nowrap`-only → lemma-only → drop).
 - REQ-7 (**the Rust→Lean obligation exporter**): build the automated
   exporter that turns a per-clause obligation into the
-  `smt`-dischargeable Lean goal `(P_production) ⟺ (P_reference)` —
+  Lean goal `(P_production) ⟺ (P_reference)` —
   the step `SmtDemo.lean`'s Tier-3 PoC performs by hand
   (`lean/Thermite/SmtDemo.lean`, "the hand-translation step is the gap
   an automated Rust→Lean exporter would close"). The exporter covers
   the QF_LIA scalar fragment (comparisons + connectives over `int`,
   the PoC's proven shape) and the QF_BV fragment (the bit-vector
-  clauses REQ-2 produces). Its output is fed to the lean-smt `smt`
-  tactic (pinned @ `7d1d8239`, `lean/lakefile.toml`) and the resulting
-  theorem's `#print axioms` must stay within `{propext,
+  clauses REQ-2 produces). QF_LIA is discharged by lean-smt's `smt`
+  tactic (pinned @ `ee6d36b`, `lean/lakefile.toml`). QF_BV is rendered
+  as literal Lean `BitVec N` terms and discharged with kernel-checked
+  normalization lemmas, avoiding lean-smt's incomplete bit-blast
+  reconstructor. Each resulting theorem's `#print axioms` must stay within `{propext,
   Classical.choice, Quot.sound}` for the fragment to count as
   reconstruction-supported.
 - REQ-8 (**reconstruction default-on**): where the obligation's
@@ -190,9 +192,10 @@ locks shipping inside the same gate as the feature. Umbrella:
   known counts; a synthetic density spike trips the named F-F warning.
   (REQ-6)
 - [ ] AC-8: The exporter emits a `(P_prod) ⟺ (P_ref)` Lean goal for a
-  QF_LIA scalar clause AND a QF_BV `@bv` clause; each is discharged by
-  `smt` and `#print axioms` reports ⊆ `{propext, Classical.choice,
-  Quot.sound}` (no `Smt`-internal oracle, no `ofReduceBool`). (REQ-7)
+  QF_LIA scalar clause and a QF_BV `@bv` clause. QF_LIA is discharged
+  by `smt`; QF_BV uses literal `BitVec N` normalization lemmas.
+  `#print axioms` reports ⊆ `{propext, Classical.choice, Quot.sound}`
+  for both (no `Smt`-internal oracle, no `ofReduceBool`). (REQ-7)
 - [ ] AC-9: A reconstruction-supported clause (QF_LIA or QF_BV)'s
   certificate shows the kernel-checked `trust:` form while an
   unsupported clause on the same item retains `solver(z3)`; the audit's
@@ -241,7 +244,7 @@ locks shipping inside the same gate as the feature. Umbrella:
   goldens stay byte-identical and the v1 oracle subset is unchanged for
   untagged clauses.
 - **Reconstruction** (`lean/` + `forge`): lean-smt is pinned @
-  `7d1d8239` with vendored cvc5 over FFI, toolchain v4.29.0 + Mathlib
+  `ee6d36b` with vendored cvc5 over FFI, toolchain v4.29.0 + Mathlib
   (`lean/lakefile.toml`). `lean/Thermite/SmtDemo.lean` already proves
   the path works and stays axiom-clean for QF_LIA (Tier 2 toy +
   Tier 3 one TV obligation, both `smt`-discharged, `#print axioms` ⊆
@@ -289,39 +292,27 @@ solver-model-relative is migrated where the reconstruction path
 supports it and otherwise named honestly in the audit — F-J keeps that
 free, so G3 does not overclaim closing the entire rel/array gap.
 
-**As-built note (REQ-7 #349, 2026-06-23) — the QF_BV reconstruction
-wall and the bounded-int workaround.** D-RECON assumed cvc5's *literal*
-QF_BV reconstruction was kernel-clean. It is NOT: at the pinned lean-smt
-`7d1d8239`, any `BitVec N`-typed `by smt` goal — even a pure comparison
-— bit-blasts through the upstream `Smt/Reconstruct/BitVec/Bitblast.lean`
-`sorry` and pulls `sorryAx` (the `z3-demotion.md` wall). REQ-7's
-exporter therefore renders QF_BV obligations over a **bounded-integer
-machine model** (a `bvN` var → `Int` with `0 ≤ x < 2^N`; a wrap op →
-`(a · b) % 2^N`; an unsigned compare → `Int` compare), which `smt`
-discharges via clean linear-arith reconstruction — `#print axioms ⊆
-{propext, Classical.choice, Quot.sound}`, verified on all three shipped
-theorems. Consequences REQ-8 inherits:
+**As-built note (REQ-7 #349, updated 2026-07-28) — literal QF_BV.**
+The exporter renders `@bvN` variables and terms directly as Lean
+`BitVec N`. It covers wrapping `+`/`-`/`*`, unsigned division and
+remainder, bitwise not/and/or/xor, bit-vector shifts, unsigned
+comparisons, and boolean connectives.
 
-- **Reconstruction-support = QF_LIA + the *arithmetic/comparison*
-  subset of QF_BV** (`+`,`-`,`*`, unsigned `=/≠/</≤/>/≥`, logical
-  connectives). The **bitwise/shift/rotate** subset (`^`,`&`,`|`,`<<`,
-  `>>`, rotate) is NOT reconstruction-supported — no clean `Int`
-  encoding exists, and the literal-`BitVec` path hits the `sorry`. The
-  exporter **refuses** it (`SmtExportError`, a named skip, never a
-  silent mis-encode). So `mix64`'s `a^b^b==a` and the rotate lemma stay
-  **solver-trusted** (F-J) — REQ-8's fragment-support check keys on
-  exactly this renderable/refused split.
-- **The `render_bv_prop` faithfulness obligation is largely DISCHARGED,
-  not deferred.** REQ-7 ships `lean/Thermite/BvModel.lean`: a
-  kernel-checked, Mathlib-free, core-`BitVec`-only metatheorem
-  (`tmInt_eq_toNat`, `frmInt_iff_frmBV`, `tv_equiv_faithful`, all
-  axiom-clean, in `lean-axiom-probe.sh`) proving the bounded-int model
-  ⇔ the `BitVec` semantics. So the *semantic* gap REQ-8 was to own is
-  closed for the renderable fragment; the residual REQ-8 still owns is
-  narrower — the two **string-emission** legs (the Rust→Lean exporter's
-  pretty-printer and `bitvector.rs`'s SMT renderer both encode the same
-  `Frm`), a pretty-printer-trust class, not a semantic one. Tracked as
-  #356.
+The exported goal compares the production predicate with
+`reference_normalize`. That normalization only changes order duals,
+`≠`, and the operand order of addition and multiplication. Lean proves
+these equivalences with `simp` and ordinary `BitVec` lemmas, including
+when the rewritten terms occur below bitwise, shift, division, or
+remainder operations. This avoids both cvc5's partial literal-BitVec
+reconstructor and `bv_decide`'s native-reflection axiom.
+
+The committed `Thermite/SmtExport.lean` includes a fixture using the
+complete term surface. Every `#print axioms` result stays within
+`{propext, Classical.choice, Quot.sound}`. The older
+`Thermite/BvModel.lean` bounded-integer equivalence remains as an
+independent semantic cross-check; it is no longer part of the active
+export path. The remaining inspection-tier residual is agreement
+between the Rust→Lean and SMT-LIB string emitters. Tracked as #356.
 
 ## Out of Scope
 

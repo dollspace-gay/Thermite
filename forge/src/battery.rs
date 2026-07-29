@@ -1,10 +1,10 @@
-//! `forge/src/battery.rs` — the FROZEN forge-tier proof battery (REQ-5 / AC-9;
+//! `forge/src/battery.rs` — the frozen forge-tier proof battery (REQ-5 / AC-9;
 //! `.design/stage1-forge-tier.md`, increment 2c).
 //!
-//! This is the LOGIC the foundation (#20) + the 2a surface (#29) set up for. 2a parsed
-//! `proof { … }` / `lemma … proof { … }` blocks VERBATIM (their tactic content captured
+//! This is the logic the foundation (#20) + the 2a surface (#29) set up for. 2a parsed
+//! `proof { … }` / `lemma … proof { … }` blocks verbatim (their tactic content captured
 //! as a raw [`thermite_syntax::ast::ProofBlock::text`], tactic parsing explicitly
-//! deferred to THIS increment). Here we CONSUME that text:
+//! deferred to this increment). Here we CONSUME that text:
 //!
 //! 1. The frozen [`REGISTRY`](static@FROZEN_TACTICS) — a single static, auditable,
 //!    byte-deterministic source of truth modeled on the combinator registry
@@ -24,9 +24,9 @@
 //!    residual goal(s) + the "missing simp bridge" heuristic (RFC-1 §8) — never silently
 //!    `Proved` and never mis-classed as a solver `Timeout`.
 //!
-//! ## Why the battery is frozen to exactly these
+//! ## Why the battery is frozen to these
 //!
-//! The tactic allowlist is the REQ-5 list verbatim. The simp set is the EXACT
+//! The tactic allowlist is the REQ-5 list verbatim. The simp set is the exact
 //! `simp only [ … ]` list the generated auto battery emits
 //! (`lean_export.rs::auto_tactic_battery`) — the single auditable record of what the
 //! frozen battery knows how to rewrite. A citation outside it is an unlisted simp lemma
@@ -65,7 +65,7 @@ static FROZEN_TACTICS: [BatteryEntry; 9] = [
 ];
 
 /// The frozen simp-lemma set (REQ-5) — the closed set a `simp [ … ]` citation inside a
-/// frozen-battery proof may name. These are the EXACT `simp only [ … ]` lemmas the
+/// frozen-battery proof may name. These are the exact `simp only [ … ]` lemmas the
 /// generated auto battery emits (`lean_export.rs::auto_tactic_battery`): the single
 /// auditable source of what the frozen battery knows how to rewrite. Pinned against the
 /// oracle's `simp_lemmas` array.
@@ -131,7 +131,7 @@ pub fn all_simp_lemmas() -> &'static [BatteryEntry] {
 }
 
 /// Is `tactic` an allowlisted frozen-battery tactic head? (REQ-5.) Exact-match by name
-/// — `simp_all`/`simp?` are NOT `simp` (the frozen set is closed to the listed heads).
+/// — `simp_all`/`simp?` are not `simp` (the frozen set is closed to the listed heads).
 #[must_use]
 pub fn is_allowed_tactic(tactic: &str) -> bool {
     FROZEN_TACTICS.iter().any(|e| e.name == tactic)
@@ -164,7 +164,7 @@ pub enum Citation {
 }
 
 /// A frozen-battery refusal (REQ-5 / AC-9): a proof cites a tactic or a simp lemma the
-/// frozen battery does not list. A HARD error, named — never a warning (R-BAT-1). The
+/// frozen battery does not list. A hard error, named — never a warning (R-BAT-1). The
 /// proof-tier analogue of `thermite_spec::SpecError` (the contract-cage refusal) and
 /// `covenant_engine::CovenantError` (the covenant refusal).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -288,7 +288,7 @@ fn leading_ident(s: &str) -> Option<&str> {
 
 /// Extract the tactic head(s) of one tactic-sequencing fragment (REQ-5). Handles the
 /// common proof shapes without a full Lean parser, returning 0..2 heads in order:
-/// - a `calc` block first line `calc a = b := by tac` → both `calc` AND the inline step's
+/// - a `calc` block first line `calc a = b := by tac` → both `calc` and the inline step's
 ///   `by` tactic (`calc` opens a step-structured block);
 /// - a match/`induction … with` arm `| label args => tac` → the head is after the last
 ///   `=>` (the arm label is not a tactic);
@@ -418,7 +418,7 @@ fn simp_lemmas_in(bracketed: &str) -> Vec<String> {
 
 /// Scan a verbatim proof block ([`thermite_syntax::ast::ProofBlock::text`]) into its
 /// tactic + simp-lemma citations, in document order (REQ-5). A deterministic citation
-/// scanner — NOT a full Lean parser: it strips comments, splits into tactic-sequencing
+/// scanner — not a full Lean parser: it strips comments, splits into tactic-sequencing
 /// units (newline / `;` / `<;>` / `|`-alternative), extracts each unit's tactic head
 /// ([`fragment_head`]), and parses every `simp [ … ]` lemma list it finds. Pure
 /// (R-CODE-5).
@@ -483,11 +483,11 @@ fn find_word(s: &str, word: &str) -> Option<usize> {
 }
 
 /// The elaboration-time frozen-battery gate (REQ-5 / AC-9): refuse a proof block that
-/// cites an unlisted tactic OR an unlisted simp lemma, naming the FIRST offender (scan is
+/// cites an unlisted tactic OR an unlisted simp lemma, naming the first offender (scan is
 /// in document order). A clean proof (every citation in the frozen battery) returns
 /// `Ok(())`. `item` names the proved/lemma item for the refusal message (R-BAT-1).
 ///
-/// This is the HARD gate — a violation is a refusal, never a warning: `check.rs` runs it
+/// This is the hard gate — a violation is a refusal, never a warning: `check.rs` runs it
 /// before a forge-tier item is admitted, the proof-tier mirror of the
 /// `thermite_spec::validate` contract cage.
 #[allow(
@@ -503,7 +503,7 @@ pub fn enforce(item: &str, proof_text: &str) -> Result<(), BatteryViolation> {
 
 /// The frozen-battery gate, made aware of the per-project lemma namespace (REQ-9 / AC-13,
 /// increment 3). Identical to [`enforce`] EXCEPT a `simp [ … ]` citation that names a
-/// project lemma (`project_lemmas`) is NOT refused as an unlisted simp lemma — it is
+/// project lemma (`project_lemmas`) is not refused as an unlisted simp lemma — it is
 /// DEFERRED to the REQ-9 certified-only citation gate
 /// ([`crate::lemma_library::enforce_citations`]), which refuses it only if the lemma did
 /// not certify. The frozen battery still refuses a citation that is neither a frozen spine
@@ -527,7 +527,7 @@ pub fn enforce_with_project_lemmas(
             }
             Citation::SimpLemma(lemma) => {
                 // A project-lemma citation is resolved by REQ-9 (certified-only), not
-                // refused here; only a citation outside BOTH the frozen set and the
+                // refused here; only a citation outside both the frozen set and the
                 // project namespace is the unlisted-simp-lemma refusal.
                 if !is_allowed_simp_lemma(&lemma) && !project_lemmas.contains(&lemma) {
                     return Err(BatteryViolation::UnlistedSimpLemma {
@@ -542,7 +542,7 @@ pub fn enforce_with_project_lemmas(
 }
 
 /// Enforce the frozen battery over every proof block a forge-tier item carries (REQ-5 /
-/// AC-9), naming the FIRST offender. A `lemma … proof { … }` has one proof block; a
+/// AC-9), naming the first offender. A `lemma … proof { … }` has one proof block; a
 /// `proof for f { ens#k by { … } … }` has one per obligation (checked in source order). A
 /// `prop fn` / `witness` block carries no proof to elaborate → `Ok(())`. This is the
 /// per-item elaboration gate `check.rs` runs before a forge-tier item is admitted.
@@ -608,7 +608,7 @@ pub fn residual_goals(lake_output: &str) -> Vec<String> {
 
 /// The "missing simp bridge" heuristic (REQ-5, the RFC-1 §8 transcript): if a residual
 /// goal still mentions a function-application head symbol the frozen battery simp set
-/// does NOT normalize, name it + the simp bridge lemma (`<head>_cons`) likely missing
+/// does not normalize, name it + the simp bridge lemma (`<head>_cons`) likely missing
 /// from the frozen set. Returns `None` when the residual mentions only frozen-normalized
 /// symbols / bound variables (no specific bridge to suggest). Deterministic: the first
 /// such symbol in the first goal.
@@ -652,7 +652,7 @@ fn bridge_candidate(goal: &str) -> Option<String> {
 }
 
 /// Is `leaf` a frozen simp lemma leaf or a known builtin (a logical/arith connective name
-/// or a base type) the missing-bridge heuristic should NOT suggest a bridge for?
+/// or a base type) the missing-bridge heuristic should not suggest a bridge for?
 fn is_frozen_or_builtin(leaf: &str) -> bool {
     if is_allowed_simp_lemma(leaf) {
         return true;
@@ -769,7 +769,7 @@ mod tests {
     #[test]
     fn match_arm_and_calc_step_heads_are_after_arrow_and_by() {
         // `induction … with | zero => simp | succ k ih => omega` — the arm labels
-        // (`zero`/`succ`) are NOT tactics; the heads are the arm RHS tactics.
+        // (`zero`/`succ`) are not tactics; the heads are the arm RHS tactics.
         let cites = scan_citations("induction n with | zero => decide | succ k ih => omega");
         assert_eq!(
             cites,
@@ -888,7 +888,7 @@ mod tests {
 
     #[test]
     fn non_residual_output_is_not_stuck() {
-        // A lake failure that is NOT an unsolved-goals residual (e.g. an elaboration
+        // A lake failure that is not an unsolved-goals residual (e.g. an elaboration
         // error) yields no Stuck payload — the caller falls through to the verdict map.
         assert!(stuck_from_lake_output("error: type mismatch\n  expected Nat").is_none());
         assert!(stuck_from_lake_output("").is_none());

@@ -1,16 +1,16 @@
 //! Tests for the refinement-type sugar `x: T{P}` / `-> T{P}` and its post-parse
 //! desugar pass (`.design/stage1-forge-tier.md` REQ-3, increment 2a).
 //!
-//! The sugar desugars in a NEW post-parse pass (`thermite_syntax::desugar`) so
-//! downstream stages see ONLY the v1 `req`/`ens` clause shapes: a parameter
+//! The sugar desugars in a new post-parse pass (`thermite_syntax::desugar`) so
+//! downstream stages see only the v1 `req`/`ens` clause shapes: a parameter
 //! refinement folds into `req` (and so becomes a Verus-checked call-site
 //! obligation), a return refinement folds into `ens`. After parsing, the transient
-//! `FnItem.refinements` store is EMPTY. R-CHAR-3: expected shapes are hand-derived
+//! `FnItem.refinements` store is empty. R-CHAR-3: expected shapes are hand-derived
 //! from the grammar; `tests/` is ungated.
 
 use thermite_syntax::{parse, BinOp, Expr, Item};
 
-/// Parse `src` cleanly and return its single `fn` item.
+/// Parse `src` and return its single `fn` item.
 fn single_fn(src: &str) -> thermite_syntax::FnItem {
     let result = parse(src);
     assert!(
@@ -28,7 +28,7 @@ fn single_fn(src: &str) -> thermite_syntax::FnItem {
 fn param_refinement_folds_into_req_and_clears_the_transient_store() {
     let src = "fn f(x: u64{x > 0}) -> u64 req true ens result == x fx pure { x }";
     let f = single_fn(src);
-    // The transient refinement store is EMPTY post-parse: downstream sees v1 shapes.
+    // The transient refinement store is empty post-parse: downstream sees v1 shapes.
     assert!(
         f.refinements.is_empty(),
         "refinements must be folded + cleared, got: {:?}",
@@ -91,7 +91,7 @@ fn an_unrefined_fn_is_byte_stable() {
 
 #[test]
 fn refinement_predicate_is_a_parsed_expression() {
-    // The predicate is a real contract-position expression, not opaque text.
+    // The predicate is a contract-position expression, not opaque text.
     let src = "fn f(x: u64{x > 0 && x < 10}) -> u64 req true ens result == x fx pure { x }";
     let f = single_fn(src);
     // The folded req's rhs conjunct is the (parsed) predicate `x > 0 && x < 10`.

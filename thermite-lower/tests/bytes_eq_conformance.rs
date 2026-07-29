@@ -21,8 +21,8 @@
 //! shifted-suffix) each certify L3 with one `lemma_bytes_eq_bridge` citation, zero
 //! per-conjunct glue.
 //! AC-16: the length-preserving head/tail-swap mutant fails verus (non-vacuity,
-//! R-DEFER-9) — the pins are content teeth a length pin cannot fake; and without the
-//! REQ-19 citation the pins fail (the bridge is load-bearing, not decorative).
+//! R-DEFER-9). The content pins catch mutations that preserve length; without the
+//! REQ-19 citation the pins fail (the bridge is required, not decorative).
 //!
 //! The verus checks skip when verus is absent (the `string_conformance.rs`
 //! precedent) rather than panic on a missing solver. `tests/` is not anti-pattern-gated,
@@ -139,7 +139,7 @@ fn bytes_eq_demo_emits_def_and_lemmas_and_citation() {
             "the prove-once lemma {lemma} is emitted (REQ-18):\n{emitted}"
         );
     }
-    // The load-bearing explicit trigger on the arithmetic index (REQ-18 recorded finding).
+    // The required explicit trigger on the arithmetic index (REQ-18 recorded finding).
     assert!(
         emitted.contains("#[trigger] a[ai + k] == b[bi + k]"),
         "the load-bearing explicit #[trigger] a[ai + k] (REQ-18):\n{emitted}"
@@ -256,7 +256,7 @@ fn bytes_eq_demo_matches_cert_oracle() {
     );
 }
 
-// ---- AC-13/AC-14: the emitted lowering verifies under real verus (L3) --------
+// ---- AC-13/AC-14: the emitted lowering verifies under verus (L3) --------
 
 #[test]
 fn bytes_eq_demo_verifies_l3_under_real_verus() {
@@ -285,7 +285,7 @@ fn bytes_eq_demo_verifies_l3_under_real_verus() {
 //
 // The length-preserving swap (`tail.concat(ins).concat(head)`) keeps every length
 // identity but breaks the byte-content pins — the design's `15 verified, 1 errors`
-// mutant, here through the real pipeline (the body is mutated in the lowered source,
+// mutant, here through the pipeline (the body is mutated in the lowered source,
 // the contract + the prove-once lemmas unchanged). If verus still passed the mutant,
 // the pins would be vacuous (a length pin a content pin cannot distinguish), R-DEFER-9.
 

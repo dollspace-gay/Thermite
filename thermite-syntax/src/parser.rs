@@ -141,24 +141,24 @@ pub enum SyntaxError {
     /// rule): break/continue are loop-control statements and have no meaning at
     /// a function-body top level; `keyword` is `"break"` or `"continue"`.
     BreakContinueOutsideLoop { keyword: String, span: Span },
-    /// A body-position hole `?N` parsed OUTSIDE an exec-fn body
+    /// A body-position hole `?N` parsed outside an exec-fn body
     /// (`.design/forge/goal-repl.md` REQ-4, #193). The v1 scope pin: holes are
     /// exec-fn-body statement position only; a `?N` in a `spec fn` body, a clause,
     /// an expression, or a signature is a structural parse error (`number` is the
     /// verbatim hole number written).
     HoleOutsideFnBody { number: u32, span: Span },
-    /// A proof hole `?pN` parsed OUTSIDE a proof block
+    /// A proof hole `?pN` parsed outside a proof block
     /// (`.design/stage1-forge-tier.md` REQ-3, AC-7). The forge-tier scope pin:
     /// proof holes are valid only inside a `lemma`/`proof`-item proof block; a
     /// `?pN` in fn-body statement position, a clause, an expression, or a signature
     /// is a structural parse error (`number` is the verbatim hole number written).
     ProofHoleOutsideProofBlock { number: u32, span: Span },
-    /// A body hole `?N` parsed INSIDE a proof block
+    /// A body hole `?N` parsed inside a proof block
     /// (`.design/stage1-forge-tier.md` REQ-3). A proof block admits only proof
     /// holes `?pN`; a body hole `?N` there is the mirror error of
     /// `ProofHoleOutsideProofBlock` (`number` is the verbatim hole number written).
     BodyHoleInProofBlock { number: u32, span: Span },
-    /// A `@bv` machine-semantics clause tag appeared in a build WITHOUT the
+    /// A `@bv` machine-semantics clause tag appeared in a build without the
     /// shadow-flag plumbing compiled in (`.design/stage3-bv-reconstruction.md`
     /// REQ-1, AC-1). This is the structural lock (R-BV-1): the feature cannot
     /// exist without its visibility machinery, so a build that lacks the
@@ -313,7 +313,7 @@ impl std::fmt::Display for SyntaxError {
 
 impl std::error::Error for SyntaxError {}
 
-/// The result of parsing: the recovered program AND every diagnostic, so even a
+/// The result of parsing: the recovered program and every diagnostic, so even a
 /// partial failure yields the surviving items for tooling (parser.md REQ-4).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseResult {
@@ -402,7 +402,7 @@ struct Parser<'a> {
     /// (REQ-2): the parser owns presence/position; Verus owns the invariant/
     /// decreases semantics (`verus-lowering.md` REQ-12).
     loop_depth: usize,
-    /// Current EXEC-fn-body nesting depth (`.design/forge/goal-repl.md` REQ-4,
+    /// Current exec-fn-body nesting depth (`.design/forge/goal-repl.md` REQ-4,
     /// #193). Incremented around the body parse of an `Item::Fn` (`parse_fn`),
     /// decremented after; a nested `loop`/`if`/`while` block keeps it > 0 (a hole
     /// in a nested block within a fn body is still in "fn-body statement position").
@@ -679,7 +679,7 @@ impl<'a> Parser<'a> {
         }
 
         // Stage-1 forge-tier items (`.design/stage1-forge-tier.md` REQ-3), led by
-        // CONTEXTUAL identifiers (not reserved keywords — like `for`/`Box`/`Vec`,
+        // contextual identifiers (not reserved keywords — like `for`/`Box`/`Vec`,
         // so they never collide with an existing program identifier): `prop fn`,
         // `lemma`, `proof for`, `witness`. The match peeks (and looks one ahead for
         // `prop fn`) without consuming, so a plain identifier named e.g. `proof`
@@ -710,7 +710,7 @@ impl<'a> Parser<'a> {
 
         if self.check(&TokKind::Spec) {
             // Neither `#[slag]` nor `#[boundary]` attaches to a `spec fn`
-            // (surface-grammar Item; ffi-boundary.md "#[boundary] is NOT valid on
+            // (surface-grammar Item; ffi-boundary.md "#[boundary] is not valid on
             // a spec fn"); `#[sealed]` is a `struct`-only barrier (REQ-8).
             match &attr {
                 Some(ParsedAttr::Slag(_)) => {
@@ -960,7 +960,7 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    /// Parse a `[#[sealed]] struct NAME { field: TYPE, … } [inv <expr>]` item
+    /// Parse a `[#[sealed]] struct NAME { field: type, … } [inv <expr>]` item
     /// (`.design/basis/01-adts.md` REQ-1; the seal is
     /// `.design/basis/06-provenance-and-sinks.md` REQ-8). The optional `inv`
     /// type-invariant clause follows the closing brace and reuses the existing
@@ -990,7 +990,7 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    /// Parse a `{ field: TYPE, … }` field-definition block, shared by `struct`
+    /// Parse a `{ field: type, … }` field-definition block, shared by `struct`
     /// items and struct-shaped enum variants (`.design/basis/01-adts.md`
     /// REQ-1/REQ-2). A trailing comma is permitted.
     fn parse_field_defs(&mut self) -> PResult<Vec<FieldDef>> {
@@ -1014,9 +1014,9 @@ impl<'a> Parser<'a> {
         Ok(fields)
     }
 
-    /// Parse an `enum NAME { Variant, Variant(TYPE, …), Variant { field: TYPE, … }
+    /// Parse an `enum NAME { Variant, Variant(type, …), Variant { field: type, … }
     /// }` item (`.design/basis/01-adts.md` REQ-2). A variant is `Unit` (bare
-    /// name), `Tuple` (`(TYPE, …)`), or `Struct` (`{ field: TYPE, … }`). A
+    /// name), `Tuple` (`(type, …)`), or `Struct` (`{ field: type, … }`). A
     /// trailing comma is permitted. Recursive `Box<List>` self-refs parse via
     /// `parse_type` (REQ-3).
     fn parse_enum(&mut self, start_span: Span) -> PResult<Item> {
@@ -1071,9 +1071,9 @@ impl<'a> Parser<'a> {
 
     // ---- Stage-1 forge-tier items (`.design/stage1-forge-tier.md` REQ-3) -------
 
-    /// Parse a `prop fn NAME(params) -> TYPE [dec <measure>] { body }` proposition
+    /// Parse a `prop fn NAME(params) -> type [dec <measure>] { body }` proposition
     /// definition (REQ-3). Mirrors `parse_spec_fn` (it is a forge-tier definition,
-    /// not an exec fn): the body is parsed WITHOUT entering an exec-fn-body scope,
+    /// not an exec fn): the body is parsed without entering an exec-fn-body scope,
     /// so a `?N` body hole in a prop fn body is rejected (`HoleOutsideFnBody`), the
     /// same as a `spec fn` body. The optional `dec` accepts the same measure surface
     /// the other `dec` positions do (`dec <expr>` / `dec lex(…)` / `dec wf <rel>`).
@@ -1101,7 +1101,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    /// Parse a `lemma NAME(params) req CLAUSE ens CLAUSE+ proof { … }` item
+    /// Parse a `lemma NAME(params) req clause ens clause+ proof { … }` item
     /// (REQ-3). The `req`/`ens` cardinality mirrors a `fn` contract (exactly one
     /// `req`, one-or-more `ens`) but a lemma carries no `fx` row — it is pure proof.
     /// The `proof { … }` block is captured verbatim (its tactic content is the
@@ -1147,7 +1147,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    /// Parse a `proof for f { CLAUSE by { … } … }` item (REQ-3): a proof discharging
+    /// Parse a `proof for f { clause by { … } … }` item (REQ-3): a proof discharging
     /// specific contract clauses (`ens#k`) of an existing function `f`. Each
     /// obligation is a [`ClauseSelector`] + a `by { … }` proof block (with `?pN`
     /// proof holes). The clauses are resolved against `f` by the proof view
@@ -1209,7 +1209,7 @@ impl<'a> Parser<'a> {
 
     /// Parse a `witness { inhabit (…); falsify N; }` covenant witness block
     /// (REQ-3/REQ-4). Surface only: `inhabit` records an author-stated witness tuple
-    /// of expressions, `falsify` records the generator budget. The covenant LOGIC
+    /// of expressions, `falsify` records the generator budget. The covenant logic
     /// (type-check + execute against `req`, run the generator) is increment 2b.
     fn parse_witness(&mut self, start_span: Span) -> PResult<WitnessBlock> {
         self.expect_contextual("witness")?;
@@ -1260,7 +1260,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    /// Scan a forge-tier proof block `{ … }` (REQ-3) WITHOUT structurally parsing
+    /// Scan a forge-tier proof block `{ … }` (REQ-3) without structurally parsing
     /// its tactic content (the frozen tactic battery is increment 2c, REQ-5).
     /// Captures the verbatim inner source `text` plus the open proof holes (`?pN`,
     /// [`HoleContext::Proof`]) in document order, tracking brace depth so nested
@@ -1469,7 +1469,7 @@ impl<'a> Parser<'a> {
     fn parse_clause(&mut self, keyword: &TokKind) -> PResult<Clause> {
         self.consume(keyword, "a clause keyword")?;
         // An optional `@bvN` machine-semantics tag sits between the keyword and the
-        // clause expression (`ens@bv64 P`). It is parsed BEFORE `start` so the
+        // clause expression (`ens@bv64 P`). It is parsed before `start` so the
         // clause `text` (the addressing oracle string) stays the expression only.
         let bv = self.parse_bv_tag()?;
         let start = self.peek_span();
@@ -1498,10 +1498,10 @@ impl<'a> Parser<'a> {
     /// only if the shadow-flag plumbing is compiled in (the `bv` cargo
     /// feature) — this is the build-flag gate, REQ-1's structural lock R-BV-1:
     ///
-    /// - WITHOUT the feature, the `@`-handling code path below is `#[cfg]`-removed,
+    /// - without the feature, the `@`-handling code path below is `#[cfg]`-removed,
     ///   so the tag is a structured parse error (`BvTagWithoutShadowPlumbing`) and
-    ///   the feature genuinely cannot exist in the build (AC-1's negative half).
-    /// - WITH the feature, `@bvN` for N ∈ {8, 16, 32, 64} parses, plus the optional
+    ///   the feature cannot exist in the build (AC-1's negative half).
+    /// - with the feature, `@bvN` for N ∈ {8, 16, 32, 64} parses, plus the optional
     ///   `(nowrap)` modifier (`@bvN(nowrap)`, REQ-5's surface). A bad width
     ///   (`@bv7`, `@bv`) is `BvWidthInvalid`; a malformed modifier is the generic
     ///   unexpected-token error.
@@ -1578,11 +1578,11 @@ impl<'a> Parser<'a> {
     /// Parse a `dec <measure>` clause, supporting the forge-tier measure forms
     /// (`.design/stage1-forge-tier.md` REQ-3, Q-DECWF). Consumes the `dec` keyword,
     /// then:
-    /// - `dec wf <rel>` — a WELL-FOUNDED relation (ASCII spelling per Q-DECWF, NOT
+    /// - `dec wf <rel>` — a WELL-FOUNDED relation (ASCII spelling per Q-DECWF, not
     ///   the Unicode `⟨⟩` — the lexer stays ASCII-only). Since `wf <rel>` is two
     ///   tokens (not one expression), it is normalized to the registry-free call
     ///   `wf(<rel>)` so a downstream consumer keys on the `wf` callee. A bare `wf`
-    ///   NOT followed by an expression (a `{` body, a clause keyword, EOF) is an
+    ///   not followed by an expression (a `{` body, a clause keyword, EOF) is an
     ///   ordinary measure named `wf` (the v1 reading), handled by the plain path.
     /// - `dec lex(<e>, …)` — a LEXICOGRAPHIC tuple. `lex` is a contextual ident, so
     ///   `lex(...)` is ALREADY an ordinary `Expr::Call` (registry-free, like the
@@ -1927,7 +1927,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse + desugar a C10 `for i in lo..hi inv … { B }` bounded-range loop
-    /// (`.design/basis/11-ergonomics.md` REQ-2). `for`/`in` are CONTEXTUAL
+    /// (`.design/basis/11-ergonomics.md` REQ-2). `for`/`in` are contextual
     /// identifiers (not reserved keywords), so the caller dispatched on
     /// `Ident("for")`. Pure desugar to the shipped `while`+`inv`/`dec` core:
     ///   `let mut i = lo;`
@@ -2731,8 +2731,8 @@ impl<'a> Parser<'a> {
     /// The keyword (`forall`/`exists`) is at the cursor.
     ///
     /// Grammar: `QUANT '(' IDENT ':' IDENT ')' 'in' <dom> '.' <expr>`. `in` is a
-    /// CONTEXTUAL identifier (mirroring the C10 `for … in` loop precedent,
-    /// `parse_for`), NOT a reserved keyword. The `<dom>` is parsed with the postfix
+    /// contextual identifier (mirroring the C10 `for … in` loop precedent,
+    /// `parse_for`), not a reserved keyword. The `<dom>` is parsed with the postfix
     /// `.` suppressed (`with_no_dot`) so the `.` introducing the body is
     /// unambiguous; the body is a full greedy `parse_expr` (lowest precedence). The
     /// parser builds the node unconditionally — well-sortedness of `S`/`<dom>` and
@@ -2944,7 +2944,7 @@ impl<'a> Parser<'a> {
             // An arm body is in value position, so a struct-literal construction
             // (`Point { x: 1 }`) must parse here even when the `match` sits under
             // an enclosing no-struct-literal head (a contract clause / `match`
-            // scrutinee). Re-enable struct literals exactly as `parse_call_args`
+            // scrutinee). Re-enable struct literals as `parse_call_args`
             // does inside `( … )` (REQ-2/REQ-4); the scrutinee above stays under
             // the no-struct-literal context, and `with_struct_literal` restores
             // the prior context on exit so no leak escapes the body.
@@ -3151,7 +3151,7 @@ impl<'a> Parser<'a> {
             TokKind::LParen => {
                 self.bump();
                 if self.check(&TokKind::RParen) {
-                    // Arity 0: `()` is the unit type (UNCHANGED).
+                    // Arity 0: `()` is the unit type (unchanged).
                     self.bump();
                     return Ok(Type::Unit);
                 }
@@ -3203,7 +3203,7 @@ impl<'a> Parser<'a> {
                     "usize" => Ok(Type::Prim(PrimType::Usize)),
                     "bool" => Ok(Type::Prim(PrimType::Bool)),
                     // The heap-indirection primitive `Box<T>`
-                    // (`.design/basis/01-adts.md` REQ-3, OQ-1 RESOLVED: a
+                    // (`.design/basis/01-adts.md` REQ-3, OQ-1 resolved: a
                     // dedicated `Type::Box` node). `Box` is a contextual
                     // identifier (not a reserved keyword), matched here by name.
                     "Box" => {
@@ -3213,7 +3213,7 @@ impl<'a> Parser<'a> {
                         Ok(Type::Box(Box::new(inner)))
                     }
                     // The bounded growable-collection primitive `Vec<T>`
-                    // (`.design/basis/04-collections.md` REQ-1, OQ-2 RESOLVED: a
+                    // (`.design/basis/04-collections.md` REQ-1, OQ-2 resolved: a
                     // dedicated `Type::Vec` node, mirroring `Box<T>`). `Vec` is a
                     // contextual identifier (not a reserved keyword), matched here
                     // by name as `Box` is. The element type `T` parses
@@ -3228,7 +3228,7 @@ impl<'a> Parser<'a> {
                         Ok(Type::Vec(Box::new(inner)))
                     }
                     // The bounded owned-text primitive `String`
-                    // (`.design/basis/07-strings.md` REQ-2, OQ-3 RESOLVED: a
+                    // (`.design/basis/07-strings.md` REQ-2, OQ-3 resolved: a
                     // dedicated nullary `Type::String` node with no `<T>` argument,
                     // unlike `Vec<T>`, because the element type is fixed to `u8`
                     // (the char model is bytes for v1). `String` is a contextual
@@ -3240,7 +3240,7 @@ impl<'a> Parser<'a> {
                     // new surface; `==`/`+` are the existing `Binary` ops.
                     "String" => Ok(Type::String),
                     // The built-in optional primitive `Option<T>`
-                    // (`.design/basis/09-option-result.md` REQ-1, OQ-1 RESOLVED: a
+                    // (`.design/basis/09-option-result.md` REQ-1, OQ-1 resolved: a
                     // dedicated `Type::Option` node, mirroring `Box<T>`/`Vec<T>`).
                     // `Option` stops being a string-named `Generic` so the
                     // lowerer/validator key on the node kind. `Option` is a
@@ -3254,7 +3254,7 @@ impl<'a> Parser<'a> {
                         Ok(Type::Option(Box::new(inner)))
                     }
                     // The built-in fallible primitive `Result<T, E>`
-                    // (`.design/basis/09-option-result.md` REQ-2, OQ-1 RESOLVED: a
+                    // (`.design/basis/09-option-result.md` REQ-2, OQ-1 resolved: a
                     // dedicated two-type-argument node, the first two-arg type in
                     // the grammar, the parser change of C7). The
                     // single-arg `Generic { name, arg }` dies at the comma; this arm
@@ -3271,7 +3271,7 @@ impl<'a> Parser<'a> {
                         Ok(Type::Result(Box::new(ok_ty), Box::new(err_ty)))
                     }
                     // The bounded verified key-value primitive `Map<K, V>`
-                    // (`.design/basis/13-map.md` REQ-1, C12: the SECOND
+                    // (`.design/basis/13-map.md` REQ-1, C12: the second
                     // two-type-argument node, mirroring `Result<T, E>`:
                     // the single-arg `Generic { name, arg }` cannot carry a key and
                     // a value (it dies at the comma, the C7 finding). `Map` is

@@ -18,7 +18,7 @@
 //! the validator rejects any `Expr::StructLit` of a `#[sealed]` struct with
 //! `SpecError::SealedConstruction`. `forge check` on a bypass program now fails at
 //! validation (a whole-program spec error — exit non-zero, the `SealedConstruction`
-//! diagnostic on stderr, no L3 certificate ever emitted), exactly as every other
+//! diagnostic on stderr, no L3 certificate ever emitted), as every other
 //! validator reject (`NonExhaustiveMatch`, `UnknownField`, …) does. The door is the
 //! only launder point — its body is foreign (`external_body`), with no in-language
 //! `StructLit`, so the safe doored path (`query(parameterize(input))`) is unaffected
@@ -26,9 +26,9 @@
 //!
 //! Authority (`.design/basis/06-provenance-and-sinks.md`):
 //!   - REQ-8: a `#[sealed]` clean type "CANNOT be constructed by a `StructLit`
-//!     anywhere in Thermite code, so the ONLY way to obtain one is through its
+//!     anywhere in Thermite code, so the only way to obtain one is through its
 //!     `#[boundary]` door". `query(Sql { … })` is `SpecError::SealedConstruction`.
-//!   - REQ-2: "No mark-change exists outside a door … TRUE only because the clean
+//!   - REQ-2: "No mark-change exists outside a door … true only because the clean
 //!     types are `#[sealed]` (REQ-8)." The StructLit launder is closed.
 //!   - AC-7: these three `#[ignore]`d tests are un-ignored and pass — each launder
 //!     yields `SealedConstruction` and does not certify L3.
@@ -201,7 +201,7 @@ fn bypass_delete(u: User) -> u64
 
 /// Taint bypass — `query(Sql { stmt: input.raw })` from a `Tainted input`.
 ///
-/// AUTHORITY (06-provenance-and-sinks.md REQ-8/AC-7): `Sql` is `#[sealed]`, so a
+/// authority (06-provenance-and-sinks.md REQ-8/AC-7): `Sql` is `#[sealed]`, so a
 /// `StructLit` minting it is `SpecError::SealedConstruction` — the door
 /// (`parameterize`) is the only launder point. The tainted payload reaching the
 /// SQL sink as a clean `Sql` via a struct literal must be rejected at validation,
@@ -214,7 +214,7 @@ fn taint_structlit_bypass_must_not_certify_l3() {
 
 /// Secret bypass — `emit(Public { val: s.val })` from a `Secret s`.
 ///
-/// AUTHORITY (06-provenance-and-sinks.md Axis 2 / REQ-8/AC-7): `Public` is
+/// authority (06-provenance-and-sinks.md Axis 2 / REQ-8/AC-7): `Public` is
 /// `#[sealed]`, so a `StructLit` minting it is `SealedConstruction` — `declassify`
 /// is the only release door. A `Public` struct literal reading a secret payload is
 /// an un-audited release rejected at validation, never L3. Fixed by #77 —
@@ -227,7 +227,7 @@ fn secret_structlit_bypass_must_not_certify_l3() {
 
 /// Capability bypass — `delete(Authorized { id: u.id })` from a `User u`.
 ///
-/// AUTHORITY (06-provenance-and-sinks.md Axis 3 / REQ-8/AC-7): `Authorized` is
+/// authority (06-provenance-and-sinks.md Axis 3 / REQ-8/AC-7): `Authorized` is
 /// `#[sealed]`, so a `StructLit` forging it is `SealedConstruction` — `authorize`
 /// is the only `Authorized` producer. A forged capability via a struct literal is
 /// rejected at validation, never L3. Fixed by #77 — un-ignored.

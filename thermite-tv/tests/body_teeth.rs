@@ -1,4 +1,4 @@
-//! The R-CHAR-3 body-teeth-test (`.design/verified/exec-stmt-tv.md` REQ-3 /
+//! The R-CHAR-3 body-TV negative test (`.design/verified/exec-stmt-tv.md` REQ-3 /
 //! AC-1..AC-4; epic crosslink #158, blockers #159/#160/#161). The proof that
 //! straight-line exec-body state-refinement TV (step 2.2.1) discriminates a faithful
 //! body lowering from an injected state-transformation infidelity — the class the
@@ -17,7 +17,7 @@
 //!   - infidel  -> be caught — a `postcondition not satisfied` counterexample (the
 //!     final state differs from the reference state-denotation).
 //!
-//! The state-threading is real (the load-bearing point): B2's reorder is caught
+//! The state-threading is real (the required point): B2's reorder is caught
 //! because the final state differs. Each RHS (`s + 1`, `s * 2`) is value-faithful in
 //! isolation (step 2.1 would pass each), the order is the bug. The reference
 //! `body_ref_state` threads the substitution chain in order, so the reordered
@@ -166,8 +166,7 @@ fn assert_faithful_verifies(fixture: &str, program: &str) {
 /// Discharge an infidel body obligation: TV must catch it as a `postcondition not
 /// satisfied` counterexample (the final state differs from the reference
 /// state-denotation). Skips with a logged note if verus is absent. The catch shape
-/// is asserted precisely so the teeth bite for the right reason (R-CHAR-3 — a
-/// spurious unrelated failure is not a pass).
+/// is asserted to rule out unrelated failures (R-CHAR-3).
 fn assert_infidel_caught(fixture: &str, program: &str) {
     let tmp = std::env::temp_dir().join(format!("tv_body_teeth_{fixture}_infidel.rs"));
     std::fs::write(&tmp, program).unwrap_or_else(|e| panic!("write {fixture} infidel: {e}"));
@@ -205,9 +204,9 @@ fn assert_infidel_caught(fixture: &str, program: &str) {
 }
 
 // ============================================================================
-// B1 straight-line — the let-chain teeth (a dropped statement)
+// B1 straight-line — a dropped statement in a let chain
 // source body: { let a = x + 1; let b = a * 2; b }   frame: x: u64, x <= 1000
-// faithful P_prod: the real lower_exec_body (pinned exec_body_tests::b1)
+// faithful P_prod: the lower_exec_body (pinned exec_body_tests::b1)
 // infidel  P_prod: drops `let b = a * 2`, returns `a` (final state x+1 != (x+1)*2)
 // reference (body_ref_state): ((x + 1) * 2)
 // ============================================================================
@@ -252,9 +251,9 @@ fn b1_dropped_statement_infidel_caught() {
 }
 
 // ============================================================================
-// B2 mutation-order — the state-sequencing teeth (the load-bearing fixture)
+// B2 mutation order — reordered state updates
 // source body: { let mut s = x; s = s + 1; s = s * 2; s }  frame: x: u64, x <= 1000
-// faithful P_prod: the real lower_exec_body (pinned exec_body_tests::b2)
+// faithful P_prod: the lower_exec_body (pinned exec_body_tests::b2)
 // infidel  P_prod: reordered `s = s * 2; s = s + 1` (final state (x*2)+1 != (x+1)*2)
 // reference (body_ref_state): ((x + 1) * 2)
 // Each RHS (s + 1, s * 2) is value-faithful in isolation; the order is the bug.
@@ -307,9 +306,9 @@ fn b2_reordered_mutation_infidel_caught() {
 }
 
 // ============================================================================
-// B3 if-branch — the branch state-transformer teeth (a swapped branch)
+// B3 if branch — a swapped state-transformer branch
 // source body: { if c { x + 1 } else { x - 1 } }  frame: c: bool, x: u64, 1<=x<=1000
-// faithful P_prod: the real lower_exec_body (pinned exec_body_tests::b3)
+// faithful P_prod: the lower_exec_body (pinned exec_body_tests::b3)
 // infidel  P_prod: swapped branches `if c { x - 1 } else { x + 1 }`
 // reference (body_ref_state): if c { (x + 1) } else { (x - 1) }
 // ============================================================================
@@ -373,10 +372,10 @@ fn b3_swapped_branch_infidel_caught() {
 }
 
 // ============================================================================
-// B4 multi-cell tuple — the multi-cell projection teeth (the design's #1)
+// B4 multi-cell tuple — a wrong tuple projection
 // source body: { let mut a = x; let mut b = y; a = a + 1; b = b + a; (a, b) }
 //   frame: x: u64, y: u64, x <= 1000, y <= 1000
-// faithful P_prod: the real lower_exec_body (pinned exec_body_tests::b4)
+// faithful P_prod: the lower_exec_body (pinned exec_body_tests::b4)
 // infidel  P_prod: `b = b + x` (uses the old x, not the updated a) -> b cell wrong
 // reference (body_ref_state): ((x + 1), (y + (x + 1)))
 // ============================================================================
@@ -423,7 +422,7 @@ fn b4_wrong_cell_infidel_caught() {
     // The multi-cell projection infidelity: production threads `b = b + x` (the old
     // x) instead of `b = b + a` (the updated a) -> the b cell's final state is
     // `y + x`, != the reference `(y + (x + 1))`. The a cell is unchanged; only the
-    // b projection of the tuple is wrong, so the teeth bite on the tuple comparison.
+    // b projection of the tuple is wrong, so the tuple comparison fails.
     let prog = body_equivalence_obligation(
         &b4_body(),
         "    let mut a = x;\n    let mut b = y;\n    a = a + 1;\n    b = b + x;\n    (a, b)\n",
@@ -433,7 +432,7 @@ fn b4_wrong_cell_infidel_caught() {
     assert_infidel_caught("b4", &prog);
 }
 
-// ---- body_ref_state unit checks (the reference output MEANS the final state) -
+// ---- body_ref_state unit checks (the reference output means the final state) -
 
 /// The reference state-denotation of each source body must be the closed-form final
 /// state in the inputs (the obligation tests prove semantic equivalence under verus;

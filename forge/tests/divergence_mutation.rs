@@ -9,7 +9,7 @@
 //!     reports exactly which mutants survived." The floor's purpose is to catch a
 //!     contract that under-constrains the body.
 //!   - `goal.md` R-DEFER-9 (anti-Goodhart): "the design's §7 battery exists
-//!     precisely to catch this" — a contract that does not constrain its result
+//!     to catch this" — a contract that does not constrain its result
 //!     must not certify clean. A path that lets a weak contract certify L3
 //!     unscored is a bypass = a hole.
 //!   - `.design/forge/mutation-scoring.md` REQ-5 (the floor gate) + REQ-7 (the
@@ -125,7 +125,7 @@ fn is_clean_l3(cert: &Value) -> bool {
 // Expected (authority): a contract that fails to constrain its result must not
 // certify clean L3 unscored; the floor must catch it (§7 / R-DEFER-9). The
 // early-return mutant should be generatable for any body so 0/0 is unreachable
-// for a real fn.
+// for a fn.
 //
 // Actual (fa55760): clean L3 certify, `mutants_killed: "0/0"`, ungated.
 //

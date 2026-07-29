@@ -80,7 +80,7 @@ theorem brokenLift_counterexample :
       ∧ sdenote twoCarrier qTrivial phi rho = false := by
   decide
 
-/-- The pin: the push/lift lemma `sdenote_push_lift` is FALSE for `liftBadFrm` —
+/-- The pin: the push/lift lemma `sdenote_push_lift` is false for `liftBadFrm` —
     there is an instance on a concrete carrier where it fails. (Contrast
     `SubstKit.sdenote_push_lift`, which holds for every carrier.) -/
 theorem brokenLift_breaks_push_lift :

@@ -416,7 +416,7 @@ fn check_addresses(oracle_file: &str) {
         oracle.source
     );
 
-    // Every `inv`/`dec` address must resolve to the verbatim oracle text, AND
+    // Every `inv`/`dec` address must resolve to the verbatim oracle text, and
     // resolution must be the inverse of computation (AC-4).
     for fact in &oracle.addresses {
         let entry = resolve(&result.program, &fact.addr)

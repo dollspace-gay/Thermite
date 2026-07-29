@@ -31,7 +31,7 @@ use crate::normalize::{ArithOp, CmpOp, Formula, Quant, Term};
 /// `d`: `encName d i = d - 1 - i` (index 0 ↦ the innermost binder, level `d-1`). Mirrors
 /// `lean/Thermite/Strat/RefEncode.lean` `encName` exactly. Rendered as `v{level}` — a
 /// stable positional name; the normalizer alpha-canonicalizes binders anyway, so the only
-/// requirement is that the SAME source binder maps consistently (no capture).
+/// requirement is that the same source binder maps consistently (no capture).
 fn enc_name(d: u32, i: u32) -> String {
     // `d` is always ≥ 1 wherever a bound var is read (a var at index `i < d` is only
     // reachable under ≥ `i+1` binders), so `d - 1 - i` does not underflow for bound vars.
@@ -43,10 +43,10 @@ fn enc_name(d: u32, i: u32) -> String {
     }
 }
 
-/// The reference spelling of a (machine/opaque) literal. `Cls.Tm.lit` carries NO value
+/// The reference spelling of a (machine/opaque) literal. `Cls.Tm.lit` carries no value
 /// (`Strat/Nnf.lean`: "value irrelevant here"), so the reference names it symbolically by
 /// its sort — a free constant `lit_<sort>`. The production lowerer and this reference must
-/// agree on this convention for the syntactic phase to hit; a genuine value mismatch is
+/// agree on this convention for the syntactic phase to hit; a value mismatch is
 /// caught by the semantic phase (where the v1 `qfree` atoms carry real values).
 fn lit_name(s: &Sort2) -> String {
     format!("lit_{}", sort_tag(s))

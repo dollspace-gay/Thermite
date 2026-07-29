@@ -196,7 +196,7 @@ fn divergence_interactive_indented_command_escapes_allowlist() {
     // indented top-level command), so the obligation's conclusion re-elaborates to
     // `True`. A proof of `True` is not a discharge of the obligation, and the enumerable
     // trusted base the cert lists (none — `True` rests on no axioms) is a fiction: the
-    // real obligation was never proven. Such a re-elaboration cheat is never Proven →
+    // obligation was never proven. Such a re-elaboration cheat is never Proven →
     // item `f` does not certify at L3. forge (commit 4d745e35) emits "L3" — the divergence
     // the #251 column-0-only allowlist leaves open.
     assert_ne!(

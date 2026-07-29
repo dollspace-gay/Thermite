@@ -27,7 +27,7 @@
 //! exercised by this oracle (the v1 type-level slice rejects a direct
 //! `query(input)` by the sink's parameter type alone — grounded).
 //!
-//! These run a real verus proof (the doored callers L3-prove against the assumed
+//! These run a verus proof (the doored callers L3-prove against the assumed
 //! door contracts), so they skip with a logged note if verus is absent — never
 //! panic on a missing solver, mirroring `composition_conformance.rs` /
 //! `audit_conformance.rs`.
@@ -180,7 +180,7 @@ fn assert_careless_rejected(certs: &[Value], item: &str) {
 
 /// Assert a safe / doored path CERTIFIES `L3` to-the-boundary via the named sink:
 /// the marked value is laundered to the clean type through the door, the sink
-/// accepts it, and the caller proves THROUGH the door+sink contracts.
+/// accepts it, and the caller proves through the door+sink contracts.
 fn assert_safe_certifies(certs: &[Value], item: &str, expect_via: &str) {
     let cert = find_cert(certs, item);
     assert_eq!(
@@ -189,7 +189,7 @@ fn assert_safe_certifies(certs: &[Value], item: &str, expect_via: &str) {
         "`{item}` routes the marked value through its door → type-checks → proves \
          L3 (the default floor; the equality contract is mutation-killable)"
     );
-    // #17 scope ⊥ level: L3 AND to_boundary via the reached sink/door.
+    // #17 scope ⊥ level: L3 and to_boundary via the reached sink/door.
     assert_eq!(
         cert["assurance_scope"]["kind"],
         Value::from("to_boundary"),

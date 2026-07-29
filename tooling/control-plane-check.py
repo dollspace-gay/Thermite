@@ -1,72 +1,21 @@
 #!/usr/bin/env python3
-"""
-control-plane gate — the gate that guards the gates.
+"""Verify the hook wiring declared by this repository.
 
-`tooling/spec-discipline.py` and `tooling/anti-pattern-gate.py` are agent-facing
-PreToolUse/PostToolUse hooks. They only ever fire because `.claude/settings.json`
-WIRES them. That wiring is a single tracked JSON file that `crosslink init`
-regenerates from a generic template — so a routine `crosslink init` (or a
-`--force` re-init) silently drops the project-specific entries and leaves the
-crosslink-generic ones. That is exactly what commit 5581b65f did on 2026-06-21:
-both gates were dormant for the whole Stage-3 arc while README.md:172, goal.md
-§Spec-discipline, and all four `.claude/agents/acto-*.md` files kept asserting
-"they enforce automatically — no setup" (crosslink #93).
+The check reads ``.claude/settings.json`` and confirms that every entry in
+``REQUIRED_HOOKS`` has a covering matcher and an existing script. A missing or
+malformed setting is a finding because Claude Code cannot run that hook.
 
-Nothing could catch it: `doc-drift.py` only checks files reachable from
-`tooling/spec-routes.toml`, and no route covered the control plane. The design
-layer governed everything except the file that decides whether the governance
-runs.
+Exit codes:
 
-This gate closes that loop. It asserts — as a CI-enforced, deterministic check —
-that every hook this project's documentation CLAIMS is live is actually wired in
-the tracked `settings.json`, and that the script each entry names exists on disk.
-An "asserted enforcement that isn't" becomes a red build instead of a quiet
-regression (the R-HONEST-3 move: a gate that fails open is a silent pass).
+* 0: every required hook is wired and present
+* 1: missing wiring, a missing script, or invalid settings
+* 3: the repository could not be inspected
 
-The rule, precisely (governed by .design/tooling/control-plane.md):
+Usage: ``python3 tooling/control-plane-check.py [--root <repo-toplevel>]``
 
-  1. Load the tracked `.claude/settings.json` (REQ-1). It must exist and parse:
-     Claude Code loads NO hooks from a malformed settings file, so unparseable
-     is gate-dead, i.e. a FINDING (exit 1), never INCONCLUSIVE.
-  2. For each required wiring (event, tools, script) in REQUIRED_HOOKS below,
-     find a hook entry under that event whose `matcher` COVERS every required
-     tool and one of whose commands names `script` (REQ-2). Matcher coverage is
-     alternative-set containment (`Write|Edit|Bash` covers a `Write|Edit`
-     requirement), so a superset matcher passes and a reordering does not
-     false-fail — but a matcher that drops a required tool is a MISSING-WIRING.
-  3. Assert each required script exists at its repo-relative path (REQ-3). A
-     wired-but-absent hook is the same dead gate as an unwired one: every
-     command is `if [ -f "$HOOK" ]`-guarded, so an absent script degrades to a
-     silent no-op exit 0.
-  4. Report (REQ-4) deterministically in REQUIRED_HOOKS order, and exit per the
-     REQ-5 contract:
-         0 = every required hook wired and present;
-         1 = at least one MISSING-WIRING / MISSING-SCRIPT / UNPARSEABLE;
-         3 = the gate could not determine the answer (no git / not a repo) —
-             the audit's INCONCLUSIVE precedent (scripts/audit.sh, doc-drift.py
-             REQ-9). An environment failure is never collapsed to "all wired".
-
-A finding prints the exact JSON entry to restore, so the fix is a paste, not an
-archaeology dig through `git show 5581b65f`.
-
-NOT a Claude-Code hook: invoked by CI and by `make control-plane`. Deliberately
-NOT part of `make audit` — hook wiring is a development-discipline invariant,
-not a link in the proof-trust chain (the doc-drift decision-5 precedent).
-
-Usage:  python3 tooling/control-plane-check.py [--root <repo-toplevel>]
-
-  --root  the repo to check (default: the git toplevel of the cwd). The
-          production invocation is flagless; --root keeps the fixture tests
-          hermetic.
-
-See:
-  .design/tooling/control-plane.md  (the governing doc — REQ-1..REQ-5)
-  goal.md                            (authority chain; R-CODE-4/5, R-HONEST-3)
-  tooling/doc-drift.py               (the sibling gate; exit-3 precedent)
-  tooling/spec-routes.toml           (routes the control plane under doc-drift)
-
-PROJECT CUSTOMIZATION:
-  Edit SETTINGS_RELPATH, REQUIRED_HOOKS below.
+See ``.design/tooling/control-plane.md`` for the requirements. The check runs in
+CI and through ``make control-plane``; it is not itself a hook or part of
+``make audit``. Customize ``SETTINGS_RELPATH`` and ``REQUIRED_HOOKS`` below.
 """
 
 import json
@@ -76,16 +25,14 @@ import sys
 from pathlib import Path
 
 
-# =====================================================================
-# PROJECT CUSTOMIZATION — edit these constants for your project
-# =====================================================================
+# Project settings
 
 # Repo-relative path to the tracked Claude Code settings file (the subject).
 SETTINGS_RELPATH = ".claude/settings.json"
 
 # The wirings this project's docs claim are live. Each entry is:
 #   event   — the settings.json hook event key
-#   tools   — the tool names the matcher MUST cover
+#   tools   — the tool names the matcher must cover
 #   script  — the repo-relative hook script the entry must invoke
 #   claim   — the doc line asserting this hook enforces (named in the report,
 #             so a finding points at the prose that would go false)
@@ -110,9 +57,7 @@ REQUIRED_HOOKS = (
     },
 )
 
-# =====================================================================
-# Implementation — generally no edits needed below this line
-# =====================================================================
+# Implementation
 
 # Defect classes (REQ-4). The literal tokens the report emits and the oracle
 # asserts.
@@ -134,11 +79,9 @@ _MATCHER_STRIP_RE = re.compile(r"[()\s^$]")
 
 
 class EnvironmentError3(Exception):
-    """The gate could not determine the answer — maps to exit 3 (REQ-5).
+    """The check could not determine the answer; maps to exit 3 (REQ-5).
 
-    Raised (never a traceback to the user) for: git absent / not a repo. A CI
-    gate that fails open is a silent pass, so these are INCONCLUSIVE, never
-    "every hook is wired".
+    This covers a missing git executable or an invalid repository.
     """
 
 
@@ -177,11 +120,10 @@ def _matcher_covers(matcher, tools):
 
 
 def _entry_commands(entry):
-    """Every command string in a settings.json hook entry, shape-tolerantly.
+    """Return the command strings in a settings.json hook entry.
 
-    A wrong-shaped entry yields no commands rather than raising: the wiring it
-    was supposed to provide then reads as MISSING (a loud finding), which is the
-    honest answer for a settings file Claude Code could not act on either.
+    A malformed entry yields no commands and is therefore reported as missing
+    wiring.
     """
     if not isinstance(entry, dict):
         return []

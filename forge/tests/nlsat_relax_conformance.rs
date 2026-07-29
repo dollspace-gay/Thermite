@@ -5,8 +5,8 @@
 //! - the isqrt characterization certifies **L4** push-button with `engine: nlsat`
 //!   attribution (the relaxable squeeze admitted, real-valid → kernel-grounded);
 //! - `∀ n. n*n ≠ 2` (true over ℤ, false over ℝ) yields a **RealWitness** carrying the
-//!   raw real point (√2), NEVER a `Counterexample`;
-//! - a div-containing clause is rejected by the relaxable check (an honest skip).
+//!   raw real point (√2), never a `Counterexample`;
+//! - a div-containing clause is rejected by the relaxable check (a skip).
 //!
 //! Live: gated on `z3` (the relax route issues a direct Z3 nlsat QF_NRA query). CI
 //! test-shards without z3 SKIP rather than fail, mirroring the sibling lake-gated live
@@ -110,7 +110,7 @@ fn nlsat_isqrt_certifies_l4_pushbutton() {
 }
 
 // AC-12: a true-over-ℤ, false-over-ℝ claim (`∀ n. n*n ≠ 2`) yields a RealWitness
-// carrying the real point, NEVER a Counterexample.
+// carrying the real point, never a Counterexample.
 #[test]
 fn nlsat_n_squared_ne_two_is_real_witness_never_counterexample() {
     if !z3_present() {
@@ -152,7 +152,7 @@ fn nlsat_n_squared_ne_two_is_real_witness_never_counterexample() {
         n_val.starts_with("1.41"),
         "the RealWitness carries the raw real point n ≈ √2 (got `{n_val}`); cert: {cert}"
     );
-    // And it is NOT a counterexample reject (the headline: it escalates UP, not down).
+    // And it is not a counterexample reject (the headline: it escalates UP, not down).
     assert_ne!(
         cert.get("reject")
             .and_then(|r| r.get("cause"))
@@ -162,7 +162,7 @@ fn nlsat_n_squared_ne_two_is_real_witness_never_counterexample() {
     );
 }
 
-// REQ-8b: a div-containing clause is rejected by the relaxable check (an honest skip,
+// REQ-8b: a div-containing clause is rejected by the relaxable check (a skip,
 // non-certified — not relaxable, never a false verdict). No z3 needed.
 #[test]
 fn nlsat_div_clause_is_not_relaxable_skip() {

@@ -49,7 +49,7 @@ def body1 : Frm := .atom (.rel .eq (.var valueS 0) (.var keyS 1))
 /-- `body₂` under `∃v. ∀k.`: de Bruijn `k = 0`, `v = 1`. -/
 def body2 : Frm := .atom (.rel .eq (.var keyS 0) (.var valueS 1))
 
-/-- `(¬∃k:Key. ∀v:Value. body₁) ∧ (¬∃v:Value. ∀k:Key. body₂)`. RAW polarity hides the
+/-- `(¬∃k:Key. ∀v:Value. body₁) ∧ (¬∃v:Value. ∀k:Key. body₂)`. raw polarity hides the
     alternation; NNF reveals the `Key ⇄ Value` cycle. -/
 def phiHiddenCycle : Frm :=
   .conj (.neg (.ex keyS (.all valueS body1)))
@@ -57,13 +57,13 @@ def phiHiddenCycle : Frm :=
 
 /-! ## The pin -/
 
-/-- The concrete counterexample: the pre-NNF classifier ADMITS the hidden-cycle formula
+/-- The concrete counterexample: the pre-NNF classifier admits the hidden-cycle formula
     (its raw graph is empty → acyclic), while the real `admitted` REJECTS it (the
     post-NNF graph has the `Key ⇄ Value` alternation cycle). -/
 theorem nnfPolarity_counterexample :
     admittedPreNnf phiHiddenCycle = true ∧ admitted phiHiddenCycle = false := by decide
 
-/-- The pin: admission is UNSOUND for the pre-NNF classifier — it accepts a formula
+/-- The pin: admission is unsound for the pre-NNF classifier — it accepts a formula
     (`phiHiddenCycle`) the real `admitted` rejects, because it reads quantifier polarity
     syntactically rather than after NNF. Computing acyclicity before NNF is therefore
     not a safe refactor — NNF is load-bearing. -/

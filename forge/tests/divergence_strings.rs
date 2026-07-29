@@ -207,7 +207,7 @@ fn confirm_byte_at_bound_is_load_bearing() {
     // (2) the OOB negative — the oracle's `oob_byte_at_no_req.program` (R-CHAR-3):
     //     no `req s.len() > 0` -> byte_at's `0 < len` undischarged -> L0.
     // (3) an off-by-one bound `req i <= s.len()` -> `i < len` undischarged
-    //     (`i == len` is OOB) -> L0 (the bound is load-bearing).
+    //     (`i == len` is OOB) -> L0 (the bound is required).
     let fixture = std::env::temp_dir().join(format!("forge_div_str_oob_{}.th", std::process::id()));
     std::fs::write(
         &fixture,

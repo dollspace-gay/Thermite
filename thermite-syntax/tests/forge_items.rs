@@ -2,7 +2,7 @@
 //! items (`.design/stage1-forge-tier.md` REQ-3 / AC-7, increment 2a): `prop fn`,
 //! `lemma`, `proof for`, `witness`, and the `?pN` proof holes inside proof blocks.
 //!
-//! These items are PARSE-ONLY in this increment (their semantic consumers are the
+//! These items are PARSE-only in this increment (their semantic consumers are the
 //! covenant engine 2b, the tactic battery 2c, the proof view 2e, the lemma library
 //! 3); the tests here are their consumers — they assert the parsed AST shape and
 //! the semantic addresses (`f.proof.ens#k`, `?pN`). R-CHAR-3: expected shapes are
@@ -80,7 +80,7 @@ fn lemma_parses_with_req_ens_and_proof_block() {
     assert_eq!(l.name, "add_id");
     assert_eq!(l.params.len(), 1);
     assert_eq!(l.ens.len(), 1);
-    // The proof block captures verbatim tactic text (NOT structurally parsed) and
+    // The proof block captures verbatim tactic text (not structurally parsed) and
     // has no open holes here.
     assert_eq!(l.proof.text, "omega");
     assert!(l.proof.holes.is_empty());
@@ -235,7 +235,7 @@ fn nested_braces_in_proof_block_are_balanced() {
 
 #[test]
 fn forge_items_do_not_disturb_v1_items_in_a_mixed_program() {
-    // A program mixing a v1 `fn` with forge items parses cleanly; the v1 fn keeps
+    // A program mixing a v1 `fn` with forge items parses; the v1 fn keeps
     // its ordinary address and the forge items add theirs.
     let src = "fn id(x: u64) -> u64 req true ens result == x fx pure { x }\n\
                lemma l(a: u64) req true ens a == a proof { omega }\n\

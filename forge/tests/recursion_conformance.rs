@@ -4,8 +4,8 @@
 //! (`.design/basis/10-recursion-tuples.md` REQ-1..4).
 //!
 //! These run against the external truths the toolchain does not author for itself:
-//! the built `forge` binary's certificate ladder (`forge check`, real verus) and
-//! the L1 build+run path (`forge build`, real rustc) — R-CODE-4: the subprocess
+//! the built `forge` binary's certificate ladder (`forge check`, verus) and
+//! the L1 build+run path (`forge build`, rustc) — R-CODE-4: the subprocess
 //! status is checked, never swallowed.
 //!
 //! Pins the C9-A deliverables (the grounded forms from the design's Verification
@@ -110,12 +110,12 @@ fn level(certs: &[Value], item: &str) -> String {
         .to_string()
 }
 
-/// `true` iff the `forge build --entry` runnable artifact can LINK + RUN here. The
+/// `true` iff the `forge build --entry` runnable artifact can link + run here. The
 /// #57 runtime seccomp sandbox (`forge/src/sandbox.rs`) is native Linux only, with
 /// generated filters for x86_64 and aarch64. The emitted runner does not link off
 /// Linux (`Undefined symbols: _prctl` on macOS).
 /// The build+run tests SKIP with an explicit warning on any non-Linux platform —
-/// FULL ACCEPTANCE OF THE BUILD+RUN PATH REQUIRES LINUX CI. Mirrors the
+/// full acceptance OF the build+run PATH requires LINUX CI. Mirrors the
 /// `verus_present()` skip precedent (a missing capability is a logged skip, not a
 /// panic, R-CODE-4).
 fn linux_build_run_supported(test: &str) -> bool {
@@ -153,7 +153,7 @@ const SPIN_DIVERGE: &str = "fn spin(n: u64) -> u64\n  \
     {\n  if n == 0 {\n    0\n  } else {\n    spin(n - 1)\n  }\n}\n";
 
 // ---------------------------------------------------------------------------
-// REQ-1/REQ-3, AC-1: a recursive fn with `dec` certifies L3 (real verus).
+// REQ-1/REQ-3, AC-1: a recursive fn with `dec` certifies L3 (verus).
 // ---------------------------------------------------------------------------
 
 #[test]

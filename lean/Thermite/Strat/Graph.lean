@@ -83,7 +83,7 @@ def reach (G : Graph) : List Sort₂ → Sort₂ → Sort₂ → Bool
   | [],      a, b => hasEdge G a b
   | v :: vs, a, b => reach G vs a b || (reach G vs a v && reach G vs v b)
 
-/-- Soundness: a positive `reach` yields a genuine transitive-closure path. -/
+/-- Soundness: a positive `reach` yields a transitive-closure path. -/
 theorem reach_sound {G : Graph} : ∀ (allowed : List Sort₂) (a b : Sort₂),
     reach G allowed a b = true → TC G a b
   | [],      a, b, h => TC.base h
@@ -93,7 +93,7 @@ theorem reach_sound {G : Graph} : ∀ (allowed : List Sort₂) (a b : Sort₂),
       · exact reach_sound vs a b h
       · exact TC.trans (reach_sound vs a v h1) (reach_sound vs v b h2)
 
-/-- Cut a chain at the FIRST occurrence of `v`: a prefix `a → v` not re-using `v`. -/
+/-- Cut a chain at the first occurrence of `v`: a prefix `a → v` not re-using `v`. -/
 theorem chain_prefix {G : Graph} {a b ms} (h : Chain G a b ms) :
     ∀ v, v ∈ ms → ∃ ms1, Chain G a v ms1 ∧ v ∉ ms1 ∧ (∀ x ∈ ms1, x ∈ ms) := by
   induction h with
@@ -115,7 +115,7 @@ theorem chain_prefix {G : Graph} {a b ms} (h : Chain G a b ms) :
           · exact List.mem_cons_self ..
           · exact List.mem_cons_of_mem _ (hsub x h)
 
-/-- Cut a chain at the LAST occurrence of `v`: a suffix `v → b` not re-using `v`. -/
+/-- Cut a chain at the last occurrence of `v`: a suffix `v → b` not re-using `v`. -/
 theorem chain_suffix {G : Graph} {a b ms} (h : Chain G a b ms) :
     ∀ v, v ∈ ms → ∃ ms2, Chain G v b ms2 ∧ v ∉ ms2 ∧ (∀ x ∈ ms2, x ∈ ms) := by
   induction h with
@@ -260,7 +260,7 @@ def sortGraph (φ : Frm) : Graph :=
   let es := edgesFrm [] φ
   { nodes := nodesOf es, edges := es }
 
-/-- `sortGraph` is well-formed: its node set is COMPLETE for its edges (every edge
+/-- `sortGraph` is well-formed: its node set is complete for its edges (every edge
     endpoint is a node), so `acyclic`'s Warshall closure over `nodes` is exhaustive.
 
     This is the kernel realisation of metatheory §5's `sortGraph_complete`: the E2 edges

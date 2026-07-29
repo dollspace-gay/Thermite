@@ -16,7 +16,7 @@
 //! [`suggested_move`]) is deterministic given a `SolverProfile`; the input
 //! profile (the Z3 instantiation counts) is not.
 //!
-//! ## Grounded profiler format (real verus 0.2026.05.24, Z3 4.12.5)
+//! ## Grounded profiler format (verus 0.2026.05.24, Z3 4.12.5)
 //!
 //! Captured by running `~/.local/bin/verus --profile-all --verify-root` on a
 //! transitivity / connectivity quantifier set (the checked-in fixture
@@ -309,7 +309,7 @@ fn reconstruct_trigger(source: Option<&str>, caret: Option<&str>) -> String {
     fallback_forall_body(source)
 }
 
-/// Fallback trigger text: the body of a `forall|binders| BODY` source line
+/// Fallback trigger text: the body of a `forall|binders| body` source line
 /// (everything after the closing `|` of the binder list), trimmed of trailing
 /// punctuation. Used when the caret annotation is unavailable.
 fn fallback_forall_body(source: &str) -> String {

@@ -1,76 +1,57 @@
-# Verified line / CSV parser — acceptance program 3 of 3 (#103)
+# Verified line and CSV parser
 
-`parse_lines.th` composes shipped verified primitives — cluster **C5**'s `split`
-(`String` → `Vec<String>` on a separator byte, `.design/basis/07-strings.md`
-REQ-15) over cluster **C6**'s non-`Copy` `Vec<String>` wrapper (`TVecTString`),
-plus C5's `contains` substring predicate (REQ-13). No new toolchain feature is
-needed to CERTIFY.
+[`parse_lines.th`](parse_lines.th) combines the verified string `split`
+operation, `Vec<String>`, and the `contains` predicate.
 
-## What is proven
+## Verified behavior
 
 ```thermite
 fn fields(s: String, sep: u64) -> Vec<String>
   req true
-  ens result.len() == 1 + count_sep(s, sep)    // the EXACT piece count
+  ens result.len() == 1 + count_sep(s, sep)
   fx  alloc
 { s.split(sep) }
 
 fn has_sep(s: &String, sep: &String) -> bool
   req true
-  ens result == contains_sub(s, sep)            // the substring relation
+  ens result == contains_sub(s, sep)
   fx  pure
 { s.contains(sep) }
 ```
 
-- `has_sep` certifies **L3** through the FULL `forge check` §7-mutation-scored
-  ladder (the substring predicate is real teeth — a broken `contains` fails).
-- `fields` (the split count-bound) certifies **L3 under real verus** on the
-  lowering (GROUNDED `7 verified, 0 errors`, REQ-15). Its thin `{ s.split(sep) }`
-  body delegates entirely to the proven `split` method, so `forge check`'s §7 gate
-  cannot mutation-score it (no scoreable body mutant — the documented split-caller
-  precedent in `forge/tests/string_search_conformance.rs`); its L3 is established by
-  running verus on the emitted Verus source.
+`has_sep` certifies at L3 through the normal `forge check` path. The emitted
+Verus lowering for `fields` also verifies at L3 (`7 verified, 0 errors`).
+Because `fields` delegates directly to `split`, it has no scoreable scalar body
+mutant; its proof is checked at the lowering level.
 
-## Run it (the split core)
-
-```bash
-cargo run -p forge -- build examples/parser/parse_lines.th --entry split_abc  # see the gap below first
+```sh
+cargo run -q -p forge -- check examples/parser/parse_lines.th
 ```
 
-The split core RUNS — "a,b,c" split on ',' (byte 44) → 3 pieces:
+## Run the split demo
 
+```sh
+cargo run -q -p forge -- build examples/parser/parse_lines.th --entry split_abc --out ./parse
+./parse
 ```
-split_abc() = TVecTString { data: [TString { data: [97] }, TString { data: [98] }, TString { data: [99] }] }
-#                                              "a"=97              "b"=98              "c"=99   → 3 pieces
-```
 
-The `split_abc` entry's `ens result.len() >= 1` is a non-vacuous floor (every split
-yields at least one piece) that lowers to an L1 runtime check WITHOUT naming a C5
-spec fn, so the runnable binary compiles.
+The result is a three-element `TVecTString` containing `a`, `b`, and `c`.
+`split_abc` uses the runtime-checkable postcondition `result.len() >= 1`.
 
-## FORCING-FUNCTION FINDING — the count-bound contracts cannot `forge build`
+## Current build limitation
 
-`forge build parse_lines.th` (the full program) **fails to compile**:
+Building the complete program currently fails because two C5 specification
+helpers lack L1 runtime forms:
 
-```
+```text
 error[E0425]: cannot find function `count_sep` in this scope
 error[E0425]: cannot find function `contains_sub` in this scope
 ```
 
-Same class as the calculator's gap: `forge build` lowers every function's contract
-to a runtime `thermite_check!`, and `fields`/`has_sep` name the **C5 spec fns**
-`count_sep` / `contains_sub`, which `thermite-lower`'s `emit_string_runtime_l1`
-does **not** emit an L1 runnable form for (only C4's numfmt spec fns got one). This
-belongs to the **C5 / #102 build-side cluster** (the L1 mirror of the C5 contract
-spec fns `count_sep` / `sep_free` / `occurs_at` / `contains_sub`). When that L1
-lowering lands, `parse_lines.th` builds + runs end-to-end with the count-bound
-contract enforced at runtime. The C5 split/contains METHODS already have L1 forms
-(the split core above runs); only the contract SPEC fns lack one.
+The `split` and `contains` methods already have runnable implementations. The
+missing work is limited to runtime forms for contract helpers such as
+`count_sep`, `sep_free`, `occurs_at`, and `contains_sub`, described in
+`.design/basis/07-strings.md`.
 
-## Verification
-
-`forge/tests/acceptance_programs.rs`: `parser_contains_predicate_certifies_l3`
-(forge check → L3 for `has_sep`), `parser_split_count_bound_verifies_under_real_verus`
-(verus → L3 for `fields`), `parser_split_core_builds_and_runs_three_pieces` (the
-split core RUNS → 3 pieces), and `parser_build_is_blocked_by_missing_l1_count_sep`
-(PINS the gap; flips to assert end-to-end build when the C5 L1 lowering lands).
+The certification, runnable core, and build limitation are covered in
+`forge/tests/acceptance_programs.rs`.

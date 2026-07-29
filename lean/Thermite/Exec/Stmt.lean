@@ -426,10 +426,10 @@ theorem b1_let_chain_threads :
         execDenote, asInt, evalArith, rawArith, IntTy.bound, IntTy.width]
   decide
 
-/-- B2 — the mutation order is load-bearing. `{ let mut s = x; s = s + 1;
+/-- B2 — the mutation order is required. `{ let mut s = x; s = s + 1;
     s = s * 2; s }` threads `s ↦ 5 → 6 → 12` = `12`, while the reorder `s = s * 2;
     s = s + 1` threads `s ↦ 5 → 10 → 11` = `11`, a different result. The mutation
-    updates the state and the order matters (the state-sequencing teeth). -/
+    updates the state, so the order matters. -/
 theorem b2_mutation_order_matters :
     bodyDenote
       (.mk [ .letS "s" (.var "x"),
@@ -576,8 +576,8 @@ theorem mutation_not_applied_breaks_soundness :
         execDenote, asInt, evalArith, rawArith, IntTy.bound, IntTy.width]
   decide
 
-/-- The faithful positive counterpart (the teeth bite only the bugs): with the real
-    threading the body encoder is sound; `bodyRefState = bodyDenote` for the correct
+/-- With the faithful threading, the body encoder is sound:
+    `bodyRefState = bodyDenote` for the correct
     `{ let mut s = x; s = s + 1; s }` body, by `body_ref_sound`. -/
 theorem faithful_body_is_sound :
     bodyRefState
@@ -601,7 +601,7 @@ theorem faithful_body_is_sound :
   the exec side. Its `none` arises only at failure sites (the `evalArith` overflow /
   div-or-shift-by-zero, the out-of-range `index`, the `asInt`/`asBool` sort mismatch, the `letS`
   re-shadow, the unbound `assign`, a tail-less block), and `some v` means a value: the
-  spine's own teeth `body_overflow_rhs_has_no_result` (`= none`) vs `body_in_range_rhs_has_result`
+  contrasting lemmas `body_overflow_rhs_has_no_result` (`= none`) and `body_in_range_rhs_has_result`
   (`= some (.int ⟨.u64, 10⟩)`). The `Option` is the bottom-distinguishing layer; the #213/#241
   trap (a total denotation that forges a value at the bottom) does not exist in `S_B`. So
   `bodyConverges` is a definitional abbreviation over `bodyDenote`, not a new denotation. -/

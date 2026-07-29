@@ -1,7 +1,7 @@
 //! `forge/tests/goal_repl_fill.rs` — conformance for the goal-state REPL increment
 //! (iii): the `?N` body-hole token + the open-hole validator + `forge fill` + the
 //! §5.1 dialogue golden (#193; `.design/forge/goal-repl.md` REQ-4/REQ-5/REQ-6 +
-//! AC-5/AC-6). Drives the real toolchain:
+//! AC-5/AC-6). Drives the toolchain:
 //!
 //! - `thermite_syntax` parses a `body = ?0` fn to a clean holed AST carrying its
 //!   open holes; a `?N` in a `spec fn` body / expression / clause position is a
@@ -290,7 +290,7 @@ fn fill_introducing_new_holes_re_presents_them() {
     let _ = std::fs::remove_file(&th);
 }
 
-// `forge fill` on a non-hole address is an honest Usage error directing to `edit`
+// `forge fill` on a non-hole address is an Usage error directing to `edit`
 // (the two verbs have distinct contracts — REQ-3 vs REQ-6), never a silent splice.
 #[test]
 fn fill_on_a_non_hole_address_is_an_honest_error() {
@@ -309,8 +309,8 @@ fn fill_on_a_non_hole_address_is_an_honest_error() {
 }
 
 // REQ-6 (verus-gated): filling the hole with correct code closes it and the item
-// certifies L3 (the §5.1 "ALL GOALS DISCHARGED" terminal). Skips with a logged
-// note without verus (the discharge claim is a real proof).
+// certifies L3 (the §5.1 "all goals discharged" terminal). Skips with a logged
+// note without verus (the discharge claim is a proof).
 #[test]
 fn fill_closing_the_hole_certifies_l3() {
     if !verus_present() {
@@ -339,11 +339,11 @@ fn fill_closing_the_hole_certifies_l3() {
 // AC-6: the §5.1 binary_search dialogue as the end-to-end acceptance oracle.
 // ---------------------------------------------------------------------------
 
-// The full §5.1 loop, driven turn-by-turn against the real toolchain. Asserts the
+// The full §5.1 loop, driven turn-by-turn against the toolchain. Asserts the
 // structural oracle from `conformance/goal/binary_search.dialogue.json` (given/want/
 // holes/discharged-vs-open/counterexample-presence), never the illustrative
 // timings/mutant-counts (R-CHAR-3; the golden README pins the split). Verus-gated:
-// the discharge/counterexample turns are real proofs.
+// the discharge/counterexample turns are proofs.
 #[test]
 fn ac6_binary_search_dialogue_structural_oracle() {
     if !verus_present() {
@@ -438,7 +438,7 @@ loop \
 
     // Turn 4 — guard the branch (rewrite the body via `edit` on the loop) so the
     // invariant is preserved; the item certifies L3 with a non-vacuous battery line
-    // (the §5.1 terminal `ALL GOALS DISCHARGED ✓ binary_search certified L3`). We
+    // (the §5.1 terminal `all goals discharged ✓ binary_search certified L3`). We
     // rewrite to the corpus's guarded branch by re-creating the corpus body.
     let corpus = std::fs::read_to_string(repo_root().join("conformance/binary_search.th"))
         .expect("read binary_search.th");

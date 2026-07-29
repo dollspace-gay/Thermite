@@ -4,7 +4,7 @@
 //! `.1`/…), the v1 §2.3 "one way" tuple access (not destructuring — REQ-9
 //! deferred). These run against the two external truths the toolchain does not
 //! author for itself: the built `forge` binary's certificate ladder (`forge
-//! check`, real verus) and the real `verus` binary on the emitted lowering.
+//! check`, verus) and the real `verus` binary on the emitted lowering.
 //!
 //! Pins the C9-B deliverables (`.design/basis/10-recursion-tuples.md`):
 //!
@@ -214,7 +214,7 @@ fn tuple_expr_and_projection_nodes() {
 }
 
 // ---------------------------------------------------------------------------
-// End-to-end ladder pins (REQ-8; real verus via `forge check`).
+// End-to-end ladder pins (REQ-8; verus via `forge check`).
 // ---------------------------------------------------------------------------
 
 const SWAP_L3: &str = "fn swap(a: u64, b: u64) -> (u64, u64)\n  req true\n  ens result.0 == b && result.1 == a\n  fx pure\n{ (b, a) }\n";

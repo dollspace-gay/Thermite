@@ -13,7 +13,7 @@
 //!     (`1 verified, 0 errors`).
 //!
 //! Toolchain: `thermite_tv::exec_stmt_encode::thread_stmt` (the `Stmt::If { .. }`
-//! arm) returns `RefEncodeError::Unsupported("`if` as a non-tail STATEMENT ...")`,
+//! arm) returns `RefEncodeError::Unsupported("`if` as a non-tail statement ...")`,
 //! so `body_ref_state` / `body_equivalence_obligation` cannot encode the AC-4 body
 //! and the obligation builder returns `Err`. The production side
 //! (`thermite_lower::lower_exec_body` → `lower_block_inner`'s `Stmt::If` arm) lowers

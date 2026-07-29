@@ -12,12 +12,12 @@
 //! no syscall mapping"): an admitted-effect boundary carries a std-bodied wrapper.
 //!
 //! Amended authority (R-CHAR-3 trace — `.design/build/kernel-target.md`):
-//!   - OQ-2 (RESOLVED — REJECT; amended by #198): "`time`/`rand` MOVE INTO the reject
+//!   - OQ-2 (resolved — REJECT; amended by #198): "`time`/`rand` MOVE INTO the reject
 //!     set: the v1 kernel admit set is now EXACTLY `pure`/`alloc`/`panic`/`diverge`,
 //!     and `KERNEL_REJECTED_FX = [\"read\",\"write\",\"net\",\"term\",\"time\",\"rand\"]`."
 //!     A kernel has no ambient clock (`clock_gettime`) or entropy (`getrandom`) any
 //!     more than it has `read`/`write` (the critic's own observation).
-//!   - REQ-3: a kernel refusal is "a NAMED-effect, nonzero-exit, NO-artifact
+//!   - REQ-3: a kernel refusal is "a named-effect, nonzero-exit, NO-artifact
 //!     structured `ForgeError`" — so `effect_link_demo.th --target kernel` returns
 //!     a refusal naming `time`, exit 2, no artifact, and no raw `E0433` reaches
 //!     the user (the std-bodied wrapper is refused before codegen).

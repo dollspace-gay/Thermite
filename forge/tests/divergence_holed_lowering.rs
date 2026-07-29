@@ -21,7 +21,7 @@
 //! Authority:
 //! - `.design/forge/goal-repl.md` REQ-4: "an item with any open hole is
 //!   L0-equivalent until every hole is filled"; REQ-5: a holed item gets "no
-//!   lowering, no verus"; Architecture: "A holed item NEVER reaches verus; it
+//!   lowering, no verus"; Architecture: "A holed item never reaches verus; it
 //!   can never accidentally certify."
 //! - `thermite_syntax::ast` (`FnItem.holes` doc, shipped by bf29a050): "a holed
 //!   item never lowers — it short-circuits at `forge check`" — the
@@ -136,7 +136,7 @@ fn divergence_build_emits_artifact_for_holed_item() {
 /// ships it to verus, and reports the body `faithful` — a TV verdict certifying
 /// fidelity of an incomplete body whose open goal was silently deleted.
 /// Authority: `.design/forge/goal-repl.md` REQ-5 + Architecture ("a holed item
-/// NEVER reaches verus") + the `FnItem.holes` contract ("a holed item never
+/// never reaches verus") + the `FnItem.holes` contract ("a holed item never
 /// lowers"). Expected: the holed body is never counted `faithful` (the
 /// classes are a refusal or an explicit skip naming the open hole).
 #[test]

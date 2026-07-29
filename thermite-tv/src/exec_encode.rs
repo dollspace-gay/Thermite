@@ -52,12 +52,12 @@ use std::fmt;
 
 use thermite_syntax::ast::{BinOp, Expr, IndexArg, PrimType, Type, UnaryOp};
 
-/// An honest failure to encode a construct outside the pure-exec subset (REQ-1).
+/// An failure to encode a construct outside the pure-exec subset (REQ-1).
 /// The exec reference encoder never panics and never silently emits a wrong
 /// encoding: an unsupported construct is a real `Err` carrying the offending shape
 /// (R-CODE-2 / R-APG-1). A silent wrong encoding would compare a wrong reference
 /// and either spuriously pass or spuriously fail. Method calls / Vec-String
-/// accessors are out of scope for step 2.1 (the #154/#156 territory) → an honest
+/// accessors are out of scope for step 2.1 (the #154/#156 territory) → an
 /// [`RefEncodeError::Unsupported`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RefEncodeError {
@@ -138,7 +138,7 @@ impl ExecRefCtx {
 ///   the bounded element value).
 ///
 /// Anything else (a method call, a Vec/String accessor, a struct literal, an `if`/
-/// `match`, a closure, …) is an honest [`RefEncodeError::Unsupported`] (never a
+/// `match`, a closure, …) is an [`RefEncodeError::Unsupported`] (never a
 /// panic, never a silent wrong encoding — #154/#156 territory).
 pub fn exec_ref_value(expr: &Expr, ctx: &ExecRefCtx) -> Result<String, RefEncodeError> {
     encode(expr, ctx)
@@ -254,7 +254,7 @@ fn encode_unary(op: UnaryOp, inner: &Expr, ctx: &ExecRefCtx) -> Result<String, R
 /// A free-form call `f(args)` (REQ-1). In exec position the callee is emitted
 /// verbatim (the exec call lowers to the exec fn by name; the value semantics are
 /// the callee's own contract). A non-path callee is outside the pure-exec subset
-/// (an honest `Err`). Arguments are encoded by the same independent recursion.
+/// (an `Err`). Arguments are encoded by the same independent recursion.
 fn encode_call(callee: &Expr, args: &[Expr], ctx: &ExecRefCtx) -> Result<String, RefEncodeError> {
     let Expr::Path(segments) = callee else {
         return Err(RefEncodeError::Unsupported(format!(
@@ -276,7 +276,7 @@ fn encode_call(callee: &Expr, args: &[Expr], ctx: &ExecRefCtx) -> Result<String,
 /// `xs[i as int]`; the obligation `ensures result == xs[i as int]` is the
 /// element-value equality, grounded `exec-tv.md` AC-5/E4). A `RangeTo`/`RangeFrom`/
 /// `Range` slice index produces a sub-slice (not a scalar value), outside the
-/// pure-exec scalar-value subset of step 2.1 → an honest `Err`. A non-slice base
+/// pure-exec scalar-value subset of step 2.1 → an `Err`. A non-slice base
 /// index is also unsupported (no scalar-value denotation in the frozen subset).
 fn encode_index(base: &Expr, index: &IndexArg, ctx: &ExecRefCtx) -> Result<String, RefEncodeError> {
     let IndexArg::Single(i) = index else {
@@ -344,7 +344,7 @@ fn encode_cast(inner: &Expr, ty: &Type, ctx: &ExecRefCtx) -> Result<String, RefE
 /// The Verus cast-target spelling for an exec cast (`thermite-design.md` §4.1). The
 /// exec sublanguage casts to the bounded prims (`u8`/`u16`/`u32`/`u64`/`usize`),
 /// not the spec `nat`/`int` (that is the contract encoder's target). A `bool`
-/// cast is not an arithmetic cast (an honest `Err`). The narrower bounded targets
+/// cast is not an arithmetic cast (an `Err`). The narrower bounded targets
 /// (`u8`/`u16`) the fixture E1 needs are accepted alongside the prim-type set so a
 /// narrowing/wrapping cast (the #122 surface) is encodable.
 fn cast_target(ty: &Type) -> Result<String, RefEncodeError> {
@@ -477,7 +477,7 @@ mod tests {
     }
 
     /// A method call (exec / Vec-String accessor) is out of scope for step 2.1 →
-    /// an honest `Err`, never a silent wrong encoding (REQ-1 / R-CODE-2).
+    /// an `Err`, never a silent wrong encoding (REQ-1 / R-CODE-2).
     #[test]
     fn method_call_is_unsupported_not_panic() {
         let e = Expr::MethodCall {
@@ -492,7 +492,7 @@ mod tests {
     }
 
     /// A bare index over a non-slice base has no scalar-value denotation in the
-    /// frozen subset → an honest `Err`.
+    /// frozen subset → an `Err`.
     #[test]
     fn non_slice_index_is_unsupported() {
         let e = Expr::Index {

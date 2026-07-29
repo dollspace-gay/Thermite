@@ -74,30 +74,22 @@ import Thermite.Faithfulness
 -- (hand-translated, the gap an exporter closes) discharged by `smt` and kernel-checked,
 -- `#print axioms` = [propext, Classical.choice, Quot.sound] (standard only; the cvc5 proof
 -- is replayed, not oracle-trusted). The walls (toolchain v4.29.0 + full Mathlib +
--- vendored cvc5 1.3.2; the hand-translation residual; the BitVec-reconstruction `sorry`
--- excluding bitwise obligations; Verus/Z3 not emitting reconstructable certificates) are in
+-- vendored cvc5 1.3.2; the hand-translation residual; Verus/Z3 not emitting
+-- reconstructable certificates) are in
 -- `.design/verified/z3-demotion.md`.
 import Thermite.SmtDemo
 -- Layer 4 (trust-shrink), stage-3 increment REQ-7 (#349; `.design/stage3-bv-reconstruction.md`
 -- REQ-7 / AC-8): the AUTOMATED Rust→Lean obligation exporter's output. Where `SmtDemo`
--- hand-translated two TV obligations, `forge/src/lean_smt_export.rs` now EMITS the
--- `(P_prod) ⟺ (P_ref)` Lean goals — one QF_LIA scalar clause + two QF_BV `@bv` clauses
--- (the bounded-integer machine-model, since lean-smt's literal BitVec reconstruction
--- bit-blasts through an upstream `sorry`) — each discharged by `smt` and kernel-checked,
--- `#print axioms` ⊆ {propext, Classical.choice, Quot.sound}. The file is the exporter's
--- verbatim output (pinned by `golden_file_matches_exporter`); building it here makes the
--- default `lake build` kernel-check the AC-8 reconstruction (the Smt toolchain already
--- enters the graph via `SmtDemo`, so this adds no dependency).
+-- hand-translated two TV obligations, `forge/src/lean_smt_export.rs` now emits the
+-- `(P_prod) ⟺ (P_ref)` Lean goals: one QF_LIA scalar clause and three literal
+-- `BitVec N` QF_BV clauses, including the full arithmetic/bitwise/shift/division term
+-- surface. QF_LIA uses `smt`; QF_BV uses kernel-checked normalization lemmas.
+-- `#print axioms` stays within {propext, Classical.choice, Quot.sound}. The file is
+-- generated verbatim and pinned by `golden_file_matches_exporter`.
 import Thermite.SmtExport
--- Layer 4 (trust-shrink), stage-3 REQ-7/REQ-8 (#356, "Path B"): the bit-vector ⟷
--- bounded-integer model FAITHFULNESS metatheorem. The exporter renders a `@bvN` clause
--- over the bounded-integer machine-model (not `BitVec N`, whose `smt` reconstruction
--- bit-blasts through an upstream `sorry`). `Thermite.BvModel` proves — KERNEL-CHECKED,
--- core-only, `#print axioms` ⊆ {propext, Classical.choice, Quot.sound} — that the two
--- denotations agree (`frmInt_iff_frmBV`), so the exporter's `by smt`-discharged int-model
--- `↔` certifies the genuine bit-vector clause (`tv_equiv_faithful`). This discharges the
--- REQ-8 `render_bv_prop` faithfulness obligation for the renderable fragment IN OUR OWN
--- SPINE — no dependency on lean-smt's (stalled) literal QF_BV reconstruction.
+-- Layer 4 reference theorem (#356): the older bounded-integer model remains proved
+-- equivalent to `BitVec N`. The active exporter now emits literal `BitVec N`, so this
+-- module is a supplementary semantic cross-check rather than a bridge in the export path.
 import Thermite.BvModel
 -- The stabilization spine prerequisite (increment (ii), #240, ref #203;
 -- `.design/verified/proof-backends.md` §4/§6.1): the `stabilizes`/`stabilizesProp`

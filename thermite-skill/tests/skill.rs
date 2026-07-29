@@ -22,7 +22,7 @@ fn skill_is_under_budget() {
     assert!(count > 0, "generated skill counted zero tokens");
 }
 
-/// AC-2 — every entry in the frozen registry appears by name AND carries a usage
+/// AC-2 — every entry in the frozen registry appears by name and carries a usage
 /// example. This is REQ-2's anti-drift property: a combinator the registry adds
 /// or drops changes this coverage automatically (the expected set IS `all()`).
 #[test]
@@ -47,7 +47,7 @@ fn every_combinator_appears_with_an_example() {
 }
 
 /// AC-9 — every entry in the frozen recursion-scheme registry appears by name
-/// AND carries a usage example (the REQ-9 registry-driven anti-drift property —
+/// and carries a usage example (the REQ-9 registry-driven anti-drift property —
 /// the AC-2 analogue for schemes). The expected set IS `schemes::all()`, so a
 /// scheme added or dropped changes this coverage automatically (R-CHAR-3).
 #[test]
@@ -78,9 +78,9 @@ fn every_scheme_appears_with_an_example() {
 }
 
 /// AC-10(ii) — coverage: every current Stage-1–8 surface construct appears in the
-/// generated skill (the OUTPUT half of the no-staleness guarantee). Expected
+/// generated skill (the output half of the no-staleness guarantee). Expected
 /// substrings are derived from the construct's name / §4.4 — never copied back
-/// from the generator (R-CHAR-3). The STRUCTURAL half (no `_` arm, so a new
+/// from the generator (R-CHAR-3). The structural half (no `_` arm, so a new
 /// variant fails to compile — AC-10(i)) is enforced by `rustc`'s exhaustiveness
 /// check on `render_*_arm`: this very test crate would not compile if a renderer
 /// arm were missing, so a green build IS the structural proof. See the module
@@ -138,11 +138,11 @@ fn surface_construct_coverage() {
 /// The Stage-1 forge-tier section (skill v2; umbrella `.design/thermite2-program.md`
 /// REQ-8 / AC-13) teaches the agent the SHIPPED forge tier. Its four mandated
 /// content areas must each be present, with expected strings derived from the
-/// shipped forge code — NOT copied from `generate.rs` (R-CHAR-3):
+/// shipped forge code — not copied from `generate.rs` (R-CHAR-3):
 ///
-/// 1. the SEVEN cert-level verdicts — the closed `forge::verdict::CertVerdict::kind`
+/// 1. the seven cert-level verdicts — the closed `forge::verdict::CertVerdict::kind`
 ///    set is the oracle (a new verdict there must appear here too);
-/// 2. the per-clause ROUTING — the `nlsat`/`verus`/`lean` engine names + the L4/L3
+/// 2. the per-clause routing — the `nlsat`/`verus`/`lean` engine names + the L4/L3
 ///    attribution (`forge::engine::EngineName`, `forge::manifest::Level::L4`);
 /// 3. COVENANT authoring — the `witness { inhabit; falsify N }` covenant-before-burn
 ///    surface (`forge::covenant_engine`);

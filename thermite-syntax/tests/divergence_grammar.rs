@@ -115,7 +115,7 @@ fn divergence_if_else_in_tail_position_is_expr() {
     let Some(Block { stmts, tail }) = &f.body else {
         panic!("expected an in-language fn with a body (not a boundary fn)");
     };
-    // The if/else is the block's VALUE: it must be the tail Expr::If, not a
+    // The if/else is the block's value: it must be the tail Expr::If, not a
     // statement (surface-grammar.md Block grammar + ast.md REQ-6).
     assert!(
         matches!(tail.as_deref(), Some(Expr::If { .. })),

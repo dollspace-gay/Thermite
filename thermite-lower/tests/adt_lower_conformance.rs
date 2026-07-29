@@ -108,7 +108,7 @@ fn lower_and_verify(name: &str) -> String {
 //
 // REQ-8: `deposit` lowers to a `pub struct Account` + the `well_formed` invariant
 // predicate, with the invariant threaded (OQ-3 automatic threading) into
-// `requires`/`ensures`; real verus verifies it (L3). The cert oracle says L3,
+// `requires`/`ensures`; verus verifies it (L3). The cert oracle says L3,
 // pure, non-vacuous.
 
 #[test]
@@ -196,7 +196,7 @@ fn deposit_matches_cert_oracle_stable_subset() {
 // ---- AC-2: enum + match + is → Verus enum/match/is, verifies (L3) ----------
 //
 // REQ-9: `is_circle` lowers to a Verus `enum Shape`, an enum-qualified `match`,
-// and the `s is Circle` discriminant test; real verus verifies it (L3). The cert
+// and the `s is Circle` discriminant test; verus verifies it (L3). The cert
 // oracle (`conformance/shape.cert.json`) says L3, pure, non-vacuous.
 
 #[test]
@@ -254,7 +254,7 @@ fn is_circle_matches_cert_oracle_stable_subset() {
 // REQ-10: `list_sum` lowers to a Verus recursive `enum List` with `Box<List>` at
 // the recursive occurrence, and `spec fn sum_list` carries `decreases l` (the
 // datatype value, Verus's built-in structural order) recursing through `*t`;
-// real verus verifies it (terminates + totals). No fn cert (a spec-fn-only
+// verus verifies it (terminates + totals). No fn cert (a spec-fn-only
 // program), so the oracle is verus itself.
 
 #[test]
@@ -438,7 +438,7 @@ fn assert_no_cheats(emitted: &str, name: &str) {
 //
 // The ADT additions are purely additive (new `Item`/`Expr`/`Pattern`/`Type` and
 // new error arms; no existing node reshapes). The non-ADT corpus must still lower
-// to Verus that real verus verifies, and the key contract substrings must be
+// to Verus that verus verifies, and the key contract substrings must be
 // present (no weakening). Verification is by verus rather than a byte-match of the
 // emitted source against the golden — the verify-not-byte-match practice the
 // existing `lower_conformance.rs` uses (the goldens are design-authored

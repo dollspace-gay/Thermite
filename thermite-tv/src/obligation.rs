@@ -22,7 +22,7 @@
 //! (`thermite-design.md` §5.1 "counterexamples, not adjectives").
 //!
 //! `thermite-tv` does not run verus itself: it emits the obligation text. The
-//! teeth-test (`tests/teeth.rs`, REQ-4) and the future forge plug-in (REQ-5,
+//! negative test (`tests/teeth.rs`, REQ-4) and the future forge plug-in (REQ-5,
 //! `forge/src/contract_tv.rs`) discharge it through the existing
 //! `forge::check::run_verus` path.
 //!
@@ -36,7 +36,7 @@
 //! | REQ-TV-CONTRACT-OBLIGATION | shipped | `thermite-tv/src/obligation.rs` | Contract-TV per-clause Z3 equivalence obligation |  |
 //! <!-- /generated:reqs -->
 //!
-//! ## EXEC-position extension (`.design/verified/exec-tv.md` REQ-2; epic #151)
+//! ## exec-position extension (`.design/verified/exec-tv.md` REQ-2; epic #151)
 //!
 //! [`exec_equivalence_obligation`] is the exec dual: it emits the exec-fn-wrapped
 //! `fn tv_exec_wrap(..) requires <req>, ensures result == <exec_ref_value(source)>
@@ -70,7 +70,7 @@
 //! satisfied`), and exit (`proof fn` with `requires inv && !cond` asserting the claimed
 //! after-loop characterization, where an over-claim stronger than `inv ∧ ¬cond` fails).
 //! The single-iteration step reuses the shipped `body_ref_state` (no new body machinery,
-//! AC-5); a loop out of v1 is an honest `Unsupported` from `loop_ref_obligations`
+//! AC-5); a loop out of v1 is an `Unsupported` from `loop_ref_obligations`
 //! (Skipped, never silently Faithful, R-HONEST-3).
 //!
 //! <!-- generated:reqs view=thermite-tv-obligation-loop-status -->
@@ -195,8 +195,8 @@ impl ObligationFrame {
 /// `requires`.
 ///
 /// Returns the obligation program text (`thermite-tv` does not run verus — the
-/// teeth-test / forge plug-in discharge it). Returns [`RefEncodeError`] if the
-/// source clause is outside the frozen contract sublanguage (an honest error,
+/// negative test and forge plug-in discharge it). Returns [`RefEncodeError`] if the
+/// source clause is outside the frozen contract sublanguage (an error,
 /// never a panic / silent wrong encoding).
 pub fn equivalence_obligation(
     source: &Expr,
@@ -249,7 +249,7 @@ pub fn equivalence_obligation(
 pub struct ExecParamDecl {
     /// The parameter name as it appears in the obligation signature and the body.
     pub name: String,
-    /// The Verus EXEC value-type spelling (`u64` / `usize` / `&[u32]` / `bool`).
+    /// The Verus exec value-type spelling (`u64` / `usize` / `&[u32]` / `bool`).
     pub type_str: String,
 }
 
@@ -354,8 +354,8 @@ impl ExecObligationFrame {
 /// (`exec-tv.md` AC-4): the structural reason the obligation is an exec fn.
 ///
 /// Returns the obligation program text (`thermite-tv` does not run verus — the
-/// teeth-test / forge plug-in discharge it). Returns [`ExecRefEncodeError`] if the
-/// source body expr is outside the pure-exec subset (an honest error, never a
+/// negative test and forge plug-in discharge it). Returns [`ExecRefEncodeError`] if the
+/// source body expr is outside the pure-exec subset (an error, never a
 /// panic / silent wrong encoding).
 pub fn exec_equivalence_obligation(
     source: &Expr,
@@ -408,7 +408,7 @@ pub fn exec_equivalence_obligation(
 pub struct BodyParamDecl {
     /// The parameter name as it appears in the obligation signature and the body.
     pub name: String,
-    /// The Verus EXEC value-type spelling (`u64` / `usize` / `&[u32]` / `bool`).
+    /// The Verus exec value-type spelling (`u64` / `usize` / `&[u32]` / `bool`).
     pub type_str: String,
 }
 
@@ -509,16 +509,16 @@ impl BodyObligationFrame {
 /// faithful. A `postcondition not satisfied` counterexample is a
 /// state-transformation infidelity — a dropped statement, a reordered mutation, a
 /// swapped `if`-branch (each changes the final state while every sub-expression stays
-/// value-faithful — the state-sequencing teeth that per-expression step-2.1 TV cannot
+/// value-faithful, which is the state-sequencing failure that per-expression step-2.1 TV cannot
 /// see). The production body is an exec `fn` (not `proof`/`spec`), so the
 /// always-active runtime overflow checks are live (the same structural reason the
 /// step-2.1 obligation is an exec fn).
 ///
 /// Returns the obligation program text (`thermite-tv` does not run verus — the
-/// teeth-test / the future forge plug-in discharge it). Returns
+/// negative test and the future forge plug-in discharge it). Returns
 /// [`ExecRefEncodeError`] if the source body is outside the frozen straight-line
 /// subset (a loop / mid-branch early return / non-scalar mutation / re-shadow — an
-/// honest error, never a panic / silent wrong encoding).
+/// error, never a panic / silent wrong encoding).
 pub fn body_equivalence_obligation(
     body: &Block,
     p_production: &str,
@@ -579,7 +579,7 @@ pub fn body_equivalence_obligation(
 pub struct LoopParamDecl {
     /// The parameter name (as it appears in the signature and the predicates).
     pub name: String,
-    /// The Verus EXEC value-type spelling (`usize` / `u64` / `&[u32]` / `bool`).
+    /// The Verus exec value-type spelling (`usize` / `u64` / `&[u32]` / `bool`).
     pub type_str: String,
 }
 
@@ -702,7 +702,7 @@ impl LoopObligationFrame {
 /// Verified iff the invariant holds on entry; an `assertion failed`
 /// counterexample means the entry state violates the claimed invariant (a wrong
 /// pre-loop initialization). Returns [`ExecRefEncodeError`] if the loop is outside
-/// the v1 frozen subset (an honest Skipped, never a panic / silent wrong encoding).
+/// the v1 frozen subset (an Skipped, never a panic / silent wrong encoding).
 pub fn loop_entry_obligation(
     block: &Block,
     frame: &LoopObligationFrame,
@@ -763,10 +763,10 @@ pub fn loop_entry_obligation(
 ///
 /// Verified iff one faithful iteration preserves the invariant (and production computes
 /// the reference step); a `postcondition not satisfied` is a per-iteration state-lowering
-/// infidelity (a dropped / reordered / wrong-cell body mutation — the same teeth
-/// `body_ref_sound`'s negative lemmas bite) or a broken-invariant body (the source step
+/// infidelity (a dropped, reordered, or wrong-cell body mutation covered by
+/// `body_ref_sound`'s negative lemmas) or a broken-invariant body (the source step
 /// does not re-establish `inv`). Returns [`ExecRefEncodeError`] if the loop is outside
-/// the v1 frozen subset (an honest Skipped).
+/// the v1 frozen subset (an Skipped).
 pub fn loop_preservation_obligation(
     block: &Block,
     p_production: &str,
@@ -834,7 +834,7 @@ pub fn loop_preservation_obligation(
 /// verus! {
 ///     <frame.spec_defs>
 ///     proof fn tv_loop_exit(<cells>, <inputs>)
-///         requires <inv> && (!(<cond>)),    // the genuine after-loop facts (assumed)
+///         requires <inv> && (!(<cond>)),    // the after-loop facts (assumed)
 ///     {
 ///         assert(<claimed_after_loop>);     // the production's after-loop claim
 ///     }
@@ -846,7 +846,7 @@ pub fn loop_preservation_obligation(
 /// claim follows); an `assertion failed` counterexample means a wrong after-loop
 /// characterization (an over-strong claim about the exit state — stronger than
 /// `inv ∧ ¬cond`). Returns [`ExecRefEncodeError`] if the loop is outside the v1 frozen
-/// subset (an honest Skipped).
+/// subset (an Skipped).
 pub fn loop_exit_obligation(
     block: &Block,
     claimed_after_loop: &str,

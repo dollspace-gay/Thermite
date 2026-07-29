@@ -1,7 +1,7 @@
 //! Conformance for the exec-body (state-refinement) translation-validation phase
 //! (`.design/verified/exec-stmt-tv.md` REQ-5 + `.design/verified/loop-tv.md` REQ-5;
 //! epic crosslink #169, blocker #162). The state analogue of
-//! `exec_tv_conformance.rs`. Four load-bearing properties, all through the real
+//! `exec_tv_conformance.rs`. Four required properties, all through the real
 //! `verus` binary (skip with a logged reason if absent, mirroring
 //! `exec_tv_conformance.rs` / `body_teeth.rs`):
 //!

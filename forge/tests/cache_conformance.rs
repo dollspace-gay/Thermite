@@ -177,7 +177,7 @@ fn cache_hit_serves_l3_with_verus_unavailable() {
     let _ = std::fs::remove_dir_all(&cache_dir);
     let fixture = write_fixture("decisive", &verifiable_program("decisive_fn"));
 
-    // Populate the cache with verus present (pinned version, real binary on PATH).
+    // Populate the cache with verus present (pinned version, binary on PATH).
     let (code1, certs1) = run_check(&fixture, &cache_dir, &HashMap::new());
     assert_eq!(code1, Some(0), "population run must certify L3");
     assert_eq!(

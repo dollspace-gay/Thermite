@@ -107,7 +107,7 @@ fn f(xs: &[u32]) -> usize
     );
 }
 
-/// Inner loop nested inside an OUTER loop's body; the INNER loop's `inv` is
+/// Inner loop nested inside an outer loop's body; the INNER loop's `inv` is
 /// bogus while the outer's is well-formed. The traversal must descend a loop
 /// body (`scan_block_for_loops(&loop_node.body)`) to reach the inner loop.
 #[test]

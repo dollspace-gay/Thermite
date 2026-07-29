@@ -4,7 +4,7 @@
 tier: 3-component
 status: draft
 audited-sha: 92396428567edc6940a9e2845217f5ff4c2ea3c6 (re-pinned 2026-06-16, user-authorized: the only change to this doc's governed files since the prior pin is the additive stage-1 forge-tier increment 2a — the new Item::Forge surface + inert Item::Forge match arms, verified net-additive with no substantive removal of existing v1 logic (git log <main>..HEAD = the 8 forge commits); the v1 behavior this doc governs is unchanged, and the new forge-tier surface is specified in .design/stage1-forge-tier.md / REQ-S1-3)
-audited-content-sha256: 53e9a27809ae6399cd68f9ec7956660ef4a78a21847170ee088d0a1caa72ecaa
+audited-content-sha256: ebc394dadd626478bdbc2729278ec3bf4ef4693ea78e2be249c5ca142e02729b
 governs: thermite-tv/src/exec_stmt_encode.rs, thermite-tv/src/obligation.rs, thermite-lower/src/lower.rs, forge/src/body_tv.rs, forge/src/tv_signal.rs
 thesis-refs:
   - thermite-design.md §1 (trust relocated: code → spec → spec-intent)

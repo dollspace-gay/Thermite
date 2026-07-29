@@ -1,65 +1,22 @@
 #!/usr/bin/env python3
-"""
-doc-drift tripwire — pinned-SHA freshness for every routed design doc.
+"""Check whether routed design documents are current with their source files.
 
-The .design/ docs are the per-component contracts (goal.md authority chain),
-and spec-discipline.py guarantees they EXIST and are READ before a routed
-edit — but nothing checks their CONTENT is still true of the code. They drift
-silently. This gate converts that staleness from a silent failure into a loud,
-gated one (the same move #[slag] makes for unverified code, thermite-design.md
-§8): every routed design doc pins an `audited-content-sha256:` digest over its
-governed files (or, for legacy docs, an `audited-sha:` commit), and this gate
-FAILS whenever those governed file contents change. Legacy commit pins use a
-full-history commit-set predicate so merge-parent order cannot hide drift.
+Routes come from ``tooling/spec-routes.toml``. Each routed document must contain
+either an ``audited-content-sha256`` pin or a legacy ``audited-sha`` commit pin.
+Content pins are compared with a digest of the governed files. Legacy pins are
+checked against commits that touched those files after the pinned commit.
 
-The rule, precisely (governed by .design/tooling/doc-drift-tripwire.md):
+Results are sorted by document and file:
 
-  1. Enumerate the routed docs: the deduplicated `design` fields of every
-     [[route]] in tooling/spec-routes.toml, each inverted to its governed file
-     set = the union of that doc's routes' crate_patterns (REQ-1, REQ-6b).
-  2. Extract each doc's pin from the doc's HTML-comment header (REQ-5): prefer
-     `audited-content-sha256:` (64-hex aggregate content digest) when present;
-     otherwise use the legacy first `audited-sha:` 40-hex commit pin.
-  3. Validate a legacy commit pin: it must resolve to a commit
-     (`git rev-parse --verify <P>^{commit}`) AND be an ancestor of HEAD
-     (`git merge-base --is-ancestor <P> HEAD`) — else INVALID-PIN (REQ-6d, 8).
-  4. Drift predicate: for content pins, recompute the governed-file aggregate
-     SHA-256 and compare it to the pin. For legacy commit pins (commit-set,
-     never commit-date — decision 2), a governed file f has drifted iff
-     `git log --full-history --format=%H <P>..HEAD -- <pathspec>` is non-empty.
-     Literal paths use pathspec `<f>`; glob patterns use `:(glob)<f>` (REQ-6e).
-     A file with no commits in <P>..HEAD — including a file never committed at
-     all — is CURRENT, not drift (REQ-6 unbuilt-file rule).
-  5. Report (REQ-7) deterministically sorted by doc path, then file path
-     (R-CODE-5), and exit per the REQ-9 contract:
-         0 = every routed doc pinned and current;
-         1 = at least one DRIFT / MISSING-PIN / INVALID-PIN;
-         3 = the gate could not determine the answer (no git / not a repo /
-             tomllib absent / spec-routes.toml unreadable) — the audit's
-             INCONCLUSIVE precedent (scripts/audit.sh, REQ-3/REQ-9). A CI gate
-             that fails open is a silent pass, so an environment failure is
-             never collapsed to "no drift" (R-HONEST-3, R-CODE-4).
+* 0: every document is pinned and current
+* 1: drift, a missing pin, or an invalid pin was found
+* 3: the check could not run reliably
 
-NOT a Claude-Code hook (decision 5): invoked directly by CI, via
-`make doc-drift`'s synthetic merge-ref worktree, or standalone. NOT part of
-`make audit` — doc freshness is a development-discipline invariant, not a link
-in the proof-trust chain. scripts/audit.sh is untouched by this component
-(AC-7).
+Usage: ``python3 tooling/doc-drift.py [--root <repo-toplevel>]``
 
-Usage:  python3 tooling/doc-drift.py [--root <repo-toplevel>]
-
-  --root  the repo to check (default: the git toplevel of the cwd). The
-          production invocation is flagless; --root keeps the fixture tests
-          hermetic.
-
-See:
-  .design/tooling/doc-drift-tripwire.md  (the governing doc — REQ-5..REQ-11)
-  goal.md                                 (authority chain; R-CODE-4/5, R-HONEST-3)
-  tooling/spec-routes.toml                (the route table — single source of truth)
-  scripts/audit.sh                        (the exit-3 INCONCLUSIVE precedent)
-
-PROJECT CUSTOMIZATION:
-  Edit ROUTES_RELPATH, PIN_FIELD_RE below.
+The detailed rules are in ``.design/tooling/doc-drift-tripwire.md``.
+This is a standalone/CI check, not a Claude Code hook or part of ``make audit``.
+Customize ``ROUTES_RELPATH`` and the pin expressions below when adapting it.
 """
 
 import hashlib
@@ -74,9 +31,7 @@ except ImportError:  # pragma: no cover - exercised via the env-failure path
     tomllib = None
 
 
-# =====================================================================
-# PROJECT CUSTOMIZATION — edit these constants for your project
-# =====================================================================
+# Project settings
 
 # Repo-relative path to the route table (the enumeration source, REQ-1).
 ROUTES_RELPATH = "tooling/spec-routes.toml"
@@ -90,14 +45,11 @@ CONTENT_PIN_FIELD_RE = re.compile(
 )
 CONTENT_PIN_ANY_RE = re.compile(r"^audited-content-sha256:\s*(\S+)", re.MULTILINE)
 
-# Legacy commit pin, per REQ-5: the FIRST line matching this in a doc's header.
-# Full 40-hex (never the 8-hex short form) so a pin can never go ambiguous as
-# the repo grows.
+# Legacy commit pin, per REQ-5: the first matching line in a doc's header.
+# Use all 40 hex digits to avoid ambiguity as the repository grows.
 PIN_FIELD_RE = re.compile(r"^audited-sha:\s*([0-9a-f]{40})\b", re.MULTILINE)
 
-# =====================================================================
-# Implementation — generally no edits needed below this line
-# =====================================================================
+# Implementation
 
 # Defect classes (REQ-7/REQ-8). The literal tokens the report emits and the
 # oracle asserts.
@@ -113,11 +65,10 @@ EXIT_INCONCLUSIVE = 3
 
 
 class EnvironmentError3(Exception):
-    """The gate could not determine the answer — maps to exit 3 (REQ-9).
+    """The check could not determine the answer; maps to exit 3 (REQ-9).
 
-    Raised (never a traceback to the user) for: git absent / not a repo /
-    tomllib absent / spec-routes.toml unreadable. A CI gate that fails open is
-    a silent pass, so these are INCONCLUSIVE, never "no drift".
+    This covers missing git, an invalid repository, missing tomllib, and an
+    unreadable route table.
     """
 
 
@@ -126,10 +77,8 @@ class EnvironmentError3(Exception):
 def _run_git(root, args):
     """Run `git <args>` in `root`; return (returncode, stdout, stderr).
 
-    Raises EnvironmentError3 iff git itself cannot be invoked (absent from
-    PATH / not executable) — an environment failure, exit 3. A non-zero
-    returncode from git that DOES run is returned to the caller to interpret;
-    it is never an environment failure on its own.
+    Raise EnvironmentError3 when git cannot be invoked. Otherwise return git's
+    status to the caller for interpretation.
     """
     try:
         proc = subprocess.run(
@@ -215,8 +164,8 @@ def _intervening_commits(root, pin, pathspec):
 def load_doc_files(root):
     """Invert the route table to doc -> sorted(set(governed file patterns)).
 
-    REQ-1 / REQ-6b. Raises EnvironmentError3 on an unreadable / unparseable
-    route table or absent tomllib (a gate that fails open is a silent pass).
+    Raise EnvironmentError3 when tomllib is unavailable or the route table
+    cannot be read and validated (REQ-1, REQ-6b, REQ-9).
     """
     if tomllib is None:
         raise EnvironmentError3("tomllib is unavailable (Python < 3.11)")
@@ -231,13 +180,9 @@ def load_doc_files(root):
             f"route table unreadable ({ROUTES_RELPATH}): {exc}"
         ) from exc
 
-    # Shape validation (REQ-9): a table that PARSES as TOML can still be the
-    # wrong SHAPE (e.g. `route = 5`, or `route = ["a"]`). Iterating such a value
-    # would raise a bare TypeError/AttributeError -> unhandled traceback, exit 1
-    # (the DRIFT class). A malformed enumeration source is an ENVIRONMENT failure
-    # (the "spec-routes.toml unreadable" case), so it is INCONCLUSIVE (exit 3),
-    # never a drift finding and never a traceback (R-HONEST-3: a gate that fails
-    # open is a silent pass). Validate before the loop; name the defect loudly.
+    # TOML syntax alone does not validate the route-table shape. Check it here
+    # so malformed input is reported as inconclusive instead of raising while
+    # the entries are traversed (REQ-9).
     routes = data.get("route", [])
     if not isinstance(routes, list):
         raise EnvironmentError3(
@@ -254,16 +199,9 @@ def load_doc_files(root):
             )
         design = route.get("design")
         pattern = route.get("crate_pattern")
-        # Both fields are "# required" per the spec-routes.toml schema header,
-        # so an entry missing either (a None from an absent / typo'd key) or
-        # carrying an empty string is WRONG-SHAPED. The builder-era
-        # `if not design or not pattern: continue` silently DROPPED such an
-        # entry, shrinking the deduplicated-design checked set (REQ-1) while the
-        # gate could still exit 0 — a one-doc fail-open (a typo'd `crate_patern =`
-        # quietly removes a doc from coverage). Per REQ-9 / R-HONEST-3 a
-        # malformed enumeration source is INCONCLUSIVE (exit 3), never a drift
-        # finding and never a silent pass: route it through EnvironmentError3,
-        # naming the defective entry and the missing/empty field (#261).
+        # Both fields are required by the spec-routes.toml schema. Reject absent,
+        # empty, or non-string values so a malformed route cannot reduce coverage
+        # while the check still succeeds (#261).
         for field, value in (("design", design), ("crate_pattern", pattern)):
             if value is not None and not isinstance(value, str):
                 raise EnvironmentError3(
@@ -280,12 +218,8 @@ def load_doc_files(root):
                 )
         doc_files.setdefault(design, set()).add(pattern)
     if not doc_files:
-        # REQ-9 / R-HONEST-3: the route table is the enumeration source, and an
-        # empty one means there is NOTHING to check — not "every routed doc is
-        # current". Exiting 0 here would be a vacuous green (fail-open silent
-        # pass), so an empty/usable-but-route-less table is INCONCLUSIVE (3),
-        # exactly like an unreadable one. ("The tool never exits 0 without
-        # having checked all 48 docs.")
+        # With no routes, the check cannot establish that routed docs are current.
+        # Treat that case as inconclusive (REQ-9).
         raise EnvironmentError3(
             f"route table {ROUTES_RELPATH} yielded zero routed docs — nothing "
             f"to check; an empty enumeration source is INCONCLUSIVE, not a pass"

@@ -92,7 +92,7 @@ const DOMAIN: &[u8] = b"thermite.forge.proof-cache.v1";
 ///       REQ-2: a hit must equal a fresh verify).
 ///   5 — blocker #101 (`.design/forge/equivalent-mutants.md` REQ-5): the §7
 ///       mutation gate now excludes a survivor Verus proves observably equivalent
-///       to the real body under `req` from the kill-ratio denominator
+///       to the body under `req` from the kill-ratio denominator
 ///       (`check::mutation_score` → `equivalence_proves_equal`). This changes the
 ///       gate verdict for forced-output fns (a `1/3` `WeakContract` `clamp_zero`
 ///       becomes a certifying `1/1` once its two proved-equivalent survivors
@@ -103,7 +103,7 @@ const DOMAIN: &[u8] = b"thermite.forge.proof-cache.v1";
 ///   6 — blocker #269 (`.design/forge/mutation-scoring.md` REQ-9/REQ-10/REQ-12):
 ///       the §7 early-return family now also synthesizes the F-IDENT identity
 ///       returns (`return <param>` for every param whose type equals the return)
-///       and the F-STRUCT-ZERO named-struct field-zero literal. Both are
+///       and the F-STRUCT-zero named-struct field-zero literal. Both are
 ///       verdict-changing widenings of the frozen mutant set (an item's `K/N`
 ///       and even its certify/gate verdict can change, e.g. `move_up` gains a
 ///       surviving `return b` identity mutant), so the check logic is no longer
@@ -309,10 +309,10 @@ fn temp_sibling(cache_dir: &Path, key: &str) -> PathBuf {
 // Stage-1 forge tier (`.design/stage1-forge-tier.md` REQ-9 / Q7 / AC-13): a `dec wf <rel>`
 // termination measure carries an ACCESSIBILITY obligation — the relation must be
 // well-founded on the recursion's carrier for the recursion to be admitted. That proof is
-// expensive and re-derivable, so — exactly like the per-item proof cache above — it is
+// expensive and re-derivable, so — like the per-item proof cache above — it is
 // content-addressed and cached by the (relation, carrier) pair, invalidated by the same
 // `CHECK_SCHEMA_VERSION` gate-set key (a gate change ⇒ a new key ⇒ a miss ⇒ a re-check). A
-// `dec wf` re-check on an unchanged (relation, carrier) HITS the cache (AC-13), skipping the
+// `dec wf` re-check on an unchanged (relation, carrier) hits the cache (AC-13), skipping the
 // re-derivation — observable through [`load_accessibility`] returning the stored proof.
 
 /// Domain-separation tag for the accessibility cache key (REQ-9), distinct from the
@@ -400,7 +400,7 @@ fn accessibility_entry_path(cache_dir: &Path, key: &str) -> PathBuf {
 /// Look up a cached [`AccessibilityProof`] by `key` under `cache_dir` (REQ-9 / AC-13).
 /// Returns `Some(proof)` (flagged `cached: true`) on a hit, `None` on a miss. A miss
 /// includes no file, an unreadable file, and a corrupt/unparseable file — a damaged cache
-/// degrades to re-derive, never to an error or a stale read (R-CODE-2), exactly like
+/// degrades to re-derive, never to an error or a stale read (R-CODE-2), like
 /// [`load`].
 #[must_use]
 pub fn load_accessibility(cache_dir: &Path, key: &str) -> Option<AccessibilityProof> {
@@ -602,7 +602,7 @@ mod tests {
         assert_ne!(a, cache_key("lt", 0, "u32", "0.1.0"));
     }
 
-    // REQ-9 / AC-13: a `dec wf` re-check HITS the cache — a stored accessibility proof is
+    // REQ-9 / AC-13: a `dec wf` re-check hits the cache — a stored accessibility proof is
     // served (flagged `cached: true`) on the second look, observable via the cache layer;
     // the stored form is canonical `cached: false`.
     #[test]
@@ -617,7 +617,7 @@ mod tests {
         );
         let proof = AccessibilityProof::new("lt", "u32", true);
         store_accessibility(&dir, &key, &proof).expect("store");
-        // The re-check HITS — same (relation, carrier), served from the cache.
+        // The re-check hits — same (relation, carrier), served from the cache.
         let hit = load_accessibility(&dir, &key).expect("HIT after store");
         assert_eq!(hit.relation, "lt");
         assert_eq!(hit.carrier, "u32");
@@ -639,7 +639,7 @@ mod tests {
         // sharing a schema differ, and the same pair across schemas would differ — pinned
         // structurally by `accessibility_cache_key` feeding `CHECK_SCHEMA_VERSION`.
         let k = accessibility_cache_key("lt", "u32");
-        // A hand-built key WITHOUT the schema field must differ from the real key (proving
+        // A hand-built key without the schema field must differ from the real key (proving
         // the schema participates — the invalidation lever).
         let mut bare = Sha256::new();
         bare.update(DOMAIN_ACCESSIBILITY);

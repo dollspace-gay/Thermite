@@ -42,27 +42,27 @@
 //! | REQ-FORGE-OBLIGATION-REGISTRY-TERMINATION | shipped | `forge/src/obligation.rs` | Registry-termination class and full-position closure |  |
 //! <!-- /generated:reqs -->
 //!
-//! The auxiliary OVERFLOW / TERMINATION classes and the multi-class minting of one
+//! The auxiliary overflow / termination classes and the multi-class minting of one
 //! item's full obligation set are part of the per-class rendering increment (ii)
-//! still grows; increment (i) reifies the class enum (AC-1) and mints the CONTRACT +
-//! REGISTRY-TERMINATION classes the §0 pipeline discharges today, which
+//! still grows; increment (i) reifies the class enum (AC-1) and mints the contract +
+//! REGISTRY-termination classes the §0 pipeline discharges today, which
 //! is what the Verus engine's `discharge` keys on.
 
 use thermite_syntax::{Block, Expr, FnItem, SpecFnItem, Type};
 
 /// The backend-neutral obligation class (`.design/verified/proof-backends.md`
 /// REQ-1 / AC-1). The variant set is the union of the `thermite-tv/src/obligation.rs`
-/// emitters (CONTRACT / EXEC / BODY / LOOP-{entry,preservation,exit}), the §6/§7
-/// in-item auxiliaries Verus discharges (OVERFLOW / TERMINATION), and REQ-1.2's
+/// emitters (contract / exec / body / LOOP-{entry,preservation,exit}), the §6/§7
+/// in-item auxiliaries Verus discharges (overflow / termination), and REQ-1.2's
 /// [`ObligationClass::RegistryTermination`]. The three §0.1 meta/battery query
 /// classes (vacuity / equivalence / strengthen) are not here — they
 /// stay direct verus invocations outside the Engine interface in v1 (the role
 /// discriminator carries that future seam; see [`ObligationRole`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 // AC-1 requires the class enum's variants to be the full union of the
-// `obligation.rs` emitters + the §6/§7 in-item auxiliaries + REGISTRY-TERMINATION.
-// Increment (i) mints CONTRACT + REGISTRY-TERMINATION on the live path; the EXEC /
-// BODY / LOOP-* / OVERFLOW / TERMINATION variants are forward-declared per AC-1 and
+// `obligation.rs` emitters + the §6/§7 in-item auxiliaries + REGISTRY-termination.
+// Increment (i) mints contract + REGISTRY-termination on the live path; the exec /
+// body / LOOP-* / overflow / termination variants are forward-declared per AC-1 and
 // minted as the per-class rendering grows (increment (ii)+). Each carries a stable
 // `tag()`. The forward-declared variants are not yet constructed in production.
 #[allow(
@@ -76,10 +76,10 @@ pub enum ObligationClass {
     /// `equivalence_obligation` content (the canonical `result == spec_sum(xs)`
     /// shape). This is the class the Verus engine's per-item L3 discharge proves.
     Contract,
-    /// An EXEC value obligation (`exec_equivalence_obligation`): the production
+    /// An exec value obligation (`exec_equivalence_obligation`): the production
     /// exec expr's bounded value equals the reference exec value.
     Exec,
-    /// A straight-line BODY state obligation (`body_equivalence_obligation`).
+    /// A straight-line body state obligation (`body_equivalence_obligation`).
     Body,
     /// A loop ENTRY obligation (`loop_entry_obligation`): `inv` holds on entry.
     LoopEntry,
@@ -89,13 +89,13 @@ pub enum ObligationClass {
     /// A loop EXIT obligation (`loop_exit_obligation`): the claimed after-loop
     /// characterization follows from `inv ∧ ¬cond`.
     LoopExit,
-    /// An OVERFLOW / bounds obligation (the bounded `S_E`: `execDenote = none`
+    /// An overflow / bounds obligation (the bounded `S_E`: `execDenote = none`
     /// exactly at overflow) Verus discharges inside an item.
     Overflow,
-    /// A TERMINATION obligation: the item's own `dec` measure is a valid
+    /// A termination obligation: the item's own `dec` measure is a valid
     /// well-founded descent (the source `dec` → the well-founded fixpoint).
     Termination,
-    /// The REGISTRY-TERMINATION class (REQ-1.2, the #215 fix): for an item with a
+    /// The REGISTRY-termination class (REQ-1.2, the #215 fix): for an item with a
     /// non-empty called-spec-fn set, every reached spec-fn carries a per-spec-fn
     /// obligation that its `dec` measure is a valid well-founded descent. The
     /// parser guarantees dec presence; this class is dec validity, and it is not
@@ -130,7 +130,7 @@ impl ObligationClass {
 /// reified as `Obligation`s in v1 (they keep their own direct verus calls, OQ-5).
 /// The role field is the seam those inverted/advisory roles will key on, so the
 /// REQ-3 discharge discipline (Unknown→degrade, Refuted→hard-fail) can be scoped
-/// to `Certification` from day one without dragging the OUT-list in.
+/// to `Certification` from day one without dragging the out-list in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ObligationRole {
     /// An item-correctness CERTIFICATION obligation — REQ-3's discharge discipline
@@ -157,8 +157,8 @@ impl ObligationRole {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AstSlice {
     /// A single expression node (a contract clause, an exec expr, a loop measure).
-    /// Forward-declared for the EXEC / LOOP-measure classes (increment (ii)+); the
-    /// CONTRACT obligation increment (i) mints uses the `Block` body slice.
+    /// Forward-declared for the exec / LOOP-measure classes (increment (ii)+); the
+    /// contract obligation increment (i) mints uses the `Block` body slice.
     #[allow(
         dead_code,
         reason = "proof-backends §1: the single-Expr slice serves the EXEC/loop-measure \
@@ -238,7 +238,7 @@ pub struct Obligation {
 }
 
 impl Obligation {
-    /// Mint the per-item CONTRACT certification obligation for a checked exec
+    /// Mint the per-item contract certification obligation for a checked exec
     /// `fn` (`.design/verified/proof-backends.md` §1 — "the (T1)-style equality the
     /// spine already proves the reference encoder satisfies, lifted to the per-item
     /// obligation"). The `ast_slice` is the fn's body (the production side the
@@ -280,7 +280,7 @@ impl Obligation {
         }
     }
 
-    /// Mint the per-item CONTRACT certification obligation for a checked `spec fn`
+    /// Mint the per-item contract certification obligation for a checked `spec fn`
     /// (`.design/verified/proof-backends.md` §1). A spec fn is a pure
     /// contract-free definition; its certification obligation is stated over its
     /// `body` with its params in env. The `called_spec_fns` closure (REQ-1.2/#226,
@@ -309,9 +309,9 @@ impl Obligation {
         }
     }
 
-    /// Mint the per-item REGISTRY-TERMINATION certification obligation (REQ-1.2):
+    /// Mint the per-item REGISTRY-termination certification obligation (REQ-1.2):
     /// an item with a non-empty `called_spec_fns` set carries this class
-    /// item-wide, conjoined with its CONTRACT class. The `ast_slice` is the item's
+    /// item-wide, conjoined with its contract class. The `ast_slice` is the item's
     /// own body (the descent measures live in `env.spec_defs`'s reached spec-fns +
     /// the item's own `dec`); the env's `spec_defs` is the full closure so the
     /// engine that discharges it (Verus's dec-check today; a Lean well-foundedness
@@ -360,7 +360,7 @@ mod tests {
             .expect("fn present")
     }
 
-    // REQ-1: the CONTRACT obligation reifies the fn's body + params + req as
+    // REQ-1: the contract obligation reifies the fn's body + params + req as
     // neutral content (no Verus strings) — the params carry their Thermite types,
     // the req is an AST node. Expected from the design's §1 artifact shape (R-CHAR-3).
     #[test]
@@ -389,7 +389,7 @@ mod tests {
     }
 
     // REQ-1.2: an item with a non-empty called-spec-fn set gets a
-    // REGISTRY-TERMINATION obligation; an empty set yields None. Expected from the
+    // REGISTRY-termination obligation; an empty set yields None. Expected from the
     // design's REQ-1.2 class-assignment condition (R-CHAR-3).
     #[test]
     fn registry_termination_minted_iff_called_spec_fns_nonempty() {

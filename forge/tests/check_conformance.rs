@@ -255,7 +255,7 @@ fn assert_stable_subset_matches_golden(corpus: &str, cert_stem: &str, item: &str
 
 /// C7 / `.design/basis/09-option-result.md` AC-4 (#100): `parse_valid` certifies L3
 /// against the committed `conformance/parse_u64.cert.json` oracle. A valid in-range
-/// digit string PROVES `result is Some` via parse_u64's strengthened contract.
+/// digit string proves `result is Some` via parse_u64's strengthened contract.
 #[test]
 fn parse_valid_cert_matches_golden_deterministic_subset() {
     if !verus_present() {
@@ -285,7 +285,7 @@ fn make_some_cert_matches_golden_deterministic_subset() {
 /// §4.2-caged accessor; the lowerer maps spec-position `contains_key` to the TMap
 /// wrapper's `spec_contains_key`. The stable subset (item/level/tautology/
 /// vacuous_precondition/effects/slag) must match the committed oracle; the
-/// insert-then-get round-trip + absent→None teeth are pinned at the verus
+/// insert-then-get round trip and absent→None cases are pinned at the verus
 /// codegen-grounding level in `map_conformance.rs`.
 ///
 /// Unlike the single-L3-item corpora above, `map_kv.th` is multi-item and its

@@ -404,7 +404,7 @@ pub fn emit_sandbox_prelude(transitive_fx: &BTreeSet<String>) -> String {
     format!(
         r##"
 // ---- thermite #57 runtime effect sandbox (seccomp-bpf, fx-derived) ----------
-// Installed as the FIRST statements of `main`, BEFORE the entry call, so the entry
+// Installed as the first statements of `main`, before the entry call, so the entry
 // (and any boundary/slag body it reaches) runs UNDER the filter. A syscall off the
 // fx-derived allowlist -> SECCOMP_RET_KILL_PROCESS -> SIGSYS -> process killed.
 // Raw `extern "C"` prctl resolved against the std binary's linked libc (no libc
@@ -483,9 +483,9 @@ pub fn emit_sandbox_prelude(transitive_fx: &BTreeSet<String>) -> String {
 pub fn emit_probe() -> String {
     format!(
         r##"
-// ---- thermite #57 sandbox self-test probe (--sandbox-self-test ONLY) --------
-// A raw openat AFTER the filter install: under a pure filter it is non-allowlisted
-// -> SIGSYS -> the process is killed BEFORE the entry call (exit 159); under a
+// ---- thermite #57 sandbox self-test probe (--sandbox-self-test only) --------
+// A raw openat after the filter install: under a pure filter it is non-allowlisted
+// -> SIGSYS -> the process is killed before the entry call (exit 159); under a
 // read(_) filter openat is allowlisted -> the probe returns and the entry runs.
 {{
     #[cfg(target_arch = "x86_64")]

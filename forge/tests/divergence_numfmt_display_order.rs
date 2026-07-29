@@ -40,12 +40,12 @@ fn forge_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_forge"))
 }
 
-/// `true` iff the `forge build --entry` runnable artifact can LINK + RUN here. The
+/// `true` iff the `forge build --entry` runnable artifact can link + run here. The
 /// #57 runtime seccomp sandbox (`forge/src/sandbox.rs`) is native Linux only, with
 /// generated filters for x86_64 and aarch64. The emitted runner does not link off
 /// Linux (`Undefined symbols: _prctl` on macOS).
 /// The build+run tests SKIP with an explicit warning on any non-Linux platform —
-/// FULL ACCEPTANCE OF THE BUILD+RUN PATH REQUIRES LINUX CI. Mirrors the
+/// full acceptance OF the build+run PATH requires LINUX CI. Mirrors the
 /// `verus_present()` skip precedent (a missing capability is a logged skip, not a
 /// panic, R-CODE-4).
 fn linux_build_run_supported(test: &str) -> bool {

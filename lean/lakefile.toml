@@ -12,14 +12,14 @@
 name = "thermite"
 defaultTargets = ["Thermite"]
 
-# Pinned to a SHA (not the `main` branch) so a manifest refresh cannot float the
-# dependency upstream unobserved (trust-audit finding F4). This is the commit
-# `lake-manifest.json` already locks; pinning it here makes the requirement and the
-# lockfile agree, so the Lean CI job's `lake build` is reproducible.
+# Pin lean-smt to the proof from upstream PR #227. The PR author's fork
+# advertises this commit, so fresh Lake checkouts can fetch it by SHA.
+# It closes the `BitVec.eq_eq_beq` axiom while keeping the Lean 4.29
+# dependency set.
 [[require]]
 name = "smt"
-git = "https://github.com/ufmg-smite/lean-smt.git"
-rev = "7d1d8239e78daa5197f9a71948776c4627049f5f"
+git = "https://github.com/AlexeyMilovanov/lean-smt.git"
+rev = "ee6d36b97a70f6b378c8ad851a938ed79b321c65"
 
 [[lean_lib]]
 name = "Thermite"

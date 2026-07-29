@@ -54,7 +54,7 @@ def stateOfDropped : State :=
 /-- The exec body `{ xs[0] }` (index element 0 of the slice param `xs`). -/
 def idxBody : Block := .mk [] (some (.index "xs" (.intLit .u64 0)))
 
-/-- Faithful — the body converges to the genuine element `7`. With the slice mapped,
+/-- Faithful — the body converges to the element `7`. With the slice mapped,
     `xs[0]` reads element `0` of `[⟨u32,7⟩]` = `7`, so `bodyConverges` holds. -/
 theorem faithful_body_converges :
     bodyConverges idxBody stateOfFaithful (.int ⟨.u32, 7⟩) := by

@@ -650,7 +650,7 @@ noncomputable def intValNB : Nat → Expr → Env → Option Int
             | none => some True) s)
   | _,    Expr.intLit n,      _   => some n
   | _,    Expr.var x,         env => some (env.ints x)
-  -- The bool-sorted catch-all: `some 0`, a genuine value (matches `intVal`'s `0`; the
+  -- The bool-sorted catch-all: `some 0`, a value (matches `intVal`'s `0`; the
   -- `specCall` arms above already peeled off both fuels, so no `specCall` reaches here).
   | _, _, _ => some 0
   termination_by fuel e _ => (fuel, sizeOf e)

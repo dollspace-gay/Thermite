@@ -3,7 +3,7 @@
 tier: 3-component
 status: draft
 audited-sha: 92396428567edc6940a9e2845217f5ff4c2ea3c6 (re-pinned 2026-06-16, user-authorized: the only change to this doc's governed files since the prior pin is the additive stage-1 forge-tier increment 2a — the new Item::Forge surface + inert Item::Forge match arms, verified net-additive with no substantive removal of existing v1 logic (git log <main>..HEAD = the 8 forge commits); the v1 behavior this doc governs is unchanged, and the new forge-tier surface is specified in .design/stage1-forge-tier.md / REQ-S1-3)
-audited-content-sha256: df347aac593e3f751d671d91af8a5bdd5c5d0ec1007017e86664c40b4f9c6ca2
+audited-content-sha256: a27e21b7ee949f1348a8b96077e1b75efbb8644ca440c70797d5fc3fee55bcd5
 governs: forge/src/build.rs
 governs: forge/src/effect_wrappers.rs
 (the thermite-stdlib/src/effect/* paths this doc originally listed were never

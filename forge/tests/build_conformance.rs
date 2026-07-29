@@ -73,12 +73,12 @@ fn write_fixture(name: &str, body: &str) -> PathBuf {
     path
 }
 
-/// `true` iff the `forge build --entry` runnable artifact can LINK + RUN here. The
+/// `true` iff the `forge build --entry` runnable artifact can link + run here. The
 /// #57 runtime seccomp sandbox (`forge/src/sandbox.rs`) is native Linux only, with
 /// generated filters for x86_64 and aarch64. The emitted runner does not link off
 /// Linux (`Undefined symbols: _prctl` on macOS).
 /// The build+run tests SKIP with an explicit warning on any non-Linux platform —
-/// FULL ACCEPTANCE OF THE BUILD+RUN PATH REQUIRES LINUX CI. Mirrors the
+/// full acceptance OF the build+run PATH requires LINUX CI. Mirrors the
 /// `verus_present()` skip precedent (a missing capability is a logged skip, not a
 /// panic, R-CODE-4).
 fn linux_build_run_supported(test: &str) -> bool {
@@ -129,7 +129,7 @@ fn sum_runs() {
     assert_eq!(v["crate_type"], "bin", "an --entry build is a runnable bin");
     assert_eq!(v["entry"], "sum");
 
-    // AC-3: the produced binary RUNS and prints the hand-derived value `6`.
+    // AC-3: the produced binary runs and prints the hand-derived value `6`.
     let artifact = artifact_path_from_json(&stdout);
     let (ran, output) = run_artifact(&artifact);
     assert!(
@@ -396,7 +396,7 @@ fn checks_are_baked_in() {
 // the per-run scratch path remapped out of the debug metadata) produce a
 // byte-identical compiled rlib (§5.3). The emitted source is forge-owned
 // deterministic; the codegen is reproducible once the path + the
-// archive mtime are pinned. This builds via the real CLI twice and diffs the
+// archive mtime are pinned. This builds via the CLI twice and diffs the
 // artifact bytes (R-CHAR-3 — the design's reproducibility AC, not a
 // toolchain self-comparison of derived strings).
 
@@ -430,7 +430,7 @@ fn rebuilt_library_is_byte_identical() {
 // ---- AC-7: exit-status discipline (R-CODE-4) --------------------------------
 //
 // A program that parses/validates/effect-checks clean but lowers to Rust rustc
-// REJECTS (an `ens` referencing an undefined identifier) yields a non-zero `forge
+// rejects (an `ens` referencing an undefined identifier) yields a non-zero `forge
 // build` exit and a structured RustcOutput error — never a silent success.
 
 #[test]
@@ -449,7 +449,7 @@ fn uncompilable_lowering_is_nonzero_exit() {
     let _ = std::fs::remove_file(&fixture);
 }
 
-// ---- helper: the EXACT bytes build_file compiles for the library form --------
+// ---- helper: the exact bytes build_file compiles for the library form --------
 //
 // `build_file` compiles `thermite_lower::lower_l1(program)` verbatim (build.rs's
 // `emit_source` is `lower_l1` + an optional appended runner). AC-2 inspects that

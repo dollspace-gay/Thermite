@@ -179,7 +179,7 @@ fn ens_is_trivially_true(ens: &[thermite_syntax::Clause]) -> Option<usize> {
 /// A syntactically-trivial identity clause: an `Eq`/`Le`/`Ge` whose `lhs` and
 /// `rhs` are structurally identical (`PartialEq`). `x == x` / `x <= x` / `x >= x`
 /// are all trivially true. `<`/`>`/`!=` are not identities (`x < x` is false), and
-/// `Eq` with differing operands is a real obligation.
+/// `Eq` with differing operands is a obligation.
 fn identity_clause(expr: &Expr) -> bool {
     matches!(
         expr,
@@ -353,7 +353,7 @@ fn index_arg_mentions_result(index: &thermite_syntax::IndexArg, depth: usize) ->
 /// whole postcondition conjunction adds nothing. So the rule fires only when every
 /// clause is req-implied. A contract with a redundant implied clause and a
 /// stronger clause (`req x > 0 && x < 10` / `ens x > 0` / `ens result == x`)
-/// carries a real obligation (`result == x` is not a req conjunct) and is not
+/// carries a obligation (`result == x` is not a req conjunct) and is not
 /// (c)-rejected. Returns the first req-implied `ens` clause index (for the
 /// diagnostic) only when every clause matches; `None` otherwise. Syntactic only:
 /// the solver "is `ens` provable from `req`" question is #13.

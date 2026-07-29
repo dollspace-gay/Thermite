@@ -1,18 +1,18 @@
 //! `forge/src/verdict.rs` — the seven-variant certificate-level verdict (REQ-1 /
 //! AC-1; `.design/stage1-forge-tier.md`). The forge tier's closed outcome
-//! vocabulary, a **separate cert-level enum**, NOT arms of [`crate::engine::Verdict`]
+//! vocabulary, a **separate cert-level enum**, not arms of [`crate::engine::Verdict`]
 //! (the three-arm engine type `Proven`/`Refuted`/`Unknown`).
 //!
 //! ## The split (the §gap-analysis "verdict architecture" decision)
 //!
 //! The engine layer decides three things and only three: it `Proven`, it `Refuted`
 //! (with a witness), or it could not decide (`Unknown`). Three of the seven cert
-//! verdicts come from THAT, by a total map with no wildcard arm ([`CertVerdict::
+//! verdicts come from that, by a total map with no wildcard arm ([`CertVerdict::
 //! from_engine_verdict`]): `Proven → Proved`, `Refuted → Counterexample`, `Unknown →
 //! Timeout`. No `Unknown` survives into a certificate (R-VERDICT-1): the map is total,
 //! so every engine verdict becomes one of the seven.
 //!
-//! The other four have **no engine-level source** — they are produced UPSTREAM at the
+//! The other four have **no engine-level source** — they are produced upstream at the
 //! forge orchestration layer, each by a different increment's machinery:
 //! - `RealWitness` — the relax route (REQ-8/2f): a real countermodel of a clause true
 //!   over ℤ but false over ℝ, carrying the raw real point (the 3-arm engine `Verdict`
@@ -25,11 +25,11 @@
 //! - `KernelBudget` — the budget wrapper (REQ-1b): a Lean elaboration/kernel-budget
 //!   exhaustion (Q4 30s/clause), detected upstream via the textually-distinct signal
 //!   [`crate::tv_signal::is_kernel_budget_signal`] (Q-KBSIGNAL — a distinct Lean signal
-//!   DOES exist: `(deterministic) timeout … maximum number of heartbeats` /
+//!   does exist: `(deterministic) timeout … maximum number of heartbeats` /
 //!   `maximum recursion depth has been reached`, never confusable with the Z3 rlimit
 //!   text), so a budget exhaustion is `KernelBudget`, never mis-mapped to `Timeout`.
 //!
-//! For the FOUNDATION (this increment) the variants, their construction sites, and the
+//! For the foundation (this increment) the variants, their construction sites, and the
 //! serde are defined; the *producing logic* for `RealWitness`/`CovenantRefuted`/`Stuck`
 //! is built by 2b/2c/2f, so those are constructed only in tests here (and at the
 //! pinned construction sites the later increments fill).
@@ -72,7 +72,7 @@ pub struct CovenantCounterexample {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind")]
 pub enum CertVerdict {
-    /// Proven for all inputs at the engine's level → certify. The ONLY verdict
+    /// Proven for all inputs at the engine's level → certify. The only verdict
     /// [`from_engine_verdict`](CertVerdict::from_engine_verdict) constructs from a
     /// `Proven`; no other path constructs `Proved` from a non-`Proven` value
     /// (R-VERDICT-1, the never-converts-silently invariant).
@@ -85,7 +85,7 @@ pub enum CertVerdict {
         obligations: Vec<ObligationResult>,
     },
     /// A real countermodel of a clause true over ℤ, false over ℝ (REQ-8/2f) → escalate
-    /// UP to the forge, NEVER `Counterexample`. Carries the raw real point.
+    /// UP to the forge, never `Counterexample`. Carries the raw real point.
     RealWitness {
         /// The raw real point the nlsat query returned.
         point: RealPoint,
@@ -149,13 +149,13 @@ impl CertVerdict {
         matches!(self, CertVerdict::Proved)
     }
 
-    /// The TOTAL map from the three-arm engine [`Verdict`] into the cert vocabulary
-    /// (REQ-1 / AC-1), by an EXHAUSTIVE match with NO wildcard arm: `Proven → Proved`,
+    /// The total map from the three-arm engine [`Verdict`] into the cert vocabulary
+    /// (REQ-1 / AC-1), by an exhaustive match with no wildcard arm: `Proven → Proved`,
     /// `Refuted → Counterexample`, `Unknown → Timeout`. Only these three of the seven
     /// have an engine-level source; the other four are produced upstream (see the
-    /// module docs). The map is total, so NO `engine::Verdict::Unknown` survives into a
+    /// module docs). The map is total, so no `engine::Verdict::Unknown` survives into a
     /// certificate, and — the never-converts-silently invariant (R-VERDICT-1) — `Proved`
-    /// is constructed ONLY from `Proven`.
+    /// is constructed only from `Proven`.
     #[must_use]
     pub fn from_engine_verdict(v: &Verdict) -> Self {
         match v {
@@ -173,7 +173,7 @@ impl CertVerdict {
 /// The human detail carried by an engine [`Reason`] (exhaustive, no wildcard): both
 /// non-`Proven`/`Refuted` reasons are solver-budget/incompleteness events that the cert
 /// vocabulary classes as `Timeout` (a Lean KERNEL budget is discriminated upstream
-/// BEFORE this map, by [`cert_verdict_for_lean`], so it never reaches here as a
+/// before this map, by [`cert_verdict_for_lean`], so it never reaches here as a
 /// `Timeout`).
 fn reason_detail(reason: &Reason) -> String {
     match reason {
@@ -188,7 +188,7 @@ fn reason_detail(reason: &Reason) -> String {
 /// 1. A Lean elaboration/kernel-budget exhaustion carries a textually-distinct signal
 ///    ([`crate::tv_signal::is_kernel_budget_signal`]) that the Z3 rlimit text never
 ///    matches and vice-versa (the negative test in `tv_signal`), so a budget exhaustion
-///    is classed `KernelBudget` UPSTREAM — never routed through the 3-arm
+///    is classed `KernelBudget` upstream — never routed through the 3-arm
 ///    [`CertVerdict::from_engine_verdict`] map (which would mis-call it `Timeout`).
 /// 2. A proof that ELABORATED but left a residual goal ("unsolved goals", REQ-5/2c) is
 ///    [`CertVerdict::Stuck`] — the residual goal(s) + the frozen-battery missing-bridge
@@ -251,7 +251,7 @@ mod tests {
         })
     }
 
-    /// The total map is EXHAUSTIVE with no wildcard: each of the three engine arms maps
+    /// The total map is exhaustive with no wildcard: each of the three engine arms maps
     /// to exactly its cert image; `Unknown` (both reasons) becomes `Timeout`, so no
     /// `Unknown` survives (REQ-1 / AC-1).
     #[test]
@@ -278,7 +278,7 @@ mod tests {
     }
 
     /// The never-converts-silently invariant (R-VERDICT-1 / AC-3): `Proved` is
-    /// constructed ONLY from `Proven`. A `Refuted`/`Unknown` never yields `Proved`.
+    /// constructed only from `Proven`. A `Refuted`/`Unknown` never yields `Proved`.
     #[test]
     fn proved_is_constructed_only_from_proven() {
         assert!(CertVerdict::from_engine_verdict(&proven()).is_proved());
@@ -291,8 +291,8 @@ mod tests {
         );
     }
 
-    /// A Lean kernel/elaboration-budget exhaustion is produced UPSTREAM as
-    /// `KernelBudget`, NOT mapped to `Timeout` (Q-KBSIGNAL). A residual-goal failure is
+    /// A Lean kernel/elaboration-budget exhaustion is produced upstream as
+    /// `KernelBudget`, not mapped to `Timeout` (Q-KBSIGNAL). A residual-goal failure is
     /// `Stuck` (REQ-5/2c), and only a budget-less, residual-less incompleteness falls
     /// through to the total engine map as `Timeout`.
     #[test]
@@ -314,7 +314,7 @@ mod tests {
         );
         assert_eq!(v2.kind(), "Stuck");
 
-        // A budget-less, residual-less incompleteness (a genuine rlimit/`unknown`) is the
+        // A budget-less, residual-less incompleteness (a rlimit/`unknown`) is the
         // engine map's `Timeout` image.
         let rlimit = "error: rlimit exceeded; resource limit reached";
         let v3 = cert_verdict_for_lean(
@@ -324,7 +324,7 @@ mod tests {
         assert_eq!(v3.kind(), "Timeout");
     }
 
-    /// serde round-trips for ALL SEVEN variants (REQ-1 / AC-1): each serializes to a
+    /// serde round-trips for all seven variants (REQ-1 / AC-1): each serializes to a
     /// `"kind"`-tagged object and deserializes back to an equal value.
     #[test]
     fn all_seven_variants_round_trip() {

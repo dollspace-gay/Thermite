@@ -17,11 +17,11 @@
 //! statement-binding gate (`canonical_theorem_statement`, first textual occurrence)
 //! reads a namespaced theorem carrying the canonical obligation statement proven via
 //! `thermite_cheat`. The axiom report inspected and the statement bound belong to two
-//! different declarations: the cheat-backed proof of the real obligation is masked by
+//! different declarations: the cheat-backed proof of the obligation is masked by
 //! the clean same-short-name decoy. forge certifies the item at L3.
 //!
 //! Expected (authority, not forge's own output, R-CHAR-3): item `f` does not certify
-//! at ANY proven rung. A proof resting on `thermite_cheat` (outside the REQ-4
+//! at any proven rung. A proof resting on `thermite_cheat` (outside the REQ-4
 //! allowlist) is a cheat and is never Proven. This test fails against commit 5f601a2d
 //! (forge emits L3).
 //!
@@ -29,7 +29,7 @@
 //! path — the kernel/forge tier (the L4-shaped, kernel-grounded rung in the new
 //! ladder: `L0 < L1 < L2 < L3 < L4`, `manifest.rs::Level`). The v1-era "certifies at
 //! L3" framing is widened to its real soundness requirement: a cheat-backed proof is
-//! NEVER Proved at any PROVEN rung — neither the SOLVER rung **L3** nor the
+//! never Proved at any proven rung — neither the SOLVER rung **L3** nor the
 //! kernel-grounded rung **L4**. The assertion below checks the item certifies at
 //! neither (it must remain a non-certified L0 reject). Authority: RFC-1 / GH #2;
 //! `.design/stage1-forge-tier.md` REQ-8; `.design/verified/proof-backends.md` REQ-4/§1.
@@ -180,7 +180,7 @@ fn divergence_interactive_axiom_allowlist_masked_by_shortname_decoy() {
     // GH #2 ladder re-anchor, 2f): the obligation's canonical statement is proven only
     // via `axiom thermite_cheat : ∀ p : Prop, p` (maximal vacuity, outside the
     // {propext, Classical.choice, Quot.sound} allowlist). Such a proof is a cheat and
-    // is never Proven → item `f` does not certify at ANY PROVEN rung — neither the
+    // is never Proven → item `f` does not certify at any proven rung — neither the
     // SOLVER rung L3 nor the kernel-grounded rung L4. forge (commit 5f601a2d) emits
     // "L3" — the divergence. (It must remain a non-certified L0 reject.)
     assert!(

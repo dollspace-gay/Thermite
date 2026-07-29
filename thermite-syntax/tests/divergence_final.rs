@@ -75,7 +75,7 @@ fn divergence_value_less_trailing_if_is_statement_not_tail_expr() {
     // Both branches are assignment statements -> neither branch produces a
     // value. By surface-grammar.md decision #2 ("the expression form ... must
     // have a value; the statement form does not") + OQ-3 ("the corpus only uses
-    // the statement form"), this is the STATEMENT form: it must be the LAST
+    // the statement form"), this is the statement form: it must be the last
     // `Stmt::If` in the body, and the loop body must have no tail expr.
     //
     // EXPECTED (design authority): loop body tail is None; last stmt is Stmt::If

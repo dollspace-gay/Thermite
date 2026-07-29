@@ -9,7 +9,7 @@
 //! reference-encoded ([`thermite_tv::strat_ref_encode`]). The recursive combinators
 //! (`count_where`/`permutation_of`) have no raw-quantifier spelling, so they are routed
 //! [`ClauseRoute::DirectSemantic`] and land in the semantic phase (REQ-6 / §8.2). A
-//! deliberately-divergent pair and a timeout pair pin the WITHHELD / DIVERGENT buckets.
+//! divergent pair and a timeout pair pin the WITHHELD / DIVERGENT buckets.
 
 use std::fs;
 use std::path::PathBuf;
@@ -122,7 +122,7 @@ fn generated_clauses_flow_through_the_sweep() {
     assert!(!clauses.is_empty(), "the generator produced clauses");
 
     // Inject the two recursive combinators (no raw-quantifier spelling → direct semantic)
-    // and a deliberately-divergent + a slow (timeout) pair, to exercise every bucket.
+    // and a divergent + a slow (timeout) pair, to exercise every bucket.
     let p = normalize::parse("forall i . i < len(xs)").unwrap();
     let r_same = p.clone();
     let r_diff = normalize::parse("forall i . i < len(ys)").unwrap();

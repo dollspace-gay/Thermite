@@ -3,7 +3,7 @@
 //! is in-language and L3-certifiable.
 //!
 //! Authority:
-//!   - `.design/syntax/ast.md` REQ-10 / OQ-4: there is ONE `!` token / ONE
+//!   - `.design/syntax/ast.md` REQ-10 / OQ-4: there is one `!` token / one
 //!     `UnaryOp::Not` whose meaning is per the operand type — "**bitwise-not on an
 //!     integer type, logical-not on `bool`** ... resolved by Verus's type-directed
 //!     `!`". OQ-4: "a fn using `!` on an integer and a fn using `!` on `bool` both
@@ -14,20 +14,20 @@
 //!   - `forge/src/covenant_eval.rs` module docs (the evaluator's own stated fragment):
 //!     "The evaluator admits the pure scalar fragment: integer (`u32`/`u64`/`usize`)
 //!     and `bool` values; the arithmetic/comparison/logical/**bitwise** operators;
-//!     `!`; ...". Integer `!` is therefore claimed to be INSIDE the fragment, not an
-//!     out-of-fragment honest `Unsupported`.
+//!     `!`; ...". Integer `!` is therefore claimed to be inside the fragment, not an
+//!     out-of-fragment `Unsupported`.
 //!
 //! Divergence: `covenant_eval::eval_expr`'s `Expr::Unary { op: UnaryOp::Not, .. }` arm
-//! evaluates ONLY `Value::Bool(!v.as_bool()?)` — an integer operand hits `as_bool()` and
+//! evaluates only `Value::Bool(!v.as_bool()?)` — an integer operand hits `as_bool()` and
 //! returns `CovenantEvalError::Type("expected a bool, found integer N")`. In
 //! `covenant_engine::analyze_covenant` that non-Trap eval error becomes a
-//! `CovenantError::UnsupportedItem`, so the covenant gate REFUSES the item before burn
-//! (`CovenantUnsupportedItem`, L0). The same item WITHOUT a witness block certifies L3.
+//! `CovenantError::UnsupportedItem`, so the covenant gate refuses the item before burn
+//! (`CovenantUnsupportedItem`, L0). The same item without a witness block certifies L3.
 //! A sound, in-language item is downgraded from L3 to an L0 refusal purely because it
 //! carries a covenant and uses the documented integer `!` — a fragment-completeness
 //! divergence (REQ-4), not an out-of-fragment Unsupported.
 //!
-//! Control: the same `fn` with NO witness block certifies L3 (verified against the live
+//! Control: the same `fn` with no witness block certifies L3 (verified against the live
 //! binary), isolating the divergence to the covenant evaluator's unary-not arm.
 //!
 //! Tracking: filed by the critic (see report). `forge check` resolves the verus version
@@ -96,8 +96,8 @@ fn first_cert(program: &str, name: &str) -> Value {
 
 /// `fn flipbits(x: u32) -> u32 ... { !x }` with `ens result == !x` — a sound, in-language
 /// item. `!x` on a `u32` is bitwise-not (ast.md REQ-10/OQ-4), Verus-native. The body
-/// agrees with `ens` for every `x`, so the covenant should VALIDATE and the item should
-/// certify L3 with covenant evidence. The ONLY textual difference from the control is the
+/// agrees with `ens` for every `x`, so the covenant should validate and the item should
+/// certify L3 with covenant evidence. The only textual difference from the control is the
 /// trailing `witness` block.
 const FLIP_WITH_WITNESS: &str = "\
 fn flipbits(x: u32) -> u32
@@ -109,7 +109,7 @@ fn flipbits(x: u32) -> u32
 witness { inhabit (5); falsify 20; }
 ";
 
-/// The control: the SAME `fn` with NO witness block. It certifies L3 (the integer `!`
+/// The control: the same `fn` with no witness block. It certifies L3 (the integer `!`
 /// is Verus-native; ast.md OQ-4 — it certifies under Verus's type-directed `!`).
 const FLIP_NO_WITNESS: &str = "\
 fn flipbits(x: u32) -> u32
@@ -140,9 +140,9 @@ fn covenant_admits_integer_bitwise_not_in_its_fragment() {
     );
 
     // Authority (ast.md REQ-10/OQ-4 + covenant_eval.rs's own stated fragment): integer
-    // `!` is INSIDE the covenant scalar fragment. The covenanted item must therefore be
+    // `!` is inside the covenant scalar fragment. The covenanted item must therefore be
     // covenant-CHECKED (validated, since the body == `ens` for all x) and certify L3 with
-    // covenant evidence — NOT refused as `CovenantUnsupportedItem`.
+    // covenant evidence — not refused as `CovenantUnsupportedItem`.
     let cert = first_cert(FLIP_WITH_WITNESS, "withwitness");
     assert_eq!(
         cert["level"],

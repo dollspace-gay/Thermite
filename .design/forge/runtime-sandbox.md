@@ -3,7 +3,7 @@
 tier: 3-component
 status: draft
 audited-sha: 9171f7fc260242151432300c3ce7ec7bd3000d6e (re-pinned 2026-06-16: forge runtime status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: 488103d4382815b85141d17bc01b60917ba744e7 (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262))
-audited-content-sha256: 41538b2db294602e23ef5079c9e3742029194ae020bb6766c6b6be83ed94c650
+audited-content-sha256: cecbfd3a8b37bc83670d4fb4e32496fb7b90701a7863e7c6394a23309e7c37bf
 governs: forge/src/sandbox.rs
 thesis-refs:
   - thermite-design.md §4.1

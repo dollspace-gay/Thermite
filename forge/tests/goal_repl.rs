@@ -10,7 +10,7 @@
 //!   not enforced), so its fidelity is asserted cross-verb (battery ratio == check
 //!   ratio from the same binary), never literal-copied (R-CHAR-3).
 //! - `forge goal conformance/sum.th sum` renders the §5.1 goal state: the `given`
-//!   (`req`) + `want` (`ens`) source text and `ALL GOALS DISCHARGED` (AC-2).
+//!   (`req`) + `want` (`ens`) source text and `all goals discharged` (AC-2).
 //! - `forge edit` resolves a semantic address, splices the replacement clause at
 //!   its span, re-emits, and re-checks (REQ-3 / AC-4).
 //! - a bad address is a structured error, never a panic (REQ-7 / AC-4).
@@ -127,7 +127,7 @@ fn battery_view_matches_check_verdicts() {
 }
 
 // REQ-2 / AC-2: `forge goal sum` renders the §5.1 goal state — given (`req`) +
-// want (`ens`) source text and ALL GOALS DISCHARGED for the clean corpus item.
+// want (`ens`) source text and all goals discharged for the clean corpus item.
 #[test]
 fn goal_render_discharged_for_sum() {
     if !verus_present() {

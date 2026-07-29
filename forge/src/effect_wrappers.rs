@@ -241,7 +241,7 @@ const WRAPPERS: &[Wrapper] = &[
                  Ok(bytes) => super::TString { data: bytes },\n            \
                  Err(_) => super::TString { data: Vec::new() },\n        }\n    }\n",
     },
-    // os::write_file (the editor's file-SAVE boundary, #125 — Ctrl-S) — write the
+    // os::write_file (the editor's file-save boundary, #125 — Ctrl-S) — write the
     // buffer `String`'s bytes to the editor's fixed demo file (THERMITE_EDITOR_FILE if
     // set, else `/tmp/thermite_editor.txt`). Returns a status u64 (0 = ok, 1 = I/O
     // error), the closed status arm, never a panic. The bytes (incl. the `\n`
@@ -554,7 +554,7 @@ mod tests {
 
     #[test]
     fn write_file_wrapper_is_total_status_arm() {
-        // REQ-1 (the editor's file-SAVE boundary, #125 — Ctrl-S): `os::write_file`
+        // REQ-1 (the editor's file-save boundary, #125 — Ctrl-S): `os::write_file`
         // writes the buffer bytes (incl. `\n`) to the fixed demo path, returning a
         // status u64 (0 = ok, 1 = I/O error), the closed arm, never a panic.
         // Anchored to the design's pinned wrapper shape (R-CHAR-3).

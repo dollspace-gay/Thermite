@@ -294,7 +294,7 @@ enum Command {
     /// emits it as the stable `--json` document or a human summary. The default-config
     /// path is the reproducible trust statement (OQ-3). `--meaning` (REQ-6c, increment
     /// 2d) additionally prints each `fn`'s unfolded definition tower, the pinned hash,
-    /// and the Q2 budget status — a READ-ONLY companion that gates nothing (the budget
+    /// and the Q2 budget status — a READ-only companion that gates nothing (the budget
     /// gate is certify-time, in `forge check`; #274 "audit gates nothing").
     Audit {
         file: PathBuf,
@@ -368,7 +368,7 @@ enum Command {
     /// `inv`/`dec` clause it discharges the per-clause Z3 equivalence obligation
     /// `P_production <==> P_reference` (the production lowering vs the independent
     /// `thermite-tv` reference encoder) through verus, reporting each clause
-    /// faithful or divergent (a real lowering-fidelity finding). `--generated [N]`
+    /// faithful or divergent (a lowering-fidelity finding). `--generated [N]`
     /// also runs the off-corpus generated clause space (REQ-3, the corpus-bound
     /// escape; default N = [`TV_GENERATED_DEFAULT_N`]).
     Tv {
@@ -410,7 +410,7 @@ enum Command {
     /// admission classifier (`thermite_spec::classifier`) byte-equal to the Lean kernel
     /// `Thermite.Strat.Cls.admitted` (via `lake env lean --run`); any verdict
     /// disagreement is a verification-failure exit, and the unknown-on-admitted tripwire
-    /// escalates as classifier-suspect. lake-absent is an honest skip (exit 0).
+    /// escalates as classifier-suspect. lake-absent is a skip (exit 0).
     StratTv {
         json: bool,
         /// `--generated [N]` — the formula count (default [`crate::strat_tv::STRAT_TV_DEFAULT_N`]).
@@ -437,11 +437,11 @@ enum Command {
         seed: Option<u64>,
     },
     /// `forge g2-gate --axiom-probe <0|1> --doc-drift <0|1> --differential <0|1>
-    /// --two-phase <0|1> [--json]` — THE G2 GATE (`.design/stage2-stratified-cage.md`
+    /// --two-phase <0|1> [--json]` — the G2 gate (`.design/stage2-stratified-cage.md`
     /// REQ-9 / AC-9). The runtime enforcer `make audit` drives after running the four
     /// stage-2 checks: it combines their green/red outcomes through
-    /// [`thermite_tv::strat_two_phase::g2_flip_permitted`], prints the EFFECTIVE trust
-    /// profile (the proven scoped form iff the declaration `G2_FLIPPED` is on AND all four
+    /// [`thermite_tv::strat_two_phase::g2_flip_permitted`], prints the effective trust
+    /// profile (the proven scoped form iff the declaration `G2_FLIPPED` is on and all four
     /// green, else the conservative `UNPROVEN` form), and EXITS NONZERO when G2 is declared
     /// while any of the four is red — the mechanical block of the trust flip.
     G2Gate {
@@ -475,7 +475,7 @@ enum Command {
     /// pure view over the shipped `check::check_file` cert collection + the re-parsed
     /// AST contract (given/want); adds no verification. An optional second positional
     /// restricts the render to one item. Holes (`?N`) are increment (iii), not in
-    /// this verb yet. `--proof` switches to the forge-tier PROOF VIEW
+    /// this verb yet. `--proof` switches to the forge-tier proof view
     /// (`.design/stage1-forge-tier.md` REQ-7): forge-routed goals (`lemma` / `proof
     /// for f`) rendered with their hypotheses in scope + open `?pN` proof holes.
     Goal {
@@ -504,9 +504,9 @@ enum Command {
     },
     /// `forge edit --restratify [--json]` — the restratification rewrite, end to end
     /// (`.design/stage2-stratified-cage.md` REQ-7 / AC-7). Runs the §6 kv-alternation
-    /// worked example through `restrat`: shows the original φ REJECTED (the `Key ⇄ Value`
-    /// cycle), the rewritten φ' = `A ∧ p` ADMITTED, the `Side(φ', φ) = p ⇒ B` obligation
-    /// ADMITTED, discharges `Side` in-cage, and certifies φ. R-SIDE-1: certification is
+    /// worked example through `restrat`: shows the original φ rejected (the `Key ⇄ Value`
+    /// cycle), the rewritten φ' = `A ∧ p` admitted, the `Side(φ', φ) = p ⇒ B` obligation
+    /// admitted, discharges `Side` in-cage, and certifies φ. R-side-1: certification is
     /// WITHHELD when `Side` is undischarged (a tested code path, mirroring the Lean
     /// `restrat_conservative` / `PinRestratDropSide`).
     Restratify { json: bool },
@@ -527,7 +527,7 @@ enum Command {
     /// exporter (`.design/stage3-bv-reconstruction.md` REQ-7 / AC-8). With a `<file>`,
     /// emits a `(P_prod) ⟺ (P_ref)` Lean theorem (discharged `by smt`, then a
     /// `#print axioms` probe) for every renderable contract `ens` clause — QF_LIA for
-    /// an untagged clause, QF_BV (the bounded-integer machine-model) for a `@bvN` clause
+    /// an untagged clause, literal `BitVec N` QF_BV for a `@bvN` clause
     /// in a `bv`-feature build. Without a `<file>`, emits the canonical
     /// reconstruction-supported demo batch (the source of `lean/Thermite/SmtExport.lean`).
     /// `--out <path>` writes the Lean file there (else stdout).
@@ -726,14 +726,14 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                     "--json" => json = true,
                     // `--meaning` (REQ-6c, increment 2d): the read-only definition-tower
                     // companion — print each fn's unfolded meaning tower + the pinned
-                    // hash + the Q2 budget status. It GATES NOTHING (the budget gate is
+                    // hash + the Q2 budget status. It gates nothing (the budget gate is
                     // certify-time, in `forge check`, not here — #274 "audit gates
                     // nothing"): `forge audit --meaning` never changes the exit code.
                     "--meaning" => meaning = true,
                     // `--metrics` (umbrella REQ-7 / AC-12): the read-only §6 metrics
                     // dashboard companion — the cage-vs-forge share by routing reason, the
                     // seven-verdict counts, and the TV phase split, projected from the
-                    // certificate telemetry + a contract-TV run. It GATES NOTHING (#274
+                    // certificate telemetry + a contract-TV run. It gates nothing (#274
                     // "audit gates nothing"): `forge audit --metrics` never changes the
                     // exit code, and its output is not part of the certificate oracle.
                     "--metrics" => metrics = true,
@@ -1166,7 +1166,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
             // `forge g2-gate --axiom-probe <0|1> --doc-drift <0|1> --differential <0|1>
             // --two-phase <0|1> [--json]` (`.design/stage2-stratified-cage.md` REQ-9 /
             // AC-9). Each of the four flags takes a 0/1 (or pass/fail / true/false)
-            // verdict; all four are REQUIRED — the gate cannot honestly evaluate a check it
+            // verdict; all four are REQUIRED — the gate cannot evaluate a check it
             // was not told about (a missing verdict is a usage error, never an optimistic
             // green).
             let mut json = false;
@@ -1584,7 +1584,7 @@ fn dispatch(args: &[String]) -> Result<ExitCode, ForgeError> {
 /// `check::check_file` cert collection — given/want from the re-parsed contract,
 /// per-obligation status with counterexamples from the cert's `obligations`.
 ///
-/// Exit code: a render is a successful query (SUCCESS) — the verdict (discharged /
+/// Exit code: a render is a successful query (success) — the verdict (discharged /
 /// open obligation) lives in the rendered goal state, not in the exit code (the
 /// goal REPL is a view, not a gate). An environment failure (verus absent, file
 /// unreadable, parse failure) propagates as a `ForgeError`.
@@ -1605,7 +1605,7 @@ fn run_goal(file: &Path, item: Option<&str>, proof: bool) -> Result<ExitCode, Fo
 /// cert's `contract_quality` block — the vacuity + mutation verdicts the gate
 /// already computed inside `check_file` (AC-1: a view, never a re-derivation).
 ///
-/// Exit code: a render is a successful query (SUCCESS); an environment failure
+/// Exit code: a render is a successful query (success); an environment failure
 /// propagates as a `ForgeError`.
 fn run_battery(file: &Path, item: Option<&str>) -> Result<ExitCode, ForgeError> {
     let rendered = goal_repl::render_battery(file, item)?;
@@ -1619,7 +1619,7 @@ fn run_battery(file: &Path, item: Option<&str>) -> Result<ExitCode, ForgeError> 
 /// the addressed node's span in the file, re-emits, re-checks the affected item,
 /// and prints the new goal state.
 ///
-/// Exit code: a successful edit + re-check is SUCCESS (the new goal state is the
+/// Exit code: a successful edit + re-check is success (the new goal state is the
 /// output). A bad/unresolvable address, a re-parse failure after the splice, or an
 /// IO / environment failure propagates as a `ForgeError` (the environment exit
 /// code; never a panic — REQ-7).
@@ -1633,7 +1633,7 @@ fn run_edit(file: &Path, addr: &str, replace: &str) -> Result<ExitCode, ForgeErr
 /// new goal state (#193 increment (iii); `.design/forge/goal-repl.md` REQ-6). The
 /// fill splices the code at the hole's span, re-checks the affected item, and
 /// renders the new goal state (the §5.1 loop, which may surface new holes the fill
-/// introduced). Exit code SUCCESS: a fill is a view-producing query (the verdict
+/// introduced). Exit code success: a fill is a view-producing query (the verdict
 /// lives in the rendered goal state, like `goal`); a bad/unresolvable hole address,
 /// a non-hole target, or a re-parse failure after the splice propagates as a
 /// `ForgeError`.
@@ -1646,7 +1646,7 @@ fn run_fill(file: &Path, addr: &str, code: &str) -> Result<ExitCode, ForgeError>
 /// Run `forge smt-export`: the automated Rust→Lean obligation exporter
 /// (`.design/stage3-bv-reconstruction.md` REQ-7 / AC-8). With a `file`, parses it and
 /// exports a `(P_prod) ⟺ (P_ref)` `smt`-discharged Lean theorem per renderable
-/// contract `ens` clause (QF_LIA for an untagged clause; QF_BV bounded-integer model
+/// contract `ens` clause (QF_LIA for an untagged clause; literal `BitVec N` QF_BV
 /// for a `@bvN` clause in a `bv` build); a non-renderable clause is reported as a
 /// named skip on stderr, never silently dropped. Without a `file`, emits the canonical
 /// reconstruction-supported demo batch (the source of `lean/Thermite/SmtExport.lean`).
@@ -1699,17 +1699,17 @@ fn run_smt_export(file: Option<&Path>, out: Option<&Path>) -> Result<ExitCode, F
 
 /// Run `forge edit --restratify`: the restratification rewrite, end to end
 /// (`.design/stage2-stratified-cage.md` REQ-7 / AC-7). Drives the §6 kv-alternation
-/// worked example through `thermite_spec::restratify`: the original φ is REJECTED (the
+/// worked example through `thermite_spec::restratify`: the original φ is rejected (the
 /// `Key ⇄ Value` cycle), `restrat` excises the cycle-closing conjunct into a fresh
-/// opaque abstraction `p`, yielding the ADMITTED φ' = `A ∧ p` and the ADMITTED side
+/// opaque abstraction `p`, yielding the admitted φ' = `A ∧ p` and the admitted side
 /// obligation `Side(φ', φ) = p ⇒ B`; the demo DISCHARGES `Side` in-cage and certifies φ.
 ///
-/// R-SIDE-1: a φ'-only certificate never counts for φ — `certify(.., false)` WITHHELDs.
+/// R-side-1: a φ'-only certificate never counts for φ — `certify(.., false)` WITHHELDs.
 /// The CLI runs the discharged (certified) path; the withheld path is the
 /// `restratify_withholds_undischarged_side` test below + the thermite-spec unit test +
 /// the Lean `PinRestratDropSide`.
 ///
-/// Exit code: a successful certified rewrite is SUCCESS; a (theoretically impossible for
+/// Exit code: a successful certified rewrite is success; a (theoretically impossible for
 /// the built-in example) withheld certification is a verification-failure exit.
 fn run_restratify(json: bool) -> Result<ExitCode, ForgeError> {
     use thermite_spec::classifier::{classify, to_wire, Verdict};
@@ -1719,7 +1719,7 @@ fn run_restratify(json: bool) -> Result<ExitCode, ForgeError> {
     let orig_verdict = classify(&phi);
     // Discharge `Side` in-cage (it is admitted — see below), certifying φ.
     let cert = certify(&phi, true);
-    // Cross-check the withheld path so the rendered report can attest R-SIDE-1 honestly.
+    // Cross-check the withheld path so the rendered report can attest R-side-1.
     let withheld = certify(&phi, false);
 
     let result = match &cert {
@@ -1834,7 +1834,7 @@ fn run_check(
             },
         )?,
         // `--engine lean` / `--engine auto`: the proof-backends increment-(iii) Lean
-        // surface (OQ-1). A genuine engine disagreement (Verus Proven ⊕ Lean Refuted,
+        // surface (OQ-1). A engine disagreement (Verus Proven ⊕ Lean Refuted,
         // or vice versa, on the same obligation) halts as a `ForgeError::SoundnessAlarm`,
         // never resolved by preference (REQ-5).
         (CheckLevel::L3, sel) => check::check_file_with_engine(
@@ -1906,7 +1906,7 @@ fn run_audit(
     metrics: bool,
 ) -> Result<ExitCode, ForgeError> {
     // Parse the file once for the boundary contracts' enforced req/ens/fx (the
-    // §9 per-function contracts the TCB enumerates) AND to decide the route below.
+    // §9 per-function contracts the TCB enumerates) and to decide the route below.
     // A pure read of the parsed AST (deterministic, R-CODE-5), never a verification.
     let src = std::fs::read_to_string(file).map_err(|e| ForgeError::Io {
         path: file.display().to_string(),
@@ -1955,8 +1955,8 @@ fn run_audit(
     }
 
     // REQ-6c (increment 2d): the `--meaning` read-only companion — print each fn's
-    // unfolded definition tower + the pinned hash + the Q2 budget status. It GATES
-    // NOTHING (#274 "audit gates nothing"; the budget gate is certify-time in
+    // unfolded definition tower + the pinned hash + the Q2 budget status. It gates
+    // nothing (#274 "audit gates nothing"; the budget gate is certify-time in
     // `forge check`): the exit code below is the manifest headline, unchanged by this
     // print. In `--json` mode it goes to stderr so the stdout JSON stays a valid v1
     // document; in human mode it appends to the stdout report.
@@ -1972,8 +1972,8 @@ fn run_audit(
     // Umbrella REQ-7 / AC-12: the `--metrics` read-only §6 dashboard companion — the
     // cage-vs-forge share BY routing reason, the seven-verdict counts, and the TV phase
     // split, projected from the certificate per-clause telemetry + a contract-TV run over
-    // the same file. It GATES NOTHING (#274 "audit gates nothing"): the exit code below is
-    // the manifest headline, unchanged by this print, and the dashboard is NOT part of the
+    // the same file. It gates nothing (#274 "audit gates nothing"): the exit code below is
+    // the manifest headline, unchanged by this print, and the dashboard is not part of the
     // certificate oracle. In `--json` mode it goes to stderr so the stdout JSON stays a
     // valid v1 document; in human mode it appends to the stdout report.
     if metrics {
@@ -2017,7 +2017,7 @@ fn run_audit(
 /// Render the `forge audit --meaning` read-only companion section (REQ-6c, increment
 /// 2d): each `fn`'s unfolded definition tower + the pinned hash + the Q2 budget
 /// status, in source order. A pure projection of the parsed AST + source
-/// (`meaning::build_tower`) — it re-runs no prover and GATES NOTHING (the budget gate
+/// (`meaning::build_tower`) — it re-runs no prover and gates nothing (the budget gate
 /// is certify-time, in `forge check`; #274 "audit gates nothing"). A `spec fn` / ADT
 /// has no contract to root a tower, so only `fn` items are shown.
 fn render_meaning(program: &thermite_syntax::Program, src: &str) -> String {
@@ -2044,7 +2044,7 @@ fn render_meaning(program: &thermite_syntax::Program, src: &str) -> String {
 /// for timeout items only, report the rest), then renders the per-item repair
 /// report. A one-shot, deterministic, re-runnable pass (OQ-4 reading (a)).
 ///
-/// The exit code (REQ-5 parallel): SUCCESS iff every repaired item upgraded to L3
+/// The exit code (REQ-5 parallel): success iff every repaired item upgraded to L3
 /// and no item remains a hard fail (a no-op corpus is vacuously success); else the
 /// verification-failure code (a still-sub-L3 or not-repairable item means the
 /// project does not fully certify). An environment failure (verus absent /
@@ -2063,7 +2063,7 @@ fn run_repair(file: &Path, item: Option<&str>, json: bool) -> Result<ExitCode, F
         print!("{}", render_repair(&report));
     }
 
-    // SUCCESS iff every sub-L3 item was upgraded (or there were none to repair).
+    // success iff every sub-L3 item was upgraded (or there were none to repair).
     // A still-sub-L3 or not-repairable residue is a non-zero exit (the project
     // does not fully certify), parallel to `forge check`'s headline.
     if report.all_upgraded() {
@@ -2083,7 +2083,7 @@ fn run_repair(file: &Path, item: Option<&str>, json: bool) -> Result<ExitCode, F
 /// is the reviewer's, never a `Certificate` field; forge does not fabricate
 /// `aligned`).
 ///
-/// Exit code: the extraction succeeding is a SUCCESS (the artifact is a valid
+/// Exit code: the extraction succeeding is a success (the artifact is a valid
 /// document — surfacing a battery-failing fn is the artifact's content, not a forge
 /// failure). An environment failure (verus absent for the pre-screen, a
 /// `--reviewer` cmd absent/failing/garbage, an IO error) propagates as a
@@ -2195,7 +2195,7 @@ fn run_build(
 /// generated run) confirms the lowerer is faithful off-corpus.
 ///
 /// Exit code: a clean audit (no divergent clause) exits 0; any divergent clause is
-/// a real lowering-fidelity finding surfaced as a verification-failure exit (the
+/// a lowering-fidelity finding surfaced as a verification-failure exit (the
 /// meaning-mismatch verdict, distinct from `forge check`'s obligation verdict). An
 /// environment failure (file unreadable, parse failure) propagates as a
 /// `ForgeError` (the environment exit). A verus-absent run reports `unverifiable`
@@ -2243,7 +2243,7 @@ fn run_tv(
         }
     }
 
-    // Any divergent clause (corpus or generated) is a real lowering-fidelity finding
+    // Any divergent clause (corpus or generated) is a lowering-fidelity finding
     // → verification-failure exit. A clean audit exits 0.
     let divergent = corpus_counts.divergent + gen_counts.map(|c| c.divergent).unwrap_or(0);
     if divergent == 0 {
@@ -2259,10 +2259,10 @@ fn run_tv(
 /// (`thermite_spec::classifier`) byte-equal to the Lean kernel
 /// `Thermite.Strat.Cls.admitted` (run via `lake env lean --run`).
 ///
-/// Exit code: zero disagreements AND zero tripwire → exit 0; any verdict disagreement,
+/// Exit code: zero disagreements and zero tripwire → exit 0; any verdict disagreement,
 /// or an unknown-on-admitted tripwire (classifier-suspect, escalated), is a
 /// verification-failure exit (the hard CI failure check [8] raises). lake-absent is an
-/// honest skip (exit 0 — the differential was not run, never a false pass). A harness
+/// skip (exit 0 — the differential was not run, never a false pass). A harness
 /// failure (Lean driver exited non-zero, line desync) propagates as a `ForgeError`
 /// (environment exit).
 fn run_strat_tv(json: bool, generated: usize, seed: Option<u64>) -> Result<ExitCode, ForgeError> {
@@ -2279,7 +2279,7 @@ fn run_strat_tv(json: bool, generated: usize, seed: Option<u64>) -> Result<ExitC
             } else {
                 println!("strat-TV (classifier differential): SKIPPED — {reason}");
             }
-            // An honest not-run (lake absent) is not a failure (R-HONEST-3).
+            // A missing lake executable means the differential was not run (R-HONEST-3).
             Ok(ExitCode::SUCCESS)
         }
         strat_tv::StratTvOutcome::Ran(report) => {
@@ -2330,7 +2330,7 @@ fn run_strat_tv(json: bool, generated: usize, seed: Option<u64>) -> Result<ExitC
 ///
 /// Exit code: every clause certified (no divergence, none withheld) → exit 0; a
 /// divergence OR a withheld (timeout) clause is a verification-failure exit (a withheld
-/// clause is honestly NOT a pass — the semantic phase reached no verdict).
+/// clause is not a pass — the semantic phase reached no verdict).
 fn run_strat_faithful_tv(
     json: bool,
     generated: usize,
@@ -2373,16 +2373,16 @@ fn run_strat_faithful_tv(
     }
 }
 
-/// Run `forge g2-gate`: THE G2 GATE (`.design/stage2-stratified-cage.md` REQ-9 / AC-9).
+/// Run `forge g2-gate`: the G2 gate (`.design/stage2-stratified-cage.md` REQ-9 / AC-9).
 ///
 /// `make audit` runs the four stage-2 checks ([1′] axiom probe, [4′] doc-drift, [8] the
 /// classifier differential battery, [9] the two-phase TV sweep) and passes their green/red
-/// verdicts here. This subcommand combines them with the compiled-in G2 DECLARATION
+/// verdicts here. This subcommand combines them with the compiled-in G2 declaration
 /// (`thermite_tv::strat_two_phase::G2_FLIPPED`) through
 /// [`thermite_tv::strat_two_phase::g2_flip_permitted`] and:
-///   * prints the EFFECTIVE trust profile (the proven scoped form iff declared AND all four
+///   * prints the effective trust profile (the proven scoped form iff declared and all four
 ///     green, else the conservative `UNPROVEN` form), and
-///   * EXITS NONZERO iff G2 is DECLARED while any of the four is RED — the mechanical block.
+///   * EXITS NONZERO iff G2 is declared while any of the four is red — the mechanical block.
 ///     A flipped certificate can never out-run the audit that justifies it (a red check
 ///     fails the audit and withholds the flip). A consistent pre-G2 state (undeclared) is
 ///     exit 0 — green checks alone do not over-claim.
@@ -2408,8 +2408,8 @@ fn run_g2_gate(
     let profile = strat_trust_profile_gated(declared, &checks);
     let red = checks.red();
     // The mechanical block: G2 declared but a gating check is red ⇒ the flip would
-    // over-claim ⇒ FAIL the audit (and withhold the flip). An undeclared gate is always
-    // consistent (the conservative form is honest), even with red checks.
+    // over-claim ⇒ fail the audit (and withhold the flip). An undeclared gate is always
+    // consistent because it retains the conservative form, even with red checks.
     let blocked = declared && !checks.all_green();
 
     if json {
@@ -2473,7 +2473,7 @@ fn run_g2_gate(
 /// construct coverage.
 ///
 /// Exit code: a clean audit (no divergent expr) exits 0; any divergent expr is a
-/// real exec-lowering finding surfaced as a verification-failure exit (the off-corpus
+/// exec-lowering finding surfaced as a verification-failure exit (the off-corpus
 /// #122/#146 catch). An environment failure (file unreadable, parse failure)
 /// propagates as a `ForgeError`. A verus-absent run reports `unverifiable` exprs
 /// (surfaced, never a silent pass — R-CODE-4) and does not fail the exit.
@@ -2521,7 +2521,7 @@ fn run_exec_tv(file: &Path, json: bool, generated: Option<usize>) -> Result<Exit
         );
     }
 
-    // Any divergent expr (corpus or generated) is a real exec-lowering finding →
+    // Any divergent expr (corpus or generated) is a exec-lowering finding →
     // verification-failure exit. A clean audit exits 0.
     let divergent = corpus_counts.divergent + gen_counts.map(|c| c.divergent).unwrap_or(0);
     if divergent == 0 {
@@ -2633,7 +2633,7 @@ fn run_body_tv(file: &Path, json: bool) -> Result<ExitCode, ForgeError> {
         );
     }
 
-    // Any divergent body is a real body-lowering state-transformation finding →
+    // Any divergent body is a body-lowering state-transformation finding →
     // verification-failure exit. A clean audit (Faithful / Skipped /
     // Unverifiable only) exits 0 (the same convention `forge exec-tv` uses).
     if counts.divergent == 0 {
@@ -3362,7 +3362,7 @@ mod tests {
         );
         // A stray positional is a Usage error.
         assert!(parse_args(&argv(&["edit", "--restratify", "f.th"])).is_err());
-        // `--json` WITHOUT `--restratify` stays an unknown flag for plain `edit`.
+        // `--json` without `--restratify` stays an unknown flag for plain `edit`.
         assert!(parse_args(&argv(&["edit", "f.th", "x", "--replace", "c", "--json"])).is_err());
     }
 

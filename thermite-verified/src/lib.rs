@@ -12,7 +12,7 @@
 //! decision is ported to a bounded **9-atom `u16` bitset** (Read=0 .. Term=8,
 //! the path-insensitive atom-kind projection `EffectKind::of` already computes in
 //! `thermite-lower`), where subsumption is the mask test `(callee & !caller) == 0`
-//! and the genuine subset relation `effects(callee) ⊆ effects(caller)` is the
+//! and the subset relation `effects(callee) ⊆ effects(caller)` is the
 //! explicit 9-way conjunction over the bit positions. The two are proved
 //! equivalent by Verus `bit_vector`-mode SMT. (The proved bitset widened from
 //! `u8` to `u16` for the 9th atom `Term` — the §4.1 terminal-control effect,
@@ -119,7 +119,7 @@ pub fn subsumes_masks(caller: u16, callee: u16) -> bool {
     missing == 0
 }
 
-/// The genuine subset relation `effects(callee) ⊆ effects(caller)` over the
+/// The subset relation `effects(callee) ⊆ effects(caller)` over the
 /// 9-atom `u16` bitset, as the explicit per-atom conjunction (REQ-4 — the
 /// non-trivial contract `subsumes_masks` is proved to compute). For each atom
 /// position `i`, if `callee` has atom `i` then `caller` must have it. This is the
@@ -156,7 +156,7 @@ pub enum L3Tag {
     Proved,
     /// verus timed out (inconclusive) → the sole degrade trigger → attempt L2.
     Timeout,
-    /// verus disproved the item (a real bug) → hard fail, never a degrade.
+    /// verus disproved the item (a bug) → hard fail, never a degrade.
     Counterexample,
 }
 
@@ -167,7 +167,7 @@ pub enum L2Tag {
     Verified,
     /// kani exhausted its bound (inconclusive) → degrade to L1.
     UnderBound,
-    /// kani disproved the contract (a real bug) → hard fail, never a drop to L1.
+    /// kani disproved the contract (a bug) → hard fail, never a drop to L1.
     Counterexample,
 }
 
@@ -436,7 +436,7 @@ mod verus_core {
         (mask & (1u16 << i)) != 0
     }
 
-    /// The genuine subset relation `effects(callee) ⊆ effects(caller)`, as the
+    /// The subset relation `effects(callee) ⊆ effects(caller)`, as the
     /// explicit 9-way conjunction over the atom positions (mirrors the plain-Rust
     /// `spec_subsumes_mask`). Non-vacuous (REQ-4): false when callee has an atom
     /// caller lacks. Bit 8 is the #106 terminal-control atom `Term`.
@@ -523,12 +523,12 @@ mod verus_core {
         }
     }
 
-    /// `true` iff the L3 verdict is a counterexample (verus disproved — a real bug).
+    /// `true` iff the L3 verdict is a counterexample (verus disproved — a bug).
     pub open spec fn l3_is_counterexample(v: L3Tag) -> bool {
         match v { L3Tag::Counterexample => true, _ => false }
     }
 
-    /// `true` iff the L2 verdict is a counterexample (kani disproved — a real bug).
+    /// `true` iff the L2 verdict is a counterexample (kani disproved — a bug).
     pub open spec fn l2_is_counterexample(v: L2Tag) -> bool {
         match v { L2Tag::Counterexample => true, _ => false }
     }

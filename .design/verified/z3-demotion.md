@@ -65,8 +65,8 @@ not in the trust base for these obligations; only the Lean kernel + the standard
 
 ## The dependency / toolchain story (Tier 2 — the dep BUILDS, spine stays green)
 
-- **Lean-SMT** has NO release tags; it is pinned by toolchain. `main`
-  (`7d1d823`) requires **`leanprover/lean4:v4.29.0`** + full **Mathlib v4.29.0** +
+- **Lean-SMT** has no release tags. Thermite pins upstream PR #227
+  (`ee6d36b`), which requires **`leanprover/lean4:v4.29.0`** + full **Mathlib v4.29.0** +
   **lean-auto** (`5c4433f`) + **lean-cvc5** (`abdoo8080/lean-cvc5` @ `4ecae27`).
 - **lean-cvc5** downloads a **VENDORED cvc5 1.3.2 static library** (from
   `abdoo8080/cvc5/releases`, Linux-x86_64-static) and builds an FFI binding. It does NOT
@@ -92,51 +92,29 @@ not in the trust base for these obligations; only the Lean kernel + the standard
 The per-run TV obligation is `lower(P) ⟺ ref(P)` as a Verus/SMT query. For the CAGED
 contract sublanguage the relevant SMT fragments are:
 
-| Clause family (`gen.rs`/`obligation.rs`)        | SMT fragment        | Lean-SMT reconstructable? |
+| Clause family (`gen.rs`/`obligation.rs`)        | SMT fragment        | Kernel-checked export? |
 |---|---|---|
 | scalar comparisons + logical connectives (`==`/`<=`/`&&`/`||`/`!`) | QF_LIA / QF_UF      | **YES** — kernel-clean (the two Tier-3 obligations) |
 | integer arithmetic (`+`/`-`/`*`-by-literal, linear) | QF_LIA              | **YES** (linear); nonlinear `*` is solver-incomplete (not a reconstruction wall, a solver one) |
 | bounded quantifier combinators (`forall_in`/`sorted`/…) | quantified (UF + LIA + arrays) | PARTIAL — quantifier-instantiation rules have weaker reconstruction coverage (~30% of cvc5 rules overall, finding #8); not exercised here |
-| bitwise / shift ops (`&`/`|`/`^`/`<<`)          | QF_BV               | **NO (kernel-clean)** — see the BitVec wall below |
+| bitwise / shift ops (`&`/`|`/`^`/`<<`)          | QF_BV               | **YES** — literal `BitVec N` normalization proof |
 | `spec_sum`/recursive spec fns, `permutation_of` | UF + recursion / multiset | OUT — needs the recursive definition exported as an SMT axiomatization; not a single reconstructable query |
 
-So **the scalar/linear-arithmetic core of the contract obligation is within Lean-SMT's
-reconstructable subset TODAY** (demonstrated, kernel-clean). The richer fragments are not.
+The scalar/linear core uses Lean-SMT. QF_BV takes a separate literal-`BitVec` path in
+Thermite's exporter. Quantified and recursive fragments remain outside the automated path.
 
 ## THE EXACT WALLS
 
-1. **The BitVec-reconstruction `sorry`.** Building Lean-SMT emits:
-   `warning: Smt/Reconstruct/BitVec/Bitblast.lean:36:4: declaration uses 'sorry'`.
-   The bit-vector (QF_BV) proof-reconstruction path in Lean-SMT itself contains a `sorry`.
-   It is NOT pulled into our integer obligations (their axiom sets are clean — verified by
-   `#print axioms`), but it means a **bitwise/shift TV obligation (`&`/`|`/`^`/`<<`, the
-   `gen.rs` exec-side surface) would NOT be kernel-clean** — its reconstruction would route
-   through the `sorry`. This is a hard wall for the bitwise fragment until upstream closes
-   it.
-   **UPDATE (stage-3 REQ-7, #349):** empirically reconfirmed at the pinned rev and found
-   to be WIDER than "bitwise/shift only" — *every* `BitVec`-typed `by smt` goal, including
-   a pure unsigned comparison `a ≤ b ↔ ¬ (b < a)` over `BitVec 8`, bit-blasts and pulls
-   `sorryAx`. Root cause (read in the vendored source): `reconstructRewrite` is a total
-   stub (`| _ => return none` for every cvc5 DSL rewrite) and `BV_BITBLAST_STEP` covers
-   only `EQUAL`/`BITVECTOR_ADD`; closing the `eq_eq_beq` sorry alone (verified, = upstream
-   PR ufmg-smite/lean-smt#227) is necessary but NOT sufficient. The stage-3 exporter
-   therefore renders a `@bvN` clause over the **range-bounded integer machine-model**
-   (`0 ≤ x < 2^N`, wrap as `% 2^N`, unsigned cmp as `Int` cmp), which IS kernel-clean.
+1. **Lean-SMT's cvc5 BitVec reconstructor remains partial, but Thermite no longer uses
+   it for QF_BV.** The pinned revision includes the proof of `BitVec.eq_eq_beq`, so the
+   dependency build has no `sorry` warning. Thermite's exporter renders the complete
+   fixed-width term surface directly as Lean `BitVec N`. Its production/reference
+   normalization needs only order duality, `≠` expansion, and commutativity, all proved
+   with ordinary kernel-checked lemmas. The full-term fixture's `#print axioms` stays
+   within `{propext, Classical.choice, Quot.sound}`.
 
-   **UPDATE (stage-3 "Path B", #356) — the `render_bv_prop` gap is now CLOSED in our own
-   spine, no upstream dependency.** Rather than complete lean-smt's literal bv
-   reconstruction (weeks–months, fork-owning), `lean/Thermite/BvModel.lean` proves the
-   integer machine-model FAITHFUL to the `BitVec N` semantics: `frmInt_iff_frmBV`
-   (the two denotations agree) + `tv_equiv_faithful` (so the exporter's int-model `↔`
-   certifies the genuine `@bv` clause), KERNEL-CHECKED, `#print axioms` ⊆ {propext,
-   Classical.choice, Quot.sound}, and **Mathlib/Smt-free** (so it runs in CI via
-   `scripts/lean-axiom-probe.sh`, unlike the `Smt`-importing `SmtExport`). Combined with
-   the exporter's `by smt`-reconstructed int-model `↔`, a `@bv` clause's truth is
-   kernel-grounded end to end with no solver in the trust base for the renderable
-   fragment. This is the route that retires the bit-blasting wall for our purposes —
-   completing lean-smt's literal QF_BV reconstruction (the `reconstructRewrite` stub +
-   the missing `BV_BITBLAST_STEP` arms) remains the open UPSTREAM task, not load-bearing
-   for us.
+   `lean/Thermite/BvModel.lean` keeps the former bounded-integer equivalence as an
+   independent cross-check. It is no longer part of the active export path.
 2. **Coverage ~30% of cvc5's proof rules (finding #8).** Quantified obligations (the
    bounded combinators) and theory-lemma-heavy proofs may hit an unreconstructable cvc5
    rule and FAIL (the `smt` tactic errors rather than producing an unsound proof — it does
@@ -157,37 +135,35 @@ reconstructable subset TODAY** (demonstrated, kernel-clean). The richer fragment
    exporter** that parses both emitted predicate strings into Lean `Prop`s over the typed
    env the obligation frame declares. The LOGICAL CONTENT discharged is exactly
    the per-run obligation; the residual is the parse/translate step.
-   **UPDATE (stage-3 REQ-7, #349 — this gap is now CLOSED for the scalar/bv-model
-   fragment).** `forge/src/lean_smt_export.rs` is the automated Rust→Lean obligation
+   **UPDATE (stage-3 REQ-7, #349).** `forge/src/lean_smt_export.rs` is the automated
+   Rust→Lean obligation
    exporter (`forge smt-export`): it renders a Thermite predicate `Expr` into a Lean
-   `Prop` and emits the `(P_prod) ⟺ (P_ref)` theorem `by smt` + `#print axioms`. The
-   committed `lean/Thermite/SmtExport.lean` is its verbatim output for one QF_LIA scalar
-   clause and two QF_BV `@bv` clauses, all three `#print axioms` ⊆ `{propext,
-   Classical.choice, Quot.sound}` (verified by `lake build`). The hand-translation step
-   `SmtDemo.lean` performed is now mechanical.
+   `Prop` and emits the `(P_prod) ⟺ (P_ref)` theorem plus `#print axioms`. QF_LIA uses
+   `smt`; QF_BV uses literal `BitVec N` lemmas. The committed module contains one QF_LIA
+   and three QF_BV fixtures, including the complete term surface. All four axiom reports
+   stay within `{propext, Classical.choice, Quot.sound}`.
 
 ## The upstream asks (what would have to change)
 
-- **Lean-SMT:** close the `Smt/Reconstruct/BitVec/Bitblast.lean` `sorry` (kernel-clean
-  QF_BV reconstruction) and raise proof-rule coverage above ~30% (esp. quantifier
-  instantiation, for the bounded combinators). A release-tagged, toolchain-current
-  (`v4.30.0`+) line would also remove our forced downgrade.
+- **Lean-SMT:** raise proof-rule coverage above ~30%, especially quantifier
+  instantiation for the bounded combinators. Complete cvc5 BitVec reconstruction
+  would still help other users, but Thermite's QF_BV exporter no longer depends on it.
 - **Verus / Z3:** emit a **reconstructable proof certificate** for a discharged VC (proof
   logging Lean-SMT/SMTCoq can replay). Until then the demotion must RE-SOLVE the obligation
   through cvc5 rather than reuse the Verus/Z3 attestation.
-- **Thermite (us):** a Rust→Lean predicate exporter (parse the two emitted Verus predicate
-  strings → Lean `Prop`s under the obligation frame's typed env) to remove the
-  hand-translation step — future work, NOT this increment.
+- **Thermite:** widen the exporter to quantified and recursive obligation shapes while
+  preserving the typed environment and stabilization evidence.
 
 ## Honest assessment — when does FULL demotion become practical?
 
-- **Today (this increment):** the SCALAR / QF-linear-integer core of the contract TV
-  obligation can be RE-discharged by cvc5 and kernel-checked with the standard axioms — a
-  REAL but PARTIAL-SCOPE demotion (proven, not asserted). The bitwise fragment is blocked
-  by an upstream `sorry`; quantified/recursive fragments by coverage; the end-to-end path
-  by Verus/Z3 not emitting certificates + the missing exporter.
-- **Practical full demotion** needs THREE things to land: (1) Lean-SMT QF_BV `sorry` closed
-  + quantifier-rule coverage raised; (2) Verus/Z3 proof-logging OR an accepted policy of
+- **Today (this increment):** the scalar QF_LIA core can be re-discharged by cvc5
+  and kernel-checked with the standard axioms. Thermite's literal `BitVec` path covers
+  its complete QF_BV term surface with ordinary Lean lemmas. Quantified and recursive
+  fragments remain limited by reconstruction coverage, and Verus/Z3 still do not emit
+  replayable certificates.
+- **Practical full demotion** needs three things: (1) broader Lean-SMT
+  quantifier-rule coverage; (2) Verus/Z3 proof-logging or
+  an accepted policy of
   re-solving every TV obligation through cvc5 (a latency cost — every L3 program's TV runs
   twice); (3) the Rust→Lean exporter. None is fundamental; all are engineering + upstream
   maturation. Realistically this is a multi-cycle, partly-upstream-gated effort — exactly

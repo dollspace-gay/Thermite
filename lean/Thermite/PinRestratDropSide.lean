@@ -46,12 +46,12 @@ def ρ0 : Subst := fun _ => .lit usizeS
 
 /-- `A` — a true sub-formula (`boolLit true`, read as `true` by `qBool`). -/
 def aT : Frm := .atom (.qfree (.boolLit true))
-/-- `B` — the cycle-closing conjunct, FALSE in this model (`boolLit false`). -/
+/-- `B` — the cycle-closing conjunct, false in this model (`boolLit false`). -/
 def bF : Frm := .atom (.qfree (.boolLit false))
-/-- The fresh restratify abstraction token `p` — a DISTINCT leaf, `true` in this model. -/
+/-- The fresh restratify abstraction token `p` — a distinct leaf, `true` in this model. -/
 def pAbs : Thermite.Expr := .boolLit true
 
-/-- The original (would-be-restratified) formula `φ = A ∧ B`: TRUE ∧ FALSE = FALSE. -/
+/-- The original (would-be-restratified) formula `φ = A ∧ B`: true ∧ false = false. -/
 def phi : Frm := .conj aT bF
 
 /-! ## The pin -/
@@ -63,7 +63,7 @@ theorem dropSide_counterexample :
     fdenote qBool dom (restrat pAbs phi) ρ0 = true
       ∧ fdenote qBool dom phi ρ0 = false := by decide
 
-/-- The pin: with `Side` DROPPED, "φ' certified ⇒ φ certified" is UNSOUND — there is a
+/-- The pin: with `Side` dropped, "φ' certified ⇒ φ certified" is unsound — there is a
     model where φ' holds but φ does not. -/
 theorem dropSide_breaks_certification :
     ¬ ∀ (A B : Frm),
@@ -75,13 +75,13 @@ theorem dropSide_breaks_certification :
   have hf : fdenote qBool dom (aT.conj bF) ρ0 = false := dropSide_counterexample.2
   exact absurd (hc.symm.trans hf) (by decide)
 
-/-- The contrast: under the SAME model the genuine `Side(φ', φ) = p ⇒ B` is FALSE
+/-- The contrast: under the SAME model the `Side(φ', φ) = p ⇒ B` is false
     (`true ⇒ false`), so `restrat_conservative`'s `Side` hypothesis is UNMET — the real
     discipline does not fire, and the unsound step is blocked exactly by R-SIDE-1. -/
 theorem side_is_false_here :
     fdenote qBool dom (Side pAbs phi) ρ0 = false := by decide
 
-/-- And WITH the discharged `Side`, `restrat_conservative` would correctly require it —
+/-- And with the discharged `Side`, `restrat_conservative` would correctly require it —
     here `Side` is false, so the (sound) certificate of φ is correctly WITHHELD. The pin
     therefore shows the gap is solely the dropped obligation. -/
 theorem conservative_withholds_without_side :

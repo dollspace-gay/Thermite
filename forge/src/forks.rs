@@ -6,7 +6,7 @@
 //! 1. **semantic forks** — `@bv`-tagged clauses are interpreted over a fixed-width
 //!    machine-semantics fork, not the default unbounded integers. Lock 1 (REQ-3) already
 //!    makes each tagged clause loud + greppable (its `bv_shadow` block, surfaced per
-//!    clause in `forge audit`/`forge review`). This section is the AGGREGATE over those
+//!    clause in `forge audit`/`forge review`). This section is the aggregate over those
 //!    clauses: **bv-shadow density per module** — how much of each contract-bearing
 //!    item's postcondition surface has committed to a machine-semantics fork.
 //! 2. **definition towers** — a forge-tier `lemma`'s `req ∪ ens` can unfold a tower of
@@ -19,14 +19,14 @@
 //! Q-BVSCOPE asked whether to ship the `@bv` tag full, `nowrap`-only, or lemma-only. The
 //! "measure bv-shadow density first" input was circular — no bv clause exists to measure
 //! until the tag ships. So the resolution (`.design/stage3-bv-reconstruction.md` Decision
-//! Record) ships the full tag guarded by its three locks and makes THIS density report the
+//! Record) ships the full tag guarded by its three locks and makes this density report the
 //! *post-ship* retreat trigger: rising shadow-flag density in contract-bearing code is the
 //! named **F-F tripwire** down the ladder (full → `nowrap`-only → lemma-only → drop). The
 //! tripwire fires when the project's bv-shadow density crosses
 //! [`FF_DENSITY_THRESHOLD_PERMILLE`] — a loud, informational warning that the program is
 //! becoming dominated by machine-semantics forks and the retreat ladder should be weighed.
 //!
-//! ## A pure projection that GATES NOTHING
+//! ## A pure projection that gates nothing
 //!
 //! Like `forge audit` itself (#274 "audit gates nothing") and the `--meaning` companion,
 //! this section is a deterministic projection of the settled cert collection + the parsed
@@ -42,7 +42,7 @@ use thermite_syntax::{Expr, Item, Program};
 use crate::manifest::{cert_certifies, Certificate};
 
 /// The F-F retreat-trigger threshold (REQ-6 / AC-7): the project-wide bv-shadow density,
-/// in PER-MILLE of the contract-bearing postcondition surface, at or above which the named
+/// in per-MILLE of the contract-bearing postcondition surface, at or above which the named
 /// F-F tripwire fires. `500‰` (half) is the Schelling point — when a MAJORITY of the
 /// project's `ens` clauses have committed to a fixed-width machine-semantics fork, the
 /// program has drifted far enough toward the fork that the retreat ladder (full →
@@ -106,7 +106,7 @@ pub struct LemmaTower {
 }
 
 /// The project-wide F-F density tripwire (REQ-6 / AC-7) — the post-ship retreat trigger.
-/// Aggregates the bv-shadow density across ALL contract-bearing `ens` clauses and compares
+/// Aggregates the bv-shadow density across all contract-bearing `ens` clauses and compares
 /// it to [`FF_DENSITY_THRESHOLD_PERMILLE`]. Informational: a tripped tripwire gates
 /// nothing (it changes no verdict and no exit code), it raises a named human warning.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -129,7 +129,7 @@ pub struct FfTripwire {
 
 impl SemanticForks {
     /// Build the section from the settled cert collection + the parsed program (REQ-6 /
-    /// AC-7), or `None` when there is nothing to report — no `@bv`-tagged clause AND no
+    /// AC-7), or `None` when there is nothing to report — no `@bv`-tagged clause and no
     /// burned lemma (the v1 / non-bv corpus, whose goldens stay byte-identical). A pure
     /// projection: density is a parse-level fact, the burned-lemma set is read from the
     /// certificates (the `review::burned_lemma_projection` predicate), and the tower depth
@@ -263,7 +263,7 @@ fn burned_lemma_towers(certs: &[Certificate], program: &Program) -> Vec<LemmaTow
     let mut rows = Vec::new();
     for cert in certs {
         // Mirror `review::burned_lemma_projection`: the cert's item is a top-level
-        // `lemma`, it CERTIFIED (`cert_certifies`), and it carries a burn receipt.
+        // `lemma`, it certified (`cert_certifies`), and it carries a burn receipt.
         let Some(lemma) = program.items.iter().find_map(|i| match i {
             Item::Forge(thermite_syntax::ForgeItem::Lemma(l)) if l.name == cert.item => Some(l),
             _ => None,
@@ -273,7 +273,7 @@ fn burned_lemma_towers(certs: &[Certificate], program: &Program) -> Vec<LemmaTow
         if !cert_certifies(cert) || cert.burn.is_none() {
             continue;
         }
-        // The tower roots: the lemma's `req ∪ ens` (the meaning surface), exactly as
+        // The tower roots: the lemma's `req ∪ ens` (the meaning surface), as
         // `meaning::build_tower` roots a `fn`'s tower.
         let mut roots: Vec<&Expr> = Vec::with_capacity(1 + lemma.ens.len());
         roots.push(&lemma.req.expr);
@@ -430,7 +430,7 @@ mod tests {
         assert_eq!(towers[0].definitions, 2);
     }
 
-    // AC-7: an uncertified lemma (no burn) is NOT surfaced as a tower — only a burned
+    // AC-7: an uncertified lemma (no burn) is not surfaced as a tower — only a burned
     // (certified, receipted) lemma is, mirroring `review::burned_lemma_projection`.
     #[test]
     fn uncertified_lemma_is_not_a_tower() {

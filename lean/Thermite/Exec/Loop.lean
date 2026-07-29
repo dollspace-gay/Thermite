@@ -434,14 +434,13 @@ theorem l1_while_rule_certifies_exit :
   -- `while_rule` then certifies the after-loop characterization at `stf`.
   exact ⟨stf, hrun, while_rule l1Cond l1Body l1Inv l1_preservation 4 l1State stf l1_entry_holds hrun⟩
 
-/-! ## Negative lemmas — the while-rule's premises are load-bearing (the teeth, the
-    L2/L3 mirrors)
+/-! ## Negative lemmas: required while-rule premises
 
   Two faithfulness bugs the loop TV must not commit, each proven to break the rule:
   pinning that `while_rule` consumes `h_pres` (L2) and that the after-loop
   conclusion is exactly `inv ∧ ¬cond`, not a stronger over-claim (L3). -/
 
-/-! ### L2 — a non-preserved invariant (the `lo + 2` shape): `h_pres` is load-bearing.
+/-! ### L2 — a non-preserved invariant (the `lo + 2` shape): `h_pres` is required.
 
   Mirrors the Rust L2 (`loop_teeth.rs::l2_broken_preservation_caught`): a body that
   steps `lo` by 2 (the production infidelity for source `lo + 1`) does not preserve
@@ -512,7 +511,7 @@ theorem l2_non_preserved_invariant_admits_bad_step :
     simp only [execIntValue, hlo4, hn4] at hle
     omega
 
-/-- L2 contrast — `while_rule` refuses the buggy loop (the teeth bite the bug). If
+/-- L2 contrast: `while_rule` refuses the buggy loop. If
     one could supply a preservation premise `h_pres` for the buggy `l2Body`, the rule
     would certify its after-state; but L2 above shows no such `h_pres` exists (the
     premise is false at `l2State`). A hypothetical `h_pres` for `l2Body`
@@ -540,8 +539,8 @@ theorem l2_no_preservation_premise_for_buggy_body :
     = `lo ≤ n ∧ ¬(lo < n)`, satisfied by the exit state `lo = 3 = n`. The
     over-claim `lo > n` is false there (`3 > 3` is false). So a production claiming the
     stronger `lo > n` would be refuted at the `loopDenote` exit; the conclusion
-    is exactly `inv ∧ ¬cond`, never the over-claim. The loop analogue of the wrong-cell /
-    swapped-branch teeth. (`exit_lo_gt_n` is the over-claim predicate; the witness is
+    is exactly `inv ∧ ¬cond`, never the over-claim. This is the loop analogue of the
+    wrong-cell and swapped-branch tests. (`exit_lo_gt_n` is the over-claim predicate; the witness is
     `l1_while_rule_certifies_exit`'s `stf`.) -/
 theorem l3_exit_overclaim_refuted :
     ∃ stf, loopDenote l1Cond l1Body 4 l1State = some stf

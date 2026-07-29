@@ -218,7 +218,7 @@ theorem lowering_faithful (w : FnTvWitness) :
   ⟨tv_meta_contract w.fuel w.contract w.contractEnv w.loweredContract w.h_tv_contract,
    tv_meta_body w.body w.bodyState w.loweredBody w.h_tv_body⟩
 
-/-! ## Non-vacuity of the capstone: `h_tv` is a load-bearing premise, the `∀` ranges freely
+/-! ## Non-vacuity of the capstone: `h_tv` is a required premise, the `∀` ranges freely
 
   These witnesses show that `lowering_faithful` (and its per-layer pieces) is not a
   trivial tautology. The conclusion is the faithfulness equality, and `h_tv` is a premise

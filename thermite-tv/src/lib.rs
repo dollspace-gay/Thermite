@@ -10,7 +10,7 @@
 //! independent reference encoder for the SpecTherm contract sublanguage
 //! ([`ref_encode`]) plus a per-clause Z3 equivalence obligation
 //! ([`obligation`]) of the shape `assert(P_production <==> P_reference)`. A
-//! divergence is a real lowering-fidelity bug (the #122 cast-paren and #127
+//! divergence is a lowering-fidelity bug (the #122 cast-paren and #127
 //! byte-view-misdispatch classes) that the five existing layers structurally
 //! cannot see.
 //!
@@ -93,7 +93,7 @@ pub mod obligation;
 pub mod ref_encode;
 // Stage-2 REQ-8 (`.design/stage2-stratified-cage.md` REQ-8 / AC-8): the stratified
 // reference encoder + the two-phase TV (syntactic normalizer + thin semantic fallback)
-// + the trust flip. Unlike `normalize` (the SPIKE-2 leaf), these ARE load-bearing TV
+// + the trust flip. Unlike `normalize` (the SPIKE-2 leaf), these ARE required TV
 // pipeline modules (consumed by `forge`'s stratified faithfulness sweep).
 pub mod strat_ref_encode;
 pub mod strat_two_phase;

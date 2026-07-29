@@ -165,15 +165,15 @@ pub struct Program {
 pub enum Item {
     Fn(FnItem),
     SpecFn(SpecFnItem),
-    /// A `struct NAME { field: TYPE, … } [inv <expr>]` product type
+    /// A `struct NAME { field: type, … } [inv <expr>]` product type
     /// (`.design/basis/01-adts.md` REQ-1).
     Struct(StructItem),
-    /// An `enum NAME { Variant, Variant(TYPE, …), Variant { field: TYPE, … } }`
+    /// An `enum NAME { Variant, Variant(type, …), Variant { field: type, … } }`
     /// sum type (`.design/basis/01-adts.md` REQ-2).
     Enum(EnumItem),
     /// A Stage-1 forge-tier item (`.design/stage1-forge-tier.md` REQ-3): one of the
     /// proof-tier surface forms parsed beside `fn` — `prop fn`, `lemma`,
-    /// `proof for`, `witness`. Grouped under ONE `Item` variant (with the kind
+    /// `proof for`, `witness`. Grouped under one `Item` variant (with the kind
     /// distinguished by the inner [`ForgeItem`]) so the v1 downstream consumers
     /// (`thermite-spec` validation, `thermite-lower` lowering, `forge check`)
     /// dispatch every forge-tier item through a SINGLE match arm: they have no v1
@@ -203,11 +203,11 @@ impl Item {
 /// A Stage-1 forge-tier item (`.design/stage1-forge-tier.md` REQ-3, increment 2a).
 /// The four proof-tier surface forms parsed beside `fn`. This is surface syntax
 /// only: the AST faithfully represents each form (with `?pN` proof holes captured
-/// in proof blocks), but the SEMANTIC consumers are later increments and are not
+/// in proof blocks), but the semantic consumers are later increments and are not
 /// built here (REQ-4 covenant / REQ-5 battery / REQ-7 proof view / REQ-9 library).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ForgeItem {
-    /// `prop fn NAME(params) -> TYPE { body }` — a proposition (logical predicate)
+    /// `prop fn NAME(params) -> type { body }` — a proposition (logical predicate)
     /// definition, like a `spec fn` but a forge-tier proposition.
     PropFn(PropFnItem),
     /// `lemma NAME(params) req … ens … proof { … }` — a named lemma carrying a
@@ -217,7 +217,7 @@ pub enum ForgeItem {
     /// contract clauses (`ens#k`) of an existing function `f`.
     Proof(ProofItem),
     /// `witness { inhabit (…); falsify N; }` — a covenant witness block (the
-    /// covenant LOGIC is increment 2b; here parsed + represented only).
+    /// covenant logic is increment 2b; here parsed + represented only).
     Witness(WitnessBlock),
 }
 
@@ -235,7 +235,7 @@ impl ForgeItem {
     }
 }
 
-/// A `prop fn NAME(params) -> TYPE { body }` proposition definition
+/// A `prop fn NAME(params) -> type { body }` proposition definition
 /// (`.design/stage1-forge-tier.md` REQ-3). A proposition is a logical predicate —
 /// it mirrors [`SpecFnItem`] (params, return type, an expression body) but is a
 /// forge-tier definition. `dec` is the optional termination measure for a
@@ -282,7 +282,7 @@ pub struct ProofItem {
     pub span: Span,
 }
 
-/// One `CLAUSE by { … }` obligation inside a [`ProofItem`]
+/// One `clause by { … }` obligation inside a [`ProofItem`]
 /// (`.design/stage1-forge-tier.md` REQ-3): a [`ClauseSelector`] (`ens#k`) plus the
 /// proof block discharging it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -303,13 +303,13 @@ pub struct ClauseSelector {
 }
 
 /// A forge-tier proof block — the `{ … }` body of a `lemma`/`proof` form
-/// (`.design/stage1-forge-tier.md` REQ-3). The block's TACTIC content is NOT
+/// (`.design/stage1-forge-tier.md` REQ-3). The block's tactic content is not
 /// structurally parsed here (the frozen tactic battery is increment 2c, REQ-5):
 /// the block is captured as the verbatim source `text` plus the open proof holes
 /// (`?pN`) it carries, in document order, so the proof view (2e) and the battery
 /// (2c) can consume it next. `holes` carry [`HoleContext::Proof`]; a body hole
 /// `?N` inside a proof block is a structured parse error
-/// (`SyntaxError::BodyHoleInProofBlock`). An OPEN proof hole blocks build and
+/// (`SyntaxError::BodyHoleInProofBlock`). An open proof hole blocks build and
 /// certification (AC-7) once the forge consumers land.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProofBlock {
@@ -322,10 +322,10 @@ pub struct ProofBlock {
 }
 
 /// A `witness { inhabit (…); falsify N; }` covenant witness block
-/// (`.design/stage1-forge-tier.md` REQ-3/REQ-4). The covenant LOGIC — type-checking
+/// (`.design/stage1-forge-tier.md` REQ-3/REQ-4). The covenant logic — type-checking
 /// and executing `inhabit` witnesses against `req`, running the `falsify`
 /// generator — is increment 2b (REQ-4); here the surface is parsed + represented +
-/// round-tripped only (NO execution, NO covenant record produced).
+/// round-tripped only (no execution, no covenant record produced).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WitnessBlock {
     pub inhabits: Vec<Inhabit>,
@@ -352,7 +352,7 @@ pub struct Falsify {
     pub span: Span,
 }
 
-/// A `struct NAME { field: TYPE, … }` product-type item, optionally carrying a
+/// A `struct NAME { field: type, … }` product-type item, optionally carrying a
 /// type-invariant `inv <expr>` clause (`.design/basis/01-adts.md` REQ-1). The
 /// `inv` reuses the existing [`Clause`] (verbatim text + parsed expr); it is
 /// `None` when the struct declares no invariant. Stage 1b validates field
@@ -457,15 +457,15 @@ pub struct FnItem {
     /// `match Stmt` stay untouched. The parser records a hole here when it sees a
     /// `?N` in fn-body statement position (`parser.md` REQ-11).
     pub holes: Vec<Hole>,
-    /// TRANSIENT refinement-type sugar (`.design/stage1-forge-tier.md` REQ-3): the
+    /// transient refinement-type sugar (`.design/stage1-forge-tier.md` REQ-3): the
     /// `x: T{P}` parameter refinements and the `-> T{P}` return refinement the
-    /// parser captured on this fn, BEFORE the post-parse desugar pass folds them
+    /// parser captured on this fn, before the post-parse desugar pass folds them
     /// into the contract. The pass [`crate::desugar::desugar_refinements`] runs at
     /// the end of [`crate::parse`] and (a) folds each parameter refinement into the
     /// `req` clause (`req && P` — so a caller automatically owes the refinement as a
     /// call-site obligation, Verus-checked), (b) appends each return refinement as
     /// an `ens` clause, then (c) CLEARS this vec. So in every `parse()` output this
-    /// is EMPTY — downstream stages (`thermite-spec` validation, lowering) see only
+    /// is empty — downstream stages (`thermite-spec` validation, lowering) see only
     /// the v1 `req`/`ens` clause shapes (REQ-3 "downstream sees only v1 clause
     /// shapes plus the new item kinds"). It is `Vec::new()` on every non-refined
     /// `FnItem` literal, mirroring the `holes: Vec::new()` / `dec: None` additive
@@ -475,9 +475,9 @@ pub struct FnItem {
 }
 
 /// A refinement-type sugar predicate captured on a [`FnItem`]
-/// (`.design/stage1-forge-tier.md` REQ-3), BEFORE the post-parse desugar pass folds
+/// (`.design/stage1-forge-tier.md` REQ-3), before the post-parse desugar pass folds
 /// it into the contract. A `x: T{P}` parameter refinement targets the parameter;
-/// a `-> T{P}` return refinement targets the result. TRANSIENT: present only
+/// a `-> T{P}` return refinement targets the result. transient: present only
 /// between parsing and [`crate::desugar::desugar_refinements`], which folds it into
 /// `req`/`ens` and clears it (so it never reaches downstream stages).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -626,7 +626,7 @@ impl BvWidth {
 /// clause-level annotation in `thermite-syntax` (`.design/stage3-bv-reconstruction.md`
 /// REQ-1). It marks a clause for interpretation over fixed-width wraparound
 /// (`by(bit_vector)`, QF_BV) semantics. `nowrap` additionally requests the
-/// no-overflow side obligation (REQ-5). The tag parses ONLY when the shadow-flag
+/// no-overflow side obligation (REQ-5). The tag parses only when the shadow-flag
 /// plumbing is compiled in (the `bv` cargo feature, REQ-1's structural
 /// lock R-BV-1); lowering + the three locks are REQ-2..REQ-5.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -640,7 +640,7 @@ pub struct BvTag {
     pub span: Span,
 }
 
-/// A clause carrying its parsed expression AND the verbatim source text it was
+/// A clause carrying its parsed expression and the verbatim source text it was
 /// built from. The `text` is the oracle string `address.rs` resolves an
 /// `inv`/`dec` address to (semantic-addressing.md AC-1/AC-2).
 ///
@@ -648,7 +648,7 @@ pub struct BvTag {
 /// (`.design/stage3-bv-reconstruction.md` REQ-1). It is `None` for every v1/v2
 /// clause and for every clause when the `bv` plumbing is not compiled in
 /// (the tag cannot parse there); `Some` only on an `ens`/`inv`/`req`/lemma clause
-/// that carried the tag in a `bv` build. The tag sits OUTSIDE `text`, so
+/// that carried the tag in a `bv` build. The tag sits outside `text`, so
 /// the addressing oracle string is unchanged by it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Clause {
@@ -844,9 +844,9 @@ pub enum IndexArg {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expr {
     /// An integer literal carrying both the numeric `value` (with `_`
-    /// separators stripped, ast.md REQ-6 VALUE, the original semantics
+    /// separators stripped, ast.md REQ-6 value, the original semantics
     /// unchanged) and the verbatim source `raw` (separators included, ast.md
-    /// REQ-6 RAW, #37). `1_000_000` parses to `{ value: 1000000, raw:
+    /// REQ-6 raw, #37). `1_000_000` parses to `{ value: 1000000, raw:
     /// "1_000_000" }`. Lowering/mutation/vacuity consume `value`, not
     /// `raw` (no golden churn); `raw` is AST-fidelity / round-trip only.
     IntLit {
@@ -972,9 +972,9 @@ pub enum Expr {
     /// sort `S`; `domain` is the `<dom>` expression it ranges over (parsed after the
     /// contextual `in`, e.g. a slice/carrier); `body` is the quantified formula φ.
     ///
-    /// This is the FOUNDATION increment blocking REQ-1 (the Lean `Strat/Syntax` denote
+    /// This is the foundation increment blocking REQ-1 (the Lean `Strat/Syntax` denote
     /// path) and REQ-4 (the Rust classifier): until raw `forall`/`exists` parse, the
-    /// classifier cannot see a quantified formula. It is deliberately DISTINCT from the
+    /// classifier cannot see a quantified formula. It is distinct from the
     /// registry-free `forall_in`/`forall_below`/`forall_from`/`sorted` COMBINATOR calls
     /// — those stay ordinary [`Expr::Call`] nodes and the combinator registry
     /// (`thermite-spec/src/combinators.rs`) is untouched as surface syntax. Surface +

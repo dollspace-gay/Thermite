@@ -87,7 +87,7 @@ pub struct AuditManifest {
     /// nothing — it changes no exit code and alters no verdict (REQ-10).
     #[serde(default)]
     pub lean_fragment: LeanFragment,
-    /// The `@bv`-tagged clauses' SHADOW FLAGS (`.design/stage3-bv-reconstruction.md`
+    /// The `@bv`-tagged clauses' shadow flags (`.design/stage3-bv-reconstruction.md`
     /// REQ-3 / AC-4 — Lock 1): one row per machine-semantics clause aggregated across the
     /// cert collection, so the audit lists the project's semantic forks the same way the
     /// `tcb` lists `#[slag]` blocks. A pure projection of each obligation's `bv_shadow`.
@@ -98,7 +98,7 @@ pub struct AuditManifest {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bv_shadows: Vec<BvShadowRow>,
     /// The "semantic forks and definition towers" section
-    /// (`.design/stage3-bv-reconstruction.md` REQ-6 / AC-7): the AGGREGATE legibility
+    /// (`.design/stage3-bv-reconstruction.md` REQ-6 / AC-7): the aggregate legibility
     /// surface over the per-clause `bv_shadows` above + the burned-lemma towers — bv-shadow
     /// density per module, every burned lemma's definition-tower depth, and the post-ship
     /// **F-F density tripwire**. A pure projection ([`crate::forks::SemanticForks::build`]);
@@ -108,9 +108,9 @@ pub struct AuditManifest {
     /// `bv_shadows`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub semantic_forks: Option<crate::forks::SemanticForks>,
-    /// The REQ-8 / AC-9 RESIDUAL-TRUST STATEMENT: the kernel-checked-vs-solver-trusted split
+    /// The REQ-8 / AC-9 RESIDUAL-TRUST statement: the kernel-checked-vs-solver-trusted split
     /// after reconstruction's default-on per-clause trust migration, with the
-    /// still-solver-trusted clauses + fragments named honestly. A pure projection
+    /// still-solver-trusted clauses + fragments named. A pure projection
     /// ([`ResidualTrust::build`]) over the certs' per-clause trust bases; `None` (and
     /// omitted) for a project the bit-vector route did not run on, so the v1 / nlsat-only
     /// corpus serializes BYTE-IDENTICALLY (the additive `semantic_forks` discipline;
@@ -156,15 +156,14 @@ impl BvShadowRow {
     }
 }
 
-/// The REQ-8 / AC-9 RESIDUAL-TRUST STATEMENT (`.design/stage3-bv-reconstruction.md`
+/// The REQ-8 / AC-9 RESIDUAL-TRUST statement (`.design/stage3-bv-reconstruction.md`
 /// REQ-8). After reconstruction's default-on per-clause trust migration, a project's
-/// clauses split into two trust bases at the SAME rung: the ones whose `trust:` migrated to
-/// the KERNEL-CHECKED form (the renderable QF_LIA + arithmetic/comparison QF_BV fragment,
-/// plus the nlsat-relax kernel-grounded clauses) and the ones that STAYED solver-trusted
-/// (the bitwise/shift/rotate QF_BV subset the exporter refuses, a Verus L3 base, and the
-/// EPR-stratified rel/array residual the reconstruction fragment does not cover). This
-/// section is that split, named honestly — "the audit names exactly what stayed
-/// solver-trusted" (F-J is free: reconstruction was never load-bearing for any gate, so an
+/// clauses split into two trust bases at the same rung: the ones whose `trust:` migrated to
+/// the kernel-checked form (the renderable QF_LIA/QF_BV fragment plus nlsat-relax
+/// kernel-grounded clauses) and the ones that stayed solver-trusted (expressions outside
+/// those exporters, a Verus L3 base, and the EPR-stratified rel/array residual). This
+/// section is that split, named — "the audit names exactly what stayed
+/// solver-trusted" (F-J is free: reconstruction was never required for any gate, so an
 /// unsupported fragment regresses nothing by staying labeled).
 ///
 /// A pure projection ([`ResidualTrust::build`]) of each per-clause obligation's `trust`
@@ -174,29 +173,25 @@ impl BvShadowRow {
 /// discipline; `manifest_version` stays `"v1"`). The section gates nothing — informational.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResidualTrust {
-    /// The number of per-clause obligations now KERNEL-CHECKED / kernel-grounded (REQ-8):
+    /// The number of per-clause obligations now kernel-checked or kernel-grounded (REQ-8):
     /// the reconstruction-migrated bv clauses + the nlsat-relax clauses.
     pub kernel_checked_clauses: usize,
-    /// The number of per-clause obligations that STAYED solver-trusted (the bitwise/shift/
-    /// rotate QF_BV subset + any non-migrated solver base).
+    /// The number of per-clause obligations that stayed solver-trusted.
     pub solver_trusted_clauses: usize,
-    /// The still-solver-trusted clauses, NAMED (item + per-clause obligation name + engine)
-    /// — the F-J inventory a reviewer audits, the same "grep finds exactly these" discipline
+    /// The still-solver-trusted clauses, named (item + per-clause obligation name + engine)
+    /// — the F-J inventory a reviewer audits, the same "grep finds these" discipline
     /// the `bv_shadows` / `tcb` sections follow. Source order (deterministic, REQ-6).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub solver_trusted: Vec<ResidualClause>,
-    /// The named FRAGMENTS reconstruction does not support program-wide (the standing F-J
-    /// note): the bitwise/shift/rotate QF_BV subset (the bit-blasting wall) and the
-    /// EPR-stratified rel/array atoms (left z3-model-relative by `strat_lowering_faithful`,
-    /// the G2 residual — outside the QF_LIA/QF_BV reconstruction fragment, named not
-    /// migrated). Deterministic, R-CODE-5.
+    /// The named fragments reconstruction does not support program-wide. Literal QF_BV
+    /// terms are covered; EPR-stratified rel/array atoms remain model-relative.
     pub unsupported_fragments: Vec<String>,
     /// The human one-line residual-trust statement (the auditor's headline).
     pub statement: String,
 }
 
 /// One still-solver-trusted clause in the residual-trust statement (REQ-8 / AC-9) — a pure
-/// projection of an obligation that carries a per-clause `trust` base with NO kernel-checked
+/// projection of an obligation that carries a per-clause `trust` base with no kernel-checked
 /// marker. Read verbatim from the cert (REQ-4).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResidualClause {
@@ -213,9 +208,8 @@ impl ResidualTrust {
     /// Aggregate the REQ-8 kernel-checked-vs-solver split across a settled cert collection
     /// (AC-9). A pure projection: every per-clause obligation that carries a non-empty
     /// `trust` base is classified by [`crate::engine::trust_is_kernel_checked`]; the
-    /// solver-trusted ones are named. The standing F-J fragments (bitwise/shift/rotate +
-    /// EPR rel/array) are named unconditionally for a bv project, because the
-    /// reconstruction fragment structurally excludes them program-wide. Returns `None` for a
+    /// solver-trusted ones are named. The standing EPR rel/array residual is named
+    /// unconditionally for a bv project. Returns `None` for a
     /// project the bit-vector route did not run on, so the v1 / nlsat goldens stay
     /// byte-identical.
     fn build(certs: &[Certificate], bv_present: bool) -> Option<Self> {
@@ -242,23 +236,15 @@ impl ResidualTrust {
         }
         let solver_trusted_clauses = solver_trusted.len();
         let unsupported_fragments = vec![
-            "bitwise/shift/rotate QF_BV (`^`/`&`/`|`/`<<`/`>>`, rotate): outside the exporter's \
-             renderable fragment — no clean Int encoding, the literal-BitVec path hits the \
-             upstream bit-blasting `sorry` (z3-demotion.md), so these stay solver-trusted (F-J)"
-                .to_string(),
             "EPR-stratified rel/array atoms: left z3-model-relative by `strat_lowering_faithful` \
-             (the G2 residual) — outside the QF_LIA/QF_BV reconstruction fragment, named not \
-             migrated (F-J — reconstruction was never load-bearing for any gate)"
+             (the G2 residual) — outside the QF_LIA/QF_BV reconstruction fragment (F-J)"
                 .to_string(),
         ];
         let statement = format!(
             "Residual trust (REQ-8, default-on): {kernel_checked_clauses} clause(s) \
              kernel-checked, {solver_trusted_clauses} clause(s) still solver-trusted. \
-             Reconstruction is default-on for the QF_LIA + arithmetic/comparison QF_BV \
-             fragment (trust migrated from solver(Z3) to the Lean kernel + the kernel-checked \
-             BvModel faithfulness, same rung); the bitwise/shift/rotate QF_BV subset and the \
-             EPR-stratified rel/array atoms stay solver-trusted, named above (F-J — no gate \
-             regresses, reconstruction was never load-bearing)."
+             Reconstruction is default-on for QF_LIA and the literal QF_BV term fragment; \
+             EPR-stratified rel/array atoms stay solver-trusted and are named above (F-J)."
         );
         Some(ResidualTrust {
             kernel_checked_clauses,
@@ -596,9 +582,9 @@ pub struct LeanFragmentRow {
     /// would export this item's contract obligation.
     pub exportable: bool,
     /// The coarse attempt class (REQ-7):
-    /// - `"auto"` — exportable AND [`ExportTier::is_auto`](crate::lean_export::ExportTier::is_auto) (tiers (a)/(b)):
-    ///   `--engine lean` would export AND lake-invoke the auto battery;
-    /// - `"interactive"` — exportable AND `RecursiveInteractive` (tier (c)):
+    /// - `"auto"` — exportable and [`ExportTier::is_auto`](crate::lean_export::ExportTier::is_auto) (tiers (a)/(b)):
+    ///   `--engine lean` would export and lake-invoke the auto battery;
+    /// - `"interactive"` — exportable and `RecursiveInteractive` (tier (c)):
     ///   `--engine lean` exports but does not invoke lake (returns `Unknown`);
     /// - `"none"` — refused: `--engine lean` skips (`Verdict::Unknown`).
     pub tier: String,
@@ -617,9 +603,9 @@ pub struct LeanFragmentRow {
 /// The coarse `tier` string for a refused row (REQ-7) — `--engine lean` skips an
 /// item it cannot export.
 const TIER_NONE: &str = "none";
-/// The coarse `tier` string for an exportable AUTO-tier row (REQ-7) — tiers (a)/(b).
+/// The coarse `tier` string for an exportable automatic-tier row (REQ-7), tiers (a) and (b).
 const TIER_AUTO: &str = "auto";
-/// The coarse `tier` string for an exportable INTERACTIVE-tier row (REQ-7) — tier (c).
+/// The coarse `tier` string for an exportable interactive-tier row (REQ-7) — tier (c).
 const TIER_INTERACTIVE: &str = "interactive";
 
 impl LeanFragmentRow {
@@ -1077,8 +1063,8 @@ mod tests {
     }
 
     // REQ-8 / AC-9: the residual-trust statement aggregates the kernel-checked-vs-solver
-    // split across a bv project's per-clause obligations and names the still-solver-trusted
-    // clauses + fragments. The mix64 split: one kernel-checked (arith) + one solver (xor).
+    // split across a bv project's per-clause obligations and names any solver-trusted
+    // clause. This fixture supplies one of each to exercise the aggregation.
     #[test]
     fn req8_residual_trust_aggregates_the_kernel_checked_vs_solver_split() {
         let cert = Certificate::new(
@@ -1100,25 +1086,23 @@ mod tests {
             .expect("a bv project carries the REQ-8 residual-trust statement");
         assert_eq!(
             rt.kernel_checked_clauses, 1,
-            "the arith clause is kernel-checked"
+            "the migrated clause is kernel-checked"
         );
         assert_eq!(
             rt.solver_trusted_clauses, 1,
-            "the xor clause stays solver-trusted"
+            "the explicit solver-profile fixture stays solver-trusted"
         );
         assert_eq!(rt.solver_trusted.len(), 1);
         assert_eq!(rt.solver_trusted[0].item, "mix64");
         assert_eq!(rt.solver_trusted[0].clause, "mix64::ens#1");
         assert_eq!(rt.solver_trusted[0].engine.as_deref(), Some("bitvector"));
-        // The standing F-J fragments are named: the bitwise/shift/rotate subset + the EPR
-        // rel/array residual.
-        assert_eq!(rt.unsupported_fragments.len(), 2);
-        assert!(rt.unsupported_fragments[0].contains("bitwise/shift/rotate"));
-        assert!(rt.unsupported_fragments[1].contains("rel/array"));
+        // Literal QF_BV is covered; the standing EPR rel/array residual remains.
+        assert_eq!(rt.unsupported_fragments.len(), 1);
+        assert!(rt.unsupported_fragments[0].contains("rel/array"));
         assert!(rt.statement.contains("kernel-checked"));
     }
 
-    // REQ-8 / AC-9: a non-bv project (the v1 / nlsat corpus) carries NO residual-trust
+    // REQ-8 / AC-9: a non-bv project (the v1 / nlsat corpus) carries no residual-trust
     // statement, so its audit manifest serializes byte-identically (the additive discipline).
     #[test]
     fn req8_non_bv_project_has_no_residual_trust_statement() {

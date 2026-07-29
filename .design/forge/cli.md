@@ -4,7 +4,7 @@
 tier: 3-component
 status: shipped
 audited-sha: 5ae0816c042debb01c70eb9b89c775837f0c0f24 (content-sha256 re-pinned 2026-06-23 for stage-3 REQ-7 / AC-8 (#349), the automated Rust→Lean obligation exporter: the change to this doc's governed file (cli.rs) is the additive `forge smt-export [<file>] [--out <path>]` subcommand (`Command::SmtExport` → `run_smt_export`, emitting the `(P_prod) ⟺ (P_ref)` `by smt` Lean theorems + `#print axioms` probes via `lean_smt_export.rs`); every other subcommand + flag parse is unchanged. The legacy commit pin stays at the 5ae0816c stable-main ancestor; only the active content-sha256 digest moves. prior: 2026-06-21 stage-2 REQ-8 / AC-8 (#330) `forge strat-faithful-tv`; 2026-06-20 stage-2 REQ-4 / AC-4 (#326) `forge strat-tv` + `ForgeError::StratDifferential`; 2026-06-18 umbrella REQ-2c / AC-4 rotating-seed `--seed` flag on `forge tv`; §6 metrics dashboard `--metrics` value)
-audited-content-sha256: c26663ba3002a4cb2bd72fd30383d6d4f0c9b0eb9f975ea1d6aa0599b2a45826
+audited-content-sha256: 19ee007ec4e8bfdaed609662ab91486543b0ce3be348a40ddc1a77f3d48d9cce
 governs: forge/src/cli.rs
 thesis-refs:
   - thermite-design.md §5
@@ -58,9 +58,10 @@ What the old doc never saw, grouped (each verb cites its issue in the code):
 - **SMT-tactic obligation export** — `forge smt-export [<file>] [--out <path>]`
   (stage-3 REQ-7 / AC-8, #349): the automated Rust→Lean obligation exporter
   (`Command::SmtExport` → `run_smt_export`, driving `lean_smt_export.rs`). Emits a
-  `(P_prod) ⟺ (P_ref)` `by smt`-discharged Lean theorem + `#print axioms` probe per
-  renderable contract clause (QF_LIA, or QF_BV over the bounded-integer model for a
-  `@bvN` clause in a `bv` build); no file emits the canonical demo batch.
+  `(P_prod) ⟺ (P_ref)` Lean theorem + `#print axioms` probe per renderable contract
+  clause. QF_LIA uses `smt`; `@bvN` clauses use literal `BitVec N` terms and
+  kernel-checked normalization lemmas. With no file, the command emits the canonical
+  demo batch.
 
 ## Requirements
 

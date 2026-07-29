@@ -1,5 +1,5 @@
 //! Conformance test for the runnable effect link (Basis Stage 8, issue **#81**)
-//! against the external truths: the real `rustc` compiler, the real Linux seccomp
+//! against the external truths: the real `rustc` compiler, the Linux seccomp
 //! kernel, the real `verus` prover, and the hand-derived oracle
 //! `conformance/effect-link/cases.json` (`.design/basis/08-runnable-effect-link.md`).
 //!
@@ -60,7 +60,7 @@ fn seccomp_kill_available() -> bool {
 }
 
 /// `true` iff a `verus` binary is resolvable (mirrors `effect_stdlib_conformance.rs`).
-/// The `verify_unchanged` case is a real verus proof of the L3 compose-through.
+/// The `verify_unchanged` case is a verus proof of the L3 compose-through.
 fn verus_present() -> bool {
     if let Ok(p) = std::env::var("VERUS_BIN") {
         if Path::new(&p).exists() {
@@ -429,7 +429,7 @@ fn read_byte_links_and_runs_both_arms() {
         out_a.contains("130"),
         "AC-2: stdin `A` (byte 65) → doubled() = 130 (65+65, hand-derived):\n{out_a}"
     );
-    // Run with EMPTY stdin (EOF) → doubled() = 0 (the handled EOF/256 arm).
+    // Run with empty stdin (EOF) → doubled() = 0 (the handled EOF/256 arm).
     let out_eof = run_with_stdin(&artifact, b"");
     assert!(
         out_eof.contains("doubled() = 0"),

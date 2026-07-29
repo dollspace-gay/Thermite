@@ -36,7 +36,7 @@
 //!
 //! Verus-needing tests skip with a logged reason when verus is absent (mirroring
 //! `cache_conformance.rs`): the L3 verdict the guarantee rests on needs the solver.
-//! The fault-injection and locality shapes that do not need a real proof still run
+//! The fault-injection and locality shapes that do not need a proof still run
 //! their non-verus halves.
 //!
 //! Expected verdicts trace to `conformance/sum.cert.json` and the `binary_search`
@@ -349,7 +349,7 @@ fn n_concurrent_agents_produce_correct_uncorrupted_certs() {
     }
 
     // AC-1 (uncorrupted cache): every `<key>.json` parses (a torn entry would
-    // PANIC inside `parse_all_entries`), and no orphan `.tmp` sibling survived the
+    // panic inside `parse_all_entries`), and no orphan `.tmp` sibling survived the
     // concurrent atomic publishes.
     let entries = parse_all_entries(&cache_dir);
     assert!(
@@ -391,7 +391,7 @@ fn n_concurrent_agents_produce_correct_uncorrupted_certs() {
 /// reported verdict is the same L3 (REQ-1, REQ-3; AC-2).
 ///
 /// Note on entry count: a single-fn item legitimately yields more than one
-/// content-address entry — the real fn plus one per mutation-scoring (#12) mutant
+/// content-address entry — the fn plus one per mutation-scoring (#12) mutant
 /// (and per strengthening-probe (#14) candidate). The convergence guarantee is
 /// therefore "the concurrent cache key set equals the serial run's, every entry
 /// consistent" — not a literal count of one. Asserting one entry would be wrong

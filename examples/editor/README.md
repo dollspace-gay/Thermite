@@ -1,158 +1,104 @@
-# A MAX-VERIFIED, runnable MULTI-LINE text editor (Thermite)
+# Verified terminal editor
 
-`editor.th` is the keystone proof-of-the-pudding for Thermite (crosslink #125,
-builds on #90, ref #83): a nano-like **multi-line** text editor whose **bug-prone
-logic — the editing heart, the line NAVIGATION + cursor LAYOUT math, the
-display-frame construction, AND the keystroke decode — is mechanically PROVEN**,
-with only the raw read/write/ioctl/open **syscalls** honestly trusted at the seam
-where proof meets the world. It both `forge check`s (the proof) and `forge build`s +
-RUNS (the artifact).
+[`editor.th`](editor.th) is a small multi-line terminal editor. Thermite proves
+the buffer operations, navigation, cursor layout, frame construction, and key
+decoding. File and terminal operations remain at the L1 boundary.
 
-It is genuinely nano-like: **newlines (Enter), up/down line navigation, a
-full-screen render that positions the cursor by ROW/COLUMN, and file load/save**.
-The buffer is ONE `String` with `\n` bytes; the cursor is a byte offset, so the
-shipped edit core (`insert_str`/`backspace`/`move_left`/`move_right`) works
-unchanged over the multi-line text (a `\n` is just a byte). The ROW/COLUMN cursor
-math and the UP/DOWN navigation are VERIFIED Thermite (L3) — the navigation +
-layout logic is proven, not trusted glue.
+## Assurance boundary
 
-## The thesis: verified vs trusted, pushed as far as the language allows
+The project-level assurance is L1 because a project's level is the minimum of
+its functions. Most editor logic reaches L3; syscall wrappers and the
+non-terminating event loop remain L1.
 
-Thermite does not pretend the kernel can be proven — but it pushes the proof
-boundary all the way down to the syscalls. The display logic and the input
-interpretation, the parts that are actually bug-prone, are VERIFIED.
+### L3 logic
 
-### Verified logic — `forge check` certifies **L3** (total + mutation-proven)
-
-| item | what is proven |
+| Item | Guarantee |
 |---|---|
-| `Buffer` | the type invariant `cursor <= text.len() && text.len() <= 1_000_000` — the cursor NEVER points past the text, the text stays within the bounded-`String` cage (§4.2) |
-| `insert_str` | the text grows by exactly `ins.len()` and the cursor advances by exactly `ins.len()` (so it still points within the new text) |
-| `backspace` | the text shrinks by exactly one and the cursor steps back exactly one (`req cursor > 0` guarantees a byte to delete) |
-| `move_left` | the cursor steps back exactly one; the text is unchanged |
-| `move_right` | the cursor advances exactly one (`req cursor < text.len()` keeps it in bounds); the text is unchanged |
-| `count_nl` | **NAV (#125)** — a verified recursive FORWARD scan counting the newline (byte 10) occurrences in `text[i..end]`; `ens result <= end - i` plus a boundary teeth clause (a newline at `i` forces `result >= 1`) make it non-vacuous, `dec end - i` proves termination. The row math. |
-| `line_start` / `line_end` | **NAV (#125)** — verified forward scans for the start/end of the line a position sits on (`line_start` carries the running "index after the last newline" accumulator). The line-boundary math up/down navigation stands on. |
-| `cursor_row` / `cursor_col` | **LAYOUT (#125)** — the cursor's 0-based ROW (newlines in `text[0..cursor]`, via `count_nl`) and COLUMN (`cursor − line_start`). `ens result <= b.cursor`; they feed the ANSI cursor positioning. Proven cursor layout, not trusted. |
-| `move_up` / `move_down` | **NAV (#125)** — verified up/down line navigation: find the prev/next line boundaries, clamp the target column to that line's length (`min2`), set the new cursor. PROVEN: the text is unchanged AND the new cursor stays in bounds (`cursor <= text.len()` — the Buffer type invariant). |
-| `to_1based` | **LAYOUT (#125)** — the 0→1-based ANSI coordinate conversion, `ens result == x + 1`. PROVEN exactly, so an off-by-one mutant is killed — the `+1` is verified, not an unverified literal in `render_frame`. |
-| `render_frame` | **THE THESIS (multi-line, #125)** — the full ANSI display frame is built as a `String` (C1 escape literals + the buffer text [`\n` bytes render as terminal line breaks] by `concat` + the cursor coordinate `\x1b[<row+1>;<col+1>H` from the VERIFIED `cursor_row`/`cursor_col` via the C4 `.to_string()` and the proven `to_1based`), and `ens result.len() >= b.text.len()` PROVES the whole buffer text is carried into the frame (a dropped-text mutant shortens the frame and fails the `ens`). The display logic is PROVEN, not trusted glue. |
-| `decode` | a PURE TOTAL function mapping the raw read bytes to a key code (printable → itself, DEL → backspace, **Enter (CR/LF) → insert-newline 1004**, **Ctrl-S → save 19**, Ctrl-Q → quit, the arrow escape sequences `ESC [ A..D` → synthetic codes 1000..1003). The keystroke INTERPRETATION is proven, not trusted. |
+| `Buffer` | `cursor <= text.len()` and `text.len() <= 1_000_000` |
+| `insert_str` | Inserts at the cursor and advances it by `ins.len()` |
+| `backspace` | Deletes the preceding byte and moves the cursor back one |
+| `move_left` / `move_right` | Moves one byte while preserving the text and cursor bound |
+| `count_nl` | Counts newlines in a bounded range and terminates by `end - i` |
+| `line_start` / `line_end` | Finds the bounds of the line containing a position |
+| `cursor_row` / `cursor_col` | Computes zero-based display coordinates |
+| `move_up` / `move_down` | Preserves the text and clamps the cursor to the target line |
+| `to_1based` | Converts terminal coordinates with `result == x + 1` |
+| `render_frame` | Includes the buffer text and positions the terminal cursor |
+| `decode` | Maps printable bytes, control keys, and arrow sequences to editor commands |
 
-Each is a TOTAL function: its math holds for ALL inputs, an SMT proof discharges
-every obligation, and the §7 mutation battery confirms the contract is strong (not
-a tautology a weak body could satisfy). **L3 = total correctness.**
+These functions are total and pass the mutation battery. The decimal formatter's
+20-digit upper bound is used to prove that cursor-coordinate concatenation stays
+within the bounded string capacity.
 
-`render_frame` L3 rests on a real C4 strengthening: `u64_to_string`'s `ens` now
-bounds the formatted decimal length `result.data.len() <= 20` (a u64 is < 10^20, so
-at most 20 digits — PROVED, not assumed), so the bounded `concat`'s §4.2 cage
-precondition discharges for any formatted-number concat.
+### L1 boundary
 
-### The minimal trusted syscall boundary — **L1** (the honest seam to the world)
+| Item | Responsibility |
+|---|---|
+| `raw_mode_on` / `raw_mode_off` | Enter and restore terminal raw mode through `tcgetattr` and `tcsetattr` |
+| `read_key_raw` | Read and pack a key sequence for `decode` |
+| `write_frame` | Write and flush a rendered frame |
+| `read_file` / `write_file` | Load and save the configured file |
+| `run` | Drive the `fx diverge` event loop under runtime contract checks |
 
-| item | level | why it is trusted, not proven |
-|---|---|---|
-| `raw_mode_on` | L1 boundary | `#[boundary("os::raw_mode_on")]` — put the terminal in RAW mode (clear `ICANON`/`ECHO` so each keystroke reaches the editor live) via extern-C `tcgetattr`/`tcsetattr` (libc linked through std — self-contained, no `stty`). `ens result <= 1` (0 = ok, 1 = not-a-TTY/error). The binary self-sets raw mode; a non-TTY (piped) stdin is handled gracefully — `tcgetattr` returns ENOTTY, the wrapper returns 1, **no crash**. |
-| `raw_mode_off` | L1 boundary | `#[boundary("os::raw_mode_off")]` — restore the saved original termios; runs on the quit path so the terminal is never left in raw mode. A clean no-op when raw mode was never entered. |
-| `read_key_raw` | L1 boundary | `#[boundary("os::read_key_raw")]` — read one keystroke, returning the raw bytes PACKED into a u64 for `decode` (`b0` bits 0..9, `b1` 9..18, `b2` 18..27; an ESC reads the 2-byte arrow tail). `ens result <= 134_217_727` (the 27-bit packing width — an honest boundary bound). |
-| `write_frame` | L1 boundary | `#[boundary("os::write_frame")]` — write the rendered frame `String` to stdout and flush. `ens result <= 1`. |
-| `read_file` | L1 boundary | `#[boundary("os::read_file")]` — LOAD the initial buffer from the fixed demo file (`THERMITE_EDITOR_FILE` if set, else `/tmp/thermite_editor.txt`) via extern-C `std::fs::read`; the multi-line `\n` bytes are preserved. A missing file yields the EMPTY string (a fresh buffer) — the honest arm, no crash. `ens result.len() <= 1_000_000`. (#125) |
-| `write_file` | L1 boundary | `#[boundary("os::write_file")]` — SAVE the buffer `String`'s bytes (incl. the `\n` line breaks) to the same fixed file on Ctrl-S, via `std::fs::write`. `ens result <= 1` (0 = ok, 1 = I/O error). (#125) |
-| `run` | L1 (partial correctness) | the `fx diverge` event loop. An event loop is **non-terminating by design**, so it cannot honestly claim L3 = TOTAL correctness. It caps at **L1 = partial correctness**: the loop runs under its always-active runtime contract checks, and the logic it drives (`decode`, `render_frame`, `insert_str`/`backspace`/`move_left`/`move_right`) is the L3-proven core its correctness rests on. The §7 mutation gate is exempt for a diverge fn — `run`'s shape is honestly weak, NOT a gamed one (R-DEFER-9). |
+The terminal wrappers return status values instead of panicking when stdin is
+not a TTY. A missing input file produces an empty buffer. `run` is partial
+correctness at L1 because the event loop is intentionally non-terminating.
 
-The whole-project assurance is the **min over functions = L1** — capped by the
-trusted syscall seam, exactly as it should be. The verified guarantee is
-*to-the-boundary*: the display + input logic is PROVEN; only the raw syscalls are
-trusted.
-
-## How to check it
+## Check it
 
 ```sh
-forge check examples/editor/editor.th
+cargo run -q -p forge -- check examples/editor/editor.th
 ```
 
-Expect the verified logic (`Buffer`/`insert_str`/`backspace`/`move_left`/
-`move_right`/`render_frame`/`decode`) at **L3**, the syscall boundary
-(`raw_mode_on`/`raw_mode_off`/`read_key_raw`/`write_frame`) at **L1 boundary**, and
-`run` at **L1** (diverge / partial correctness — NOT an L0 `WeakContract` reject).
-Project assurance: **L1**.
+Expect the pure editor functions at L3, boundary functions at L1, and `run` at
+L1. The resulting project level is L1.
 
-## How to run it
-
-Build it once to a named path with `--out`, then run that **standalone binary
-directly** — it self-sets raw mode via its own extern-C `termios` boundary (no
-`stty`, no wrapper script):
+## Build and run
 
 ```sh
-# build the standalone editor binary (one time) — FULLY SANDBOXED by default:
 cargo run -q -p forge -- build examples/editor/editor.th --entry run --out ./nano
-
-# run it INTERACTIVELY in a real terminal — type, arrows move, Ctrl-S saves, Ctrl-Q quits:
 THERMITE_EDITOR_FILE=mydoc.txt ./nano
 ```
 
-`./nano` is a self-contained executable: it puts the terminal in raw mode itself,
-loads `THERMITE_EDITOR_FILE` (empty/missing → a fresh buffer), and restores the
-terminal on Ctrl-Q. It runs UNDER the default seccomp sandbox (no `--no-sandbox`):
-its `raw_mode_on`/`raw_mode_off` boundaries declare `fx term` (crosslink #106/#132),
-whose seccomp widening grants the `ioctl` the termios raw mode needs — so every
-syscall the editor issues is granted by its transitive `fx` (`ioctl` by `term`,
-`read`/`openat` by `read(input)`, `write`/`openat` by `write(output)`, the heap by
-the baseline). A program WITHOUT `term` attempting `ioctl` is still SIGSYS-killed.
+The editor sets and restores raw mode itself. No `stty` wrapper is required.
 
-You can also drive it non-interactively by piping keystrokes (deterministic):
+| Key | Action |
+|---|---|
+| Printable byte | Insert at the cursor |
+| Enter | Insert `"\n"` |
+| Up / Down | Move to the previous or next line, preserving the column when possible |
+| Left / Right | Move one byte |
+| Backspace | Delete the byte before the cursor |
+| Ctrl-S | Save |
+| Ctrl-Q | Quit and restore the terminal |
+
+You can also run a deterministic piped session:
 
 ```sh
-printf 'ab\x1b[DX\x7f\x11' | ./nano    # a, b, LEFT, X (splice -> aXb), Backspace, Ctrl-Q
+printf 'ab\x1b[DX\x7f\x11' | ./nano
 ```
 
-The keystrokes are `a`, `b`, then a **LEFT arrow** (`ESC [ D` = `\x1b[D`, decode →
-1003: cursor steps left between `a` and `b`), then `X` (the L3 `insert_str` SPLICES
-mid-text → `aXb`), then **Backspace** (`0x7f`, deletes `X` → `ab`), then **Ctrl-Q**
-(`0x11` = 17 = quit). The editor self-sets raw mode, decodes each keystroke with the
-L3-proven `decode`, dispatches to the L3-proven edit ops, builds each frame with the
-L3-proven `render_frame`, writes it, and exits clean on Ctrl-Q — restoring the
-terminal on the way out.
+That sequence inserts `ab`, moves left, inserts and deletes `X`, then quits.
 
-### The MULTI-LINE keymap (#125)
+For a multi-line save:
 
 ```sh
 SAVE=/tmp/thermite_editor.txt
-# type "ab", ENTER (newline), "cd", UP arrow, Ctrl-S (save), Ctrl-Q (quit):
-printf 'ab\rcd\x1b[A\x13\x11' | THERMITE_EDITOR_FILE="$SAVE" <the-built-binary>
-cat "$SAVE"   # -> ab\ncd   (the multi-line buffer, saved with its newline)
+printf 'ab\rcd\x1b[A\x13\x11' |
+  THERMITE_EDITOR_FILE="$SAVE" ./nano
+cat "$SAVE"
 ```
 
-| key | byte(s) | decode | action |
-|---|---|---|---|
-| printable (space..~) | 32..126 | itself | insert the char at the cursor |
-| **Enter** | CR `\r` (13) or LF (10) | 1004 | insert `"\n"` (a new line — the cursor drops to row+1, col 1) |
-| **UP** / **DOWN** arrow | `ESC [ A` / `ESC [ B` | 1000 / 1001 | move the cursor to the same column on the previous / next line (`move_up`/`move_down`) |
-| **LEFT** / **RIGHT** arrow | `ESC [ D` / `ESC [ C` | 1003 / 1002 | move the cursor one byte (`move_left`/`move_right`) |
-| Backspace / DEL | `0x7f` | 127 | delete the char before the cursor |
-| **Ctrl-S** | `0x13` | 19 | **save** the buffer to the file (`write_file`) |
-| Ctrl-Q | `0x11` | 17 | quit (restores the terminal) |
+The saved content is `ab\ncd`.
 
-The buffer is LOADED from the file on start (`read_file`; an empty/missing file is a
-fresh buffer). Each frame is the full-screen render: clear+home, the multi-line
-buffer text (`\n` → line breaks), then the cursor positioned at
-`\x1b[<row+1>;<col+1>H` from the VERIFIED `cursor_row`/`cursor_col`. A piped session
-shows TWO lines and the cursor moving between them — e.g. after Enter the cursor is
-at `\x1b[2;1H` (row 2), and after the UP arrow it is back at `\x1b[1;3H` (row 1).
+## Sandbox
 
-**The sandbox grants `ioctl` via `fx term` (#106/#132):** the termios boundary
-(`raw_mode_on`/`raw_mode_off`) issues the `ioctl` syscall (16) via
-`tcgetattr`/`tcsetattr`. Those boundaries declare `fx term` — the dedicated
-terminal-control effect atom — whose `forge/src/sandbox.rs` `TERM_SYSCALLS={ioctl:16}`
-widening grants `ioctl`. So the editor builds + runs FULLY sandboxed (the default,
-NO `--no-sandbox`): raw mode enters under the filter, edits/saves run, exit 0. The
-grant is SCOPED to the effect — a plain `write` program (`print`, `write_file`) does
-NOT acquire `ioctl`, so its `ioctl` is still SIGSYS-killed. The grant is `ioctl`-broad
-(any cmd) because classic seccomp-bpf cannot filter the `ioctl` cmd register
-(runtime-sandbox.md OQ-5).
+The binary runs under the default seccomp filter. The terminal boundaries
+declare `fx term`, which adds `ioctl`; file effects add the required `read`,
+`write`, and `openat` calls. Programs without `fx term` do not receive `ioctl`.
+Classic seccomp-BPF cannot filter the `ioctl` command argument, so the grant is
+syscall-wide.
 
-The runnable session is grounded as a test: `forge/tests/editor_runs.rs` builds the
-editor with `rustc`, runs it with the piped keystrokes above, and asserts the frames
-show the mid-text splice (`aXb`) then the backspace undo (`ab`) and a clean exit —
-alongside the cert-level checks (logic L3, boundary/`run` L1) and the diverge-only
-honesty regressions.
+`forge/tests/editor_runs.rs` checks certification, builds the editor, drives the
+piped session, verifies the rendered splice and backspace behavior, and checks a
+clean exit.

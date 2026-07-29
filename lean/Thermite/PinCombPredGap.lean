@@ -146,9 +146,9 @@ theorem divergent_registry_fails_the_hypothesis : ¬ RegistryTerminating envD eD
   rw [eDeep_NB_none N] at this
   exact absurd this (by simp)
 
-/-! ## F.+ — the over-rejection guard: a genuine registry of the same shape converges -/
+/-! ## F.+ — the over-rejection guard: a registry of the same shape converges -/
 
-/-- A genuine (terminating) registry: `g(x) = 1` — the same eDeep shape, but the spec-fn
+/-- A (terminating) registry: `g(x) = 1` — the same eDeep shape, but the spec-fn
     returns a constant instead of diverging. -/
 def Rgen : Registry := fun n =>
   if n = "f" then some ⟨["x"], Expr.intLit 1⟩ else none
@@ -159,7 +159,7 @@ def envG : Env :=
     optres := fun _ => OptResVal.none_
     specs := Rgen }
 
-/-- The genuine call resolves to `some 1` at every positive fuel (`intValNB`). -/
+/-- The call resolves to `some 1` at every positive fuel (`intValNB`). -/
 theorem genuine_call_NB_one :
     ∀ fuel (env : Env), env.specs = Rgen → intValNB (fuel + 1) fCall env = some 1 := by
   intro fuel env h
@@ -168,12 +168,12 @@ theorem genuine_call_NB_one :
       = some [env.ints "x"] from by simp only [intValArgsNB, intValNB, Option.bind]]
   simp only [Option.bind]
 
-/-- The predicate body `f(x) > 0` denotes `some (1 > 0)` under the genuine registry. -/
+/-- The predicate body `f(x) > 0` denotes `some (1 > 0)` under the registry. -/
 theorem pBody_NB_genuine (fuel : Nat) (env : Env) (h : env.specs = Rgen) :
     denoteNB (fuel + 1) pBody env = some ((1 : Int) > 0) := by
   simp only [pBody, denoteNB, genuine_call_NB_one fuel env h, Option.bind, intValNB]
 
-/-- The inner `forall_in` NB-denotes to `some` of an explicit genuine proposition at
+/-- The inner `forall_in` NB-denotes to `some` of an explicit proposition at
     positive fuel; the predicate gate now succeeds (`some`) because the genuine call
     resolves. The carried proposition is the spine `denote` form (agreement is reflexive). -/
 theorem forall_NB_genuine_eq (fuel : Nat) (env : Env) (h : env.specs = Rgen)
@@ -186,7 +186,7 @@ theorem forall_NB_genuine_eq (fuel : Nat) (env : Env) (h : env.specs = Rgen)
   rw [pBody_NB_genuine fuel (env.bindInt "y" 0) (by rw [Env.bindInt]; exact h)]
   simp only [predGateNB]
 
-/-- The spine `forall_in(s, |y| f(x) > 0)` denotes true under the genuine registry: the
+/-- The spine `forall_in(s, |y| f(x) > 0)` denotes true under the registry: the
     body is `1 > 0` at the (single) bound element, which holds. -/
 theorem forall_denote_genuine (fuel : Nat) (env : Env) (h : env.specs = Rgen)
     (hs : env.seqs "s" = [0]) :
@@ -200,9 +200,9 @@ theorem forall_denote_genuine (fuel : Nat) (env : Env) (h : env.specs = Rgen)
     simp only [fCall, intVal, h, Rgen, if_pos, Env.bindInt, intValArgs]]
   simp only [intVal]; omega
 
-/-- The pin (F.+, the over-rejection guard): the same eDeep shape under the genuine
+/-- The pin (F.+, the over-rejection guard): the same eDeep shape under the
     registry `g(x) = 1` reaches a value under `intValNB` at positive fuel, so
-    `RegistryTerminating envG eDeep` holds and `stabilization_exists` delivers a genuine
+    `RegistryTerminating envG eDeep` holds and `stabilization_exists` delivers a
     stabilized value. The #242 gate rejects divergence, not every predicate-body
     spec-call (the #241 precedent: a fix that rejected everything would be unsound the
     other way). The convergent value is the genuine count `1` (the single element's
@@ -222,7 +222,7 @@ theorem genuine_registry_satisfies_the_hypothesis : RegistryTerminating envG eDe
     (by rw [Env.bindInt]; rfl))]
   simp only [Option.some.injEq]; omega
 
-/-- `stabilization_exists` is dischargeable on the genuine registry, delivering a genuine
-    stabilized value — the resolved-side counterpart to F.2's rejection of divergence. -/
+/-- `stabilization_exists` is dischargeable on the registry and produces a
+    stabilized value, the resolved-side counterpart to F.2's rejection of divergence. -/
 theorem genuine_stabilization_exists : ∃ v, stabilizes eDeep envG v :=
   stabilization_exists genuine_registry_satisfies_the_hypothesis

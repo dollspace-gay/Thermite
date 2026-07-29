@@ -19,7 +19,7 @@
 //!
 //! Both checks reuse the existing Verus contract lowering: each builds a one-query
 //! `proof fn` harness by lowering the item via `thermite_lower::lower` (so the
-//! emitted `requires`/`ensures` text is byte-identical to the real proof's, with
+//! emitted `requires`/`ensures` text is byte-identical to the proof's, with
 //! the combinator + `spec fn` weaving the lowerer already performs) and splicing
 //! that verbatim contract into the harness frame. The harness is run through verus
 //! and the verdict interpreted (REQ-3): a verus success is the bad news
@@ -145,7 +145,7 @@ struct HarnessSummary {
 /// root cause is the unsatisfiable `req`. So the unsat-precondition check
 /// runs first: a contract whose `req` is unsat is reported as `VacuousPrecondition`
 /// (its true defect), and the tautology check then runs only on a satisfiable
-/// precondition, where a proved `ens`-for-arbitrary-result is a genuine tautology
+/// precondition, where a proved `ens`-for-arbitrary-result is a tautology
 /// rather than an artifact of a false premise. This is an implementation precedence
 /// within the solver stage, not a contract/cause change: both checks and both
 /// causes are as the design specifies; only which fires first when both
@@ -180,7 +180,7 @@ pub fn solver_vacuity_check(
 
     // §7 step 2: tautology (assume req / arbitrary result / assert ens). Reached
     // only when the `req` is satisfiable, so a proved `ens` for an arbitrary result
-    // is a genuine semantic tautology rather than an artifact of a false premise.
+    // is a semantic tautology rather than an artifact of a false premise.
     let taut = build_tautology_harness(f, spec_items, adt_items)?;
     if matches!(
         run_harness(&taut, "taut", seed, rlimit)?,
@@ -200,7 +200,7 @@ pub fn solver_vacuity_check(
 
 /// The pieces of a lowered `fn` a harness reuses verbatim (REQ-1/REQ-2). Extracted
 /// from `thermite_lower::lower`'s output so the harness's contract text is
-/// byte-identical to the real proof's (no re-emission of `req`/`ens` by hand).
+/// byte-identical to the proof's (no re-emission of `req`/`ens` by hand).
 struct LoweredFn {
     /// Everything inside `verus! {` before the target `fn NAME(`: the woven
     /// combinator `spec fn` defs, the file's `spec fn`s, and any push-lemma
@@ -214,8 +214,8 @@ struct LoweredFn {
     /// The lowered return type from `-> (result: <RET>)` (e.g. `u64`,
     /// `Option<usize>`). The arbitrary-result binder type (OQ-4).
     ret: String,
-    /// The lowered `requires` region's lines, captured VERBATIM (each line with its
-    /// own indentation and trailing comma exactly as the lowerer emitted it),
+    /// The lowered `requires` region's lines, captured verbatim (each line with its
+    /// own indentation and trailing comma as the lowerer emitted it),
     /// including the `requires` keyword line. Empty when the lowerer omitted the
     /// clause (`req` literally `true`, a trivially-satisfiable precondition that is
     /// never vacuous), so the harness simply has no `requires`. Verbatim capture
@@ -224,7 +224,7 @@ struct LoweredFn {
     /// appended after every physical line (crosslink #275: the per-line
     /// reconstruction produced `match result {,` and the harness failed to compile).
     requires_lines: Vec<String>,
-    /// The lowered `ensures` region's lines, captured VERBATIM (including the
+    /// The lowered `ensures` region's lines, captured verbatim (including the
     /// `ensures` keyword line and every clause line, each as the lowerer emitted
     /// it). Used only by the tautology harness. Verbatim capture preserves a
     /// multi-line `match result { … }` ens as valid Verus (the #275 fix; the prior
@@ -232,7 +232,7 @@ struct LoweredFn {
     ensures_lines: Vec<String>,
 }
 
-/// Build the §7 step-2 tautology harness for `f` (REQ-1). Lowers the real item via
+/// Build the §7 step-2 tautology harness for `f` (REQ-1). Lowers the item via
 /// `thermite_lower::lower` and rebuilds:
 ///
 /// ```text
@@ -262,7 +262,7 @@ fn build_tautology_harness(
     // The harness signature: real params plus the arbitrary `result` binder.
     let params = append_result_param(&lf.params, &lf.ret);
     out.push_str(&format!("proof fn taut_check({params})\n"));
-    // Splice the lowered `requires` + `ensures` regions VERBATIM (each line as the
+    // Splice the lowered `requires` + `ensures` regions verbatim (each line as the
     // lowerer emitted it, including the keyword lines and original commas), so a
     // multi-line `match`/`forall` clause reconstructs as valid Verus (#275).
     for line in &lf.requires_lines {
@@ -278,7 +278,7 @@ fn build_tautology_harness(
     Ok(out)
 }
 
-/// Build the §7 step-3 vacuity harness for `f` (REQ-2). Lowers the real item and
+/// Build the §7 step-3 vacuity harness for `f` (REQ-2). Lowers the item and
 /// rebuilds:
 ///
 /// ```text
@@ -333,13 +333,13 @@ fn append_result_param(params: &str, ret: &str) -> String {
 /// sub-program) and extract the lowered preamble + signature + verbatim
 /// `requires`/`ensures` lines (REQ-1/REQ-2). This is the reuse the harness rests
 /// on: the harness's contract text is the same bytes the real L3 proof sees, so a
-/// tautology/vacuity verdict reflects the real contract rather than a
+/// tautology/vacuity verdict reflects the contract rather than a
 /// re-derivation.
 ///
 /// `adt_items` are the reachable `Item::Struct`/`Item::Enum` declarations the
 /// caller resolved (`check::reachable_adt_deps`, the same set woven into the L3
 /// sub-program). An ADT-returning / ADT-taking `fn` (`-> Account`, `a: Shape`)
-/// whose harness omitted these decls failed to COMPILE (`error[E0425]: cannot
+/// whose harness omitted these decls failed to compile (`error[E0425]: cannot
 /// find type`), and a non-compiling harness was silently read as "not a tautology
 /// / not vacuous" — both anti-Goodhart checks then no-op'd on every ADT fn
 /// (crosslink #275). Weaving the ADT decls first (so the synthetic `proof fn`'s
@@ -353,7 +353,7 @@ fn extract_lowered_fn(
     adt_items: &[Item],
 ) -> Result<LoweredFn, ForgeError> {
     // The same sub-program shape `check::item_subprogram` builds for the L3 `Fn`
-    // path: the reachable `struct`/`enum` decls FIRST (#68 — so the type decls +
+    // path: the reachable `struct`/`enum` decls first (#68 — so the type decls +
     // their `well_formed` invariants are in scope before any fn that references
     // them), then the file's `spec fn`s (pure shared deps a contract may
     // reference), then the target `fn` last (so a forward reference resolves; the
@@ -424,7 +424,7 @@ fn parse_lowered_fn(lowered: &str, name: &str) -> Result<LoweredFn, ForgeError> 
     // The `requires` / `ensures` lines between the signature and the body's `{`.
     // The lowerer emits `    requires <expr>,` (omitted when `req` is literally
     // `true`) then `    ensures\n        <expr>,\n ...`, then the body opener `{`.
-    // Capture each region's lines VERBATIM (with the lowerer's own indentation and
+    // Capture each region's lines verbatim (with the lowerer's own indentation and
     // trailing commas, keyword lines included) up to the first line whose trimmed
     // form is `{` (the body block opener `lower_fn` emits). Verbatim capture — not
     // per-clause re-emission — is the #275 fix: a multi-line `ens` (the
@@ -542,7 +542,7 @@ fn lowering_shape_error(what: &str) -> ForgeError {
 /// exit path: success, a clean failure, or a `?` early-return on an environment/IO
 /// error. Reuses `check.rs`'s #53 guard (the identical fix). Cleanup is
 /// best-effort (`Drop` does a `let _ = remove_dir_all`), never a panic (R-CODE-2):
-/// a removal failure must not mask the real verus result.
+/// a removal failure must not mask the verus result.
 ///
 /// R-CODE-4: every environment / internal failure surfaces a `ForgeError` and is
 /// not read as either "tautology" or "clean":
@@ -643,14 +643,14 @@ fn invoke_verus_on_harness(
 }
 
 /// Map a parsed harness summary to a [`HarnessOutcome`] (REQ-3, R-CODE-4). The
-/// solver-vacuity polarity, with the COMPILE-vs-VERIFY distinction the #275 fix
-/// makes load-bearing:
+/// solver-vacuity polarity, with the compile-vs-VERIFY distinction the #275 fix
+/// makes required:
 ///
 /// - a VIR / internal verus error → `ForgeError::VerusOutput` (an environment
 ///   condition, not a verdict, never a silent clean `false`);
-/// - PROVED (`success && errors == 0`) → `Proved`: the harness property holds,
+/// - proved (`success && errors == 0`) → `Proved`: the harness property holds,
 ///   which is the bad news (the contract is degenerate, so the caller rejects);
-/// - a genuine NON-PROOF (`!success && errors >= 1`) → `Failed`: the harness
+/// - a NON-proof (`!success && errors >= 1`) → `Failed`: the harness
 ///   COMPILED and verus checked its obligation (the empty-body `ens`, or the
 ///   `assert(false)`) and could not prove it — the good news, the contract is
 ///   non-degenerate, so clean. A counterexample, a failed assert, and an
@@ -658,15 +658,15 @@ fn invoke_verus_on_harness(
 ///   verification error), so a timeout still reads as `Failed` (the conservative
 ///   OQ-3 polarity: an inconclusive query does not reject);
 /// - a NON-VERDICT (`!success && errors == 0`) → `ForgeError::VerusOutput`: a
-///   `!success` run that reported ZERO verification errors never reached the
-///   verification phase — the harness failed to COMPILE / elaborate (an `E0425`
+///   `!success` run that reported zero verification errors never reached the
+///   verification phase — the harness failed to compile / elaborate (an `E0425`
 ///   unresolved name, a parse / type error). That is a HARNESS CONSTRUCTION
-///   failure, NOT "verus checked the obligation and it failed" (R-CODE-4: a
+///   failure, not "verus checked the obligation and it failed" (R-CODE-4: a
 ///   non-verdict must never be read as a clean `Failed`). Before #275, this case
 ///   mapped to `Failed` → clean, so every ADT-returning / ADT-taking `fn` whose
 ///   harness lacked the `struct`/`enum` decls (the now-fixed weave above) silently
-///   bypassed BOTH anti-Goodhart checks. The discriminator is `errors`: verus's
-///   `verification-results.errors` counts only VERIFICATION failures, so a
+///   bypassed both anti-Goodhart checks. The discriminator is `errors`: verus's
+///   `verification-results.errors` counts only verification failures, so a
 ///   compiled harness with an obligation is either `success` (proved) or
 ///   `errors >= 1` (checked-and-failed) — `errors == 0` with `!success` is
 ///   exclusively the never-verified (compile) case (confirmed against verus
@@ -689,7 +689,7 @@ fn interpret_summary(summary: HarnessSummary, stderr: &str) -> Result<HarnessOut
     if summary.errors == 0 {
         // `!success` with zero verification errors: the harness never reached the
         // verification phase, so verus rendered no verdict on the obligation — it
-        // failed to COMPILE / elaborate (E0425 unresolved name, parse / type
+        // failed to compile / elaborate (E0425 unresolved name, parse / type
         // error). Surface it as a harness-construction error (R-CODE-4), never the
         // clean `Failed` the #275 bug produced.
         return Err(ForgeError::VerusOutput {
@@ -828,7 +828,7 @@ mod tests {
     }
 
     // REQ-1 (OQ-4): a slice param + a `nat`-spec-fn ens lowers into the harness
-    // with the same `xs@` / `as nat` spelling the real proof uses (the contract is
+    // with the same `xs@` / `as nat` spelling the proof uses (the contract is
     // not re-derived). Grounded against `sum`'s lowering.
     #[test]
     fn tautology_harness_weaves_spec_fn_and_slice_view() {
@@ -844,7 +844,7 @@ mod tests {
         // The spec fn def is woven into the preamble (so `spec_sum` resolves).
         assert!(h.contains("spec fn spec_sum("), "harness:\n{h}");
         // The slice param is exec `&[u32]`; the ens uses the `xs@` view + `as nat`
-        // coercion as the real proof does (REQ-1 byte-identical contract text).
+        // coercion as the proof does (REQ-1 byte-identical contract text).
         assert!(
             h.contains("proof fn taut_check(xs: &[u32], result: u64)"),
             "harness:\n{h}"
@@ -938,7 +938,7 @@ mod tests {
         assert!(h.contains("assert(false);"), "harness:\n{h}");
     }
 
-    // REQ-3 / AC-6: a synthetic PROVED summary → Proved (vacuity detected). The
+    // REQ-3 / AC-6: a synthetic proved summary → Proved (vacuity detected). The
     // verdict polarity (a verus success is the bad news) traces to the design's §7
     // interpretation table (R-CHAR-3), not to forge's output.
     #[test]
@@ -968,10 +968,10 @@ mod tests {
         );
     }
 
-    // REQ-3 / R-CODE-4 (crosslink #275): a `!success` summary with ZERO
-    // verification errors is the COMPILE/elaborate-failure signal — verus never
+    // REQ-3 / R-CODE-4 (crosslink #275): a `!success` summary with zero
+    // verification errors is the compile/elaborate-failure signal — verus never
     // reached verification (an `E0425` unresolved name, a parse/type error), so it
-    // rendered no verdict on the obligation. It must surface a `ForgeError`, NEVER
+    // rendered no verdict on the obligation. It must surface a `ForgeError`, never
     // the clean `Failed` the pre-#275 code produced (the silent no-op that let
     // every ADT-returning fn bypass both anti-Goodhart checks). The discriminator
     // is `errors == 0`: a compiled harness with an obligation is either proved

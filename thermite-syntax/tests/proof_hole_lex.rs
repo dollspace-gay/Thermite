@@ -78,7 +78,7 @@ fn digit_then_p_is_a_body_hole_then_ident() {
 #[test]
 fn proof_hole_in_fn_body_is_structured_error_not_a_body_hole() {
     // A `?pN` in fn-body statement position is rejected: proof holes live only in
-    // proof blocks (AC-7). It is NOT silently reclassified as a body hole.
+    // proof blocks (AC-7). It is not silently reclassified as a body hole.
     let src = "fn f(x: u64) -> u64 req true ens result == x fx pure { ?p0 }";
     let result = parse(src);
     assert!(

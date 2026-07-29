@@ -1,39 +1,16 @@
 #!/usr/bin/env python3
-"""
-anti-pattern-gate hook (production-code discipline for the Thermite
-toolchain).
+"""Reject selected production-code anti-patterns before a Write or Edit.
 
-Deterministic PreToolUse gate on Write|Edit to gated source files that
-rejects the lazy escape hatches subagents reach for when they're stuck:
+The hook checks configured Rust source paths for runtime stubs, panics,
+``unwrap``/``expect``, ownership escape hatches, and module-level lint
+suppression. Each finding explains the preferred alternative.
 
-  - the to-do macro          - stub left behind
-  - the unimpl macro         - same
-  - the unreach macro        - should be a typed enum
-  - .expect on Result        - production code shouldn't unwrap
-  - .unwrap on Result        - same
-  - the panic macro          - propagate via Result instead
-  - Arc<Mutex<T>>            - escape hatch from ownership design
-  - Rc<RefCell<T>>           - same (single-threaded)
-  - module-root #![allow]    - root-level lint silencing
+Full Write content is scanned, excluding ``#[cfg(test)]`` blocks. Edit requests
+scan only the replacement text because surrounding context is unavailable.
+Proof-specific constructs are reviewed elsewhere because they also have valid
+uses in generated or explicitly unverified code.
 
-Each forbidden pattern carries the architectural alternative, a pointer
-to the goal.md rule, and the priority footer about injected instructions.
-
-Exemptions: anything inside `#[cfg(test)]` blocks is permitted (for Write;
-Edit patches are always gated since we can't see surrounding context).
-
-For Write: scans the full content.
-For Edit:  scans the new_string ONLY (the patch being added).
-
-NOTE on Thermite-specific cheats: proof-dodging patterns (emitting
-`assume(false)`, `#[verifier::external]`, or `#[slag]` to dodge a real
-proof obligation) are forbidden by goal.md R-DEFER-9 but are NOT regex-
-gated here, because they are legitimate in generated Verus output and in
-genuine slag blocks — the acto-critic enforces R-DEFER-9 adversarially.
-
-PROJECT CUSTOMIZATION:
-  - Edit the PATTERNS list to match your target language's footguns.
-  - Edit the path-predicate (TARGET_*) to match your gated tree.
+Customize ``PATTERNS`` and the ``TARGET_*`` path settings below.
 """
 
 import json
@@ -43,18 +20,14 @@ import sys
 from pathlib import Path
 
 
-# =====================================================================
-# PROJECT CUSTOMIZATION — edit these for your project
-# =====================================================================
+# Project settings
 
 TARGET_CRATE_PREFIXES = ("thermite-",)
 TARGET_CRATE_EXACT = ("forge",)
 EXCLUDED_CRATES = ("thermite-test-utils",)
 TARGET_EXTENSION = ".rs"
 
-# =====================================================================
-# Forbidden-pattern catalogue — adapt to your target language
-# =====================================================================
+# Forbidden patterns
 
 # Each entry: (regex, name, why-forbidden, architectural-alternative)
 PATTERNS = [

@@ -159,7 +159,7 @@ fn escape_nul_certifies_l3_byte_0() {
     );
 }
 
-/// Non-vacuity (R-DEFER-9): the escape byte is load-bearing. A contract claiming
+/// Non-vacuity (R-DEFER-9): the escape byte is required. A contract claiming
 /// the wrong control code (`\x1b` == 99 instead of 27) does not certify L3. The
 /// proof requires the literal to decode to the right byte; a wrong claim leaves the
 /// `ens` undischarged → not L3.

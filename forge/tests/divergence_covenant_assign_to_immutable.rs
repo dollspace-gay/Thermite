@@ -6,7 +6,7 @@
 //! Authority: `.design/stage1-forge-tier.md` REQ-4 — the `falsify` run is "aimed at
 //! the executable semantics". `covenant_eval.rs` module docs (the faithfulness
 //! contract): the evaluator admits the pure scalar fragment, and "anything outside
-//! it … is an honest `CovenantEvalError::Unsupported` … it never silently evaluates
+//! it … is an `CovenantEvalError::Unsupported` … it never silently evaluates
 //! a wrong value, mirroring `thermite_tv::exec_encode`'s `RefEncodeError::Unsupported`
 //! (R-CODE-2 / R-APG-1)." `thermite-syntax/src/ast.rs` `Stmt::Let { mutable: bool, .. }`
 //! records whether a binding is `mut`; the parser populates it.
@@ -14,11 +14,11 @@
 //! Divergence: `covenant_eval.rs` `eval_stmts` destructures `Stmt::Let { name, init, .. }`
 //! and DISCARDS `mutable`, and its `Stmt::Assign` arm re-`insert`s the target name into
 //! the env unconditionally. So an assignment `r = 1` to a binding introduced by an
-//! IMMUTABLE `let r = 0;` is accepted as a valid mutation and the body evaluates to a
+//! immutable `let r = 0;` is accepted as a valid mutation and the body evaluates to a
 //! concrete value — while Rust/Verus reject the body outright
 //! (`error[E0384]: cannot assign twice to immutable variable`). The evaluator therefore
 //! validates a covenant (reports a clean `falsify_generated > 0`, `falsify_refuted == 0`
-//! run) on a body that has NO well-defined value: a silent wrong value, the precise
+//! run) on a body that has no well-defined value: a silent wrong value, the precise
 //! thing the module contract and REQ-4 forbid. An assignment to a non-`mut` binding is
 //! outside the executable fragment and must surface as a loud covenant error.
 //!
@@ -29,7 +29,7 @@
 //! { let r = 0; if x > 0 { r = 1; } else { r = 1; } r }
 //! ```
 //!
-//! `r` is declared by an IMMUTABLE `let r = 0;`, so `r = 1;` is a compile error in
+//! `r` is declared by an immutable `let r = 0;`, so `r = 1;` is a compile error in
 //! Verus — the body never builds. The covenant evaluator instead threads the (illegal)
 //! mutation and reports a clean validated `falsify` run, identical to the control with
 //! a legal `let mut r = 0;` (`ASSIGN_MUT_CONTROL`). The control isolates the divergence
@@ -101,9 +101,9 @@ fn first_cert(program: &str, name: &str) -> Value {
         .unwrap_or_else(|| panic!("forge --json must emit at least one cert: {value}"))
 }
 
-/// The DIVERGENCE input: `r` is introduced by an IMMUTABLE `let r = 0;`, then assigned
+/// The divergence input: `r` is introduced by an immutable `let r = 0;`, then assigned
 /// `r = 1;` in both `if` branches. Verus rejects this body (`cannot assign twice to
-/// immutable variable`), so it has no executable value and the covenant must NOT report
+/// immutable variable`), so it has no executable value and the covenant must not report
 /// a clean validated `falsify` run — the evaluator must surface the assignment to a
 /// non-`mut` binding as a loud covenant error (outside the executable fragment).
 const ASSIGN_IMMUTABLE: &str = "\
@@ -116,8 +116,8 @@ fn setone(x: u64) -> u64
 witness { inhabit (0); falsify 1000; }
 ";
 
-/// The control: the SAME program with a LEGAL `let mut r = 0;`. This body is well-formed
-/// and returns 1 for every input, so the covenant validates with a clean run. The ONLY
+/// The control: the same program with a LEGAL `let mut r = 0;`. This body is well-formed
+/// and returns 1 for every input, so the covenant validates with a clean run. The only
 /// textual difference from `ASSIGN_IMMUTABLE` is the `mut` keyword — isolating the
 /// divergence to the dropped `Stmt::Let.mutable` flag in `covenant_eval`.
 const ASSIGN_MUT_CONTROL: &str = "\
@@ -140,7 +140,7 @@ fn assignment_to_immutable_let_is_not_a_silent_clean_covenant() {
         return;
     }
 
-    // Control: the legal `let mut` body validates cleanly (no covenant refutation, a
+    // Control: the legal `let mut` body validates (no covenant refutation, a
     // clean falsify run). This establishes that the covenant evidence shape below is the
     // "validated" shape, not an artifact of some unrelated gate.
     let control = first_cert(ASSIGN_MUT_CONTROL, "mut");
@@ -156,9 +156,9 @@ fn assignment_to_immutable_let_is_not_a_silent_clean_covenant() {
     );
 
     // Authority (REQ-4 / the covenant_eval faithfulness contract): `r` is declared by an
-    // IMMUTABLE `let r = 0;`, so `r = 1;` is ill-formed in Rust/Verus and the body has no
+    // immutable `let r = 0;`, so `r = 1;` is ill-formed in Rust/Verus and the body has no
     // executable value. The evaluator must surface the assignment to a non-`mut` binding
-    // as a loud covenant error — it must NOT silently thread the illegal mutation and
+    // as a loud covenant error — it must not silently thread the illegal mutation and
     // report a clean validated falsify run. The divergence: it drops `Stmt::Let.mutable`,
     // accepts the assignment, and produces covenant_evidence IDENTICAL to the `let mut`
     // control (a clean `falsify_refuted == 0` run over `falsify_generated > 0` inputs) on

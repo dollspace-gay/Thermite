@@ -1,11 +1,11 @@
 //! Divergence pin (crosslink #92, the diagnostics half) — a per-item verus
-//! harness was named after the FIRST item of the woven sub-program rather than
+//! harness was named after the first item of the woven sub-program rather than
 //! the item it checks, so a failure reported its source location under a
 //! sibling's name.
 //!
 //! `run_verus` took its scratch-dir/`.rs` stem from
 //! `program.items.first().map(|i| i.name())`. `item_subprogram` weaves the ADT
-//! decls and spec fns first and pushes the checked item LAST, so any item with
+//! decls and spec fns first and pushes the checked item last, so any item with
 //! anything woven ahead of it reported diagnostics under the wrong name:
 //!
 //!   spec fn helper(n: u64) -> u64 { n }

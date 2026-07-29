@@ -8,9 +8,9 @@
 //! (`manifest::ObligationResult`) and the translation-validation (TV) phase verdicts
 //! (`contract_tv::TvCounts`). It aggregates three §6 metrics:
 //!
-//! 1. **cage-vs-forge share BY ROUTING REASON** — every discharged clause was routed
+//! 1. **cage-vs-forge share BY routing reason** — every discharged clause was routed
 //!    either to the Verus/Z3 *cage* (the default push-button path) or escalated UP to
-//!    the *forge* (the nlsat relax route or the Lean lemma route). The routing REASON
+//!    the *forge* (the nlsat relax route or the Lean lemma route). The routing reason
 //!    is a total, deterministic projection of the per-clause `engine` tag
 //!    ([`RoutingReason::from_engine`]): `verus`/absent ⇒ in-cage, `nlsat` ⇒ relaxable,
 //!    `lean-*` ⇒ lemma. No new certificate field is introduced — `engine` IS the
@@ -26,8 +26,8 @@
 //! ## Gates nothing (#274, `.design/forge/audit-manifest.md` REQ-10)
 //!
 //! The dashboard is printed by `forge audit --metrics` as an informational section
-//! AFTER the manifest. It changes no exit code and alters no verdict — exactly like
-//! the `--meaning` companion. Its output is NOT part of the certificate
+//! after the manifest. It changes no exit code and alters no verdict — like
+//! the `--meaning` companion. Its output is not part of the certificate
 //! `oracle_subset`, so it never perturbs a golden.
 //!
 //! ## REQ status
@@ -57,7 +57,7 @@ pub const VERDICT_KINDS: [&str; 7] = [
 ];
 
 /// The per-clause routing reason — WHY a clause was discharged where it was (REQ-7).
-/// A total, deterministic projection of the schema-v2 per-clause `engine` tag, NOT a
+/// A total, deterministic projection of the schema-v2 per-clause `engine` tag, not a
 /// new certificate field (the cert schema is untouched, so goldens stay byte-identical).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RoutingReason {
@@ -85,7 +85,7 @@ pub enum Share {
 }
 
 impl RoutingReason {
-    /// Project the per-clause `engine` tag to its routing reason (REQ-7) — a TOTAL map
+    /// Project the per-clause `engine` tag to its routing reason (REQ-7) — a total map
     /// over the closed engine-tag set ([`crate::engine::EngineName::tag`]):
     /// `nlsat` ⇒ [`RoutingReason::Relaxable`], any `lean*` tag ⇒ [`RoutingReason::Lemma`],
     /// and `verus` / `None` (the v1 Verus corpus clause, which carries no per-clause
@@ -122,7 +122,7 @@ impl RoutingReason {
     }
 }
 
-/// The cage-vs-forge routing share BY REASON (REQ-7) — the per-reason clause counts.
+/// The cage-vs-forge routing share BY reason (REQ-7) — the per-reason clause counts.
 /// `in_cage` is the whole cage share; `relaxable` + `lemma` is the whole forge share.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct RoutingShare {
@@ -214,9 +214,9 @@ fn verdict_index(kind: &str) -> Option<usize> {
 /// The TV phase split (REQ-7) — the contract-TV outcome split mapped to the §6
 /// taxonomy. The mapping over [`crate::contract_tv::ClauseVerdict`]:
 /// - `faithful` ← `Faithful` (the lowering verified faithful — the baseline);
-/// - `syntactic` ← `Skipped` (a clause outside the framed sublanguage — a SYNTACTIC
+/// - `syntactic` ← `Skipped` (a clause outside the framed sublanguage — a syntactic
 ///   coverage gap, reported not-checked rather than a false faithful);
-/// - `semantic` ← `Divergent` (verus found a counterexample — a SEMANTIC lowering
+/// - `semantic` ← `Divergent` (verus found a counterexample — a semantic lowering
 ///   infidelity);
 /// - `timeout` ← `Unverifiable` (a Verus/Z3 rlimit exhaustion or verus-absent run —
 ///   surfaced, never fabricated into a Divergent).
@@ -379,7 +379,7 @@ mod tests {
     use crate::manifest::{Certificate, Level, ObligationResult};
     use crate::verdict::{CertVerdict, CovenantCounterexample, RealPoint};
 
-    /// REQ-7: the routing-reason projection is a TOTAL map over the closed engine-tag
+    /// REQ-7: the routing-reason projection is a total map over the closed engine-tag
     /// set — `nlsat` ⇒ relaxable, every `lean*` tag ⇒ lemma, `verus`/absent ⇒ in-cage,
     /// and the cage-vs-forge `share()` splits relaxable+lemma to the forge.
     #[test]

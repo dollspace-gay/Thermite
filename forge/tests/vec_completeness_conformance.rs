@@ -152,7 +152,7 @@ fn vec_u64_ops_certify_l3() {
             "REQ-8 op `{needle}` not emitted on TVecU64:\n{emitted}"
         );
     }
-    // REQ-8 the no-OOB insert guard (`i <= len`) is present (load-bearing).
+    // REQ-8 the no-OOB insert guard (`i <= len`) is present (required).
     assert!(
         emitted.contains("i <= old(self).data.len(),"),
         "REQ-8 insert's `i <= len` no-OOB guard absent (would be vacuous):\n{emitted}"

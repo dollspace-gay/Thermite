@@ -8,7 +8,7 @@ governs: tooling/control-plane-check.py + the control-plane files it and
          the `make control-plane` Makefile target and its CI step. Explicitly
          NOT `scripts/audit.sh`, which this component leaves byte-identical
          (the doc-drift decision-5 precedent).
-audited-content-sha256: 383403a2dd8c325e76f22e4f2986b820f093d8eaf8bceb7f1fdf27c9c2972382
+audited-content-sha256: cdce9510c89d0bd00fb08a9a441e07a8299ad4eb71e43e20d4c29e928797b59e
 thesis-refs:
   - thermite-design.md §1 (trust relocated: "a skeptical third party can audit in minutes")
   - thermite-design.md §8 (#[slag]: the unverified residue is LOUD, never silent)

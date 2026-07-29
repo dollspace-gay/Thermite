@@ -1,4 +1,4 @@
-//! The R-CHAR-3 teeth-test (`.design/verified/contract-tv.md` REQ-4; epic
+//! The R-CHAR-3 contract-TV negative test (`.design/verified/contract-tv.md` REQ-4; epic
 //! crosslink #143). The proof that contract-faithfulness TV discriminates a
 //! faithful lowering from an injected infidelity — the bug class the five
 //! existing layers (verus-on-emitted, the cert oracle, the vacuity/mutation
@@ -184,7 +184,7 @@ fn assert_infidel_caught(fixture: &str, program: &str) {
 }
 
 // ============================================================================
-// F1 — comparison: the ==-vs-<= teeth (the canonical infidelity case)
+// F1 — comparison: `==` encoded as `<=`
 // source clause:  result == spec_sum(xs)
 // faithful P_prod: result as nat == spec_sum(xs)   (xs bound as Seq, so the
 //                  slice→@ view is the identity; the doc AC-1 grounded form
@@ -211,7 +211,7 @@ fn f1_frame() -> ObligationFrame {
         nat_coerce_params: vec!["result".to_string()],
         // #150 mechanical ripple: the additive `string_params`/`map_params` fields
         // (the String/Map byte-view receiver dispatch) are empty for F1 (no
-        // String/Map receiver in the comparison teeth).
+        // String/Map receiver in this comparison case).
         ..Default::default()
     }
 }
@@ -240,7 +240,7 @@ fn f1_comparison_infidel_caught() {
 }
 
 // ============================================================================
-// F2 — combinator: the wrong-predicate teeth
+// F2 — combinator with the wrong predicate
 // source clause:  forall_in(xs, |x| x < 10)
 // faithful P_prod: the forall_in verus_l3 body applied with |x| x < 10
 // infidel  P_prod: same but |x| x <= 10
@@ -289,7 +289,7 @@ fn f2_combinator_infidel_caught() {
 }
 
 // ============================================================================
-// F3 — byteview (#127): the wrong-index teeth (receiver-shape dispatch)
+// F3 — byteview (#127) with the wrong index (receiver-shape dispatch)
 // source clause:  s.byte_at(0) == 65
 // faithful P_prod: s@[0] == 65   (s bound as Seq<u8> → s@ == s, index 0 correct)
 // infidel  P_prod: s@[1] == 65   (wrong index — the #127 misdispatch class)
@@ -336,7 +336,7 @@ fn f3_byteview_infidel_caught() {
 }
 
 // ============================================================================
-// F4 — structural-drop: the dropped-conjunct teeth
+// F4 — structural drop of a conjunct
 // source clause:  a == b && c == d
 // faithful P_prod: a == b && c == d
 // infidel  P_prod: a == b    (a conjunct silently dropped)
@@ -383,7 +383,7 @@ fn f4_structural_drop_infidel_caught() {
     assert_infidel_caught("f4", &prog);
 }
 
-// ---- ref_encode unit checks (the reference output MEANS the faithful column) -
+// ---- ref_encode unit checks (the reference output means the faithful column) -
 
 /// The reference encoding of each source must be a string that means the
 /// faithful production column (the obligation tests prove semantic equivalence
@@ -419,7 +419,7 @@ fn ref_encode_matches_faithful_meaning() {
     );
 }
 
-/// An unsupported construct is an honest `Err`, never a panic / silent wrong
+/// An unsupported construct is an `Err`, never a panic / silent wrong
 /// encoding (REQ-1 / R-CODE-2). A `match` in spec position is outside the frozen
 /// sublanguage.
 #[test]

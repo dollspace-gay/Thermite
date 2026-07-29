@@ -11,7 +11,7 @@ use thermite_syntax::{parse, Expr, Item};
 /// clause into a `match` arm body.
 ///
 /// Authority: `.design/basis/01-adts.md` REQ-2 ("a struct-variant construction
-/// is a NEW `Expr::StructLit`") and REQ-4 ("`match` in expression position").
+/// is a new `Expr::StructLit`") and REQ-4 ("`match` in expression position").
 /// A `match` arm body is in value position, so a struct-literal construction
 /// (`Point { x: 1 }`) there must parse, as it does in any other value
 /// position (e.g. a `let` initializer, which `tests/adt_parse.rs`
@@ -36,7 +36,7 @@ use thermite_syntax::{parse, Expr, Item};
 #[test]
 fn divergence_clause_match_arm_body_struct_lit_parses() {
     // A `fn` whose `ens` clause is a bare `match` (a no-struct-literal head) and
-    // whose arm bodies construct a struct in VALUE position.
+    // whose arm bodies construct a struct in value position.
     let src = "\
 struct Point { x: u64, }
 enum E { A, B, }

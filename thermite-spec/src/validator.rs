@@ -201,7 +201,7 @@ const MAX_RECURSION_DEPTH: usize = 64;
 /// method whose round-trip a contract names (`ens parse_le(result) == n`, the
 /// grounded gold standard). Both are constructing ops (`fx alloc`); `from_byte` is
 /// an associated path-call (`String::from_byte(b)`, an `Expr::Call`), so it needs
-/// no `BUILTIN_METHODS` entry. The no-OOB / round-trip teeth are proved at L3 (a
+/// no `BUILTIN_METHODS` entry. The L3 proof covers the no-OOB and round-trip properties (a
 /// wrong digit fails, R-DEFER-9); admitting the method here only opens the cage to
 /// name it.
 /// Cluster C6 collections (`.design/basis/04-collections.md` REQ-8/REQ-12, issue
@@ -254,7 +254,7 @@ const BUILTIN_METHODS: &[&str] = &[
     "trim",
 ];
 
-/// The GENERATED `spec fn` names the lowerer materializes for the C4 `u64`→`String`
+/// The generated `spec fn` names the lowerer materializes for the C4 `u64`→`String`
 /// round-trip (`.design/basis/07-strings.md` REQ-8, issue #94): `parse_be` (the
 /// MSB-first / human-readable decimal value of a byte sequence — the DISPLAY-form
 /// round-trip the surface contract names, blocker #96), `parse_le` (the LSB-first
@@ -350,7 +350,7 @@ pub enum SpecError {
     /// A construct the contract sublanguage forbids that nonetheless parsed —
     /// e.g. a `MethodCall` whose callee is not a grammar built-in, or a non-call
     /// callee shape (REQ-4 (iv)). Distinct from `UnknownCombinator` (a free
-    /// `Expr::Call`) so the diagnostic names the construct precisely.
+    /// `Expr::Call`) so the diagnostic identifies the construct.
     ForbiddenCall { detail: String, span: Span },
     /// A registered combinator call appearing inside another combinator's
     /// predicate-closure body — an anonymous nested quantifier (REQ-6). The
@@ -438,7 +438,7 @@ pub enum SpecError {
         span: Span,
     },
     /// An `enum` variant declared with a lowercase-initial name
-    /// (`.design/basis/01-adts.md` REQ-2: "Variant names MUST be UpperCamelCase
+    /// (`.design/basis/01-adts.md` REQ-2: "Variant names must be UpperCamelCase
     /// (uppercase-initial); the validator rejects a lowercase-initial variant
     /// declaration"). This is a soundness rule: the parser
     /// disambiguates a single-segment arm pattern by first-letter case
@@ -722,10 +722,10 @@ impl Validator {
             })
             .collect();
         // Cluster C4 strings (`.design/basis/07-strings.md` REQ-8, issue #94): seed
-        // the GENERATED round-trip spec fns (`parse_le`/`pow10`) so a contract
+        // the generated round-trip spec fns (`parse_le`/`pow10`) so a contract
         // `ens parse_le(result) == n` validates inside the §4.2 cage as a named
         // `spec fn` call (the lowerer materializes their bodies). These are reserved
-        // names the lowerer owns — accepted exactly as a user-declared spec fn.
+        // names the lowerer owns — accepted as a user-declared spec fn.
         for name in GENERATED_SPEC_FNS {
             spec_fns.insert((*name).to_string());
         }
@@ -741,7 +741,7 @@ impl Validator {
         // REQ-8 (`.design/basis/06-provenance-and-sinks.md`): the `#[sealed]`
         // clean/capability struct names — the abstraction barrier the
         // `Expr::StructLit` walk keys off to REJECT a direct mint. Collected in
-        // the SAME pre-pass as `struct_fields` so a forward reference (`fn
+        // the same pre-pass as `struct_fields` so a forward reference (`fn
         // f() { Sql { … } }` before `#[sealed] struct Sql`) is seen.
         let mut sealed_structs: HashSet<String> = HashSet::new();
         // `.design/basis/01-adts.md` REQ-2: every `enum` variant name must be
@@ -781,7 +781,7 @@ impl Validator {
                         // ACCESS, not enum-declaration uniqueness (a separate
                         // concern not in this REQ). A struct-shaped variant's
                         // fields join the struct field set (REQ-6: `Field`
-                        // access is checked against struct AND struct-variant
+                        // access is checked against struct and struct-variant
                         // fields).
                         variant_to_enum.insert(variant.name.clone(), e.name.clone());
                         if let VariantShape::Struct(fields) = &variant.shape {
@@ -950,7 +950,7 @@ impl Validator {
                 // its contract/proof positions (`prop fn` body, `lemma`/`proof`
                 // clauses + proof blocks, `witness` directives) are consumed by the
                 // forge increments (2b covenant, 2c battery, 2e proof view, 3
-                // library), NOT the v1 spec cage. No v1 contract walk applies here;
+                // library), not the v1 spec cage. No v1 contract walk applies here;
                 // the surface is parse/address/round-trip tested in thermite-syntax.
                 Item::Forge(_) => {}
             }
@@ -1012,7 +1012,7 @@ impl Validator {
                     self.walk_clause(inv);
                 }
                 self.walk_clause(&loop_node.dec);
-                // The loop BODY is still executable surface code: scan it
+                // The loop body is still executable surface code: scan it
                 // structurally for further nested loops, do not cage it.
                 self.scan_block_for_loops(&loop_node.body, loop_node.span);
             }
@@ -1210,7 +1210,7 @@ impl Validator {
         match expr {
             // (c) grammar built-ins: literals and paths are leaves. A string
             // literal (`.design/basis/07-strings.md` REQ-1) is a value-carrying
-            // leaf admitted in a contract position exactly as an int/bool literal
+            // leaf admitted in a contract position as an int/bool literal
             // — e.g. the editor case `s == "needle"`; no sub-expression to walk.
             Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) | Expr::StrLit(_) => {}
 
@@ -1348,7 +1348,7 @@ impl Validator {
                 self.check_variant_ref(variant, span);
                 self.walk_expr(scrutinee, span);
             }
-            // A `Box` deref `*EXPR` (REQ-3): accepted STRUCTURALLY here (the
+            // A `Box` deref `*EXPR` (REQ-3): accepted structurally here (the
             // recursive deref `sum_list(*t)` of `list_sum.th`); its `Box` SEMANTICS
             // are Stage 1c. Recurse the inner expression (depth-guarded).
             Expr::Deref(inner) => self.walk_expr(inner, span),
@@ -1356,7 +1356,7 @@ impl Validator {
             // tuple construction `(a, b, …)` is a flat structural built-in (its
             // elements are recursed, depth-guarded); a projection `e.0`/`e.1` is a
             // flat built-in like `Field`, admitted inside the §4.2 cage — an `ens
-            // result.0 == b` reads a tuple element exactly as `Field` reads a
+            // result.0 == b` reads a tuple element as `Field` reads a
             // struct field. A tuple is well-formed iff its elements are.
             Expr::Tuple(elems) => {
                 for e in elems {
@@ -1404,7 +1404,7 @@ impl Validator {
     /// built-in (`Option`'s `Some`/`None` in `binary_search.th` — `Option` is no
     /// declared `Item::Enum`) and is left unchanged (the AC-6 no-regression
     /// invariant). Once identified as a declared-enum match:
-    /// - an arm naming a variant of a DIFFERENT/undeclared enum is `UnknownVariant`;
+    /// - an arm naming a variant of a different/undeclared enum is `UnknownVariant`;
     /// - a variant matched twice, or an arm after a catch-all, is `UnreachableArm`;
     /// - if no catch-all closes the match, every uncovered declared variant is
     ///   collected into `NonExhaustiveMatch { missing }` (declaration order).
@@ -1707,7 +1707,7 @@ impl Validator {
             // Arity is wrong; still recurse the supplied args (depth guard,
             // nested-content surfacing) but skip the per-position step check (the
             // step slot is not where we expect it). The step body, if any, is
-            // walked WITHOUT scheme-step mode — a malformed call is not a valid
+            // walked without scheme-step mode — a malformed call is not a valid
             // step context.
             for arg in args {
                 self.walk_expr(arg, span);

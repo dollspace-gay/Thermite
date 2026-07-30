@@ -69,8 +69,8 @@ composes that with the Lean (T1) theorems. CORR is the bridge that lets the theo
 | Rust exec-expr encoder | `thermite-tv/src/exec_encode.rs` | `6f5b8b53` (comment-only since `60fd029e`; see Amendment 2026-07-29) |
 | Rust exec-body encoder | `thermite-tv/src/exec_stmt_encode.rs` | `6f5b8b53` (production code unchanged since `543b506e`; see Amendment 2026-07-29) |
 | Frozen combinator registry | `thermite-spec/src/combinators.rs` | `543b506e` (#283 re-pin — CODE-IDENTICAL, see Amendment 2026-06-18; was `c0b1d8a3` #4) |
-| Rust→Lean obligation exporter | `forge/src/lean_export.rs` | `6f5b8b53` (comment-only since `60fd029e`; see Amendment 2026-07-29) |
-| Lean spine | `lean/Thermite/**` | `69236a22` (existing audited v1 files are code-identical; Stage 2/3 proof modules were added separately, see Amendment 2026-07-29) |
+| Rust→Lean obligation exporter | `forge/src/lean_export.rs` | `06e14a2e` (additive EPR leaf bridge since `6f5b8b53`; see Stage 4 Amendment 2026-07-29) |
+| Lean spine | `lean/Thermite/**` | `ba960a9a` (audited v1 files are code-identical; Stage 2/3/4 proof modules are separate, see Stage 4 Amendment 2026-07-29) |
 
 Lean toolchain: `leanprover/lean4:v4.29.0` (downgraded from v4.30.0 by the #184 Z3-demotion probe — `lean/lakefile.toml` now `[[require]]`s Lean-SMT + Mathlib; this is OUTSIDE the `lean/Thermite/**` audited-spine scope and the entire audited spine still builds green and `sorry`-free on v4.29.0 — see `.design/verified/z3-demotion.md` and Amendment 2026-06-10).
 Verified `sorry`-free by inspection: every `sorry` token in the tree is inside a comment, never in
@@ -243,6 +243,34 @@ corresponding table section and requires re-audit (see "Drift" below).**
 > Verification verdict: **zero audited production arm or theorem changed meaning.** The new
 > reconstruction modules are additive and are built and axiom-checked by Gate G3. The full
 > `make audit` run is green after this re-pin.
+
+> **Stage 4 Amendment 2026-07-29 (re-pin, GitHub #2 / Gate G4) — VERIFIED unchanged
+> audited v1 arms, with a separate checked EPR reconstruction surface.** The deep-audit
+> tripwire fired after the Stage 4 EPR reconstruction work. Both stale ranges were inspected
+> before updating the pins:
+> - **`forge/src/lean_export.rs` `6f5b8b53` → `06e14a2e` is 13 insertions and zero
+>   deletions.** The sole addition is `encode_strat_qfree_expr`. It constructs the same
+>   parameter context and result sort used by the ordinary exporter, then delegates to the
+>   existing `encode_contract_clause`; no existing match arm, format string, theorem frame,
+>   or refusal changed. The helper lets the separate EPR exporter embed the actual source
+>   `Thermite.Expr` for a deferred quantifier-free leaf instead of inventing a propositional
+>   placeholder.
+> - **`lean/Thermite/**` `69236a22` → `ba960a9a` has 20 added files, 13 modified files,
+>   and zero deleted files.** Every v1 file governed by Tables 1–4B is byte-for-byte
+>   unchanged: `Ast.lean`, `Denote.lean`, `RefEncode.lean`, `Exec.lean`,
+>   `Exec/Stmt.lean`, `Soundness.lean`, and `Faithfulness.lean`. The additions and
+>   modifications are confined to `Strat/**`, Stage 2 negative pins, and the new
+>   `PropReconstruct.lean` / Stage 4 pins. They implement the typed model, normalization,
+>   Skolemization, finite grounding, ground theory, CNF/LRAT replay, and concrete-model
+>   checks described in `.design/stage4-epr-reconstruction.md`; they do not alter any
+>   correspondence arm audited by this document. The separate G4 gate builds, tests,
+>   tamper-checks, placeholder-scans, and axiom-probes that reconstruction surface.
+>
+> Verification verdict: **the v1 Rust↔Lean correspondence remains unchanged.** The only
+> exporter addition reuses the audited encoder, and the Lean changes belong to the separate
+> Stage 4 proof boundary. Re-pinned the exporter `→ 06e14a2e` and the Lean spine
+> `→ ba960a9a`; `make audit` and `scripts/g4-gate.sh` must both be green before this
+> amendment is accepted.
 
 
 ## Requirements

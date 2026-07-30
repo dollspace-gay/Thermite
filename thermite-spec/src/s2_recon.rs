@@ -10,8 +10,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use thermite_syntax::{
-    BinOp, Block, Clause, Expr, FnItem, IndexArg, Item, MatchArm, Param, Pattern, PrimType,
-    Program, Quant, SlicePat, Stmt, Type, UnaryOp,
+    BinOp, Block, BvWidth, Clause, Expr, FnItem, IndexArg, Item, MatchArm, Param, Pattern,
+    PrimType, Program, Quant, SlicePat, Stmt, Type, UnaryOp,
 };
 
 use crate::classifier::{to_wire, Atom, Frm, Mach, Rel, ScalarValue, Sort2, Tm};
@@ -56,10 +56,31 @@ pub struct BinderDomain {
     pub canonical: String,
 }
 
+/// The checked arithmetic semantics used for a quantifier-free leaf.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QFreeFragment {
+    Lia,
+    Bv(BvWidth),
+}
+
+impl QFreeFragment {
+    fn for_clause(clause: &Clause) -> Self {
+        clause.bv.map_or(Self::Lia, |tag| Self::Bv(tag.width))
+    }
+
+    fn wire_name(self) -> &'static str {
+        match self {
+            Self::Lia => "lia",
+            Self::Bv(width) => width.spelling(),
+        }
+    }
+}
+
 /// A real quantifier-free source leaf embedded in the classifier formula.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QFreeAtom {
     pub id: u32,
+    pub fragment: QFreeFragment,
     pub expression: Expr,
     pub canonical: String,
 }
@@ -133,6 +154,8 @@ impl S2Recon {
         for atom in &self.qfree_atoms {
             out.push_str(" (");
             out.push_str(&atom.id.to_string());
+            out.push(' ');
+            out.push_str(atom.fragment.wire_name());
             out.push(' ');
             push_name(&mut out, &atom.canonical);
             out.push(')');
@@ -241,7 +264,7 @@ pub fn from_clause(
         domains: Vec::new(),
         qfree_atoms: Vec::new(),
     };
-    let formula = bridge.formula(&clause.expr)?;
+    let formula = bridge.formula(&clause.expr, QFreeFragment::for_clause(clause))?;
 
     Ok(S2Recon {
         version: S2_RECON_VERSION,
@@ -286,8 +309,8 @@ pub fn from_obligation(
         domains: Vec::new(),
         qfree_atoms: Vec::new(),
     };
-    let premise = bridge.formula(&premise.expr)?;
-    let conclusion = bridge.formula(&conclusion.expr)?;
+    let premise = bridge.formula(&premise.expr, QFreeFragment::for_clause(premise))?;
+    let conclusion = bridge.formula(&conclusion.expr, QFreeFragment::for_clause(conclusion))?;
 
     Ok(S2Recon {
         version: S2_RECON_VERSION,
@@ -316,23 +339,23 @@ struct Bridge {
 }
 
 impl Bridge {
-    fn formula(&mut self, expr: &Expr) -> Result<Frm, BridgeError> {
+    fn formula(&mut self, expr: &Expr, fragment: QFreeFragment) -> Result<Frm, BridgeError> {
         match expr {
             Expr::Binary {
                 op: BinOp::And,
                 lhs,
                 rhs,
             } => Ok(Frm::Conj(
-                Box::new(self.formula(lhs)?),
-                Box::new(self.formula(rhs)?),
+                Box::new(self.formula(lhs, fragment)?),
+                Box::new(self.formula(rhs, fragment)?),
             )),
             Expr::Binary {
                 op: BinOp::Or,
                 lhs,
                 rhs,
             } => Ok(Frm::Disj(
-                Box::new(self.formula(lhs)?),
-                Box::new(self.formula(rhs)?),
+                Box::new(self.formula(lhs, fragment)?),
+                Box::new(self.formula(rhs, fragment)?),
             )),
             Expr::Binary { op, lhs, rhs } if relation(*op).is_some() => {
                 match self.relation_atom(relation(*op).expect("guarded"), lhs, rhs) {
@@ -340,9 +363,9 @@ impl Bridge {
                     Err(err)
                         if qfree_fallback_allowed(&err)
                             && !uses_bound(expr, &self.binders)
-                            && qfree_formula(expr, &self.constants) =>
+                            && qfree_formula(expr, &self.constants, fragment) =>
                     {
-                        self.qfree(expr)
+                        self.qfree(expr, fragment)
                     }
                     Err(err) => Err(err),
                 }
@@ -350,7 +373,7 @@ impl Bridge {
             Expr::Unary {
                 op: UnaryOp::Not,
                 expr,
-            } => Ok(Frm::Neg(Box::new(self.formula(expr)?))),
+            } => Ok(Frm::Neg(Box::new(self.formula(expr, fragment)?))),
             Expr::Quantifier {
                 quant,
                 var,
@@ -378,7 +401,7 @@ impl Bridge {
                     name: var.clone(),
                     sort: binder_sort.clone(),
                 });
-                let lowered = self.formula(body);
+                let lowered = self.formula(body, fragment);
                 self.binders.pop();
                 let lowered = lowered?;
                 let variable = Tm::Var(binder_sort.clone(), 0);
@@ -402,7 +425,7 @@ impl Bridge {
                     ),
                 })
             }
-            Expr::BoolLit(_) if !uses_bound(expr, &self.binders) => self.qfree(expr),
+            Expr::BoolLit(_) if !uses_bound(expr, &self.binders) => self.qfree(expr, fragment),
             _ => match self.term(expr, Some(&Sort2::Mach(Mach::Bool))) {
                 Ok(term) => {
                     let actual = term_sort(&term);
@@ -418,9 +441,9 @@ impl Bridge {
                 Err(err)
                     if qfree_fallback_allowed(&err)
                         && !uses_bound(expr, &self.binders)
-                        && qfree_formula(expr, &self.constants) =>
+                        && qfree_formula(expr, &self.constants, fragment) =>
                 {
-                    self.qfree(expr)
+                    self.qfree(expr, fragment)
                 }
                 Err(err) => Err(err),
             },
@@ -445,7 +468,7 @@ impl Bridge {
         Ok(Atom::Rel(rel, left, right))
     }
 
-    fn qfree(&mut self, expr: &Expr) -> Result<Frm, BridgeError> {
+    fn qfree(&mut self, expr: &Expr, fragment: QFreeFragment) -> Result<Frm, BridgeError> {
         if uses_bound(expr, &self.binders) {
             return Err(BridgeError::BoundVariableInQFree {
                 context: "quantifier-free leaf",
@@ -455,13 +478,14 @@ impl Bridge {
         if let Some(existing) = self
             .qfree_atoms
             .iter()
-            .find(|atom| atom.canonical == canonical)
+            .find(|atom| atom.fragment == fragment && atom.canonical == canonical)
         {
             return Ok(Frm::Atom(Atom::QFree(existing.id)));
         }
         let id = u32::try_from(self.qfree_atoms.len()).expect("S₂.0 qfree atom count exceeds u32");
         self.qfree_atoms.push(QFreeAtom {
             id,
+            fragment,
             expression: expr.clone(),
             canonical,
         });
@@ -683,21 +707,25 @@ fn relation(op: BinOp) -> Option<Rel> {
 /// Qfree fallback is deliberately syntax-directed. A failed EPR term
 /// translation is not permission to hide a call, field, collection operation,
 /// or other unsupported source node behind an opaque atom.
-fn qfree_formula(expr: &Expr, constants: &BTreeMap<String, ConstantDecl>) -> bool {
+fn qfree_formula(
+    expr: &Expr,
+    constants: &BTreeMap<String, ConstantDecl>,
+    fragment: QFreeFragment,
+) -> bool {
     match expr {
         Expr::BoolLit(_) => true,
         Expr::Binary { op, lhs, rhs } if relation(*op).is_some() => {
-            qfree_term(lhs, constants) && qfree_term(rhs, constants)
+            qfree_term(lhs, constants, fragment) && qfree_term(rhs, constants, fragment)
         }
         Expr::Binary {
             op: BinOp::And | BinOp::Or,
             lhs,
             rhs,
-        } => qfree_formula(lhs, constants) && qfree_formula(rhs, constants),
+        } => qfree_formula(lhs, constants, fragment) && qfree_formula(rhs, constants, fragment),
         Expr::Unary {
             op: UnaryOp::Not,
             expr,
-        } => qfree_formula(expr, constants),
+        } => qfree_formula(expr, constants, fragment),
         _ => false,
     }
 }
@@ -706,16 +734,22 @@ fn qfree_fallback_allowed(error: &BridgeError) -> bool {
     matches!(error, BridgeError::UnsupportedTerm { .. })
 }
 
-fn qfree_term(expr: &Expr, constants: &BTreeMap<String, ConstantDecl>) -> bool {
+fn qfree_term(
+    expr: &Expr,
+    constants: &BTreeMap<String, ConstantDecl>,
+    fragment: QFreeFragment,
+) -> bool {
     match expr {
         Expr::IntLit { .. } => true,
         Expr::Path(path) => path.len() == 1 && constants.contains_key(&path[0]),
         Expr::Binary {
+            op: BinOp::Add | BinOp::Sub | BinOp::Mul,
+            lhs,
+            rhs,
+        } => qfree_term(lhs, constants, fragment) && qfree_term(rhs, constants, fragment),
+        Expr::Binary {
             op:
-                BinOp::Add
-                | BinOp::Sub
-                | BinOp::Mul
-                | BinOp::Div
+                BinOp::Div
                 | BinOp::Rem
                 | BinOp::Shl
                 | BinOp::Shr
@@ -724,12 +758,14 @@ fn qfree_term(expr: &Expr, constants: &BTreeMap<String, ConstantDecl>) -> bool {
                 | BinOp::BitXor,
             lhs,
             rhs,
-        } => qfree_term(lhs, constants) && qfree_term(rhs, constants),
+        } if matches!(fragment, QFreeFragment::Bv(_)) => {
+            qfree_term(lhs, constants, fragment) && qfree_term(rhs, constants, fragment)
+        }
         Expr::Unary {
             op: UnaryOp::Not,
             expr,
-        }
-        | Expr::Cast { expr, .. } => qfree_term(expr, constants),
+        } if matches!(fragment, QFreeFragment::Bv(_)) => qfree_term(expr, constants, fragment),
+        Expr::Cast { expr, .. } => qfree_term(expr, constants, fragment),
         _ => false,
     }
 }
@@ -1720,27 +1756,28 @@ mod tests {
     fn qfree_leaf_retains_a_deterministic_source_ast() {
         let a = bridge(
             "spec fn id(x: u64) -> u64 dec x { x }\n\
-             fn f(x: u64) -> u64 req x / 2 == 3 ens result == 0 fx pure { 0 }",
+             fn f(x: u64) -> u64 req x + x == 6 ens result == 0 fx pure { 0 }",
             "req",
         )
         .expect("bridge");
         let b = bridge(
             "spec fn id(x: u64) -> u64 dec x { x }\n\
-             fn f(x: u64) -> u64 req x / 2 == 3 ens result == 0 fx pure { 0 }",
+             fn f(x: u64) -> u64 req x + x == 6 ens result == 0 fx pure { 0 }",
             "req",
         )
         .expect("bridge");
         assert_eq!(a.canonical_wire(), b.canonical_wire());
         assert_eq!(a.qfree_atoms.len(), 1);
-        assert!(a.qfree_atoms[0].canonical.contains("(bin div"));
+        assert_eq!(a.qfree_atoms[0].fragment, QFreeFragment::Lia);
+        assert!(a.qfree_atoms[0].canonical.contains("(bin add"));
     }
 
     #[test]
     fn repeated_qfree_source_expressions_share_one_canonical_atom() {
         let parsed = parse(
             "fn f(x: u64) -> u64\n\
-             req x / 2 == 3\n\
-             ens x / 2 == 3 fx pure { x }",
+             req x + x == 6\n\
+             ens x + x == 6 fx pure { x }",
         );
         assert!(parsed.is_clean(), "parse errors: {:?}", parsed.errors);
         let Item::Fn(function) = &parsed.program.items[0] else {
@@ -1761,6 +1798,100 @@ mod tests {
         let wire = crate::classifier::to_wire(&recon.formula);
         assert_eq!(wire.matches("(qf 0)").count(), 2, "{wire}");
         assert!(!wire.contains("(qf 1)"), "{wire}");
+    }
+
+    #[test]
+    fn identical_qfree_text_under_lia_and_bv_keeps_distinct_semantics() {
+        use thermite_syntax::{BvTag, Span};
+
+        let parsed = parse(
+            "fn f(x: u64) -> u64\n\
+             req x + x == 6\n\
+             ens x + x == 6 fx pure { x }",
+        );
+        assert!(parsed.is_clean(), "parse errors: {:?}", parsed.errors);
+        let Item::Fn(parsed_function) = &parsed.program.items[0] else {
+            panic!("expected function");
+        };
+        let mut function = parsed_function.clone();
+        function.contract.ens[0].bv = Some(BvTag {
+            width: BvWidth::W64,
+            nowrap: false,
+            span: Span::new(0, 0),
+        });
+        let recon = from_obligation(
+            &parsed.program,
+            &function,
+            &function.contract.req,
+            &function.contract.ens[0],
+            SourceAddress {
+                item: "f".to_string(),
+                clause: "ens#0".to_string(),
+            },
+        )
+        .expect("mixed QF obligation bridge");
+
+        assert_eq!(recon.qfree_atoms.len(), 2);
+        assert_eq!(recon.qfree_atoms[0].fragment, QFreeFragment::Lia);
+        assert_eq!(
+            recon.qfree_atoms[1].fragment,
+            QFreeFragment::Bv(BvWidth::W64)
+        );
+        let wire = recon.canonical_wire();
+        assert!(wire.contains("(0 lia "), "{wire}");
+        assert!(wire.contains("(1 bv64 "), "{wire}");
+    }
+
+    #[test]
+    fn division_is_a_bv_leaf_not_an_unchecked_lia_leaf() {
+        use thermite_syntax::{BvTag, Span};
+
+        let parsed = parse(
+            "fn f(x: u64) -> u64\n\
+             req x / 2 == 3\n\
+             ens result == 0 fx pure { 0 }",
+        );
+        assert!(parsed.is_clean(), "parse errors: {:?}", parsed.errors);
+        let Item::Fn(parsed_function) = &parsed.program.items[0] else {
+            panic!("expected function");
+        };
+        let untagged = from_clause(
+            &parsed.program,
+            parsed_function,
+            &parsed_function.contract.req,
+            SourceAddress {
+                item: "f".to_string(),
+                clause: "req".to_string(),
+            },
+        );
+        assert!(matches!(
+            untagged,
+            Err(BridgeError::UnsupportedTerm {
+                context: "binary operator"
+            })
+        ));
+
+        let mut function = parsed_function.clone();
+        function.contract.req.bv = Some(BvTag {
+            width: BvWidth::W32,
+            nowrap: false,
+            span: Span::new(0, 0),
+        });
+        let tagged = from_clause(
+            &parsed.program,
+            &function,
+            &function.contract.req,
+            SourceAddress {
+                item: "f".to_string(),
+                clause: "req".to_string(),
+            },
+        )
+        .expect("tagged division uses the QF_BV leaf");
+        assert_eq!(tagged.qfree_atoms.len(), 1);
+        assert_eq!(
+            tagged.qfree_atoms[0].fragment,
+            QFreeFragment::Bv(BvWidth::W32)
+        );
     }
 
     #[test]

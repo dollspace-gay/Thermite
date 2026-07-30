@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: 61a1208f3f224ffbd4798b1d853f779cf34acb383f632904d05dd94a646c5a90
+audited-content-sha256: bf98d22e303f34628e7e3daffe7cd2c69fe0765bd0bcd060cfeb6433e1b91413 (re-pinned 2026-07-30 after CI began prebuilding the EPR replay/model modules before parallel nextest processes)
 governs: canonical S₂.0 bridge, typed Lean reconstruction, production routing,
          audit boundary, proof tooling, and Gate G4 (see tooling/spec-routes.toml)
 -->
@@ -148,6 +148,9 @@ Rust/Lean/solver differential tests, the axiom allowlist, and the absence of
 `sorry`, `admit`, custom axioms, and `native_decide`. The gate applies a 6 GiB
 address-space ceiling, serializes Rust tests and reconstruction runs, and uses
 one Lean worker so the same command is safe on low-memory builders.
+The sharded CI jobs prebuild `Thermite.Strat.EprReplay` and
+`Thermite.Strat.TestModel` before nextest starts, so separate test processes do
+not race to compile the shared Lean artifacts.
 
 ## Acceptance criteria
 

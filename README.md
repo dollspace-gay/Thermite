@@ -1,64 +1,34 @@
 # Thermite
 
-**A programming language where the code has to prove it works.**
+Thermite is a programming language for code that must explain why it is
+correct. Functions state:
 
-*Every plain-language term in this README resolves to a precise mechanism in [RATIONALE.md](RATIONALE.md).*
+- `req`: what callers must establish;
+- `ens`: what the function guarantees;
+- `fx`: what the function may affect.
 
-> Thermite is what you get when you add energy to rust. Iron oxide plus aluminum: inert powder until ignited, then it burns at 2,500 °C and cuts through steel. Take Rust's substrate, add the energy budget AI agents bring (compute, patience, token spend), and produce something hot enough to weld trust into software.
+Forge checks those contracts, returns concrete counterexamples when they fail,
+and records the result in an assurance manifest. The long-term goal is simple:
+compose a small set of known primitives in known-safe ways.
 
-## The problem
+Thermite is experimental research software. The complete build and proof stack
+is currently tested on x86-64 Linux, including Ubuntu and WSL2. The Rust crates
+may build elsewhere, but the Verus distribution, Lean/CVC5 bridge, and
+seccomp-backed runtime path are Linux-oriented.
 
-When an AI writes code for you, how do you know it's right? Today the answer is "read it yourself" or "trust the vibes." Neither scales. Code review by humans is the bottleneck AI was supposed to remove, and "the tests pass" only covers the cases somebody thought to test.
-
-Formal verification — mathematically proving code correct — has existed for decades. It never caught on because writing the proofs is expensive for humans, who pay for it in attention. Agents pay in compute, which is cheap and parallel. Thermite's bet is that this flips the economics of proof: burn the cheap resource (tokens) to buy the expensive one (trust).
-
-Thermite is strict in a way no human would tolerate, because humans are not the intended author. People decide what the software should do and read the resulting certificates; the agent writes the proofs.
-
-## How it works, in plain terms
-
-Every function carries three promises, enforced as syntax. Leaving one out is a compile error:
-
-- `req` — *"here's what must be true before you call me"* (e.g. "the list is sorted")
-- `ens` — *"here's what I guarantee about my answer"* (e.g. "if I return an index, the item is really there")
-- `fx` — *"here's everything I'm allowed to touch"* (e.g. "nothing — I'm pure", or "I may read this one file")
-
-Each promise is graded on a **five-rung ladder by *refutation quality*** — how good the evidence is when a promise fails — and `forge` aims for the top rung. An obligation the prover's decidable **cage** cannot hold no longer slides *down* the ladder; it escalates *up* to the **forge**, a kernel-checked proof tier (see [RATIONALE.md](RATIONALE.md#the-ladder-l4--l3--l2--l1--l0)):
-
-| Rung | What it means |
-|---|---|
-| **L4** | A **kernel-grounded** proof. For nonlinear arithmetic, the relax route discharges the claim over the reals (Z3's nlsat) and ties it back to the integers through a **Lean-kernel-checked soundness lemma**. |
-| **L3** | A machine-checked proof that the promise holds for every input — SMT-backed deductive verification via the Verus prover and the Z3 logic engine, **or**, for an obligation past the decidable cage, an agent-authored proof term checked by the Lean 4 kernel. |
-| **L2** | Proven for all inputs up to a stated size. (Bounded model checking, via Kani/CBMC.) |
-| **L1** | The promise is checked **while the program runs**; violations stop it on the spot. (Runtime contract monitoring.) |
-| **L0** | Trusted by fiat. The escape hatch, spelled `#[slag]` (a greppable [trusted-code annotation](RATIONALE.md#slag), cf. `unsafe`/`axiom`/`admit`), so `grep slag` lists every line taken on faith. |
-
-An item lands at the highest rung it reaches. A counterexample — a concrete input where the promise fails, such as n = 3 — is a hard failure; it is never recorded as a lower grade. (Today **L4** is the kernel-grounded relax route for nonlinear arithmetic; ordinary cage proofs sit at L3, and lifting the whole decidable cage to L4 is the next stage of the [Thermite 2 program](https://github.com/dollspace-gay/Thermite/issues/2).)
-
-Grading also covers the contract itself. A promise that promises nothing (`ens true`) would pass trivially, so every contract goes through an anti-Goodhart battery ([vacuity detection plus mutation testing](RATIONALE.md#the-vacuity-battery-the-anti-goodhart-layer)): it is checked for emptiness, then run against mutant copies of the code that introduce bugs. A contract that fails to catch them is rejected.
-
-The `fx` promise is enforced at runtime as well. When you build a binary, Thermite derives a syscall filter (seccomp-BPF, the kernel mechanism Docker and Chrome use; see [RATIONALE.md](RATIONALE.md#the-cage--seccomp-sandbox)) from the declared effects. A function that declared `pure` and then opens a network connection is killed by the OS mid-syscall. The static effect check and the runtime cage come from the same `fx` declaration.
-
-An agent writes Thermite incrementally. Declare the contract with a hole where the body goes (`?0`, a [typed hole](RATIONALE.md#typed-holes-n--the-goal-repl), the Agda/Idris/Lean `sorry` idea). `forge goal` shows what is given and what must hold; `forge fill` puts code in the hole and re-checks, returning counterexamples on failure. Repeat until `ALL GOALS DISCHARGED ✓ certified L3`. An item with an unfilled hole cannot be built or certified.
-
-Thermite translates to Rust annotated for the [Verus](https://github.com/verus-lang/verus) prover (which uses the Z3 logic engine), so it inherits Rust's compiler, optimizer, and ecosystem. The specification language is a small [caged quantifier fragment](RATIONALE.md#the-combinator-cage): a fixed set of bounded combinators with frozen SMT triggers and no raw `forall`. That fragment is what makes the [soundness proof](RATIONALE.md#the-frozen-subset-the-central-design-why) below feasible. The full design rationale lives in [`thermite-design.md`](./thermite-design.md).
-
-## A worked example
-
-We built a text editor in Thermite — a small one, like a tiny nano you run in a terminal. Its editing logic, line navigation, and cursor math are proven correct for every input (L3), and it runs inside the syscall cage with only the permissions its `fx` declares. (See [`examples/editor/`](examples/), plus a formatter, a calculator, and a CSV parser, all proven and runnable.)
-
-Here is a function that sums a list, with its three promises:
+## A small example
 
 ```thermite
 fn sum(xs: &[u32]) -> u64
-  req xs.len() <= 1_000_000        // what I need
-  ens result == spec_sum(xs)       // what I guarantee
-  fx  pure                         // what I touch: nothing
+  req xs.len() <= 1_000_000
+  ens result == spec_sum(xs)
+  fx  pure
 {
   let mut acc: u64 = 0;
   let mut i: usize = 0;
   while i < xs.len()
-    inv acc == spec_sum(&xs[..i])  // why this loop is right
-    dec xs.len() - i               // why this loop ends
+    inv acc == spec_sum(&xs[..i])
+    dec xs.len() - i
   {
     acc = acc + xs[i] as u64;
     i = i + 1;
@@ -67,168 +37,307 @@ fn sum(xs: &[u32]) -> u64
 }
 ```
 
-`forge check` turns that into a certificate (a JSON manifest; [schema](RATIONALE.md#the-certificate)): proven for all inputs, promise non-empty, mutants killed. `forge build` turns it into a runnable binary with the cage enabled.
+`forge check` proves the contract or reports why it could not. `forge build`
+lowers the program to Rust with runtime contract checks; hosted executables are
+confined by an `fx`-derived seccomp filter unless the sandbox is explicitly
+disabled.
 
-## Audit it yourself
+## Install
 
-The repo ships an audit ([`make audit`](RATIONALE.md#make-audit)) that re-derives the trust chain on your machine:
+There are two useful installation levels:
+
+1. A Rust-only build compiles Forge and the supporting crates.
+2. The full proof stack also installs Verus, Lean, Z3, and the pinned
+   reconstruction tools. Use this if you want meaningful `forge check`, the
+   complete test suite, or the trust-chain audit.
+
+The commands below match the versions used by CI. Allow several gigabytes of
+disk for Rust, Verus, Lean, Mathlib, and solver caches.
+
+### 1. System packages
+
+On Ubuntu or Debian:
 
 ```sh
-make audit        # the full re-derivation (slow — minutes)
-make audit-fast   # the 60-second demonstration (one program, one injected bug)
+sudo apt-get update
+sudo apt-get install --yes \
+  build-essential ca-certificates clang curl git \
+  libc++-dev libc++abi-dev python3 unzip util-linux z3
 ```
 
-The fast version shows the essentials: a correct program certifies; the same program with one injected bug is refused with a counterexample; and the emitted proof re-verifies under an independent copy of the prover, with our tooling excluded.
+What these provide:
 
-The deep version re-checks every link of the guarantee: your own Lean proof checker re-verifies the central theorem (described below), the translation cross-checks re-run over every program in the test corpus (thousands of live proof obligations), and the forty-odd sabotage tests re-run to confirm the prover catches each known class of translation bug. At the end it prints the list of what you are still trusting (five items, mostly industry-standard tools). If any tool is missing it says so and refuses to claim success.
-
-<details>
-<summary><b>The six checks</b> (click to expand)</summary>
-
-- **[1] The universal theorem, re-verified by <i>your</i> Lean kernel.** Builds the [`lean/`](lean/) proof spine from source and checks the axiom footprint of the five load-bearing theorems (`lowering_faithful`, `ref_sound`, `exec_ref_sound`, `body_ref_sound`, `while_rule`); passes only if each depends on nothing beyond `{propext, Classical.choice, Quot.sound}`, with no `sorry` and no custom axioms. Skips (and downgrades the verdict) if Lean isn't installed.
-- **[2] Full-corpus translation validation.** Runs `forge tv` / `exec-tv` / `body-tv` over every program in [`conformance/`](conformance/); requires zero divergences across thousands of live Z3-checked obligations; prints skip reasons.
-- **[3] The falsification battery.** Runs the live "teeth" suites that inject known classes of translation bugs (wrong operator, dropped parenthesis, mis-dispatched method, swapped match arms, dropped statements, broken loop invariants…) and asserts Z3 catches every one — plus one visible end-to-end mutant for legibility.
-- **[4] Correspondence drift tripwire.** The Rust encoders are tied to their Lean models by an arm-by-arm [inspection audit](.design/verified/rust-lean-correspondence.md) that pins the exact commits inspected; this check fails if the code has drifted past its audit.
-- **[5] Third-party prover re-check.** The committed proof re-verifies under your own Verus/Z3 with `forge` excluded.
-- **[6] The residual-trust statement.** Pass requires 1–5; then it prints exactly what remains trusted: the Lean kernel + its three standard axioms; Z3/Verus soundness (with a [kernel-replay proof-of-concept](.design/verified/z3-demotion.md) already covering part of it); the gap between formal spec and human intent; the pinned inspection audit; rustc/LLVM. Everything else was re-derived on your machine.
-
-A run with a skipped guarantee prints `INCONCLUSIVE` and exits nonzero.
-</details>
-
-## How the translation is verified
-
-Thermite translates your code into the prover's language, so a buggy translator could prove the wrong statement — promise `=`, prove `≤`, and the certificate would read L3 while the code is wrong. Two mechanisms prevent that, both machine-checked:
-
-1. Per run: a second, independent translator (forbidden by the build system from sharing code with the first) re-translates your contracts and bodies, and Z3 must prove the two translations equivalent on your program. A mistranslation does not pass the check.
-2. Across all programs: that independent translator is small enough to prove correct in Lean. The theorem ([`lean/`](lean/), `Thermite.lowering_faithful`) states that every program passing the cross-check is translated meaning-for-meaning; it is quantified over all programs, checked by Lean's kernel, and re-checkable by yours (audit check [1]). Each translation bug previously found by testing is now refuted by that theorem.
-
-This is the [verified-validator architecture](RATIONALE.md#translation-validation--the-lean-proof-spine) from the compiler-verification literature (the CompCert lineage: translation validation plus a kernel-checked Lean proof spine). Thermite's meaning is defined by the Lean semantics; Verus is the first proof engine against it, proven faithful.
-
-Lean is also a second proof engine. [`forge check --engine lean|auto`](RATIONALE.md#proof-backends-the-second-engine) discharges proof obligations in Lean directly, kernel-checked, with a replay that rejects `sorry` and non-standard axioms; the certificate records which engine proved each obligation and under which trust assumptions. If the two engines contradict each other on the same obligation (one proves it, the other produces a counterexample), `forge` halts with a soundness alarm rather than resolving the disagreement by preference.
-
-## What works today
-
-The language is complete enough to write real programs, and the pipeline (prove, build, run, cage) works end to end.
-
-- A general-purpose surface: integers, strings, vectors, maps, structs/enums with invariants, pattern matching, tuples, recursion (including mutual), `for`/`while` loops, `Option`/`Result` — all provable to L3.
-- Four finished example programs, all proven and runnable — including the sandboxed text editor.
-- The conversational workflow (`forge goal` / `fill` / `edit`) with holes, for incremental agent-driven development.
-- A [`--target kernel`](RATIONALE.md#the-kernel-target) build mode that emits freestanding, OS-less libraries (the road toward a verified microkernel) — code that needs ambient OS access is refused at compile time.
-- Two independent proof engines: L3 obligations are discharged by Verus by default, or by Lean under `--engine lean|auto`. Each certificate names the engine and its trust assumptions, and an engine disagreement halts the run with a soundness alarm.
-- The toolchain verifies its own soundness-critical core in Verus, and the translation layer carries the Lean theorem above.
-- Built almost entirely by AI agents, adversarially: every component was audited by an independent critic agent, and every divergence found (dozens) was pinned by a failing test and fixed.
-
-<details>
-<summary><b>The full component inventory</b> (click to expand — dense, for the technically inclined)</summary>
-
-- ✅ **Frontend** (`thermite-syntax`) — lexer, recovering per-item parser, AST (literals keep verbatim text), stable semantic addressing
-- ✅ **SpecTherm** (`thermite-spec`) — the frozen bounded-combinator registry + the cage validator (no anonymous nested quantifiers; closure bodies are flat predicates)
-- ✅ **Lowering** (`thermite-lower`) — Thermite → Verus (L3), Kani harnesses (L2), executable Rust + always-active runtime checks (L1); compile-time effect-row subsumption; a `req`-bounded `var*var` overflow proof aid discharges multiplication overflow from declared bounds
-- ✅ **Forge** (`forge`) — `check` (per-item certificate with content-addressed proof caching), the goal-state REPL (`goal`/`fill`/`edit`/`battery` over `?N` holes — a holed item never certifies), `build` (native binary with runtime checks + the fx-derived seccomp sandbox; `--target kernel` emits a freestanding `no_std`+`alloc` rlib and refuses ambient-syscall `fx`), `audit`, `review`, `repair`, and the translation-validation phases `tv`/`exec-tv`/`body-tv` (four-way `Faithful`/`Divergent`/`Unverifiable`/`Skipped`, skips honest, divergences loud). An obligation past the decidable cage **escalates to the forge tier** (an L3 Lean-kernel proof, falsified first by a mandatory covenant) rather than degrading; *within* the cage a solver timeout still degrades L3 → L2 → L1, and a counterexample never degrades. Every obligation settles to one of **seven verdicts** (`Proved`/`Counterexample`/`RealWitness`/`CovenantRefuted`/`Stuck`/`KernelBudget`/`Timeout`) — none silently becomes `Proved`.
-- ✅ **Anti-Goodhart battery** — structural vacuity triage, solver tautology/unsat-precondition checks, mutation scoring with a kill-ratio floor (excluding only prover-proved-equivalent mutants), strengthening probes
-- ✅ **Boundaries** — crates.io FFI + `#[slag]` modules, L1-enforced and runtime-confined to their declared `fx`; the manifest distinguishes *verified-to-the-boundary* from *verified, period*
-- ✅ **Self-verification** (`thermite-verified`) — the soundness-critical pure core is itself Verus-verified (`--no-cheating`, no `assume`/`external_body`): effect subsumption, the degrade anti-cheat, the seccomp allowlist, the boundary honesty gate, project aggregation, the mutation floor
-- ✅ **Proof backends** ([`.design/verified/proof-backends.md`](.design/verified/proof-backends.md)) — the backend-neutral Obligation + `Engine` interface with Verus and Lean as independent L3 engines (`forge check --engine verus|lean|auto`); per-obligation engine attribution (`{engine, trust_profile}`) in the certificate; the engine-disagreement soundness alarm (`Proven ⊕ Refuted` on the same obligation halts the run — never resolved by preference); interactive Lean proofs with hardened kernel replay (evidence-key staleness gate, `sorry`/non-standard-axiom rejection, and the canonical-reconstruction architecture that closed five generations of elaborator-injection bypasses); the engine-generic mutation battery; the exec-body bridge for straight-line bodies
-- ✅ **Fixed-width clauses and checked reconstruction** ([`.design/stage3-bv-reconstruction.md`](.design/stage3-bv-reconstruction.md)) — `ens@bvN`, `inv@bvN`, and `@bvN(nowrap)` use explicit 8/16/32/64-bit semantics with certificate shadows, width-aware mutation, and fail-closed overflow checks. QF_LIA and QF_BV solver results move to kernel trust only after Lean accepts the route's actual `req → clause` theorem and its axiom report.
-- ✅ **Universal lowering soundness** (`thermite-tv` + [`lean/`](lean/)) — per-run translation validation by an independent reference encoder + the kernel-checked Lean proof spine (`ref_sound` over all 8 contract construct classes, `exec_ref_sound`, `body_ref_sound`, the loop `while_rule`, composed into `lowering_faithful`); 13+ negative lemmas machine-refute the historical infidelity classes; arm-by-arm Rust↔Lean [correspondence audit](.design/verified/rust-lean-correspondence.md); [checked replay](.design/verified/z3-demotion.md) covers QF_LIA and the shipped QF_BV surface
-- ✅ **The verified primitive basis** (Stages 1–8) + the **primitive-completeness campaign** (C1–C12) — recursive ADTs with invariants, recursion schemes with prove-once induction laws, the contracted effect stdlib, bounded collections, compositional reasoning (callers verify *through* callee contracts; assurance aggregates as the honest min), security-by-construction marked types (SQL injection is *untypeable*), strings, and the full ergonomics layer (destructuring, `for`, guards, or-patterns, `if let`, `Map<K,V>`)
-- ✅ **`THERMITE.skill.md`** — the entire language in ≤ 6,000 tokens, regenerated from the compiler's own definitions (a new construct without a skill entry is a compile error), CI-gated
-- 🔭 Deferred (tracked): direct MIR-level lowering (transpile-to-Verus stands in, #21); the contract-TV parallel seam (#166); the basis v1.1 layer; widening the Lean engine's exportable fragment past straight-line bodies (#253); and the named proof-spine residuals — full Z3 demotion (upstream-gated), the Lean→Rust extraction bridge, user-ADT `match`/`is` in the proven fragment
-
-Roadmap v0.1 → v0.5: all shipped (milestones #1–#5 closed).
-</details>
-
-## Repository layout
-
-| Path | What |
+| Package | Used for |
 |---|---|
-| [`thermite-design.md`](./thermite-design.md) | The design document — why Thermite exists and how it's meant to work |
-| [`goal.md`](./goal.md) | The binding contract for the AI agents that build Thermite (the ACToR loop + anti-drift rules) |
-| `conformance/` | Golden test programs with hand-certified expected results — the oracle the toolchain is checked against |
-| [`examples/`](examples/) | The proven, runnable programs (editor, formatter, calculator, parser) + how to build and run each |
-| `.design/` | Per-component design docs — each part of the toolchain answers to one |
-| `tooling/` | The enforcement gates (no editing a component without reading its design; no stubs/TODOs) |
-| [`lean/`](lean/) | The kernel-checked Lean proof spine (`ref_sound` → … → `lowering_faithful`) + the Lean-SMT demotion PoC |
-| `.claude/agents/` | The four ACToR sub-agents that build this repo — auto-discovered by Claude Code (see below) |
-| `thermite-*/`, `forge/` | The toolchain itself: `thermite-syntax`, `thermite-spec`, `thermite-lower`, `thermite-tv` (translation validation), `thermite-verified`, `forge` (the CLI), `thermite-skill` |
+| `git`, `curl`, `ca-certificates`, `unzip` | Fetching pinned Rust, Lean, Verus, CVC5, and solver artifacts |
+| `build-essential`, `clang`, `libc++-dev`, `libc++abi-dev` | Building the Stage 4 SAT tools and Lean's CVC5 bridge |
+| `python3` | Repository gates and proof-artifact checks |
+| `util-linux` | `prlimit`, used by the memory-bounded G4 gate |
+| `z3` | Normal reconstruction and G4 checks; Verus also ships its matching private Z3 |
 
-## Working on Thermite as an agent — the ACToR loop
+You do not need a system CVC5 package. Lean's pinned dependency downloads the
+matching CVC5 distribution and builds its bridge.
 
-Thermite is built by AI agents using a four-role adversarial loop, and everything an
-agent needs to work the repo **ships in the repo**:
+### 2. Rust
 
-- **`goal.md`** — the binding contract: the full ACToR loop, the verification model
-  (corpus + golden oracles), **R-CHAR-3** (the toolchain never authors its own
-  oracle), and the anti-drift rules. Read it first, every session.
-- **`THERMITE.skill.md`** — the entire surface language + toolchain in ≤ 6,000 tokens,
-  generated from the registry (CI-gated). Load it as context before writing any `.th`.
-- **`.claude/agents/acto-*.md`** — the four sub-agents below, auto-discovered by Claude
-  Code as the `acto-doc-author` / `acto-builder` / `acto-critic` / `acto-fixer`
-  subagent types (dispatch them with the Task/Agent tool — no setup needed).
-- **`tooling/`** (tracked — ships + fires on a fresh clone) — the enforcement layer:
-  the **spec-discipline gate** (`spec-discipline.py`: a routed file can't be edited
-  until its `.design/` doc exists), the **anti-pattern gate** (`anti-pattern-gate.py`:
-  no stubs/TODOs), and the **route table** (`spec-routes.toml`: which file maps to
-  which design doc). `.claude/settings.json` (also tracked) wires these into Claude
-  Code's `PreToolUse`/`PostToolUse` events, so they enforce automatically — no setup.
-  That last sentence is itself CI-checked: `crosslink init` regenerates
-  `settings.json` from a generic template and once silently dropped both gates for
-  a whole stage (#93), so the **control-plane gate** (`control-plane-check.py`,
-  `make control-plane`) asserts every hook the docs claim is live is actually wired,
-  and the route table pins the control plane under `doc-drift.py`.
-- **`.claude/hooks/`** (gitignored — environment infra, *not* project source) — the
-  crosslink issue-tracking + session machinery (`work-check.py` = an active issue is
-  required before any edit, plus session/heartbeat/prompt hooks). These are regenerated
-  by `crosslink init` and depend on the `crosslink` CLI + the `.crosslink/` DB, so they
-  ship with the *harness*, not the repo. Every hook in `settings.json` is guarded with
-  `if [ -f "$HOOK" ]` — so a clone **without** crosslink degrades them to no-ops while
-  the `tooling/` gates still fire.
-
-### Setting up a fresh clone
-
-The verification gates work immediately (`tooling/` + `settings.json` are tracked). To
-also get the crosslink issue-tracking discipline (the `acto-*` agents assume it), install
-the `crosslink` CLI and run `crosslink init` at the repo root —
-it regenerates `.claude/hooks/` + the `.crosslink/` DB and leaves the tracked
-`settings.json` (with its `tooling/` wiring) intact. Without it, you can still build and
-verify; you just won't get the issue-before-edit enforcement.
-
-### The four roles
-
-| Agent | Does | Never |
-|---|---|---|
-| **acto-doc-author** | Writes `.design/<area>/<doc>.md` grounded in real code + the thesis; classifies each REQ **SHIPPED** or **NOT-STARTED** (+ a blocker #). | Touches toolchain code. |
-| **acto-builder** | Ships a missing component against a pre-declared ≤ ~10-file manifest; tests + production in one commit. | Widens scope mid-dispatch. |
-| **acto-critic** | Adversarially audits a "done" claim; pins each divergence as a **failing test** + files a `-l blocker`. | Fixes anything. |
-| **acto-fixer** | Minimal fix for **one** pinned divergence, root cause in the owning crate. | Bundles fixes / refactors. |
-
-The loop: **doc-author → (orchestrator hand-authors the R-CHAR-3 oracle) → builder →
-critic → (GENERATOR MUST FIX) → fixer → critic → … until clean.** Every builder/fixer
-on novel code is followed by a critic. A "divergence" is anchored to two things the
-toolchain may not author for itself — the **conformance corpus**
-(`conformance/<name>.cert.json`) and the **Verus golden lowerings**
-(`tests/golden/lower/<name>.verus.rs`).
-
-### Session start (any Claude on this machine)
-
-1. Read `goal.md`.
-2. Load the language reference. Install it once as a user-level skill so every future
-   session auto-discovers it (or just read `THERMITE.skill.md` directly):
-   ```sh
-   mkdir -p ~/.claude/skills/thermite
-   { printf -- '---\nname: thermite\ndescription: Thermite language + Forge toolchain reference.\n---\n\n'; cat THERMITE.skill.md; } > ~/.claude/skills/thermite/SKILL.md
-   ```
-3. Work the loop. The orchestrator stays hands-on-the-wheel: load context, hand off
-   implementation with a clear manifest, and **verify every result** — read the diff,
-   re-run the gauntlet, cross-check the critic. Agents are capable and also make
-   mistakes; the loop's adversarial structure is what keeps them honest.
-
-Every change must pass the gauntlet (also the CI gate in `.github/workflows/ci.yml`):
+Install rustup if necessary:
 
 ```sh
-cargo build --workspace
-cargo test --workspace          # with `verus` on PATH for the L3 tier
+curl --proto '=https' --tlsv1.2 -sSf \
+  https://sh.rustup.rs -o /tmp/rustup-init.sh
+sh /tmp/rustup-init.sh -y
+. "$HOME/.cargo/env"
+```
+
+The repository's [`rust-toolchain.toml`](rust-toolchain.toml) selects Rust
+1.95.0 and installs `rustfmt` and Clippy automatically.
+
+For a Rust-only build:
+
+```sh
+cargo build --release -p forge
+```
+
+To put Forge on your path:
+
+```sh
+mkdir -p "$HOME/.local/bin"
+install -m 0755 target/release/forge "$HOME/.local/bin/forge"
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Add that `PATH` export to your shell profile if `~/.local/bin` is not already
+present.
+
+### 3. Verus
+
+Thermite's L3 path invokes `verus` from `PATH`. Install the exact CI release:
+
+```sh
+VERUS_VERSION="0.2026.05.24.ecee80a"
+VERUS_ROOT="$HOME/.local/share/thermite/verus-$VERUS_VERSION"
+
+mkdir -p "$VERUS_ROOT" "$HOME/.local/bin"
+curl -fsSL -o /tmp/verus.zip \
+  "https://github.com/verus-lang/verus/releases/download/release/$VERUS_VERSION/verus-$VERUS_VERSION-x86-linux.zip"
+unzip -q /tmp/verus.zip -d "$VERUS_ROOT"
+VERUS_BIN="$(find "$VERUS_ROOT" -type f -name verus -print -quit)"
+test -n "$VERUS_BIN"
+ln -sf "$VERUS_BIN" "$HOME/.local/bin/verus"
+verus --version
+```
+
+Keep the Verus directory intact: its binary expects the bundled Rust toolchain
+and Z3 beside it.
+
+### 4. Lean and the proof spine
+
+Install elan, then let the repository select Lean 4.29.0:
+
+```sh
+curl -fsSL \
+  https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
+  -o /tmp/elan-init.sh
+bash /tmp/elan-init.sh -y --default-toolchain none
+export PATH="$HOME/.elan/bin:$PATH"
+
+cd lean
+lake exe cache get
+lake build
+cd ..
+```
+
+`lake exe cache get` is important: without the prebuilt Mathlib cache, a first
+build can spend hours rebuilding dependencies.
+
+### 5. Checked BV and EPR reconstruction
+
+Normal release builds include fixed-width `@bvN` syntax and automatic routing.
+The finite relation/array reconstruction path additionally needs the exact
+CaDiCaL and `drat-trim` revisions pinned in
+[`scripts/g4-toolchain.env`](scripts/g4-toolchain.env):
+
+```sh
+bash scripts/install-g4-tools.sh
+```
+
+They are installed under `target/g4-tools`. Forge finds that directory
+automatically when run from this checkout. The G4 gate also exports explicit
+paths before it runs:
+
+```sh
+bash scripts/g4-gate.sh
+```
+
+The gate applies a 6 GiB address-space ceiling and serializes the expensive
+work, so it is suitable for smaller development machines.
+
+### 6. Optional: Kani for explicit L2 checks
+
+Kani is only needed for `forge check --level l2` and the live Kani tests:
+
+```sh
+cargo install --locked kani-verifier --version 0.67.0
+cargo kani setup
+```
+
+Kani installs its own nightly Rust and CBMC toolchain. It is not required for a
+normal L3/L4 check.
+
+### Dependency check
+
+After installing the full stack:
+
+```sh
+rustc --version
+cargo --version
+verus --version
+lake --version
+z3 --version
+python3 --version
+
+cargo build --release -p forge
+forge check conformance/sum.th
+```
+
+Missing proof tools are errors in the proof-bearing gates; they are not treated
+as successful skips.
+
+## Everyday Forge commands
+
+The complete method list is generated from the same registry the CLI parses:
+
+```sh
+forge check program.th
+forge goal program.th item
+forge fill program.th item.?0 'replacement code'
+forge build program.th --entry main --out ./program
+forge audit program.th
+forge skill
+```
+
+Run `forge` with no arguments for the current full synopsis. The primary
+workflow is:
+
+1. Write the contract and leave a hole if the body is unfinished.
+2. Run `forge check`.
+3. Read the counterexample or open goal.
+4. Use `goal`, `fill`, or `edit`, then check again.
+5. Build only after every required obligation is discharged.
+
+## Assurance levels
+
+The level records refutation quality; each clause separately records its engine
+and trust profile.
+
+| Level | Meaning |
+|---|---|
+| **L4** | An admitted decidable route with checked reconstruction and concrete failures: nonlinear relaxation, fixed-width BV, or finite EPR relation/array clauses |
+| **L3** | An all-input machine proof through Verus/Z3 or the Lean engine |
+| **L2** | A bounded Kani/CBMC result with the bound recorded |
+| **L1** | An always-active runtime contract check |
+| **L0** | Body trusted by fiat through the explicit `#[slag]` escape hatch |
+
+Plain `forge check` uses automatic routing, including eligible BV and EPR
+reconstruction. A counterexample is a failure, never a downgrade. Timeouts and
+unsupported shapes remain named outcomes rather than being laundered into a
+proof.
+
+For the detailed trust argument, see [RATIONALE.md](RATIONALE.md) and
+[thermite-design.md](thermite-design.md).
+
+## Generated skill and Claude Code
+
+[`THERMITE.skill.md`](THERMITE.skill.md) is the generated language and Forge
+reference. Its surface grammar comes from exhaustive compiler matches, its
+combinators and methods come from registries, and CI keeps it below 6,000
+estimated tokens.
+
+Regenerate or check the canonical copy:
+
+```sh
+forge skill --write THERMITE.skill.md
+forge skill --check THERMITE.skill.md
+```
+
+Install the matching Claude Code skill:
+
+```sh
+forge skill --claude --write "$HOME/.claude/skills/thermite/SKILL.md"
+forge skill --claude --check "$HOME/.claude/skills/thermite/SKILL.md"
+```
+
+The `--claude` form adds the required frontmatter. It is generated from the
+same content as the committed reference, so there is no hand-maintained Claude
+copy to drift.
+
+The tracked `.claude/agents/` files and repository gates support the ACToR
+development workflow. Crosslink is optional issue/session infrastructure; it is
+not a Thermite build dependency.
+
+## Tests and audits
+
+Focused development checks:
+
+```sh
+cargo test -p thermite-skill
+cargo test -p forge
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all --check
-cargo run -p thermite-skill -- --check-budget
+python3 tooling/doc-drift.py
+tooling/reqs check
 ```
+
+Run the Rust/control-plane gauntlet with:
+
+```sh
+make gauntlet
+```
+
+Proof-bearing gates:
+
+```sh
+bash scripts/g3-gate.sh
+bash scripts/g4-gate.sh
+make audit-fast
+make audit
+```
+
+`make audit` re-derives the trust chain, including the Lean axiom probe,
+translation-validation batteries, correspondence drift checks, and independent
+Verus replay. A missing guarantee-bearing dependency makes the final result
+inconclusive and nonzero.
+
+On a memory-constrained machine, keep Rust compilation and test execution
+serial:
+
+```sh
+CARGO_BUILD_JOBS=1 cargo test --workspace -- --test-threads=1
+```
+
+## Examples and repository map
+
+Runnable examples live under [`examples/`](examples/):
+
+- [`editor`](examples/editor/README.md)
+- [`calculator`](examples/calculator/README.md)
+- [`formatter`](examples/formatter/README.md)
+- [`parser`](examples/parser/README.md)
+
+Important paths:
+
+| Path | Purpose |
+|---|---|
+| [`THERMITE.skill.md`](THERMITE.skill.md) | Generated language and Forge reference |
+| [`thermite-design.md`](thermite-design.md) | Language and verification design |
+| [`RATIONALE.md`](RATIONALE.md) | Plain-language trust rationale |
+| [`goal.md`](goal.md) | Repository development and anti-drift contract |
+| [`conformance/`](conformance/) | Hand-authored programs and certificate oracles |
+| [`lean/`](lean/) | Lean proof spine and checked reconstruction |
+| [`.design/`](.design/) | Component-level requirements and audit pins |
+| [`tooling/`](tooling/) | Documentation, requirement, and anti-pattern gates |
+| `thermite-*`, `forge/` | Compiler, verifier, translation validator, and CLI crates |
+
+## License
+
+Thermite is open source under the [MIT License](LICENSE).

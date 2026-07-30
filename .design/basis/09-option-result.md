@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: 46202bede5f263fcedce4791f1994cb1c74efc06c9016b3115239deec7653cd3 (migrated from legacy audited-sha commit pin to a squash-stable content digest; doc-drift-tripwire.md REQ-2 — content pin is primary, commit pin is a migration fallback)
+audited-content-sha256: 18ccaa9ecdaa08c4eea7820121bc06627aec1dd7845237c5295af7400d414a6a (re-pinned 2026-07-30 after the skill audit and the comment-only clarification of automatic BV/EPR routing; Option/Result behavior and renderer arms are unchanged)
 governs: thermite-syntax/src/ast.rs
 governs: thermite-syntax/src/parser.rs
 governs: thermite-spec/src/validator.rs

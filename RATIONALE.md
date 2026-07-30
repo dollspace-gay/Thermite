@@ -134,10 +134,12 @@ a smaller trusted base. The downward degrade above applies to an *inconclusive
 in-cage* goal (a solver timeout); an obligation the decidable cage cannot hold at
 all now escalates **up** to the **forge** — an agent-authored proof term checked
 by the Lean 4 kernel, falsified first by a mandatory covenant — instead of the
-whole function sliding down. This forge tier and the L4 relax route are the
-Stage-1 deliverable of the Thermite 2 program ([RFC-1, GH #2](https://github.com/dollspace-gay/Thermite/issues/2)); today only the relax
-route reaches L4, and lifting the whole cage to L4 (a stratified-FOL spine
-extension) is Stage 2.
+whole function sliding down. This forge tier and the L4 relax route were the
+Stage-1 deliverable of the Thermite 2 program
+([RFC-1, GH #2](https://github.com/dollspace-gay/Thermite/issues/2)). The
+shipped ladder now also places reconstructed fixed-width BV clauses and
+admitted finite relation/array clauses at L4. Plain `forge check` selects those
+routes automatically when a clause qualifies.
 
 ---
 
@@ -785,31 +787,25 @@ verified-microkernel convergence (§13).
 their own machine, ending with the honest residual-trust statement. The README's
 "don't trust us — audit it."
 
-**Mechanism.** `Makefile` `audit` target → `scripts/audit.sh` runs six checks:
-**[1]** builds the `lean/` spine from source and parses `#print axioms` for the
-five load-bearing theorems (`lowering_faithful`, `ref_sound`, `exec_ref_sound`,
-`body_ref_sound`, `while_rule`), passing only if each depends on nothing beyond
-`{propext, Classical.choice, Quot.sound}` (no `sorry`, no custom axiom);
-**[2]** full-corpus translation validation (`forge tv`/`exec-tv`/`body-tv` over
-every `conformance/` program, zero divergences); **[3]** the falsification
-battery (inject known translation-bug classes, assert Z3 catches each) + one
-visible end-to-end mutant; **[4]** the Rust↔Lean correspondence drift tripwire
-(pinned SHAs vs current); **[5]** the committed proof re-verified under
-third-party Verus/Z3 with `forge` excluded; **[6]** the verdict + the residual
-trust statement. Each guarantee-bearing check **skips visibly** (degrading the
-verdict to `INCONCLUSIVE`, nonzero exit) when its tool is absent, so it cannot be
-mistaken for a pass. `make audit-fast` is the 60-second A/B demo. See
+**Mechanism.** `make audit` runs five primary checks plus the Stage-2 G2 gate:
+the Lean spine and axiom allowlist; full-corpus contract/expression/body
+translation validation; a multi-class falsification battery; the Rust↔Lean
+correspondence drift tripwire; and an independent Verus replay with Forge
+excluded. G2 additionally combines the stratified axiom probe, mirrored-code
+drift check, Rust↔Lean classifier differential, and two-phase faithfulness
+sweep through `forge g2-gate`.
+
+The script then prints the verdict and residual-trust statement. A missing
+guarantee-bearing tool is a visible skip that makes the result `INCONCLUSIVE`
+and nonzero; it cannot be mistaken for a pass. `make audit-fast` is the
+60-second A/B demo. See
 [`.design/forge/audit-manifest.md`](.design/forge/audit-manifest.md) for the
 `forge audit` manifest format.
 
-**What each check re-derives, and the residual.** Checks [1]–[5] re-derive,
-respectively, the universal faithfulness theorem (the auditor's Lean kernel), the
-per-run TV agreement (the auditor's Z3, every corpus program), the falsification
-teeth, the correspondence-non-drift, and the third-party proof re-check. What
-remains **trusted** after a clean run (check [6]'s list): the Lean kernel + its
-three standard axioms; Z3/Verus soundness (with the `z3-demotion.md` PoC already
-covering the scalar core); the spec↔intent gap; the pinned inspection audit;
-rustc/LLVM. Everything else is re-derived on the auditor's machine.
+**Residual trust.** After a clean run, the script still names the Lean kernel
+and its three standard axioms, the remaining solver assumptions, the
+specification-to-intent gap, the pinned inspection audit, and rustc/LLVM. It
+does not pretend these assumptions disappeared.
 
 **Why this design.** A trust statement is only useful if it enumerates its
 assumptions, so the audit lists the residual trust items rather than claiming

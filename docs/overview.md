@@ -24,15 +24,16 @@ aims for the top rung and records where each clause landed.
 
 | Rung | Meaning |
 |---|---|
-| **L4** | A kernel-grounded proof. The nonlinear-arithmetic route combines a Z3 nlsat result with Lean-checked soundness lemmas that connect the real relaxation back to integer semantics. |
-| **L3** | A machine-checked proof that the clause holds for every input. (SMT-backed deductive verification via the Verus prover and the Z3 solver.) |
+| **L4** | An admitted decidable route with checked reconstruction and concrete failures: nonlinear relaxation, fixed-width bit-vectors, or finite relation/array clauses. |
+| **L3** | A machine-checked proof that the clause holds for every input through Verus/Z3 or the Lean engine. |
 | **L2** | Proven for all inputs up to a stated size. (Bounded model checking, via Kani/CBMC.) |
 | **L1** | Checked while the program runs; a violation stops it. (Runtime contract monitoring.) |
 | **L0** | Trusted by fiat — the `#[slag]` escape hatch, greppable so the trusted lines are enumerable. |
 
 A function's level is the minimum over its clauses. A counterexample — a
 concrete input where a clause fails — is a hard failure; it is never recorded
-as a lower grade.
+as a lower grade. Plain `forge check` automatically routes eligible BV and EPR
+clauses through their L4 reconstruction paths.
 
 [Verification](verification.md) explains how the upper rungs are discharged and
 re-checked. [Trust](trust.md) lists what remains trusted after a clean run.

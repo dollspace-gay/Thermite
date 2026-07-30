@@ -4,7 +4,7 @@
 tier: 3-component
 status: shipped
 audited-sha: 5ae0816c042debb01c70eb9b89c775837f0c0f24 (content-sha256 re-pinned 2026-06-23 for stage-3 REQ-7 / AC-8 (#349), the automated Rust→Lean obligation exporter: the change to this doc's governed file (cli.rs) is the additive `forge smt-export [<file>] [--out <path>]` subcommand (`Command::SmtExport` → `run_smt_export`, emitting the `(P_prod) ⟺ (P_ref)` `by smt` Lean theorems + `#print axioms` probes via `lean_smt_export.rs`); every other subcommand + flag parse is unchanged. The legacy commit pin stays at the 5ae0816c stable-main ancestor; only the active content-sha256 digest moves. prior: 2026-06-21 stage-2 REQ-8 / AC-8 (#330) `forge strat-faithful-tv`; 2026-06-20 stage-2 REQ-4 / AC-4 (#326) `forge strat-tv` + `ForgeError::StratDifferential`; 2026-06-18 umbrella REQ-2c / AC-4 rotating-seed `--seed` flag on `forge tv`; §6 metrics dashboard `--metrics` value)
-audited-content-sha256: f5fda77ede58ab4a768d552e6946a26f8048f51c372c8ac9b54b5c71b9961cdb
+audited-content-sha256: fde26b43eddd39f0d6afc5e3523898c4c1760fe8f1b96278b4bf48a62f70f953 (re-pinned 2026-07-30 for the shared ForgeMethod registry, the implemented `forge skill` print/write/check command, and current Auto-routing documentation)
 governs: forge/src/cli.rs
 thesis-refs:
   - thermite-design.md §5
@@ -14,19 +14,26 @@ thesis-refs:
 
 ## Summary
 
-`forge/src/cli.rs` (2,778 lines) is the command surface of the `forge` driver:
-a hand-rolled argv matcher (`fn parse_args in cli.rs`) that dispatches FOURTEEN
-verbs — `new` / `check` / `audit` / `repair` / `review` / `build` / `tv` /
-`exec-tv` / `body-tv` / `goal` / `battery` / `edit` / `fill` / `smt-export` —
+`forge/src/cli.rs` is the command surface of the `forge` driver. Its hand-rolled
+argument matcher dispatches 18 top-level methods — `new`, `check`, `audit`,
+`repair`, `review`, `build`, `tv`, `exec-tv`, `strat-tv`,
+`strat-faithful-tv`, `g2-gate`, `body-tv`, `goal`, `battery`, `edit`, `fill`,
+`smt-export`, and `skill` —
 renders each verb's result as human-readable text or (under `--json`) the §5.1 structured
 document, owns `enum ForgeError in cli.rs` (the boundary error that AGGREGATES
 every driven library's error plus driver-native subprocess/environment
 variants), and maps every outcome to a typed exit code
 (`0` / `EXIT_VERIFICATION_FAILURE` = 1 / `EXIT_ENVIRONMENT` = 2). It is the
 only module that touches `std::env::args` / `std::process::ExitCode`
-(`pub fn run in cli.rs`, consumed by `fn main in main.rs`); all verb logic
+(`pub fn run in cli.rs`, consumed by `fn main in main.rs`); most method logic
 lives in the driven modules (`check.rs`, `audit.rs`, `repair.rs`, `review.rs`,
 `build.rs`, `contract_tv.rs`, `exec_tv.rs`, `body_tv.rs`, `goal_repl.rs`).
+
+The public method names, synopses, and short descriptions live in
+`thermite_skill::ForgeMethod`. The parser recognizes its first argument through
+that registry, the usage banner iterates it, and the generated language skill
+uses the same records. Forge still owns the detailed per-method flag parser and
+its private `Command` values.
 
 This amendment (#262) replaces the greenfield-era text wholesale: the previous
 revision's Summary claimed "This component is GREENFIELD … Every REQ below is
@@ -69,16 +76,18 @@ What the old doc never saw, grouped (each verb cites its issue in the code):
 
 ## Requirements
 
-- REQ-1 (command surface): `forge` exposes exactly the fourteen verbs above;
+- REQ-1 (command surface): `forge` exposes exactly the 18 methods above;
   no args, an unknown verb, a missing positional, or an unknown flag is a
   structured `ForgeError::Usage` carrying `fn usage_text in cli.rs`, never a
   panic and never exit 0.
   Source: `thermite-design.md` Appendix B (the verb inventory); §5.1.
 - REQ-2 (hand-rolled argv matcher): argv is parsed by `fn parse_args in cli.rs`
-  — a `match` over the verb with per-verb flag loops — NOT a derive-macro
+  — a registry lookup followed by an exhaustive `ForgeMethod` match with
+  per-method flag loops — NOT a derive-macro
   dependency (`forge/Cargo.toml` declares no `clap`). The original two-verb
   justification (§2.2/§2.3/§4.4 low-magic posture) was made when the grammar
-  was `new <name> | check <file> [--json]`; the decision SURVIVED to 14 verbs
+  was `new <name> | check <file> [--json]`; the decision survived as the
+  surface grew
   and ~650 lines of matcher. Honest assessment: it still holds — every flag
   error is a precise structured diagnostic and the dependency cost stays zero —
   but the per-verb flag loops are hand-duplicated (see OQ-1).
@@ -145,12 +154,18 @@ What the old doc never saw, grouped (each verb cites its issue in the code):
   Source: `.design/lower/l2-kani.md` REQ-7; `.design/forge/solver-profiles.md`
   REQ-5; `.design/forge/mutation-scoring.md` REQ-5;
   `.design/verified/proof-backends.md` OQ-1/REQ-5.
-- REQ-9 (usage-banner currency): `fn usage_text in cli.rs` names every verb and
-  every flag the parser accepts. The #257 fix (commit `6368550a`) closed the
-  one known drift — the banner had been missing `[--engine verus|lean|auto]`
-  after #247 landed the flag.
+- REQ-9 (usage-banner currency): `fn usage_text in cli.rs` iterates
+  `ForgeMethod::ALL`; every registered method and its synopsis therefore appear
+  in help automatically. Detailed flag parsing remains hand-written, and each
+  registry synopsis must match it.
   Source: `thermite-design.md` §5.1 ("every message is a prompt" — the banner
   is the agent-facing grammar).
+- REQ-11 (`forge skill`): `forge skill` prints the canonical generated
+  `THERMITE.skill.md`. `--claude` adds valid Claude skill frontmatter;
+  `--write <path>` writes the selected format; `--check <path>` exits nonzero
+  when an existing file differs. `--write` and `--check` are mutually
+  exclusive. The content comes from `thermite-skill`, the same crate that owns
+  the method registry and 6,000-token gate.
 - REQ-10 (project assurance display, #10): without `--json`, `run_check`
   renders `fn render_assurance in cli.rs` after the per-cert text — the per-fn
   `lowered-assurance` flags plus the project headline (min over functions, or
@@ -188,6 +203,10 @@ What the old doc never saw, grouped (each verb cites its issue in the code):
   target (`scaffold_writes_layout_and_refuses_clobber`).
 - AC-8: `cargo clippy -p forge --all-targets -- -D warnings` + the
   anti-pattern gate are clean of non-test `unwrap`/`expect`/`panic!`.
+- AC-9: `ForgeMethod::ALL` is present in the generated skill and usage text;
+  `forge skill --check` accepts a fresh canonical file and rejects stale bytes;
+  `forge skill --claude` starts with valid `name` and `description`
+  frontmatter.
 
 ## Architecture
 
@@ -196,7 +215,7 @@ The flow is `fn main in main.rs` → `pub fn run in cli.rs` (the ONLY reader of
 `enum Command in cli.rs` → `fn dispatch` (split from `run` so it is
 unit-testable without real argv) → one `run_<verb>` function per verb.
 
-The verbs fall into four families, each with its own exit-code convention
+The methods fall into five families, each with its own exit-code convention
 (REQ-5):
 
 1. **Certification gates** — `check` (`run_check`: the four-way
@@ -223,6 +242,9 @@ The verbs fall into four families, each with its own exit-code convention
    (`run_goal`/`run_battery`/`run_edit`/`run_fill` → `goal_repl::*`): a render
    is a successful query; the verdict lives in the rendered goal state.
 4. **Scaffold** — `new` → `pub fn scaffold_project` (REQ-7).
+5. **Toolchain reference** — `skill` → `run_skill`: render the matching
+   canonical or Claude-compatible skill, optionally write it, or compare an
+   existing copy for drift.
 
 `ForgeError` (REQ-3) is where the leaf-first DAG's many error channels
 converge: the driven crates keep their own error types, `cli.rs` wraps them so
@@ -259,34 +281,34 @@ a reader cannot mistake it for an oracle field.
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-1 (14-verb command surface) | SHIPPED | `fn parse_args in cli.rs` matches `new`/`check`/`audit`/`repair`/`review`/`build`/`tv`/`exec-tv`/`body-tv`/`goal`/`battery`/`edit`/`fill`/`smt-export`; the fall-through arm is `Err(ForgeError::Usage(format!("unknown command \`{other}\`. {}", usage_text())))`. Non-test consumer: `fn main in main.rs` → `cli::run`. Verification: unit `usage_errors`; integration `missing_file_is_usage_error_nonzero`. |
-| REQ-2 (hand-rolled argv matcher) | SHIPPED | `fn parse_args in cli.rs` (~650 lines, verb `match` + per-verb flag loops); `grep clap forge/Cargo.toml` → no hit. Consumer: `fn dispatch in cli.rs`. Verification: the six `parses_*` unit tests. Decision survived the 2-verb → 14-verb growth; duplication cost named in OQ-1. |
+| REQ-1 (18-method command surface) | SHIPPED | `fn parse_args in cli.rs` resolves every entry in `ForgeMethod::ALL`, including `skill`, then exhaustively matches it. Unknown names return `ForgeError::Usage` with generated usage text. |
+| REQ-2 (hand-rolled argv matcher) | SHIPPED | `fn parse_args in cli.rs` uses a registry lookup plus per-method flag loops; `forge/Cargo.toml` has no CLI parser dependency. Consumer: `fn dispatch in cli.rs`. |
 | REQ-3 (`ForgeError` aggregation) | SHIPPED | `enum ForgeError in cli.rs`: `Parse(Vec<SyntaxError>)`/`Spec`/`Effects`/`Lower` + the verus/kani/rustc/reviewer Absent-Spawn-Output families + `Io`/`Usage` + `SoundnessAlarm(crate::engine::Disagreement)`; `impl fmt::Display` forwards inner diagnostics. Non-test consumers: every driven module returns it (`check::check_file -> Result<_, ForgeError>`, `pub fn check_disagreement in engine.rs` surfaces the alarm). Verification: `aggregation_preserves_inner_diagnostics`. |
 | REQ-4 (human + `--json` dual rendering) | SHIPPED | `fn run_check in cli.rs`: `serde_json::to_string_pretty(&certs)` under `--json`, else `render_human` per cert + `render_assurance`; parallel paths in `run_audit`/`run_repair`/`run_review`/`run_build`/`run_tv`/`run_exec_tv`/`run_body_tv`; stderr for diagnostics (e.g. `run_review`'s `eprintln!` keeps `--json` stdout clean). Verification: `run_check_json` harness parses stdout whole in `check_conformance.rs`. |
 | REQ-5 (typed exit codes) | SHIPPED | `pub const EXIT_VERIFICATION_FAILURE: u8 = 1` / `EXIT_ENVIRONMENT: u8 = 2` in `cli.rs`; `run_check`/`run_audit` gate on `matches!(.., ProjectAssurance::Certified(_))`; `run_repair` on `report.all_upgraded()`; the TV trio on `counts.divergent == 0`; `fn exit_code in cli.rs` maps every `ForgeError` to `EXIT_ENVIRONMENT`. Verification: `errors_map_to_environment_exit_code`, `broken_contract_is_reported_failure_with_counterexample` (exit 1), `divergence_audit_check2_exit_swallow.rs` (the TV exit discipline). |
 | REQ-6 (no panics; Result discipline) | SHIPPED | every `run_*`/`parse_args` path returns `Result<_, ForgeError>`; no `unwrap`/`expect`/`panic!` outside `#[cfg(test)]` in `cli.rs`. Verification: clippy `-D warnings` + the anti-pattern gate in the gauntlet (HEAD commit `93d3cbc0` chain is gauntlet-green). |
 | REQ-7 (`forge new` scaffold) | SHIPPED | `pub fn scaffold_project in cli.rs` writes `forge.toml`/`forge.lock` (`seed = {DEFAULT_SOLVER_SEED}`)/`THERMITE.skill.pin`; non-empty target → `ForgeError::Usage("… refusing to overwrite")`. Non-test consumer: `fn dispatch` (`Command::New` arm). Verification: `scaffold_writes_layout_and_refuses_clobber`. |
 | REQ-8 (`check` flags + engine routing) | SHIPPED | `Command::Check { file, json, level, rlimit, mutation_floor, engine }`; the parser defaults `engine` to `Auto`, and `fn run_check` sends normal L3 checks through `check_file_with_engine` for per-clause BV/EPR routing. Explicit `--engine verus` uses the byte-stable legacy entries; `(CheckLevel::L2, _)` uses `check_l2_file`. Verification: the flag parser tests, `engine_verus_flag_is_byte_identical_oracle`, automatic-route tests, and the engine disagreement halt. |
-| REQ-9 (usage-banner currency, #257) | SHIPPED | `fn usage_text in cli.rs` names all 14 verbs and the full flag surface including `[--engine verus|lean|auto]` — added by commit `6368550a` ("forge usage banner gains [--engine verus|lean|auto] (drift fix)"). Non-test consumer: `parse_args`'s no-verb and unknown-verb arms. Verification: `usage_errors` exercises both arms; `l2_check.rs` checks the banner rejects a bogus `--level`. |
+| REQ-9 (usage-banner currency) | SHIPPED | `fn usage_text in cli.rs` iterates `ForgeMethod::ALL`; method names and synopses share their source with parsing and the generated skill. |
 | REQ-10 (project assurance display, #10) | SHIPPED | `fn render_assurance in cli.rs` prints per-fn `lowered-assurance:` lines + the `project assurance:` headline; `run_check` computes `AssuranceManifest::aggregate(&certs)` once for both the display and the exit gate. Verification: `render_assurance_shows_headline_and_lowered_flags`, `render_assurance_shows_failed_headline`. |
+| REQ-11 (`forge skill`) | SHIPPED | `Command::Skill` dispatches to `run_skill`; canonical and Claude-compatible output are sourced from `thermite-skill`, with stdout, write, and check modes covered by unit tests. |
 
 ## Open questions
 
-- **OQ-1 (matcher scale):** the hand-rolled matcher survived to 14 verbs, but
+- **OQ-1 (matcher scale):** the hand-rolled matcher has grown substantially, but
   the per-verb flag loops duplicate the
   `--json`/unknown-flag/extra-positional boilerplate ~10 times and the
   value-taking-flag pattern (`iter.next().ok_or_else(Usage)`) ~9 times. The
   no-`clap` decision still pays (zero deps, precise diagnostics, REQ-9's
-  banner is the single grammar source) — but a shared flag-loop helper inside
-  `cli.rs` would cut the duplication without a dependency. Revisit if a 14th
-  verb lands.
+  registry is the method-level grammar source) — but a shared flag-loop helper
+  inside `cli.rs` would cut the duplication without a dependency. Revisit when
+  another flag-heavy method lands.
 - **OQ-2 (REPL views have no `--json`):** `goal`/`battery`/`edit`/`fill` emit
   human text only ("pure views — no flags"). An agent-facing machine form of
   the goal state is plausibly wanted by the #21 REPL arc; not designed here.
-- **OQ-3 (Appendix B `forge skill` verb):** Appendix B names a `skill` verb;
-  no such verb exists in `parse_args`. The skill artifact is generated by the
-  `thermite-skill` crate instead (#7 arc). Whether a CLI verb should front it
-  is unowned by this doc.
+- **OQ-3 (Appendix B `forge skill` verb):** RESOLVED. Forge fronts the
+  `thermite-skill` generator and can emit, write, or check both canonical and
+  Claude-compatible forms.
 - **OQ-4 (`SoundnessAlarm` exit class):** the uniform `fn exit_code` maps
   `SoundnessAlarm` to `EXIT_ENVIRONMENT` (2) — the same class as a missing
   binary. A soundness alarm is arguably a third kind of outcome (worse than

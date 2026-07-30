@@ -1,10 +1,8 @@
-//! `forge/src/cli.rs` — the command surface of the `forge` driver. It parses
-//! `argv` with a minimal hand-rolled matcher (REQ-2, not a derive macro),
-//! dispatches `forge new <name>` and `forge check [<file>] [--json]`, renders the
-//! certificate as human-readable text or (under `--json`) the §5.1 structured
-//! JSON, and owns [`ForgeError`] — the boundary error that aggregates each driven
-//! crate's error (`thermite_syntax::SyntaxError`, `thermite_spec::SpecError`,
-//! `thermite_lower::LowerError`) plus driver-native verus/io/usage variants.
+//! Forge's command-line boundary. It parses the shared top-level
+//! [`ForgeMethod`] registry with a small hand-written flag parser, dispatches
+//! private [`Command`] values, and renders either readable text or the stable
+//! JSON form requested by a method. [`ForgeError`] preserves errors from the
+//! driven crates and adds CLI, process, and filesystem failures.
 //!
 //! Governing design: `.design/forge/cli.md`.
 //!
@@ -39,6 +37,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use thermite_lower::LowerError;
+use thermite_skill::{forge_usage, generate, generate_claude, ForgeMethod};
 use thermite_spec::SpecError;
 use thermite_syntax::SyntaxError;
 
@@ -282,9 +281,9 @@ enum Command {
         /// low value (e.g. `0.2`) flips a weak contract back to certified (AC-3).
         mutation_floor: f64,
         /// The proof-backend engine (`--engine verus|lean|auto|nlsat`; `.design/verified/
-        /// proof-backends.md` OQ-1, #247). `verus` (the default) is byte-identical; `lean`
-        /// runs the LeanEngine only (exportable items discharged by Lean, attributed);
-        /// `auto` runs Verus first and tries Lean on a Verus Unknown/timeout.
+        /// proof-backends.md` OQ-1, #247). The CLI defaults to `auto`, which preserves
+        /// the base Verus result and adds eligible Lean, BV, and EPR routing. Explicit
+        /// `verus` keeps the byte-identical legacy path.
         engine: check::EngineSelection,
     },
     /// `forge audit <file> [--json] [--meaning]` — emit the project audit manifest v1
@@ -535,6 +534,18 @@ enum Command {
         file: Option<PathBuf>,
         out: Option<PathBuf>,
     },
+    /// `forge skill [--claude] [--write <path> | --check <path>]` — serve the
+    /// toolchain-matched language reference. The canonical form is the committed
+    /// `THERMITE.skill.md`; `--claude` adds skill frontmatter. With no action the
+    /// selected form is printed to stdout.
+    Skill { claude: bool, action: SkillAction },
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum SkillAction {
+    Print,
+    Write(PathBuf),
+    Check(PathBuf),
 }
 
 /// The default generated-clause count for `forge tv --generated` (REQ-3 / AC-7).
@@ -555,16 +566,16 @@ enum CheckLevel {
 }
 
 /// Parse `argv[1..]` (the arguments after the program name) into a [`Command`]
-/// (REQ-2 — hand-rolled, no derive macro). The v0.1 grammar is
-/// `new <name>` | `check <file> [--json]`. An unknown verb, a missing
-/// positional, or an unexpected flag is a `ForgeError::Usage`, never a panic.
+/// (REQ-2 — hand-rolled, no derive macro). Top-level names come from
+/// [`ForgeMethod`]; detailed flags remain local to each branch. Bad input is a
+/// [`ForgeError::Usage`], never a panic.
 fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
     let mut iter = args.iter();
-    let verb = iter
-        .next()
-        .ok_or_else(|| ForgeError::Usage(usage_text().to_string()))?;
-    match verb.as_str() {
-        "new" => {
+    let verb = iter.next().ok_or_else(|| ForgeError::Usage(usage_text()))?;
+    let method = ForgeMethod::parse(verb)
+        .ok_or_else(|| ForgeError::Usage(format!("unknown command `{verb}`.\n{}", usage_text())))?;
+    match method {
+        ForgeMethod::New => {
             let name = iter
                 .next()
                 .ok_or_else(|| ForgeError::Usage("`forge new` requires a <name>".to_string()))?;
@@ -577,7 +588,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                 name: name.to_string(),
             })
         }
-        "check" => {
+        ForgeMethod::Check => {
             let mut file: Option<PathBuf> = None;
             let mut json = false;
             let mut level = CheckLevel::L3;
@@ -711,7 +722,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                 engine,
             })
         }
-        "audit" => {
+        ForgeMethod::Audit => {
             // `forge audit <file> [--json]` (#15; `.design/forge/audit-manifest.md`
             // REQ-2). The canonical audit deliverable runs at the pinned default
             // config (OQ-3 — the reproducible trust statement), so this verb takes
@@ -759,7 +770,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                 metrics,
             })
         }
-        "repair" => {
+        ForgeMethod::Repair => {
             // `forge repair <file> [item] [--json]` (#18;
             // `.design/forge/proof-repair.md` REQ-1). The first positional is the
             // file (required); an optional second positional restricts repair to a
@@ -794,7 +805,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
             })?;
             Ok(Command::Repair { file, item, json })
         }
-        "review" => {
+        ForgeMethod::Review => {
             // `forge review <file> [item] [--json] [--reviewer <cmd>]` (#19;
             // `.design/forge/spec-review.md` REQ-7). The first positional is the
             // file (required); an optional second positional restricts the artifact
@@ -852,7 +863,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                 reviewer,
             })
         }
-        "build" => {
+        ForgeMethod::Build => {
             // `forge build <file> [--entry <fn>] [--json] [--sandbox|--no-sandbox]
             // [--sandbox-self-test]` (#56/#57; `.design/forge/build.md` REQ-1/REQ-3 +
             // `.design/forge/runtime-sandbox.md` REQ-4/REQ-6). The first positional is
@@ -954,7 +965,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                 target,
             })
         }
-        "tv" => {
+        ForgeMethod::Tv => {
             // `forge tv <file> [--generated [N]] [--json]` (#144;
             // `.design/verified/contract-tv.md` REQ-5). The first positional is the
             // file (required). `--generated` opts into the off-corpus generated run
@@ -1020,7 +1031,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                 seed,
             })
         }
-        "exec-tv" => {
+        ForgeMethod::ExecTv => {
             // `forge exec-tv <file> [--generated [N]] [--no-generated] [--json]`
             // (#154/#156; `.design/verified/exec-tv.md` REQ-5). The first positional
             // is the file (required). The off-corpus generated run is the primary
@@ -1073,7 +1084,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                 generated,
             })
         }
-        "strat-tv" => {
+        ForgeMethod::StratTv => {
             // `forge strat-tv [--generated [N]] [--seed <u64>] [--json]`
             // (`.design/stage2-stratified-cage.md` REQ-4 / AC-4). No file positional —
             // the clause source is the deterministic generator, not a corpus program.
@@ -1118,7 +1129,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                 seed,
             })
         }
-        "strat-faithful-tv" => {
+        ForgeMethod::StratFaithfulTv => {
             // `forge strat-faithful-tv [--generated [N]] [--seed <u64>] [--json]`
             // (`.design/stage2-stratified-cage.md` REQ-8 / AC-8). The two-phase TV sweep
             // over generated stratified clauses, reporting the phase split + the trust
@@ -1162,7 +1173,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                 seed,
             })
         }
-        "g2-gate" => {
+        ForgeMethod::G2Gate => {
             // `forge g2-gate --axiom-probe <0|1> --doc-drift <0|1> --differential <0|1>
             // --two-phase <0|1> [--json]` (`.design/stage2-stratified-cage.md` REQ-9 /
             // AC-9). Each of the four flags takes a 0/1 (or pass/fail / true/false)
@@ -1223,7 +1234,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                 two_phase: two_phase.ok_or_else(|| missing("--two-phase"))?,
             })
         }
-        "body-tv" => {
+        ForgeMethod::BodyTv => {
             // `forge body-tv <file> [--json]` (#162; `.design/verified/exec-stmt-tv.md`
             // REQ-5 + `.design/verified/loop-tv.md` REQ-5). The first positional is the
             // file (required). Like the other deeper-audit verbs, it runs at the pinned
@@ -1253,7 +1264,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
             })?;
             Ok(Command::BodyTv { file, json })
         }
-        "goal" | "battery" => {
+        ForgeMethod::Goal | ForgeMethod::Battery => {
             // `forge goal <file> [item]` / `forge battery <file> [item]` (#193
             // increment (i); `.design/forge/goal-repl.md` REQ-1/REQ-2). The first
             // positional is the file (required); an optional second positional
@@ -1264,7 +1275,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
             for arg in iter {
                 match arg.as_str() {
                     // `--proof` is the forge-tier proof view, a `goal`-only flag (REQ-7).
-                    "--proof" if verb == "goal" => proof = true,
+                    "--proof" if method == ForgeMethod::Goal => proof = true,
                     flag if flag.starts_with("--") => {
                         return Err(ForgeError::Usage(format!("unknown flag `{flag}`")));
                     }
@@ -1285,13 +1296,13 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
             let file = file.ok_or_else(|| {
                 ForgeError::Usage(format!("`forge {verb}` requires a <file> [item]"))
             })?;
-            if verb == "goal" {
+            if method == ForgeMethod::Goal {
                 Ok(Command::Goal { file, item, proof })
             } else {
                 Ok(Command::Battery { file, item })
             }
         }
-        "edit" => {
+        ForgeMethod::Edit => {
             // `forge edit <file> <addr> --replace <code>` (#193 increment (ii);
             // `.design/forge/goal-repl.md` REQ-3). Two required positionals (the
             // file then the semantic address) + the required `--replace <code>`
@@ -1379,7 +1390,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                 replace,
             })
         }
-        "fill" => {
+        ForgeMethod::Fill => {
             // `forge fill <file> <hole-addr> <code>` (#193 increment (iii);
             // `.design/forge/goal-repl.md` REQ-6). Three required positionals: the
             // file, the `<fn>.?N` hole address, and the fill code (a single token;
@@ -1425,7 +1436,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
             })?;
             Ok(Command::Fill { file, addr, code })
         }
-        "smt-export" => {
+        ForgeMethod::SmtExport => {
             // `forge smt-export [<file>] [--out <path>]` (stage-3 REQ-7 / AC-8). An
             // optional file positional and an optional `--out` path; no file means the
             // canonical demo batch. A missing `--out` value is a Usage error.
@@ -1455,27 +1466,51 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
             }
             Ok(Command::SmtExport { file, out })
         }
-        other => Err(ForgeError::Usage(format!(
-            "unknown command `{other}`. {}",
-            usage_text()
-        ))),
+        ForgeMethod::Skill => {
+            let mut claude = false;
+            let mut action: Option<SkillAction> = None;
+            while let Some(arg) = iter.next() {
+                match arg.as_str() {
+                    "--claude" => claude = true,
+                    "--write" | "--check" => {
+                        if action.is_some() {
+                            return Err(ForgeError::Usage(
+                                "`forge skill` accepts only one of `--write` or `--check`"
+                                    .to_string(),
+                            ));
+                        }
+                        let path = iter.next().ok_or_else(|| {
+                            ForgeError::Usage(format!("`{arg}` requires a <path>"))
+                        })?;
+                        action = Some(if arg == "--write" {
+                            SkillAction::Write(PathBuf::from(path))
+                        } else {
+                            SkillAction::Check(PathBuf::from(path))
+                        });
+                    }
+                    flag if flag.starts_with('-') => {
+                        return Err(ForgeError::Usage(format!("unknown flag `{flag}`")));
+                    }
+                    positional => {
+                        return Err(ForgeError::Usage(format!(
+                            "`forge skill` takes no positional arguments; unexpected \
+                             `{positional}`"
+                        )));
+                    }
+                }
+            }
+            let action = match action {
+                Some(action) => action,
+                None => SkillAction::Print,
+            };
+            Ok(Command::Skill { claude, action })
+        }
     }
 }
 
-/// The usage banner (REQ-1: the v0.1 verb subset).
-fn usage_text() -> &'static str {
-    "usage: forge new <name> | forge check <file> [--json] [--level l2|l3] [--rlimit <FLOAT>] \
-     [--mutation-floor <FLOAT>] [--engine verus|lean|auto|nlsat] | forge audit <file> [--json] \
-     [--meaning] | \
-     forge repair <file> [item] [--json] \
-     | forge review <file> [item] [--json] [--reviewer <cmd>] | forge build <file> [--entry <fn>] \
-     [--out <PATH>] [--target std|kernel] [--json] [--no-sandbox] [--sandbox-self-test] | forge tv \
-     <file> \
-     [--generated [N]] [--seed <u64>] [--json] | forge exec-tv <file> [--generated [N]] [--no-generated] \
-     [--json] | forge body-tv <file> [--json] | forge goal <file> [item] [--proof] | forge \
-     battery <file> [item] | forge edit <file> <addr> --replace <code> | forge edit \
-     --restratify [--json] | forge fill <file> \
-     <hole-addr> <code> | forge smt-export [<file>] [--out <PATH>]"
+/// The usage banner generated from the same method registry as the skill.
+fn usage_text() -> String {
+    forge_usage()
 }
 
 /// The entry boundary (`.design/forge/cli.md` Architecture): reads `argv`,
@@ -1576,6 +1611,56 @@ fn dispatch(args: &[String]) -> Result<ExitCode, ForgeError> {
         Command::Fill { file, addr, code } => run_fill(&file, &addr, &code),
         Command::Restratify { json } => run_restratify(json),
         Command::SmtExport { file, out } => run_smt_export(file.as_deref(), out.as_deref()),
+        Command::Skill { claude, action } => run_skill(claude, action),
+    }
+}
+
+/// Serve the language reference that matches this Forge binary.
+fn run_skill(claude: bool, action: SkillAction) -> Result<ExitCode, ForgeError> {
+    let content = if claude {
+        generate_claude()
+    } else {
+        generate()
+    };
+    match action {
+        SkillAction::Print => {
+            print!("{content}");
+            Ok(ExitCode::SUCCESS)
+        }
+        SkillAction::Write(path) => {
+            if let Some(parent) = path.parent() {
+                if !parent.as_os_str().is_empty() {
+                    std::fs::create_dir_all(parent).map_err(|source| ForgeError::Io {
+                        path: parent.display().to_string(),
+                        source,
+                    })?;
+                }
+            }
+            std::fs::write(&path, content).map_err(|source| ForgeError::Io {
+                path: path.display().to_string(),
+                source,
+            })?;
+            println!("wrote {}", path.display());
+            Ok(ExitCode::SUCCESS)
+        }
+        SkillAction::Check(path) => {
+            let existing = std::fs::read_to_string(&path).map_err(|source| ForgeError::Io {
+                path: path.display().to_string(),
+                source,
+            })?;
+            if existing == content {
+                println!("skill is current: {}", path.display());
+                Ok(ExitCode::SUCCESS)
+            } else {
+                eprintln!(
+                    "skill is stale: {}; refresh it with `forge skill{} --write {}`",
+                    path.display(),
+                    if claude { " --claude" } else { "" },
+                    path.display()
+                );
+                Ok(ExitCode::from(EXIT_VERIFICATION_FAILURE))
+            }
+        }
     }
 }
 
@@ -3339,6 +3424,39 @@ mod tests {
                 engine: check::EngineSelection::Auto,
             })
         );
+    }
+
+    #[test]
+    fn parses_skill_modes() {
+        assert_eq!(
+            parse_args(&argv(&["skill"])).ok(),
+            Some(Command::Skill {
+                claude: false,
+                action: SkillAction::Print,
+            })
+        );
+        assert_eq!(
+            parse_args(&argv(&["skill", "--claude", "--write", "SKILL.md"])).ok(),
+            Some(Command::Skill {
+                claude: true,
+                action: SkillAction::Write(PathBuf::from("SKILL.md")),
+            })
+        );
+        assert_eq!(
+            parse_args(&argv(&["skill", "--check", "THERMITE.skill.md"])).ok(),
+            Some(Command::Skill {
+                claude: false,
+                action: SkillAction::Check(PathBuf::from("THERMITE.skill.md")),
+            })
+        );
+        assert!(matches!(
+            parse_args(&argv(&["skill", "--write", "one.md", "--check", "two.md"])),
+            Err(ForgeError::Usage(_))
+        ));
+        assert!(matches!(
+            parse_args(&argv(&["skill", "--write"])),
+            Err(ForgeError::Usage(_))
+        ));
     }
 
     // Stage-2 REQ-7 (`.design/stage2-stratified-cage.md` REQ-7 / AC-7): `forge edit

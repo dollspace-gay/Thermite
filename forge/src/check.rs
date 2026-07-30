@@ -224,8 +224,9 @@ pub enum EngineSelection {
     /// (with the smaller trust base, attributed); a non-exportable item is reported as
     /// a skip (the Lean engine `Unknown`, not a false verdict).
     Lean,
-    /// `--engine auto`: Verus first; on a Verus Unknown/timeout, try Lean (the §6
-    /// ordering — Verus push-button common case, Lean as the smaller-base fallback).
+    /// `--engine auto`: run the base Verus path, use Lean on an eligible
+    /// Unknown/timeout, and overlay checked BV/EPR reconstruction for admitted
+    /// clauses. This is the normal CLI default.
     Auto,
     /// `--engine nlsat` (`.design/stage1-forge-tier.md` REQ-8 / Q-NLSAT / AC-12,
     /// increment 2f): the relax route — the [`crate::engine::NlsatEngine`] only. A

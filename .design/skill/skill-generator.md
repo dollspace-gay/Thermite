@@ -4,7 +4,7 @@
 tier: 3-component
 status: draft
 audited-sha: 92396428567edc6940a9e2845217f5ff4c2ea3c6 (re-pinned 2026-06-16, user-authorized: the only change to this doc's governed files since the prior pin is the additive stage-1 forge-tier increment 2a — the new Item::Forge surface + inert Item::Forge match arms, verified net-additive with no substantive removal of existing v1 logic (git log <main>..HEAD = the 8 forge commits); the v1 behavior this doc governs is unchanged, and the new forge-tier surface is specified in .design/stage1-forge-tier.md / REQ-S1-3)
-audited-content-sha256: 18bc37d3f4c06ccfc7137f4bfafeec744d64d8fb079d713e4fc583574596f9e9
+audited-content-sha256: d23215ddb533259f63d9eb1efc1d7d58ff8f7a7e3b6cfca1903299a630f9250e (re-pinned 2026-07-30 for the shared Forge method registry, Claude frontmatter renderer, current L4 routing text, and the 5,385-token generated reference)
 governs: thermite-skill/src/generate.rs
 thesis-refs:
   - thermite-design.md §2.2
@@ -27,7 +27,7 @@ token hard budget** that `thermite-design.md` §2.2 makes a pillar and §10 make
 CI gate.
 
 The skill has two content kinds, and **§10's "the skill IS the spec, no version
-skew" pillar is realized MECHANICALLY for the part that drifts**:
+skew" pillar is realized mechanically for the parts that drift**:
 
 1. The **SURFACE INVENTORY** (the drifty part — the language's constructs) is
    DYNAMIC, by one of two compiler-backed mechanisms (REQ-8):
@@ -48,6 +48,13 @@ skew" pillar is realized MECHANICALLY for the part that drifts**:
    rules, the §5.1 Forge framing, the §4.2 flat-closure rule) stays CURATED, but
    guarded by the committed-`==-generate()` freshness test (REQ-5) and the 6k-
    token budget gate (REQ-4) (REQ-11).
+
+The Forge method inventory is no longer prose. `ForgeMethod` and its metadata
+registry live in `thermite-skill`; Forge consumes the same registry to recognize
+top-level methods and build its usage text, while `render_forge` consumes it to
+write the skill. The dependency already points from Forge to `thermite-skill`,
+so this removes the old cycle concern without exposing Forge's private parsed
+`Command` values.
 
 The crate exposes `generate() -> String` (the library API) and a `thermite-skill`
 binary (`--emit`, `--check-budget`) that the CI gauntlet runs. The committed
@@ -78,12 +85,11 @@ exhaustive-match renderers (`render_{type,expr,item,pattern,effect,binop,prim}_a
 - **Owns** `thermite-skill/src/generate.rs` (the generator), `src/main.rs` (the
   `--emit` / `--check-budget` CLI), the committed `THERMITE.skill.md` at the repo
   root, the up-to-date `cargo test`, and the `--check-budget` CI step.
-- **Does NOT own** the Forge CLI verb `forge skill` (Appendix B). The v0.1
-  serving path is `cargo run -p thermite-skill -- --emit`; `forge skill` is a
-  deferred thin wrapper (OQ-3). NB: `forge` DEPENDS ON `thermite-skill` (per
-  `forge/Cargo.toml`), so the dependency edge runs forge → thermite-skill, not
-  the reverse — `thermite-skill` cannot import anything from `forge` (OQ-5,
-  REQ-11 honesty note on the forge command list).
+- **Owns** the public Forge method registry and the two generated skill formats:
+  canonical Markdown and Claude-compatible Markdown with frontmatter.
+- **Does NOT own** Forge's parsed arguments, dispatch, filesystem writes, or
+  exit-code behavior. Those remain in `forge/src/cli.rs`; Forge reads this
+  crate's registry and generated strings through its existing dependency.
 - **Does NOT mutate any toolchain enum.** The exhaustive-match mechanism READS
   the definitional enums (`thermite_syntax::Type`/`Expr`/`Item`/`Pattern`/
   `Effect`); it adds no variant and changes no AST. The doc adapts to the AST,
@@ -107,7 +113,7 @@ gap by pinning, per surface-inventory section, **WHICH mechanism keeps it fresh*
 | Item grammar | `thermite_syntax::Item` | exhaustive `match` (REQ-10) | **compiler** + AC-10 |
 | Pattern grammar | `thermite_syntax::Pattern` | exhaustive `match` (REQ-10) | **compiler** + AC-10 |
 | Effect atoms | `thermite_syntax::Effect` | exhaustive `match` (REQ-10) | **compiler** + AC-10 |
-| Forge command list | (none importable — see below) | curated table + freshness test | committed-==-generate (REQ-5) + AC-4 (OQ-5) |
+| Forge command list | `thermite_skill::ForgeMethod::ALL` | shared registry | Forge's exhaustive method dispatch + iterate-all coverage |
 | Thesis / ladder / slag / §5.1 framing prose | the design narrative | curated (REQ-11) | committed-==-generate (REQ-5) |
 
 **The exhaustive-`match` mechanism (REQ-10), and why it gives the compile-error-
@@ -158,22 +164,15 @@ SkillEntry` impl or a `static SKILL: &[…]` table. Rationale:
   rendered by exhaustive `match` so a new operator/primitive also compile-forces
   a skill entry.
 
-**The forge command list — the honest exception (OQ-5, REQ-11).** The task asks
-that the `forge` CLI `Command` enum also drive an exhaustive match. This is NOT
-mechanically achievable in `thermite-skill` for two grounded reasons read from
-the code: (a) `forge`'s `Command` enum is **private** (`enum Command` in
-`forge/src/cli.rs`, not `pub`), so it is not importable even in principle; and
-(b) `forge` **depends on** `thermite-skill` (`forge/Cargo.toml` lists
-`thermite-skill` as a dep), so `thermite-skill` importing `forge` would be a
-dependency CYCLE. The skill's Forge command section therefore stays a CURATED
-table, kept honest by the committed-`==-generate()` freshness test (REQ-5) and
-AC-4's verb-coverage assertion. This is documented as a deliberate, honest
-scoping of the §10 mechanism (the same posture REQ-3's original grammar-is-
-curated note took), NOT a deferral and NOT a code-change proposal. If the
-orchestrator wants the forge command list ALSO compile-forced, the cleanest path
-is to make `forge`'s `Command` enum `pub` and exhaustively match it in `forge`'s
-OWN `forge skill` renderer (which CAN see its own enum) — that is a `forge`-side
-change owned by the forge CLI design doc, recorded in OQ-5, not authored here.
+**The Forge command list.** `thermite-skill` owns a small public
+`ForgeMethod` enum plus one metadata record per variant (verb, synopsis, and
+plain-language purpose). A single macro invocation declares the enum and
+registry together, so there is no separately maintained list. Forge parses the
+first argument through this registry and exhaustively matches `ForgeMethod` to
+produce its private `Command`; the skill and usage banner iterate the same
+records. This preserves the dependency direction (`forge` →
+`thermite-skill`) and makes the public method surface mechanically current
+without exposing Forge internals.
 
 ## Requirements
 
@@ -225,12 +224,12 @@ change owned by the forge CLI design doc, recorded in OQ-5, not authored here.
 
 - **REQ-5 (committed `THERMITE.skill.md` + the up-to-date freshness check):** The
   generator's output is committed at the repo root as `THERMITE.skill.md`,
-  regenerated by `cargo run -p thermite-skill -- --emit > THERMITE.skill.md`. A
+  regenerated by `forge skill --write THERMITE.skill.md` (the lower-level
+  `cargo run -p thermite-skill -- --emit` stdout interface remains available). A
   `cargo test` asserts the committed bytes equal `generate()` exactly, so the
   committed skill can never go stale relative to the generator (§10 "no version
-  skew"). RETAINED unchanged — and is the freshness enforcer for the one surface-
-  inventory section that cannot be compiler-forced (the forge command list,
-  REQ-11/OQ-5). Source: §10; R-CHAR-3 (committed artifact == its generator).
+  skew"). `forge skill --check THERMITE.skill.md` exposes the same comparison to
+  contributors and CI. Source: §10; R-CHAR-3 (committed artifact == its generator).
   **SHIPPED** (`committed_skill_is_fresh`).
 
 - **REQ-6 (the `thermite-skill` bin — `--emit` / `--check-budget`):** a
@@ -244,7 +243,7 @@ change owned by the forge CLI design doc, recorded in OQ-5, not authored here.
   as a must-pass step. Source: §2.2/§10; `.design/scaffold/workspace.md` REQ-7.
   **SHIPPED** (the step is in `ci.yml`).
 
-### New REQs — the dynamic surface inventory (this amendment)
+### Dynamic surface requirements
 
 - **REQ-8 (the compiler-enforced no-staleness GUARANTEE — the key property):**
   The skill's SURFACE INVENTORY (the set of language constructs an agent must
@@ -261,7 +260,7 @@ change owned by the forge CLI design doc, recorded in OQ-5, not authored here.
   mechanical realization of the §10 "the skill IS the spec, no version skew"
   pillar (the curated-string version of which repeatedly drifted: it missed
   `forge build`, the sandbox, then the whole ADT/scheme/`Vec`/`String`/effects
-  basis). Source: `thermite-design.md` §10; §2.2. **NOT-STARTED** (blocker #84).
+  basis). Source: `thermite-design.md` §10; §2.2. **SHIPPED**.
 
 - **REQ-9 (recursion-scheme section is REGISTRY-DRIVEN from `schemes::all()`):**
   A new skill section (2b, after the combinator library) iterates
@@ -279,7 +278,7 @@ change owned by the forge CLI design doc, recorded in OQ-5, not authored here.
   production consumer (R-DEFER-1 — `schemes::all()` is an existing pub API; REQ-9
   is its skill consumer). Source: `thermite-design.md` §4.4 (closed built-in
   scheme set), §10 (anti-drift); `.design/basis/02-recursion-schemes.md` REQ-1.
-  **NOT-STARTED** (blocker #84).
+  **SHIPPED**.
 
 - **REQ-10 (type/expr/item/pattern/effect grammar is EXHAUSTIVE-MATCH-DRIVEN):**
   The surface-grammar section's CONSTRUCT INVENTORY — the type forms, the
@@ -299,22 +298,17 @@ change owned by the forge CLI design doc, recorded in OQ-5, not authored here.
   text is a skill concern, not an AST concern (R-DOC-1 — REQ-10 reads the enums,
   never mutates them). Source: `thermite-design.md` §4/§4.2/§4.4/§10;
   `thermite-syntax/src/ast.rs` (`enum Type`/`Expr`/`Item`/`Pattern`/`Effect`).
-  **NOT-STARTED** (blocker #84).
+  **SHIPPED**.
 
-- **REQ-11 (the explanatory PROSE stays curated + freshness-tested; the forge
-  command list is the honest exception):** The narrative that cannot be
+- **REQ-11 (the explanatory PROSE stays curated + freshness-tested):** The
+  narrative that cannot be
   mechanically derived from a registry or an enum — the thesis framing, the §6
   ladder semantics, the §8 slag rules, the §5.1 Forge framing, the §4.2 flat-
   closure rule, and the "removed from Rust" motivation — stays CURATED (REQ-3),
   guarded by the committed-`==-generate()` freshness test (REQ-5) and the 6k
-  budget gate (REQ-4). Additionally, the **forge command LIST** stays a curated
-  table (it cannot be exhaustive-match-driven: `forge`'s `Command` enum is
-  private and `forge` depends on `thermite-skill`, a cycle — OQ-5), kept honest by
-  REQ-5 + AC-4's verb-coverage assertion. This REQ pins the PROSE/DERIVED
-  boundary so the builder knows precisely what to keep as a string vs. what to
-  drive from a registry/enum. Source: §10; the dependency facts in
-  `forge/Cargo.toml` / `forge/src/cli.rs`. **NOT-STARTED** (blocker #84 — the
-  re-scoping lands with the refactor; the prose strings themselves are shipped).
+  budget gate (REQ-4). The Forge command list is excluded from this requirement:
+  it is generated from the shared method registry. This REQ pins the
+  prose/derived boundary. Source: §10. **SHIPPED**.
 
 ## Acceptance criteria
 
@@ -332,17 +326,11 @@ change owned by the forge CLI design doc, recorded in OQ-5, not authored here.
 - **AC-3 (ladder coverage — L0–L3 all present + the L0/slag clarification):**
   substring assertions, expected strings from §6. (REQ-3, REQ-11)
 
-- **AC-4 (forge / slag / grammar-keyword coverage):** `generate()` contains every
-  Appendix B forge verb (`forge new`/`goal`/`fill`/`edit`/`check`/`build`/
-  `battery`/`audit`/`skill`/`repair`), the three mandatory slag fields, and the
-  mandatory grammar clause keywords (`req`/`ens`/`fx`/`inv`/`dec`/`spec fn`/
-  `#[slag]`). Expected strings from Appendix B / §8 / §4. Note: `forge build` is
-  added to this list (it shipped in `forge/src/cli.rs` `Command::Build` and was
-  one of the historically-missed verbs). The curated table additionally carries
-  the post-Appendix-B SHIPPED verbs — `forge review` and the translation-
-  validation phases `forge tv` / `forge exec-tv` / `forge body-tv` (the
-  lowering-soundness program, epic #169/#162) — kept honest by the same REQ-5
-  freshness test. (REQ-3, REQ-11)
+- **AC-4 (Forge / slag / grammar-keyword coverage):** for every entry in
+  `ForgeMethod::ALL`, `generate()` contains its verb and synopsis. The test also
+  checks the three mandatory slag fields and grammar clause keywords
+  (`req`/`ens`/`fx`/`inv`/`dec`/`spec fn`/`#[slag]`). Adding a Forge method
+  expands this check automatically.
 
 - **AC-9 (recursion-scheme coverage — every entry in `schemes::all()`, with an
   example):** for every `SchemeSig` in `thermite_spec::schemes::all()`,
@@ -374,8 +362,7 @@ change owned by the forge CLI design doc, recorded in OQ-5, not authored here.
 
 - **AC-5 (committed `THERMITE.skill.md` == generate()):** the repo-root file's
   bytes equal `generate()` exactly (regeneration command in the failure message)
-  — the generated-file freshness check; the enforcer for the curated forge
-  command list (REQ-11). (REQ-5)
+  — the generated-file freshness check. (REQ-5)
 
 - **AC-6 (determinism — generate() is pure):** two `generate()` calls and two
   `--emit` runs are byte-identical; no timestamp/path/env/RNG/wall-clock content.
@@ -405,8 +392,8 @@ numbers (R-CITE-2b).
 `pub fn generate() -> String` concatenates the section renderers in §10 order:
 `render_grammar` (curated framing + the REQ-10 exhaustive-match construct
 inventory), `render_combinators` (REQ-2, registry-driven), `render_schemes`
-(REQ-9, registry-driven — NEW), `render_forge` (curated framing + the REQ-11
-curated verb table), `render_ladder` (curated prose), `render_slag` (curated
+(REQ-9, registry-driven), `render_forge` (curated framing + the shared
+`ForgeMethod` registry), `render_ladder` (curated prose), `render_slag` (curated
 prose). Pure: no I/O, env, clock, or RNG (R-CODE-5, AC-6).
 
 ### `render_combinators` — the shipped registry renderer (REQ-2)
@@ -501,12 +488,12 @@ rationale (a `thermite-design.md` §2.2 amendment), and does NOT silently overfl
 (R-SPEC-4). The conservative `/3.5` divisor over-counts vs. a real tokenizer, so
 the heuristic failing early is the safe direction.
 
-### The bin, the committed artifact, the forge boundary
+### The bin, the committed artifact, and Forge
 
 `--emit`/`--check-budget` (REQ-6), the committed `THERMITE.skill.md` + freshness
-test (REQ-5), and the `forge skill` boundary (OQ-3) are unchanged from the
-shipped #7 (see the original Architecture in this doc's history; the bin and
-freshness test gain nothing but the larger generated output).
+test (REQ-5), and the 6,000-token gate remain. Forge adds the user-facing
+`forge skill` wrapper: raw or Claude-compatible output can go to stdout, be
+written to a path, or be compared with an existing path.
 
 ## Verification
 
@@ -522,8 +509,8 @@ constants and the live registries/enums (R-CHAR-3):
   variant fails to compile). **AC-10 (ii):** assert a representative substring per
   current Stage-1–8 construct (`struct`, `enum`, `String`, `Vec`, `Box`, `is`,
   `match`, `StructLit`, deref, each effect atom) appears in `generate()`.
-- **AC-3/AC-4:** ladder labels + L0/slag clarification; forge verbs (incl.
-  `forge build`), slag fields, grammar keywords.
+- **AC-3/AC-4:** ladder labels + L0/slag clarification; every
+  `ForgeMethod::ALL` entry, slag fields, and grammar keywords.
 - **AC-5:** `committed_skill_is_fresh` reads repo-root `THERMITE.skill.md` and
   asserts `== generate()`.
 - **AC-6:** `assert_eq!(generate(), generate())` + a no-timestamp grep.
@@ -551,7 +538,7 @@ determinism tests above, not by the cert oracle (which is forge / thermite-lower
 | REQ-8 (compiler-enforced no-staleness GUARANTEE) | SHIPPED | #84. The surface inventory is rendered ONLY by registry iteration (`render_combinators`/`render_schemes`) or by exhaustive `match` with NO `_` arm (`render_{type,expr,item,pattern,effect,binop,prim}_arm` in `generate.rs`); consumed by `render_grammar`/`render_schemes` in `generate`. A new variant FAILS TO COMPILE (`E0004`); a new registry entry auto-renders. Verified: `surface_construct_coverage` (output, in `tests/skill.rs`) + `renderers_are_exhaustive_no_wildcard` (structural, the no-`_` invariant; the green build is the compile-forced proof). The committed skill's "no struct/enum" lie is gone (the test asserts `!contains("no \`struct\`")`). |
 | REQ-9 (recursion-scheme section registry-driven from `schemes::all()`) | SHIPPED | #84. `render_schemes in generate.rs` iterates `thermite_spec::schemes::all()`, renders each `SchemeSig`'s call shape (`scrutinee_args` + `step_shape`) + `SchemeResult` + one `scheme_example_for` example; consumed by `generate`. This is `thermite-skill`'s non-test consumer of `schemes::all()` (R-DEFER-1). Verified: `every_scheme_appears_with_an_example` (AC-9) iterates `schemes::all()` and asserts name + call shape per entry. The 5 schemes (`fold`/`map`/`for_all`/`exists`/`traverse`) now appear in the committed skill. |
 | REQ-10 (type/expr/item/pattern/effect grammar exhaustive-match-driven) | SHIPPED | #84. `render_{type,expr,item,pattern,effect,binop,prim}_arm in generate.rs` are exhaustive `match`es (NO `_` arm) over `thermite_syntax::{Type,Expr,Item,Pattern,Effect,BinOp,PrimType}`, each arm a `SkillFragment { fragment, description, example }`; driven over per-variant inventories (`type_inventory`/`item_inventory`/`expr_inventory`/`pattern_inventory`/`effect_inventory`/`prim_inventory`/`binop_inventory`) by `render_grammar`. Verified: `surface_construct_coverage` asserts the Stage-1–8 surface (`struct`/`enum`, `Box`/`Vec`/`String`, `is`/`*`/`StructLit`/`match`, each effect atom). |
-| REQ-11 (prose curated + freshness-tested; forge command list the honest exception) | SHIPPED | #84. The irreducible PROSE stays curated in `render_grammar`'s framing + `render_forge`/`render_ladder`/`render_slag`; the forge verb LIST stays a curated table (forge's `Command` is private + `forge` → `thermite-skill` dep, so it cannot be compile-forced from here — OQ-5), kept honest by `committed_skill_is_fresh` (REQ-5/AC-5) + `forge_slag_grammar_markers_present` (AC-4). #199 (post-#193/#164 currency + readability): `HEADER` gained the "How to read this file / 60-second workflow" comprehension intro; `render_grammar`'s Statements prose gained the `?N` body-hole token + the `forge goal`/`fill` tie-in (`.design/forge/goal-repl.md` REQ-4); `render_forge`'s curated table gained `forge build --target kernel` (the `no_std`+`alloc` rlib; ambient-syscall `fx` refused — `.design/build/kernel-target.md` REQ-1/REQ-3). Concise-rendering trims kept `--check-budget` at 5,988 ≤ 6,000. #257 (proof-backends currency, post-pin — verified at the #262 re-audit): `render_forge`'s curated table gained the `forge check --engine lean|auto` row, `render_ladder`'s L3 line now reads "machine proof (Verus/Z3; or Lean via `--engine`)", and the `forge build --target kernel` row was TRIMMED to hold the budget — still 5,988 ≤ 6,000 (`budget_gate` + `committed_skill_is_fresh` green). |
+| REQ-11 (prose curated + freshness-tested) | SHIPPED | The irreducible prose stays curated in `render_grammar`'s framing and `render_ladder`/`render_slag`/the Forge introduction. The Forge method list is generated from `ForgeMethod::ALL`, consumed by Forge parsing/help and checked by iterate-all tests. `committed_skill_is_fresh` and the token budget guard the resulting document. |
 
 ## Open questions (for the orchestrator before the builder runs)
 
@@ -565,19 +552,15 @@ determinism tests above, not by the cert oracle (which is forge / thermite-lower
   grammar fragments are generator-side, NOT fields on `SchemeSig` / the AST enums.
   RECOMMENDATION: keep examples/fragments generator-side. Not a blocker.
 
-- **OQ-3 (`forge skill` ownership):** RESOLVED at #7 — `--emit` is the v0.1
-  serving path; `forge skill` is a deferred thin wrapper. Unchanged.
+- **OQ-3 (`forge skill` ownership):** RESOLVED — `thermite-skill` owns the
+  generated content and formats; Forge owns the user-facing print/write/check
+  command.
 
-- **OQ-5 (the forge command list — can it be compile-forced?):** NO, not from
-  `thermite-skill`: `forge`'s `Command` enum is PRIVATE (`enum Command` in
-  `forge/src/cli.rs`) and `forge` DEPENDS ON `thermite-skill` (`forge/Cargo.toml`),
-  so importing it would be a private-item access AND a dependency cycle. The skill
-  keeps a curated forge-verb table, freshness-tested (REQ-5) + verb-coverage-
-  asserted (AC-4). RECOMMENDATION (for the orchestrator, NOT authored here): if
-  the forge command list should ALSO be compile-forced, make `forge::Command`
-  `pub` and put an exhaustive-match `forge skill` renderer in `forge` itself
-  (which can see its own enum) — a `forge`-side change owned by `.design/forge/
-  cli.md`. Flagged; not a blocker for this component.
+- **OQ-5 (the Forge command list — can it be compile-forced?):** RESOLVED. The
+  public `ForgeMethod` registry lives in the dependency both consumers can
+  already see. Forge's private parser exhaustively matches its variants; the
+  skill and usage text iterate the same registry. No dependency cycle or public
+  parsed-command type is required.
 
 - **OQ-6 (exhaustive `match` vs. `trait SkillEntry`/`SKILL: &[…]` table — the
   DECISION):** this doc DECIDES the exhaustive `match` in `generate.rs` (REQ-10

@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: 1d510c2fa2abf3818702f3908d8b13066e318dc80d12d45d5c069f971fe21d62 (migrated from legacy audited-sha commit pin to a squash-stable content digest; doc-drift-tripwire.md REQ-2 — content pin is primary, commit pin is a migration fallback)
+audited-content-sha256: 2bc2545cd90e7ad88f143c5a4b4a72882227d45a20310cfde5db92ff2d5e808f (re-pinned 2026-07-30 for a comment-only clarification that Auto includes Lean fallback and checked BV/EPR overlays; check behavior is unchanged)
 governs: forge/src/check.rs
 thesis-refs:
   - thermite-design.md §5.1

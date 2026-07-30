@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: 3158984f966b99063a28ce692db077fbdde6e4b6bc4a1969ae56d4a1dac282a6 (migrated from legacy audited-sha commit pin to a squash-stable content digest; doc-drift-tripwire.md REQ-2 — content pin is primary, commit pin is a migration fallback)
+audited-content-sha256: 9629a375440c6e28914775c90610b4e7ce2e6beab3af0139982c5e8833ca4c2f (re-pinned 2026-07-30 for a comment-only clarification of the existing automatic BV/EPR overlay; boundary composition is unchanged)
 governs: thermite-lower/src/lower.rs, forge/src/check.rs
 thesis-refs:
   - thermite-design.md §9

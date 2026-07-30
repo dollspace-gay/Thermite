@@ -21,4 +21,6 @@
 
 pub mod generate;
 
-pub use generate::{generate, token_count, SKILL_TOKEN_BUDGET};
+pub use generate::{
+    forge_usage, generate, generate_claude, token_count, ForgeMethod, SKILL_TOKEN_BUDGET,
+};

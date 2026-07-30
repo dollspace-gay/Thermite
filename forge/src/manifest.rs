@@ -184,20 +184,22 @@ fn scope_is_end_to_end(scope: &Option<AssuranceScope>) -> bool {
 /// push-button, *every failure a concrete countermodel* (finite structure, integer
 /// point, or bit pattern), never degraded. RUNG and TRUST BASE are orthogonal axes:
 /// the rung records refutation quality; what is trusted is recorded separately per
-/// clause in the engine attribution. Two L4 routes exist today, same rung, different
+/// clause in the engine attribution. Three L4 route families exist today, same rung,
+/// different
 /// trust bases:
 ///
 /// - the **nlsat real-relaxation** discharge (Stage-1 REQ-8, `--engine nlsat`):
 ///   trust `solver(nlsat) + spine-lemma(kernel)`, the ℝ→ℤ bridge sound by the
 ///   kernel-checked `r_relax_sound` + `rencode_sound` (`lean/Thermite/Relax.lean`);
-/// - the **`@bv` machine-width** discharge (Stage-3 REQ-2, `--engine bv`): trust
-///   `solver(Z3 QF_BV)`, kernel-grounded by REQ-7/8 reconstruction at the same rung.
+/// - the **`@bv` machine-width** discharge (Stage-3 REQ-2, `--engine bv`): QF_BV
+///   solving followed by checked reconstruction of the actual clause theorem;
+/// - admitted **finite relation/sequence** clauses (Stage 4): grounded SAT/LRAT
+///   reconstruction and Lean replay, with false clauses returning finite models.
 ///
 /// (The general Verus/Z3 cage still certifies at L3 in code pending its own promotion
 /// — a follow-up; the RFC ladder eventually places the whole decidable cage at L4.)
-/// Adding L4 is additive: the v1 conformance corpus stays at L3 (the L4 routes are new
-/// engine routes reached only via `--engine nlsat`/`--engine bv`, never the default
-/// Verus path), so the v1 `oracle_subset` is byte-identical.
+/// Automatic CLI routing overlays eligible BV and EPR reconstruction on the base
+/// engine path; explicit engine flags remain diagnostic overrides.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Level {
     /// L0 — unverified / `#[slag]` escape hatch (§6, §8).
@@ -211,12 +213,9 @@ pub enum Level {
     L3,
     /// L4 — CAGED (RFC-1 §2): decidable, push-button, every failure a concrete
     /// countermodel; never degraded. The rung is refutation quality; the trust base is
-    /// recorded separately per clause. Two routes today (same rung, different trust):
-    /// nlsat real-relaxation (`--engine nlsat`, trust `solver(nlsat) +
-    /// spine-lemma(kernel)`, `r_relax_sound`); and `@bv` machine-width (`--engine bv`,
-    /// trust `solver(Z3 QF_BV)`, kernel-grounded by REQ-7/8 at the same rung). Above L3
-    /// on the ladder; reached only by these new engine routes, so v1 items are
-    /// unperturbed.
+    /// recorded separately per clause. Current routes cover nlsat real-relaxation,
+    /// reconstructed fixed-width BV, and reconstructed finite relation/sequence
+    /// clauses. Above L3 on the ladder.
     L4,
 }
 

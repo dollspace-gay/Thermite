@@ -9,6 +9,12 @@
 
 # Thermite 2 — Stage-1 normative semantics
 
+> This document freezes the Stage-1 increment. Later stages add checked QF_BV
+> and finite EPR relation/array reconstruction at L4 and make eligible routes
+> automatic; see [thermite-design.md §6](thermite-design.md#6-the-verification-ladder)
+> and [the Stage 4 design](.design/stage4-epr-reconstruction.md) for the live
+> ladder.
+
 This document is the one authoritative place the shipped Stage-1 forge-tier
 semantics live. It consolidates the conventions that were stated across module
 headers in `forge/src/`, `lean/Thermite/`, and `thermite-lower/src/` into one

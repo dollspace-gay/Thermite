@@ -6,7 +6,9 @@
 //! list, the §8 slag fields, and the registry itself; never literals copied back
 //! from the generator).
 
-use thermite_skill::{generate, token_count, SKILL_TOKEN_BUDGET};
+use thermite_skill::{
+    forge_usage, generate, generate_claude, token_count, ForgeMethod, SKILL_TOKEN_BUDGET,
+};
 
 /// AC-1 — the generated skill is under the §2.2 hard budget (6,000 tokens),
 /// with the real measured headroom reported on success for the grader.
@@ -234,18 +236,17 @@ fn ladder_levels_and_slag_clarification_present() {
 #[test]
 fn forge_slag_grammar_markers_present() {
     let skill = generate();
-    for verb in [
-        "forge new",
-        "forge goal",
-        "forge fill",
-        "forge edit",
-        "forge check",
-        "forge battery",
-        "forge audit",
-        "forge skill",
-        "forge repair",
-    ] {
-        assert!(skill.contains(verb), "skill is missing forge verb `{verb}`");
+    for method in ForgeMethod::ALL {
+        assert!(
+            skill.contains(method.usage()),
+            "skill is missing Forge method `{}`",
+            method.name()
+        );
+        assert!(
+            skill.contains(method.purpose()),
+            "skill is missing the purpose for Forge method `{}`",
+            method.name()
+        );
     }
     for field in ["reason", "owner", "review"] {
         assert!(
@@ -256,6 +257,32 @@ fn forge_slag_grammar_markers_present() {
     for kw in ["req", "ens", "fx", "inv", "dec", "spec fn", "#[slag]"] {
         assert!(skill.contains(kw), "skill is missing grammar marker `{kw}`");
     }
+}
+
+#[test]
+fn forge_registry_drives_usage_and_has_unique_names() {
+    let usage = forge_usage();
+    let mut names = std::collections::BTreeSet::new();
+    for method in ForgeMethod::ALL {
+        assert!(
+            names.insert(method.name()),
+            "duplicate Forge method `{}`",
+            method.name()
+        );
+        assert!(
+            usage.contains(method.usage()),
+            "usage is missing `{}`",
+            method.usage()
+        );
+    }
+}
+
+#[test]
+fn claude_format_wraps_the_canonical_skill() {
+    let claude = generate_claude();
+    assert!(claude.starts_with("---\nname: thermite\ndescription: "));
+    assert!(claude.contains("\n---\n\n# Thermite language and Forge reference\n"));
+    assert!(claude.ends_with(&generate()));
 }
 
 /// AC-5 — the committed repo-root `THERMITE.skill.md` is byte-identical to
@@ -272,7 +299,7 @@ fn committed_skill_is_fresh() {
         committed,
         generate(),
         "committed THERMITE.skill.md is stale; regenerate with \
-         `cargo run -p thermite-skill -- --emit > THERMITE.skill.md`"
+         `cargo run -p forge -- skill --write THERMITE.skill.md`"
     );
 }
 

@@ -1,26 +1,16 @@
-# THERMITE.skill.md
+# Thermite language and Forge reference
 
-The complete Thermite v0.1 surface language and toolchain, in one file. This is
-the canonical language definition (`thermite-design.md` §10): an agent reads it
-at session start and holds the entire language in context. It is GENERATED — do
-not edit by hand. Regenerate with:
+This generated file matches the toolchain that produced it. Do not edit it by
+hand; refresh it with `forge skill --write THERMITE.skill.md`. The canonical
+file stays below the 6,000-token CI budget.
 
-    cargo run -p thermite-skill -- --emit > THERMITE.skill.md
+Start with a contract-first `fn`: write `req`, `ens`, and `fx`, then its body.
+Run `forge check <file>`. Fix any concrete counterexample, or leave a `?0` hole
+and use `forge goal` and `forge fill`. A function with a hole never certifies.
 
-Budget: this file must stay under 6,000 tokens (a hard CI gate, design §2.2).
-
-## How to read this file — the 60-second workflow
-
-You write verified code. The loop: (1) write a `fn` CONTRACT-FIRST — `req`/`ens`/`fx`,
-THEN the body (§1); the contract is mandatory. (2) `forge check <file>` (§3) returns a
-PER-OBLIGATION result — each goal discharged or `Failed` with a CONCRETE
-counterexample (e.g. `lo=3, hi=3`), never a bare "verification failed". (3) Fix and
-re-check; or drop a HOLE `?0` (§1) and work `forge goal`/`forge fill` — a holed item
-never certifies.
-
-Map: §1 grammar, §2/§2b combinators + recursion schemes (the ONLY way to
-quantify/recurse), §3 Forge verbs, §4 the assurance ladder, §5 `#[slag]`, §6 the
-forge tier (verdicts, routing, covenants, proofs).
+Sections: grammar (§1), bounded combinators and recursion schemes (§2/§2b),
+Forge methods (§3), assurance levels (§4), `#[slag]` (§5), and the forge proof
+tier (§6).
 
 ## 1. Surface grammar
 
@@ -260,38 +250,33 @@ The schemes (call shape, result, then one example each):
 - `exists(l, |x| …) -> bool`
   // scheme: exists(list, |x| x == needle)
 
-## 3. Forge command set
+## 3. Forge methods
 
-Forge is your interface — a goal-state REPL. Every reply inlines the source and
-returns a CONCRETE counterexample, not an adjective, when an obligation fails, and
-DEGRADES (L3 -> L2 -> L1) rather than blocking on a solver timeout. Day-to-day:
-`check`, `goal`/`fill` (work open holes), `build` (runnable binary).
+Use `check` for normal certification, `goal`/`fill` for open holes, and `build`
+for artifacts. Failures carry witnesses; timeouts remain named resource events.
+Plain `check` automatically routes eligible fixed-width and finite EPR clauses
+through checked reconstruction.
 
-```
-forge new <name>                   create project (manifest, lockfile, skill pin)
-forge check [item]                 run the ladder; per-obligation results +
-                                   counterexamples (your primary verb)
-forge check --engine lean|auto|nlsat|forge   pick the engine (§6.2); disagree = HALT
-forge goal <item> [--proof]        goal state: given / want / open holes ?N
-                                   (--proof = the forge-tier proof view, §6.4)
-forge fill <fn>.?N <code>          splice code at hole ?N + re-check (may surface
-                                   new holes); proof holes ?pN too (§6.4)
-forge edit <addr> --replace <code> splice at any semantic address + re-check
-forge build [item] --entry <fn>    lower to Rust + rustc -> a native binary whose
-                                   contract checks fire at runtime, fx-sandboxed
-forge build --target kernel <file> freestanding no_std+alloc rlib (no main/seccomp,
-                                   panic=abort); ambient-syscall fx is REFUSED
-forge battery [item]               run vacuity battery + mutation scoring
-forge audit                        full slag + boundary + assurance inventory
-forge review <file> [item]         pluggable spec-intent review slot
-forge tv | exec-tv | body-tv <file>   translation-validate the CONTRACT / exec
-                                   EXPRESSION / exec BODY lowering vs the reference
-forge skill                        emit the canonical THERMITE.skill.md
-forge repair [item]                background L1/L2 -> L3 upgrade loop
-```
+- `forge new <name>` — Create a pinned project.
+- `forge check <file> [--json] [--level l2|l3] [--rlimit FLOAT] [--mutation-floor FLOAT] [--engine auto|verus|lean|nlsat|forge|bv]` — Certify; auto-routes eligible BV and EPR clauses.
+- `forge audit <file> [--json] [--meaning] [--metrics]` — Show assurance, boundaries, meaning, and metrics.
+- `forge repair <file> [item] [--json]` — Retry timeout-lowered items.
+- `forge review <file> [item] [--json] [--reviewer <cmd>]` — Emit contracts for intent review.
+- `forge build <file> [--entry <fn>] [--out <path>] [--target std|kernel] [--json] [--no-sandbox] [--sandbox-self-test]` — Build checked Rust; sandbox hosted executables.
+- `forge tv <file> [--generated [N]] [--seed <u64>] [--json]` — Validate contract lowering.
+- `forge exec-tv <file> [--generated [N]] [--no-generated] [--json]` — Validate expression lowering.
+- `forge strat-tv [--generated N] [--seed <u64>] [--json]` — Compare Rust and Lean cage classifiers.
+- `forge strat-faithful-tv [--generated N] [--seed <u64>] [--json]` — Run two-phase stratified validation.
+- `forge g2-gate --axiom-probe 0|1 --doc-drift 0|1 --differential 0|1 --two-phase 0|1 [--json]` — Combine the Stage 2 gate results.
+- `forge body-tv <file> [--json]` — Validate statement and loop lowering.
+- `forge goal <file> [item] [--proof]` — Show goals, witnesses, and holes.
+- `forge battery <file> [item]` — Show vacuity and mutation results.
+- `forge edit <file> <addr> --replace <code> | forge edit --restratify [--json]` — Edit by address or demonstrate restratification.
+- `forge fill <file> <hole-addr> <code>` — Fill a body or proof hole.
+- `forge smt-export [<file>] [--out <path>]` — Export Rust-to-Lean SMT obligations.
+- `forge skill [--claude] [--write <path> | --check <path>]` — Print, write, or check this reference.
 
-Items and blocks have stable semantic addresses (`binary_search.loop#1.inv#2`,
-a hole is `<fn>.?N`); `edit`/`fill` take addresses, not string matches.
+Items and blocks have stable semantic addresses such as `binary_search.loop#1.inv#2`; holes use `<fn>.?N` or `<fn>.?pN`.
 
 ## 4. Verification ladder
 
@@ -299,8 +284,9 @@ Every function targets L3; downgrades are automatic, logged, and surfaced in the
 build manifest; upgrades are a standing background task. The certificate lists every
 function's level — this manifest IS the deliverable's trust statement.
 
-- L4 — KERNEL-grounded proof: the relax route's nlsat discharge, trust `solver(nlsat)
-  + spine-lemma(kernel)` (§6.2). The top rung, above L3.
+- L4 — admitted, decidable clauses with checked reconstruction: nonlinear
+  relaxation, fixed-width BV, and finite EPR relation/array clauses. Failures
+  carry a real, bit-pattern, or finite-structure witness.
 - L3 — machine proof (Verus/Z3, or Lean via `--engine`): holds for ALL inputs. Not
   guaranteed to terminate -> solver budget + automatic downgrade.
 - L2 — bounded model check (Kani/CBMC): holds for all inputs UP TO a bound (stated
@@ -350,70 +336,47 @@ The polarity inversion is the point: verification is the default and free;
 non-verification is the exotic add-on that costs more keystrokes and visibility.
 ## 6. Forge tier (Stage-1)
 
-Beyond exec contracts the forge proves PROPOSITIONS. Forge items: `prop fn` (a bool
-spec predicate), `lemma N(..) req .. ens .. { proof }`, `proof for f` (discharge one
-`ens#k` of an exec `fn`), and `witness { .. }` covenants.
+The forge tier proves propositions as `prop fn`, `lemma`, or `proof for f`
+items. A `witness` block gives its covenant.
 
 ### 6.1 The seven verdicts
 
-`forge check` settles every clause to ONE of seven cert-level verdicts (a closed
-set; no "Unknown" survives into a cert). What each means, and your move:
+Every clause receives one final verdict:
 
-- **Proved** — holds for ALL inputs at the clause's level. Done.
-- **Counterexample** — a witnessed countermodel with concrete inputs (e.g. `lo=3,
-  hi=3`). Hard fail, never degrades — fix the body or the contract.
-- **RealWitness** — the `ens` is false over the REALS (a real point, e.g. √2) though
-  it may hold over ℤ; escalated UP to you, never downgraded to a Counterexample. Add
-  the integrality `req` so the relaxation can't reach it.
-- **CovenantRefuted** — a `falsify` input refuted the covenant: the carried
-  counterexample IS the bug. Hard fail — fix the body/contract, never weaken `falsify`.
-- **Stuck** — the proof elaborated but left a residual `⊢ goal`; it carries the goal +
-  a missing-bridge hint. Add the named simp bridge from the frozen battery and re-check.
-- **KernelBudget** — Lean's kernel/elaboration budget (heartbeats) was exhausted: a
-  budget event, NOT a refutation. Split the lemma or shrink the proof.
-- **Timeout** — the SMT solver hit its rlimit: a resource event, not a refutation.
-  Lower the goal or raise `--rlimit`.
+- **Proved** — holds at the stated level.
+- **Counterexample** — concrete failing inputs; fix code or contract.
+- **RealWitness** — false over the reals but possibly true over integers; add the
+  missing integrality `req`.
+- **CovenantRefuted** — `falsify` found a contract violation.
+- **Stuck** — Lean left a residual `⊢ goal`; add the named bridge.
+- **KernelBudget** — Lean exhausted its budget; split or shrink the proof.
+- **Timeout** — SMT exhausted its rlimit; simplify or raise `--rlimit`.
 
 ### 6.2 Routing + per-clause attribution
 
-Each clause routes by its SHAPE; the cert attributes `engine`/`trust`/`verdict` PER
-CLAUSE, so you read which machine carried it at what trust:
+Certificates record `engine`, `trust`, and `verdict` per clause:
 
-- a RELAXABLE polynomial clause — universal over integer-scalar params, atoms from
-  only `+ - *`, comparisons, and `&&`/`||` (NO `/ % << >> & | ^`, no `as`) → the
-  **nlsat** engine (Z3 QF_NRA), at **L4** (`solver(nlsat) + spine-lemma(kernel)` —
-  the kernel-checked real→ℤ bridge).
-- an in-cage v1 contract → **verus**, at **L3** (an SMT solver proof).
-- a `lemma` / `proof for` → the **lean** engine, at **L3** (the Lean-kernel base).
+- relaxable integer polynomials → **nlsat** plus the kernel-checked real-to-integer
+  bridge, at **L4**;
+- an `@bvN` fixed-width clause → QF_BV solving plus Lean replay of the actual
+  theorem, at **L4**; false returns a bit pattern;
+- an admitted finite S₂.0 relation/sequence clause → grounded SAT plus LRAT and
+  Lean replay, at **L4**; false returns a finite model;
+- an ordinary in-cage contract → **verus**, at **L3**;
+- a `lemma` or `proof for` item → **lean**, at **L3**.
 
-`--engine forge` drives this hybrid per-clause route end to end; `--engine
-nlsat|verus|lean` pins a single engine.
+Plain `forge check` uses automatic routing. `--engine
+auto|nlsat|verus|lean|forge|bv` selects a diagnostic override.
 
 ### 6.3 Covenant authoring
 
-A `witness { inhabit (..); falsify N; }` block covenants the `fn` it immediately
-FOLLOWS in source order — the covenant-BEFORE-burn gate: a forge-routed `fn` must
-PASS its covenant before any proof is attempted (structural).
-
-- `inhabit (args)` — an author-stated witness that `req` is inhabited. At least ONE
-  is MANDATORY; each tuple's arity + types must match the params, and each must
-  SATISFY `req` (an `inhabit` that fails `req` is a loud author error, refused before
-  burn).
-- `falsify N` — draw N inputs from the deterministic SplitMix64 generator (default
-  fixed-seed `falsify 50_000`), run each body, check the contract. A `req`-satisfying
-  input whose body breaks `ens` is a **CovenantRefuted** hit, carried into the cert.
-
-A covenant that refutes — or whose `inhabit` set is missing, ill-typed, or
-`req`-violating — blocks the burn: you never prove a `fn` whose witnesses already
-break it.
+`witness { inhabit (args); falsify N; }` follows the function it covenants.
+At least one well-typed `inhabit` tuple must satisfy `req`. `falsify N` checks a
+deterministic sample; any violation yields **CovenantRefuted** and blocks proof.
 
 ### 6.4 Forge-tier verbs + the burn receipt
 
-- `forge goal <f> --proof` — the PROOF VIEW of a forge-routed goal (`lemma` / `proof
-  for f`): its hypotheses in scope, the `⊢ goal`, and any open `?pN` PROOF holes.
-- `forge fill <f>.?pN <proof>` — splice proof text at a `?pN` proof hole and re-check
-  (the proof analogue of body-hole `fill`; may surface new `?pN`).
-- closing an L3/L4 goal attaches a **burn receipt** to the cert: the lexer-token
-  count of the committed proof, the lemmas it cited, and (optionally) the LLM
-  authoring spend. It records HOW MUCH proof was spent, never WHAT was proved —
-  oracle-excluded, so it never changes the verdict.
+- `forge goal <f> --proof` shows hypotheses, the goal, and open `?pN` holes.
+- `forge fill <f>.?pN <proof>` fills a proof hole and re-checks.
+- A closed L3/L4 goal gets a **burn receipt** recording proof size and cited
+  lemmas. This metadata never changes the verdict.

@@ -519,6 +519,8 @@ fn replay_validity_source(lean_root: &Path, theorem: &str, source: &str) -> Reco
         .arg("env")
         .arg("lean")
         .arg("--stdin")
+        // Do not multiply the large BitVec stack by the host's CPU count.
+        .arg("--threads=1")
         // Full-surface QF_BV goals need more interpreter stack than Lean's default.
         .arg("--tstack=65536")
         .current_dir(lean_root)
@@ -679,7 +681,14 @@ pub fn reconstruct_validity(
         }
         return outcome;
     }
-    ReconstructionOutcome::Failed(failures.join("\n"))
+    let outcome = ReconstructionOutcome::Failed(failures.join("\n"));
+    if std::env::var_os("THERMITE_TRACE_RECONSTRUCTION").is_some() {
+        eprintln!(
+            "reconstruction failed for `{}` ({fragment}): {outcome:?}",
+            obligation.item
+        );
+    }
+    outcome
 }
 
 /// Lemmas needed for the commutative rewrites performed by [`reference_normalize`].

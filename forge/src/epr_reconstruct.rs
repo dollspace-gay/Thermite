@@ -26,8 +26,8 @@ const EPR_FRAGMENT: &str = "s2_recon_v1";
 const CADICAL_VERSION: &str = "2.1.3";
 const CADICAL_REVISION: &str = "f13d74439a5b5c963ac5b02d05ce93a8098018b8";
 const DRAT_TRIM_REVISION: &str = "effa1dcce85c878236f8313133dff1a2b766cd7c";
-const EPR_CHECKER: &str =
-    "Lean kernel + structural EPR + CaDiCaL 2.1.3 + drat-trim effa1dc + LRAT replay";
+const EPR_CHECKER: &str = "Lean kernel + structural EPR + CaDiCaL 2.1.3 + drat-trim effa1dc + \
+     term-producing LRAT replay";
 const EPR_CACHE_SCHEMA: &str = "thermite.epr.artifacts.v1";
 const AXIOM_ALLOWLIST: &[&str] = &["propext", "Classical.choice", "Quot.sound"];
 const COUNTERMODEL_SEEDS: usize = 1 << 16;
@@ -760,7 +760,13 @@ fn check_bool_countermodel(
 fn run_lean(source: &Path, run_main: bool) -> Result<String, String> {
     let lake = lake_binary();
     let mut command = Command::new(&lake);
-    command.arg("env").arg("lean").arg("--tstack=65536");
+    command
+        .arg("env")
+        .arg("lean")
+        // A single worker keeps the 64 MiB stack below the reconstruction gate's
+        // memory ceiling, even on hosts with many logical CPUs.
+        .arg("--threads=1")
+        .arg("--tstack=65536");
     if run_main {
         command.arg("--run");
     }

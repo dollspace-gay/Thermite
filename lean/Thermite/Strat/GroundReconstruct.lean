@@ -308,7 +308,7 @@ theorem qfreeId_mem_of_occurs {id : Nat} {expression : Thermite.Expr}
     source matrix. Unique IDs make this lookup independent of traversal order. -/
 def qfreeValue (M : Model) : Frm → Nat → Bool
   | .atom (.qfree candidate expression), id =>
-      if id = candidate then M.qfree expression else false
+      if id = candidate then M.qfree candidate expression else false
   | .atom (.rel _ _ _), _ => false
   | .neg formula, id => qfreeValue M formula id
   | .conj left right, id | .disj left right, id
@@ -321,7 +321,7 @@ theorem qfreeValue_of_occurs (M : Model) {id : Nat}
     {expression : Thermite.Expr} {formula : Frm}
     (occurs : QfreeOccurs id expression formula)
     (unique : formula.qfreeIds.Nodup) :
-    qfreeValue M formula id = M.qfree expression := by
+    qfreeValue M formula id = M.qfree id expression := by
   induction occurs with
   | here => simp [qfreeValue]
   | neg occurs ih =>
@@ -347,7 +347,7 @@ def QfreeAgreementFor (M : Model)
     (interpretation : GroundInterpretation M) (formula : Frm) : Prop :=
   ∀ id expression,
     QfreeOccurs id expression formula →
-    interpretation.qfree id = M.qfree expression
+    interpretation.qfree id = M.qfree id expression
 
 theorem qfreeAgreementFor_value (M : Model) (formula : Frm)
     (skolem : (id : Nat) → List (Value M) →

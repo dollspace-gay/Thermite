@@ -28,8 +28,8 @@ theorem strat_lowering_faithful_qfree_iff (source : SourceModel)
     (id : Nat) (expr : Thermite.Expr) (σ : Valuation source.toModel) :
     evalTok source.toModel (sencode (.atom (.qfree id expr))) σ = true
       ↔ Thermite.denote 0 expr source.venv := by
-  change source.qfree expr = true ↔ Thermite.denote 0 expr source.venv
-  rw [source.qfree_source expr]
+  change source.qfree id expr = true ↔ Thermite.denote 0 expr source.venv
+  rw [source.qfree_source id expr]
   simp only [decide_eq_true_eq]
 
 #print axioms strat_lowering_faithful

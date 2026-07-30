@@ -40,7 +40,7 @@ structure Model where
   mul : (left right : Sort₂) → Carrier left → Carrier right → Carrier left
   app1 : (arg result actual : Sort₂) → Nat → Carrier actual → Carrier result
   order : Rel → (left right : Sort₂) → Carrier left → Carrier right → Bool
-  qfree : Thermite.Expr → Bool
+  qfree : Nat → Thermite.Expr → Bool
 
   read_seq : ∀ (elem indexSort : Sort₂) (sq : Carrier (.seq elem))
       (i : Carrier indexSort),
@@ -82,7 +82,7 @@ structure Model where
     leaves are not another oracle. -/
 structure SourceModel extends Model where
   venv : Thermite.Env
-  qfree_source : ∀ e, qfree e = decide (Thermite.denote 0 e venv)
+  qfree_source : ∀ id e, qfree id e = decide (Thermite.denote 0 e venv)
 
 /-- A value tagged by its carrier sort. Environments use tagged values because
     one de Bruijn stack contains binders of several sorts. -/
@@ -147,7 +147,7 @@ def orderTagged (M : Model) (relation : Rel) : Value M → Value M → Bool
       M.order relation leftSort rightSort left right
 
 def evalAtom (M : Model) (ρ : Valuation M) : Atom → Bool
-  | .qfree _ expr => M.qfree expr
+  | .qfree id expr => M.qfree id expr
   | .rel .eq left right => valueEqTagged M (evalTm M ρ left) (evalTm M ρ right)
   | .rel .ne left right => !valueEqTagged M (evalTm M ρ left) (evalTm M ρ right)
   | .rel relation left right =>

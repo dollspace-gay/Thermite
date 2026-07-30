@@ -83,7 +83,7 @@ def boolModel : Model where
     | .le => !left || right
     | .gt => left && !right
     | .ge => left || !right
-  qfree := fun _ => false
+  qfree := fun _ _ => false
   read_seq := by
     intro elem indexSort seq index
     rfl
@@ -153,10 +153,7 @@ def searchedBoolModel (seed : Nat) : Model where
     | .le => !left || right
     | .gt => left && !right
     | .ge => left || !right
-  qfree := fun expression =>
-    match expression with
-    | .boolVar name => searchedBoolQfree seed name.hash.toNat
-    | _ => searchedBoolQfree seed 0
+  qfree := fun id _ => searchedBoolQfree seed id
   read_seq := by
     intro elem indexSort seq index
     rfl

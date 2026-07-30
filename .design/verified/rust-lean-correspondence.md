@@ -69,8 +69,8 @@ composes that with the Lean (T1) theorems. CORR is the bridge that lets the theo
 | Rust exec-expr encoder | `thermite-tv/src/exec_encode.rs` | `6f5b8b53` (comment-only since `60fd029e`; see Amendment 2026-07-29) |
 | Rust exec-body encoder | `thermite-tv/src/exec_stmt_encode.rs` | `6f5b8b53` (production code unchanged since `543b506e`; see Amendment 2026-07-29) |
 | Frozen combinator registry | `thermite-spec/src/combinators.rs` | `543b506e` (#283 re-pin — CODE-IDENTICAL, see Amendment 2026-06-18; was `c0b1d8a3` #4) |
-| Rust→Lean obligation exporter | `forge/src/lean_export.rs` | `06e14a2e` (additive EPR leaf bridge since `6f5b8b53`; see Stage 4 Amendment 2026-07-29) |
-| Lean spine | `lean/Thermite/**` | `ba960a9a` (audited v1 files are code-identical; Stage 2/3/4 proof modules are separate, see Stage 4 Amendment 2026-07-29) |
+| Rust→Lean obligation exporter | `forge/src/lean_export.rs` | `10365b60` (content-identical PR #98 squash of audited `06e14a2e`; see Stage 4 Amendment 2026-07-29) |
+| Lean spine | `lean/Thermite/**` | `10365b60` (content-identical PR #98 squash of audited `ba960a9a`; see Stage 4 Amendment 2026-07-29) |
 
 Lean toolchain: `leanprover/lean4:v4.29.0` (downgraded from v4.30.0 by the #184 Z3-demotion probe — `lean/lakefile.toml` now `[[require]]`s Lean-SMT + Mathlib; this is OUTSIDE the `lean/Thermite/**` audited-spine scope and the entire audited spine still builds green and `sorry`-free on v4.29.0 — see `.design/verified/z3-demotion.md` and Amendment 2026-06-10).
 Verified `sorry`-free by inspection: every `sorry` token in the tree is inside a comment, never in
@@ -268,9 +268,11 @@ corresponding table section and requires re-audit (see "Drift" below).**
 >
 > Verification verdict: **the v1 Rust↔Lean correspondence remains unchanged.** The only
 > exporter addition reuses the audited encoder, and the Lean changes belong to the separate
-> Stage 4 proof boundary. Re-pinned the exporter `→ 06e14a2e` and the Lean spine
-> `→ ba960a9a`; `make audit` and `scripts/g4-gate.sh` must both be green before this
-> amendment is accepted.
+> Stage 4 proof boundary. The audit inspected the exporter at `06e14a2e` and the Lean spine
+> at `ba960a9a`; PR #98 squashed both into `10365b60` with the exporter blob and complete
+> `lean/Thermite` tree byte-identical to those audited branch revisions. The drift pins now
+> name that content-identical commit on `main`; `make audit` and `scripts/g4-gate.sh` must
+> both be green before this amendment is accepted.
 
 
 ## Requirements

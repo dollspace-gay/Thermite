@@ -26,10 +26,11 @@ concurrency:
 #
 # Both jobs install the pinned Rust toolchain (rust-toolchain.toml channel,
 # 1.95.0) and restore the shared Rust build cache + pinned Verus distribution.
-# The test shards also build the Lean modules used by live reconstruction tests;
-# a missing Lean dependency is a hard failure, not a skipped test. Verus is the
-# L3 verification gate (it bundles the matching rust toolchain + z3); tests
-# resolve it via VERUS_BIN.
+# The test shards also build the Lean modules and install the pinned
+# CaDiCaL/drat-trim pair used by live reconstruction tests; a missing proof
+# dependency is a hard failure, not a skipped test. Verus is the L3 verification
+# gate (it bundles the matching rust toolchain + z3); tests resolve it via
+# VERUS_BIN.
 # The skill-budget gate fails CI if the generated THERMITE.skill.md exceeds its
 # 6,000-token budget (design §2.2 / §10).
 jobs:

@@ -57,11 +57,16 @@
 pub mod classifier;
 pub mod combinators;
 pub mod restratify;
+pub mod s2_recon;
 pub mod schemes;
 pub mod validator;
 
 pub use classifier::{admitted, classify, parse_frm, to_wire, Frm, RejectReason, Sort2, Verdict};
 pub use combinators::{all, lookup, ArgKind, CombinatorSig, ResultKind};
 pub use restratify::{certify, restratify, Certification, RestratResult, WithheldReason};
+pub use s2_recon::{
+    canonical_source_expr, from_clause as s2_recon_from_clause,
+    from_obligation as s2_recon_from_obligation, S2Recon, SourceAddress,
+};
 pub use schemes::{SchemeResult, SchemeSig, StepShape};
 pub use validator::{validate, SpecError};

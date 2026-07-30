@@ -31,13 +31,13 @@ open Thermite.Strat.Cls
     (every other atom shape is `false` — unused here). This lets the model set the fresh
     abstraction `p` to `true` independently of the excised conjunct `B`. -/
 def qBool : Atom → Bool
-  | .qfree (.boolLit b) => b
+  | .qfree _ (.boolLit b) => b
   | _                   => false
 
 /-- The (irrelevant) finite domain and environment — the formulas below are closed
     propositional combinations of `qfree` leaves, so neither is inspected. -/
-def dom : List Tm := [.lit usizeS]
-def ρ0 : Subst := fun _ => .lit usizeS
+def dom : List Tm := [.lit usizeS (.int 0)]
+def ρ0 : Subst := fun _ => .lit usizeS (.int 0)
 
 /-! ## The witness formulas
 
@@ -45,9 +45,9 @@ def ρ0 : Subst := fun _ => .lit usizeS
     as opaque `qfree` leaves — the minimal shape exhibiting the drop-Side hole. -/
 
 /-- `A` — a true sub-formula (`boolLit true`, read as `true` by `qBool`). -/
-def aT : Frm := .atom (.qfree (.boolLit true))
+def aT : Frm := .atom (.qfree 0 (.boolLit true))
 /-- `B` — the cycle-closing conjunct, false in this model (`boolLit false`). -/
-def bF : Frm := .atom (.qfree (.boolLit false))
+def bF : Frm := .atom (.qfree 1 (.boolLit false))
 /-- The fresh restratify abstraction token `p` — a distinct leaf, `true` in this model. -/
 def pAbs : Thermite.Expr := .boolLit true
 

@@ -35,7 +35,7 @@ use crate::classifier::{classify, Atom, Frm, Sort2, Tm, Verdict};
 /// conjunct deletes that conjunct's edges from the sort graph.
 #[must_use]
 pub fn abs_leaf() -> Frm {
-    Frm::Atom(Atom::QFree)
+    Frm::Atom(Atom::QFree(0))
 }
 
 /// The product of the restratify rewrite: the admissible φ' and the side obligation
@@ -214,7 +214,7 @@ mod tests {
     /// apply, and certification is withheld.
     #[test]
     fn non_conjunction_not_restratifiable() {
-        let phi = Frm::Atom(Atom::QFree);
+        let phi = Frm::Atom(Atom::QFree(0));
         assert!(restratify(&phi).is_none());
         assert!(matches!(
             certify(&phi, true),

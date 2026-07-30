@@ -350,7 +350,7 @@ mod tests {
     // placeholder for the pure-comparison tests (the wire content is irrelevant; only the
     // verdict pairing matters).
     fn dummy() -> Frm {
-        Frm::Atom(thermite_spec::classifier::Atom::QFree)
+        Frm::Atom(thermite_spec::classifier::Atom::QFree(0))
     }
 
     #[test]

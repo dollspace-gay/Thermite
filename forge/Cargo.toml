@@ -40,6 +40,7 @@ sha2 = "0.10"
 # compiled (it reads the always-present `Clause.bv: Option<BvTag>`), so only the parse
 # gate is feature-conditional.
 [features]
+default = ["bv"]
 bv = ["thermite-syntax/bv"]
 
 # epic #60 (self-verification, REQ-7/REQ-8): the Verus-verified soundness-critical

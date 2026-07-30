@@ -583,7 +583,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
             let mut level = CheckLevel::L3;
             let mut rlimit = DEFAULT_RLIMIT;
             let mut mutation_floor = MUTATION_FLOOR;
-            let mut engine = check::EngineSelection::Verus;
+            let mut engine = check::EngineSelection::Auto;
             let mut iter = iter.peekable();
             while let Some(arg) = iter.next() {
                 match arg.as_str() {
@@ -1804,14 +1804,14 @@ fn run_check(
     mutation_floor: f64,
     engine: check::EngineSelection,
 ) -> Result<ExitCode, ForgeError> {
-    // The default (no flag) stays the L3 verus path; `--level l2` is an explicit
+    // The default (no flag) uses automatic L3 routing; `--level l2` is an explicit
     // choice that runs the Kani bounded model check instead, never an automatic
     // degrade (`.design/lower/l2-kani.md` REQ-7; #10 owns the auto-degrade). The
     // `--rlimit` (#11) tunes the L3 verus resource budget; the L2 Kani path does
     // not consume it.
     //
-    // proof-backends OQ-1 (#247): `--engine verus|lean|auto`. `verus` (the default)
-    // keeps the byte-identical path below; `lean`/`auto` route through
+    // proof-backends OQ-1 (#247): `--engine verus|lean|auto`. `verus` keeps the
+    // legacy byte-identical path below; `lean`/`auto` route through
     // `check::check_file_with_engine` (the LeanEngine surface — exportable items
     // discharged by Lean with attribution; the disagreement halt on `auto`).
     let certs = match (level, engine) {

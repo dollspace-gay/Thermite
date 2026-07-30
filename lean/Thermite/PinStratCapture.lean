@@ -33,8 +33,8 @@ open Thermite.Strat.Cls
 /-! ## A concrete 2-element domain + an equality oracle -/
 
 /-- Two distinct closed carrier terms (`c0 ≠ c1`: different constructors). -/
-def c0 : Tm := .lit usizeS
-def c1 : Tm := .idxOp (.lit usizeS) 1
+def c0 : Tm := .lit usizeS (.int 0)
+def c1 : Tm := .idxOp (.lit usizeS (.int 0)) 1
 /-- The finite quantifier domain. -/
 def dom : List Tm := [c0, c1]
 
@@ -52,7 +52,8 @@ def σ0 : Subst := fun _ => c0
     (instead of its level), so it cannot distinguish nested binders. -/
 def encTmCap : Tm → Tm
   | .var s _      => .var s 0
-  | .lit s        => .lit s
+  | .const s id   => .const s id
+  | .lit s value  => .lit s value
   | .read e sq ix => .read e (encTmCap sq) (encTmCap ix)
   | .len sq       => .len (encTmCap sq)
   | .cast to t    => .cast to (encTmCap t)
@@ -62,7 +63,7 @@ def encTmCap : Tm → Tm
 
 def encAtomCap : Atom → Atom
   | .rel ρ t u => .rel ρ (encTmCap t) (encTmCap u)
-  | .qfree e   => .qfree e
+  | .qfree id e => .qfree id e
 
 /-- The capture-broken formula encoder: every binder reuses the name `0` (no
     fresh-name discipline), so a nested binder shadows its parent. -/

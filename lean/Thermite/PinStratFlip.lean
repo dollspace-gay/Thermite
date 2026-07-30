@@ -28,8 +28,8 @@ open Thermite.Strat.Cls
 /-! ## A concrete 2-element domain + an equality oracle -/
 
 /-- Two distinct closed carrier terms (`c0 ≠ c1`: different constructors). -/
-def c0 : Tm := .lit usizeS
-def c1 : Tm := .idxOp (.lit usizeS) 1
+def c0 : Tm := .lit usizeS (.int 0)
+def c1 : Tm := .idxOp (.lit usizeS (.int 0)) 1
 /-- The finite quantifier domain. -/
 def dom : List Tm := [c0, c1]
 

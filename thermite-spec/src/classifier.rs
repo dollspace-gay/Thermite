@@ -137,11 +137,22 @@ impl fmt::Display for Sort2 {
 /// Terms carry their sort annotations explicitly (`Strat/Nnf.lean` `inductive Tm`); the
 /// classifier reads sorts off the syntax rather than re-running a typechecker.
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ScalarValue {
+    Int(i128),
+    Bool(bool),
+}
+
+/// Terms carry their sort annotations explicitly (`Strat/Nnf.lean` `inductive Tm`); the
+/// classifier reads sorts off the syntax rather than re-running a typechecker.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Tm {
     /// `var s i` — a de Bruijn variable carrying its sort.
     Var(Sort2, u32),
-    /// `lit s` — a machine literal (value irrelevant to classification).
-    Lit(Sort2),
+    /// A free source constant. `id` is assigned deterministically by the canonical
+    /// source bridge and distinguishes constants of the same sort.
+    Const(Sort2, u32),
+    /// A source literal with its value preserved for reconstruction.
+    Lit(Sort2, ScalarValue),
     /// `read elem sq ix` — `sq[ix] : Read SeqS elem × usize → elem`.
     Read(Sort2, Box<Tm>, Box<Tm>),
     /// `len sq` — `sq.len() : SeqS _ → usize`.
@@ -163,7 +174,7 @@ impl Tm {
     fn sort_of(&self) -> Sort2 {
         match self {
             Tm::Var(s, _) => s.clone(),
-            Tm::Lit(s) => s.clone(),
+            Tm::Const(s, _) | Tm::Lit(s, _) => s.clone(),
             Tm::Read(elem, _, _) => elem.clone(),
             Tm::Len(_) => Sort2::usize_s(),
             Tm::Cast(to, _) => to.clone(),
@@ -213,13 +224,13 @@ impl Rel {
 /// Atoms (`Strat/Nnf.lean` `inductive Atom`): a relation between two terms, or a whole
 /// v1 quantifier-free formula embedded — opaque to the classifier (it contributes no
 /// sorts and no graph edges, exactly the metatheory §1.2 `QFree φ₀` leaf). The Lean
-/// `qfree` carries a `Thermite.Expr`; the classifier never inspects it, so the Rust
-/// mirror models it as a unit [`Atom::QFree`] (the wire form maps to the canonical
-/// placeholder `Thermite.Expr.boolLit true` on the Lean side).
+/// `qfree` carries a `Thermite.Expr`; the classifier never inspects it. The Rust
+/// mirror carries the canonical bridge's stable leaf ID so reconstruction cannot
+/// accidentally associate a normalized leaf with a different source expression.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Atom {
     Rel(Rel, Tm, Tm),
-    QFree,
+    QFree(u32),
 }
 
 /// The stratified formula language with sorted binders and `⇒` (eliminated by NNF)
@@ -289,7 +300,7 @@ fn same_width(a: &Sort2, b: &Sort2) -> bool {
 fn has_bound_var(depth: u32, t: &Tm) -> bool {
     match t {
         Tm::Var(_, i) => *i < depth,
-        Tm::Lit(_) => false,
+        Tm::Const(_, _) | Tm::Lit(_, _) => false,
         Tm::Read(_, sq, ix) => has_bound_var(depth, sq) || has_bound_var(depth, ix),
         Tm::Len(sq) => has_bound_var(depth, sq),
         Tm::Cast(_, t) => has_bound_var(depth, t),
@@ -303,7 +314,7 @@ fn has_bound_var(depth: u32, t: &Tm) -> bool {
 /// (`Strat/Fragment.lean` `idxOkTm`).
 fn idx_ok_tm(depth: u32, t: &Tm) -> bool {
     match t {
-        Tm::Var(_, _) | Tm::Lit(_) => true,
+        Tm::Var(_, _) | Tm::Const(_, _) | Tm::Lit(_, _) => true,
         Tm::Read(_, sq, ix) => idx_ok_tm(depth, sq) && idx_ok_tm(depth, ix),
         Tm::Len(sq) => idx_ok_tm(depth, sq),
         Tm::Cast(to, t) => {
@@ -325,7 +336,7 @@ fn idx_ok_tm(depth: u32, t: &Tm) -> bool {
 fn idx_grammar_at(depth: u32, phi: &Frm) -> bool {
     match phi {
         Frm::Atom(Atom::Rel(_, t, u)) => idx_ok_tm(depth, t) && idx_ok_tm(depth, u),
-        Frm::Atom(Atom::QFree) => true,
+        Frm::Atom(Atom::QFree(_)) => true,
         Frm::Neg(p) => idx_grammar_at(depth, p),
         Frm::Conj(p, q) | Frm::Disj(p, q) | Frm::Imp(p, q) => {
             idx_grammar_at(depth, p) && idx_grammar_at(depth, q)
@@ -435,26 +446,20 @@ impl Graph {
 /// binder (de Bruijn level 0), matching the Lean `ctx : List (Bool × Sort₂)`.
 type Ctx = Vec<(bool, Sort2)>;
 
-/// Is de Bruijn index `i` bound by a universal binder in `ctx`? (`Strat/Graph.lean`
-/// `varUniv` — `ctx[i]?`.)
-fn var_univ(ctx: &Ctx, i: u32) -> bool {
-    match ctx.get(i as usize) {
-        Some((u, _)) => *u,
-        None => false,
-    }
-}
-
-/// Does a term mention a universally bound variable? (`Strat/Graph.lean` `hasUnivVar`.)
-fn has_univ_var(ctx: &Ctx, t: &Tm) -> bool {
+/// Does a term mention a variable bound by the current prefix?
+///
+/// Existential occurrences count: after Skolemization they can carry an
+/// earlier universal dependency through the surrounding function.
+fn has_scoped_var(ctx: &Ctx, t: &Tm) -> bool {
     match t {
-        Tm::Var(_, i) => var_univ(ctx, *i),
-        Tm::Lit(_) => false,
-        Tm::Read(_, sq, ix) => has_univ_var(ctx, sq) || has_univ_var(ctx, ix),
-        Tm::Len(sq) => has_univ_var(ctx, sq),
-        Tm::Cast(_, t) => has_univ_var(ctx, t),
-        Tm::IdxOp(t, _) => has_univ_var(ctx, t),
-        Tm::Mul(t, u) => has_univ_var(ctx, t) || has_univ_var(ctx, u),
-        Tm::App1(_, _, _, t) => has_univ_var(ctx, t),
+        Tm::Var(_, i) => (*i as usize) < ctx.len(),
+        Tm::Const(_, _) | Tm::Lit(_, _) => false,
+        Tm::Read(_, sq, ix) => has_scoped_var(ctx, sq) || has_scoped_var(ctx, ix),
+        Tm::Len(sq) => has_scoped_var(ctx, sq),
+        Tm::Cast(_, t) => has_scoped_var(ctx, t),
+        Tm::IdxOp(t, _) => has_scoped_var(ctx, t),
+        Tm::Mul(t, u) => has_scoped_var(ctx, t) || has_scoped_var(ctx, u),
+        Tm::App1(_, _, _, t) => has_scoped_var(ctx, t),
     }
 }
 
@@ -463,22 +468,22 @@ fn has_univ_var(ctx: &Ctx, t: &Tm) -> bool {
 /// the edges of its subterms.
 fn edges_tm(ctx: &Ctx, t: &Tm, out: &mut Vec<(Sort2, Sort2)>) {
     match t {
-        Tm::Var(_, _) | Tm::Lit(_) => {}
+        Tm::Var(_, _) | Tm::Const(_, _) | Tm::Lit(_, _) => {}
         Tm::Read(elem, sq, ix) => {
-            if has_univ_var(ctx, ix) {
+            if has_scoped_var(ctx, ix) {
                 out.push((Sort2::usize_s(), elem.clone()));
             }
             edges_tm(ctx, sq, out);
             edges_tm(ctx, ix, out);
         }
         Tm::Len(sq) => {
-            if has_univ_var(ctx, sq) {
+            if has_scoped_var(ctx, sq) {
                 out.push((sq.sort_of(), Sort2::usize_s()));
             }
             edges_tm(ctx, sq, out);
         }
         Tm::Cast(to, t) => {
-            if has_univ_var(ctx, t) {
+            if has_scoped_var(ctx, t) {
                 out.push((t.sort_of(), to.clone()));
             }
             edges_tm(ctx, t, out);
@@ -489,7 +494,7 @@ fn edges_tm(ctx: &Ctx, t: &Tm, out: &mut Vec<(Sort2, Sort2)>) {
             edges_tm(ctx, u, out);
         }
         Tm::App1(arg, res, _, t) => {
-            if has_univ_var(ctx, t) {
+            if has_scoped_var(ctx, t) {
                 out.push((arg.clone(), res.clone()));
             }
             edges_tm(ctx, t, out);
@@ -504,7 +509,7 @@ fn edges_atom(ctx: &Ctx, a: &Atom, out: &mut Vec<(Sort2, Sort2)>) {
             edges_tm(ctx, t, out);
             edges_tm(ctx, u, out);
         }
-        Atom::QFree => {}
+        Atom::QFree(_) => {}
     }
 }
 
@@ -711,9 +716,28 @@ fn write_tm(t: &Tm, out: &mut String) {
             out.push_str(&i.to_string());
             out.push(')');
         }
-        Tm::Lit(s) => {
+        Tm::Const(s, id) => {
+            out.push_str("(c ");
+            write_sort(s, out);
+            out.push(' ');
+            out.push_str(&id.to_string());
+            out.push(')');
+        }
+        Tm::Lit(s, value) => {
             out.push_str("(l ");
             write_sort(s, out);
+            match value {
+                ScalarValue::Int(value) => {
+                    out.push_str(" (i ");
+                    out.push_str(&value.to_string());
+                    out.push(')');
+                }
+                ScalarValue::Bool(value) => {
+                    out.push_str(" (b ");
+                    out.push_str(if *value { "1" } else { "0" });
+                    out.push(')');
+                }
+            }
             out.push(')');
         }
         Tm::Read(elem, sq, ix) => {
@@ -776,7 +800,11 @@ fn write_atom(a: &Atom, out: &mut String) {
             write_tm(u, out);
             out.push(')');
         }
-        Atom::QFree => out.push_str("(qf)"),
+        Atom::QFree(id) => {
+            out.push_str("(qf ");
+            out.push_str(&id.to_string());
+            out.push(')');
+        }
     }
 }
 
@@ -841,7 +869,7 @@ fn write_frm(phi: &Frm, out: &mut String) {
 /// sort := (m WIDTH) | (s sort) | (o NAT)
 /// tm   := (v sort INT) | (l sort) | (rd sort TM TM) | (ln TM)
 ///       | (ct sort TM) | (ix TM INT) | (ml TM TM) | (a1 sort sort NAT TM)
-/// atom := (r REL TM TM) | (qf)
+/// atom := (r REL TM TM) | (qf NAT)
 /// frm  := (at ATOM) | (ng FRM) | (cj FRM FRM) | (dj FRM FRM)
 ///       | (im FRM FRM) | (al sort FRM) | (ex sort FRM)
 /// ```
@@ -945,7 +973,25 @@ impl Parser<'_> {
                 let s = self.sort()?;
                 Tm::Var(s, self.int()?)
             }
-            "l" => Tm::Lit(self.sort()?),
+            "c" => {
+                let sort = self.sort()?;
+                Tm::Const(sort, self.int()?)
+            }
+            "l" => {
+                let sort = self.sort()?;
+                let value_tag = self.open()?;
+                let value = match value_tag.as_str() {
+                    "i" => ScalarValue::Int(self.int()?),
+                    "b" => match self.int::<u8>()? {
+                        0 => ScalarValue::Bool(false),
+                        1 => ScalarValue::Bool(true),
+                        other => return Err(format!("bad boolean literal `{other}`")),
+                    },
+                    other => return Err(format!("bad literal tag `{other}`")),
+                };
+                self.expect(")")?;
+                Tm::Lit(sort, value)
+            }
             "rd" => {
                 let elem = self.sort()?;
                 let sq = self.tm()?;
@@ -987,7 +1033,7 @@ impl Parser<'_> {
                 let u = self.tm()?;
                 Atom::Rel(r, t, u)
             }
-            "qf" => Atom::QFree,
+            "qf" => Atom::QFree(self.int()?),
             other => return Err(format!("bad atom tag `{other}`")),
         };
         self.expect(")")?;
@@ -1045,7 +1091,7 @@ mod tests {
     /// Example 1 — nested reads `a[a[i]]` (`a : SeqS usize`): the E2 self-loop
     /// `usize → usize`. Expected: REJECT (a `usize`-cycle).
     fn ex_self_loop() -> Frm {
-        let a_seq = || Tm::Lit(Sort2::Seq(Box::new(usize_s())));
+        let a_seq = || Tm::Const(Sort2::Seq(Box::new(usize_s())), 0);
         let inner = Tm::Read(
             usize_s(),
             Box::new(a_seq()),
@@ -1063,8 +1109,8 @@ mod tests {
     /// rejection is purely the graph cycle. Expected: REJECT.
     fn ex_cast_cycle() -> Frm {
         let u64s = Sort2::Mach(Mach::U64);
-        let a_seq = Tm::Lit(Sort2::Seq(Box::new(u64s.clone())));
-        let b_seq = Tm::Lit(Sort2::Seq(Box::new(u64s.clone())));
+        let a_seq = Tm::Const(Sort2::Seq(Box::new(u64s.clone())), 0);
+        let b_seq = Tm::Const(Sort2::Seq(Box::new(u64s.clone())), 1);
         let ai = Tm::Read(
             u64s.clone(),
             Box::new(a_seq),
@@ -1106,7 +1152,7 @@ mod tests {
     /// `usize → u32` only, acyclic. Expected: ADMIT.
     fn ex_sortedness() -> Frm {
         let u32s = Sort2::Mach(Mach::U32);
-        let a_seq = || Tm::Lit(Sort2::Seq(Box::new(u32s.clone())));
+        let a_seq = || Tm::Const(Sort2::Seq(Box::new(u32s.clone())), 0);
         let i = Tm::Var(usize_s(), 1);
         let j = Tm::Var(usize_s(), 0);
         let hyp = Frm::Atom(Atom::Rel(Rel::Le, i.clone(), j.clone()));
@@ -1158,10 +1204,10 @@ mod tests {
 
     #[test]
     fn seq_binder_is_seq_quantifier() {
-        // `∀ x : SeqS u32. (qfree)` — a binder over a sequence sort, the (R1) rejection.
+        // `∀ x : SeqS u32. qfree#0` — a binder over a sequence sort, the (R1) rejection.
         let phi = Frm::All(
             Sort2::Seq(Box::new(Sort2::Mach(Mach::U32))),
-            Box::new(Frm::Atom(Atom::QFree)),
+            Box::new(Frm::Atom(Atom::QFree(0))),
         );
         match classify(&phi) {
             Verdict::Rejected(RejectReason::SeqQuantifier { sort }) => {
@@ -1172,11 +1218,38 @@ mod tests {
     }
 
     #[test]
+    fn existential_function_flow_closes_the_skolem_cycle() {
+        let source = Sort2::Opaque(40);
+        let target = Sort2::Opaque(41);
+        let formula = Frm::All(
+            source.clone(),
+            Box::new(Frm::Ex(
+                target.clone(),
+                Box::new(Frm::Atom(Atom::Rel(
+                    Rel::Eq,
+                    Tm::App1(
+                        target.clone(),
+                        source.clone(),
+                        0,
+                        Box::new(Tm::Var(target, 0)),
+                    ),
+                    Tm::Var(source, 1),
+                ))),
+            )),
+        );
+
+        assert!(matches!(
+            classify(&formula),
+            Verdict::Rejected(RejectReason::SortGraphCycle { .. })
+        ));
+    }
+
+    #[test]
     fn mul_over_bound_var_is_index_grammar() {
         // `∀ i : usize. a[(i * i)] = a[(i * i)]` — a bound index var under `mul`, the
         // (R2) rejection with no graph-cycle witness.
         let u32s = Sort2::Mach(Mach::U32);
-        let a_seq = || Tm::Lit(Sort2::Seq(Box::new(u32s.clone())));
+        let a_seq = || Tm::Const(Sort2::Seq(Box::new(u32s.clone())), 0);
         let prod = Tm::Mul(
             Box::new(Tm::Var(usize_s(), 0)),
             Box::new(Tm::Var(usize_s(), 0)),
@@ -1212,16 +1285,16 @@ mod tests {
     fn wire_qfree_and_all_term_forms_round_trip() {
         // A formula exercising every Tm/Atom/Frm constructor at least once.
         let u64s = Sort2::Mach(Mach::U64);
-        let a_seq = Tm::Lit(Sort2::Seq(Box::new(u64s.clone())));
+        let a_seq = Tm::Const(Sort2::Seq(Box::new(u64s.clone())), 0);
         let inner = Tm::IdxOp(Box::new(Tm::Var(usize_s(), 0)), -3);
         let app = Tm::App1(usize_s(), u64s.clone(), 7, Box::new(inner));
         let rd = Tm::Read(u64s.clone(), Box::new(a_seq), Box::new(app));
-        let ln = Tm::Len(Box::new(Tm::Lit(Sort2::Seq(Box::new(u64s.clone())))));
+        let ln = Tm::Len(Box::new(Tm::Const(Sort2::Seq(Box::new(u64s.clone())), 0)));
         let phi = Frm::Ex(
             usize_s(),
             Box::new(Frm::Conj(
                 Box::new(Frm::Atom(Atom::Rel(Rel::Ne, rd, ln))),
-                Box::new(Frm::Neg(Box::new(Frm::Atom(Atom::QFree)))),
+                Box::new(Frm::Neg(Box::new(Frm::Atom(Atom::QFree(11))))),
             )),
         );
         let wire = to_wire(&phi);

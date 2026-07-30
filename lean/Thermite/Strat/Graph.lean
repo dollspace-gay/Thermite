@@ -12,7 +12,7 @@
   * **E1 (alternation):** `S → T` for every existential binder of sort `T` in the scope
     of a universal binder of sort `S`.
   * **E2 (function flow):** `S → T` for every function occurrence `g : … S … → T`
-    whose `S`-position argument contains a universally bound variable — including
+    whose `S`-position argument contains a bound variable — including
     `Read : SeqS T × usize → T` (edge `usize → T`), `Cast` (edge `from → to`), `Len`
     (edge `SeqS T → usize`, inert), and declared spec fns (`app1`, edge `arg → res`).
 
@@ -201,40 +201,38 @@ theorem acyclic_iff_no_cycle {G : Graph} (hwf : Wf G) : acyclic G = true ↔ ¬ 
     A typing context `ctx` records, per de Bruijn binder level (head = innermost), whether
     the binder is universal and its sort. -/
 
-/-- Is de Bruijn index `i` bound by a universal binder in `ctx`? -/
-def varUniv (ctx : List (Bool × Sort₂)) (i : Nat) : Bool :=
-  match ctx[i]? with
-  | some (u, _) => u
-  | none        => false
-
-/-- Does a term mention a universally bound variable? -/
-def hasUnivVar (ctx : List (Bool × Sort₂)) : Tm → Bool
-  | .var _ i      => varUniv ctx i
-  | .lit _        => false
-  | .read _ sq ix => hasUnivVar ctx sq || hasUnivVar ctx ix
-  | .len sq       => hasUnivVar ctx sq
-  | .cast _ t     => hasUnivVar ctx t
-  | .idxOp t _    => hasUnivVar ctx t
-  | .mul t u      => hasUnivVar ctx t || hasUnivVar ctx u
-  | .app1 _ _ _ t => hasUnivVar ctx t
+/-- Does a term mention a variable bound by the current prefix? Existential
+    occurrences count too: after Skolemization they can carry an earlier
+    universal dependency through the surrounding function. -/
+def hasScopedVar (ctx : List (Bool × Sort₂)) : Tm → Bool
+  | .var _ i      => decide (i < ctx.length)
+  | .const _ _    => false
+  | .lit _ _      => false
+  | .read _ sq ix => hasScopedVar ctx sq || hasScopedVar ctx ix
+  | .len sq       => hasScopedVar ctx sq
+  | .cast _ t     => hasScopedVar ctx t
+  | .idxOp t _    => hasScopedVar ctx t
+  | .mul t u      => hasScopedVar ctx t || hasScopedVar ctx u
+  | .app1 _ _ _ t => hasScopedVar ctx t
 
 /-- The E2 edges contributed by a term: a function occurrence whose `S`-position argument
     contains a universally bound variable, plus the edges of its subterms. -/
 def edgesTm (ctx : List (Bool × Sort₂)) : Tm → List (Sort₂ × Sort₂)
   | .var _ _      => []
-  | .lit _        => []
+  | .const _ _    => []
+  | .lit _ _      => []
   | .read elem sq ix =>
-      (if hasUnivVar ctx ix then [(usizeS, elem)] else []) ++ edgesTm ctx sq ++ edgesTm ctx ix
-  | .len sq       => (if hasUnivVar ctx sq then [(sq.sortOf, usizeS)] else []) ++ edgesTm ctx sq
-  | .cast to t    => (if hasUnivVar ctx t then [(t.sortOf, to)] else []) ++ edgesTm ctx t
+      (if hasScopedVar ctx ix then [(usizeS, elem)] else []) ++ edgesTm ctx sq ++ edgesTm ctx ix
+  | .len sq       => (if hasScopedVar ctx sq then [(sq.sortOf, usizeS)] else []) ++ edgesTm ctx sq
+  | .cast to t    => (if hasScopedVar ctx t then [(t.sortOf, to)] else []) ++ edgesTm ctx t
   | .idxOp t _    => edgesTm ctx t
   | .mul t u      => edgesTm ctx t ++ edgesTm ctx u
-  | .app1 arg res _ t => (if hasUnivVar ctx t then [(arg, res)] else []) ++ edgesTm ctx t
+  | .app1 arg res _ t => (if hasScopedVar ctx t then [(arg, res)] else []) ++ edgesTm ctx t
 
 /-- The E2 edges contributed by an atom (the `qfree` leaf is opaque — no sorts/edges). -/
 def edgesAtom (ctx : List (Bool × Sort₂)) : Atom → List (Sort₂ × Sort₂)
   | .rel _ t u => edgesTm ctx t ++ edgesTm ctx u
-  | .qfree _   => []
+  | .qfree _ _ => []
 
 /-- The universal sorts currently in scope. -/
 def univSorts (ctx : List (Bool × Sort₂)) : List Sort₂ :=

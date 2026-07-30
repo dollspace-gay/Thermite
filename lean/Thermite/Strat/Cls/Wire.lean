@@ -24,13 +24,14 @@
   - sort := `(m WIDTH)` | `(s SORT)` | `(o NAT)`   (WIDTH ∈ u8 u16 u32 u64 usize bool)
   - tm   := `(v SORT INT)` | `(l SORT)` | `(rd SORT TM TM)` | `(ln TM)`
           | `(ct SORT TM)` | `(ix TM INT)` | `(ml TM TM)` | `(a1 SORT SORT NAT TM)`
-  - atom := `(r REL TM TM)` | `(qf)`               (REL ∈ eq ne lt le gt ge)
+  - atom := `(r REL TM TM)` | `(qf NAT)`           (REL ∈ eq ne lt le gt ge)
   - frm  := `(at ATOM)` | `(ng FRM)` | `(cj FRM FRM)` | `(dj FRM FRM)`
           | `(im FRM FRM)` | `(al SORT FRM)` | `(ex SORT FRM)`
 
-  The `(qf)` leaf maps to `Atom.qfree` carrying the canonical placeholder
-  `Thermite.Expr.boolLit true` — the classifier never inspects a `qfree`'s payload
-  (it is the opaque §1.2 `QFree φ₀` leaf), so any closed `Expr` is faithful.
+  A `(qf id)` leaf maps to a distinct closed `Atom.qfree` placeholder. The
+  classifier never inspects the payload, but retaining the ID catches wire
+  round-trip mistakes and mirrors the production bridge's stable source-leaf
+  identity.
 -/
 import Thermite.Strat.Fragment
 
@@ -121,9 +122,24 @@ partial def parseTm : List String → Option (Tm × List String)
         | some n, ")" :: r3 => some (Tm.var s n, r3)
         | _, _ => none
       | _ => none
+    | "c" =>
+      match parseSort rest with
+      | some (s, i :: r2) =>
+        match i.toNat?, r2 with
+        | some n, ")" :: r3 => some (Tm.const s n, r3)
+        | _, _ => none
+      | _ => none
     | "l" =>
       match parseSort rest with
-      | some (s, ")" :: r3) => some (Tm.lit s, r3)
+      | some (s, "(" :: kind :: value :: ")" :: ")" :: r3) =>
+        match kind with
+        | "i" => value.toInt?.map fun n => (Tm.lit s (.int n), r3)
+        | "b" =>
+          match value with
+          | "0" => some (Tm.lit s (.bool false), r3)
+          | "1" => some (Tm.lit s (.bool true), r3)
+          | _ => none
+        | _ => none
       | _ => none
     | "rd" =>
       match parseSort rest with
@@ -194,7 +210,9 @@ partial def parseAtom : List String → Option (Atom × List String)
       | _ => none
     | "qf" =>
       match rest with
-      | ")" :: r2 => some (Atom.qfree (Thermite.Expr.boolLit true), r2)
+      | id :: ")" :: r2 =>
+        id.toNat?.map fun n =>
+          (Atom.qfree n (Thermite.Expr.boolVar s!"__s2_qfree_{n}"), r2)
       | _ => none
     | _ => none
   | _ => none

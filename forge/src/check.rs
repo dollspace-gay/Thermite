@@ -1081,7 +1081,7 @@ pub fn check_file_with_engine(
     // nlsat/forge routes; the v1 Verus path and the lean/auto paths are untouched, so
     // the v1 corpus (which carries no `@bv` tag) stays byte-identical.
     if selection == EngineSelection::Bv {
-        return Ok(bv_check(base, &parsed.program));
+        return Ok(bv_check(base, &parsed.program, true));
     }
 
     let lean = crate::engine::LeanEngine::new(parsed.program.clone(), lean_package_root());
@@ -1186,6 +1186,16 @@ pub fn check_file_with_engine(
                 .any(|c| c.item == name && c.level == Level::L3 && c.reject.is_none())
         },
     );
+    // Automatic routing is per clause. A tagged clause takes the checked
+    // bit-vector route after the ordinary Verus/Lean pass; untagged items remain
+    // untouched by `bv_check`. Explicit `--engine verus` remains available as a
+    // diagnostic override.
+    if selection == EngineSelection::Auto {
+        if program_has_bv_tag(&parsed.program) {
+            out = bv_check(out, &parsed.program, false);
+        }
+        out = epr_check(out, &parsed.program);
+    }
     Ok(out)
 }
 
@@ -1625,7 +1635,7 @@ fn nlsat_realwitness_cert(
 /// non-`@bv`, non-relaxable clauses (`BvUntaggedUnsupported`) and silently DOWNGRADE a
 /// L3 function to L0 in the audit — a faithfulness bug. The v1 corpus carries no
 /// `@bv` tag, so its goldens are byte-identical.
-fn bv_check(base: Vec<Certificate>, program: &Program) -> Vec<Certificate> {
+fn bv_check(base: Vec<Certificate>, program: &Program, include_epr_only: bool) -> Vec<Certificate> {
     let bv = crate::bitvector::BitVectorEngine::new();
     let nlsat = crate::engine::NlsatEngine::new(program.clone());
     // The reachable `struct`/`enum` decls the bv-semantics mutation battery (REQ-4 /
@@ -1640,12 +1650,16 @@ fn bv_check(base: Vec<Certificate>, program: &Program) -> Vec<Certificate> {
     let mut out = Vec::with_capacity(base.len());
     for cert in base {
         match crate::lean_export::find_item(program, &cert.item) {
-            Some(Item::Fn(f)) if fn_has_bv_tag(f) => {
+            Some(Item::Fn(f))
+                if fn_has_bv_tag(f) || (include_epr_only && fn_has_epr_clause(program, f)) =>
+            {
                 let invariant_tags = fn_bv_invariant_tags(f);
                 let base_proved = cert.level == Level::L3 && cert.reject.is_none();
-                let rebuilt = if fn_has_bv_ens_tag(f) && (invariant_tags.is_empty() || base_proved)
+                let has_epr = fn_has_epr_clause(program, f);
+                let rebuilt = if (fn_has_bv_ens_tag(f) || (include_epr_only && has_epr))
+                    && (invariant_tags.is_empty() || base_proved)
                 {
-                    bv_fn_cert(&bv, &nlsat, f, &cert, &adt_deps)
+                    bv_fn_cert(&bv, &nlsat, program, f, &cert, &adt_deps)
                 } else {
                     // The base Verus result includes initiation and preservation
                     // for invariants lowered to fixed-width operations.
@@ -1709,6 +1723,372 @@ pub fn program_has_bv_tag(program: &Program) -> bool {
         Item::Forge(thermite_syntax::ForgeItem::Lemma(l)) => lemma_has_bv_tag(l),
         _ => false,
     })
+}
+
+/// Apply the admitted S₂.0 reconstruction overlay to ordinary automatic
+/// routing. Functions that carry a `@bv` clause are skipped here because
+/// [`bv_fn_cert`] already dispatches their untagged EPR clauses in the same
+/// hybrid pass. For an EPR-only function, every admitted relation/sequence
+/// clause is reconstructed even when Verus happened to prove the item.
+fn epr_check(base: Vec<Certificate>, program: &Program) -> Vec<Certificate> {
+    let mut out = Vec::with_capacity(base.len());
+    for cert in base {
+        let Some(Item::Fn(function)) = crate::lean_export::find_item(program, &cert.item) else {
+            out.push(cert);
+            continue;
+        };
+        if fn_has_bv_tag(function) {
+            out.push(cert);
+            continue;
+        }
+
+        let mut reconstructed = Vec::new();
+        let mut terminal = None;
+        for (index, clause) in function.contract.ens.iter().enumerate() {
+            let Some(outcome) = epr_clause_outcome(program, function, index, clause) else {
+                continue;
+            };
+            match outcome {
+                crate::epr_reconstruct::EprOutcome::Proved(evidence) => {
+                    reconstructed.push(epr_proved_obl(
+                        &function.name,
+                        index,
+                        evidence,
+                        &epr_attribution(),
+                    ));
+                }
+                crate::epr_reconstruct::EprOutcome::Counterexample(model) => {
+                    terminal = Some(epr_counterexample_cert(
+                        &function.name,
+                        &cert.effects,
+                        function.slag.is_some(),
+                        index,
+                        &model,
+                        &epr_countermodel_attribution(),
+                    ));
+                    break;
+                }
+                crate::epr_reconstruct::EprOutcome::Timeout(reason) => {
+                    terminal = Some(epr_timeout_cert(
+                        &function.name,
+                        &cert.effects,
+                        function.slag.is_some(),
+                        index,
+                        &reason,
+                        &epr_undecided_attribution(),
+                    ));
+                    break;
+                }
+                crate::epr_reconstruct::EprOutcome::Failed(reason) => {
+                    terminal = Some(epr_failure_cert(
+                        &function.name,
+                        &cert.effects,
+                        function.slag.is_some(),
+                        index,
+                        &reason,
+                        &epr_undecided_attribution(),
+                    ));
+                    break;
+                }
+            }
+        }
+        if let Some(terminal) = terminal {
+            out.push(terminal);
+            continue;
+        }
+        if reconstructed.is_empty() {
+            out.push(cert);
+            continue;
+        }
+
+        let every_clause_reconstructed = reconstructed.len() == function.contract.ens.len();
+        if every_clause_reconstructed {
+            // A base-engine counterexample contradicting a kernel-checked EPR proof
+            // is a soundness alarm, not permission to silently replace either
+            // verdict. Keep it as a named, non-certifying result.
+            if cert.reject.as_ref().map(|reject| reject.cause.as_str()) == Some("Counterexample") {
+                out.push(epr_failure_cert(
+                    &function.name,
+                    &cert.effects,
+                    function.slag.is_some(),
+                    0,
+                    "EprVerifierDisagreement: the base engine reported a counterexample \
+                     while Lean kernel replay proved every admitted S₂.0 clause",
+                    &epr_undecided_attribution(),
+                ));
+                continue;
+            }
+            out.push(
+                Certificate::new(
+                    function.name.clone(),
+                    Level::L4,
+                    cert.effects.clone(),
+                    0,
+                    reconstructed,
+                )
+                .graduate_triage_clean()
+                .with_engine_attribution(epr_attribution()),
+            );
+        } else {
+            // EPR migrated the relation/sequence clauses, but the remaining
+            // clauses retain the base engine's verdict and item-level rung.
+            let mut mixed = cert;
+            mixed.obligations.extend(reconstructed);
+            out.push(mixed);
+        }
+    }
+    out
+}
+
+/// Whether at least one clause is admitted by the canonical S₂.0 IR and needs
+/// relation/sequence reconstruction.
+fn fn_has_epr_clause(program: &Program, function: &thermite_syntax::FnItem) -> bool {
+    function
+        .contract
+        .ens
+        .iter()
+        .enumerate()
+        .any(|(index, clause)| {
+            matches!(
+                epr_candidate(program, function, index, clause),
+                Ok(Some(_)) | Err(_)
+            )
+        })
+}
+
+/// Build the exact canonical record used by routing and replay.
+///
+/// Result-bearing clauses are first grounded with the function body, matching
+/// the existing BV validity route. If grounding is impossible, the raw clause
+/// is inspected only to determine whether this was an admitted EPR obligation;
+/// such a case becomes a named reconstruction failure instead of disappearing
+/// as `Unsupported`.
+fn epr_candidate(
+    program: &Program,
+    function: &thermite_syntax::FnItem,
+    index: usize,
+    clause: &thermite_syntax::Clause,
+) -> Result<Option<thermite_spec::S2Recon>, String> {
+    let address = thermite_spec::SourceAddress {
+        item: function.name.clone(),
+        clause: format!("ens#{index}"),
+    };
+    let grounded_expr = match ground_result_in_clause(function, &clause.expr) {
+        Ok(expression) => expression,
+        Err(reason) => {
+            let raw = thermite_spec::s2_recon_from_obligation(
+                program,
+                function,
+                &function.contract.req,
+                clause,
+                address,
+            )
+            .ok();
+            if raw.as_ref().is_some_and(epr_recon_is_target) {
+                return Err(format!("EprBodyGrounding: {reason}"));
+            }
+            return Ok(None);
+        }
+    };
+    let mut grounded_clause = clause.clone();
+    grounded_clause.expr = grounded_expr;
+    let recon = match thermite_spec::s2_recon_from_obligation(
+        program,
+        function,
+        &function.contract.req,
+        &grounded_clause,
+        address,
+    ) {
+        Ok(recon) => recon,
+        // No canonical IR means the source construct is outside S₂.0; routing
+        // cannot call it admitted and therefore does not fabricate an EPR
+        // `Unsupported` result.
+        Err(_) => return Ok(None),
+    };
+    Ok(epr_recon_is_target(&recon).then_some(recon))
+}
+
+fn epr_recon_is_target(recon: &thermite_spec::S2Recon) -> bool {
+    matches!(
+        thermite_spec::classifier::classify(&recon.formula),
+        thermite_spec::classifier::Verdict::Admitted
+    ) && crate::epr_reconstruct::needs_reconstruction(&recon.formula)
+}
+
+fn epr_clause_outcome(
+    program: &Program,
+    function: &thermite_syntax::FnItem,
+    index: usize,
+    clause: &thermite_syntax::Clause,
+) -> Option<crate::epr_reconstruct::EprOutcome> {
+    match epr_candidate(program, function, index, clause) {
+        Ok(Some(recon)) => Some(crate::epr_reconstruct::reconstruct(
+            &recon,
+            function,
+            &function.contract.req,
+            clause,
+        )),
+        Ok(None) => None,
+        Err(reason) => Some(crate::epr_reconstruct::EprOutcome::Failed(reason)),
+    }
+}
+
+fn epr_attribution() -> crate::engine::EngineAttribution {
+    crate::engine::EngineAttribution {
+        engine: crate::engine::EngineName::Epr.tag().to_string(),
+        trust_profile: crate::engine::epr_kernel_checked_trust_profile().items,
+    }
+}
+
+fn epr_countermodel_attribution() -> crate::engine::EngineAttribution {
+    crate::engine::EngineAttribution {
+        engine: crate::engine::EngineName::Epr.tag().to_string(),
+        trust_profile: vec![
+            "finite S2Recon ground assignment checked against the exact emitted CNF and \
+             checked ground-theory clauses"
+                .to_string(),
+        ],
+    }
+}
+
+fn epr_undecided_attribution() -> crate::engine::EngineAttribution {
+    crate::engine::EngineAttribution {
+        engine: crate::engine::EngineName::Epr.tag().to_string(),
+        trust_profile: Vec::new(),
+    }
+}
+
+fn epr_proved_obl(
+    item: &str,
+    index: usize,
+    evidence: crate::lean_smt_export::ReconstructionEvidence,
+    attribution: &crate::engine::EngineAttribution,
+) -> ObligationResult {
+    ObligationResult::discharged(format!(
+        "{item}::ens#{index}: admitted S₂.0 relation/sequence clause reconstructed from \
+         canonical IR; Lean checked the actual req → clause theorem (L4 caged rung)"
+    ))
+    .with_clause_attribution(
+        attribution.engine.clone(),
+        attribution.trust_profile.clone(),
+        crate::verdict::CertVerdict::Proved,
+    )
+    .with_reconstruction(evidence)
+}
+
+fn epr_counterexample_cert(
+    item: &str,
+    effects: &[String],
+    slag: bool,
+    index: usize,
+    model: &crate::epr_reconstruct::FiniteCountermodel,
+    attribution: &crate::engine::EngineAttribution,
+) -> Certificate {
+    let detail = format!(
+        "the admitted S₂.0 route found a finite countermodel for `{item}`'s clause \
+         `ens#{index}`: {}",
+        model.diagnostic()
+    );
+    let witness =
+        ObligationResult::failed(format!("{item}#ens#{index}"), None, Some(detail.clone()));
+    let verdict = crate::verdict::CertVerdict::Counterexample {
+        obligations: vec![witness.clone()],
+    };
+    let mut cert = Certificate::rejected(
+        item.to_string(),
+        effects.to_vec(),
+        slag,
+        RejectReason {
+            cause: "EprCounterexample".to_string(),
+            detail,
+        },
+    );
+    cert.obligations = vec![witness.with_clause_attribution(
+        attribution.engine.clone(),
+        attribution.trust_profile.clone(),
+        verdict,
+    )];
+    cert.with_engine_attribution(attribution.clone())
+}
+
+fn epr_timeout_cert(
+    item: &str,
+    effects: &[String],
+    slag: bool,
+    index: usize,
+    reason: &str,
+    attribution: &crate::engine::EngineAttribution,
+) -> Certificate {
+    let kernel_budget = reason.starts_with("EprKernelBudget:");
+    let verdict = if kernel_budget {
+        crate::verdict::CertVerdict::KernelBudget {
+            detail: reason.to_string(),
+        }
+    } else {
+        crate::verdict::CertVerdict::Timeout {
+            detail: reason.to_string(),
+        }
+    };
+    let cause = if kernel_budget {
+        "EprKernelBudget"
+    } else {
+        "EprSolverTimeout"
+    };
+    let detail = format!("`{item}`'s admitted S₂.0 clause `ens#{index}` did not certify: {reason}");
+    let obligation =
+        ObligationResult::failed(format!("{item}#ens#{index}"), None, Some(detail.clone()))
+            .with_clause_attribution(
+                attribution.engine.clone(),
+                attribution.trust_profile.clone(),
+                verdict,
+            );
+    let mut cert = Certificate::rejected(
+        item.to_string(),
+        effects.to_vec(),
+        slag,
+        RejectReason {
+            cause: cause.to_string(),
+            detail,
+        },
+    );
+    cert.obligations = vec![obligation];
+    cert.with_engine_attribution(attribution.clone())
+}
+
+fn epr_failure_cert(
+    item: &str,
+    effects: &[String],
+    slag: bool,
+    index: usize,
+    reason: &str,
+    attribution: &crate::engine::EngineAttribution,
+) -> Certificate {
+    let cause = reason
+        .split_once(':')
+        .map_or("EprReconstructionFailure", |(cause, _)| cause)
+        .to_string();
+    let detail = format!(
+        "`{item}`'s admitted S₂.0 clause `ens#{index}` failed checked reconstruction: \
+         {reason}"
+    );
+    let obligation =
+        ObligationResult::failed(format!("{item}#ens#{index}"), None, Some(detail.clone()))
+            .with_clause_attribution(
+                attribution.engine.clone(),
+                attribution.trust_profile.clone(),
+                crate::verdict::CertVerdict::Stuck {
+                    goals: vec![format!("{item}::ens#{index}")],
+                    hint: Some(reason.to_string()),
+                },
+            );
+    let mut cert = Certificate::rejected(
+        item.to_string(),
+        effects.to_vec(),
+        slag,
+        RejectReason { cause, detail },
+    );
+    cert.obligations = vec![obligation];
+    cert.with_engine_attribution(attribution.clone())
 }
 
 /// Does this function contain any tagged postcondition or invariant?
@@ -1878,6 +2258,7 @@ fn ground_result_in_clause(
 fn bv_fn_cert(
     bv: &crate::bitvector::BitVectorEngine,
     nlsat: &crate::engine::NlsatEngine,
+    program: &Program,
     f: &thermite_syntax::FnItem,
     base: &Certificate,
     adt_deps: &[Item],
@@ -1982,9 +2363,36 @@ fn bv_fn_cert(
                 }
             }
         } else {
-            // Untagged → the unbounded side: nlsat when the clause is a relaxable
-            // polynomial, else a skip (this route lowers only the bit-vector
-            // clauses and the relaxable unbounded clauses).
+            // Untagged admitted S₂.0 relation/sequence clauses use the checked
+            // finite-ground reconstruction route. This branch comes before the
+            // scalar nlsat fallback so the same canonical IR controls
+            // classification, solver emission, and Lean replay.
+            if let Some(outcome) = epr_clause_outcome(program, f, k, ens) {
+                match outcome {
+                    crate::epr_reconstruct::EprOutcome::Proved(evidence) => {
+                        let attr = epr_attribution();
+                        obligations.push(epr_proved_obl(&f.name, k, evidence, &attr));
+                        item_level = item_level.min(Level::L4);
+                        item_attr.get_or_insert(attr);
+                        continue;
+                    }
+                    crate::epr_reconstruct::EprOutcome::Counterexample(model) => {
+                        let attr = epr_countermodel_attribution();
+                        return epr_counterexample_cert(&f.name, &effects, slag, k, &model, &attr);
+                    }
+                    crate::epr_reconstruct::EprOutcome::Timeout(reason) => {
+                        let attr = epr_undecided_attribution();
+                        return epr_timeout_cert(&f.name, &effects, slag, k, &reason, &attr);
+                    }
+                    crate::epr_reconstruct::EprOutcome::Failed(reason) => {
+                        let attr = epr_undecided_attribution();
+                        return epr_failure_cert(&f.name, &effects, slag, k, &reason, &attr);
+                    }
+                }
+            }
+
+            // Other untagged clauses use the unbounded side: nlsat when the
+            // clause is a relaxable polynomial, else a named honest skip.
             let synth = single_ens_fn(f, ens);
             if crate::relax::classify_fn(&synth).is_relaxable() {
                 match nlsat.discharge_relax(&synth) {
@@ -7262,7 +7670,7 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
             0,
             vec![],
         );
-        bv_fn_cert(&bv, &nlsat, &f, &base, &[])
+        bv_fn_cert(&bv, &nlsat, &parsed.program, &f, &base, &[])
     }
 
     /// AC-6: a `@bv64(nowrap)` clause whose body can overflow fails its side obligation
@@ -7417,5 +7825,113 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
             .as_ref()
             .and_then(|shadow| shadow.nowrap_obligation.as_deref())
             .is_some_and(|text| text.contains("undecided")));
+    }
+
+    fn epr_route_fixture() -> (Program, Certificate) {
+        let parsed = thermite_syntax::parse(
+            "fn epr_route(xs: Vec<u64>) -> u64\n\
+             req xs.len() > 0\n\
+             ens forall (i : usize) in xs. xs[i] == xs[i]\n\
+             fx pure { 0 }",
+        );
+        assert!(parsed.is_clean(), "fixture must parse: {:?}", parsed.errors);
+        let base = Certificate::rejected(
+            "epr_route",
+            vec!["pure".to_string()],
+            false,
+            RejectReason {
+                cause: "VerusTimeout".to_string(),
+                detail: "fixture: base engine was inconclusive".to_string(),
+            },
+        );
+        (parsed.program, base)
+    }
+
+    fn epr_false_route_fixture() -> (Program, Certificate) {
+        let parsed = thermite_syntax::parse(
+            "fn epr_false(xs: Vec<u64>) -> u64\n\
+             req xs.len() > 0\n\
+             ens forall (i : usize) in xs. xs[i] != xs[i]\n\
+             fx pure { 0 }",
+        );
+        assert!(parsed.is_clean(), "fixture must parse: {:?}", parsed.errors);
+        let base = Certificate::rejected(
+            "epr_false",
+            vec!["pure".to_string()],
+            false,
+            RejectReason {
+                cause: "VerusTimeout".to_string(),
+                detail: "fixture: base engine was inconclusive".to_string(),
+            },
+        );
+        (parsed.program, base)
+    }
+
+    #[test]
+    fn automatic_route_kernel_reconstructs_an_admitted_array_clause() {
+        let (program, base) = epr_route_fixture();
+        let certs = epr_check(vec![base], &program);
+        assert_eq!(certs.len(), 1);
+        let cert = &certs[0];
+        assert_eq!(cert.level, Level::L4);
+        assert!(cert.reject.is_none());
+        let obligation = cert
+            .obligations
+            .first()
+            .expect("the admitted clause produces one obligation");
+        assert_eq!(obligation.engine.as_deref(), Some("epr"));
+        let evidence = obligation
+            .reconstruction
+            .as_ref()
+            .expect("L4 EPR requires checked reconstruction evidence");
+        assert_eq!(evidence.fragment, "s2_recon_v1");
+        assert!(
+            evidence.checker.contains("term-producing LRAT"),
+            "evidence must name the actual checker path: {}",
+            evidence.checker
+        );
+    }
+
+    #[test]
+    fn explicit_bv_route_also_enables_epr_reconstruction() {
+        let (program, base) = epr_route_fixture();
+        let certs = bv_check(vec![base], &program, true);
+        assert_eq!(certs.len(), 1);
+        let cert = &certs[0];
+        assert_eq!(cert.level, Level::L4);
+        assert!(cert.reject.is_none());
+        assert!(cert
+            .obligations
+            .iter()
+            .any(|obligation| obligation.engine.as_deref() == Some("epr")
+                && obligation.reconstruction.is_some()));
+    }
+
+    #[test]
+    fn automatic_route_returns_a_lean_checked_finite_countermodel() {
+        let (program, base) = epr_false_route_fixture();
+        let certs = epr_check(vec![base], &program);
+        assert_eq!(certs.len(), 1);
+        let cert = &certs[0];
+        assert_eq!(cert.level, Level::L0);
+        let reject = cert.reject.as_ref().expect("false clause must reject");
+        assert_eq!(reject.cause, "EprCounterexample");
+        assert!(reject
+            .detail
+            .contains("Lean-checked finite S₂.0 countermodel"));
+        assert!(reject.detail.contains("ground terms="));
+        assert!(
+            reject.detail.len() < 6000,
+            "countermodel diagnostics must stay readable"
+        );
+        let obligation = cert
+            .obligations
+            .first()
+            .expect("counterexample produces a failed obligation");
+        assert_eq!(obligation.engine.as_deref(), Some("epr"));
+        assert!(matches!(
+            obligation.verdict,
+            Some(crate::verdict::CertVerdict::Counterexample { .. })
+        ));
     }
 }

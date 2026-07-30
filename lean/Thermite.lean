@@ -28,3 +28,21 @@ import Thermite.PinReconstruction
 -- Stabilization and the integer-to-real relaxation theorem.
 import Thermite.Stabilize
 import Thermite.Relax
+
+-- Finite EPR reconstruction for admitted S₂.0 relation and sequence clauses.
+import Thermite.Strat.Model
+import Thermite.Strat.Normalize
+import Thermite.Strat.Substitution
+import Thermite.Strat.Skolem
+import Thermite.Strat.Grounding
+import Thermite.Strat.Instantiation
+import Thermite.Strat.GroundReconstruct
+import Thermite.Strat.GroundTheory
+import Thermite.Strat.StructuralInstantiation
+import Thermite.Strat.EprReplay
+import Thermite.PinSubstitutionCapture
+import Thermite.PinSkolemDependencies
+import Thermite.PinGroundingCompleteness
+import Thermite.PinInstantiationOmission
+import Thermite.PinStructuralSkolemScopes
+import Thermite.PinEprReplay

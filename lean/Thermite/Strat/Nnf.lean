@@ -51,7 +51,7 @@ namespace Thermite.Strat.Cls
 /-- Machine sorts — finite by definition. -/
 inductive Mach where
   | u8 | u16 | u32 | u64 | usize | bool
-  deriving DecidableEq, Repr
+  deriving DecidableEq, Repr, Hashable
 
 /-- The stratified sort language: machine sorts, sequences, and user-declared opaque
     nominal sorts (`Key`, `Value`, … identified by a `Nat`). `seq` is never itself a
@@ -60,10 +60,16 @@ inductive Sort₂ where
   | mach   (m : Mach) : Sort₂
   | seq    (s : Sort₂) : Sort₂
   | opaque (k : Nat) : Sort₂
-  deriving DecidableEq, Repr
+  deriving DecidableEq, Repr, Hashable
 
 /-- The `usize` index sort, the workhorse of array-property formulas. -/
 abbrev usizeS : Sort₂ := .mach .usize
+
+/-- Literal values are preserved because reconstruction evaluates ground terms. -/
+inductive ScalarValue where
+  | int  (value : Int)
+  | bool (value : Bool)
+  deriving DecidableEq, Repr, Hashable
 
 /-! ## Terms and atoms (metatheory §1.2)
 
@@ -75,19 +81,21 @@ abbrev usizeS : Sort₂ := .mach .usize
     `app1` is a declared unary spec fn (uninterpreted in S₂; an E2 edge `arg → res`). -/
 inductive Tm where
   | var   (s : Sort₂) (i : Nat) : Tm            -- de Bruijn variable, carries its sort
-  | lit   (s : Sort₂) : Tm                       -- a machine literal (value irrelevant here)
+  | const (s : Sort₂) (id : Nat) : Tm            -- named free source constant
+  | lit   (s : Sort₂) (value : ScalarValue) : Tm -- value-preserving source literal
   | read  (elem : Sort₂) (sq ix : Tm) : Tm      -- sq[ix] : Read SeqS elem × usize → elem
   | len   (sq : Tm) : Tm                          -- sq.len() : SeqS _ → usize
   | cast  (to : Sort₂) (t : Tm) : Tm            -- (t as `to`)
   | idxOp (t : Tm) (k : Int) : Tm                -- t ± literal k  (R2-admissible offset)
   | mul   (t u : Tm) : Tm                         -- a non-linear op (R2-forbidden over idx vars)
   | app1  (arg res : Sort₂) (f : Nat) (a : Tm) : Tm  -- declared unary spec fn
-  deriving DecidableEq, Repr
+  deriving DecidableEq, Repr, Hashable
 
 /-- The sort of a term, read straight off its annotations. -/
 def Tm.sortOf : Tm → Sort₂
   | .var s _      => s
-  | .lit s        => s
+  | .const s _    => s
+  | .lit s _      => s
   | .read elem _ _ => elem
   | .len _        => usizeS
   | .cast to _    => to
@@ -99,14 +107,14 @@ def Tm.sortOf : Tm → Sort₂
     the structural denotation reads them through the atom oracle. -/
 inductive Rel where
   | eq | ne | lt | le | gt | ge
-  deriving DecidableEq, Repr
+  deriving DecidableEq, Repr, Hashable
 
 /-- Atoms: a relation between two terms, or a whole v1 quantifier-free formula embedded
     (opaque to the classifier — it contributes no sorts and no graph edges, exactly as
     the metatheory §1.2 `QFree φ₀` leaf). -/
 inductive Atom where
   | rel   (ρ : Rel) (t u : Tm) : Atom
-  | qfree (e : Thermite.Expr) : Atom
+  | qfree (id : Nat) (e : Thermite.Expr) : Atom
   deriving Repr
 
 /-- The stratified formula language with SORTED binders and `⇒` (eliminated by NNF). -/
@@ -129,7 +137,8 @@ def bumpIdx (c i : Nat) : Nat := if i < c then i else i + 1
     cutoff is constant across the term recursion. -/
 def liftTm (c : Nat) : Tm → Tm
   | .var s i      => .var s (bumpIdx c i)
-  | .lit s        => .lit s
+  | .const s id   => .const s id
+  | .lit s value  => .lit s value
   | .read e sq ix => .read e (liftTm c sq) (liftTm c ix)
   | .len sq       => .len (liftTm c sq)
   | .cast to t    => .cast to (liftTm c t)
@@ -140,7 +149,7 @@ def liftTm (c : Nat) : Tm → Tm
 /-- `lift` on atoms (the `qfree` leaf is carrier-closed, passed through). -/
 def liftAtom (c : Nat) : Atom → Atom
   | .rel ρ t u => .rel ρ (liftTm c t) (liftTm c u)
-  | .qfree e   => .qfree e
+  | .qfree id e => .qfree id e
 
 /-- `lift` on formulas; the cutoff increments under each binder. -/
 def liftFrm (c : Nat) : Frm → Frm
@@ -159,7 +168,8 @@ abbrev Subst := Nat → Tm
 /-- Apply a closing substitution to a term. -/
 def substTm (ρ : Subst) : Tm → Tm
   | .var _ i      => ρ i
-  | .lit s        => .lit s
+  | .const s id   => .const s id
+  | .lit s value  => .lit s value
   | .read e sq ix => .read e (substTm ρ sq) (substTm ρ ix)
   | .len sq       => .len (substTm ρ sq)
   | .cast to t    => .cast to (substTm ρ t)
@@ -170,7 +180,7 @@ def substTm (ρ : Subst) : Tm → Tm
 /-- Apply a closing substitution to an atom. -/
 def substAtom (ρ : Subst) : Atom → Atom
   | .rel r t u => .rel r (substTm ρ t) (substTm ρ u)
-  | .qfree e   => .qfree e
+  | .qfree id e => .qfree id e
 
 /-! ## The structural denotation (§2)
 
@@ -198,7 +208,8 @@ theorem substTm_liftTm (c : Nat) (ρ : Subst) (t : Tm) :
     substTm ρ (liftTm c t) = substTm (fun i => ρ (bumpIdx c i)) t := by
   induction t with
   | var s i => rfl
-  | lit s => rfl
+  | const s id => rfl
+  | lit s value => rfl
   | read e sq ix ihsq ihix => simp [liftTm, substTm, ihsq, ihix]
   | len sq ih => simp [liftTm, substTm, ih]
   | cast to t ih => simp [liftTm, substTm, ih]

@@ -50,7 +50,8 @@ def encName (d i : Nat) : Nat := d - 1 - i
 
 def encTm (d : Nat) : Tm → Tm
   | .var s i      => .var s (encName d i)
-  | .lit s        => .lit s
+  | .const s id   => .const s id
+  | .lit s value  => .lit s value
   | .read e sq ix => .read e (encTm d sq) (encTm d ix)
   | .len sq       => .len (encTm d sq)
   | .cast to t    => .cast to (encTm d t)
@@ -60,7 +61,7 @@ def encTm (d : Nat) : Tm → Tm
 
 def encAtom (d : Nat) : Atom → Atom
   | .rel ρ t u => .rel ρ (encTm d t) (encTm d u)
-  | .qfree e   => .qfree e
+  | .qfree id e => .qfree id e
 
 /-- The reference encoder, depth-indexed. Each binder is named by the current
     depth (its de Bruijn level — the fresh-name discipline) and flagged trigger-free
@@ -87,7 +88,8 @@ def sencode (φ : Frm) : Tok := sencodeAt 0 φ
 
 def wfTm (d : Nat) : Tm → Bool
   | .var _ i      => decide (i < d)
-  | .lit _        => true
+  | .const _ _    => true
+  | .lit _ _      => true
   | .read _ sq ix => wfTm d sq && wfTm d ix
   | .len sq       => wfTm d sq
   | .cast _ t     => wfTm d t
@@ -97,7 +99,7 @@ def wfTm (d : Nat) : Tm → Bool
 
 def wfAtom (d : Nat) : Atom → Bool
   | .rel _ t u => wfTm d t && wfTm d u
-  | .qfree _   => true
+  | .qfree _ _ => true
 
 def wfFrm (d : Nat) : Frm → Bool
   | .atom a   => wfAtom d a

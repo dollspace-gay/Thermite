@@ -42,6 +42,7 @@ mod covenant_eval;
 mod degrade;
 mod effect_wrappers;
 mod engine;
+mod epr_reconstruct;
 mod exec_tv;
 mod forks;
 mod goal_repl;

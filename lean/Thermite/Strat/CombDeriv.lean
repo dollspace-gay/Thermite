@@ -73,12 +73,12 @@ abbrev boolS : Sort₂ := .mach .bool
 
 /-- A closed sequence-of-`elem` term standing for the primary slice `s`. Closed
     (`lit`), so `substTm ρ (seqA elem) = seqA elem`. -/
-def seqA (elem : Sort₂) : Tm := .lit (.seq elem)
+def seqA (elem : Sort₂) : Tm := .const (.seq elem) 0
 
 /-- A closed sequence-of-`elem` term standing for the second slice `b` (only
     `disjoint`/`permutation_of`). Distinct constructor from `seqA` so the two
     slices are syntactically different terms; also closed. -/
-def seqB (elem : Sort₂) : Tm := .idxOp (.lit (.seq elem)) 1
+def seqB (elem : Sort₂) : Tm := .const (.seq elem) 1
 
 /-- The bound `usize` index variable (de Bruijn 0). -/
 def idx0 : Tm := .var usizeS 0
@@ -87,10 +87,10 @@ def idx0 : Tm := .var usizeS 0
 def idx1 : Tm := .var usizeS 1
 /-- A closed `usize` literal standing for the scalar index argument `n`
     (`forall_below`/`forall_from`). -/
-def nLit : Tm := .lit usizeS
+def nLit : Tm := .const usizeS 0
 
 /-- `0 ≤ t` — the lower index bound (`0 <= i` in every `verus_l3` form). -/
-def boundLo (t : Tm) : Atom := .rel .le (.lit usizeS) t
+def boundLo (t : Tm) : Atom := .rel .le (.lit usizeS (.int 0)) t
 /-- `t < (sq).len()` — the upper index bound against a slice term. -/
 def boundHi (sq t : Tm) : Atom := .rel .lt t (.len sq)
 
@@ -100,7 +100,7 @@ def boundHi (sq t : Tm) : Atom := .rel .lt t (.len sq)
     (`Strat/Nnf.lean`); comparing it to the `bool` literal makes a relation atom
     the oracle reads. -/
 def predApp (elem : Sort₂) (f : Nat) (x : Tm) : Atom :=
-  .rel .eq (.app1 elem boolS f x) (.lit boolS)
+  .rel .eq (.app1 elem boolS f x) (.lit boolS (.bool true))
 
 /-- The element `s[i]` of the primary slice. -/
 def readA (elem : Sort₂) (i : Tm) : Tm := .read elem (seqA elem) i
@@ -178,8 +178,8 @@ theorem comb_deriv_forall_in (q : Atom → Bool) (dom : List Tm) (ρ : Subst)
     simp only [hb.1, hb.2] at this
     simpa using this
   · intro h v hv
-    cases hb1 : q (.rel .le (.lit usizeS) v) <;>
-      cases hb2 : q (.rel .lt v (.len (.lit (.seq elem)))) <;>
+    cases hb1 : q (.rel .le (.lit usizeS (.int 0)) v) <;>
+      cases hb2 : q (.rel .lt v (.len (.const (.seq elem) 0))) <;>
       simp_all
 
 theorem comb_deriv_exists_in (q : Atom → Bool) (dom : List Tm) (ρ : Subst)
@@ -207,9 +207,9 @@ theorem comb_deriv_sorted (q : Atom → Bool) (dom : List Tm) (ρ : Subst)
     simp only [hb.1, hb.2.1, hb.2.2] at this
     simpa using this
   · intro h vi hvi vj hvj
-    cases hb1 : q (.rel .le (.lit usizeS) vi) <;>
+    cases hb1 : q (.rel .le (.lit usizeS (.int 0)) vi) <;>
       cases hb2 : q (.rel .le vi vj) <;>
-      cases hb3 : q (.rel .lt vj (.len (.lit (.seq elem)))) <;>
+      cases hb3 : q (.rel .lt vj (.len (.const (.seq elem) 0))) <;>
       simp_all
 
 theorem comb_deriv_forall_below (q : Atom → Bool) (dom : List Tm) (ρ : Subst)
@@ -228,9 +228,9 @@ theorem comb_deriv_forall_below (q : Atom → Bool) (dom : List Tm) (ρ : Subst)
     simp only [hb.1, hb.2.1, hb.2.2] at this
     simpa using this
   · intro h v hv
-    cases hb1 : q (.rel .le (.lit usizeS) v) <;>
-      cases hb2 : q (.rel .lt v (.lit usizeS)) <;>
-      cases hb3 : q (.rel .lt v (.len (.lit (.seq elem)))) <;>
+    cases hb1 : q (.rel .le (.lit usizeS (.int 0)) v) <;>
+      cases hb2 : q (.rel .lt v (.const usizeS 0)) <;>
+      cases hb3 : q (.rel .lt v (.len (.const (.seq elem) 0))) <;>
       simp_all
 
 theorem comb_deriv_forall_from (q : Atom → Bool) (dom : List Tm) (ρ : Subst)
@@ -248,8 +248,8 @@ theorem comb_deriv_forall_from (q : Atom → Bool) (dom : List Tm) (ρ : Subst)
     simp only [hb.1, hb.2] at this
     simpa using this
   · intro h v hv
-    cases hb1 : q (.rel .le (.lit usizeS) v) <;>
-      cases hb2 : q (.rel .lt v (.len (.lit (.seq elem)))) <;>
+    cases hb1 : q (.rel .le (.const usizeS 0) v) <;>
+      cases hb2 : q (.rel .lt v (.len (.const (.seq elem) 0))) <;>
       simp_all
 
 theorem comb_deriv_disjoint (q : Atom → Bool) (dom : List Tm) (ρ : Subst)
@@ -268,10 +268,10 @@ theorem comb_deriv_disjoint (q : Atom → Bool) (dom : List Tm) (ρ : Subst)
     simp only [hb.1.1, hb.1.2, hb.2.1, hb.2.2] at this
     simpa using this
   · intro h vi hvi vj hvj
-    cases hb1 : q (.rel .le (.lit usizeS) vi) <;>
-      cases hb2 : q (.rel .lt vi (.len (.lit (.seq elem)))) <;>
-      cases hb3 : q (.rel .le (.lit usizeS) vj) <;>
-      cases hb4 : q (.rel .lt vj (.len (.idxOp (.lit (.seq elem)) 1))) <;>
+    cases hb1 : q (.rel .le (.lit usizeS (.int 0)) vi) <;>
+      cases hb2 : q (.rel .lt vi (.len (.const (.seq elem) 0))) <;>
+      cases hb3 : q (.rel .le (.lit usizeS (.int 0)) vj) <;>
+      cases hb4 : q (.rel .lt vj (.len (.const (.seq elem) 1))) <;>
       simp_all
 
 /-! ## The two SPIKE-2 census combinators — definitional aggregate forms

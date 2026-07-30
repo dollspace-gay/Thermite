@@ -101,6 +101,12 @@ pub enum EngineName {
     /// REQ-7/REQ-8 at the same rung. The implementation is
     /// [`crate::bitvector::BitVectorEngine`].
     BitVector,
+    /// The admitted S₂.0 finite-ground reconstruction engine. It translates the
+    /// canonical source IR to the checked Lean semantics, asks the pinned SAT
+    /// toolchain for a verdict, and accepts a proof only after Lean reconstructs
+    /// the actual `req → clause` theorem. SAT results carry a checked finite
+    /// countermodel; timeout and replay failures remain non-certifying.
+    Epr,
 }
 
 impl EngineName {
@@ -114,7 +120,26 @@ impl EngineName {
             EngineName::LeanInteractive => "lean-interactive",
             EngineName::Nlsat => "nlsat",
             EngineName::BitVector => "bitvector",
+            EngineName::Epr => "epr",
         }
+    }
+}
+
+/// Trust recorded after Lean checks an admitted S₂.0 `req → clause` theorem.
+///
+/// The SAT solver and LRAT converter are proof producers only: neither remains
+/// in the trusted base after the generated theorem and its axiom report pass.
+#[must_use]
+pub fn epr_kernel_checked_trust_profile() -> TrustProfile {
+    TrustProfile {
+        items: vec![
+            "Lean kernel, kernel-checked (canonical S2Recon grounding, theory clauses, \
+             CNF, and the actual req → clause theorem accepted)"
+                .to_string(),
+            "standard Lean axioms only (propext, Classical.choice, Quot.sound; \
+             #print axioms allowlist checked)"
+                .to_string(),
+        ],
     }
 }
 

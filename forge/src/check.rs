@@ -1753,7 +1753,7 @@ fn epr_check(base: Vec<Certificate>, program: &Program) -> Vec<Certificate> {
                     reconstructed.push(epr_proved_obl(
                         &function.name,
                         index,
-                        evidence,
+                        *evidence,
                         &epr_attribution(),
                     ));
                 }
@@ -2371,7 +2371,7 @@ fn bv_fn_cert(
                 match outcome {
                     crate::epr_reconstruct::EprOutcome::Proved(evidence) => {
                         let attr = epr_attribution();
-                        obligations.push(epr_proved_obl(&f.name, k, evidence, &attr));
+                        obligations.push(epr_proved_obl(&f.name, k, *evidence, &attr));
                         item_level = item_level.min(Level::L4);
                         item_attr.get_or_insert(attr);
                         continue;
@@ -2798,7 +2798,7 @@ fn bv_proved_obl(
     // Every tagged clause records its width and any nowrap result.
     .with_bv_shadow(bv_shadow_for(clause.tag, nowrap_obligation));
     if let crate::lean_smt_export::ReconstructionOutcome::Checked(evidence) = reconstruction {
-        obligation = obligation.with_reconstruction(evidence);
+        obligation = obligation.with_reconstruction(*evidence);
     }
     obligation
 }
@@ -3033,7 +3033,7 @@ fn lia_proved_obl(
         crate::verdict::CertVerdict::Proved,
     );
     if let crate::lean_smt_export::ReconstructionOutcome::Checked(evidence) = reconstruction {
-        obligation = obligation.with_reconstruction(evidence);
+        obligation = obligation.with_reconstruction(*evidence);
     }
     obligation
 }

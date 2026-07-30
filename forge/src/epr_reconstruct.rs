@@ -108,7 +108,7 @@ enum CountermodelAttemptFailure {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EprOutcome {
-    Proved(ReconstructionEvidence),
+    Proved(Box<ReconstructionEvidence>),
     Counterexample(FiniteCountermodel),
     Timeout(String),
     Failed(String),
@@ -274,7 +274,7 @@ pub fn reconstruct(
             &scratch.path,
             started,
         ) {
-            Ok(Some(evidence)) => return EprOutcome::Proved(evidence),
+            Ok(Some(evidence)) => return EprOutcome::Proved(Box::new(evidence)),
             Ok(None) => {}
             Err(reason) => return EprOutcome::Failed(reason),
         }
@@ -491,7 +491,7 @@ pub fn reconstruct(
             let _ = store_cached_unsat(&entry);
         }
     }
-    EprOutcome::Proved(evidence)
+    EprOutcome::Proved(Box::new(evidence))
 }
 
 fn obligation_parts(formula: &Frm) -> Option<(&Frm, &Frm)> {
@@ -995,7 +995,7 @@ fn checked_qfree_group(
         .collect::<Vec<_>>()
         .join(",");
     Ok(QfreeGroupRealization {
-        evidence,
+        evidence: *evidence,
         witness: format!("{suffix}{{{witness}}}"),
         values,
     })

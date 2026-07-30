@@ -158,7 +158,7 @@ pub struct ReconstructionEvidence {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReconstructionOutcome {
     /// Lean accepted the actual validity theorem and its axiom report passed.
-    Checked(ReconstructionEvidence),
+    Checked(Box<ReconstructionEvidence>),
     /// The actual precondition or clause cannot be represented in this fragment.
     Unsupported(String),
     /// Lean/Lake or the pinned Lean package could not be invoked.
@@ -568,7 +568,7 @@ fn replay_validity_source(lean_root: &Path, theorem: &str, source: &str) -> Reco
         ));
     }
     match parse_and_validate_axioms(&combined, theorem) {
-        Ok(axioms) => ReconstructionOutcome::Checked(ReconstructionEvidence {
+        Ok(axioms) => ReconstructionOutcome::Checked(Box::new(ReconstructionEvidence {
             theorem: theorem.to_string(),
             source_sha256: sha256_hex(source.as_bytes()),
             fragment: String::new(),
@@ -590,7 +590,7 @@ fn replay_validity_source(lean_root: &Path, theorem: &str, source: &str) -> Reco
             budget_outcome: None,
             verdict_key_sha256: None,
             cache_hit: None,
-        }),
+        })),
         Err(reason) => ReconstructionOutcome::Failed(reason),
     }
 }

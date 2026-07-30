@@ -62,7 +62,8 @@ echo "[G4 2/6] Lean normalization, Skolemization, grounding, and replay pins"
     Thermite.PinSkolemDependencies \
     Thermite.PinGroundingCompleteness \
     Thermite.PinInstantiationOmission \
-    Thermite.PinEprReplay
+    Thermite.PinEprReplay \
+    Thermite.Strat.TestModel
 )
 
 echo "[G4 3/6] production LRAT replay and cache tamper checks"

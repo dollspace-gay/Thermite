@@ -7,22 +7,27 @@
 //! a second Lean run parses and kernel-checks that LRAT against the recomputed
 //! problem and proves the actual `req → clause` formula.
 
+use std::collections::BTreeMap;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thermite_spec::classifier::{self, Atom, Frm, Mach, Rel, ScalarValue, Sort2, Tm, Verdict};
-use thermite_spec::S2Recon;
-use thermite_syntax::{Clause, FnItem};
+use thermite_spec::{QFreeAtom, QFreeFragment, S2Recon};
+use thermite_syntax::{BinOp, BvWidth, Clause, Expr, FnItem, UnaryOp};
 
-use crate::lean_smt_export::ReconstructionEvidence;
+use crate::lean_smt_export::{
+    ReconstructionEvidence, ReconstructionOutcome, SmtFragment, SmtValidityObligation,
+};
 
 const SOLVER_SECONDS: u64 = 30;
-const EPR_FRAGMENT: &str = "s2_recon_v1";
+const EPR_FRAGMENT: &str = "s2_recon_v2";
 const CADICAL_VERSION: &str = "2.1.3";
 const CADICAL_REVISION: &str = "f13d74439a5b5c963ac5b02d05ce93a8098018b8";
 const DRAT_TRIM_REVISION: &str = "effa1dcce85c878236f8313133dff1a2b766cd7c";
@@ -32,6 +37,8 @@ const EPR_CACHE_SCHEMA: &str = "thermite.epr.artifacts.v1";
 const AXIOM_ALLOWLIST: &[&str] = &["propext", "Classical.choice", "Quot.sound"];
 const COUNTERMODEL_SEEDS: usize = 1 << 16;
 static SCRATCH_COUNTER: AtomicU64 = AtomicU64::new(0);
+static RECONSTRUCTION_LOCK: Mutex<()> = Mutex::new(());
+static LEAN_MODULE_BUILD: OnceLock<Result<(), String>> = OnceLock::new();
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GroundAtomValue {
@@ -47,6 +54,7 @@ pub struct FiniteCountermodel {
     pub universe_sha256: String,
     pub atoms: Vec<GroundAtomValue>,
     pub cnf_sha256: String,
+    pub qfree_checks: Vec<String>,
     pub axioms: Vec<String>,
 }
 
@@ -67,16 +75,29 @@ impl FiniteCountermodel {
         format!(
             "Lean-checked finite S₂.0 countermodel; {}; ground terms={} \
              (sha256={}); evaluated atoms={} [{}]; satisfying CNF sha256={}; \
-             axioms=[{}]",
+             checked QF groups=[{}]; axioms=[{}]",
             self.model,
             self.universe_count,
             self.universe_sha256,
             self.atoms.len(),
             assignments.join(", "),
             self.cnf_sha256,
+            self.qfree_checks.join(", "),
             self.axioms.join(", ")
         )
     }
+}
+
+struct QfreeRealization {
+    values: Vec<bool>,
+    checks: Vec<ReconstructionEvidence>,
+    witnesses: Vec<String>,
+}
+
+struct QfreeGroupRealization {
+    evidence: ReconstructionEvidence,
+    witness: String,
+    values: BTreeMap<String, u128>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -185,6 +206,9 @@ pub fn reconstruct(
     premise_clause: &Clause,
     conclusion_clause: &Clause,
 ) -> EprOutcome {
+    let _reconstruction_guard = RECONSTRUCTION_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let started = Instant::now();
     if !matches!(classifier::classify(&recon.formula), Verdict::Admitted) {
         return EprOutcome::Failed(
@@ -205,6 +229,9 @@ pub fn reconstruct(
         Ok(toolchain) => toolchain,
         Err(reason) => return EprOutcome::Failed(reason),
     };
+    if let Err(reason) = ensure_lean_reconstruction_modules() {
+        return EprOutcome::Failed(format!("EprLeanBuild: {reason}"));
+    }
     let premise = match render_frm(premise, recon, item) {
         Ok(rendered) => rendered,
         Err(reason) => return EprOutcome::Failed(format!("EprLeanExport: {reason}")),
@@ -290,24 +317,50 @@ pub fn reconstruct(
             if let Err(reason) = validate_dimacs_assignment(&ground.dimacs, &assignment) {
                 return EprOutcome::Failed(format!("EprCountermodelInvalid: {reason}"));
             }
-            if !recon.qfree_atoms.is_empty() {
-                return EprOutcome::Failed(
-                    "EprCountermodelQFreeRealization: SAT was checked, but a genuine source \
-                     countermodel for embedded QF_LIA/QF_BV atoms must be decoded through \
-                     their existing checked model path"
-                        .to_string(),
-                );
-            }
-            let (seed, atoms, axioms) =
-                match check_bool_countermodel(&scratch.path, &premise, &conclusion, &ground) {
-                    Ok(model) => model,
-                    Err(reason) => {
-                        return EprOutcome::Failed(format!(
-                            "EprCountermodelRealization: the propositional problem is SAT, \
+            let qfree_values = match qfree_values_from_assignment(recon, &ground, &assignment) {
+                Ok(values) => values,
+                Err(reason) => {
+                    return EprOutcome::Failed(format!("EprCountermodelQFreeAssignment: {reason}"))
+                }
+            };
+            let qfree = match check_qfree_realization(recon, item, qfree_values) {
+                Ok(realization) => realization,
+                Err(reason) => {
+                    return EprOutcome::Failed(format!("EprCountermodelQFreeRealization: {reason}"))
+                }
+            };
+            let (seed, atoms, mut axioms) = match check_bool_countermodel(
+                &scratch.path,
+                &premise,
+                &conclusion,
+                &ground,
+                &qfree.values,
+            ) {
+                Ok(model) => model,
+                Err(reason) => {
+                    return EprOutcome::Failed(format!(
+                        "EprCountermodelRealization: the propositional problem is SAT, \
                          but no checked typed model was produced: {reason}"
-                        ))
-                    }
-                };
+                    ))
+                }
+            };
+            for axiom in qfree
+                .checks
+                .iter()
+                .flat_map(|evidence| evidence.axioms.iter())
+            {
+                if !axioms.contains(axiom) {
+                    axioms.push(axiom.clone());
+                }
+            }
+            let qfree_checks = qfree
+                .checks
+                .iter()
+                .zip(&qfree.witnesses)
+                .map(|(evidence, witness)| {
+                    format!("{} via {} ({witness})", evidence.fragment, evidence.checker)
+                })
+                .collect();
             EprOutcome::Counterexample(FiniteCountermodel {
                 model: format!(
                     "two-element typed model seed {seed} (Lean searched constants, \
@@ -317,6 +370,7 @@ pub fn reconstruct(
                 universe_sha256: sha256_hex(ground.ground.as_bytes()),
                 atoms,
                 cnf_sha256: sha256_hex(ground.dimacs.as_bytes()),
+                qfree_checks,
                 axioms,
             })
         }
@@ -647,38 +701,451 @@ theorem {theorem} : EprClaim premise conclusion := by
     )
 }
 
-fn countermodel_search_source(premise: &str, conclusion: &str) -> String {
+fn conjunction(mut formulas: Vec<Expr>) -> Expr {
+    if formulas.is_empty() {
+        return Expr::BoolLit(true);
+    }
+    let first = formulas.remove(0);
+    formulas
+        .into_iter()
+        .fold(first, |left, right| Expr::Binary {
+            op: BinOp::And,
+            lhs: Box::new(left),
+            rhs: Box::new(right),
+        })
+}
+
+fn expected_qfree_formula(atoms: &[(&QFreeAtom, bool)]) -> Expr {
+    conjunction(
+        atoms
+            .iter()
+            .map(|(atom, value)| {
+                if *value {
+                    atom.expression.clone()
+                } else {
+                    Expr::Unary {
+                        op: UnaryOp::Not,
+                        expr: Box::new(atom.expression.clone()),
+                    }
+                }
+            })
+            .collect(),
+    )
+}
+
+fn numeric_qfree_vars(recon: &S2Recon) -> Vec<String> {
+    recon
+        .constants
+        .iter()
+        .filter(|constant| {
+            matches!(
+                constant.sort,
+                Sort2::Mach(Mach::U8 | Mach::U16 | Mach::U32 | Mach::U64 | Mach::Usize)
+            )
+        })
+        .map(|constant| constant.name.clone())
+        .collect()
+}
+
+fn literal(value: u128) -> Expr {
+    Expr::IntLit {
+        value,
+        raw: value.to_string(),
+    }
+}
+
+fn binding_formula(values: &BTreeMap<String, u128>) -> Expr {
+    conjunction(
+        values
+            .iter()
+            .map(|(name, value)| Expr::Binary {
+                op: BinOp::Eq,
+                lhs: Box::new(Expr::Path(vec![name.clone()])),
+                rhs: Box::new(literal(*value)),
+            })
+            .collect(),
+    )
+}
+
+fn render_lia_term_smt(expression: &Expr) -> Result<String, String> {
+    match expression {
+        Expr::IntLit { value, .. } => Ok(value.to_string()),
+        Expr::Path(path) if path.len() == 1 => Ok(path[0].clone()),
+        Expr::Binary { op, lhs, rhs } => {
+            let operator = match op {
+                BinOp::Add => "+",
+                BinOp::Sub => "-",
+                BinOp::Mul => "*",
+                _ => return Err(format!("`{op:?}` is not a QF_LIA term operator")),
+            };
+            Ok(format!(
+                "({operator} {} {})",
+                render_lia_term_smt(lhs)?,
+                render_lia_term_smt(rhs)?
+            ))
+        }
+        Expr::Cast { expr, .. } => render_lia_term_smt(expr),
+        other => Err(format!("`{other:?}` is not a QF_LIA term")),
+    }
+}
+
+fn render_lia_prop_smt(expression: &Expr) -> Result<String, String> {
+    match expression {
+        Expr::BoolLit(value) => Ok(value.to_string()),
+        Expr::Binary { op, lhs, rhs } => match op {
+            BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
+                let operator = match op {
+                    BinOp::Eq | BinOp::Ne => "=",
+                    BinOp::Lt => "<",
+                    BinOp::Le => "<=",
+                    BinOp::Gt => ">",
+                    BinOp::Ge => ">=",
+                    _ => unreachable!("the outer match fixed the relation"),
+                };
+                let relation = format!(
+                    "({operator} {} {})",
+                    render_lia_term_smt(lhs)?,
+                    render_lia_term_smt(rhs)?
+                );
+                if *op == BinOp::Ne {
+                    Ok(format!("(not {relation})"))
+                } else {
+                    Ok(relation)
+                }
+            }
+            BinOp::And | BinOp::Or => {
+                let operator = if *op == BinOp::And { "and" } else { "or" };
+                Ok(format!(
+                    "({operator} {} {})",
+                    render_lia_prop_smt(lhs)?,
+                    render_lia_prop_smt(rhs)?
+                ))
+            }
+            other => Err(format!("`{other:?}` is not a QF_LIA proposition operator")),
+        },
+        Expr::Unary {
+            op: UnaryOp::Not,
+            expr,
+        } => Ok(format!("(not {})", render_lia_prop_smt(expr)?)),
+        other => Err(format!("`{other:?}` is not a QF_LIA proposition")),
+    }
+}
+
+fn lia_model_query(vars: &[String], formula: &Expr) -> Result<String, String> {
+    let mut query = String::from("(set-logic QF_LIA)\n(set-option :timeout 30000)\n");
+    for variable in vars {
+        query.push_str(&format!("(declare-const {variable} Int)\n"));
+        query.push_str(&format!("(assert (>= {variable} 0))\n"));
+    }
+    query.push_str(&format!("(assert {})\n", render_lia_prop_smt(formula)?));
+    query.push_str("(check-sat)\n(get-model)\n");
+    Ok(query)
+}
+
+fn run_z3(query: &str) -> Result<(String, String), String> {
+    let mut child = Command::new("z3")
+        .arg("-in")
+        .arg("-smt2")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("could not invoke `z3`: {error}"))?;
+    let Some(mut stdin) = child.stdin.take() else {
+        return Err("z3 did not expose stdin".to_string());
+    };
+    stdin
+        .write_all(query.as_bytes())
+        .map_err(|error| format!("could not send the QF realization query to z3: {error}"))?;
+    drop(stdin);
+    let output = child
+        .wait_with_output()
+        .map_err(|error| format!("could not collect the z3 model: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "z3 exited {:?}: {}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stderr)
+                .chars()
+                .take(800)
+                .collect::<String>()
+        ));
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let result = stdout
+        .lines()
+        .find(|line| matches!(*line, "sat" | "unsat" | "unknown"))
+        .ok_or_else(|| format!("z3 returned no satisfiability result: {stdout}"))?
+        .to_string();
+    Ok((result, stdout))
+}
+
+fn matching_parenthesis(text: &str, open: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    for (offset, byte) in text.as_bytes()[open..].iter().enumerate() {
+        match byte {
+            b'(' => depth += 1,
+            b')' => {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    return Some(open + offset);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn parse_z3_int_value(text: &str) -> Option<i128> {
+    let text = text.trim();
+    if let Some(negative) = text
+        .strip_prefix("(-")
+        .and_then(|value| value.strip_suffix(')'))
+    {
+        return negative.trim().parse::<i128>().ok()?.checked_neg();
+    }
+    text.parse().ok()
+}
+
+fn parse_z3_int_model(model: &str, vars: &[String]) -> Result<BTreeMap<String, u128>, String> {
+    let mut values = BTreeMap::new();
+    for variable in vars {
+        let needle = format!("(define-fun {variable} ");
+        let value = if let Some(open) = model.find(&needle) {
+            let close = matching_parenthesis(model, open)
+                .ok_or_else(|| format!("unterminated z3 binding for `{variable}`"))?;
+            let definition = &model[open + needle.len()..close];
+            let after_sort = definition
+                .find("Int")
+                .map(|position| &definition[position + 3..])
+                .ok_or_else(|| format!("z3 binding for `{variable}` is not integer-valued"))?;
+            parse_z3_int_value(after_sort)
+                .ok_or_else(|| format!("could not decode z3 integer value `{after_sort}`"))?
+        } else {
+            0
+        };
+        values.insert(
+            variable.clone(),
+            u128::try_from(value)
+                .map_err(|_| format!("z3 produced negative unsigned value {value}"))?,
+        );
+    }
+    Ok(values)
+}
+
+fn checked_qfree_group(
+    item: &FnItem,
+    suffix: &str,
+    vars: &[String],
+    desired: Expr,
+    values: BTreeMap<String, u128>,
+    fragment: SmtFragment,
+    solver_query: &str,
+) -> Result<QfreeGroupRealization, String> {
+    let outcome = crate::lean_smt_export::reconstruct_validity(
+        &SmtValidityObligation {
+            item: format!("{}_qfree_{suffix}", item.name),
+            vars: vars.to_vec(),
+            req: binding_formula(&values),
+            clause: desired,
+            fragment,
+        },
+        Some(solver_query),
+    );
+    let ReconstructionOutcome::Checked(evidence) = outcome else {
+        return Err(format!(
+            "Lean rejected the concrete {suffix} QFree realization: {outcome:?}"
+        ));
+    };
+    let witness = values
+        .iter()
+        .map(|(name, value)| format!("{name}={value}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    Ok(QfreeGroupRealization {
+        evidence,
+        witness: format!("{suffix}{{{witness}}}"),
+        values,
+    })
+}
+
+fn realize_lia_group(
+    item: &FnItem,
+    vars: &[String],
+    atoms: &[(&QFreeAtom, bool)],
+) -> Result<QfreeGroupRealization, String> {
+    let desired = expected_qfree_formula(atoms);
+    let query = lia_model_query(vars, &desired)?;
+    let (result, model) =
+        run_z3(&query).map_err(|reason| format!("EprQFreeSolverUnavailable: {reason}"))?;
+    if result != "sat" {
+        return Err(format!(
+            "EprQFreeUnrealizable: QF_LIA assignment is {result}"
+        ));
+    }
+    let values = parse_z3_int_model(&model, vars)?;
+    checked_qfree_group(
+        item,
+        "qf_lia",
+        vars,
+        desired,
+        values,
+        SmtFragment::Lia,
+        &query,
+    )
+}
+
+fn realize_bv_group_with_values(
+    item: &FnItem,
+    vars: &[String],
+    width: BvWidth,
+    atoms: &[(&QFreeAtom, bool)],
+    fixed_values: &BTreeMap<String, u128>,
+) -> Result<QfreeGroupRealization, String> {
+    let desired = expected_qfree_formula(atoms);
+    let query_formula = if fixed_values.is_empty() {
+        desired.clone()
+    } else {
+        conjunction(vec![binding_formula(fixed_values), desired.clone()])
+    };
+    let false_clause = Expr::BoolLit(false);
+    let (query, _) =
+        crate::bitvector::validity_query(vars, Some(&query_formula), &false_clause, width)?;
+    let outcome = crate::bitvector::BitVectorEngine::new().discharge_bv(
+        vars,
+        Some(&query_formula),
+        &false_clause,
+        width,
+    );
+    let crate::bitvector::BvOutcome::Counterexample { bits } = outcome else {
+        return Err(format!(
+            "EprQFreeUnrealizable: QF_BV{} assignment produced {outcome:?}",
+            width.bits()
+        ));
+    };
+    let values = if fixed_values.is_empty() {
+        bits.into_iter()
+            .map(|pattern| (pattern.var, pattern.value))
+            .collect()
+    } else {
+        fixed_values.clone()
+    };
+    checked_qfree_group(
+        item,
+        &format!("qf_bv{}", width.bits()),
+        vars,
+        desired,
+        values,
+        SmtFragment::Bv(width),
+        &query,
+    )
+}
+
+fn check_qfree_realization(
+    recon: &S2Recon,
+    item: &FnItem,
+    values: Vec<bool>,
+) -> Result<QfreeRealization, String> {
+    if values.len() != recon.qfree_atoms.len() {
+        return Err("qfree assignment length does not match the canonical IR".to_string());
+    }
+    let vars = numeric_qfree_vars(recon);
+    let atoms_with_values = recon
+        .qfree_atoms
+        .iter()
+        .zip(values.iter().copied())
+        .collect::<Vec<_>>();
+    let mut checks = Vec::new();
+    let mut witnesses = Vec::new();
+    let mut joint_values = BTreeMap::new();
+
+    let lia = atoms_with_values
+        .iter()
+        .copied()
+        .filter(|(atom, _)| atom.fragment == QFreeFragment::Lia)
+        .collect::<Vec<_>>();
+    if !lia.is_empty() {
+        let group = realize_lia_group(item, &vars, &lia)?;
+        joint_values = group.values;
+        checks.push(group.evidence);
+        witnesses.push(group.witness);
+    }
+    for width in [BvWidth::W8, BvWidth::W16, BvWidth::W32, BvWidth::W64] {
+        let group = atoms_with_values
+            .iter()
+            .copied()
+            .filter(|(atom, _)| atom.fragment == QFreeFragment::Bv(width))
+            .collect::<Vec<_>>();
+        if group.is_empty() {
+            continue;
+        }
+        let realized = realize_bv_group_with_values(item, &vars, width, &group, &joint_values)?;
+        if joint_values.is_empty() {
+            joint_values = realized.values.clone();
+        }
+        checks.push(realized.evidence);
+        witnesses.push(realized.witness);
+    }
+    Ok(QfreeRealization {
+        values,
+        checks,
+        witnesses,
+    })
+}
+
+fn qfree_values_source(values: &[bool]) -> String {
+    let mut source = String::from("private def counterQfree : Nat → Bool\n");
+    for (id, value) in values.iter().enumerate() {
+        source.push_str(&format!("  | {id} => {value}\n"));
+    }
+    source.push_str("  | _ => false\n");
+    source
+}
+
+fn countermodel_search_source(premise: &str, conclusion: &str, qfree_values: &[bool]) -> String {
     format!(
         r#"import Thermite.Strat.TestModel
+
+{}
 
 {}
 
 def main : IO Unit := do
   let found := (List.range {COUNTERMODEL_SEEDS}).find? fun seed =>
-    evalFrm (searchedBoolModel seed) premise
-        (emptySearchedBoolValuation seed) &&
-      !evalFrm (searchedBoolModel seed) conclusion
-        (emptySearchedBoolValuation seed)
+    evalFrm (searchedBoolModelWithQfree seed counterQfree) premise
+        (emptySearchedBoolValuationWithQfree seed counterQfree) &&
+      !evalFrm (searchedBoolModelWithQfree seed counterQfree) conclusion
+        (emptySearchedBoolValuationWithQfree seed counterQfree)
   match found with
   | some seed => IO.println s!"THERMITE-COUNTERMODEL-SEED={{seed}}"
   | none => IO.println "THERMITE-COUNTERMODEL-SEED=none"
 "#,
-        common_source(premise, conclusion)
+        common_source(premise, conclusion),
+        qfree_values_source(qfree_values),
     )
 }
 
-fn countermodel_replay_source(premise: &str, conclusion: &str, seed: usize) -> String {
+fn countermodel_replay_source(
+    premise: &str,
+    conclusion: &str,
+    seed: usize,
+    qfree_values: &[bool],
+) -> String {
     format!(
         r#"import Thermite.Strat.TestModel
 
 {}
 
+{}
+
 private def counterSeed : Nat := {seed}
-private def counterModel : Model := searchedBoolModel counterSeed
+private def counterModel : Model :=
+  searchedBoolModelWithQfree counterSeed counterQfree
 private def counterValuation : Valuation counterModel :=
-  emptySearchedBoolValuation counterSeed
+  emptySearchedBoolValuationWithQfree counterSeed counterQfree
 private def counterInterpretation : GroundInterpretation counterModel where
-  qfree := fun _ => false
+  qfree := counterQfree
   skolem := fun _ _ result => counterModel.default result
 
 theorem thermiteEprCountermodel :
@@ -694,7 +1161,8 @@ def main : IO Unit := do
       evalGroundAtom counterModel counterInterpretation atom}}|{{
       (repr atom).pretty 1000000}}"
 "#,
-        common_source(premise, conclusion)
+        common_source(premise, conclusion),
+        qfree_values_source(qfree_values),
     )
 }
 
@@ -703,8 +1171,9 @@ fn check_bool_countermodel(
     premise: &str,
     conclusion: &str,
     ground: &GroundMetadata,
+    qfree_values: &[bool],
 ) -> Result<(usize, Vec<GroundAtomValue>, Vec<String>), String> {
-    let search_source = countermodel_search_source(premise, conclusion);
+    let search_source = countermodel_search_source(premise, conclusion, qfree_values);
     let search_path = scratch.join("countermodel-search.lean");
     fs::write(&search_path, search_source.as_bytes())
         .map_err(|error| format!("could not write countermodel search driver: {error}"))?;
@@ -723,7 +1192,7 @@ fn check_bool_countermodel(
         .parse::<usize>()
         .map_err(|error| format!("countermodel search returned invalid seed `{seed}`: {error}"))?;
 
-    let replay_source = countermodel_replay_source(premise, conclusion, seed);
+    let replay_source = countermodel_replay_source(premise, conclusion, seed, qfree_values);
     let replay_path = scratch.join("countermodel-replay.lean");
     fs::write(&replay_path, replay_source.as_bytes())
         .map_err(|error| format!("could not write countermodel driver: {error}"))?;
@@ -755,6 +1224,37 @@ fn check_bool_countermodel(
         ));
     }
     Ok((seed, atoms, axioms))
+}
+
+fn ensure_lean_reconstruction_modules() -> Result<(), String> {
+    LEAN_MODULE_BUILD
+        .get_or_init(|| {
+            let lake = lake_binary();
+            let output = Command::new(&lake)
+                .arg("build")
+                .arg("Thermite.Strat.EprReplay")
+                .arg("Thermite.Strat.TestModel")
+                .current_dir(lean_root())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output()
+                .map_err(|error| {
+                    format!(
+                        "could not invoke `{}` to build reconstruction modules: {error}",
+                        lake.display()
+                    )
+                })?;
+            if output.status.success() {
+                Ok(())
+            } else {
+                Err(format!(
+                    "`lake build` exited {:?}: {}",
+                    output.status.code(),
+                    output_head(&output)
+                ))
+            }
+        })
+        .clone()
 }
 
 fn run_lean(source: &Path, run_main: bool) -> Result<String, String> {
@@ -983,6 +1483,44 @@ fn parse_sat_assignment(model: &str) -> Result<Vec<bool>, String> {
         assignment[variable] = value;
     }
     Ok(assignment)
+}
+
+fn ground_qfree_id(atom: &str) -> Option<usize> {
+    atom.strip_prefix("Thermite.Strat.Cls.GroundAtom.qfree ")?
+        .trim()
+        .parse()
+        .ok()
+}
+
+fn qfree_values_from_assignment(
+    recon: &S2Recon,
+    ground: &GroundMetadata,
+    assignment: &[bool],
+) -> Result<Vec<bool>, String> {
+    let mut values = vec![None; recon.qfree_atoms.len()];
+    for (variable, atom) in &ground.atoms {
+        let Some(id) = ground_qfree_id(atom) else {
+            continue;
+        };
+        let slot = values
+            .get_mut(id)
+            .ok_or_else(|| format!("ground problem contains unknown qfree id {id}"))?;
+        let value = assignment
+            .get(*variable)
+            .copied()
+            .ok_or_else(|| format!("SAT model omits qfree DIMACS variable {variable}"))?;
+        if slot.is_some_and(|existing| existing != value) {
+            return Err(format!(
+                "SAT model assigns conflicting values to qfree id {id}"
+            ));
+        }
+        *slot = Some(value);
+    }
+    values
+        .into_iter()
+        .enumerate()
+        .map(|(id, value)| value.ok_or_else(|| format!("ground problem omits qfree id {id}")))
+        .collect()
 }
 
 /// Deletion steps are an LRAT space optimization, not part of the
@@ -1537,6 +2075,31 @@ mod tests {
     }
 
     #[test]
+    fn qfree_model_parsers_keep_ids_and_signed_integer_values_exact() {
+        assert_eq!(
+            ground_qfree_id("Thermite.Strat.Cls.GroundAtom.qfree 17"),
+            Some(17)
+        );
+        assert_eq!(ground_qfree_id("GroundAtom.rel eq"), None);
+
+        let model = "(model\n\
+          (define-fun x () Int\n\
+            3)\n\
+          (define-fun y () Int\n\
+            (- 2))\n\
+        )";
+        let parsed =
+            parse_z3_int_model(model, &["x".to_string()]).expect("non-negative integer model");
+        assert_eq!(parsed["x"], 3);
+        let negative = parse_z3_int_model(model, &["y".to_string()])
+            .expect_err("unsigned QF models reject negative values");
+        assert!(
+            negative.contains("negative unsigned value -2"),
+            "{negative}"
+        );
+    }
+
+    #[test]
     fn epr_surface_requires_a_binder_or_relation_array_term() {
         let scalar = Frm::Atom(Atom::Rel(
             Rel::Eq,
@@ -1617,6 +2180,97 @@ mod tests {
                 );
             }
             other => panic!("expected checked extensionality reconstruction, found {other:?}"),
+        }
+    }
+
+    #[test]
+    fn production_returns_a_countermodel_with_checked_lia_leaves() {
+        let parsed = parse(
+            "fn epr_qfree(xs: Vec<u64>, x: u64) -> u64\n\
+             req x + x == 2\n\
+             ens (x + x == 4) && \
+               forall (i : usize) in xs. xs[i] == xs[i]\n\
+             fx pure { 0 }",
+        );
+        assert!(parsed.is_clean(), "parse errors: {:?}", parsed.errors);
+        let Item::Fn(item) = &parsed.program.items[0] else {
+            panic!("expected function");
+        };
+        let recon = thermite_spec::s2_recon_from_obligation(
+            &parsed.program,
+            item,
+            &item.contract.req,
+            &item.contract.ens[0],
+            thermite_spec::SourceAddress {
+                item: item.name.clone(),
+                clause: "ens#0".to_string(),
+            },
+        )
+        .expect("canonical S₂.0 bridge");
+        assert_eq!(recon.qfree_atoms.len(), 2);
+        match reconstruct(&recon, item, &item.contract.req, &item.contract.ens[0]) {
+            EprOutcome::Counterexample(model) => {
+                assert!(
+                    model
+                        .qfree_checks
+                        .iter()
+                        .any(|check| check.contains("qf_lia") && check.contains("omega")),
+                    "countermodel must carry checked QF_LIA evidence: {:?}",
+                    model.qfree_checks
+                );
+                assert!(model
+                    .axioms
+                    .iter()
+                    .all(|axiom| { AXIOM_ALLOWLIST.contains(&axiom.as_str()) }));
+            }
+            other => panic!("expected checked QF countermodel, found {other:?}"),
+        }
+    }
+
+    #[test]
+    fn production_checks_mixed_lia_and_bv_countermodel_leaves() {
+        let parsed = parse(
+            "fn epr_mixed_qfree(xs: Vec<u64>, x: u64) -> u64\n\
+             req x + x == 2\n\
+             ens@bv8 x + x == 4 && \
+               forall (i : usize) in xs. xs[i] == xs[i]\n\
+             fx pure { 0 }",
+        );
+        assert!(parsed.is_clean(), "parse errors: {:?}", parsed.errors);
+        let Item::Fn(item) = &parsed.program.items[0] else {
+            panic!("expected function");
+        };
+        let recon = thermite_spec::s2_recon_from_obligation(
+            &parsed.program,
+            item,
+            &item.contract.req,
+            &item.contract.ens[0],
+            thermite_spec::SourceAddress {
+                item: item.name.clone(),
+                clause: "ens#0".to_string(),
+            },
+        )
+        .expect("canonical mixed-semantics S₂.0 bridge");
+        assert_eq!(
+            recon
+                .qfree_atoms
+                .iter()
+                .map(|atom| atom.fragment)
+                .collect::<Vec<_>>(),
+            vec![QFreeFragment::Lia, QFreeFragment::Bv(BvWidth::W8)]
+        );
+        match reconstruct(&recon, item, &item.contract.req, &item.contract.ens[0]) {
+            EprOutcome::Counterexample(model) => {
+                assert!(model
+                    .qfree_checks
+                    .iter()
+                    .any(|check| check.contains("qf_lia") && check.contains("omega")));
+                assert!(model
+                    .qfree_checks
+                    .iter()
+                    .any(|check| check.contains("qf_bv8")));
+            }
+            other => panic!("expected checked mixed-QF countermodel, found {other:?}"),
         }
     }
 

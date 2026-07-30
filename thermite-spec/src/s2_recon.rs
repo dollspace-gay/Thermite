@@ -17,7 +17,7 @@ use thermite_syntax::{
 use crate::classifier::{to_wire, Atom, Frm, Mach, Rel, ScalarValue, Sort2, Tm};
 
 /// Bumped whenever the canonical representation or source translation changes.
-pub const S2_RECON_VERSION: &str = "s2-recon-v1";
+pub const S2_RECON_VERSION: &str = "s2-recon-v2";
 
 /// The stable source location attached to a reconstructed clause.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -741,12 +741,31 @@ fn qfree_term(
 ) -> bool {
     match expr {
         Expr::IntLit { .. } => true,
-        Expr::Path(path) => path.len() == 1 && constants.contains_key(&path[0]),
+        Expr::Path(path) => {
+            path.len() == 1
+                && constants.get(&path[0]).is_some_and(|constant| {
+                    matches!(
+                        constant.sort,
+                        Sort2::Mach(Mach::U8 | Mach::U16 | Mach::U32 | Mach::U64 | Mach::Usize)
+                    )
+                })
+        }
         Expr::Binary {
-            op: BinOp::Add | BinOp::Sub | BinOp::Mul,
+            op: BinOp::Add | BinOp::Sub,
             lhs,
             rhs,
         } => qfree_term(lhs, constants, fragment) && qfree_term(rhs, constants, fragment),
+        Expr::Binary {
+            op: BinOp::Mul,
+            lhs,
+            rhs,
+        } => {
+            (matches!(fragment, QFreeFragment::Bv(_))
+                || matches!(lhs.as_ref(), Expr::IntLit { .. })
+                || matches!(rhs.as_ref(), Expr::IntLit { .. }))
+                && qfree_term(lhs, constants, fragment)
+                && qfree_term(rhs, constants, fragment)
+        }
         Expr::Binary {
             op:
                 BinOp::Div

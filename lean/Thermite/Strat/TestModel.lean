@@ -214,11 +214,22 @@ def searchedBoolModel (seed : Nat) : Model where
     · cases left <;> cases right <;>
         simp [boolSeqView] at equal ⊢
 
+/-- Override only the canonical QFree assignment while retaining the searched
+    constants, functions, relations, and sequence operations. Production
+    countermodel replay uses this after independently checking the QF_LIA/QF_BV
+    leaf values. -/
+def searchedBoolModelWithQfree (seed : Nat) (values : Nat → Bool) : Model :=
+  { searchedBoolModel seed with qfree := fun id _ => values id }
+
 def emptyBoolValuation : Valuation boolModel :=
   fun _ => ⟨.mach .bool, false⟩
 
 def emptySearchedBoolValuation (seed : Nat) :
     Valuation (searchedBoolModel seed) :=
+  fun _ => ⟨.mach .bool, false⟩
+
+def emptySearchedBoolValuationWithQfree (seed : Nat) (values : Nat → Bool) :
+    Valuation (searchedBoolModelWithQfree seed values) :=
   fun _ => ⟨.mach .bool, false⟩
 
 end Thermite.Strat.Cls

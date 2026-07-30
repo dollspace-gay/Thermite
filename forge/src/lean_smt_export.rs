@@ -618,6 +618,15 @@ pub fn reconstruct_validity(
         ),
         false,
     );
+    let concrete_simp = (
+        "Lean kernel + concrete BitVec simplification",
+        Some(
+            "simp_all [BitVec.sub_eq_add_neg, BitVec.neg_eq_not_add, \
+             BitVec.add_comm, BitVec.mul_comm, BitVec.and_comm, \
+             BitVec.or_comm, BitVec.xor_assoc]",
+        ),
+        false,
+    );
     let grind = ("Lean kernel + grind", Some("grind"), false);
     let rotate = (
         "Lean kernel + rotate-left injectivity lemma",
@@ -641,9 +650,9 @@ pub fn reconstruct_validity(
             let is_surface_bundle =
                 render_validity_goal(obligation).is_ok_and(|goal| goal.matches('∧').count() >= 4);
             if is_surface_bundle {
-                vec![simp, grind, lrat, rotate]
+                vec![concrete_simp, simp, grind, lrat, rotate]
             } else {
-                vec![lrat, simp, grind, rotate]
+                vec![concrete_simp, lrat, simp, grind, rotate]
             }
         }
     };

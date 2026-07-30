@@ -7884,7 +7884,7 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
             .reconstruction
             .as_ref()
             .expect("L4 EPR requires checked reconstruction evidence");
-        assert_eq!(evidence.fragment, "s2_recon_v1");
+        assert_eq!(evidence.fragment, "s2_recon_v2");
         assert!(
             evidence.checker.contains("term-producing LRAT"),
             "evidence must name the actual checker path: {}",

@@ -166,6 +166,8 @@ jobs:
           Thermite.Exec.Stmt
           Thermite.Exec.WhileBody
           Thermite.Strat.Cls.Wire
+          Thermite.Strat.EprReplay
+          Thermite.Strat.TestModel
           Thermite.Reconstruct
 
       - name: Install toolchain (pinned to rust-toolchain.toml channel)
@@ -329,17 +331,19 @@ jobs:
         # `Exec.WhileBody` (NOT the root `Thermite`, which pulls the cvc5-FFI `SmtDemo`);
         # the REQ-4 differential battery runs `lake env lean --run Thermite/Strat/Cls/Wire.lean`,
         # which needs `Thermite.Strat.Cls.Wire` built (it pulls Fragment/Graph/Nnf
-        # transitively). The old monolithic job got the Strat oleans for free from the
-        # axiom-probe's `lake build`; this split moved the probe to `lean-probe`, so the
-        # forge job must build Wire itself. Without these the live tests fail with
-        # "unknown module prefix 'Thermite'" / "spine may not be built". Incremental on a
-        # warm `.lake` cache.
+        # transitively). EPR tests run as separate nextest processes, so EprReplay and
+        # TestModel must also be built here instead of racing to compile them inside
+        # each test process. The old monolithic job got the Strat oleans for free from
+        # the axiom-probe's `lake build`; this split moved the probe to `lean-probe`.
+        # Incremental on a warm `.lake` cache.
         run: >-
           lake build
           Thermite.Stabilize
           Thermite.Exec.Stmt
           Thermite.Exec.WhileBody
           Thermite.Strat.Cls.Wire
+          Thermite.Strat.EprReplay
+          Thermite.Strat.TestModel
           Thermite.Reconstruct
 
       - name: Install Rust toolchain (pinned)

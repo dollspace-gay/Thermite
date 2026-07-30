@@ -3325,7 +3325,7 @@ mod tests {
                 level: CheckLevel::L3,
                 rlimit: DEFAULT_RLIMIT,
                 mutation_floor: MUTATION_FLOOR,
-                engine: check::EngineSelection::Verus,
+                engine: check::EngineSelection::Auto,
             })
         );
         assert_eq!(
@@ -3336,7 +3336,7 @@ mod tests {
                 level: CheckLevel::L3,
                 rlimit: DEFAULT_RLIMIT,
                 mutation_floor: MUTATION_FLOOR,
-                engine: check::EngineSelection::Verus,
+                engine: check::EngineSelection::Auto,
             })
         );
     }
@@ -3380,7 +3380,7 @@ mod tests {
                 level: CheckLevel::L3,
                 rlimit: 1.0,
                 mutation_floor: MUTATION_FLOOR,
-                engine: check::EngineSelection::Verus,
+                engine: check::EngineSelection::Auto,
             })
         );
         // Default when the flag is absent.
@@ -3392,7 +3392,7 @@ mod tests {
                 level: CheckLevel::L3,
                 rlimit: DEFAULT_RLIMIT,
                 mutation_floor: MUTATION_FLOOR,
-                engine: check::EngineSelection::Verus,
+                engine: check::EngineSelection::Auto,
             })
         );
         // Missing value, non-numeric, and non-positive are Usage errors.
@@ -3460,7 +3460,7 @@ mod tests {
                 level: CheckLevel::L3,
                 rlimit: DEFAULT_RLIMIT,
                 mutation_floor: 0.2,
-                engine: check::EngineSelection::Verus,
+                engine: check::EngineSelection::Auto,
             })
         );
         // Default when the flag is absent.
@@ -3500,7 +3500,7 @@ mod tests {
                 level: CheckLevel::L2,
                 rlimit: DEFAULT_RLIMIT,
                 mutation_floor: MUTATION_FLOOR,
-                engine: check::EngineSelection::Verus,
+                engine: check::EngineSelection::Auto,
             })
         );
         assert_eq!(
@@ -3511,7 +3511,7 @@ mod tests {
                 level: CheckLevel::L3,
                 rlimit: DEFAULT_RLIMIT,
                 mutation_floor: MUTATION_FLOOR,
-                engine: check::EngineSelection::Verus,
+                engine: check::EngineSelection::Auto,
             })
         );
         assert!(matches!(

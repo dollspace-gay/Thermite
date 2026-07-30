@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft (v-next architecture — the obligation/engine interface; most REQs NOT-STARTED
-audited-content-sha256: 223595a2c51c4db9194328dc2231e697c52710046717a931dc7c84f04e9d50ab (migrated from legacy audited-sha commit pin to a squash-stable content digest; doc-drift-tripwire.md REQ-2 — content pin is primary, commit pin is a migration fallback)
+audited-content-sha256: 3bad6be5a4b22bd4452a0abf2a5968852c8a374d98bed58a8732a689d1225f92 (migrated from legacy audited-sha commit pin to a squash-stable content digest; doc-drift-tripwire.md REQ-2 — content pin is primary, commit pin is a migration fallback)
         behind build blockers. The SHIPPED substrates this builds on are quoted-code-grounded.)
 governs: forge/src/check.rs + forge/src/degrade.rs + forge/src/manifest.rs (the discharge
          pipeline, the ladder, the certificate this interface generalizes) and
@@ -180,6 +180,8 @@ build-blockers:
 > non-certifying outcomes. `EngineSelection` therefore includes the shipped
 > `Nlsat`, `Forge`, and `Bv` routes in addition to `Verus`, `Lean`, and `Auto`;
 > EPR is selected automatically rather than exposed as a separate CLI flag.
+> A result-bearing clause enters EPR only when its body-substituted obligation is
+> in S₂.0. An out-of-fragment body leaves the ordinary backend result intact.
 
 ## Summary
 

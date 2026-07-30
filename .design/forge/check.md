@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: 1b60a2fa436705abfeef0f7613110a802199cd70de266c6117bbfc5b721b16d5 (migrated from legacy audited-sha commit pin to a squash-stable content digest; doc-drift-tripwire.md REQ-2 — content pin is primary, commit pin is a migration fallback)
+audited-content-sha256: ed35bf3f9882e81762d7b55555d4c4ec8bb19aa87d0aab2eb29ddb06f8252e9a (migrated from legacy audited-sha commit pin to a squash-stable content digest; doc-drift-tripwire.md REQ-2 — content pin is primary, commit pin is a migration fallback)
 governs: forge/src/check.rs
 thesis-refs:
   - thermite-design.md §5.1
@@ -115,6 +115,10 @@ REQ status table).
 > named failures. `--engine verus` is the explicit legacy diagnostic path.
 > Programmatic `check_file` and `CheckOptions::default` remain the legacy
 > Verus-only entries for callers that require byte-stable certificates.
+> Result-bearing clauses are classified after substituting the source body
+> through nested call and method expressions. If that grounded body is outside
+> S₂.0, the ordinary verifier certificate is retained; EPR must not invent an
+> unconstrained `result` value.
 
 The stages, in order, are:
 

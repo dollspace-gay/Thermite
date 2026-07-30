@@ -2198,25 +2198,52 @@ fn attach_bv_invariant_shadows(
     cert
 }
 
-/// Does `e` reference the `result` keyword (`.design/stage3-bv-reconstruction.md`
-/// REQ-2)? A `@bv` clause that names `result` must have it grounded by the body before
-/// it can be a closed QF_BV query over the parameters.
+/// Does an expression reference the function's `result` value?
+///
+/// BV and EPR validity checks must replace that value with the function body
+/// before treating the clause as closed over its parameters.
 fn expr_mentions_result(e: &thermite_syntax::Expr) -> bool {
     use thermite_syntax::Expr as E;
     match e {
         E::Path(segs) => segs.len() == 1 && segs[0] == "result",
+        E::Call { callee, args } => {
+            expr_mentions_result(callee) || args.iter().any(expr_mentions_result)
+        }
+        E::MethodCall { receiver, args, .. } => {
+            expr_mentions_result(receiver) || args.iter().any(expr_mentions_result)
+        }
+        E::Field { receiver, .. } | E::TupleProj { receiver, .. } => expr_mentions_result(receiver),
         E::Binary { lhs, rhs, .. } => expr_mentions_result(lhs) || expr_mentions_result(rhs),
-        E::Unary { expr, .. } | E::Cast { expr, .. } => expr_mentions_result(expr),
+        E::Unary { expr, .. } | E::Cast { expr, .. } | E::Ref { expr, .. } | E::Deref(expr) => {
+            expr_mentions_result(expr)
+        }
+        E::Index { base, index } => {
+            expr_mentions_result(base)
+                || match index {
+                    thermite_syntax::IndexArg::Single(expr)
+                    | thermite_syntax::IndexArg::RangeTo(expr)
+                    | thermite_syntax::IndexArg::RangeFrom(expr) => expr_mentions_result(expr),
+                    thermite_syntax::IndexArg::Range(start, end) => {
+                        expr_mentions_result(start) || expr_mentions_result(end)
+                    }
+                }
+        }
+        E::StructLit { fields, .. } => fields
+            .iter()
+            .any(|(_, expression)| expr_mentions_result(expression)),
+        E::Is { scrutinee, .. } => expr_mentions_result(scrutinee),
+        E::Tuple(expressions) => expressions.iter().any(expr_mentions_result),
+        E::Quantifier {
+            var, domain, body, ..
+        } => expr_mentions_result(domain) || (var != "result" && expr_mentions_result(body)),
         _ => false,
     }
 }
 
-/// Ground a `@bv` clause's `result` by the function body (`.design/stage3-bv-reconstruction.md`
-/// REQ-2). A clause that names `result` is rewritten with `result := body` (the
-/// forge-route precedent, [`substitute_result_with_body`]) so the QF_BV query is closed
-/// over the parameters; a clause naming `result` on a body-less `fn` is a skip
-/// (`Err`) rather than a query with a free, unconstrained `result` (which could mint a
-/// spurious counterexample).
+/// Ground a validity clause's `result` with the source body.
+///
+/// A body-less function returns an error instead of creating a query with an
+/// unconstrained result, which could produce a spurious counterexample.
 fn ground_result_in_clause(
     f: &thermite_syntax::FnItem,
     expr: &thermite_syntax::Expr,
@@ -3553,11 +3580,11 @@ fn effective_result_expr(body: &thermite_syntax::Block) -> Option<thermite_synta
     body.tail.as_deref().cloned()
 }
 
-/// Substitute `result` by the body expression `body` throughout a relaxable-fragment
-/// clause expression (`.design/stage1-forge-tier.md` REQ-10): the single-segment path
-/// `result` becomes `body`; the `+`/`-`/`*`/`/`/`%`/comparison/`!`/`&&`/`||`/cast
-/// structure recurses. Any other expression form is a leaf (no `result`) or outside the
-/// arithmetic/comparison fragment a forge-tier `ens` clause uses, cloned verbatim.
+/// Substitute the result value through non-binding contract-expression nodes.
+///
+/// Binding forms (`closure`, `match`, and block-valued `if`) remain outside the
+/// direct BV/EPR grounding fragment. Quantifiers are safe as long as their binder
+/// does not shadow the reserved result name.
 fn substitute_result_with_body(
     expr: &thermite_syntax::Expr,
     body: &thermite_syntax::Expr,
@@ -3565,6 +3592,29 @@ fn substitute_result_with_body(
     use thermite_syntax::Expr as E;
     match expr {
         E::Path(segs) if segs.len() == 1 && segs[0] == "result" => body.clone(),
+        E::Call { callee, args } => E::Call {
+            callee: Box::new(substitute_result_with_body(callee, body)),
+            args: args
+                .iter()
+                .map(|argument| substitute_result_with_body(argument, body))
+                .collect(),
+        },
+        E::MethodCall {
+            receiver,
+            name,
+            args,
+        } => E::MethodCall {
+            receiver: Box::new(substitute_result_with_body(receiver, body)),
+            name: name.clone(),
+            args: args
+                .iter()
+                .map(|argument| substitute_result_with_body(argument, body))
+                .collect(),
+        },
+        E::Field { receiver, name } => E::Field {
+            receiver: Box::new(substitute_result_with_body(receiver, body)),
+            name: name.clone(),
+        },
         E::Binary { op, lhs, rhs } => E::Binary {
             op: *op,
             lhs: Box::new(substitute_result_with_body(lhs, body)),
@@ -3577,6 +3627,76 @@ fn substitute_result_with_body(
         E::Cast { expr: inner, ty } => E::Cast {
             expr: Box::new(substitute_result_with_body(inner, body)),
             ty: ty.clone(),
+        },
+        E::Index { base, index } => E::Index {
+            base: Box::new(substitute_result_with_body(base, body)),
+            index: match index {
+                thermite_syntax::IndexArg::Single(expression) => thermite_syntax::IndexArg::Single(
+                    Box::new(substitute_result_with_body(expression, body)),
+                ),
+                thermite_syntax::IndexArg::RangeTo(expression) => {
+                    thermite_syntax::IndexArg::RangeTo(Box::new(substitute_result_with_body(
+                        expression, body,
+                    )))
+                }
+                thermite_syntax::IndexArg::RangeFrom(expression) => {
+                    thermite_syntax::IndexArg::RangeFrom(Box::new(substitute_result_with_body(
+                        expression, body,
+                    )))
+                }
+                thermite_syntax::IndexArg::Range(start, end) => thermite_syntax::IndexArg::Range(
+                    Box::new(substitute_result_with_body(start, body)),
+                    Box::new(substitute_result_with_body(end, body)),
+                ),
+            },
+        },
+        E::Ref {
+            mutable,
+            expr: inner,
+        } => E::Ref {
+            mutable: *mutable,
+            expr: Box::new(substitute_result_with_body(inner, body)),
+        },
+        E::Deref(inner) => E::Deref(Box::new(substitute_result_with_body(inner, body))),
+        E::StructLit { path, fields } => E::StructLit {
+            path: path.clone(),
+            fields: fields
+                .iter()
+                .map(|(name, expression)| {
+                    (name.clone(), substitute_result_with_body(expression, body))
+                })
+                .collect(),
+        },
+        E::Is { scrutinee, variant } => E::Is {
+            scrutinee: Box::new(substitute_result_with_body(scrutinee, body)),
+            variant: variant.clone(),
+        },
+        E::Tuple(expressions) => E::Tuple(
+            expressions
+                .iter()
+                .map(|expression| substitute_result_with_body(expression, body))
+                .collect(),
+        ),
+        E::TupleProj { receiver, index } => E::TupleProj {
+            receiver: Box::new(substitute_result_with_body(receiver, body)),
+            index: *index,
+        },
+        E::Quantifier {
+            quant,
+            var,
+            sort,
+            domain,
+            body: quantified_body,
+        } => E::Quantifier {
+            quant: *quant,
+            var: var.clone(),
+            sort: sort.clone(),
+            domain: Box::new(substitute_result_with_body(domain, body)),
+            body: if var == "result" {
+                quantified_body.clone()
+            } else {
+                Box::new(substitute_result_with_body(quantified_body, body))
+            },
         },
         other => other.clone(),
     }
@@ -7859,6 +7979,33 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
             },
         );
         (parsed.program, base)
+    }
+
+    #[test]
+    fn automatic_route_does_not_model_result_as_an_unconstrained_sequence() {
+        let parsed = thermite_syntax::parse(
+            "fn format(n: u64) -> String\n\
+             req true\n\
+             ens result.len() >= 1\n\
+             fx alloc { n.to_string() }",
+        );
+        assert!(parsed.is_clean(), "fixture must parse: {:?}", parsed.errors);
+        let Item::Fn(function) = &parsed.program.items[0] else {
+            panic!("fixture must contain a function");
+        };
+        let clause = &function.contract.ens[0];
+        let grounded =
+            ground_result_in_clause(function, &clause.expr).expect("result has a source body");
+        assert!(
+            !expr_mentions_result(&grounded),
+            "result must be substituted through the method receiver"
+        );
+        assert!(
+            epr_candidate(&parsed.program, function, 0, clause)
+                .expect("out-of-fragment bodies are not reconstruction failures")
+                .is_none(),
+            "`to_string` is outside S₂.0, so the existing verifier result must remain intact"
+        );
     }
 
     #[test]

@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: a61b0f8de8a3f85e38cb812985094467050458219ae5b3412377c14a6cf7bed6
+audited-content-sha256: e5535b453f921f9ada6c3054d082c1c4a241f9d7a5a53ec99044ded282ca60b5
 governs: canonical S₂.0 bridge, typed Lean reconstruction, production routing,
          audit boundary, proof tooling, and Gate G4 (see tooling/spec-routes.toml)
 -->
@@ -46,6 +46,13 @@ and unrealized models are named failures, never proofs.
 An admitted formula returning `Unsupported` is a gate failure. Later fragment
 versions may add sequence-sort binders, nested sequences, floating point, or
 higher-order and recursive propositions; those are not S₂.0.
+
+For postconditions, admission is decided after replacing `result` with the
+source body. The substitution descends through calls, method receivers, fields,
+indexes, tuples, casts, and quantifiers. If the body introduces an operation
+outside S₂.0, such as `to_string`, the grounded obligation stays on the ordinary
+backend. Forge never models `result` as an unconstrained reconstruction
+constant.
 
 ## Requirements
 

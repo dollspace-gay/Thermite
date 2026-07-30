@@ -38,6 +38,14 @@ IMPORTS=(
   "Thermite.PinRelaxRefute"
   "Thermite.BvModel"
   "Thermite.PinReconstruction"
+  "Thermite.Strat.EprReplay"
+  "Thermite.Strat.StructuralInstantiation"
+  "Thermite.PinSubstitutionCapture"
+  "Thermite.PinSkolemDependencies"
+  "Thermite.PinGroundingCompleteness"
+  "Thermite.PinInstantiationOmission"
+  "Thermite.PinStructuralSkolemScopes"
+  "Thermite.PinEprReplay"
 )
 
 # Universal soundness theorems and the permanent reconstruction probe.
@@ -54,6 +62,12 @@ THEOREMS=(
   "Thermite.Strat.Cls.restrat_conservative"
   "Thermite.Strat.strat_lowering_faithful"
   "Thermite.bv_reconstruction_lrat_probe"
+  "Thermite.Strat.Cls.source_false_of_verifiedInstantiation"
+  "Thermite.Strat.Cls.source_false_of_verifiedStructuralInstantiation"
+  "Thermite.Strat.Cls.source_false_of_verifyEprReplay"
+  "Thermite.Strat.Cls.checked_implication_of_problem_unsat"
+  "Thermite.Strat.Cls.checked_structural_implication_of_problem_unsat"
+  "Thermite.checked_source_is_false"
 )
 ALLOWED="propext Classical.choice Quot.sound"
 

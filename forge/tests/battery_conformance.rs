@@ -62,6 +62,12 @@ fn run_check_json(file: &Path) -> (Option<i32>, Vec<Value>) {
     let out = Command::new(forge_bin())
         .arg("check")
         .arg(file)
+        // This suite isolates the frozen-battery gate. The normal command now
+        // selects automatic proof routing, which may subsequently try to
+        // discharge a clean forge lemma; the battery oracle predates and is
+        // independent of that later proof-engine stage.
+        .arg("--engine")
+        .arg("verus")
         .arg("--json")
         .output()
         .unwrap_or_else(|e| panic!("spawn forge: {e}"));

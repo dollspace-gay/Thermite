@@ -156,7 +156,10 @@ fn confirm_string_non_join_items_certify_per_oracle() {
     let certs = check_json_file(&corpus_path("string_demo.th"));
 
     let gl = cert_for(&certs, "greeting_len");
-    assert_eq!(gl["level"], "L3", "ORACLE: greeting_len -> L3");
+    assert_eq!(
+        gl["level"], "L4",
+        "ORACLE: greeting_len -> L4 through automatic sequence reconstruction"
+    );
     assert_eq!(gl["effects"], serde_json::json!(["pure"]));
 
     let fb = cert_for(&certs, "first_byte");

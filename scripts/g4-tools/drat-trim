@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly REVISION="effa1dcce85c878236f8313133dff1a2b766cd7c"
+
+if [[ ${1-} == "--thermite-version" && $# -eq 1 ]]; then
+  echo "drat-trim ${REVISION}"
+  exit 0
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec "$SCRIPT_DIR/../libexec/drat-trim.real" "$@"

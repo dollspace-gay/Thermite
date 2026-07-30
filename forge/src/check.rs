@@ -202,10 +202,8 @@ pub struct CheckOptions {
     /// REQ-5). An item that proves L3 but scores below this floor does not certify
     /// (`WeakContract` reject). Default [`mutation::MUTATION_FLOOR`] (0.60).
     pub mutation_floor: f64,
-    /// The proof-backend engine selection (`.design/verified/proof-backends.md`
-    /// OQ-1 / REQ-8, increment (iii), #247). [`EngineSelection::Verus`] (the default)
-    /// is byte-identical to the shipped Verus path; [`EngineSelection::Lean`] /
-    /// [`EngineSelection::Auto`] add the Lean engine #2 (the `--engine` surface).
+    /// Proof-backend selection. The Rust `Default` remains the byte-stable Verus
+    /// path; the CLI chooses [`EngineSelection::Auto`] when no flag is present.
     pub engine: EngineSelection,
     /// The source-file path the interactive proof artifacts (`<file>.lean-proofs/
     /// <item>.lean`) are checked in beside (REQ-7(ii)). `None` on the in-process
@@ -214,17 +212,12 @@ pub struct CheckOptions {
     pub source_file: Option<PathBuf>,
 }
 
-/// The `forge check --engine verus|lean|auto` surface (`.design/verified/
-/// proof-backends.md` OQ-1 decision / REQ-8, increment (iii), #247). The decision
-/// (recorded in the design's OQ-1 + the REQ-4/REQ-8 rows): `verus` is the default
-/// (byte-identical to the shipped pipeline); `lean` runs the LeanEngine only
-/// (exportable items discharged by Lean; a non-exportable item is reported as a
-/// skip); `auto` runs Verus first and, on a Verus Unknown/timeout, tries Lean (the
-/// §6 ordering). Cert attribution (REQ-4) is populated whenever a non-default engine
-/// discharges.
+/// Proof-engine choices accepted by `forge check`. The enum default is Verus so
+/// programmatic callers retain the original byte-stable behavior. The CLI
+/// defaults to `Auto`, which adds Lean fallback and the checked BV/EPR overlays.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum EngineSelection {
-    /// `--engine verus` (default): the shipped Verus path, byte-identical.
+    /// `--engine verus`: the original Verus path, byte-identical.
     #[default]
     Verus,
     /// `--engine lean`: the LeanEngine only — exportable items are discharged by Lean
@@ -257,10 +250,10 @@ pub enum EngineSelection {
     /// `--engine bv` (`.design/stage3-bv-reconstruction.md` REQ-2 / AC-2 / AC-3 —
     /// stage-3): the per-clause bit-vector route (the RFC's `mix64` shape). Each `ens`
     /// clause is dispatched by its `@bvN` tag: a tagged clause lowers to fixed-width
-    /// QF_BV and is decided by the [`crate::bitvector::BitVectorEngine`] (a `Proved`
-    /// certifies at the caged rung [`Level::L4`] — decidable with complete bit-pattern
-    /// countermodels (RFC-1 §2/§4), solver-trusted (Z3 QF_BV) until REQ-7/8 kernel-
-    /// grounds it; a falsified clause yields a bit-level
+    /// QF_BV and is decided by the [`crate::bitvector::BitVectorEngine`]. A `Proved`
+    /// result certifies at [`Level::L4`] after the reconstruction path has had an
+    /// opportunity to replace solver trust with checked Lean evidence. A falsified
+    /// clause yields a bit-level
     /// `Counterexample` with the bit pattern; an over-budget 64-bit multiplier yields a
     /// `Timeout` under the dedicated budget profile, never `unknown`). An untagged
     /// clause lowers as before — routed to the [`crate::engine::NlsatEngine`] when it is
@@ -1002,9 +995,8 @@ pub fn check_file_with_options(
     Ok(certs)
 }
 
-/// Run `forge check --engine lean|auto` (`.design/verified/proof-backends.md` OQ-1 /
-/// REQ-4/REQ-5/REQ-8, increment (iii), #247). The Verus default path is
-/// [`check_file_with_options`]; this adds the Lean engine #2 surface:
+/// Run a non-legacy proof route. [`check_file_with_options`] supplies the
+/// byte-stable Verus base; this function adds the selected engine behavior:
 ///
 /// - `auto` (`.design/verified/proof-backends.md` §6 ordering): run Verus first
 ///   (the byte-identical base certs). For each item where Verus is inconclusive (a
@@ -1033,7 +1025,7 @@ pub fn check_file_with_engine(
         .clone()
         .unwrap_or_else(|| path.to_path_buf());
 
-    // The Verus base certs (byte-identical to the default path). `auto` keeps a Verus
+    // The Verus base certs (byte-identical to the legacy path). `auto` keeps a Verus
     // `Proven`; `lean` ignores the Verus verdict (LeanEngine only) but reuses the same
     // parse/validate/effect-check gate via this call (a parse/validate failure is the
     // same `ForgeError` either way).
@@ -1081,7 +1073,7 @@ pub fn check_file_with_engine(
     // nlsat/forge routes; the v1 Verus path and the lean/auto paths are untouched, so
     // the v1 corpus (which carries no `@bv` tag) stays byte-identical.
     if selection == EngineSelection::Bv {
-        return Ok(bv_check(base, &parsed.program));
+        return Ok(bv_check(base, &parsed.program, true));
     }
 
     let lean = crate::engine::LeanEngine::new(parsed.program.clone(), lean_package_root());
@@ -1186,6 +1178,16 @@ pub fn check_file_with_engine(
                 .any(|c| c.item == name && c.level == Level::L3 && c.reject.is_none())
         },
     );
+    // Automatic routing is per clause. A tagged clause takes the checked
+    // bit-vector route after the ordinary Verus/Lean pass; untagged items remain
+    // untouched by `bv_check`. Explicit `--engine verus` remains available as a
+    // diagnostic override.
+    if selection == EngineSelection::Auto {
+        if program_has_bv_tag(&parsed.program) {
+            out = bv_check(out, &parsed.program, false);
+        }
+        out = epr_check(out, &parsed.program);
+    }
     Ok(out)
 }
 
@@ -1625,7 +1627,7 @@ fn nlsat_realwitness_cert(
 /// non-`@bv`, non-relaxable clauses (`BvUntaggedUnsupported`) and silently DOWNGRADE a
 /// L3 function to L0 in the audit — a faithfulness bug. The v1 corpus carries no
 /// `@bv` tag, so its goldens are byte-identical.
-fn bv_check(base: Vec<Certificate>, program: &Program) -> Vec<Certificate> {
+fn bv_check(base: Vec<Certificate>, program: &Program, include_epr_only: bool) -> Vec<Certificate> {
     let bv = crate::bitvector::BitVectorEngine::new();
     let nlsat = crate::engine::NlsatEngine::new(program.clone());
     // The reachable `struct`/`enum` decls the bv-semantics mutation battery (REQ-4 /
@@ -1640,12 +1642,19 @@ fn bv_check(base: Vec<Certificate>, program: &Program) -> Vec<Certificate> {
     let mut out = Vec::with_capacity(base.len());
     for cert in base {
         match crate::lean_export::find_item(program, &cert.item) {
-            Some(Item::Fn(f)) if fn_has_bv_tag(f) => {
+            Some(Item::Fn(f))
+                if f.boundary.is_none()
+                    && f.slag.is_none()
+                    && (fn_has_bv_tag(f)
+                        || (include_epr_only && fn_has_epr_clause(program, f))) =>
+            {
                 let invariant_tags = fn_bv_invariant_tags(f);
                 let base_proved = cert.level == Level::L3 && cert.reject.is_none();
-                let rebuilt = if fn_has_bv_ens_tag(f) && (invariant_tags.is_empty() || base_proved)
+                let has_epr = fn_has_epr_clause(program, f);
+                let rebuilt = if (fn_has_bv_ens_tag(f) || (include_epr_only && has_epr))
+                    && (invariant_tags.is_empty() || base_proved)
                 {
-                    bv_fn_cert(&bv, &nlsat, f, &cert, &adt_deps)
+                    bv_fn_cert(&bv, &nlsat, program, f, &cert, &adt_deps)
                 } else {
                     // The base Verus result includes initiation and preservation
                     // for invariants lowered to fixed-width operations.
@@ -1709,6 +1718,379 @@ pub fn program_has_bv_tag(program: &Program) -> bool {
         Item::Forge(thermite_syntax::ForgeItem::Lemma(l)) => lemma_has_bv_tag(l),
         _ => false,
     })
+}
+
+/// Apply the admitted S₂.0 reconstruction overlay to ordinary automatic
+/// routing. Functions that carry a `@bv` clause are skipped here because
+/// [`bv_fn_cert`] already dispatches their untagged EPR clauses in the same
+/// hybrid pass. For an EPR-only function, every admitted relation/sequence
+/// clause is reconstructed even when Verus happened to prove the item.
+fn epr_check(base: Vec<Certificate>, program: &Program) -> Vec<Certificate> {
+    let mut out = Vec::with_capacity(base.len());
+    for cert in base {
+        let Some(Item::Fn(function)) = crate::lean_export::find_item(program, &cert.item) else {
+            out.push(cert);
+            continue;
+        };
+        if fn_has_bv_tag(function) {
+            out.push(cert);
+            continue;
+        }
+        // Boundary and slag functions are intentionally certified only to their
+        // recorded L1 boundary/fiat. Clause reconstruction must not turn either
+        // into an implementation-level L4 claim.
+        if function.boundary.is_some() || function.slag.is_some() {
+            out.push(cert);
+            continue;
+        }
+
+        let mut reconstructed = Vec::new();
+        let mut terminal = None;
+        for (index, clause) in function.contract.ens.iter().enumerate() {
+            let Some(outcome) = epr_clause_outcome(program, function, index, clause) else {
+                continue;
+            };
+            match outcome {
+                crate::epr_reconstruct::EprOutcome::Proved(evidence) => {
+                    reconstructed.push(epr_proved_obl(
+                        &function.name,
+                        index,
+                        *evidence,
+                        &epr_attribution(),
+                    ));
+                }
+                crate::epr_reconstruct::EprOutcome::Counterexample(model) => {
+                    terminal = Some(epr_counterexample_cert(
+                        &function.name,
+                        &cert.effects,
+                        function.slag.is_some(),
+                        index,
+                        &model,
+                        &epr_countermodel_attribution(),
+                    ));
+                    break;
+                }
+                crate::epr_reconstruct::EprOutcome::Timeout(reason) => {
+                    terminal = Some(epr_timeout_cert(
+                        &function.name,
+                        &cert.effects,
+                        function.slag.is_some(),
+                        index,
+                        &reason,
+                        &epr_undecided_attribution(),
+                    ));
+                    break;
+                }
+                crate::epr_reconstruct::EprOutcome::Failed(reason) => {
+                    terminal = Some(epr_failure_cert(
+                        &function.name,
+                        &cert.effects,
+                        function.slag.is_some(),
+                        index,
+                        &reason,
+                        &epr_undecided_attribution(),
+                    ));
+                    break;
+                }
+            }
+        }
+        if let Some(terminal) = terminal {
+            out.push(terminal);
+            continue;
+        }
+        if reconstructed.is_empty() {
+            out.push(cert);
+            continue;
+        }
+
+        let every_clause_reconstructed = reconstructed.len() == function.contract.ens.len();
+        if every_clause_reconstructed {
+            // A base-engine counterexample contradicting a kernel-checked EPR proof
+            // is a soundness alarm, not permission to silently replace either
+            // verdict. Keep it as a named, non-certifying result.
+            if cert.reject.as_ref().map(|reject| reject.cause.as_str()) == Some("Counterexample") {
+                out.push(epr_failure_cert(
+                    &function.name,
+                    &cert.effects,
+                    function.slag.is_some(),
+                    0,
+                    "EprVerifierDisagreement: the base engine reported a counterexample \
+                     while Lean kernel replay proved every admitted S₂.0 clause",
+                    &epr_undecided_attribution(),
+                ));
+                continue;
+            }
+            out.push(
+                Certificate::new(
+                    function.name.clone(),
+                    Level::L4,
+                    cert.effects.clone(),
+                    0,
+                    reconstructed,
+                )
+                .graduate_triage_clean()
+                .with_engine_attribution(epr_attribution()),
+            );
+        } else {
+            // EPR migrated the relation/sequence clauses, but the remaining
+            // clauses retain the base engine's verdict and item-level rung.
+            let mut mixed = cert;
+            mixed.obligations.extend(reconstructed);
+            out.push(mixed);
+        }
+    }
+    out
+}
+
+/// Whether at least one clause is admitted by the canonical S₂.0 IR and needs
+/// relation/sequence reconstruction.
+fn fn_has_epr_clause(program: &Program, function: &thermite_syntax::FnItem) -> bool {
+    function
+        .contract
+        .ens
+        .iter()
+        .enumerate()
+        .any(|(index, clause)| {
+            matches!(
+                epr_candidate(program, function, index, clause),
+                Ok(Some(_)) | Err(_)
+            )
+        })
+}
+
+/// Build the exact canonical record used by routing and replay.
+///
+/// Result-bearing clauses are first grounded with the function body, matching
+/// the existing BV validity route. If grounding is impossible, the raw clause
+/// is inspected only to determine whether this was an admitted EPR obligation;
+/// such a case becomes a named reconstruction failure instead of disappearing
+/// as `Unsupported`.
+fn epr_candidate(
+    program: &Program,
+    function: &thermite_syntax::FnItem,
+    index: usize,
+    clause: &thermite_syntax::Clause,
+) -> Result<Option<thermite_spec::S2Recon>, String> {
+    let address = thermite_spec::SourceAddress {
+        item: function.name.clone(),
+        clause: format!("ens#{index}"),
+    };
+    let grounded_expr = match ground_result_in_clause(function, &clause.expr) {
+        Ok(expression) => expression,
+        Err(reason) => {
+            let raw = thermite_spec::s2_recon_from_obligation(
+                program,
+                function,
+                &function.contract.req,
+                clause,
+                address,
+            )
+            .ok();
+            if raw.as_ref().is_some_and(epr_recon_is_target) {
+                return Err(format!("EprBodyGrounding: {reason}"));
+            }
+            return Ok(None);
+        }
+    };
+    let mut grounded_clause = clause.clone();
+    grounded_clause.expr = grounded_expr;
+    let recon = match thermite_spec::s2_recon_from_obligation(
+        program,
+        function,
+        &function.contract.req,
+        &grounded_clause,
+        address,
+    ) {
+        Ok(recon) => recon,
+        // No canonical IR means the source construct is outside S₂.0; routing
+        // cannot call it admitted and therefore does not fabricate an EPR
+        // `Unsupported` result.
+        Err(_) => return Ok(None),
+    };
+    Ok(epr_recon_is_target(&recon).then_some(recon))
+}
+
+fn epr_recon_is_target(recon: &thermite_spec::S2Recon) -> bool {
+    matches!(
+        thermite_spec::classifier::classify(&recon.formula),
+        thermite_spec::classifier::Verdict::Admitted
+    ) && crate::epr_reconstruct::needs_reconstruction(&recon.formula)
+}
+
+fn epr_clause_outcome(
+    program: &Program,
+    function: &thermite_syntax::FnItem,
+    index: usize,
+    clause: &thermite_syntax::Clause,
+) -> Option<crate::epr_reconstruct::EprOutcome> {
+    match epr_candidate(program, function, index, clause) {
+        Ok(Some(recon)) => Some(crate::epr_reconstruct::reconstruct(
+            &recon,
+            function,
+            &function.contract.req,
+            clause,
+        )),
+        Ok(None) => None,
+        Err(reason) => Some(crate::epr_reconstruct::EprOutcome::Failed(reason)),
+    }
+}
+
+fn epr_attribution() -> crate::engine::EngineAttribution {
+    crate::engine::EngineAttribution {
+        engine: crate::engine::EngineName::Epr.tag().to_string(),
+        trust_profile: crate::engine::epr_kernel_checked_trust_profile().items,
+    }
+}
+
+fn epr_countermodel_attribution() -> crate::engine::EngineAttribution {
+    crate::engine::EngineAttribution {
+        engine: crate::engine::EngineName::Epr.tag().to_string(),
+        trust_profile: vec![
+            "finite S2Recon ground assignment checked against the exact emitted CNF and \
+             checked ground-theory clauses"
+                .to_string(),
+        ],
+    }
+}
+
+fn epr_undecided_attribution() -> crate::engine::EngineAttribution {
+    crate::engine::EngineAttribution {
+        engine: crate::engine::EngineName::Epr.tag().to_string(),
+        trust_profile: Vec::new(),
+    }
+}
+
+fn epr_proved_obl(
+    item: &str,
+    index: usize,
+    evidence: crate::lean_smt_export::ReconstructionEvidence,
+    attribution: &crate::engine::EngineAttribution,
+) -> ObligationResult {
+    ObligationResult::discharged(format!(
+        "{item}::ens#{index}: admitted S₂.0 relation/sequence clause reconstructed from \
+         canonical IR; Lean checked the actual req → clause theorem (L4 caged rung)"
+    ))
+    .with_clause_attribution(
+        attribution.engine.clone(),
+        attribution.trust_profile.clone(),
+        crate::verdict::CertVerdict::Proved,
+    )
+    .with_reconstruction(evidence)
+}
+
+fn epr_counterexample_cert(
+    item: &str,
+    effects: &[String],
+    slag: bool,
+    index: usize,
+    model: &crate::epr_reconstruct::FiniteCountermodel,
+    attribution: &crate::engine::EngineAttribution,
+) -> Certificate {
+    let detail = format!(
+        "the admitted S₂.0 route found a finite countermodel for `{item}`'s clause \
+         `ens#{index}`: {}",
+        model.diagnostic()
+    );
+    let witness =
+        ObligationResult::failed(format!("{item}#ens#{index}"), None, Some(detail.clone()));
+    let verdict = crate::verdict::CertVerdict::Counterexample {
+        obligations: vec![witness.clone()],
+    };
+    let mut cert = Certificate::rejected(
+        item.to_string(),
+        effects.to_vec(),
+        slag,
+        RejectReason {
+            cause: "EprCounterexample".to_string(),
+            detail,
+        },
+    );
+    cert.obligations = vec![witness.with_clause_attribution(
+        attribution.engine.clone(),
+        attribution.trust_profile.clone(),
+        verdict,
+    )];
+    cert.with_engine_attribution(attribution.clone())
+}
+
+fn epr_timeout_cert(
+    item: &str,
+    effects: &[String],
+    slag: bool,
+    index: usize,
+    reason: &str,
+    attribution: &crate::engine::EngineAttribution,
+) -> Certificate {
+    let kernel_budget = reason.starts_with("EprKernelBudget:");
+    let verdict = if kernel_budget {
+        crate::verdict::CertVerdict::KernelBudget {
+            detail: reason.to_string(),
+        }
+    } else {
+        crate::verdict::CertVerdict::Timeout {
+            detail: reason.to_string(),
+        }
+    };
+    let cause = if kernel_budget {
+        "EprKernelBudget"
+    } else {
+        "EprSolverTimeout"
+    };
+    let detail = format!("`{item}`'s admitted S₂.0 clause `ens#{index}` did not certify: {reason}");
+    let obligation =
+        ObligationResult::failed(format!("{item}#ens#{index}"), None, Some(detail.clone()))
+            .with_clause_attribution(
+                attribution.engine.clone(),
+                attribution.trust_profile.clone(),
+                verdict,
+            );
+    let mut cert = Certificate::rejected(
+        item.to_string(),
+        effects.to_vec(),
+        slag,
+        RejectReason {
+            cause: cause.to_string(),
+            detail,
+        },
+    );
+    cert.obligations = vec![obligation];
+    cert.with_engine_attribution(attribution.clone())
+}
+
+fn epr_failure_cert(
+    item: &str,
+    effects: &[String],
+    slag: bool,
+    index: usize,
+    reason: &str,
+    attribution: &crate::engine::EngineAttribution,
+) -> Certificate {
+    let cause = reason
+        .split_once(':')
+        .map_or("EprReconstructionFailure", |(cause, _)| cause)
+        .to_string();
+    let detail = format!(
+        "`{item}`'s admitted S₂.0 clause `ens#{index}` failed checked reconstruction: \
+         {reason}"
+    );
+    let obligation =
+        ObligationResult::failed(format!("{item}#ens#{index}"), None, Some(detail.clone()))
+            .with_clause_attribution(
+                attribution.engine.clone(),
+                attribution.trust_profile.clone(),
+                crate::verdict::CertVerdict::Stuck {
+                    goals: vec![format!("{item}::ens#{index}")],
+                    hint: Some(reason.to_string()),
+                },
+            );
+    let mut cert = Certificate::rejected(
+        item.to_string(),
+        effects.to_vec(),
+        slag,
+        RejectReason { cause, detail },
+    );
+    cert.obligations = vec![obligation];
+    cert.with_engine_attribution(attribution.clone())
 }
 
 /// Does this function contain any tagged postcondition or invariant?
@@ -1826,25 +2208,52 @@ fn attach_bv_invariant_shadows(
     cert
 }
 
-/// Does `e` reference the `result` keyword (`.design/stage3-bv-reconstruction.md`
-/// REQ-2)? A `@bv` clause that names `result` must have it grounded by the body before
-/// it can be a closed QF_BV query over the parameters.
+/// Does an expression reference the function's `result` value?
+///
+/// BV and EPR validity checks must replace that value with the function body
+/// before treating the clause as closed over its parameters.
 fn expr_mentions_result(e: &thermite_syntax::Expr) -> bool {
     use thermite_syntax::Expr as E;
     match e {
         E::Path(segs) => segs.len() == 1 && segs[0] == "result",
+        E::Call { callee, args } => {
+            expr_mentions_result(callee) || args.iter().any(expr_mentions_result)
+        }
+        E::MethodCall { receiver, args, .. } => {
+            expr_mentions_result(receiver) || args.iter().any(expr_mentions_result)
+        }
+        E::Field { receiver, .. } | E::TupleProj { receiver, .. } => expr_mentions_result(receiver),
         E::Binary { lhs, rhs, .. } => expr_mentions_result(lhs) || expr_mentions_result(rhs),
-        E::Unary { expr, .. } | E::Cast { expr, .. } => expr_mentions_result(expr),
+        E::Unary { expr, .. } | E::Cast { expr, .. } | E::Ref { expr, .. } | E::Deref(expr) => {
+            expr_mentions_result(expr)
+        }
+        E::Index { base, index } => {
+            expr_mentions_result(base)
+                || match index {
+                    thermite_syntax::IndexArg::Single(expr)
+                    | thermite_syntax::IndexArg::RangeTo(expr)
+                    | thermite_syntax::IndexArg::RangeFrom(expr) => expr_mentions_result(expr),
+                    thermite_syntax::IndexArg::Range(start, end) => {
+                        expr_mentions_result(start) || expr_mentions_result(end)
+                    }
+                }
+        }
+        E::StructLit { fields, .. } => fields
+            .iter()
+            .any(|(_, expression)| expr_mentions_result(expression)),
+        E::Is { scrutinee, .. } => expr_mentions_result(scrutinee),
+        E::Tuple(expressions) => expressions.iter().any(expr_mentions_result),
+        E::Quantifier {
+            var, domain, body, ..
+        } => expr_mentions_result(domain) || (var != "result" && expr_mentions_result(body)),
         _ => false,
     }
 }
 
-/// Ground a `@bv` clause's `result` by the function body (`.design/stage3-bv-reconstruction.md`
-/// REQ-2). A clause that names `result` is rewritten with `result := body` (the
-/// forge-route precedent, [`substitute_result_with_body`]) so the QF_BV query is closed
-/// over the parameters; a clause naming `result` on a body-less `fn` is a skip
-/// (`Err`) rather than a query with a free, unconstrained `result` (which could mint a
-/// spurious counterexample).
+/// Ground a validity clause's `result` with the source body.
+///
+/// A body-less function returns an error instead of creating a query with an
+/// unconstrained result, which could produce a spurious counterexample.
 fn ground_result_in_clause(
     f: &thermite_syntax::FnItem,
     expr: &thermite_syntax::Expr,
@@ -1870,14 +2279,16 @@ fn ground_result_in_clause(
 /// `@bv` tag: a tagged clause → the [`crate::bitvector::BitVectorEngine`] (QF_BV at the
 /// tag width); an untagged clause → the [`crate::engine::NlsatEngine`] when it is a
 /// relaxable polynomial (the unbounded side), else a skip. A `Proved` tagged
-/// clause certifies at the caged rung [`Level::L4`] (decidable, complete bit-pattern
-/// countermodels; solver-trusted Z3 QF_BV), as does an nlsat `Proved`;
+/// clause certifies at the caged rung [`Level::L4`] (decidable, with complete
+/// bit-pattern countermodels and checked reconstruction when available), as does
+/// an nlsat `Proved`;
 /// the item level is the MIN. The first non-certifying clause (a bit-level
 /// counterexample, an over-budget multiplier timeout, an undecided/unsupported clause)
 /// short-circuits to its non-certified certificate.
 fn bv_fn_cert(
     bv: &crate::bitvector::BitVectorEngine,
     nlsat: &crate::engine::NlsatEngine,
+    program: &Program,
     f: &thermite_syntax::FnItem,
     base: &Certificate,
     adt_deps: &[Item],
@@ -1982,9 +2393,36 @@ fn bv_fn_cert(
                 }
             }
         } else {
-            // Untagged → the unbounded side: nlsat when the clause is a relaxable
-            // polynomial, else a skip (this route lowers only the bit-vector
-            // clauses and the relaxable unbounded clauses).
+            // Untagged admitted S₂.0 relation/sequence clauses use the checked
+            // finite-ground reconstruction route. This branch comes before the
+            // scalar nlsat fallback so the same canonical IR controls
+            // classification, solver emission, and Lean replay.
+            if let Some(outcome) = epr_clause_outcome(program, f, k, ens) {
+                match outcome {
+                    crate::epr_reconstruct::EprOutcome::Proved(evidence) => {
+                        let attr = epr_attribution();
+                        obligations.push(epr_proved_obl(&f.name, k, *evidence, &attr));
+                        item_level = item_level.min(Level::L4);
+                        item_attr.get_or_insert(attr);
+                        continue;
+                    }
+                    crate::epr_reconstruct::EprOutcome::Counterexample(model) => {
+                        let attr = epr_countermodel_attribution();
+                        return epr_counterexample_cert(&f.name, &effects, slag, k, &model, &attr);
+                    }
+                    crate::epr_reconstruct::EprOutcome::Timeout(reason) => {
+                        let attr = epr_undecided_attribution();
+                        return epr_timeout_cert(&f.name, &effects, slag, k, &reason, &attr);
+                    }
+                    crate::epr_reconstruct::EprOutcome::Failed(reason) => {
+                        let attr = epr_undecided_attribution();
+                        return epr_failure_cert(&f.name, &effects, slag, k, &reason, &attr);
+                    }
+                }
+            }
+
+            // Other untagged clauses use the unbounded side: nlsat when the
+            // clause is a relaxable polynomial, else a named honest skip.
             let synth = single_ens_fn(f, ens);
             if crate::relax::classify_fn(&synth).is_relaxable() {
                 match nlsat.discharge_relax(&synth) {
@@ -2220,8 +2658,9 @@ fn bv_mutation_score(
 /// A lemma carries no `result` and no body: each `@bv`-tagged `ens` clause is a closed
 /// QF_BV query over the parameters under the lemma's `req`. A non-tagged lemma clause is
 /// a skip (this route lowers only the bit-vector clauses). The lemma certifies
-/// at [`Level::L4`] (the caged rung — decidable, complete bit-pattern countermodels;
-/// solver-trusted Z3 QF_BV); a counterexample / timeout short-circuits.
+/// at [`Level::L4`] (the caged rung: decidable, with complete bit-pattern
+/// countermodels and checked reconstruction when available); a counterexample
+/// or timeout short-circuits.
 fn bv_lemma_cert(
     bv: &crate::bitvector::BitVectorEngine,
     l: &thermite_syntax::LemmaItem,
@@ -2390,7 +2829,7 @@ fn bv_proved_obl(
     // Every tagged clause records its width and any nowrap result.
     .with_bv_shadow(bv_shadow_for(clause.tag, nowrap_obligation));
     if let crate::lean_smt_export::ReconstructionOutcome::Checked(evidence) = reconstruction {
-        obligation = obligation.with_reconstruction(evidence);
+        obligation = obligation.with_reconstruction(*evidence);
     }
     obligation
 }
@@ -2625,7 +3064,7 @@ fn lia_proved_obl(
         crate::verdict::CertVerdict::Proved,
     );
     if let crate::lean_smt_export::ReconstructionOutcome::Checked(evidence) = reconstruction {
-        obligation = obligation.with_reconstruction(evidence);
+        obligation = obligation.with_reconstruction(*evidence);
     }
     obligation
 }
@@ -3151,11 +3590,11 @@ fn effective_result_expr(body: &thermite_syntax::Block) -> Option<thermite_synta
     body.tail.as_deref().cloned()
 }
 
-/// Substitute `result` by the body expression `body` throughout a relaxable-fragment
-/// clause expression (`.design/stage1-forge-tier.md` REQ-10): the single-segment path
-/// `result` becomes `body`; the `+`/`-`/`*`/`/`/`%`/comparison/`!`/`&&`/`||`/cast
-/// structure recurses. Any other expression form is a leaf (no `result`) or outside the
-/// arithmetic/comparison fragment a forge-tier `ens` clause uses, cloned verbatim.
+/// Substitute the result value through non-binding contract-expression nodes.
+///
+/// Binding forms (`closure`, `match`, and block-valued `if`) remain outside the
+/// direct BV/EPR grounding fragment. Quantifiers are safe as long as their binder
+/// does not shadow the reserved result name.
 fn substitute_result_with_body(
     expr: &thermite_syntax::Expr,
     body: &thermite_syntax::Expr,
@@ -3163,6 +3602,29 @@ fn substitute_result_with_body(
     use thermite_syntax::Expr as E;
     match expr {
         E::Path(segs) if segs.len() == 1 && segs[0] == "result" => body.clone(),
+        E::Call { callee, args } => E::Call {
+            callee: Box::new(substitute_result_with_body(callee, body)),
+            args: args
+                .iter()
+                .map(|argument| substitute_result_with_body(argument, body))
+                .collect(),
+        },
+        E::MethodCall {
+            receiver,
+            name,
+            args,
+        } => E::MethodCall {
+            receiver: Box::new(substitute_result_with_body(receiver, body)),
+            name: name.clone(),
+            args: args
+                .iter()
+                .map(|argument| substitute_result_with_body(argument, body))
+                .collect(),
+        },
+        E::Field { receiver, name } => E::Field {
+            receiver: Box::new(substitute_result_with_body(receiver, body)),
+            name: name.clone(),
+        },
         E::Binary { op, lhs, rhs } => E::Binary {
             op: *op,
             lhs: Box::new(substitute_result_with_body(lhs, body)),
@@ -3175,6 +3637,76 @@ fn substitute_result_with_body(
         E::Cast { expr: inner, ty } => E::Cast {
             expr: Box::new(substitute_result_with_body(inner, body)),
             ty: ty.clone(),
+        },
+        E::Index { base, index } => E::Index {
+            base: Box::new(substitute_result_with_body(base, body)),
+            index: match index {
+                thermite_syntax::IndexArg::Single(expression) => thermite_syntax::IndexArg::Single(
+                    Box::new(substitute_result_with_body(expression, body)),
+                ),
+                thermite_syntax::IndexArg::RangeTo(expression) => {
+                    thermite_syntax::IndexArg::RangeTo(Box::new(substitute_result_with_body(
+                        expression, body,
+                    )))
+                }
+                thermite_syntax::IndexArg::RangeFrom(expression) => {
+                    thermite_syntax::IndexArg::RangeFrom(Box::new(substitute_result_with_body(
+                        expression, body,
+                    )))
+                }
+                thermite_syntax::IndexArg::Range(start, end) => thermite_syntax::IndexArg::Range(
+                    Box::new(substitute_result_with_body(start, body)),
+                    Box::new(substitute_result_with_body(end, body)),
+                ),
+            },
+        },
+        E::Ref {
+            mutable,
+            expr: inner,
+        } => E::Ref {
+            mutable: *mutable,
+            expr: Box::new(substitute_result_with_body(inner, body)),
+        },
+        E::Deref(inner) => E::Deref(Box::new(substitute_result_with_body(inner, body))),
+        E::StructLit { path, fields } => E::StructLit {
+            path: path.clone(),
+            fields: fields
+                .iter()
+                .map(|(name, expression)| {
+                    (name.clone(), substitute_result_with_body(expression, body))
+                })
+                .collect(),
+        },
+        E::Is { scrutinee, variant } => E::Is {
+            scrutinee: Box::new(substitute_result_with_body(scrutinee, body)),
+            variant: variant.clone(),
+        },
+        E::Tuple(expressions) => E::Tuple(
+            expressions
+                .iter()
+                .map(|expression| substitute_result_with_body(expression, body))
+                .collect(),
+        ),
+        E::TupleProj { receiver, index } => E::TupleProj {
+            receiver: Box::new(substitute_result_with_body(receiver, body)),
+            index: *index,
+        },
+        E::Quantifier {
+            quant,
+            var,
+            sort,
+            domain,
+            body: quantified_body,
+        } => E::Quantifier {
+            quant: *quant,
+            var: var.clone(),
+            sort: sort.clone(),
+            domain: Box::new(substitute_result_with_body(domain, body)),
+            body: if var == "result" {
+                quantified_body.clone()
+            } else {
+                Box::new(substitute_result_with_body(quantified_body, body))
+            },
         },
         other => other.clone(),
     }
@@ -3319,11 +3851,13 @@ fn lean_engine_cert(
         // (R-APG-1 — no panic on a future wiring change).
         EngineSelection::Bv => Ok(verus_cert),
         EngineSelection::Auto => {
-            // Verus first: a Verus `Proven` (L3, no reject) is kept — Lean is not run
-            // (no cost on the common case, no spurious disagreement). Only an
-            // inconclusive Verus result (degrade / timeout / non-L3) tries Lean.
+            // Verus first: settled proofs and failures are kept. Lean is only a
+            // fallback for a genuinely inconclusive Verus run (a timeout or a
+            // lower-rung timeout degrade). In particular, body-safety witnesses
+            // and the vacuity, triage, slag, and mutation gates are conclusive
+            // results; a contract-only Lean proof must never erase them.
             let verus_verdict = verus_verdict_of(&verus_cert);
-            if matches!(verus_verdict, Verdict::Proven(_)) && verus_cert.reject.is_none() {
+            if !auto_should_try_lean(&verus_cert) {
                 return Ok(verus_cert);
             }
             // Verus inconclusive → try Lean (the §6 ordering). The disagreement guard
@@ -3381,6 +3915,21 @@ fn lean_engine_cert(
             }
         }
     }
+}
+
+/// Whether automatic engine selection may try Lean after the Verus pass.
+///
+/// The automatic degrade ladder marks timeout-derived lower rungs with
+/// `lowered_assurance`. A raw timeout can also reach this seam in tests and in a
+/// future ladder configuration. Every other non-L3 certificate is a settled
+/// failure or policy gate, not an invitation to replace the whole item verdict
+/// with a contract-only proof.
+fn auto_should_try_lean(cert: &Certificate) -> bool {
+    cert.lowered_assurance
+        || cert
+            .reject
+            .as_ref()
+            .is_some_and(|reject| reject.cause == "VerusTimeout")
 }
 
 /// Reconstruct an `engine::Verdict` from a Verus base cert (`.design/verified/
@@ -7262,7 +7811,7 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
             0,
             vec![],
         );
-        bv_fn_cert(&bv, &nlsat, &f, &base, &[])
+        bv_fn_cert(&bv, &nlsat, &parsed.program, &f, &base, &[])
     }
 
     /// AC-6: a `@bv64(nowrap)` clause whose body can overflow fails its side obligation
@@ -7417,5 +7966,140 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
             .as_ref()
             .and_then(|shadow| shadow.nowrap_obligation.as_deref())
             .is_some_and(|text| text.contains("undecided")));
+    }
+
+    fn epr_route_fixture() -> (Program, Certificate) {
+        let parsed = thermite_syntax::parse(
+            "fn epr_route(xs: Vec<u64>) -> u64\n\
+             req xs.len() > 0\n\
+             ens forall (i : usize) in xs. xs[i] == xs[i]\n\
+             fx pure { 0 }",
+        );
+        assert!(parsed.is_clean(), "fixture must parse: {:?}", parsed.errors);
+        let base = Certificate::rejected(
+            "epr_route",
+            vec!["pure".to_string()],
+            false,
+            RejectReason {
+                cause: "VerusTimeout".to_string(),
+                detail: "fixture: base engine was inconclusive".to_string(),
+            },
+        );
+        (parsed.program, base)
+    }
+
+    fn epr_false_route_fixture() -> (Program, Certificate) {
+        let parsed = thermite_syntax::parse(
+            "fn epr_false(xs: Vec<u64>) -> u64\n\
+             req xs.len() > 0\n\
+             ens forall (i : usize) in xs. xs[i] != xs[i]\n\
+             fx pure { 0 }",
+        );
+        assert!(parsed.is_clean(), "fixture must parse: {:?}", parsed.errors);
+        let base = Certificate::rejected(
+            "epr_false",
+            vec!["pure".to_string()],
+            false,
+            RejectReason {
+                cause: "VerusTimeout".to_string(),
+                detail: "fixture: base engine was inconclusive".to_string(),
+            },
+        );
+        (parsed.program, base)
+    }
+
+    #[test]
+    fn automatic_route_does_not_model_result_as_an_unconstrained_sequence() {
+        let parsed = thermite_syntax::parse(
+            "fn format(n: u64) -> String\n\
+             req true\n\
+             ens result.len() >= 1\n\
+             fx alloc { n.to_string() }",
+        );
+        assert!(parsed.is_clean(), "fixture must parse: {:?}", parsed.errors);
+        let Item::Fn(function) = &parsed.program.items[0] else {
+            panic!("fixture must contain a function");
+        };
+        let clause = &function.contract.ens[0];
+        let grounded =
+            ground_result_in_clause(function, &clause.expr).expect("result has a source body");
+        assert!(
+            !expr_mentions_result(&grounded),
+            "result must be substituted through the method receiver"
+        );
+        assert!(
+            epr_candidate(&parsed.program, function, 0, clause)
+                .expect("out-of-fragment bodies are not reconstruction failures")
+                .is_none(),
+            "`to_string` is outside S₂.0, so the existing verifier result must remain intact"
+        );
+    }
+
+    #[test]
+    fn automatic_route_kernel_reconstructs_an_admitted_array_clause() {
+        let (program, base) = epr_route_fixture();
+        let certs = epr_check(vec![base], &program);
+        assert_eq!(certs.len(), 1);
+        let cert = &certs[0];
+        assert_eq!(cert.level, Level::L4);
+        assert!(cert.reject.is_none());
+        let obligation = cert
+            .obligations
+            .first()
+            .expect("the admitted clause produces one obligation");
+        assert_eq!(obligation.engine.as_deref(), Some("epr"));
+        let evidence = obligation
+            .reconstruction
+            .as_ref()
+            .expect("L4 EPR requires checked reconstruction evidence");
+        assert_eq!(evidence.fragment, "s2_recon_v2");
+        assert!(
+            evidence.checker.contains("term-producing LRAT"),
+            "evidence must name the actual checker path: {}",
+            evidence.checker
+        );
+    }
+
+    #[test]
+    fn explicit_bv_route_also_enables_epr_reconstruction() {
+        let (program, base) = epr_route_fixture();
+        let certs = bv_check(vec![base], &program, true);
+        assert_eq!(certs.len(), 1);
+        let cert = &certs[0];
+        assert_eq!(cert.level, Level::L4);
+        assert!(cert.reject.is_none());
+        assert!(cert
+            .obligations
+            .iter()
+            .any(|obligation| obligation.engine.as_deref() == Some("epr")
+                && obligation.reconstruction.is_some()));
+    }
+
+    #[test]
+    fn automatic_route_returns_a_lean_checked_finite_countermodel() {
+        let (program, base) = epr_false_route_fixture();
+        let certs = epr_check(vec![base], &program);
+        assert_eq!(certs.len(), 1);
+        let cert = &certs[0];
+        assert_eq!(cert.level, Level::L0);
+        let reject = cert.reject.as_ref().expect("false clause must reject");
+        assert_eq!(reject.cause, "EprCounterexample");
+        assert!(reject
+            .detail
+            .contains("Lean-checked finite S₂.0 countermodel"));
+        assert!(reject.detail.contains("ground terms="));
+        assert!(
+            reject.detail.len() < 6000,
+            "countermodel diagnostics must stay readable"
+        );
+        let obligation = cert
+            .obligations
+            .first()
+            .expect("counterexample produces a failed obligation");
+        assert_eq!(obligation.engine.as_deref(), Some("epr"));
+        assert!(matches!(
+            obligation.verdict,
+            Some(crate::verdict::CertVerdict::Counterexample { .. })
+        ));
     }
 }

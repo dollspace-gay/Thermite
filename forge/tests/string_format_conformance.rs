@@ -336,12 +336,17 @@ fn ac5_string_demo_corpus_unchanged() {
         .as_array()
         .expect("array of certs")
         .clone();
-    for item in ["greeting_len", "first_byte", "join", "literal_len"] {
+    for (item, expected) in [
+        ("greeting_len", "L4"),
+        ("first_byte", "L3"),
+        ("join", "L3"),
+        ("literal_len", "L3"),
+    ] {
         let cert = cert_for(&certs, item);
         assert_eq!(
-            cert["level"], "L3",
-            "AC-5 no regression: conformance/string_demo.th `{item}` must still certify \
-             L3 (the C4 byte-builder/numfmt additions are purely additive). forge \
+            cert["level"], expected,
+            "AC-5 no regression: conformance/string_demo.th `{item}` must certify \
+             its routed rung (the C4 byte-builder/numfmt additions are purely additive). forge \
              reports: {}",
             cert["level"]
         );

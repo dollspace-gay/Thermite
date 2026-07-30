@@ -63,10 +63,6 @@ use std::collections::BTreeSet;
 use thermite_syntax::ast::{BinOp, Expr, IndexArg, PrimType, Type, UnaryOp};
 
 /// A self-contained SplitMix64 PRNG (R-CODE-5: deterministic, seeded, no `rand`
-/// crate, no wall-clock). SplitMix64 is a small, well-distributed integer
-/// generator, enough to drive the structural choices below reproducibly. The same
-/// `seed` always produces the same stream.
-/// A self-contained SplitMix64 PRNG (R-CODE-5: deterministic, seeded, no `rand`
 /// crate, no wall-clock). Public so an out-of-crate consumer can ride the same
 /// generator the contract/exec TV streams ride: the forge covenant engine's `falsify`
 /// run (`.design/stage1-forge-tier.md` REQ-4, increment 2b) seeds it with the fixed
@@ -1047,7 +1043,7 @@ fn s_usize() -> Sort2 {
 
 /// A `SeqS s` literal (a closed array parameter — contributes no edges itself).
 fn seq_lit(elem: Sort2) -> Tm {
-    Tm::Lit(Sort2::Seq(Box::new(elem)))
+    Tm::Const(Sort2::Seq(Box::new(elem)), 0)
 }
 
 /// A finite carrier sort drawn for a binder (machine or opaque — never `seq`).
@@ -1199,7 +1195,7 @@ fn gen_strat_corpus(rng: &mut Rng) -> Frm {
         // (8) A `seq` binder `∀ x : SeqS u32. (qfree)` — REJECT (`seq-quantifier`, (R1)).
         _ => Frm::All(
             Sort2::Seq(Box::new(Sort2::Mach(Mach::U32))),
-            Box::new(Frm::Atom(Atom::QFree)),
+            Box::new(Frm::Atom(Atom::QFree(0))),
         ),
     }
 }
@@ -1274,7 +1270,7 @@ impl StratCtx {
     /// `qfree` leaf.
     fn gen_atom(&mut self, rng: &mut Rng) -> Atom {
         if rng.below(8) == 0 {
-            Atom::QFree
+            Atom::QFree(0)
         } else {
             let op = pick_rel(rng);
             let t = self.gen_tm(rng, 0);
@@ -1296,20 +1292,23 @@ impl StratCtx {
             // A literal of a finite or seq sort.
             1 => {
                 if rng.below(2) == 0 {
-                    Tm::Lit(pick_fin_sort(rng))
+                    Tm::Const(pick_fin_sort(rng), 0)
                 } else {
-                    Tm::Lit(Sort2::Seq(Box::new(pick_fin_sort(rng))))
+                    Tm::Const(Sort2::Seq(Box::new(pick_fin_sort(rng))), 0)
                 }
             }
             // `read elem sq ix` — the index term often references a bound var (→ E2 edge).
             2 => {
                 let elem = pick_fin_sort(rng);
-                let sq = Tm::Lit(Sort2::Seq(Box::new(elem.clone())));
+                let sq = Tm::Const(Sort2::Seq(Box::new(elem.clone())), 0);
                 let ix = self.gen_tm(rng, depth + 1);
                 Tm::Read(elem, Box::new(sq), Box::new(ix))
             }
             // `len sq`.
-            3 => Tm::Len(Box::new(Tm::Lit(Sort2::Seq(Box::new(pick_fin_sort(rng)))))),
+            3 => Tm::Len(Box::new(Tm::Const(
+                Sort2::Seq(Box::new(pick_fin_sort(rng))),
+                0,
+            ))),
             // `cast to t` — a width-preserving or width-changing cast (both classes).
             4 => {
                 let to = pick_fin_sort(rng);
@@ -1340,7 +1339,7 @@ impl StratCtx {
     /// or a literal when no binder is in scope.
     fn gen_var_or_lit(&mut self, rng: &mut Rng) -> Tm {
         if self.binders.is_empty() {
-            Tm::Lit(pick_fin_sort(rng))
+            Tm::Const(pick_fin_sort(rng), 0)
         } else {
             let i = rng.below(self.binders.len());
             Tm::Var(self.binders[i].clone(), i as u32)

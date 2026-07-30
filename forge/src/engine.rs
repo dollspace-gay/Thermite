@@ -101,6 +101,12 @@ pub enum EngineName {
     /// REQ-7/REQ-8 at the same rung. The implementation is
     /// [`crate::bitvector::BitVectorEngine`].
     BitVector,
+    /// The admitted S₂.0 finite-ground reconstruction engine. It translates the
+    /// canonical source IR to the checked Lean semantics, asks the pinned SAT
+    /// toolchain for a verdict, and accepts a proof only after Lean reconstructs
+    /// the actual `req → clause` theorem. SAT results carry a checked finite
+    /// countermodel; timeout and replay failures remain non-certifying.
+    Epr,
 }
 
 impl EngineName {
@@ -114,20 +120,32 @@ impl EngineName {
             EngineName::LeanInteractive => "lean-interactive",
             EngineName::Nlsat => "nlsat",
             EngineName::BitVector => "bitvector",
+            EngineName::Epr => "epr",
         }
     }
 }
 
-/// The named trust base a [`EngineName::BitVector`] discharge adds on a `Proven`
-/// (`.design/stage3-bv-reconstruction.md` REQ-2). The QF_BV decision procedure is the
-/// whole solver base — a single named item. The clause certifies at the caged rung
-/// [`crate::manifest::Level::L4`] (decidable, complete bit-pattern countermodels — the
-/// L4 refutation quality, RFC-1 §2/§4); rung and trust are orthogonal axes, so this
-/// SOLVER trust base is recorded here regardless of the rung. It is strictly smaller
-/// than the Verus base (no VC-gen, no lowering theorem): the clause is a direct, ground
-/// QF_BV query. Kernel-grounding it (proof reconstruction) is REQ-7/8, which shrinks
-/// this trust base at the same rung; until then the bit-vector discharge is
-/// solver-trusted, named here for the auditor.
+/// Trust recorded after Lean checks an admitted S₂.0 `req → clause` theorem.
+///
+/// The SAT solver and LRAT converter are proof producers only: neither remains
+/// in the trusted base after the generated theorem and its axiom report pass.
+#[must_use]
+pub fn epr_kernel_checked_trust_profile() -> TrustProfile {
+    TrustProfile {
+        items: vec![
+            "Lean kernel, kernel-checked (canonical S2Recon grounding, theory clauses, \
+             CNF, and the actual req → clause theorem accepted)"
+                .to_string(),
+            "standard Lean axioms only (propext, Classical.choice, Quot.sound; \
+             #print axioms allowlist checked)"
+                .to_string(),
+        ],
+    }
+}
+
+/// Solver trust recorded for a QF_BV result before Lean reconstruction succeeds.
+/// A checked replay replaces this profile with
+/// [`bv_kernel_checked_trust_profile`] at the same L4 rung.
 #[must_use]
 pub fn bv_trust_profile() -> TrustProfile {
     TrustProfile {
@@ -180,8 +198,8 @@ pub const KERNEL_CHECKED_TRUST_MARKER: &str = "kernel-checked";
 /// Is this per-clause trust base kernel-grounded (`.design/stage3-bv-reconstruction.md`
 /// REQ-8 / AC-9)? `true` iff any named trust item carries [`KERNEL_CHECKED_TRUST_MARKER`]
 /// — a reconstruction-migrated bv clause or an nlsat-relax clause. `false` for a base that
-/// is purely solver-trusted (the bv solver profile `Z3 QF_BV`, a Verus L3 base, the
-/// EPR-stratified rel/array residual). An empty trust base (the v1 Verus corpus, recorded
+/// is purely solver-trusted (the bv solver profile `Z3 QF_BV` or a Verus L3 base). An
+/// empty trust base (the v1 Verus corpus, recorded
 /// by `status`/`level`) is not classified by this — the residual-trust statement only
 /// aggregates obligations that carry a per-clause trust base.
 #[must_use]
@@ -539,11 +557,9 @@ static NEXT_REPLAY_NONCE: std::sync::atomic::AtomicU64 = std::sync::atomic::Atom
 /// lake-manifest revs + a `lean/Thermite/` spine content hash + `LEAN_SCHEMA_VERSION`
 /// (REQ-8 / §2(d)).
 ///
-/// The engine carries the parsed [`Program`] (the exporter needs the spec-fn
-/// definitions + the source item) and the path to the `lean/` package root (where
-/// `lake env lean` runs). It is not wired into the default `check` path; Verus stays
-/// the sole default engine (byte-identical), and this engine is constructed directly
-/// by tests and (increment (iii)) the `--engine lean` surface.
+/// The engine carries the parsed [`Program`] and the `lean/` package root. It is
+/// used by `--engine lean` and by the CLI's automatic route; programmatic
+/// `check_file` remains Verus-only.
 #[derive(Debug, Clone)]
 // proof-backends REQ-6/REQ-7/REQ-8 (the #240 chain): the Lean engine #2. The
 // increment-(iii) production surface (#247) is live: `check::check_file_with_engine`

@@ -37,9 +37,9 @@ def f : Nat := 0
 
 /-- The strictly-in-bounds index (`c0 < len`, predicate holds). Note `c0` is the
     `usize` literal, so it also shares the `boundLo` first-argument shape. -/
-def c0 : Tm := .lit usizeS
+def c0 : Tm := .lit usizeS (.int 0)
 /-- The boundary index (`c1 = len`: `¬(c1 < len)` but `c1 ≤ len`, predicate fails). -/
-def c1 : Tm := .idxOp (.lit usizeS) 1
+def c1 : Tm := .idxOp (.lit usizeS (.int 0)) 1
 /-- The finite quantifier domain. -/
 def dom : List Tm := [c0, c1]
 /-- An ambient substitution (unused — the expansions are closed under their binder). -/
@@ -51,10 +51,10 @@ def σ0 : Subst := fun _ => c0
     `boundLo` shape (`le` with a `usize` literal on the left) is matched first, so
     the `i ≤ len` arm only catches the genuine off-by-one upper bound. -/
 def qPin : Atom → Bool
-  | .rel .le (.lit (.mach .usize)) _              => true                  -- 0 ≤ i (boundLo)
+  | .rel .le (.lit (.mach .usize) _) _            => true                  -- 0 ≤ i (boundLo)
   | .rel .le _ (.len _)                           => true                  -- i ≤ len (WRONG)
   | .rel .lt i (.len _)                           => decide (i = c0)       -- i < len (faithful)
-  | .rel .eq (.app1 _ _ _ (.read _ _ i)) (.lit _) => decide (i = c0)       -- p(s[i])
+  | .rel .eq (.app1 _ _ _ (.read _ _ i)) (.lit _ _) => decide (i = c0)     -- p(s[i])
   | _                                             => false
 
 /-! ## The off-by-one expansion (the broken neighbour)
@@ -63,7 +63,7 @@ def qPin : Atom → Bool
     `i ≤ s.len()` (`.rel .le`) instead of the faithful `i < s.len()` (`.rel .lt`). -/
 
 /-- `0 ≤ i` (the faithful lower bound; reused verbatim from `CombDeriv`). -/
-def boundLoP (t : Tm) : Atom := .rel .le (.lit usizeS) t
+def boundLoP (t : Tm) : Atom := .rel .le (.lit usizeS (.int 0)) t
 /-- `i ≤ len` — the OFF-BY-one upper bound (`.rel .le` where `.rel .lt` is meant). -/
 def boundHiWrong (sq t : Tm) : Atom := .rel .le t (.len sq)
 

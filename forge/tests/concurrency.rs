@@ -122,16 +122,20 @@ fn corpus_dir() -> PathBuf {
         .join("conformance")
 }
 
-/// Run `forge check <file> --json` with an explicit shared cache dir + pinned
-/// verus version, optionally applying extra env. Returns (exit_code, cert array).
-/// Mirrors `cache_conformance::run_check`.
+/// Run the Verus proof-cache path with an explicit shared cache dir + pinned
+/// Verus version, optionally applying extra env. Automatic clause overlays have
+/// their own verdict keys and are outside this cache-locality test.
 fn run_check(
     file: &Path,
     cache_dir: &Path,
     extra_env: &HashMap<String, String>,
 ) -> (Option<i32>, Vec<Value>) {
     let mut cmd = Command::new(forge_bin());
-    cmd.arg("check").arg(file).arg("--json");
+    cmd.arg("check")
+        .arg(file)
+        .arg("--engine")
+        .arg("verus")
+        .arg("--json");
     cmd.env("FORGE_CACHE_DIR", cache_dir);
     cmd.env("VERUS_VERSION", PINNED_VERUS_VERSION);
     for (k, v) in extra_env {

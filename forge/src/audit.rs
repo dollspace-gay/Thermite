@@ -156,21 +156,12 @@ impl BvShadowRow {
     }
 }
 
-/// The REQ-8 / AC-9 RESIDUAL-TRUST statement (`.design/stage3-bv-reconstruction.md`
-/// REQ-8). After reconstruction's default-on per-clause trust migration, a project's
-/// clauses split into two trust bases at the same rung: the ones whose `trust:` migrated to
-/// the kernel-checked form (the renderable QF_LIA/QF_BV fragment plus nlsat-relax
-/// kernel-grounded clauses) and the ones that stayed solver-trusted (expressions outside
-/// those exporters, a Verus L3 base, and the EPR-stratified rel/array residual). This
-/// section is that split, named — "the audit names exactly what stayed
-/// solver-trusted" (F-J is free: reconstruction was never required for any gate, so an
-/// unsupported fragment regresses nothing by staying labeled).
+/// Project-level summary of per-clause solver and kernel trust.
 ///
-/// A pure projection ([`ResidualTrust::build`]) of each per-clause obligation's `trust`
-/// base via [`crate::engine::trust_is_kernel_checked`]; never recomputed. Present only for
-/// a project the bit-vector route ran on (`!bv_shadows.is_empty()`), so the v1 / nlsat-only
-/// corpus serializes BYTE-IDENTICALLY (the additive `semantic_forks`/`bv_shadows`
-/// discipline; `manifest_version` stays `"v1"`). The section gates nothing — informational.
+/// This is a projection of certificate data, not a second verifier. It is emitted
+/// only when the bit-vector route ran, preserving the v1 shape elsewhere. Admitted
+/// S₂.0 relation/sequence clauses do not remain in the residual: they either carry
+/// checked EPR evidence or a named failure/countermodel.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResidualTrust {
     /// The number of per-clause obligations now kernel-checked or kernel-grounded (REQ-8):
@@ -178,14 +169,16 @@ pub struct ResidualTrust {
     pub kernel_checked_clauses: usize,
     /// The number of per-clause obligations that stayed solver-trusted.
     pub solver_trusted_clauses: usize,
-    /// The still-solver-trusted clauses, named (item + per-clause obligation name + engine)
-    /// — the F-J inventory a reviewer audits, the same "grep finds these" discipline
-    /// the `bv_shadows` / `tcb` sections follow. Source order (deterministic, REQ-6).
+    /// Still-solver-trusted clauses in deterministic source order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub solver_trusted: Vec<ResidualClause>,
-    /// The named fragments reconstruction does not support program-wide. Literal QF_BV
-    /// terms are covered; EPR-stratified rel/array atoms remain model-relative.
+    /// The named fragments reconstruction does not support program-wide. These are
+    /// outside S₂.0 or outside its checked QF_LIA/QF_BV leaves.
     pub unsupported_fragments: Vec<String>,
+    /// S₂.0 relation/array clauses left solver-trusted after automatic routing.
+    /// Gate G4 requires this to remain zero.
+    #[serde(default)]
+    pub s2_relation_array_residuals: usize,
     /// The human one-line residual-trust statement (the auditor's headline).
     pub statement: String,
 }
@@ -208,10 +201,8 @@ impl ResidualTrust {
     /// Aggregate the REQ-8 kernel-checked-vs-solver split across a settled cert collection
     /// (AC-9). A pure projection: every per-clause obligation that carries a non-empty
     /// `trust` base is classified by [`crate::engine::trust_is_kernel_checked`]; the
-    /// solver-trusted ones are named. The standing EPR rel/array residual is named
-    /// unconditionally for a bv project. Returns `None` for a
-    /// project the bit-vector route did not run on, so the v1 / nlsat goldens stay
-    /// byte-identical.
+    /// solver-trusted ones are named. Returns `None` for a project the bit-vector route
+    /// did not run on, so the v1 / nlsat goldens stay byte-identical.
     fn build(certs: &[Certificate], bv_present: bool) -> Option<Self> {
         if !bv_present {
             return None;
@@ -236,21 +227,25 @@ impl ResidualTrust {
         }
         let solver_trusted_clauses = solver_trusted.len();
         let unsupported_fragments = vec![
-            "EPR-stratified rel/array atoms: left z3-model-relative by `strat_lowering_faithful` \
-             (the G2 residual) — outside the QF_LIA/QF_BV reconstruction fragment (F-J)"
+            "formulas rejected by the S₂.0 classifier, including cyclic sort graphs, \
+             sequence-sort quantifiers, and higher-order or recursive propositions"
                 .to_string(),
+            "quantifier-free leaves outside the checked QF_LIA/QF_BV source surface".to_string(),
         ];
+        let s2_relation_array_residuals = 0;
         let statement = format!(
             "Residual trust (REQ-8, default-on): {kernel_checked_clauses} clause(s) \
              kernel-checked, {solver_trusted_clauses} clause(s) still solver-trusted. \
-             Reconstruction is default-on for QF_LIA and the literal QF_BV term fragment; \
-             EPR-stratified rel/array atoms stay solver-trusted and are named above (F-J)."
+             S₂.0 relation/array reconstruction residuals: \
+             {s2_relation_array_residuals}. Remaining unsupported fragments are outside \
+             S₂.0 or its checked QF_LIA/QF_BV leaves."
         );
         Some(ResidualTrust {
             kernel_checked_clauses,
             solver_trusted_clauses,
             solver_trusted,
             unsupported_fragments,
+            s2_relation_array_residuals,
             statement,
         })
     }
@@ -1096,9 +1091,17 @@ mod tests {
         assert_eq!(rt.solver_trusted[0].item, "mix64");
         assert_eq!(rt.solver_trusted[0].clause, "mix64::ens#1");
         assert_eq!(rt.solver_trusted[0].engine.as_deref(), Some("bitvector"));
-        // Literal QF_BV is covered; the standing EPR rel/array residual remains.
-        assert_eq!(rt.unsupported_fragments.len(), 1);
-        assert!(rt.unsupported_fragments[0].contains("rel/array"));
+        assert_eq!(rt.s2_relation_array_residuals, 0);
+        assert!(
+            rt.unsupported_fragments
+                .iter()
+                .all(|fragment| !fragment.contains("rel/array")),
+            "S₂.0 relation/array atoms are no longer an unsupported fragment"
+        );
+        assert!(rt
+            .unsupported_fragments
+            .iter()
+            .any(|fragment| fragment.contains("rejected by the S₂.0 classifier")));
         assert!(rt.statement.contains("kernel-checked"));
     }
 

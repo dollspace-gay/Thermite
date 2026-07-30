@@ -67,7 +67,8 @@ def sameWidth : Sort₂ → Sort₂ → Bool
 /-- Does a term mention a bound variable (de Bruijn index `< depth`)? -/
 def hasBoundVar (depth : Nat) : Tm → Bool
   | .var _ i      => decide (i < depth)
-  | .lit _        => false
+  | .const _ _    => false
+  | .lit _ _      => false
   | .read _ sq ix => hasBoundVar depth sq || hasBoundVar depth ix
   | .len sq       => hasBoundVar depth sq
   | .cast _ t     => hasBoundVar depth t
@@ -78,7 +79,8 @@ def hasBoundVar (depth : Nat) : Tm → Bool
 /-- (R2), per term: no bound index var under `mul` or a width-changing `cast`. -/
 def idxOkTm (depth : Nat) : Tm → Bool
   | .var _ _      => true
-  | .lit _        => true
+  | .const _ _    => true
+  | .lit _ _      => true
   | .read _ sq ix => idxOkTm depth sq && idxOkTm depth ix
   | .len sq       => idxOkTm depth sq
   | .cast to t    => (!hasBoundVar depth t || sameWidth t.sortOf to) && idxOkTm depth t
@@ -89,7 +91,7 @@ def idxOkTm (depth : Nat) : Tm → Bool
 /-- (R2), per formula, tracking binder depth. -/
 def idxGrammarAt (depth : Nat) : Frm → Bool
   | .atom (.rel _ t u) => idxOkTm depth t && idxOkTm depth u
-  | .atom (.qfree _)   => true
+  | .atom (.qfree _ _) => true
   | .neg φ             => idxGrammarAt depth φ
   | .conj φ ψ          => idxGrammarAt depth φ && idxGrammarAt depth ψ
   | .disj φ ψ          => idxGrammarAt depth φ && idxGrammarAt depth ψ
@@ -128,12 +130,12 @@ theorem classifier_correct (φ : Frm) : admitted φ = true ↔ Frag φ := by
     sequence sort (it is not a bound variable, so it contributes no edges itself). -/
 
 /-- `a : SeqS usize`. -/
-def aSeqUsize : Tm := .lit (.seq usizeS)
+def aSeqUsize : Tm := .const (.seq usizeS) 0
 /-- `a, b : SeqS u64`. -/
-def aSeqU64 : Tm := .lit (.seq (.mach .u64))
-def bSeqU64 : Tm := .lit (.seq (.mach .u64))
+def aSeqU64 : Tm := .const (.seq (.mach .u64)) 0
+def bSeqU64 : Tm := .const (.seq (.mach .u64)) 1
 /-- `a : SeqS u32`. -/
-def aSeqU32 : Tm := .lit (.seq (.mach .u32))
+def aSeqU32 : Tm := .const (.seq (.mach .u32)) 0
 
 /-- **Example 1 — nested reads `a[a[i]]`** (`a : SeqS usize`): the inner `Read` gives the
     E2 self-loop `usize → usize`. `∀ i:usize. a[a[i]] = a[a[i]]`. Expected: REJECT. -/
@@ -182,5 +184,19 @@ def ex_sortedness : Frm :=
   .all usizeS (.all usizeS (.imp hyp concl))
 
 theorem ex_sortedness_admitted : admitted ex_sortedness = true := by decide
+
+/-- An existential argument can carry an earlier universal through a source
+    function after Skolemization. The alternation edge `S → T` and function
+    edge `T → S` therefore form a real closure cycle. -/
+def ex_existentialFunctionCycle : Frm :=
+  let source := .opaque 40
+  let target := .opaque 41
+  .all source <| .ex target <|
+    .atom <| .rel .eq
+      (.app1 target source 0 (.var target 0))
+      (.var source 1)
+
+theorem ex_existentialFunctionCycle_rejected :
+    admitted ex_existentialFunctionCycle = false := by decide
 
 end Thermite.Strat.Cls

@@ -86,7 +86,8 @@ theorem encTm_subst (d : Nat) (ρ σ : Subst) (h : Agree d ρ σ) :
     have hi : i < d := by simp only [wfTm, decide_eq_true_eq] at hw; exact hw
     simp only [encTm, substTm]
     exact h i hi
-  | lit s => intro _; rfl
+  | const s id => intro _; rfl
+  | lit s value => intro _; rfl
   | read e sq ix ihsq ihix =>
     intro hw
     simp only [wfTm, Bool.and_eq_true] at hw

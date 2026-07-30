@@ -246,8 +246,10 @@ fn good_multiclause_constraining_ens_is_clean_l3() {
 /// constrain `result` or prove the ens for an arbitrary result → L3, not flagged.
 /// Authority: AC-1 + OQ-4 ("the `result` param must not be bound to the body's
 /// output"); a false positive here means the arbitrary-result encoding is broken.
+/// Automatic routing now reconstructs the admitted sequence/length clause at
+/// the L4 cage rather than leaving it on the ordinary L3 path.
 #[test]
-fn good_slice_param_lenconstraining_ens_is_clean_l3() {
+fn good_slice_param_lenconstraining_ens_is_clean_l4() {
     if !verus_present() {
         eprintln!("SKIP: verus absent.");
         return;
@@ -256,7 +258,11 @@ fn good_slice_param_lenconstraining_ens_is_clean_l3() {
         "slicelen",
         "fn firstlen(xs: &[u32]) -> usize\n  req xs.len() > 0\n  ens result == xs.len()\n  fx pure\n{ xs.len() }\n",
     );
-    assert_eq!(level(&c), "L3", "good slice-param ens must certify L3: {c}");
+    assert_eq!(
+        level(&c),
+        "L4",
+        "good slice-param ens must reconstruct at L4: {c}"
+    );
     assert!(
         !taut(&c),
         "the arbitrary-result binder over a slice-param fn MUST NOT prove a constraining ens: {c}"

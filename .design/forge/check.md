@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: 7158542241ba3b8ca86da4db7fb43ceee2f6c22a91177671bb5ea5b3b2f8450b (migrated from legacy audited-sha commit pin to a squash-stable content digest; doc-drift-tripwire.md REQ-2 — content pin is primary, commit pin is a migration fallback)
+audited-content-sha256: 1d510c2fa2abf3818702f3908d8b13066e318dc80d12d45d5c069f971fe21d62 (migrated from legacy audited-sha commit pin to a squash-stable content digest; doc-drift-tripwire.md REQ-2 — content pin is primary, commit pin is a migration fallback)
 governs: forge/src/check.rs
 thesis-refs:
   - thermite-design.md §5.1
@@ -104,6 +104,21 @@ REQ status table).
 > `<stem>.rs`-inside-`forge_<stem>_<pid>_<n>/` scheme and the AC-4 no-`.` crate-stem
 > property are both unchanged — only the source of `<stem>` moved. Pin:
 > `forge/tests/divergence_harness_names_checked_item.rs`.
+
+> **Amendment 2026-07-29 (Gate G4 automatic reconstruction).**
+> The normal CLI path selects `EngineSelection::Auto`. After the ordinary
+> Verus/Lean pass, routing is per clause: `@bvN` clauses take the checked
+> bit-vector path and admitted S₂.0 relation/array clauses take EPR
+> reconstruction through the canonical `S2Recon` bridge. A successful Lean
+> replay upgrades that clause to L4. A false clause returns a checked finite
+> countermodel; timeouts, missing tools, and reconstruction failures remain
+> named failures. `--engine verus` is the explicit legacy diagnostic path.
+> Programmatic `check_file` and `CheckOptions::default` remain the legacy
+> Verus-only entries for callers that require byte-stable certificates.
+> Result-bearing clauses are classified after substituting the source body
+> through nested call and method expressions. If that grounded body is outside
+> S₂.0, the ordinary verifier certificate is retained; EPR must not invent an
+> unconstrained `result` value.
 
 The stages, in order, are:
 

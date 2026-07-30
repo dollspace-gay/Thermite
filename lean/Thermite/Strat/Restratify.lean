@@ -51,7 +51,7 @@ namespace Thermite.Strat.Cls
     A `qfree` atom is opaque to the classifier (no sorts, no graph edges — `edgesAtom`
     returns `[]`), so substituting it for a cycle-closing conjunct deletes that
     conjunct's edges from the sort graph. -/
-def absLeaf (e : Thermite.Expr) : Frm := .atom (.qfree e)
+def absLeaf (e : Thermite.Expr) : Frm := .atom (.qfree 0 e)
 
 /-- The restratify rewrite (metatheory §6).  On a conjunction `A ∧ B` whose right
     conjunct `B` closes the alternation cycle, excise `B` and replace it with the fresh
@@ -131,7 +131,7 @@ theorem side_admitted : admitted (Side kvAbs ex_kvCycle) = true := by decide
     a model of φ is a model of both φ' and `Side`: the rewrite admits the original. -/
 theorem restrat_complete (e : Thermite.Expr) (q : Atom → Bool) (dom : List Tm)
     (A B : Frm) (ρ : Subst)
-    (hwit : q (.qfree e) = fdenote q dom B ρ) :
+    (hwit : q (.qfree 0 e) = fdenote q dom B ρ) :
     fdenote q dom (.conj A B) ρ = true →
       fdenote q dom (restrat e (.conj A B)) ρ = true
         ∧ fdenote q dom (Side e (.conj A B)) ρ = true := by

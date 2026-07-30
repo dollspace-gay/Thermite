@@ -101,6 +101,54 @@ pub struct ReconstructionEvidence {
     /// SHA-256 of the exact SMT-LIB query, when the solver route exposes one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub solver_query_sha256: Option<String>,
+    /// SHA-256 of the canonical source-clause IR supplied to reconstruction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub canonical_ir_sha256: Option<String>,
+    /// SHA-256 of the exact `req` and conclusion source-clause serialization.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_clause_sha256: Option<String>,
+    /// SHA-256 of the exact recomputed finite ground universe.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ground_sha256: Option<String>,
+    /// SHA-256 of the exact recomputed ground formula/instantiation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instantiation_sha256: Option<String>,
+    /// SHA-256 of the exact checked ground-theory clause list.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub theory_sha256: Option<String>,
+    /// SHA-256 of the Boolean problem before DIMACS serialization.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub propositional_problem_sha256: Option<String>,
+    /// SHA-256 of the DIMACS bytes consumed by the SAT solver.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cnf_sha256: Option<String>,
+    /// SHA-256 of the LRAT bytes parsed and replayed by Lean.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lrat_sha256: Option<String>,
+    /// Number of terms in the checked finite ground universe.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ground_universe_count: Option<usize>,
+    /// Number of distinct atoms in the finite instantiation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instantiation_count: Option<usize>,
+    /// Number of checked equality/congruence theory clauses.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub theory_clause_count: Option<usize>,
+    /// End-to-end reconstruction elapsed time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub elapsed_ms: Option<u64>,
+    /// Stable budget result (`within-budget`, `solver-timeout`, or
+    /// `kernel-budget`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub budget_outcome: Option<String>,
+    /// Domain-separated digest over every verdict-bearing reconstruction
+    /// artifact. EPR cache entries must bind to this complete collection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verdict_key_sha256: Option<String>,
+    /// Whether the checked replay artifacts came from the content-addressed
+    /// EPR cache. Cached artifacts are still replayed by Lean before use.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_hit: Option<bool>,
 }
 
 /// The result of attempting a validity replay.
@@ -110,7 +158,7 @@ pub struct ReconstructionEvidence {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReconstructionOutcome {
     /// Lean accepted the actual validity theorem and its axiom report passed.
-    Checked(ReconstructionEvidence),
+    Checked(Box<ReconstructionEvidence>),
     /// The actual precondition or clause cannot be represented in this fragment.
     Unsupported(String),
     /// Lean/Lake or the pinned Lean package could not be invoked.
@@ -471,6 +519,8 @@ fn replay_validity_source(lean_root: &Path, theorem: &str, source: &str) -> Reco
         .arg("env")
         .arg("lean")
         .arg("--stdin")
+        // Do not multiply the large BitVec stack by the host's CPU count.
+        .arg("--threads=1")
         // Full-surface QF_BV goals need more interpreter stack than Lean's default.
         .arg("--tstack=65536")
         .current_dir(lean_root)
@@ -518,14 +568,29 @@ fn replay_validity_source(lean_root: &Path, theorem: &str, source: &str) -> Reco
         ));
     }
     match parse_and_validate_axioms(&combined, theorem) {
-        Ok(axioms) => ReconstructionOutcome::Checked(ReconstructionEvidence {
+        Ok(axioms) => ReconstructionOutcome::Checked(Box::new(ReconstructionEvidence {
             theorem: theorem.to_string(),
             source_sha256: sha256_hex(source.as_bytes()),
             fragment: String::new(),
             checker: String::new(),
             axioms,
             solver_query_sha256: None,
-        }),
+            canonical_ir_sha256: None,
+            source_clause_sha256: None,
+            ground_sha256: None,
+            instantiation_sha256: None,
+            theory_sha256: None,
+            propositional_problem_sha256: None,
+            cnf_sha256: None,
+            lrat_sha256: None,
+            ground_universe_count: None,
+            instantiation_count: None,
+            theory_clause_count: None,
+            elapsed_ms: None,
+            budget_outcome: None,
+            verdict_key_sha256: None,
+            cache_hit: None,
+        })),
         Err(reason) => ReconstructionOutcome::Failed(reason),
     }
 }
@@ -548,6 +613,15 @@ pub fn reconstruct_validity(
         "Lean kernel + BitVec simplification",
         Some(
             "simp [BitVec.sub_eq_add_neg, BitVec.neg_eq_not_add, \
+             BitVec.add_comm, BitVec.mul_comm, BitVec.and_comm, \
+             BitVec.or_comm, BitVec.xor_assoc]",
+        ),
+        false,
+    );
+    let concrete_simp = (
+        "Lean kernel + concrete BitVec simplification",
+        Some(
+            "simp_all [BitVec.sub_eq_add_neg, BitVec.neg_eq_not_add, \
              BitVec.add_comm, BitVec.mul_comm, BitVec.and_comm, \
              BitVec.or_comm, BitVec.xor_assoc]",
         ),
@@ -576,9 +650,9 @@ pub fn reconstruct_validity(
             let is_surface_bundle =
                 render_validity_goal(obligation).is_ok_and(|goal| goal.matches('∧').count() >= 4);
             if is_surface_bundle {
-                vec![simp, grind, lrat, rotate]
+                vec![concrete_simp, simp, grind, lrat, rotate]
             } else {
-                vec![lrat, simp, grind, rotate]
+                vec![concrete_simp, lrat, simp, grind, rotate]
             }
         }
     };
@@ -616,7 +690,14 @@ pub fn reconstruct_validity(
         }
         return outcome;
     }
-    ReconstructionOutcome::Failed(failures.join("\n"))
+    let outcome = ReconstructionOutcome::Failed(failures.join("\n"));
+    if std::env::var_os("THERMITE_TRACE_RECONSTRUCTION").is_some() {
+        eprintln!(
+            "reconstruction failed for `{}` ({fragment}): {outcome:?}",
+            obligation.item
+        );
+    }
+    outcome
 }
 
 /// Lemmas needed for the commutative rewrites performed by [`reference_normalize`].

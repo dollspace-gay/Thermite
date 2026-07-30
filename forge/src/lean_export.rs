@@ -349,6 +349,19 @@ fn encode_expr(e: &Expr, ctx: &EncodeCtx) -> Result<String, ExportRefusal> {
     }
 }
 
+/// Encode an embedded S₂.0 quantifier-free leaf with the same source-AST
+/// semantics used by the ordinary Lean exporter. The EPR exporter owns the
+/// quantifier and relation structure, but a deferred leaf must still be the
+/// actual `Thermite.Expr`, not a fresh propositional placeholder.
+pub(crate) fn encode_strat_qfree_expr(
+    e: &Expr,
+    item: &thermite_syntax::FnItem,
+) -> Result<String, String> {
+    let ctx = ctx_for_params(&item.params);
+    let bool_result = matches!(item.ret, Type::Prim(PrimType::Bool));
+    encode_contract_clause(e, &ctx, bool_result).map_err(|error| error.to_string())
+}
+
 /// Encode a binary `Expr` — a comparison (`CmpOp`), a logical connective (`LogOp`),
 /// or an arithmetic op (`ArithOp`) — to the matching `Ast.lean` constructor (REQ-6
 /// EXP; mirrors `RefEncode.lean`'s `encOp`/`encLog`/`encArith` dispatch, #176).

@@ -23,7 +23,7 @@
 //! classifier `Frm`) only — never `thermite-lower`. A reference that reused the
 //! production lowerer would make the equivalence check vacuous.
 
-use thermite_spec::classifier::{Atom, Frm, Rel, Sort2, Tm};
+use thermite_spec::classifier::{Atom, Frm, Rel, ScalarValue, Sort2, Tm};
 
 use crate::normalize::{ArithOp, CmpOp, Formula, Quant, Term};
 
@@ -43,13 +43,8 @@ fn enc_name(d: u32, i: u32) -> String {
     }
 }
 
-/// The reference spelling of a (machine/opaque) literal. `Cls.Tm.lit` carries no value
-/// (`Strat/Nnf.lean`: "value irrelevant here"), so the reference names it symbolically by
-/// its sort — a free constant `lit_<sort>`. The production lowerer and this reference must
-/// agree on this convention for the syntactic phase to hit; a value mismatch is
-/// caught by the semantic phase (where the v1 `qfree` atoms carry real values).
-fn lit_name(s: &Sort2) -> String {
-    format!("lit_{}", sort_tag(s))
+fn const_name(s: &Sort2, id: u32) -> String {
+    format!("const_{}_{id}", sort_tag(s))
 }
 
 /// A stable tag for a sort, for naming literals / casts in the reference surface.
@@ -65,7 +60,11 @@ fn sort_tag(s: &Sort2) -> String {
 fn enc_tm(d: u32, t: &Tm) -> Term {
     match t {
         Tm::Var(_, i) => Term::Var(enc_name(d, *i)),
-        Tm::Lit(s) => Term::Var(lit_name(s)),
+        Tm::Const(s, id) => Term::Var(const_name(s, *id)),
+        Tm::Lit(_, ScalarValue::Int(value)) => Term::Int(*value),
+        Tm::Lit(_, ScalarValue::Bool(value)) => {
+            Term::Var(if *value { "true" } else { "false" }.to_string())
+        }
         // `sq[ix]` ↦ the reference `idx(sq, ix)` accessor (the normalizer's `App` form).
         Tm::Read(_, sq, ix) => Term::App("idx".to_string(), vec![enc_tm(d, sq), enc_tm(d, ix)]),
         // `sq.len()` ↦ `len(sq)`.
@@ -113,7 +112,7 @@ fn enc_atom(d: u32, a: &Atom) -> Formula {
         }),
         // An opaque qfree leaf: a nullary predicate, modeled as `qfree() = qfree()` (a
         // trivially-true atomic placeholder that normalizes stably and atomically).
-        Atom::QFree => Formula::Atom(crate::normalize::Atom {
+        Atom::QFree(_) => Formula::Atom(crate::normalize::Atom {
             op: CmpOp::Eq,
             lhs: Term::App("qfree".to_string(), vec![]),
             rhs: Term::App("qfree".to_string(), vec![]),
@@ -178,7 +177,7 @@ mod tests {
                 Tm::Read(
                     usize_s(),
                     Box::new(Tm::Var(usize_s(), 1)),
-                    Box::new(Tm::Lit(usize_s())),
+                    Box::new(Tm::Const(usize_s(), 1)),
                 ),
             ))),
         )
@@ -204,7 +203,7 @@ mod tests {
             Box::new(Frm::Atom(Atom::Rel(
                 Rel::Lt,
                 Tm::Var(usize_s(), 0),
-                Tm::Len(Box::new(Tm::Lit(Sort2::Seq(Box::new(usize_s()))))),
+                Tm::Len(Box::new(Tm::Const(Sort2::Seq(Box::new(usize_s())), 0))),
             ))),
         );
         let n = strat_ref_encode(&phi).normalize();
@@ -220,7 +219,7 @@ mod tests {
             Box::new(Frm::Atom(Atom::Rel(
                 Rel::Ne,
                 Tm::Cast(Sort2::Mach(Mach::U32), Box::new(Tm::Var(usize_s(), 0))),
-                Tm::Lit(Sort2::Mach(Mach::U32)),
+                Tm::Const(Sort2::Mach(Mach::U32), 0),
             ))),
         );
         let f = strat_ref_encode(&phi);

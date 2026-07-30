@@ -2,13 +2,17 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: aa6746d229f9a7270ad26aa17cf3184850b7ef2ae764bd5820a24d7b044f320b (migrated from legacy audited-sha commit pin to a squash-stable content digest; doc-drift-tripwire.md REQ-2 — content pin is primary, commit pin is a migration fallback)
+audited-content-sha256: 3158984f966b99063a28ce692db077fbdde6e4b6bc4a1969ae56d4a1dac282a6 (migrated from legacy audited-sha commit pin to a squash-stable content digest; doc-drift-tripwire.md REQ-2 — content pin is primary, commit pin is a migration fallback)
 governs: thermite-lower/src/lower.rs, forge/src/check.rs
 thesis-refs:
   - thermite-design.md §9
   - thermite-design.md §8
   - thermite-design.md §6
 -->
+
+> **Gate G4 re-audit (2026-07-29).** Automatic BV/EPR reconstruction is an
+> additive per-clause overlay after the ordinary check. Boundary/slag weaving
+> and verify-through-the-contract semantics remain unchanged.
 
 ## Summary
 

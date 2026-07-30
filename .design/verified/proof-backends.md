@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft (v-next architecture — the obligation/engine interface; most REQs NOT-STARTED
-audited-content-sha256: 0306955be15edcfebb1cd044cdd6c9c1d82c9d7c64482f03d9648c640e46c801 (migrated from legacy audited-sha commit pin to a squash-stable content digest; doc-drift-tripwire.md REQ-2 — content pin is primary, commit pin is a migration fallback)
+audited-content-sha256: 8e809a4bc5f6df0599fbe458d9feb6b5b7c2a418b7806edec4a9ea3b2637e81c (migrated from legacy audited-sha commit pin to a squash-stable content digest; doc-drift-tripwire.md REQ-2 — content pin is primary, commit pin is a migration fallback)
         behind build blockers. The SHIPPED substrates this builds on are quoted-code-grounded.)
 governs: forge/src/check.rs + forge/src/degrade.rs + forge/src/manifest.rs (the discharge
          pipeline, the ladder, the certificate this interface generalizes) and
@@ -168,6 +168,20 @@ build-blockers:
     statement-shape deviation under the #265-class declared-adaptation ceremony), (vi-b) exporter
     SECOND. ALL REQ-12 rows NOT-STARTED. See REQ-12.
 -->
+
+> **Gate G4 amendment (2026-07-29).** The CLI default is now `auto`, while
+> programmatic `check_file` remains the byte-stable Verus entry. Automatic
+> routing keeps the ordinary backend result, then applies two checked per-clause
+> overlays: QF_BV reconstruction for tagged machine clauses and finite-ground
+> EPR reconstruction for admitted S₂.0 relation/array clauses. The EPR engine
+> accepts a proof only after Lean checks the actual `req → clause` theorem and
+> its axiom report. False clauses return checked finite countermodels; tool
+> absence, timeout, malformed evidence, and disagreement are named
+> non-certifying outcomes. `EngineSelection` therefore includes the shipped
+> `Nlsat`, `Forge`, and `Bv` routes in addition to `Verus`, `Lean`, and `Auto`;
+> EPR is selected automatically rather than exposed as a separate CLI flag.
+> A result-bearing clause enters EPR only when its body-substituted obligation is
+> in S₂.0. An out-of-fragment body leaves the ordinary backend result intact.
 
 ## Summary
 

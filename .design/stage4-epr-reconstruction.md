@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: e5535b453f921f9ada6c3054d082c1c4a241f9d7a5a53ec99044ded282ca60b5
+audited-content-sha256: dbf72a02f6eb5f965ec89f6537490797547719206d70e3c57d1062d0e5e9b064
 governs: canonical S₂.0 bridge, typed Lean reconstruction, production routing,
          audit boundary, proof tooling, and Gate G4 (see tooling/spec-routes.toml)
 -->
@@ -132,6 +132,13 @@ failures remain named failures and never migrate trust.
 The `@bv` parser plumbing is enabled in normal release builds, and a tagged
 clause automatically selects the bit-vector route. Explicit engine flags remain
 diagnostic overrides.
+
+Automatic routing does not erase a settled result from an earlier gate. A
+witnessed body-safety failure, vacuous contract, weak contract, or triage
+refusal remains a failure; Lean is only a fallback after a genuine timeout or
+timeout-derived degrade. Boundary and `#[slag]` functions also keep their L1
+scope. Their bodies are foreign or trusted by fiat, so reconstructing a
+postcondition cannot raise the implementation assurance to L4.
 
 ### REQ-10 — Gate G4
 

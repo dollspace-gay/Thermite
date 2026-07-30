@@ -1643,7 +1643,10 @@ fn bv_check(base: Vec<Certificate>, program: &Program, include_epr_only: bool) -
     for cert in base {
         match crate::lean_export::find_item(program, &cert.item) {
             Some(Item::Fn(f))
-                if fn_has_bv_tag(f) || (include_epr_only && fn_has_epr_clause(program, f)) =>
+                if f.boundary.is_none()
+                    && f.slag.is_none()
+                    && (fn_has_bv_tag(f)
+                        || (include_epr_only && fn_has_epr_clause(program, f))) =>
             {
                 let invariant_tags = fn_bv_invariant_tags(f);
                 let base_proved = cert.level == Level::L3 && cert.reject.is_none();
@@ -1730,6 +1733,13 @@ fn epr_check(base: Vec<Certificate>, program: &Program) -> Vec<Certificate> {
             continue;
         };
         if fn_has_bv_tag(function) {
+            out.push(cert);
+            continue;
+        }
+        // Boundary and slag functions are intentionally certified only to their
+        // recorded L1 boundary/fiat. Clause reconstruction must not turn either
+        // into an implementation-level L4 claim.
+        if function.boundary.is_some() || function.slag.is_some() {
             out.push(cert);
             continue;
         }
@@ -3841,11 +3851,13 @@ fn lean_engine_cert(
         // (R-APG-1 — no panic on a future wiring change).
         EngineSelection::Bv => Ok(verus_cert),
         EngineSelection::Auto => {
-            // Verus first: a Verus `Proven` (L3, no reject) is kept — Lean is not run
-            // (no cost on the common case, no spurious disagreement). Only an
-            // inconclusive Verus result (degrade / timeout / non-L3) tries Lean.
+            // Verus first: settled proofs and failures are kept. Lean is only a
+            // fallback for a genuinely inconclusive Verus run (a timeout or a
+            // lower-rung timeout degrade). In particular, body-safety witnesses
+            // and the vacuity, triage, slag, and mutation gates are conclusive
+            // results; a contract-only Lean proof must never erase them.
             let verus_verdict = verus_verdict_of(&verus_cert);
-            if matches!(verus_verdict, Verdict::Proven(_)) && verus_cert.reject.is_none() {
+            if !auto_should_try_lean(&verus_cert) {
                 return Ok(verus_cert);
             }
             // Verus inconclusive → try Lean (the §6 ordering). The disagreement guard
@@ -3903,6 +3915,21 @@ fn lean_engine_cert(
             }
         }
     }
+}
+
+/// Whether automatic engine selection may try Lean after the Verus pass.
+///
+/// The automatic degrade ladder marks timeout-derived lower rungs with
+/// `lowered_assurance`. A raw timeout can also reach this seam in tests and in a
+/// future ladder configuration. Every other non-L3 certificate is a settled
+/// failure or policy gate, not an invitation to replace the whole item verdict
+/// with a contract-only proof.
+fn auto_should_try_lean(cert: &Certificate) -> bool {
+    cert.lowered_assurance
+        || cert
+            .reject
+            .as_ref()
+            .is_some_and(|reject| reject.cause == "VerusTimeout")
 }
 
 /// Reconstruct an `engine::Verdict` from a Verus base cert (`.design/verified/

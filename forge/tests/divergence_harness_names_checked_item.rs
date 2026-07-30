@@ -96,6 +96,11 @@ fn check_program(tag: &str, program: &str) -> Vec<Value> {
     let out = Command::new(forge_bin())
         .arg("check")
         .arg(&fixture)
+        // This test pins the generated Verus harness filename. Automatic EPR
+        // countermodels carry canonical clause addresses instead, so select the
+        // backend whose diagnostic path is under test.
+        .arg("--engine")
+        .arg("verus")
         .arg("--json")
         .output()
         .expect("spawn forge check");

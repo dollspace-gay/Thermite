@@ -213,7 +213,7 @@ fn req8_mix64_arithmetic_and_bitwise_clauses_migrate_kernel_checked() {
     assert!(
         add_evidence["checker"]
             .as_str()
-            .is_some_and(|checker| checker.contains("LRAT")),
+            .is_some_and(|checker| checker.contains("concrete BitVec simplification")),
         "the arithmetic clause records the checker that succeeded: {add_evidence}"
     );
     assert!(

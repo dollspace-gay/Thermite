@@ -1357,7 +1357,7 @@ private unsafe def cbvReconstructionGoal
 private unsafe def cbvPlatformReconstructionGoal
     (goal : MVarId) : MetaM Unit := do
   let target ← goal.getType
-  let some (_, left, right) := target.eq?
+  let some (_, _, _) := target.eq?
     | throwError
         "platform kernel reconstruction expects an equality"
   let solveCase (caseGoal : MVarId) (widthBound : Expr) :

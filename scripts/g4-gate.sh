@@ -6,7 +6,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-for tool in cargo lake prlimit python3; do
+for tool in cargo lake prlimit python3 z3; do
   command -v "$tool" >/dev/null 2>&1 || {
     echo "g4-gate: required tool not found: $tool" >&2
     exit 2
@@ -32,6 +32,8 @@ export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-1}"
 source "$ROOT/scripts/g4-toolchain.env"
 export THERMITE_EPR_CADICAL="$ROOT/target/g4-tools/bin/cadical"
 export THERMITE_EPR_DRAT_TRIM="$ROOT/target/g4-tools/bin/drat-trim"
+THERMITE_EPR_Z3="$(command -v z3)"
+export THERMITE_EPR_Z3
 
 [[ -x "$THERMITE_EPR_CADICAL" ]] || {
   echo "g4-gate: pinned CaDiCaL is missing; run scripts/install-g4-tools.sh" >&2

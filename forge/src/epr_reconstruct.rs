@@ -36,6 +36,7 @@ const EPR_CHECKER: &str = "Lean kernel + structural EPR + CaDiCaL 2.1.3 + drat-t
 const EPR_CACHE_SCHEMA: &str = "thermite.epr.artifacts.v1";
 const AXIOM_ALLOWLIST: &[&str] = &["propext", "Classical.choice", "Quot.sound"];
 const COUNTERMODEL_SEEDS: usize = 1 << 16;
+const COUNTERMODEL_QFREE_MASKS: usize = 1 << 8;
 static SCRATCH_COUNTER: AtomicU64 = AtomicU64::new(0);
 static RECONSTRUCTION_LOCK: Mutex<()> = Mutex::new(());
 static LEAN_MODULE_BUILD: OnceLock<Result<(), String>> = OnceLock::new();
@@ -98,6 +99,11 @@ struct QfreeGroupRealization {
     evidence: ReconstructionEvidence,
     witness: String,
     values: BTreeMap<String, u128>,
+}
+
+enum CountermodelAttemptFailure {
+    Retry(String),
+    Fatal(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -290,183 +296,202 @@ pub fn reconstruct(
     let cnf_path = scratch.path.join("problem.cnf");
     let proof_path = scratch.path.join("problem.drat");
     let model_path = scratch.path.join("model.txt");
-    if let Err(error) = fs::write(&cnf_path, ground.dimacs.as_bytes()) {
-        return EprOutcome::Failed(format!("EprScratch: could not write DIMACS: {error}"));
+    let mut blocked_qfree_masks = Vec::new();
+    let mut last_rejected_mask = None;
+    loop {
+        let active_dimacs = match dimacs_with_blocking_clauses(&ground.dimacs, &blocked_qfree_masks)
+        {
+            Ok(dimacs) => dimacs,
+            Err(reason) => return EprOutcome::Failed(format!("EprCountermodelBlocking: {reason}")),
+        };
+        if let Err(error) = fs::write(&cnf_path, active_dimacs.as_bytes()) {
+            return EprOutcome::Failed(format!("EprScratch: could not write DIMACS: {error}"));
+        }
+        let solver = match run_cadical(&toolchain.cadical, &cnf_path, &proof_path, &model_path) {
+            Ok(output) => output,
+            Err(reason) => return EprOutcome::Failed(reason),
+        };
+        match solver.status.code() {
+            Some(10) => {
+                let model_text = match fs::read_to_string(&model_path) {
+                    Ok(text) => text,
+                    Err(error) => {
+                        return EprOutcome::Failed(format!(
+                            "EprCountermodelMissing: CaDiCaL reported SAT but its model \
+                         could not be read: {error}"
+                        ))
+                    }
+                };
+                let assignment = match parse_sat_assignment(&model_text) {
+                    Ok(assignment) => assignment,
+                    Err(reason) => {
+                        return EprOutcome::Failed(format!("EprCountermodelMalformed: {reason}"))
+                    }
+                };
+                if let Err(reason) = validate_dimacs_assignment(&active_dimacs, &assignment) {
+                    return EprOutcome::Failed(format!("EprCountermodelInvalid: {reason}"));
+                }
+                let qfree_values = match qfree_values_from_assignment(recon, &ground, &assignment) {
+                    Ok(values) => values,
+                    Err(reason) => {
+                        return EprOutcome::Failed(format!(
+                            "EprCountermodelQFreeAssignment: {reason}"
+                        ))
+                    }
+                };
+                match checked_counterexample(
+                    recon,
+                    item,
+                    &scratch.path,
+                    &premise,
+                    &conclusion,
+                    &ground,
+                    qfree_values,
+                ) {
+                    Ok(mut counterexample) => {
+                        if !blocked_qfree_masks.is_empty() {
+                            counterexample.model.push_str(&format!(
+                                ", after rejecting {} unrealized QFree mask(s)",
+                                blocked_qfree_masks.len()
+                            ));
+                        }
+                        return EprOutcome::Counterexample(counterexample);
+                    }
+                    Err(CountermodelAttemptFailure::Fatal(reason)) => {
+                        return EprOutcome::Failed(reason)
+                    }
+                    Err(CountermodelAttemptFailure::Retry(reason)) => {
+                        if blocked_qfree_masks.len() + 1 >= COUNTERMODEL_QFREE_MASKS {
+                            return EprOutcome::Timeout(format!(
+                                "EprCountermodelMaskBudget: checked {} distinct QFree masks; \
+                             last rejection: {reason}",
+                                COUNTERMODEL_QFREE_MASKS
+                            ));
+                        }
+                        let blocking = match qfree_blocking_clause(
+                            recon.qfree_atoms.len(),
+                            &ground,
+                            &assignment,
+                        ) {
+                            Ok(clause) => clause,
+                            Err(blocking_reason) => {
+                                return EprOutcome::Failed(format!(
+                                    "EprCountermodelBlocking: {blocking_reason}; \
+                                     rejected mask: {reason}"
+                                ))
+                            }
+                        };
+                        if blocked_qfree_masks.contains(&blocking) {
+                            return EprOutcome::Failed(format!(
+                                "EprCountermodelBlocking: CaDiCaL repeated an already-blocked \
+                             QFree mask; rejected mask: {reason}"
+                            ));
+                        }
+                        blocked_qfree_masks.push(blocking);
+                        last_rejected_mask = Some(reason);
+                    }
+                }
+            }
+            Some(20) if blocked_qfree_masks.is_empty() => break,
+            Some(20) => {
+                return EprOutcome::Failed(format!(
+                    "EprCountermodelMasksExhausted: the Boolean problem has no untried \
+                     QFree assignment after {} checked rejection(s); last rejection: {}",
+                    blocked_qfree_masks.len(),
+                    last_rejected_mask.as_deref().unwrap_or("none")
+                ))
+            }
+            _ => {
+                let detail = output_head(&solver);
+                if detail.contains("time limit") || detail.contains("UNKNOWN") {
+                    return EprOutcome::Timeout(format!(
+                        "EprSolverTimeout: CaDiCaL did not decide the finite problem within \
+                         {SOLVER_SECONDS}s: {detail}"
+                    ));
+                }
+                return EprOutcome::Failed(format!(
+                    "EprSolverFailure: CaDiCaL exited {:?}: {detail}",
+                    solver.status.code()
+                ));
+            }
+        }
     }
-    let solver = match run_cadical(&toolchain.cadical, &cnf_path, &proof_path, &model_path) {
+
+    let lrat_path = scratch.path.join("problem.lrat");
+    let trim = match run_drat_trim(&toolchain.drat_trim, &cnf_path, &proof_path, &lrat_path) {
         Ok(output) => output,
         Err(reason) => return EprOutcome::Failed(reason),
     };
-    match solver.status.code() {
-        Some(10) => {
-            let model_text = match fs::read_to_string(&model_path) {
-                Ok(text) => text,
-                Err(error) => {
-                    return EprOutcome::Failed(format!(
-                        "EprCountermodelMissing: CaDiCaL reported SAT but its model \
-                         could not be read: {error}"
-                    ))
-                }
-            };
-            let assignment = match parse_sat_assignment(&model_text) {
-                Ok(assignment) => assignment,
-                Err(reason) => {
-                    return EprOutcome::Failed(format!("EprCountermodelMalformed: {reason}"))
-                }
-            };
-            if let Err(reason) = validate_dimacs_assignment(&ground.dimacs, &assignment) {
-                return EprOutcome::Failed(format!("EprCountermodelInvalid: {reason}"));
-            }
-            let qfree_values = match qfree_values_from_assignment(recon, &ground, &assignment) {
-                Ok(values) => values,
-                Err(reason) => {
-                    return EprOutcome::Failed(format!("EprCountermodelQFreeAssignment: {reason}"))
-                }
-            };
-            let qfree = match check_qfree_realization(recon, item, qfree_values) {
-                Ok(realization) => realization,
-                Err(reason) => {
-                    return EprOutcome::Failed(format!("EprCountermodelQFreeRealization: {reason}"))
-                }
-            };
-            let (seed, atoms, mut axioms) = match check_bool_countermodel(
-                &scratch.path,
-                &premise,
-                &conclusion,
-                &ground,
-                &qfree.values,
-            ) {
-                Ok(model) => model,
-                Err(reason) => {
-                    return EprOutcome::Failed(format!(
-                        "EprCountermodelRealization: the propositional problem is SAT, \
-                         but no checked typed model was produced: {reason}"
-                    ))
-                }
-            };
-            for axiom in qfree
-                .checks
-                .iter()
-                .flat_map(|evidence| evidence.axioms.iter())
-            {
-                if !axioms.contains(axiom) {
-                    axioms.push(axiom.clone());
-                }
-            }
-            let qfree_checks = qfree
-                .checks
-                .iter()
-                .zip(&qfree.witnesses)
-                .map(|(evidence, witness)| {
-                    format!("{} via {} ({witness})", evidence.fragment, evidence.checker)
-                })
-                .collect();
-            EprOutcome::Counterexample(FiniteCountermodel {
-                model: format!(
-                    "two-element typed model seed {seed} (Lean searched constants, \
-                     unary functions, order relations, and injective sequence views)"
-                ),
-                universe_count: ground.ground_count,
-                universe_sha256: sha256_hex(ground.ground.as_bytes()),
-                atoms,
-                cnf_sha256: sha256_hex(ground.dimacs.as_bytes()),
-                qfree_checks,
-                axioms,
-            })
+    if !trim.status.success() {
+        return EprOutcome::Failed(format!(
+            "EprLratConversion: drat-trim rejected the proof: {}",
+            output_head(&trim)
+        ));
+    }
+    let lrat = match fs::read_to_string(&lrat_path) {
+        Ok(text) if !text.trim().is_empty() => strip_lrat_deletions(&text),
+        Ok(_) => {
+            return EprOutcome::Failed(
+                "EprLratMissing: drat-trim produced an empty certificate".to_string(),
+            )
         }
-        Some(20) => {
-            let lrat_path = scratch.path.join("problem.lrat");
-            let trim = match run_drat_trim(&toolchain.drat_trim, &cnf_path, &proof_path, &lrat_path)
-            {
-                Ok(output) => output,
-                Err(reason) => return EprOutcome::Failed(reason),
-            };
-            if !trim.status.success() {
-                return EprOutcome::Failed(format!(
-                    "EprLratConversion: drat-trim rejected the proof: {}",
-                    output_head(&trim)
-                ));
-            }
-            let lrat = match fs::read_to_string(&lrat_path) {
-                Ok(text) if !text.trim().is_empty() => strip_lrat_deletions(&text),
-                Ok(_) => {
-                    return EprOutcome::Failed(
-                        "EprLratMissing: drat-trim produced an empty certificate".to_string(),
-                    )
-                }
-                Err(error) => {
-                    return EprOutcome::Failed(format!(
-                        "EprLratMissing: could not read drat-trim output: {error}"
-                    ))
-                }
-            };
-            let final_source = replay_source(&theorem, &premise, &conclusion, &lrat, &ground);
-            let replay_path = scratch.path.join("replay.lean");
-            if let Err(error) = fs::write(&replay_path, final_source.as_bytes()) {
-                return EprOutcome::Failed(format!(
-                    "EprScratch: could not write replay theorem: {error}"
-                ));
-            }
-            let replay_output = match run_lean(&replay_path, false) {
-                Ok(output) => output,
-                Err(reason) if is_kernel_budget(&reason) => {
-                    return EprOutcome::Timeout(format!("EprKernelBudget: {reason}"))
-                }
-                Err(reason) => return EprOutcome::Failed(format!("EprKernelReplay: {reason}")),
-            };
-            let axioms = match parse_axioms(&replay_output, &theorem) {
-                Ok(axioms) => axioms,
-                Err(reason) => {
-                    return EprOutcome::Failed(format!(
-                        "EprAxiomReport: {reason}; replay output: {}",
-                        replay_output.chars().take(1200).collect::<String>()
-                    ))
-                }
-            };
-            let evidence = build_evidence(
-                &theorem,
-                &final_source,
-                &canonical,
-                &source_clause,
-                &ground,
-                &lrat,
-                axioms,
-                started,
-                false,
-            );
-            if let Some(input_key) = cache_input.as_deref() {
-                if let Some(verdict_key_sha256) = evidence.verdict_key_sha256.clone() {
-                    let entry = CachedUnsat {
-                        schema: EPR_CACHE_SCHEMA.to_string(),
-                        input_key_sha256: input_key.to_string(),
-                        verdict_key_sha256,
-                        canonical: canonical.clone(),
-                        source_clause: source_clause.clone(),
-                        theorem: theorem.clone(),
-                        final_source: final_source.clone(),
-                        lrat: lrat.clone(),
-                        ground: ground.clone(),
-                    };
-                    let _ = store_cached_unsat(&entry);
-                }
-            }
-            EprOutcome::Proved(evidence)
+        Err(error) => {
+            return EprOutcome::Failed(format!(
+                "EprLratMissing: could not read drat-trim output: {error}"
+            ))
         }
-        _ => {
-            let detail = output_head(&solver);
-            if detail.contains("time limit") || detail.contains("UNKNOWN") {
-                EprOutcome::Timeout(format!(
-                    "EprSolverTimeout: CaDiCaL did not decide the finite problem within \
-                     {SOLVER_SECONDS}s: {detail}"
-                ))
-            } else {
-                EprOutcome::Failed(format!(
-                    "EprSolverFailure: CaDiCaL exited {:?}: {detail}",
-                    solver.status.code()
-                ))
-            }
+    };
+    let final_source = replay_source(&theorem, &premise, &conclusion, &lrat, &ground);
+    let replay_path = scratch.path.join("replay.lean");
+    if let Err(error) = fs::write(&replay_path, final_source.as_bytes()) {
+        return EprOutcome::Failed(format!(
+            "EprScratch: could not write replay theorem: {error}"
+        ));
+    }
+    let replay_output = match run_lean(&replay_path, false) {
+        Ok(output) => output,
+        Err(reason) if is_kernel_budget(&reason) => {
+            return EprOutcome::Timeout(format!("EprKernelBudget: {reason}"))
+        }
+        Err(reason) => return EprOutcome::Failed(format!("EprKernelReplay: {reason}")),
+    };
+    let axioms = match parse_axioms(&replay_output, &theorem) {
+        Ok(axioms) => axioms,
+        Err(reason) => {
+            return EprOutcome::Failed(format!(
+                "EprAxiomReport: {reason}; replay output: {}",
+                replay_output.chars().take(1200).collect::<String>()
+            ))
+        }
+    };
+    let evidence = build_evidence(
+        &theorem,
+        &final_source,
+        &canonical,
+        &source_clause,
+        &ground,
+        &lrat,
+        axioms,
+        started,
+        false,
+    );
+    if let Some(input_key) = cache_input.as_deref() {
+        if let Some(verdict_key_sha256) = evidence.verdict_key_sha256.clone() {
+            let entry = CachedUnsat {
+                schema: EPR_CACHE_SCHEMA.to_string(),
+                input_key_sha256: input_key.to_string(),
+                verdict_key_sha256,
+                canonical,
+                source_clause,
+                theorem,
+                final_source,
+                lrat,
+                ground,
+            };
+            let _ = store_cached_unsat(&entry);
         }
     }
+    EprOutcome::Proved(evidence)
 }
 
 fn obligation_parts(formula: &Frm) -> Option<(&Frm, &Frm)> {
@@ -843,14 +868,19 @@ fn lia_model_query(vars: &[String], formula: &Expr) -> Result<String, String> {
 }
 
 fn run_z3(query: &str) -> Result<(String, String), String> {
-    let mut child = Command::new("z3")
+    let z3 = solver_binary("THERMITE_EPR_Z3", "z3");
+    run_z3_at(&z3, query)
+}
+
+fn run_z3_at(z3: &Path, query: &str) -> Result<(String, String), String> {
+    let mut child = Command::new(z3)
         .arg("-in")
         .arg("-smt2")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|error| format!("could not invoke `z3`: {error}"))?;
+        .map_err(|error| format!("could not invoke `{}`: {error}", z3.display()))?;
     let Some(mut stdin) = child.stdin.take() else {
         return Err("z3 did not expose stdin".to_string());
     };
@@ -861,22 +891,23 @@ fn run_z3(query: &str) -> Result<(String, String), String> {
     let output = child
         .wait_with_output()
         .map_err(|error| format!("could not collect the z3 model: {error}"))?;
-    if !output.status.success() {
-        return Err(format!(
-            "z3 exited {:?}: {}",
-            output.status.code(),
-            String::from_utf8_lossy(&output.stderr)
-                .chars()
-                .take(800)
-                .collect::<String>()
-        ));
-    }
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     let result = stdout
         .lines()
         .find(|line| matches!(*line, "sat" | "unsat" | "unknown"))
-        .ok_or_else(|| format!("z3 returned no satisfiability result: {stdout}"))?
-        .to_string();
+        .map(str::to_string);
+    if !output.status.success() && !matches!(result.as_deref(), Some("unsat" | "unknown")) {
+        return Err(format!(
+            "z3 exited {:?}: {}{}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stderr)
+                .chars()
+                .take(800)
+                .collect::<String>(),
+            stdout.chars().take(800).collect::<String>()
+        ));
+    }
+    let result = result.ok_or_else(|| format!("z3 returned no satisfiability result: {stdout}"))?;
     Ok((result, stdout))
 }
 
@@ -1091,6 +1122,66 @@ fn check_qfree_realization(
         values,
         checks,
         witnesses,
+    })
+}
+
+fn checked_counterexample(
+    recon: &S2Recon,
+    item: &FnItem,
+    scratch: &Path,
+    premise: &str,
+    conclusion: &str,
+    ground: &GroundMetadata,
+    qfree_values: Vec<bool>,
+) -> Result<FiniteCountermodel, CountermodelAttemptFailure> {
+    let qfree = check_qfree_realization(recon, item, qfree_values).map_err(|reason| {
+        if reason.starts_with("EprQFreeUnrealizable:") {
+            CountermodelAttemptFailure::Retry(reason)
+        } else {
+            CountermodelAttemptFailure::Fatal(format!("EprCountermodelQFreeRealization: {reason}"))
+        }
+    })?;
+    let (seed, atoms, mut axioms) =
+        check_bool_countermodel(scratch, premise, conclusion, ground, &qfree.values).map_err(
+            |reason| {
+                if reason.starts_with("no source countermodel was found") {
+                    CountermodelAttemptFailure::Retry(reason)
+                } else {
+                    CountermodelAttemptFailure::Fatal(format!(
+                        "EprCountermodelRealization: the propositional problem is SAT, \
+                         but no checked typed model was produced: {reason}"
+                    ))
+                }
+            },
+        )?;
+    for axiom in qfree
+        .checks
+        .iter()
+        .flat_map(|evidence| evidence.axioms.iter())
+    {
+        if !axioms.contains(axiom) {
+            axioms.push(axiom.clone());
+        }
+    }
+    let qfree_checks = qfree
+        .checks
+        .iter()
+        .zip(&qfree.witnesses)
+        .map(|(evidence, witness)| {
+            format!("{} via {} ({witness})", evidence.fragment, evidence.checker)
+        })
+        .collect();
+    Ok(FiniteCountermodel {
+        model: format!(
+            "two-element typed model seed {seed} (Lean searched constants, unary functions, \
+             order relations, and injective sequence views)"
+        ),
+        universe_count: ground.ground_count,
+        universe_sha256: sha256_hex(ground.ground.as_bytes()),
+        atoms,
+        cnf_sha256: sha256_hex(ground.dimacs.as_bytes()),
+        qfree_checks,
+        axioms,
     })
 }
 
@@ -1521,6 +1612,97 @@ fn qfree_values_from_assignment(
         .enumerate()
         .map(|(id, value)| value.ok_or_else(|| format!("ground problem omits qfree id {id}")))
         .collect()
+}
+
+fn qfree_blocking_clause(
+    qfree_count: usize,
+    ground: &GroundMetadata,
+    assignment: &[bool],
+) -> Result<Vec<i64>, String> {
+    let mut clause = Vec::new();
+    let mut seen_ids = vec![false; qfree_count];
+    for (variable, atom) in &ground.atoms {
+        let Some(id) = ground_qfree_id(atom) else {
+            continue;
+        };
+        let seen = seen_ids
+            .get_mut(id)
+            .ok_or_else(|| format!("ground problem contains unknown qfree id {id}"))?;
+        *seen = true;
+        let variable_id = *variable;
+        let value = assignment
+            .get(variable_id)
+            .copied()
+            .ok_or_else(|| format!("SAT model omits qfree DIMACS variable {variable_id}"))?;
+        let variable = i64::try_from(variable_id)
+            .map_err(|_| format!("qfree DIMACS variable {variable_id} does not fit i64"))?;
+        if variable == 0 {
+            return Err("qfree DIMACS variable 0 is invalid".to_string());
+        }
+        clause.push(if value { -variable } else { variable });
+    }
+    if let Some(missing) = seen_ids.iter().position(|seen| !seen) {
+        return Err(format!("ground problem omits qfree id {missing}"));
+    }
+    clause.sort_unstable_by_key(|literal| literal.unsigned_abs());
+    clause.dedup();
+    if clause.is_empty() {
+        return Err("the rejected model has no QFree variables to block".to_string());
+    }
+    Ok(clause)
+}
+
+fn dimacs_with_blocking_clauses(dimacs: &str, blocks: &[Vec<i64>]) -> Result<String, String> {
+    if blocks.is_empty() {
+        return Ok(dimacs.to_string());
+    }
+    let mut output = String::new();
+    let mut header_found = false;
+    let mut variable_count = None;
+    for line in dimacs.lines() {
+        if line.trim_start().starts_with("p cnf ") {
+            if header_found {
+                return Err("DIMACS contains more than one problem header".to_string());
+            }
+            let fields = line.split_whitespace().collect::<Vec<_>>();
+            if fields.len() != 4 || fields[0] != "p" || fields[1] != "cnf" {
+                return Err(format!("malformed DIMACS problem header `{line}`"));
+            }
+            let variables = fields[2]
+                .parse::<usize>()
+                .map_err(|error| format!("invalid DIMACS variable count: {error}"))?;
+            let clauses = fields[3]
+                .parse::<usize>()
+                .map_err(|error| format!("invalid DIMACS clause count: {error}"))?;
+            let clauses = clauses
+                .checked_add(blocks.len())
+                .ok_or("DIMACS clause count overflow")?;
+            output.push_str(&format!("p cnf {variables} {clauses}\n"));
+            variable_count = Some(variables);
+            header_found = true;
+        } else {
+            output.push_str(line);
+            output.push('\n');
+        }
+    }
+    let variables = variable_count.ok_or("DIMACS has no problem header")?;
+    for block in blocks {
+        if block.is_empty() {
+            return Err("a QFree blocking clause is empty".to_string());
+        }
+        for literal in block {
+            let variable = usize::try_from(literal.unsigned_abs())
+                .map_err(|_| format!("blocking literal {literal} does not fit usize"))?;
+            if variable == 0 || variable > variables {
+                return Err(format!(
+                    "blocking literal {literal} exceeds DIMACS variable count {variables}"
+                ));
+            }
+            output.push_str(&format!("{literal} "));
+        }
+        output.push_str("0\n");
+    }
+    Ok(output)
 }
 
 /// Deletion steps are an LRAT space optimization, not part of the
@@ -2075,6 +2257,51 @@ mod tests {
     }
 
     #[test]
+    fn rejected_qfree_mask_is_blocked_without_changing_the_original_cnf() {
+        let original = "p cnf 3 1\n1 2 3 0\n";
+        let ground = GroundMetadata {
+            dimacs: original.to_string(),
+            order: String::new(),
+            ground: String::new(),
+            formula: String::new(),
+            theory: String::new(),
+            problem: String::new(),
+            bool_problem: String::new(),
+            atoms: vec![
+                (1, "Thermite.Strat.Cls.GroundAtom.qfree 0".to_string()),
+                (3, "Thermite.Strat.Cls.GroundAtom.qfree 1".to_string()),
+            ],
+            ground_count: 0,
+            instantiation_count: 0,
+            theory_count: 0,
+        };
+        let rejected = [false, true, false, false];
+        let block =
+            qfree_blocking_clause(2, &ground, &rejected).expect("complete QFree assignment");
+        assert_eq!(block, vec![-1, 3]);
+
+        let augmented =
+            dimacs_with_blocking_clauses(original, &[block]).expect("well-formed blocking CNF");
+        assert!(augmented.starts_with("p cnf 3 2\n"));
+        assert!(augmented.ends_with("-1 3 0\n"));
+        assert!(validate_dimacs_assignment(original, &rejected).is_ok());
+        assert!(validate_dimacs_assignment(&augmented, &rejected).is_err());
+        assert!(validate_dimacs_assignment(&augmented, &[false, true, false, true]).is_ok());
+        assert_eq!(original, ground.dimacs);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn qfree_lia_solver_dependency_is_not_optional() {
+        let scratch = Scratch::new("missing-z3-negative-test").expect("test scratch");
+        let missing = scratch.path.join("missing-z3");
+        let error = run_z3_at(&missing, "(check-sat)\n")
+            .expect_err("a missing QF_LIA witness solver must fail");
+        assert!(error.contains("could not invoke"), "{error}");
+        assert!(error.contains("missing-z3"), "{error}");
+    }
+
+    #[test]
     fn qfree_model_parsers_keep_ids_and_signed_integer_values_exact() {
         assert_eq!(
             ground_qfree_id("Thermite.Strat.Cls.GroundAtom.qfree 17"),
@@ -2271,6 +2498,48 @@ mod tests {
                     .any(|check| check.contains("qf_bv8")));
             }
             other => panic!("expected checked mixed-QF countermodel, found {other:?}"),
+        }
+    }
+
+    #[test]
+    fn production_retries_a_boolean_qfree_mask_that_lia_cannot_realize() {
+        let parsed = parse(
+            "fn epr_qfree_retry(xs: Vec<u64>, ys: Vec<u64>, x: u64) -> u64\n\
+             req x + x == x + x || xs.len() == xs.len()\n\
+             ens xs == ys\n\
+             fx pure { 0 }",
+        );
+        assert!(parsed.is_clean(), "parse errors: {:?}", parsed.errors);
+        let Item::Fn(item) = &parsed.program.items[0] else {
+            panic!("expected function");
+        };
+        let recon = thermite_spec::s2_recon_from_obligation(
+            &parsed.program,
+            item,
+            &item.contract.req,
+            &item.contract.ens[0],
+            thermite_spec::SourceAddress {
+                item: item.name.clone(),
+                clause: "ens#0".to_string(),
+            },
+        )
+        .expect("canonical S₂.0 bridge");
+        assert_eq!(recon.qfree_atoms.len(), 1);
+        match reconstruct(&recon, item, &item.contract.req, &item.contract.ens[0]) {
+            EprOutcome::Counterexample(model) => {
+                assert!(
+                    model
+                        .model
+                        .contains("after rejecting 1 unrealized QFree mask"),
+                    "the first Boolean mask should be blocked and retried: {}",
+                    model.model
+                );
+                assert!(model
+                    .qfree_checks
+                    .iter()
+                    .any(|check| check.contains("qf_lia") && check.contains("omega")));
+            }
+            other => panic!("expected retried checked countermodel, found {other:?}"),
         }
     }
 

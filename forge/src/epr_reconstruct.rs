@@ -860,7 +860,6 @@ fn solver_binary(environment: &str, name: &str) -> PathBuf {
 
 fn run_cadical(cadical: &Path, cnf: &Path, proof: &Path, model: &Path) -> Result<Output, String> {
     Command::new(cadical)
-        .arg("-q")
         .arg("-t")
         .arg(SOLVER_SECONDS.to_string())
         .arg("-w")

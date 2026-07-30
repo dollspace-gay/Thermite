@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: 37e70ff306ea4eb736928731fd53a7805bde57d6cc2e3b461ff0ff3851dea6ac
+audited-content-sha256: 491391eb1797dcc91de0c27a094fd4b589bce49cf7ecd22c9f404f595193505f
 governs: canonical S₂.0 bridge, typed Lean reconstruction, production routing,
          audit boundary, proof tooling, and Gate G4 (see tooling/spec-routes.toml)
 -->

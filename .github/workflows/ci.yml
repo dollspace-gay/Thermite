@@ -202,6 +202,18 @@ jobs:
           echo "$(dirname "$VERUS_BIN_PATH")" >> "$GITHUB_PATH"
           "$VERUS_BIN_PATH" --version
 
+      - name: Cache Stage 4 proof tools
+        uses: actions/cache@v4
+        with:
+          path: target/g4-tools
+          key: g4-tools-${{ hashFiles('scripts/g4-toolchain.env', 'scripts/g4-tools/drat-trim') }}
+
+      - name: Install pinned CaDiCaL and drat-trim
+        run: |
+          bash scripts/install-g4-tools.sh
+          echo "THERMITE_EPR_CADICAL=$PWD/target/g4-tools/bin/cadical" >> "$GITHUB_ENV"
+          echo "THERMITE_EPR_DRAT_TRIM=$PWD/target/g4-tools/bin/drat-trim" >> "$GITHUB_ENV"
+
       # Shard the suite across the matrix: nextest assigns each test to one
       # partition deterministically, so the union of shards is the full suite.
       - name: cargo nextest run (shard ${{ matrix.shard }}/4)
@@ -363,6 +375,18 @@ jobs:
           echo "VERUS_BIN=$VERUS_BIN_PATH" >> "$GITHUB_ENV"
           echo "$(dirname "$VERUS_BIN_PATH")" >> "$GITHUB_PATH"
           "$VERUS_BIN_PATH" --version
+
+      - name: Cache Stage 4 proof tools
+        uses: actions/cache@v4
+        with:
+          path: target/g4-tools
+          key: g4-tools-${{ hashFiles('scripts/g4-toolchain.env', 'scripts/g4-tools/drat-trim') }}
+
+      - name: Install pinned CaDiCaL and drat-trim
+        run: |
+          bash scripts/install-g4-tools.sh
+          echo "THERMITE_EPR_CADICAL=$PWD/target/g4-tools/bin/cadical" >> "$GITHUB_ENV"
+          echo "THERMITE_EPR_DRAT_TRIM=$PWD/target/g4-tools/bin/drat-trim" >> "$GITHUB_ENV"
 
       # Shard the forge suite WITH the spine present: nextest assigns each test to one
       # partition deterministically, so shards 1..4 union to the full `-p forge` suite —

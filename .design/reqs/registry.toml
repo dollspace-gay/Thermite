@@ -16033,15 +16033,15 @@ title = "Stage-2 audit integration — the G2 gate: make audit grows [1'][4'][8]
 owner = ".design/stage2-stratified-cage.md"
 status = "shipped"
 scope = "verified"
-summary = "THE G2 GATE increment (stage2-stratified-cage.md REQ-9 / AC-9; child of thermite2-program.md REQ-10; gate G2; spec of record the stage-2 metatheory sketch GH#2). Builds on REQ-1..REQ-8 (#323/#324/#325/#326/#327/#328/#329/#330, all merged @ 80c88ea1); unblocks REQ-10 (#332). make audit grows four stage-2 checks that must ALL be green in ONE run, gating REQ-8's certificate trust flip (G2_FLIPPED). (1) [1'] the axiom probe (scripts/lean-axiom-probe.sh) gates the FOUR stratified soundness theorems strat_ref_sound (T1-S) / strat_lowering_faithful (T2-S) / classifier_correct (T3-C) / restrat_conservative (T4-R) — already in THEOREMS by REQ-5/8/3/7 (allowed axioms unchanged {propext, Classical.choice, Quot.sound}); scripts/audit.sh check [1] surfaces the stratified pillars + sets the [G2] sub-verdict S2_AXIOM. (2) [4'] doc-drift over the THREE new mirrored Rust files: .design/verified/strat-rust-lean-correspondence.md (the stratified arm-by-arm correspondence, content-sha256 pinned) governs thermite-spec/src/classifier.rs + thermite-tv/src/strat_ref_encode.rs + thermite-tv/src/strat_two_phase.rs via three new tooling/spec-routes.toml routes, so tooling/doc-drift.py (the shipped tripwire) now covers the mirrors (before #331 they were unrouted — no freshness gate). (3) [8] the classifier differential battery (forge strat-tv, fixed seed) wired into scripts/audit.sh + the rotating-seed scheduled job (.github/workflows/generated-tv.yml gains elan + mathlib cache + the Wire build + a rotating-seed forge strat-tv/strat-faithful-tv step). (4) [9] the stratified two-phase TV sweep (forge strat-faithful-tv) wired into scripts/audit.sh reporting the syntactic/semantic/timeout phase split. THE GATE AS A TESTED CODE PATH (the AC-9 crux): thermite-tv/src/strat_two_phase.rs gains G2Checks{axiom_probe,doc_drift,differential,two_phase_tv} + g2_flip_permitted(declared,&checks)=declared && all_green + strat_trust_profile_gated — the proven (HONESTLY SCOPED) flip is permitted iff G2 is declared AND every gating check is green; ANY red check downgrades the label back to the conservative UNPROVEN form (a flipped certificate can never out-run the audit that justifies it). The toggle tests drive each of the four red in turn and assert the flip is withheld (gate_blocks_the_flip_when_any_one_check_is_red). forge g2-gate is the make-audit enforcer: it combines the four verdicts through g2_flip_permitted, prints the effective trust, and EXITS NONZERO when G2 is declared while any check is red (the live mechanical block). G2 is REACHED: G2_FLIPPED flipped false->true (REQ-8's one-line change, now enabled), and REF_ENCODE_PROVEN is HONESTLY SCOPED per REQ-5 option B / #330-#331: structure proven (T1-S) + qfree atoms grounded to v1 Thermite.denote (T2-S) + rel/array discharged by Z3's theory (solver base) — kernel-grounding rel is stage-3 reconstruction; the label does NOT over-claim. scripts/audit.sh grows the [G2] section (the four sub-checks + the forge g2-gate enforcer; tool-absent SKIP is INCONCLUSIVE not green, R-HONEST-3) and the .github/workflows/ci.yml lean job runs the fixed-seed strat-tv/strat-faithful-tv where lake exists. cargo test (gate toggle + flip-block tests) / clippy -D warnings / fmt / doc-drift (re-pinned) / tooling/reqs check all clean. No stubs/sorries."
-remaining_scope = "Closed: the make-audit G2 gate ([1'][4'][8][9] green in one run + the forge g2-gate mechanical block), the doc-drift route over the three mirrored files, the rotating-seed scheduled differential, and the gated honestly-scoped trust flip. The rel/array-atom semantics stays MODEL-RELATIVE by design (the SMT array theory is the solver's; kernel-grounding it in Lean is stage-3 reconstruction, out of scope — the proven label scopes to exactly what is attested). REQ-10 (the complete pin battery) is the separate downstream requirement (#332)."
+summary = "THE G2 GATE increment (stage2-stratified-cage.md REQ-9 / AC-9; child of thermite2-program.md REQ-10; gate G2; spec of record the stage-2 metatheory sketch GH#2). Builds on REQ-1..REQ-8 (#323/#324/#325/#326/#327/#328/#329/#330, all merged @ 80c88ea1); unblocks REQ-10 (#332). make audit grows four stage-2 checks that must ALL be green in ONE run, gating REQ-8's certificate trust flip (G2_FLIPPED). (1) [1'] the axiom probe (scripts/lean-axiom-probe.sh) gates the FOUR stratified soundness theorems strat_ref_sound (T1-S) / strat_lowering_faithful (T2-S) / classifier_correct (T3-C) / restrat_conservative (T4-R) — already in THEOREMS by REQ-5/8/3/7 (allowed axioms unchanged {propext, Classical.choice, Quot.sound}); scripts/audit.sh check [1] surfaces the stratified pillars + sets the [G2] sub-verdict S2_AXIOM. (2) [4'] doc-drift over the THREE new mirrored Rust files: .design/verified/strat-rust-lean-correspondence.md (the stratified arm-by-arm correspondence, content-sha256 pinned) governs thermite-spec/src/classifier.rs + thermite-tv/src/strat_ref_encode.rs + thermite-tv/src/strat_two_phase.rs via three new tooling/spec-routes.toml routes, so tooling/doc-drift.py (the shipped tripwire) now covers the mirrors (before #331 they were unrouted — no freshness gate). (3) [8] the classifier differential battery (forge strat-tv, fixed seed) wired into scripts/audit.sh + the rotating-seed scheduled job (.github/workflows/generated-tv.yml gains elan + mathlib cache + the Wire build + a rotating-seed forge strat-tv/strat-faithful-tv step). (4) [9] the stratified two-phase TV sweep (forge strat-faithful-tv) wired into scripts/audit.sh reporting the syntactic/semantic/timeout phase split. THE GATE AS A TESTED CODE PATH (the AC-9 crux): thermite-tv/src/strat_two_phase.rs gains G2Checks{axiom_probe,doc_drift,differential,two_phase_tv} + g2_flip_permitted(declared,&checks)=declared && all_green + strat_trust_profile_gated — the proven (HONESTLY SCOPED) flip is permitted iff G2 is declared AND every gating check is green; ANY red check downgrades the label back to the conservative UNPROVEN form (a flipped certificate can never out-run the audit that justifies it). The toggle tests drive each of the four red in turn and assert the flip is withheld (gate_blocks_the_flip_when_any_one_check_is_red). forge g2-gate is the make-audit enforcer: it combines the four verdicts through g2_flip_permitted, prints the effective trust, and EXITS NONZERO when G2 is declared while any check is red (the live mechanical block). G2 is REACHED: G2_FLIPPED flipped false->true (REQ-8's one-line change, now enabled), and REF_ENCODE_PROVEN is HONESTLY SCOPED per REQ-5 option B / #330-#331: structure proven (T1-S) + qfree atoms grounded to v1 Thermite.denote (T2-S) + rel/array discharged by Z3's theory (solver base) — kernel-grounding rel was downstream work later completed by Gate G4; the label does NOT over-claim. scripts/audit.sh grows the [G2] section (the four sub-checks + the forge g2-gate enforcer; tool-absent SKIP is INCONCLUSIVE not green, R-HONEST-3) and the .github/workflows/ci.yml lean job runs the fixed-seed strat-tv/strat-faithful-tv where lake exists. cargo test (gate toggle + flip-block tests) / clippy -D warnings / fmt / doc-drift (re-pinned) / tooling/reqs check all clean. No stubs/sorries."
+remaining_scope = "Closed: the make-audit G2 gate, the mirror drift route, the rotating-seed differential, and the honestly scoped trust flip. At G2 the rel/array semantics was deliberately model-relative; Gate G4 now closes that downstream residual for admitted S₂.0 clauses. REQ-10 is the separate Stage-2 pin battery."
 aliases = ["Stage-2 REQ-9", "REQ-9 audit integration", "G2 gate", "the G2 gate", "make audit", "g2-gate", "forge g2-gate", "G2Checks", "g2_flip_permitted", "strat_trust_profile_gated", "[1']", "[4']", "[8]", "[9]", "strat-rust-lean-correspondence", "doc-drift route", "rotating-seed", "AC-9", "github:dollspace-gay/Thermite#331"]
 generated_to = ["status"]
 
 [[requirement.evidence]]
 kind = "file"
 target = "thermite-tv/src/strat_two_phase.rs"
-note = "the G2 gate (REQ-9/AC-9): G2Checks{axiom_probe,doc_drift,differential,two_phase_tv} + all_green/red + g2_flip_permitted(declared,&checks) + strat_trust_profile_gated; G2_FLIPPED flipped true (G2 reached, gated); REF_ENCODE_PROVEN honestly scoped (structure+qfree-to-v1+rel-by-z3-theory, kernel-grounding rel = stage 3); the toggle tests drive each of the four red and assert the flip is withheld"
+note = "the G2 gate (REQ-9/AC-9): G2Checks{axiom_probe,doc_drift,differential,two_phase_tv} + all_green/red + g2_flip_permitted(declared,&checks) + strat_trust_profile_gated; G2_FLIPPED flipped true; the historical label is scoped to structure, qfree-to-v1, and solver-theory relations. Gate G4 later kernel-reconstructs admitted S₂.0 relation/array clauses."
 
 [[requirement.evidence]]
 kind = "symbol"
@@ -16090,7 +16090,7 @@ owner = ".design/stage2-stratified-cage.md"
 status = "shipped"
 scope = "verified"
 summary = "THE LAST STAGE-2 INCREMENT (stage2-stratified-cage.md REQ-10 / AC-10; child of thermite2-program.md REQ-10; gate G2 — this completes Stage 2). Builds on REQ-1..REQ-9 (#323..#331, all merged @ 88d37f41). AUDIT + COMPLETE the eight-pin metatheory §9 battery in the established lean/Thermite/Pin*.lean style (small concrete carrier + decide-checked / kernel-proven theorems; decide, never native_decide; core-Lean-only except the relax island). FIVE pins already landed in prior increments and were AUDITED present/green/cited: PinFiniteEscape (REQ-1, guards Strat/Denote.lean sdenote_all_iff — the (R1) completeness datum), PinStratCapture + PinStratFlip (REQ-5, guard Thermite.Strat.strat_ref_sound T1-S — fresh-name discipline + quantifier-kind fidelity), PinCombDeriv (REQ-6, guards the eight Strat/CombDeriv.lean comb_deriv_* demotion lemmas — the off-by-one i<=len vs i<len), PinRestratDropSide (REQ-7, guards Thermite.Strat.Cls.restrat_conservative T4-R — the dropped Side obligation, R-SIDE-1). THREE pins were MISSING and added here: (1) PinStratSelfLoop (lean/Thermite/PinStratSelfLoop.lean) — guards Thermite.Strat.Cls.classifier_correct (T3-C) acyclicity arm; broken neighbour stripSelf removes reflexive edges before acyclic, so it ADMITS the a[a[i]] self-loop (Strat/Fragment.lean ex_selfLoop, usize->usize self-edge) the real admitted rejects; decide-checked. (2) PinNNFPolarity (lean/Thermite/PinNNFPolarity.lean) — guards classifier_correct (T3-C) on nnf (Nnf.lean nnf_sound); broken neighbour builds the sort graph PRE-NNF, so (NOT EX k.ALL v.phi1) AND (NOT EX v.ALL k.phi2) — whose NNF flips both blocks into a Key<->Value E1 alternation cycle — is wrongly admitted (raw graph empty -> acyclic); decide-checked. (3) PinRelaxRefute (lean/Thermite/PinRelaxRefute.lean) — guards Thermite.Relax.r_relax_sound (T5-X, stage-1); refutes the ILLEGITIMATE CONVERSE: e(x)=x*x+(-1)*x = x(x-1) is >=0 for every integer (consecutive-integer product) but <0 at x=1/2 over R, so a failed real relaxation does NOT imply an integer counterexample — exactly the RealWitness escalation r_relax_sound's one-wayness mandates (don't emit a Counterexample). Mathlib-importing island like Relax.lean (imports Mathlib.Tactic.Ring + NormNum); kernel-proven, no native_decide. WIRING: all three new pins added as BUILD targets in scripts/lean-axiom-probe.sh IMPORTS (a sorry/broken decide fails the Lean CI job); each pin theorem axiom-clean (PinStratSelfLoop/PinNNFPolarity = {propext}; PinRelaxRefute subset of {propext, Classical.choice, Quot.sound}). CITATION: .design/verified/strat-rust-lean-correspondence.md gains the 'The stage-2 pin battery (AC-10)' section — an eight-row table citing each pin FROM the theorem it guards (the proven anchor) + the broken neighbour it refutes; the five soundness anchors are the same theorems the axiom probe [1'] gates, so the battery is their negative-space witness set. SELF-VERIFY all green: cd lean && lake build (zero sorry under lean/Thermite/); bash scripts/lean-axiom-probe.sh rc=0; cargo test; clippy -D; fmt; python3 tooling/doc-drift.py + make doc-drift rc=0 (the correspondence doc's content-sha256 pin is over the governed Rust files, unaffected by the prose edit — no re-pin needed); tooling/reqs check clean. No stubs/sorries."
-remaining_scope = "Closed: the complete eight-pin battery (five audited present/green/cited from prior increments + three added — PinStratSelfLoop, PinNNFPolarity, PinRelaxRefute), each wired as a Lean CI build target and cited from the theorem it guards in the stratified correspondence doc. Gate G2 / Stage 2 complete. A ninth admission trap or soundness neighbour would be a NEW pin + a new battery row (never a silent widening — the S2.0 conservatism the classifier tables record); kernel-grounding rel/array atoms (a stronger PinRelaxRefute-style pin over the SMT array theory) is stage-3 reconstruction, out of scope."
+remaining_scope = "Closed: the complete eight-pin battery is wired into Lean CI and cited from the theorem each pin guards. Gate G2 / Stage 2 is complete. A ninth admission trap remains a new pin and battery row, never a silent widening. Gate G4 later closes the admitted S₂.0 relation/array reconstruction residual."
 aliases = ["Stage-2 REQ-10", "REQ-10 pin battery", "the pin battery", "pin battery", "PinStratSelfLoop", "PinNNFPolarity", "PinRelaxRefute", "AC-10", "metatheory §9 pins", "the eight-pin battery", "github:dollspace-gay/Thermite#332"]
 generated_to = ["status"]
 
@@ -16318,3 +16318,243 @@ note = "The g3 job installs the pinned dependencies and runs scripts/g3-gate.sh.
 kind = "command"
 target = "bash scripts/g3-gate.sh"
 note = "Gate G3; exits nonzero on any failed check or missing dependency."
+
+[[requirement]]
+id = "REQ-G4-1"
+title = "Frozen S₂.0 reconstruction fragment"
+owner = ".design/stage4-epr-reconstruction.md"
+status = "shipped"
+scope = "verified"
+summary = "The versioned S2Recon bridge has an explicit constructor inventory. Admitted formulas have positive coverage, and neighboring unsupported source forms return named bridge or classifier refusals."
+aliases = ["Stage-4 REQ-1", "S2Recon inventory", "github:dollspace-gay/Thermite#2"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-spec/src/s2_recon.rs"
+note = "Defines the complete bridge inventory, versioned canonical wire form, and positive/refusal tests."
+
+[[requirement]]
+id = "REQ-G4-2"
+title = "Canonical source-to-reconstruction bridge"
+owner = ".design/stage4-epr-reconstruction.md"
+status = "shipped"
+scope = "verified"
+summary = "Real source obligations translate to one deterministic S2Recon value carrying sorts, literal values, stable constant/function IDs, binder scopes, source addresses, and typed QF leaf fragments."
+aliases = ["Stage-4 REQ-2", "canonical S2Recon bridge"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "thermite_spec::s2_recon_from_obligation"
+note = "Production source-obligation entry point used by automatic routing."
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-spec/src/s2_recon.rs"
+note = "Canonical representation, serialization, source correspondence, and bridge tests."
+
+[[requirement]]
+id = "REQ-G4-3"
+title = "Typed Lean semantics for S₂.0 relations and sequences"
+owner = ".design/stage4-epr-reconstruction.md"
+status = "shipped"
+scope = "verified"
+summary = "Lean evaluates sorted terms, relations, functions, sequence reads, and lengths in a typed model. QF leaves retain their canonical IDs, eliminating the old free relation/array Boolean boundary."
+aliases = ["Stage-4 REQ-3", "typed EPR model"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "lean/Thermite/Strat/Model.lean"
+note = "Typed model, valuation, term/atom/formula evaluation, and source-faithfulness theorems."
+
+[[requirement.evidence]]
+kind = "file"
+target = "lean/Thermite/Strat/TestModel.lean"
+note = "Finite typed model family used for kernel-checked countermodels."
+
+[[requirement]]
+id = "REQ-G4-4"
+title = "Checked normalization and Skolemization"
+owner = ".design/stage4-epr-reconstruction.md"
+status = "shipped"
+scope = "verified"
+summary = "Lean proves NNF, prenexing, capture-free substitution, Skolemization, and the req-and-not-clause polarity used by reconstruction. Negative pins cover capture, polarity, and omitted dependencies."
+aliases = ["Stage-4 REQ-4", "EPR normalization and Skolemization"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "lean/Thermite/Strat/Normalize.lean"
+note = "NNF and prenex preservation."
+
+[[requirement.evidence]]
+kind = "file"
+target = "lean/Thermite/Strat/Substitution.lean"
+note = "Capture-free substitution and evaluation preservation."
+
+[[requirement.evidence]]
+kind = "file"
+target = "lean/Thermite/Strat/Skolem.lean"
+note = "Skolemization equisatisfiability with explicit dependencies."
+
+[[requirement.evidence]]
+kind = "file"
+target = "lean/Thermite/PinSubstitutionCapture.lean"
+note = "Negative capture pin."
+
+[[requirement.evidence]]
+kind = "file"
+target = "lean/Thermite/PinSkolemDependencies.lean"
+note = "Negative dependency and quantifier-polarity pins."
+
+[[requirement]]
+id = "REQ-G4-5"
+title = "Complete finite ground universe and instantiation"
+owner = ".design/stage4-epr-reconstruction.md"
+status = "shipped"
+scope = "verified"
+summary = "Lean constructs the sort-indexed finite universe, checks its closure and order, and verifies exhaustive structural instantiation. Missing terms or quantifier instances are rejected."
+aliases = ["Stage-4 REQ-5", "EPR finite grounding"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "lean/Thermite/Strat/Grounding.lean"
+note = "Ground universe construction, closure checks, and completeness theorem."
+
+[[requirement.evidence]]
+kind = "file"
+target = "lean/Thermite/Strat/Instantiation.lean"
+note = "Verified exhaustive ground instantiation."
+
+[[requirement.evidence]]
+kind = "file"
+target = "lean/Thermite/PinGroundingCompleteness.lean"
+note = "Rejects an incomplete ground universe."
+
+[[requirement.evidence]]
+kind = "file"
+target = "lean/Thermite/PinInstantiationOmission.lean"
+note = "Rejects an omitted quantifier instance."
+
+[[requirement]]
+id = "REQ-G4-6"
+title = "Checked ground-theory reconstruction"
+owner = ".design/stage4-epr-reconstruction.md"
+status = "shipped"
+scope = "verified"
+summary = "Lean validates ground clauses for equality, relation/function/read congruence, length consistency, supported sequence extensionality, and the canonical casts/index operations. Arithmetic leaves carry separate checked QF evidence."
+aliases = ["Stage-4 REQ-6", "EPR ground theory"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "lean/Thermite/Strat/GroundTheory.lean"
+note = "Ground-theory step checker and soundness theorem."
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge::epr_reconstruct::tests::production_reconstructs_sequence_extensionality"
+note = "Live end-to-end sequence extensionality replay."
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge::epr_reconstruct::tests::production_checks_mixed_lia_and_bv_countermodel_leaves"
+note = "Kernel-checks mixed QF_LIA/QF_BV leaf values in a finite countermodel."
+
+[[requirement]]
+id = "REQ-G4-7"
+title = "Verified CNF and exact LRAT implication replay"
+owner = ".design/stage4-epr-reconstruction.md"
+status = "shipped"
+scope = "verified"
+summary = "Lean recomputes the grounded formula and Tseitin CNF, checks LRAT against those exact clauses, and derives the actual req-to-clause theorem. CaDiCaL and drat-trim are proof-search tools, not trusted theorem oracles."
+aliases = ["Stage-4 REQ-7", "EPR LRAT replay"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "lean/Thermite/PropReconstruct.lean"
+note = "Propositional compilation, LRAT checking, and soundness."
+
+[[requirement.evidence]]
+kind = "file"
+target = "lean/Thermite/Strat/EprReplay.lean"
+note = "Binds grounding, theory clauses, CNF, LRAT, and the source implication theorem."
+
+[[requirement.evidence]]
+kind = "file"
+target = "scripts/g4-toolchain.env"
+note = "Exact CaDiCaL and drat-trim source identities."
+
+[[requirement]]
+id = "REQ-G4-8"
+title = "Complete reconstruction evidence and checked cache"
+owner = ".design/stage4-epr-reconstruction.md"
+status = "shipped"
+scope = "verified"
+summary = "Evidence and cache identity cover the source clause, canonical IR, grounding, instantiation, theory, propositional problem, CNF, LRAT, theorem, checker, counts, axioms, elapsed time, and budget outcome. Cached artifacts are recomputed and replayed."
+aliases = ["Stage-4 REQ-8", "EPR evidence cache"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/epr_reconstruct.rs"
+note = "Builds complete evidence keys, stores content-addressed artifacts, and replays cached entries."
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge::epr_reconstruct::tests::cache_replays_warm_entries_and_rejects_every_tampered_boundary"
+note = "Warm-cache success and tampering failures for every recorded boundary."
+
+[[requirement]]
+id = "REQ-G4-9"
+title = "Automatic S₂.0 and bit-vector production routing"
+owner = ".design/stage4-epr-reconstruction.md"
+status = "shipped"
+scope = "verified"
+summary = "Normal release checks use automatic per-clause routing. Admitted relation/sequence clauses take the EPR route; tagged clauses take the bit-vector route; successful replay reaches L4, checked countermodels reject, and named failures never fabricate proof."
+aliases = ["Stage-4 REQ-9", "automatic EPR routing"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/check.rs"
+note = "Automatic per-clause EPR/BV overlays and trust migration."
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge::check::tests::automatic_route_kernel_reconstructs_an_admitted_array_clause"
+note = "Default route reconstructs a true admitted array clause."
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge::check::tests::automatic_route_returns_a_lean_checked_finite_countermodel"
+note = "Default route returns a checked finite countermodel for a false clause."
+
+[[requirement]]
+id = "REQ-G4-10"
+title = "Gate G4"
+owner = ".design/stage4-epr-reconstruction.md"
+status = "shipped"
+scope = "verified"
+summary = "One memory-bounded gate runs the canonical bridge differential, Lean pins, production proof/model replay, cache and dependency negatives, axiom probes, release routing, and the placeholder/custom-axiom scan. CI installs every dependency and runs the same command."
+aliases = ["Stage-4 REQ-10", "G4"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "scripts/g4-gate.sh"
+note = "Single fail-fast, 6 GiB-capped, serialized completion gate."
+
+[[requirement.evidence]]
+kind = "file"
+target = ".github/workflows/ci.yml"
+note = "The g4 job installs Lean, Z3, pinned CaDiCaL/drat-trim, then runs the gate."
+
+[[requirement.evidence]]
+kind = "command"
+target = "bash scripts/g4-gate.sh"
+note = "Gate G4; exits nonzero on any failed check or missing dependency."

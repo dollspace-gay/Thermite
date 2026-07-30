@@ -4,7 +4,7 @@
 tier: 3-component
 status: draft
 audited-sha: 4a748bc98172c98cc39fb245996ab4143bdab08d (content-sha256 re-pinned 2026-06-21 for stage-2 REQ-8 / AC-8 (#330), faithfulness + two-phase TV + the trust flip: the change to this doc's governed file (thermite-tv/src/lib.rs) is the additive `pub mod strat_ref_encode` / `pub mod strat_two_phase` declarations + their re-exports (the stratified reference encoder + the two-phase TV, NEW load-bearing TV modules beside the contract/exec ones) — the contract-TV REQs this doc governs are unchanged. The legacy commit pin stays at the 4a748bc9 stable-main ancestor; only the active content-sha256 digest moves. prior: 2026-06-20 stage-2 REQ-4 / AC-4 (#326) classifier differential `gen_strat_formulas`; 2026-06-16 stage-1 increment 2b SplitMix64 `Rng` made pub.)
-audited-content-sha256: f893e66f654d916f9e191b3bc6b96df812952a920ea039151badb73b32bad83b
+audited-content-sha256: 7934bd21ebd10f4b5d46cf1597d35ccac1e990563a399cc51b4cc7ad77c27316
 governs: thermite-tv/src/ref_encode.rs, thermite-tv/src/obligation.rs, forge/src/contract_tv.rs
 thesis-refs:
   - thermite-design.md §1 (trust relocated twice: code → spec → spec-intent)
@@ -14,6 +14,11 @@ thesis-refs:
   - thermite-design.md §7 (the vacuity battery — and the gap it explicitly does not close)
 epic: crosslink #139
 -->
+
+> **Gate G4 re-audit (2026-07-29).** The governed contract-TV semantics are
+> unchanged. `thermite-tv/src/gen.rs` only adapts generated stratified formulas
+> to the valued `Tm::Lit`, stable `Tm::Const`, and ID-bearing `Atom::QFree`
+> constructors used by the canonical S2Recon wire format.
 
 ## Summary
 

@@ -134,8 +134,7 @@ impl fmt::Display for Sort2 {
 // Terms, relations, atoms, formulas (mirrors `Strat/Nnf.lean` §1.2)
 // ===========================================================================
 
-/// Terms carry their sort annotations explicitly (`Strat/Nnf.lean` `inductive Tm`); the
-/// classifier reads sorts off the syntax rather than re-running a typechecker.
+/// Scalar values retained by the canonical reconstruction bridge.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ScalarValue {
     Int(i128),

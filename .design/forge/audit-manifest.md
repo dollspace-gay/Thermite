@@ -3,7 +3,7 @@
 tier: 3-component
 status: draft
 audited-sha: 1cc9d97c6c5d7eab6109561834db77f2ef4b57ab (re-pinned 2026-06-16: forge workflow status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: 488103d4382815b85141d17bc01b60917ba744e7 (#274 — lean_fragment membership report; REQ-7..10 SHIPPED, audit.rs verified-current))
-audited-content-sha256: 3d6979af1e56a8ecc1f6964fc27da1b2869e1b2cc8502f1cda4d19c9ce58e4aa
+audited-content-sha256: f07b4f4149f471a3c37d5443a6e1178e3e7deec4845c9941a327a9aa5f65150f
 governs: forge/src/audit.rs
 thesis-refs:
   - thermite-design.md §6
@@ -28,17 +28,16 @@ trust statement whose centerpiece is the **enumerable trusted computing base**
 the toolchain identity. `grep slag` over a codebase and the audit manifest's TCB
 section are the same complete inventory of fiat-trusted code (§8).
 
-This is **greenfield**: there is no `forge audit` command, no `forge/src/audit.rs`,
-and no aggregate `AuditManifest` schema in `forge` today (verified below — the
-only existing aggregate, `AssuranceManifest`, is a render-time level/scope
-headline, not the §6/§9 audit deliverable). ALL the underlying per-fn data ships
-(it is this component's *input*, never re-derived). REQ-1..REQ-6 are **SHIPPED**
-(`forge/src/audit.rs` + the `forge audit` verb in `cli.rs`), verified by
-`forge/tests/audit_conformance.rs` against `conformance/audit/cases.json`;
-tracked by **crosslink issue #15** (v0.3, milestone #3 Battery). The **#274
-amendment** adds the LEAN-FRAGMENT MEMBERSHIP REPORT (REQ-7..REQ-10, all
-**NOT-STARTED**, blocker #274) — a per-function, informational section answering:
-would `--engine lean` attempt this fn, and if not, what is the structured refusal.
+The command and v1 schema are shipped in `forge/src/audit.rs`. The manifest
+aggregates existing per-function certificates; it does not recompute their
+verdicts. REQ-1..REQ-10 are covered by the conformance cases and the Lean
+fragment probe described below.
+
+Gate G4 adds one backward-compatible residual-trust field:
+`residual_trust.s2_relation_array_residuals`. It is zero for the admitted S₂.0
+relation/array surface. The accompanying `unsupported_fragments` list now names
+only genuine boundaries: formulas rejected by the S₂.0 classifier and
+quantifier-free leaves outside the checked QF_LIA/QF_BV source surface.
 
 ## Decided scope
 

@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: aa6746d229f9a7270ad26aa17cf3184850b7ef2ae764bd5820a24d7b044f320b (migrated from legacy audited-sha commit pin to a squash-stable content digest; doc-drift-tripwire.md REQ-2 — content pin is primary, commit pin is a migration fallback)
+audited-content-sha256: f2bd4267de345fb81de8c451d3ba23ab935b015026573f4bc4cad8369da563c0 (migrated from legacy audited-sha commit pin to a squash-stable content digest; doc-drift-tripwire.md REQ-2 — content pin is primary, commit pin is a migration fallback)
 governs: forge/src/check.rs
 governs: thermite-lower/src/lower.rs
 thesis-refs:
@@ -11,6 +11,9 @@ thesis-refs:
   - thermite-design.md §2.3
   - thermite-design.md §7
 -->
+
+> **Gate G4 re-audit (2026-07-29).** Stage 4 changes the post-check proof routing
+> only. Mutual-recursion admission, decreases checks, and lowering are unchanged.
 
 ## Summary
 

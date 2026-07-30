@@ -5,7 +5,7 @@ tier: 3-component
 status: draft
 governs: forge/src/lean_export.rs
 audited-sha: 8978ecc950df30b58c00fe6df06f1fc5b4c56691 (re-pinned 2026-06-16 for stage-1 increment 2e, REQ-7: re-inspected the exporter surface for the new export_lemma. It reuses the EXACT tier-(a) fn-contract machinery (encode_expr + build_registry + R_item + the `Thermite.denote 0 … {v with specs := R_item}` framing) MINUS the body/result binding — a lemma is the pure `∀ params, req → ens` proposition with no body/result. The existing arms' correspondence is unchanged; the lemma goal is the same denote-framing the fn req/ens arms already certify, so no new soundness claim is introduced.)
-audited-content-sha256: b258719b018ea9dd044d6649c01cca89483ed1e4df62788178d119a4335bbb91
+audited-content-sha256: c6aebaeb9f556c82c2d7b5acedb20e08562bb8f94c5ddb8ead0f6aa18d81b35d
              tone-pass that closed increment 0; increment 1 does NOT modify lean_export.rs,
              so this pin stays valid after the foundation commit)
 thesis-refs:
@@ -42,6 +42,16 @@ table for every piece of the exporter surface, drift-tripwired so that any futur
 `.design/verified/rust-lean-correspondence.md` Table 4 / Table 4B for the exporter file,
 which was pinned at the earlier `3373215e` commit; the pin here advances to the
 current `b60b75a4` tone-pass commit.
+
+### Gate G4 leaf bridge
+
+`encode_strat_qfree_expr` is the only Stage 4 addition to this governed file.
+The EPR layer owns quantifiers, relations, sequences, and grounding; this helper
+encodes the original source expression for an embedded QF leaf by calling the
+same `encode_contract_clause` path used by ordinary contract export. It therefore
+preserves the existing AST-to-Lean correspondence instead of introducing a
+second expression encoder or a placeholder proposition. Unsupported source
+leaves still return the existing structured `ExportRefusal`.
 
 ## Scope and limits
 

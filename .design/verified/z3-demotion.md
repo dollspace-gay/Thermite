@@ -1,7 +1,7 @@
 # Checked solver replay
 
-Status: shipped for QF_LIA and the Stage 3 QF_BV surface. Wider formulas remain
-solver-trusted.
+Status: shipped for QF_LIA, the Stage 3 QF_BV surface, and admitted S₂.0
+relation/array clauses through the Stage 4 finite-ground replay.
 
 ## Purpose
 
@@ -30,7 +30,8 @@ profile.
 |---|---|---|
 | QF_LIA | `Int` arithmetic and propositions | `omega` |
 | QF_BV | literal `BitVec N` terms for N = 8, 16, 32, 64 | axiom-clean LRAT, Lean automation, and proved lemmas |
-| quantified, recursive, relation, or array formulas | outside the current validity exporter | solver-trusted |
+| admitted S₂.0 relations, functions, and sequences | typed finite grounding and theory closure | pinned CaDiCaL proof search + kernel-checked LRAT |
+| formulas rejected by S₂.0, or QF leaves outside QF_LIA/QF_BV | outside checked reconstruction | named fallback or failure |
 
 The QF_BV exporter covers wrapping addition, subtraction, and multiplication;
 unsigned division and remainder; bitwise not, and, or, and xor; logical and
@@ -48,8 +49,8 @@ connectives.
 4. Parse the theorem's anchored `#print axioms` report.
 5. Accept only `{propext, Classical.choice, Quot.sound}`.
 
-Only a `ReconstructionOutcome::Checked` result changes the clause's trust
-profile. The other outcomes preserve useful distinctions:
+For scalar replay, only a `ReconstructionOutcome::Checked` result changes the
+clause's trust profile. The other outcomes preserve useful distinctions:
 
 - `Unsupported`: the expression is outside the fragment.
 - `Unavailable`: Lean or the pinned package could not run.
@@ -68,6 +69,12 @@ The query hash prevents evidence for a separately rendered approximation from
 being presented as evidence for the solver query. The remaining
 Rust-to-SMT/Rust-to-Lean correspondence is inspection-tier and stays in the
 trust statement.
+
+Stage 4 extends that evidence with the canonical S₂.0 IR, source clause,
+ground universe, instantiation, theory, propositional problem, CNF, LRAT,
+counts, elapsed time, budget result, and a verdict key covering every
+verdict-determining hash. Cached artifacts are recomputed and replayed before
+they can change trust.
 
 ## QF_BV reconstruction
 
@@ -107,13 +114,15 @@ reconstructor.
 
 ## Trust statement
 
-For a checked QF_LIA or QF_BV clause, the trust base contains the Lean kernel,
-the allowed standard axioms, and the inspection-tier renderer correspondence.
-Z3 is no longer needed for the truth of that clause theorem.
+For a checked QF_LIA, QF_BV, or admitted S₂.0 clause, the trust base contains
+the Lean kernel, the allowed standard axioms, and the inspection-tier renderer
+correspondence. Z3 and CaDiCaL are not needed for the truth of the checked
+clause theorem.
 
 If replay is unsupported, unavailable, or unsuccessful, the existing solver
-trust remains. The project audit names those clauses and always lists the
-EPR-stratified relation/array residual.
+trust remains. The project audit names those clauses. It reports zero S₂.0
+relation/array residuals and lists only formulas outside S₂.0 or its checked
+QF_LIA/QF_BV leaves as unsupported fragments.
 
 This is per-clause trust reduction. It does not claim that every Verus VC,
 translation-validation theorem, or quantified formula has been reconstructed.

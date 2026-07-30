@@ -202,10 +202,8 @@ pub struct CheckOptions {
     /// REQ-5). An item that proves L3 but scores below this floor does not certify
     /// (`WeakContract` reject). Default [`mutation::MUTATION_FLOOR`] (0.60).
     pub mutation_floor: f64,
-    /// The proof-backend engine selection (`.design/verified/proof-backends.md`
-    /// OQ-1 / REQ-8, increment (iii), #247). [`EngineSelection::Verus`] (the default)
-    /// is byte-identical to the shipped Verus path; [`EngineSelection::Lean`] /
-    /// [`EngineSelection::Auto`] add the Lean engine #2 (the `--engine` surface).
+    /// Proof-backend selection. The Rust `Default` remains the byte-stable Verus
+    /// path; the CLI chooses [`EngineSelection::Auto`] when no flag is present.
     pub engine: EngineSelection,
     /// The source-file path the interactive proof artifacts (`<file>.lean-proofs/
     /// <item>.lean`) are checked in beside (REQ-7(ii)). `None` on the in-process
@@ -214,17 +212,12 @@ pub struct CheckOptions {
     pub source_file: Option<PathBuf>,
 }
 
-/// The `forge check --engine verus|lean|auto` surface (`.design/verified/
-/// proof-backends.md` OQ-1 decision / REQ-8, increment (iii), #247). The decision
-/// (recorded in the design's OQ-1 + the REQ-4/REQ-8 rows): `verus` is the default
-/// (byte-identical to the shipped pipeline); `lean` runs the LeanEngine only
-/// (exportable items discharged by Lean; a non-exportable item is reported as a
-/// skip); `auto` runs Verus first and, on a Verus Unknown/timeout, tries Lean (the
-/// §6 ordering). Cert attribution (REQ-4) is populated whenever a non-default engine
-/// discharges.
+/// Proof-engine choices accepted by `forge check`. The enum default is Verus so
+/// programmatic callers retain the original byte-stable behavior. The CLI
+/// defaults to `Auto`, which adds Lean fallback and the checked BV/EPR overlays.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum EngineSelection {
-    /// `--engine verus` (default): the shipped Verus path, byte-identical.
+    /// `--engine verus`: the original Verus path, byte-identical.
     #[default]
     Verus,
     /// `--engine lean`: the LeanEngine only — exportable items are discharged by Lean
@@ -257,10 +250,10 @@ pub enum EngineSelection {
     /// `--engine bv` (`.design/stage3-bv-reconstruction.md` REQ-2 / AC-2 / AC-3 —
     /// stage-3): the per-clause bit-vector route (the RFC's `mix64` shape). Each `ens`
     /// clause is dispatched by its `@bvN` tag: a tagged clause lowers to fixed-width
-    /// QF_BV and is decided by the [`crate::bitvector::BitVectorEngine`] (a `Proved`
-    /// certifies at the caged rung [`Level::L4`] — decidable with complete bit-pattern
-    /// countermodels (RFC-1 §2/§4), solver-trusted (Z3 QF_BV) until REQ-7/8 kernel-
-    /// grounds it; a falsified clause yields a bit-level
+    /// QF_BV and is decided by the [`crate::bitvector::BitVectorEngine`]. A `Proved`
+    /// result certifies at [`Level::L4`] after the reconstruction path has had an
+    /// opportunity to replace solver trust with checked Lean evidence. A falsified
+    /// clause yields a bit-level
     /// `Counterexample` with the bit pattern; an over-budget 64-bit multiplier yields a
     /// `Timeout` under the dedicated budget profile, never `unknown`). An untagged
     /// clause lowers as before — routed to the [`crate::engine::NlsatEngine`] when it is
@@ -1002,9 +995,8 @@ pub fn check_file_with_options(
     Ok(certs)
 }
 
-/// Run `forge check --engine lean|auto` (`.design/verified/proof-backends.md` OQ-1 /
-/// REQ-4/REQ-5/REQ-8, increment (iii), #247). The Verus default path is
-/// [`check_file_with_options`]; this adds the Lean engine #2 surface:
+/// Run a non-legacy proof route. [`check_file_with_options`] supplies the
+/// byte-stable Verus base; this function adds the selected engine behavior:
 ///
 /// - `auto` (`.design/verified/proof-backends.md` §6 ordering): run Verus first
 ///   (the byte-identical base certs). For each item where Verus is inconclusive (a
@@ -1033,7 +1025,7 @@ pub fn check_file_with_engine(
         .clone()
         .unwrap_or_else(|| path.to_path_buf());
 
-    // The Verus base certs (byte-identical to the default path). `auto` keeps a Verus
+    // The Verus base certs (byte-identical to the legacy path). `auto` keeps a Verus
     // `Proven`; `lean` ignores the Verus verdict (LeanEngine only) but reuses the same
     // parse/validate/effect-check gate via this call (a parse/validate failure is the
     // same `ForgeError` either way).
@@ -2250,8 +2242,9 @@ fn ground_result_in_clause(
 /// `@bv` tag: a tagged clause → the [`crate::bitvector::BitVectorEngine`] (QF_BV at the
 /// tag width); an untagged clause → the [`crate::engine::NlsatEngine`] when it is a
 /// relaxable polynomial (the unbounded side), else a skip. A `Proved` tagged
-/// clause certifies at the caged rung [`Level::L4`] (decidable, complete bit-pattern
-/// countermodels; solver-trusted Z3 QF_BV), as does an nlsat `Proved`;
+/// clause certifies at the caged rung [`Level::L4`] (decidable, with complete
+/// bit-pattern countermodels and checked reconstruction when available), as does
+/// an nlsat `Proved`;
 /// the item level is the MIN. The first non-certifying clause (a bit-level
 /// counterexample, an over-budget multiplier timeout, an undecided/unsupported clause)
 /// short-circuits to its non-certified certificate.
@@ -2628,8 +2621,9 @@ fn bv_mutation_score(
 /// A lemma carries no `result` and no body: each `@bv`-tagged `ens` clause is a closed
 /// QF_BV query over the parameters under the lemma's `req`. A non-tagged lemma clause is
 /// a skip (this route lowers only the bit-vector clauses). The lemma certifies
-/// at [`Level::L4`] (the caged rung — decidable, complete bit-pattern countermodels;
-/// solver-trusted Z3 QF_BV); a counterexample / timeout short-circuits.
+/// at [`Level::L4`] (the caged rung: decidable, with complete bit-pattern
+/// countermodels and checked reconstruction when available); a counterexample
+/// or timeout short-circuits.
 fn bv_lemma_cert(
     bv: &crate::bitvector::BitVectorEngine,
     l: &thermite_syntax::LemmaItem,

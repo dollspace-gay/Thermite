@@ -1,7 +1,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: 27534142b8bb69883f47d46d89efb63bbc333d55e171530b5e07bc12f3615617
+audited-content-sha256: a7a96c79c077a9695bbaf6e1087030ab48bc9d7d669fd5179589465bbf4bc897
 governs: thermite-spec/src/classifier.rs (the Rust admission classifier) ↔
          lean/Thermite/Strat/{Nnf,Graph,Fragment}.lean (Thermite.Strat.Cls.admitted,
          T3-C classifier_correct);
@@ -55,10 +55,11 @@ The trust reduction this closes (the stratified analogue of the v1 chain):
 = the GATED stratified trust flip       (REQ-9 / AC-9 — all four green in one make audit run)
 ```
 
-The flip is HONESTLY SCOPED (REQ-5 option B / #330–#331): structure proven (T1-S), `qfree`
-atoms grounded to the v1 `Thermite.denote` (T2-S), and `rel`/array atoms discharged by Z3's
-theory (the solver base — model-relative). Kernel-grounding the `rel`/array atoms is stage-3
-reconstruction; this doc does NOT claim it (see "Residuals", below).
+At Gate G2 this flip was intentionally narrower than full reconstruction:
+structure was proved, qfree atoms were connected to v1 denotation, and
+relation/array atoms remained model-relative. Gate G4 now closes that downstream
+residual for admitted S₂.0 clauses. This document still has the smaller job of
+attesting that the Stage 2 Rust mirrors match their Lean definitions.
 
 ## Audited files (content-pinned — re-pin on any change)
 
@@ -84,10 +85,11 @@ The Rust classifier is a line-for-line transliteration of `Thermite.Strat.Cls.ad
 
 | Rust arm (`classifier.rs`) | Lean arm | Pinned by |
 |---|---|---|
+| `ScalarValue`; `Tm::Var` / `Const` / valued `Lit` / `Read` / `Len` / `Cast` / `IdxOp` / `Mul` / `App1`; `Atom::Rel` / ID-bearing `QFree` | the matching `Sort₂`-indexed syntax in `Strat/Nnf.lean` | constructor-by-constructor inspection; `classifier_correct` consumes the result |
 | `fin_sort` / `fin_carrier` (`:245`/`:256`) | `finSort` / `finCarrier` (`Fragment.lean`) — opaque/seq carriers rejected (R1) | `classifier_correct` |
 | `idx_ok_tm` / `idx_grammar_at` / `idx_grammar` (`:304`/`:325`/`:338`) | `idxGrammar` (`Fragment.lean`) — the (R2) index grammar | `classifier_correct` |
 | `nnf` / `nnf_neg` (`:349`/`:362`) | `nnf` / `nnfNeg` (`Nnf.lean`) — NNF normalisation | `nnf_sound` |
-| `edges_tm` / `edges_atom` / `edges_frm` / `sort_graph` (`:464`–`:550`) | `edgesTm`/`edgesAtom`/`edgesFrm`/`sortGraph` E1∪E2 (`Graph.lean`) | `classifier_correct` |
+| `has_scoped_var`; `edges_tm` / `edges_atom` / `edges_frm` / `sort_graph` | `hasScopedVar`; `edgesTm`/`edgesAtom`/`edgesFrm`/`sortGraph` E1∪E2 (`Graph.lean`) | `classifier_correct`; existential occurrences count because Skolemization can carry an earlier universal dependency through them |
 | `classify` / `admitted` (`:645`/`:666`) | `admitted` (`Fragment.lean`, the `Frag` decision) | `classifier_correct` (T3-C: `admitted φ = true ↔ Frag φ`) |
 | `RejectReason` / `tag` (`:571`/`:608`) | the frozen rejection vocabulary (`infinite-carrier`/`seq-quantifier`/`index-grammar`/`…-cycle`) | n/a (reason naming — REQ-4) |
 
@@ -97,21 +99,25 @@ micro-examples); the Rust side computes the SAME boolean by a polynomial transit
 (`Graph::acyclic`). The two agree by `acyclic_iff_no_cycle`; the **differential battery**
 ([8], `forge strat-tv`) is the empirical witness over the generated clause space.
 
-The `to_wire` / `parse_frm` pair (`:679`/`:848`) is the wire protocol the differential battery
-speaks to `lake env lean --run` on `Thermite.Strat.Cls.Wire`; it is mechanism, not a
-correspondence arm.
+The `to_wire` / `parse_frm` pair is the differential wire protocol. Version 2
+preserves the sort and stable ID of source constants, the actual integer/Boolean
+literal value, function IDs, and qfree leaf IDs. The parser rejects malformed
+values instead of substituting a default.
 
 ## Table 2 — `strat_ref_encode.rs` ↔ `Strat/RefEncode.lean`
 
 | Rust arm | Lean arm | Pinned by |
 |---|---|---|
 | `enc_name(d, i) = "v{d-1-i}"` (`:35`) | `encName d i = d - 1 - i` (de Bruijn LEVEL naming, fresh-name discipline — names strictly increase down every path, so no capture) | `strat_ref_sound` (T1-S, `PinStratCapture`) |
+| `const_name` and the `Tm::Const` / valued `Tm::Lit` arms | source constants remain distinct by sort and ID; integer and Boolean literal values are preserved | direct constructor inspection |
 | `strat_ref_encode` (`:150`) | `sencode` — transcribes the boolean + relational + array-property SKELETON; sorts erased over the abstract `dom` | `strat_ref_sound` (parametric in the atom oracle `q : Atom → Bool`) |
 
 T1-S proves only the STRUCTURAL layer (the quantifier/boolean skeleton, parametric in `q`);
 atom-grounding is T2-S's obligation (Table 3). The encoder is INDEPENDENT of `thermite-lower`
 (the TV honesty boundary — a reference that reused the production lowerer would make the
-equivalence check vacuous).
+equivalence check vacuous). Its qfree arm remains deliberately opaque for this
+structural Stage 2 TV; the production Gate G4 bridge uses the stable leaf ID to
+recover and reconstruct the exact source expression.
 
 ## Table 3 — `strat_two_phase.rs` ↔ `Strat/{Nnf,Faithfulness}.lean` + the G2 gate
 
@@ -154,12 +160,13 @@ theorems the axiom probe [1′] gates; the battery is their negative-space witne
 ninth admission trap is a NEW pin + a new row here, never a silent widening (the §3.2 / S₂.0
 conservatism the classifier tables already record).
 
-## Residuals (the honest scope — what this inspection does NOT cover)
+## Scope boundaries
 
-- **Kernel-grounding of `rel`/array atoms.** T2-S grounds `qfree` atoms to the v1
-  `Thermite.denote`; `rel`/array atoms stay MODEL-RELATIVE (discharged by Z3's theory — the
-  solver base, the honest L4 boundary). Kernel-grounding them is stage-3 reconstruction. The
-  G2 flip's `REF_ENCODE_PROVEN` string says so inline; it does not over-claim.
+- **Full relation/array reconstruction is downstream of this mirror audit.**
+  This was an open residual at Gate G2. Gate G4 now reconstructs admitted S₂.0
+  clauses through typed Lean semantics, exhaustive grounding, checked theory
+  clauses, and LRAT. The remaining unsupported cases are formulas outside S₂.0
+  or qfree leaves outside the checked QF_LIA/QF_BV source surface.
 - **The two-syntax split.** This doc governs the `Cls.Frm` classifier surface (the mirror
   target). REQ-1's minimal semantic-spine `Frm` (`Strat/Denote.lean`) is the grounding
   instance, audited under its own axiom probe, not a correspondence row here.

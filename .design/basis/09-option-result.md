@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: 7b575ed2f4bd06939345f719add8203a17ba950cfed98c54afcccfaf4f972d8d (migrated from legacy audited-sha commit pin to a squash-stable content digest; doc-drift-tripwire.md REQ-2 — content pin is primary, commit pin is a migration fallback)
+audited-content-sha256: 40952232c62aeb57bd10f04d104e14f46a5220283aa391d77d23044852109ec0 (migrated from legacy audited-sha commit pin to a squash-stable content digest; doc-drift-tripwire.md REQ-2 — content pin is primary, commit pin is a migration fallback)
 governs: thermite-syntax/src/ast.rs
 governs: thermite-syntax/src/parser.rs
 governs: thermite-spec/src/validator.rs
@@ -14,6 +14,10 @@ thesis-refs:
   - thermite-design.md §4.4
   - thermite-design.md §6
 -->
+
+> **Gate G4 re-audit (2026-07-29).** Stage 4 adds automatic clause routing in
+> `forge/src/check.rs`; the Option/Result syntax, validation, and lowering
+> contracts in this document are unchanged.
 
 ## Summary
 

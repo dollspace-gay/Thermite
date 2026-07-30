@@ -63,10 +63,6 @@ use std::collections::BTreeSet;
 use thermite_syntax::ast::{BinOp, Expr, IndexArg, PrimType, Type, UnaryOp};
 
 /// A self-contained SplitMix64 PRNG (R-CODE-5: deterministic, seeded, no `rand`
-/// crate, no wall-clock). SplitMix64 is a small, well-distributed integer
-/// generator, enough to drive the structural choices below reproducibly. The same
-/// `seed` always produces the same stream.
-/// A self-contained SplitMix64 PRNG (R-CODE-5: deterministic, seeded, no `rand`
 /// crate, no wall-clock). Public so an out-of-crate consumer can ride the same
 /// generator the contract/exec TV streams ride: the forge covenant engine's `falsify`
 /// run (`.design/stage1-forge-tier.md` REQ-4, increment 2b) seeds it with the fixed

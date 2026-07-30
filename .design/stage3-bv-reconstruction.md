@@ -83,8 +83,9 @@ evidence and cannot change a certificate's trust.
 
 Unsupported expressions, a missing Lean installation, a failed theorem, or a
 disallowed axiom leave the clause solver-trusted. The audit lists those
-clauses. EPR-stratified relation and array atoms remain model-relative and are
-outside this stage's reconstruction fragment.
+clauses. At Gate G3, EPR-stratified relation and array atoms were still outside
+this reconstruction fragment. Gate G4 now handles the admitted S₂.0
+relation/array fragment; see `stage4-epr-reconstruction.md`.
 
 ## Requirements
 
@@ -157,8 +158,10 @@ change the clause's assurance rung. The generated Rust-to-Lean and Rust-to-SMT
 renderers remain inspection-tier, so their correspondence is still audited by
 source review and drift pins.
 
-Quantified, recursive, relation, and array formulas outside QF_LIA/QF_BV stay
-solver-trusted. The certificate and project audit state that result directly.
+At Gate G3, quantified relation and array formulas outside QF_LIA/QF_BV stayed
+solver-trusted. Gate G4 now reconstructs the admitted S₂.0 subset. Formulas the
+S₂.0 classifier rejects, and quantifier-free leaves outside the checked
+QF_LIA/QF_BV source surface, remain visible out-of-fragment cases.
 
-File-level or default `@bv` modes, floating-point clause modes, and full
-relation/array reconstruction are outside Stage 3.
+File-level `@bv` modes and floating-point clause modes remain outside Stage 3.
+Full S₂.0 relation/array reconstruction is the separate Stage 4 result.

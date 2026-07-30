@@ -4,7 +4,7 @@
 tier: 3-component
 status: shipped
 audited-sha: 5ae0816c042debb01c70eb9b89c775837f0c0f24 (content-sha256 re-pinned 2026-06-23 for stage-3 REQ-7 / AC-8 (#349), the automated Rust→Lean obligation exporter: the change to this doc's governed file (cli.rs) is the additive `forge smt-export [<file>] [--out <path>]` subcommand (`Command::SmtExport` → `run_smt_export`, emitting the `(P_prod) ⟺ (P_ref)` `by smt` Lean theorems + `#print axioms` probes via `lean_smt_export.rs`); every other subcommand + flag parse is unchanged. The legacy commit pin stays at the 5ae0816c stable-main ancestor; only the active content-sha256 digest moves. prior: 2026-06-21 stage-2 REQ-8 / AC-8 (#330) `forge strat-faithful-tv`; 2026-06-20 stage-2 REQ-4 / AC-4 (#326) `forge strat-tv` + `ForgeError::StratDifferential`; 2026-06-18 umbrella REQ-2c / AC-4 rotating-seed `--seed` flag on `forge tv`; §6 metrics dashboard `--metrics` value)
-audited-content-sha256: 19ee007ec4e8bfdaed609662ab91486543b0ce3be348a40ddc1a77f3d48d9cce
+audited-content-sha256: 92671712da7242251d8e3b118c62e11c547c7f28a9b772a971899e46002ac7d5
 governs: forge/src/cli.rs
 thesis-refs:
   - thermite-design.md §5
@@ -62,6 +62,10 @@ What the old doc never saw, grouped (each verb cites its issue in the code):
   clause. QF_LIA uses `smt`; `@bvN` clauses use literal `BitVec N` terms and
   kernel-checked normalization lemmas. With no file, the command emits the canonical
   demo batch.
+- **Gate G4 automatic reconstruction** — plain `forge check` now selects
+  `EngineSelection::Auto`. The ordinary backend pass is followed by per-clause
+  checked BV and EPR reconstruction when the source clause is eligible.
+  `--engine verus` retains the legacy byte-identical diagnostic path.
 
 ## Requirements
 
@@ -174,7 +178,8 @@ What the old doc never saw, grouped (each verb cites its issue in the code):
 - AC-5: `ForgeError` wrapping round-trips inner diagnostics
   (`aggregation_preserves_inner_diagnostics`) and every variant maps to
   `EXIT_ENVIRONMENT` (`errors_map_to_environment_exit_code`).
-- AC-6: `--engine verus` is byte-identical to the default path
+- AC-6: `--engine verus` is byte-identical to the legacy Verus path; the
+  no-flag CLI path now selects automatic routing
   (`engine_verus_flag_is_byte_identical_oracle` in
   `forge/tests/engine_attribution.rs`); a Proven ⊕ witnessed-Refuted
   disagreement halts (`proven_refuted_disagreement_halts` in `engine.rs`
@@ -261,7 +266,7 @@ a reader cannot mistake it for an oracle field.
 | REQ-5 (typed exit codes) | SHIPPED | `pub const EXIT_VERIFICATION_FAILURE: u8 = 1` / `EXIT_ENVIRONMENT: u8 = 2` in `cli.rs`; `run_check`/`run_audit` gate on `matches!(.., ProjectAssurance::Certified(_))`; `run_repair` on `report.all_upgraded()`; the TV trio on `counts.divergent == 0`; `fn exit_code in cli.rs` maps every `ForgeError` to `EXIT_ENVIRONMENT`. Verification: `errors_map_to_environment_exit_code`, `broken_contract_is_reported_failure_with_counterexample` (exit 1), `divergence_audit_check2_exit_swallow.rs` (the TV exit discipline). |
 | REQ-6 (no panics; Result discipline) | SHIPPED | every `run_*`/`parse_args` path returns `Result<_, ForgeError>`; no `unwrap`/`expect`/`panic!` outside `#[cfg(test)]` in `cli.rs`. Verification: clippy `-D warnings` + the anti-pattern gate in the gauntlet (HEAD commit `93d3cbc0` chain is gauntlet-green). |
 | REQ-7 (`forge new` scaffold) | SHIPPED | `pub fn scaffold_project in cli.rs` writes `forge.toml`/`forge.lock` (`seed = {DEFAULT_SOLVER_SEED}`)/`THERMITE.skill.pin`; non-empty target → `ForgeError::Usage("… refusing to overwrite")`. Non-test consumer: `fn dispatch` (`Command::New` arm). Verification: `scaffold_writes_layout_and_refuses_clobber`. |
-| REQ-8 (`check` flags + engine routing) | SHIPPED | `Command::Check { file, json, level, rlimit, mutation_floor, engine }`; `fn run_check` four-way route: default → `check::check_file` (cache-canonical), explicit options → `check::check_file_with_options`, `(CheckLevel::L3, sel)` lean/auto → `check::check_file_with_engine` (REQ-5 disagreement → `ForgeError::SoundnessAlarm`), `(CheckLevel::L2, _)` → `check::check_l2_file`. Verification: `parses_rlimit_flag`/`parses_mutation_floor_flag`/`parses_level_flag`, `engine_flag_parsing` + `engine_verus_flag_is_byte_identical_oracle` (`engine_attribution.rs`), `proven_refuted_disagreement_halts` (`engine.rs`). |
+| REQ-8 (`check` flags + engine routing) | SHIPPED | `Command::Check { file, json, level, rlimit, mutation_floor, engine }`; the parser defaults `engine` to `Auto`, and `fn run_check` sends normal L3 checks through `check_file_with_engine` for per-clause BV/EPR routing. Explicit `--engine verus` uses the byte-stable legacy entries; `(CheckLevel::L2, _)` uses `check_l2_file`. Verification: the flag parser tests, `engine_verus_flag_is_byte_identical_oracle`, automatic-route tests, and the engine disagreement halt. |
 | REQ-9 (usage-banner currency, #257) | SHIPPED | `fn usage_text in cli.rs` names all 14 verbs and the full flag surface including `[--engine verus|lean|auto]` — added by commit `6368550a` ("forge usage banner gains [--engine verus|lean|auto] (drift fix)"). Non-test consumer: `parse_args`'s no-verb and unknown-verb arms. Verification: `usage_errors` exercises both arms; `l2_check.rs` checks the banner rejects a bogus `--level`. |
 | REQ-10 (project assurance display, #10) | SHIPPED | `fn render_assurance in cli.rs` prints per-fn `lowered-assurance:` lines + the `project assurance:` headline; `run_check` computes `AssuranceManifest::aggregate(&certs)` once for both the display and the exit gate. Verification: `render_assurance_shows_headline_and_lowered_flags`, `render_assurance_shows_failed_headline`. |
 

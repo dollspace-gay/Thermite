@@ -544,7 +544,8 @@ fn forge_audit_lists_the_bv_shadows() {
 
 /// REQ-8 / AC-9: `forge audit` carries the RESIDUAL-TRUST statement — it aggregates the
 /// kernel-checked-vs-solver split and names the remaining unsupported fragments. All
-/// QF_BV clauses in `mix64` are kernel-checked; EPR rel/array remains listed.
+/// QF_BV clauses in `mix64` are kernel-checked, and Gate G4 leaves no S₂.0
+/// relation/array residual.
 #[test]
 fn forge_audit_residual_trust_statement_names_the_split() {
     if !verus_present() {
@@ -572,15 +573,27 @@ fn forge_audit_residual_trust_statement_names_the_split() {
             || rt["solver_trusted"].as_array().is_some_and(Vec::is_empty),
         "there are no named solver-trusted clauses: {rt}"
     );
-    // The standing EPR residual remains named.
+    assert_eq!(
+        rt["s2_relation_array_residuals"]
+            .as_u64()
+            .unwrap_or(u64::MAX),
+        0,
+        "automatic EPR routing leaves no S₂.0 relation/array residual: {rt}"
+    );
     let frags = rt["unsupported_fragments"]
         .as_array()
         .expect("the statement names the unsupported fragments");
     assert!(
         frags
             .iter()
-            .any(|f| f.as_str().unwrap_or("").contains("rel/array")),
-        "the EPR rel/array residual is named (F-J): {rt}"
+            .all(|f| !f.as_str().unwrap_or("").contains("rel/array")),
+        "S₂.0 relation/array atoms are reconstructed, not listed as unsupported: {rt}"
+    );
+    assert!(
+        frags
+            .iter()
+            .any(|f| f.as_str().unwrap_or("").contains("S₂.0 classifier")),
+        "genuinely out-of-fragment formulas remain visible: {rt}"
     );
     assert!(
         rt["statement"]

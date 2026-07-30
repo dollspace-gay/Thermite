@@ -3,7 +3,7 @@
 tier: 3-component
 status: draft
 audited-sha: 5ae0816c042debb01c70eb9b89c775837f0c0f24 (content-sha256 re-pinned 2026-06-23 for stage-3 REQ-7 (#349), the Rust→Lean obligation exporter: the change to this doc's governed lib roots is additive — `mod lean_smt_export;` in forge/src/main.rs (the SMT-tactic obligation exporter module); the workspace/crate structure is otherwise unchanged. The legacy commit pin stays at the 5ae0816c stable-main ancestor; only the active content-sha256 digest moves. prior: 2026-06-20 stage-2 REQ-4 / AC-4 (#326) `pub mod classifier;` + `mod strat_tv;`; 2026-06-17 umbrella REQ-7 / AC-12 §6 metrics dashboard `mod metrics;`; stage-1 REQ-10/AC-14 G1 gate seven-verdict test module)
-audited-content-sha256: 887f809568ef58104971184241a0a6677cb50ca2c111e7b99be996e1c80fb24d
+audited-content-sha256: 2ea7841eacb6c286571ee0140eedb5837b86f5688ae77405284a73f485df70c4
 governs:
   - Cargo.toml (virtual workspace manifest)
   - rust-toolchain.toml
@@ -42,6 +42,10 @@ depends on `thermite-verified`, and `forge` on `thermite-tv` +
 `thermite-verified` (still acyclic, still leaf-first, R-DEFER-7). The
 five-crate REQ texts below are the SCAFFOLD-TIME contract; the growth is
 recorded here and in the evidence rows.
+
+Gate G4 adds a dedicated CI job that installs the pinned SAT/LRAT tools and Z3,
+then runs `scripts/g4-gate.sh` under its 6 GiB process limit. This is additive:
+the workspace members and dependency graph are unchanged.
 
 ## Requirements
 

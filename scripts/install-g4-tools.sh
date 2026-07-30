@@ -32,7 +32,7 @@ git -C "$WORK/cadical" checkout --quiet --detach "$CADICAL_REV"
 (
   cd "$WORK/cadical"
   ./configure --quiet
-  make -j2
+  make -j1
 )
 
 git clone --quiet --no-checkout https://github.com/marijnheule/drat-trim.git "$WORK/drat-trim"

@@ -979,6 +979,84 @@ reference = []
 conformance_ops = []
 
 # ---------------------------------------------------------------------
+# Stage 4 checked EPR reconstruction. The design pin covers the canonical
+# source bridge, typed Lean semantics, proof/model replay, production route,
+# audit boundary, and the single memory-bounded completion gate.
+# ---------------------------------------------------------------------
+
+[[route]]
+crate_pattern = "thermite-spec/src/s2_recon.rs"
+design = ".design/stage4-epr-reconstruction.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "thermite-spec/src/lib.rs"
+design = ".design/stage4-epr-reconstruction.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "forge/src/epr_reconstruct.rs"
+design = ".design/stage4-epr-reconstruction.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "forge/src/lean_smt_export.rs"
+design = ".design/stage4-epr-reconstruction.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "forge/src/check.rs"
+design = ".design/stage4-epr-reconstruction.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "forge/src/audit.rs"
+design = ".design/stage4-epr-reconstruction.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "forge/tests/bv_lowering.rs"
+design = ".design/stage4-epr-reconstruction.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "lean/Thermite/PropReconstruct.lean"
+design = ".design/stage4-epr-reconstruction.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "lean/Thermite/Strat/*.lean"
+design = ".design/stage4-epr-reconstruction.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "scripts/g4-*"
+design = ".design/stage4-epr-reconstruction.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "scripts/install-g4-tools.sh"
+design = ".design/stage4-epr-reconstruction.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = ".github/workflows/ci.yml"
+design = ".design/stage4-epr-reconstruction.md"
+reference = []
+conformance_ops = []
+
+# ---------------------------------------------------------------------
 # tooling — the control plane gating itself (crosslink #93)
 # ---------------------------------------------------------------------
 # The two agent-facing gates (spec-discipline.py, anti-pattern-gate.py) only

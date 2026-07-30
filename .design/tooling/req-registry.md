@@ -4,7 +4,7 @@
 tier: 3-component
 status: draft
 audited-sha: f09f8ca376257cc1e2543b8ebc9fb771bffd04df (content-sha256 re-pinned 2026-07-29 for stage-3 REQ-1..REQ-9 / gate G3 (#80, crosslink #351): the registry and generated status view carry the fixed-width reconstruction requirements and verified evidence; req-registry.py --check is clean (462 requirements, 119 views). The legacy commit pin remains the f09f8ca3 stable-main ancestor; the active content digest tracks the governed files. prior: 2026-06-21 stage-2 REQ-10 / AC-10 (#332), the pin battery and final gate G2 increment)
-audited-content-sha256: c786ae03041c92391a25dcbf8df3517e3ae49a4bf90ae21c57e822e2d399cb35
+audited-content-sha256: ca59165200b77dd63e442c81d8ca7d7841f747d14aa5414ac4347e2a84bb11d2
 governs:
   - .design/reqs/registry.toml
   - .design/reqs/status.md
@@ -20,6 +20,11 @@ thesis-refs:
   - thermite-design.md §8 (unverified residue must be loud)
 issue: GitHub #17
 -->
+
+> **Gate G4 re-audit (2026-07-29).** The schema and renderer are unchanged.
+> The registry now includes `REQ-G4-1` through `REQ-G4-10`, with file, symbol,
+> test, and command evidence for the shipped reconstruction gate. Regenerating
+> the 119 views produces 472 validated requirements.
 
 ## Summary
 

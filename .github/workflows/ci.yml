@@ -452,3 +452,61 @@ jobs:
 
       - name: Gate G3
         run: bash scripts/g3-gate.sh
+
+  # Stage 4 closes the admitted S₂.0 relation/array residual. Keep its pinned
+  # SAT/LRAT tools and complete replay matrix visible as one fail-fast check.
+  g4:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.95.0
+
+      - name: Install elan
+        run: |
+          set -euo pipefail
+          curl -fsSL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -o /tmp/elan-init.sh
+          bash /tmp/elan-init.sh -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: Cache Lean build
+        uses: actions/cache@v4
+        with:
+          path: |
+            lean/.lake/packages
+            lean/.lake/build
+          key: lean-${{ hashFiles('lean/lake-manifest.json', 'lean/lean-toolchain') }}
+          restore-keys: |
+            lean-
+
+      - name: Fetch Mathlib cache
+        working-directory: lean
+        run: lake exe cache get
+
+      - name: Install Z3 witness solver
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes z3
+          z3 --version
+
+      - name: Cache Stage 4 proof tools
+        uses: actions/cache@v4
+        with:
+          path: target/g4-tools
+          key: g4-tools-${{ hashFiles('scripts/g4-toolchain.env', 'scripts/g4-tools/drat-trim') }}
+
+      - name: Install pinned CaDiCaL and drat-trim
+        run: bash scripts/install-g4-tools.sh
+
+      - name: Rust build cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: g4
+
+      - name: Gate G4
+        run: bash scripts/g4-gate.sh

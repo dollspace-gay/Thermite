@@ -1,0 +1,52 @@
+struct ProbeState {
+  owner: u64,
+  generation: u64,
+  payload: Vec<u64>,
+}
+
+enum ProbeEvent {
+  Tick(u64),
+  Idle,
+}
+
+enum ProbeAction {
+  Record(u64),
+  Noop,
+}
+
+fn probe_step(state: ProbeState, event: ProbeEvent) -> (ProbeState, ProbeAction)
+  req state.generation < 18_446_744_073_709_551_615
+  ens result.0.owner == state.owner
+  ens result.0.generation == state.generation + 1
+  ens result.0.payload.len() == state.payload.len()
+  ens match event {
+    ProbeEvent::Tick(value) => match result.1 {
+      ProbeAction::Record(observed) => observed == value,
+      ProbeAction::Noop => false,
+    },
+    ProbeEvent::Idle => match result.1 {
+      ProbeAction::Record(observed) => false,
+      ProbeAction::Noop => true,
+    },
+  }
+  fx pure
+{
+  match event {
+    ProbeEvent::Tick(value) => (
+      ProbeState {
+        owner: state.owner,
+        generation: state.generation + 1,
+        payload: state.payload,
+      },
+      ProbeAction::Record(value),
+    ),
+    ProbeEvent::Idle => (
+      ProbeState {
+        owner: state.owner,
+        generation: state.generation + 1,
+        payload: state.payload,
+      },
+      ProbeAction::Noop,
+    ),
+  }
+}

@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: dddc938765b047de47348441e37e6df150a81a124232b003b47732d5d0d2490c (re-pinned 2026-07-31 after additive L3 closure/check/library and skill surfaces; ergonomics behavior remains covered by the workspace regression suite)
+audited-content-sha256: 171a4425eb4c8b3e426a697186fc3dcbb6ad983428e7e9b3d4ce00e08b3b03f9 (re-pinned 2026-07-31 after additive rich-state composition lowering and skill surface; ergonomics behavior remains regression-covered)
 governs: thermite-syntax/src/parser.rs
 governs: thermite-syntax/src/ast.rs
 governs: thermite-lower/src/lower.rs

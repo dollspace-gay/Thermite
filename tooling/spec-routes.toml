@@ -510,6 +510,45 @@ design = ".design/build/l3-verified-artifact.md"
 reference = ["conformance/verified-build"]
 conformance_ops = ["identity", "bounded_inc", "kernel_link"]
 
+# Exact-source rich-state composition builds (issue #104): crate-visible rich
+# Thermite roots and authored direct-Verus shells share one strict compiler
+# input while only primitive link exports / shell observations cross crates.
+[[route]]
+crate_pattern = "forge/src/verified_build.rs"
+design = ".design/build/l3-rich-composition.md"
+reference = ["conformance/verified-composition"]
+conformance_ops = ["probe_step", "boot_observation"]
+
+[[route]]
+crate_pattern = "forge/src/verified_build/composition.rs"
+design = ".design/build/l3-rich-composition.md"
+reference = ["conformance/verified-composition"]
+conformance_ops = ["probe_step", "boot_observation"]
+
+[[route]]
+crate_pattern = "forge/src/cli.rs"
+design = ".design/build/l3-rich-composition.md"
+reference = ["conformance/verified-composition"]
+conformance_ops = ["compose-export", "compose-shell"]
+
+[[route]]
+crate_pattern = "thermite-lower/src/lower.rs"
+design = ".design/build/l3-rich-composition.md"
+reference = ["conformance/verified-composition"]
+conformance_ops = ["crate-visible-export", "kernel-bounded-state"]
+
+[[route]]
+crate_pattern = "thermite-lower/src/lib.rs"
+design = ".design/build/l3-rich-composition.md"
+reference = ["conformance/verified-composition"]
+conformance_ops = ["L3ExportVisibility"]
+
+[[route]]
+crate_pattern = "forge/tests/verified_composition.rs"
+design = ".design/build/l3-rich-composition.md"
+reference = ["conformance/verified-composition"]
+conformance_ops = ["probe_step", "boot_observation", "private-rich-root"]
+
 [[route]]
 crate_pattern = "forge/src/effect_wrappers.rs"
 design = ".design/basis/08-runnable-effect-link.md"

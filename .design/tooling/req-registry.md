@@ -4,7 +4,7 @@
 tier: 3-component
 status: draft
 audited-sha: f09f8ca376257cc1e2543b8ebc9fb771bffd04df (content-sha256 re-pinned 2026-07-29 for stage-3 REQ-1..REQ-9 / gate G3 (#80, crosslink #351): the registry and generated status view carry the fixed-width reconstruction requirements and verified evidence; req-registry.py --check is clean (462 requirements, 119 views). The legacy commit pin remains the f09f8ca3 stable-main ancestor; the active content digest tracks the governed files. prior: 2026-06-21 stage-2 REQ-10 / AC-10 (#332), the pin battery and final gate G2 increment)
-audited-content-sha256: bcef0610704a5954627b279c270b923cba2864c752dfe87a7d024a12249a9375 (re-pinned 2026-07-31 after registering and shipping REQ-L3BUILD-14)
+audited-content-sha256: 85804fd52962c9fcb1298bb315a38dda02edaba8ab016b9988dfd13cbc706baa (re-pinned 2026-07-31 after registering and shipping REQ-L3COMPOSE-1 through REQ-L3COMPOSE-10)
 governs:
   - .design/reqs/registry.toml
   - .design/reqs/status.md
@@ -25,6 +25,11 @@ issue: GitHub #17
 > The registry now includes `REQ-G4-1` through `REQ-G4-10`, with file, symbol,
 > test, and command evidence for the shipped reconstruction gate. Regenerating
 > the 119 views produces 472 validated requirements.
+
+> **Rich composition increment (2026-07-31).** `REQ-L3COMPOSE-1` through
+> `REQ-L3COMPOSE-10` bind issue #104's CLI, closure, policy, exact-source,
+> receipt, publication, kernel-link, and codegen acceptance evidence. The
+> generated registry now contains 496 validated requirements.
 
 ## Summary
 

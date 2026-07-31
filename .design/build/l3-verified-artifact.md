@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: 280a3b9586a3a2b915982ea107ecd9f6a1ec2c8dfe95e7068541b3f54a0489cc
+audited-content-sha256: 95843cdba2243d0911a754d5f041d43d707d6b120af5ebe4d3f60723981b8fa8
 decision: Option A — compile the canonical Verus executable body that was verified
 issue: github:dollspace-gay/Thermite#101, github:dollspace-gay/Thermite#103
 governs:
@@ -49,6 +49,16 @@ The existing `forge build` behavior remains the explicit L1 path. It continues
 to call `lower_l1` and bake in always-active runtime checks. This design does
 not prove refinement between the L3 and L1 lowerers and does not use an L1
 artifact to satisfy an L3 request.
+
+Issue #104 extends this pipeline additively for exact-source rich-state
+composition. A composition build has the distinct plan schema
+`thermite.combined-artifact-plan.v1` and receipt schema
+`thermite.verified-composition-receipt.v1`; it binds canonical Thermite lowering
+and exact direct-Verus shell bytes into the same single Verus proof-and-compile
+input. Ordinary L3 builds omit the optional composition fields and retain this
+document's original schemas and semantics. The composition-specific policy,
+visibility, inventory, and acceptance contract live in
+`.design/build/l3-rich-composition.md`.
 
 ## Decision
 

@@ -1,0 +1,18 @@
+#[slag(reason = "test crossing", owner = "thermite", review = "required")]
+fn transitive_vendored(x: u64) -> u64
+  req true
+  ens result == x
+  fx pure
+{ x }
+
+fn slag_middle(x: u64) -> u64
+  req true
+  ens result == x
+  fx pure
+{ transitive_vendored(x) }
+
+fn transitive_slag_root(x: u64) -> u64
+  req true
+  ens result == x
+  fx pure
+{ slag_middle(x) }

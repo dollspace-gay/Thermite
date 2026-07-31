@@ -172,8 +172,13 @@ forge_methods! {
     }
     Build {
         name: "build",
-        usage: "forge build <file> [--entry <fn>] [--out <path>] [--target std|kernel] [--json] [--no-sandbox] [--sandbox-self-test]",
-        purpose: "Build checked Rust; sandbox hosted executables.",
+        usage: "forge build <file> [--level l1|l3] [--export <fn>] [--crate-name <name>] [--entry <fn>] [--out <path>] [--target std|kernel] [--json] [--no-sandbox] [--sandbox-self-test]",
+        purpose: "Build L1 checked Rust or an exact-source L3 verified bundle.",
+    }
+    VerifyBuild {
+        name: "verify-build",
+        usage: "forge verify-build <bundle-dir> [--replay] [--json]",
+        purpose: "Validate or replay a correspondence-backed L3 build receipt.",
     }
     Tv {
         name: "tv",

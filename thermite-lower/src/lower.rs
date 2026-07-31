@@ -184,6 +184,7 @@
 //! | REQ-LOWER-ERGONOMICS-OR-PATTERN | shipped | `thermite-lower/src/lower.rs` | Or-pattern lowering |  |
 //! <!-- /generated:reqs -->
 
+use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
 use thermite_syntax::ast::{
@@ -233,6 +234,27 @@ pub enum LowerError {
         missing: Vec<thermite_syntax::ast::Effect>,
         span: Span,
     },
+}
+
+/// One explicit public function in an L3 verified library artifact
+/// (`.design/build/l3-verified-artifact.md` REQ-L3BUILD-6/7). A literal-true
+/// precondition can expose the verified implementation directly (`wrapped ==
+/// false`, `public_name == source_name`). A nontrivial executable precondition
+/// keeps the implementation private and emits a total `Result` wrapper under
+/// `public_name` (`wrapped == true`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct L3Export {
+    pub source_name: String,
+    pub public_name: String,
+    pub wrapped: bool,
+}
+
+/// The codegen profile for an L3 verified library. Both profiles are rlibs;
+/// `Kernel` additionally emits the freestanding `no_std + alloc` crate frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum L3LibraryTarget {
+    Std,
+    Kernel,
 }
 
 impl std::fmt::Display for LowerError {
@@ -625,8 +647,63 @@ fn zero_span() -> Span {
 /// in source order with their shape-derived proof aids, and (3) a trailing
 /// `fn main() {}`.
 pub fn lower(program: &Program) -> Result<String, LowerError> {
+    lower_with_profile(program, None)
+}
+
+/// Emit the canonical executable Verus library compiled by the L3 verified-build
+/// path. Unlike [`lower`], this emits crate attributes instead of a synthetic
+/// `main` and makes only the requested exports public. Wrapped exports are total
+/// `Result` APIs whose guard is proved to establish the private implementation's
+/// precondition in the same Verus source.
+pub fn lower_l3_library(
+    program: &Program,
+    exports: &[L3Export],
+    target: L3LibraryTarget,
+) -> Result<String, LowerError> {
+    let mut by_source: BTreeMap<&str, &L3Export> = BTreeMap::new();
+    for export in exports {
+        if by_source.insert(&export.source_name, export).is_some() {
+            return Err(LowerError::Unsupported {
+                what: format!("duplicate L3 export `{}`", export.source_name),
+                span: zero_span(),
+            });
+        }
+        let found = program
+            .items
+            .iter()
+            .any(|item| matches!(item, Item::Fn(f) if f.name == export.source_name));
+        if !found {
+            return Err(LowerError::Unsupported {
+                what: format!("unknown L3 export `{}`", export.source_name),
+                span: zero_span(),
+            });
+        }
+    }
+    lower_with_profile(program, Some((by_source, target)))
+}
+
+fn lower_with_profile(
+    program: &Program,
+    library: Option<(BTreeMap<&str, &L3Export>, L3LibraryTarget)>,
+) -> Result<String, LowerError> {
     let mut out = String::new();
-    out.push_str("use vstd::prelude::*;\n");
+    if let Some((_, target)) = &library {
+        if matches!(target, L3LibraryTarget::Kernel) {
+            out.push_str("#![no_std]\n");
+        }
+        out.push_str("#![crate_type = \"rlib\"]\n");
+        if matches!(target, L3LibraryTarget::Kernel) && program_needs_alloc(program) {
+            out.push_str("extern crate alloc;\n");
+        }
+    }
+    if matches!(
+        library.as_ref().map(|(_, target)| target),
+        Some(L3LibraryTarget::Kernel)
+    ) {
+        out.push_str("use verus_builtin::*;\nuse verus_builtin_macros::*;\n");
+    } else {
+        out.push_str("use vstd::prelude::*;\n");
+    }
     out.push_str("verus! {\n");
 
     // (1) combinator spec-fn definitions used anywhere in the program (REQ-6).
@@ -905,9 +982,12 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
                     &nat_fns,
                     &inv_structs,
                     &string_field_names,
-                    &variants,
                     &user_string_spec_fns,
-                    &spec_fn_param_types,
+                    &CallLoweringContext {
+                        variants: &variants,
+                        spec_fn_param_types: &spec_fn_param_types,
+                    },
+                    false,
                 )?
             }
             Item::Fn(f) => {
@@ -926,9 +1006,15 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
                     &nat_fns,
                     &inv_structs,
                     &string_field_names,
-                    &variants,
                     &user_string_spec_fns,
-                    &spec_fn_param_types,
+                    &CallLoweringContext {
+                        variants: &variants,
+                        spec_fn_param_types: &spec_fn_param_types,
+                    },
+                    library
+                        .as_ref()
+                        .and_then(|(exports, _)| exports.get(f.name.as_str()))
+                        .is_some_and(|export| !export.wrapped),
                 )?
             }
             // Basis Stage 1c (`.design/basis/01-adts.md` REQ-8/REQ-10): a
@@ -947,8 +1033,83 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
         out.push('\n');
     }
 
-    out.push_str("\n}\nfn main() {}\n");
+    if let Some((exports, _)) = &library {
+        let wrapped: Vec<&L3Export> = exports
+            .values()
+            .copied()
+            .filter(|export| export.wrapped)
+            .collect();
+        if !wrapped.is_empty() {
+            out.push_str("\npub enum ThermiteContractError { Precondition }\n");
+        }
+        for export in wrapped {
+            let Some(f) = program.items.iter().find_map(|item| match item {
+                Item::Fn(f) if f.name == export.source_name => Some(f),
+                _ => None,
+            }) else {
+                return Err(LowerError::Unsupported {
+                    what: format!("unknown L3 export `{}`", export.source_name),
+                    span: zero_span(),
+                });
+            };
+            out.push('\n');
+            out.push_str(&lower_l3_export_wrapper(
+                f,
+                &export.public_name,
+                &nat_fns,
+                &string_field_names,
+                &user_string_spec_fns,
+                &spec_fn_param_types,
+            )?);
+            out.push('\n');
+        }
+    }
+
+    out.push_str("\n}\n");
+    if library.is_none() {
+        out.push_str("fn main() {}\n");
+    }
     Ok(out)
+}
+
+fn program_needs_alloc(program: &Program) -> bool {
+    program.items.iter().any(|item| match item {
+        Item::Fn(function) => {
+            function.params.iter().any(|param| type_needs_alloc(&param.ty))
+                || type_needs_alloc(&function.ret)
+                || matches!(
+                    &function.contract.fx,
+                    thermite_syntax::EffectRow::Set(effects)
+                        if effects.iter().any(|effect| matches!(effect, thermite_syntax::Effect::Alloc))
+                )
+        }
+        Item::SpecFn(function) => {
+            function.params.iter().any(|param| type_needs_alloc(&param.ty))
+                || type_needs_alloc(&function.ret)
+        }
+        Item::Struct(item) => item.fields.iter().any(|field| type_needs_alloc(&field.ty)),
+        Item::Enum(item) => item.variants.iter().any(|variant| match &variant.shape {
+            VariantShape::Unit => false,
+            VariantShape::Tuple(types) => types.iter().any(type_needs_alloc),
+            VariantShape::Struct(fields) => {
+                fields.iter().any(|field| type_needs_alloc(&field.ty))
+            }
+        }),
+        Item::Forge(_) => false,
+    })
+}
+
+fn type_needs_alloc(ty: &Type) -> bool {
+    match ty {
+        Type::Box(_) | Type::Vec(_) | Type::String | Type::Map(_, _) => true,
+        Type::Ref { inner, .. }
+        | Type::Slice(inner)
+        | Type::Generic { arg: inner, .. }
+        | Type::Option(inner) => type_needs_alloc(inner),
+        Type::Result(ok, err) => type_needs_alloc(ok) || type_needs_alloc(err),
+        Type::Tuple(types) => types.iter().any(type_needs_alloc),
+        Type::Prim(_) | Type::Unit | Type::Named(_) => false,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2682,15 +2843,22 @@ fn fn_is_diverge(f: &FnItem) -> bool {
     matches!(&f.contract.fx, EffectRow::Set(es) if es.contains(&Effect::Diverge))
 }
 
+struct CallLoweringContext<'a> {
+    variants: &'a [(&'a str, &'a str)],
+    spec_fn_param_types: &'a [(&'a str, &'a [PrimType])],
+}
+
 fn lower_fn(
     f: &FnItem,
     nat_fns: &[&str],
     inv_structs: &[&str],
     string_fields: &[&str],
-    variants: &[(&str, &str)],
     user_string_spec_fns: &[&str],
-    spec_fn_param_types: &[(&str, &[PrimType])],
+    call_context: &CallLoweringContext<'_>,
+    public: bool,
 ) -> Result<String, LowerError> {
+    let variants = call_context.variants;
+    let spec_fn_param_types = call_context.spec_fn_param_types;
     // The honesty gate: external_body iff a declared trust boundary
     // (`#[boundary]`/`#[slag]`), never a regular fn. Emitted only into a caller's
     // sub-program as a woven dependency (forge's `item_subprogram`). The 2-bool
@@ -2708,6 +2876,7 @@ fn lower_fn(
             string_fields,
             user_string_spec_fns,
             spec_fn_param_types,
+            false,
         );
     }
 
@@ -2732,6 +2901,7 @@ fn lower_fn(
         string_fields,
         user_string_spec_fns,
         spec_fn_param_types,
+        public,
     )?);
     // `fx pure` emits no annotation (Verus `fn` is pure by default; §4.1).
 
@@ -2781,9 +2951,13 @@ fn lower_fn_signature(
     string_fields: &[&str],
     user_string_spec_fns: &[&str],
     spec_fn_param_types: &[(&str, &[PrimType])],
+    public: bool,
 ) -> Result<String, LowerError> {
     let mut out = String::new();
     let ret = lower_type(&f.ret)?;
+    if public {
+        out.push_str("pub ");
+    }
     write!(out, "fn {}(", f.name).ok();
     emit_params(&mut out, &f.params, Pos::Exec)?;
     writeln!(out, ") -> (result: {ret})").ok();
@@ -3035,6 +3209,98 @@ pub fn lower_exec_body(block: &Block) -> Result<String, LowerError> {
     lower_block_inner(block, Ctx::exec(), 0, zero_span())
 }
 
+/// Emit a total public wrapper for an export with a nontrivial executable
+/// precondition. The wrapper is itself inside the canonical `verus!` block, so
+/// Verus proves both that the true guard establishes the implementation's
+/// `requires` and that an `Ok` result carries every original `ensures` clause.
+fn lower_l3_export_wrapper(
+    f: &FnItem,
+    public_name: &str,
+    nat_fns: &[&str],
+    string_fields: &[&str],
+    user_string_spec_fns: &[&str],
+    spec_fn_param_types: &[(&str, &[PrimType])],
+) -> Result<String, LowerError> {
+    let mut out = String::new();
+    let ret = lower_type(&f.ret)?;
+    write!(out, "pub fn {public_name}(").ok();
+    emit_params(&mut out, &f.params, Pos::Exec)?;
+    writeln!(out, ") -> (result: Result<{ret}, ThermiteContractError>)").ok();
+
+    let slices = slice_param_names(&f.params);
+    let strings = string_value_names(f);
+    let spec = Ctx::spec(&slices, nat_fns)
+        .with_strings(&strings)
+        .with_string_fields(string_fields)
+        .with_user_string_spec_fns(user_string_spec_fns)
+        .with_spec_fn_param_types(spec_fn_param_types);
+
+    let mut ensured = Vec::new();
+    for ens in &f.contract.ens {
+        let lowered = lower_expr(&ens.expr, spec, 0, f.span)?;
+        ensured.push(replace_ident(&lowered, "result", "value"));
+    }
+    let ok_claim = if ensured.is_empty() {
+        "true".to_string()
+    } else {
+        ensured
+            .into_iter()
+            .map(|e| format!("({e})"))
+            .collect::<Vec<_>>()
+            .join(" && ")
+    };
+    out.push_str("    ensures\n");
+    writeln!(out, "        match result {{").ok();
+    writeln!(out, "            Ok(value) => {ok_claim},").ok();
+    out.push_str("            Err(_) => true,\n");
+    out.push_str("        },\n");
+
+    let guard = lower_expr(&f.contract.req.expr, Ctx::exec(), 0, f.span)?;
+    let args = f
+        .params
+        .iter()
+        .map(|p| p.name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    out.push_str("{\n");
+    writeln!(out, "    if {guard} {{").ok();
+    writeln!(out, "        Ok({}({args}))", f.name).ok();
+    out.push_str("    } else {\n");
+    out.push_str("        Err(ThermiteContractError::Precondition)\n");
+    out.push_str("    }\n");
+    out.push_str("}\n");
+    Ok(out)
+}
+
+/// Replace one identifier token without touching a longer identifier that only
+/// contains it (`result_count` must not become `value_count`). Lowered Verus
+/// source is ASCII for identifiers, so byte classification is sufficient and
+/// deterministic.
+fn replace_ident(source: &str, from: &str, to: &str) -> String {
+    let bytes = source.as_bytes();
+    let needle = from.as_bytes();
+    let mut out = String::with_capacity(source.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let matches = i + needle.len() <= bytes.len()
+            && &bytes[i..i + needle.len()] == needle
+            && (i == 0 || !is_ident_byte(bytes[i - 1]))
+            && (i + needle.len() == bytes.len() || !is_ident_byte(bytes[i + needle.len()]));
+        if matches {
+            out.push_str(to);
+            i += needle.len();
+        } else {
+            out.push(bytes[i] as char);
+            i += 1;
+        }
+    }
+    out
+}
+
+fn is_ident_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || byte == b'_'
+}
+
 /// Lower a `#[boundary]`/`#[slag]` fn as a `#[verifier::external_body]` assumable
 /// signature (`.design/lower/boundary-composition.md` REQ-1, §9/§8). The verus
 /// `#[verifier::external_body]` attribute makes the body opaque: verus assumes
@@ -3061,6 +3327,7 @@ fn lower_external_body_fn(
     string_fields: &[&str],
     user_string_spec_fns: &[&str],
     spec_fn_param_types: &[(&str, &[PrimType])],
+    public: bool,
 ) -> Result<String, LowerError> {
     let mut out = String::new();
     out.push_str("#[verifier::external_body]\n");
@@ -3071,6 +3338,7 @@ fn lower_external_body_fn(
         string_fields,
         user_string_spec_fns,
         spec_fn_param_types,
+        public,
     )?);
     // The body is suppressed: verus does not check an external_body body, so the
     // synthetic `{ unimplemented!() }` stands in for the foreign/fiat body the

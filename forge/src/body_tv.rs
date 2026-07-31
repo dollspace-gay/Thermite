@@ -66,6 +66,7 @@
 //! | REQ-FORGE-BODY-TV-PLUGIN | shipped | `forge/src/body_tv.rs` | Forge body-TV straight-line plugin point |  |
 //! <!-- /generated:reqs -->
 
+use std::collections::BTreeSet;
 use std::path::Path;
 use std::process::Command;
 
@@ -173,7 +174,7 @@ pub fn body_tv_file(path: &Path, seed: u64, rlimit: f64) -> Result<BodyTvReport,
     let mut report = BodyTvReport::default();
     for item in &parsed.program.items {
         match item {
-            Item::Fn(f) => body_tv_fn(f, seed, rlimit, &mut report),
+            Item::Fn(f) => body_tv_fn(&parsed.program, f, seed, rlimit, &mut report),
             // A `spec fn` body lowers in spec context (not exec); a struct/enum has no
             // exec body — out of scope for body-TV.
             Item::SpecFn(_) | Item::Struct(_) | Item::Enum(_) => {}
@@ -189,7 +190,13 @@ pub fn body_tv_file(path: &Path, seed: u64, rlimit: f64) -> Result<BodyTvReport,
 /// (it has no exec body to validate). Otherwise: if the body's last statement is a
 /// loop, route to the loop arm (the v1 `while` obligations, or a Skip); else route
 /// to the straight-line body arm.
-fn body_tv_fn(f: &FnItem, seed: u64, rlimit: f64, report: &mut BodyTvReport) {
+fn body_tv_fn(
+    program: &thermite_syntax::Program,
+    f: &FnItem,
+    seed: u64,
+    rlimit: f64,
+    report: &mut BodyTvReport,
+) {
     let Some(body) = &f.body else {
         return; // a boundary fn has no in-language body.
     };
@@ -210,11 +217,149 @@ fn body_tv_fn(f: &FnItem, seed: u64, rlimit: f64, report: &mut BodyTvReport) {
         return;
     }
 
+    let (support_defs, support_names) = match body_tv_support(program, f) {
+        Ok(support) => support,
+        Err(reason) => {
+            report.results.push(BodyResult {
+                label: f.name.clone(),
+                verdict: BodyVerdict::Skipped { reason },
+            });
+            return;
+        }
+    };
+
     if matches!(body.stmts.last(), Some(Stmt::Loop(_))) {
-        loop_body_tv(f, body, seed, rlimit, report);
+        loop_body_tv(f, body, &support_defs, &support_names, seed, rlimit, report);
     } else {
-        straight_line_body_tv(f, body, seed, rlimit, report);
+        straight_line_body_tv(f, body, &support_defs, &support_names, seed, rlimit, report);
     }
+}
+
+/// Lower the exact in-file executable/spec dependency closure needed by one
+/// body-TV obligation. The function under test is deliberately omitted: its
+/// production body remains the text inside `tv_body_wrap`, while callees are
+/// ordinary verified definitions available to both production and reference
+/// expressions. This closes the call-frame hole without replacing the
+/// independent state denotation.
+pub(crate) fn body_tv_support(
+    program: &thermite_syntax::Program,
+    f: &FnItem,
+) -> Result<(Vec<String>, BTreeSet<String>), String> {
+    let closure = match crate::closure::verified_closure(program, std::slice::from_ref(&f.name)) {
+        Ok(closure) => closure,
+        // The verified-build closure gate owns fail-closed unresolved-call
+        // diagnostics. Preserve the standalone body-TV four-way behavior here;
+        // the resulting obligation will classify the missing frame honestly.
+        Err(_) => return Ok((Vec::new(), BTreeSet::new())),
+    };
+    let support_names: BTreeSet<String> = closure
+        .functions
+        .iter()
+        .filter(|name| *name != &f.name)
+        .chain(closure.spec_functions.iter())
+        .cloned()
+        .collect();
+    if support_names.is_empty() {
+        return Ok((Vec::new(), support_names));
+    }
+    let referrers: Vec<&Item> = program
+        .items
+        .iter()
+        .filter(|item| match item {
+            Item::Fn(dep) => support_names.contains(&dep.name),
+            Item::SpecFn(dep) => support_names.contains(&dep.name),
+            Item::Struct(_) | Item::Enum(_) | Item::Forge(_) => false,
+        })
+        .collect();
+    let adt_names: BTreeSet<String> = crate::check::reachable_adt_deps(program, &referrers)
+        .into_iter()
+        .map(|item| item.name().to_string())
+        .collect();
+    let support = thermite_syntax::Program {
+        items: program
+            .items
+            .iter()
+            .filter(|item| match item {
+                Item::Fn(dep) => support_names.contains(&dep.name),
+                Item::SpecFn(dep) => support_names.contains(&dep.name),
+                Item::Struct(dep) => adt_names.contains(&dep.name),
+                Item::Enum(dep) => adt_names.contains(&dep.name),
+                Item::Forge(_) => false,
+            })
+            .cloned()
+            .collect(),
+    };
+    let lowered = thermite_lower::lower(&support)
+        .map_err(|error| format!("could not lower body-TV dependency frame: {error}"))?;
+    let open = "verus! {\n";
+    let close = "\n}\nfn main() {}\n";
+    let start = lowered
+        .find(open)
+        .map(|offset| offset + open.len())
+        .ok_or_else(|| "body-TV dependency frame had no Verus opening".to_string())?;
+    let end = lowered
+        .rfind(close)
+        .filter(|end| *end >= start)
+        .ok_or_else(|| "body-TV dependency frame had no canonical closing".to_string())?;
+    let mut inner = lowered[start..end].to_string();
+    let mut reference_defs = String::new();
+    for item in &support.items {
+        let Item::Fn(dep) = item else {
+            continue;
+        };
+        let Some(body) = &dep.body else {
+            return Err(format!(
+                "body-TV dependency `{}` has no in-language body",
+                dep.name
+            ));
+        };
+        let mut params = Vec::new();
+        let mut slices = Vec::new();
+        for param in &dep.params {
+            let Some((ty, is_slice)) = exec_type_spelling(&param.ty) else {
+                return Err(format!(
+                    "body-TV dependency `{}` has an unframeable parameter `{}`",
+                    dep.name, param.name
+                ));
+            };
+            if is_slice {
+                slices.push(param.name.clone());
+            }
+            params.push(format!("{}: {ty}", param.name));
+        }
+        let Some((ret, _)) = exec_type_spelling(&dep.ret) else {
+            return Err(format!(
+                "body-TV dependency `{}` has an unframeable return type",
+                dep.name
+            ));
+        };
+        let reference = thermite_tv::body_ref_state(body, &BodyRefCtx::with_slice_bound(slices))
+            .map_err(|error| {
+                format!(
+                    "body-TV dependency `{}` is outside the independent body reference: {error}",
+                    dep.name
+                )
+            })?;
+        let spec_name = format!("thermite_tv_ref_{}", dep.name);
+        reference_defs.push_str(&format!(
+            "\nspec fn {spec_name}({}) -> {ret} {{ {reference} }}\n",
+            params.join(", ")
+        ));
+        let needle = format!("\nfn {}(", dep.name);
+        let replacement = format!(
+            "\n#[verifier::when_used_as_spec({spec_name})]\nfn {}(",
+            dep.name
+        );
+        if !inner.contains(&needle) {
+            return Err(format!(
+                "body-TV dependency frame could not locate lowered function `{}`",
+                dep.name
+            ));
+        }
+        inner = inner.replacen(&needle, &replacement, 1);
+    }
+    reference_defs.push_str(&inner);
+    Ok((vec![reference_defs], support_names))
 }
 
 // ---- the straight-line body arm (exec-stmt-tv REQ-5) -----------------------
@@ -230,6 +375,8 @@ fn body_tv_fn(f: &FnItem, seed: u64, rlimit: f64, report: &mut BodyTvReport) {
 fn straight_line_body_tv(
     f: &FnItem,
     body: &Block,
+    support_defs: &[String],
+    support_names: &BTreeSet<String>,
     seed: u64,
     rlimit: f64,
     report: &mut BodyTvReport,
@@ -315,7 +462,11 @@ fn straight_line_body_tv(
     // with no frame), body-TV's `req` is the body's well-formedness / no-overflow frame;
     // dropping it could turn a faithful body into a false Divergent, so the class
     // here is Skipped, not a frameless re-check.
-    let declared: Vec<&str> = params.iter().map(|p| p.name.as_str()).collect();
+    let declared: Vec<&str> = params
+        .iter()
+        .map(|p| p.name.as_str())
+        .chain(support_names.iter().map(String::as_str))
+        .collect();
     if let Some(undeclared) = req_references_undeclarable(f, &declared) {
         report.results.push(BodyResult {
             label,
@@ -333,7 +484,7 @@ fn straight_line_body_tv(
     }
 
     let frame = BodyObligationFrame {
-        spec_defs: Vec::new(),
+        spec_defs: support_defs.to_vec(),
         params,
         ret_type: ret_ty,
         req: corpus_req(f),
@@ -376,7 +527,15 @@ fn straight_line_body_tv(
 /// false Faithful (R-HONEST-3). The `binary_search.th` corpus loop (a `loop`-kind with
 /// mid-body `return`s) reaches here as Skipped-with-reason, the expected
 /// result.
-fn loop_body_tv(f: &FnItem, body: &Block, seed: u64, rlimit: f64, report: &mut BodyTvReport) {
+fn loop_body_tv(
+    f: &FnItem,
+    body: &Block,
+    support_defs: &[String],
+    support_names: &BTreeSet<String>,
+    seed: u64,
+    rlimit: f64,
+    report: &mut BodyTvReport,
+) {
     let label = format!("{}.loop", f.name);
 
     // The loop node is the body's last statement (matched by the caller).
@@ -398,7 +557,7 @@ fn loop_body_tv(f: &FnItem, body: &Block, seed: u64, rlimit: f64, report: &mut B
     // rebinds, in the sorted order `loop_ref_obligations` reports them). A param /
     // cell of a non-exec-frame type makes the frame non-derivable → Skip. An
     // out-of-v1 loop surfaces its `Unsupported` here (the recognizer refuses).
-    let frame = match build_loop_frame(f, body, loop_node) {
+    let frame = match build_loop_frame(f, body, loop_node, support_defs, support_names) {
         Ok(frame) => frame,
         Err(reason) => {
             report.results.push(BodyResult {
@@ -437,6 +596,8 @@ fn build_loop_frame(
     f: &FnItem,
     body: &Block,
     _loop_node: &LoopNode,
+    support_defs: &[String],
+    support_names: &BTreeSet<String>,
 ) -> Result<LoopObligationFrame, String> {
     // The mutated cells (+ the v1-subset recognition) come from the shipped
     // `loop_ref_obligations` — its `Unsupported` Err is the out-of-v1 reason.
@@ -493,6 +654,7 @@ fn build_loop_frame(
     // not a fabricated Divergent).
     let mut declared: Vec<&str> = inputs.iter().map(|p| p.name.as_str()).collect();
     declared.extend(cells.iter().map(|c| c.name.as_str()));
+    declared.extend(support_names.iter().map(String::as_str));
     if let Some(undeclared) = req_references_undeclarable(f, &declared) {
         return Err(format!(
             "the `req` references `{undeclared}` — a spec-fn helper (the \
@@ -504,7 +666,7 @@ fn build_loop_frame(
     }
 
     Ok(LoopObligationFrame {
-        spec_defs: Vec::new(),
+        spec_defs: support_defs.to_vec(),
         inputs,
         cells,
         req: corpus_req(f),
@@ -951,11 +1113,13 @@ fn run_obligation(program: &str, label: &str, seed: u64, rlimit: f64) -> Dischar
                      producing a results line — a Verus/Z3 timeout, not an infidelity"
                 ))
             } else if !output.status.success() {
+                let diagnostic = combined.lines().take(12).collect::<Vec<_>>().join(" | ");
                 DischargeOutcome::CompileAbort(format!(
                     "verus ABORTED (compile/parse) on the obligation for `{label}` with no \
                      parseable results line — a FRAME compile abort (the obligation's \
                      `req`/wrapper did not compile, e.g. a spec-fn-helper `req` the frame \
-                     does not carry), not a body-lowering infidelity"
+                     does not carry), not a body-lowering infidelity; tool diagnostic: \
+                     {diagnostic}"
                 ))
             } else {
                 DischargeOutcome::Unverifiable(format!(

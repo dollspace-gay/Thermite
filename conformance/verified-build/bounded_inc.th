@@ -1,0 +1,7 @@
+fn bounded_inc(x: u64) -> u64
+  req x < 100
+  ens result == x + 1
+  fx pure
+{
+  x + 1
+}

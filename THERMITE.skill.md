@@ -262,7 +262,8 @@ through checked reconstruction.
 - `forge audit <file> [--json] [--meaning] [--metrics]` — Show assurance, boundaries, meaning, and metrics.
 - `forge repair <file> [item] [--json]` — Retry timeout-lowered items.
 - `forge review <file> [item] [--json] [--reviewer <cmd>]` — Emit contracts for intent review.
-- `forge build <file> [--entry <fn>] [--out <path>] [--target std|kernel] [--json] [--no-sandbox] [--sandbox-self-test]` — Build checked Rust; sandbox hosted executables.
+- `forge build <file> [--level l1|l3] [--export <fn>] [--crate-name <name>] [--entry <fn>] [--out <path>] [--target std|kernel] [--json] [--no-sandbox] [--sandbox-self-test]` — Build L1 checked Rust or an exact-source L3 verified bundle.
+- `forge verify-build <bundle-dir> [--replay] [--json]` — Validate or replay a correspondence-backed L3 build receipt.
 - `forge tv <file> [--generated [N]] [--seed <u64>] [--json]` — Validate contract lowering.
 - `forge exec-tv <file> [--generated [N]] [--no-generated] [--json]` — Validate expression lowering.
 - `forge strat-tv [--generated N] [--seed <u64>] [--json]` — Compare Rust and Lean cage classifiers.

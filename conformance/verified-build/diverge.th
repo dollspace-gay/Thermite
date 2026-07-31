@@ -1,0 +1,11 @@
+fn diverging(x: u64) -> u64
+  req true
+  ens result == x
+  fx diverge
+{ diverging(x) }
+
+fn diverge_root(x: u64) -> u64
+  req true
+  ens result == x
+  fx diverge
+{ diverging(x) }

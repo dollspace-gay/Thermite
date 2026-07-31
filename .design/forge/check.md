@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: 2bc2545cd90e7ad88f143c5a4b4a72882227d45a20310cfde5db92ff2d5e808f (re-pinned 2026-07-30 for a comment-only clarification that Auto includes Lean fallback and checked BV/EPR overlays; check behavior is unchanged)
+audited-content-sha256: 9e6f82caf75643f6752dc4b87d4a9d71b6b777cdb69617b582614e6548cc0e91 (re-pinned 2026-07-31 after exposing exact reachable ADT dependencies to the additive L3 path; existing check behavior remains regression-covered)
 governs: forge/src/check.rs
 thesis-refs:
   - thermite-design.md §5.1

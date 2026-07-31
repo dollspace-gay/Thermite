@@ -1,0 +1,5 @@
+fn reads_clock_without_using_it(x: u64) -> u64
+  req true
+  ens result == x
+  fx time
+{ x }

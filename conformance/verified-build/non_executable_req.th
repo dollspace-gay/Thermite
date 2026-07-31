@@ -1,0 +1,9 @@
+spec fn is_small(x: u64) -> bool
+  dec 0
+{ x < 100 }
+
+fn guarded_by_spec(x: u64) -> u64
+  req is_small(x)
+  ens result == x
+  fx pure
+{ x }

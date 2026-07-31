@@ -299,6 +299,344 @@ pub fn reachable_in_file_fns(program: &Program, start: &str) -> BTreeSet<String>
     CallGraph::from_program(program).reachable_fns(start)
 }
 
+/// A complete, fail-closed dependency closure for an L3 artifact. Unlike the
+/// legacy assurance classifier above, this surface never treats an unresolved
+/// call as pure: unknown and indirect calls are errors before code emission.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VerifiedClosure {
+    pub roots: Vec<String>,
+    pub functions: BTreeSet<String>,
+    pub spec_functions: BTreeSet<String>,
+    pub edges: BTreeSet<(String, String)>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VerifiedClosureError {
+    UnknownExport { name: String },
+    ExportNotFunction { name: String },
+    UnresolvedCall { path: Vec<String>, callee: String },
+    IndirectCall { path: Vec<String> },
+}
+
+impl std::fmt::Display for VerifiedClosureError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            VerifiedClosureError::UnknownExport { name } => {
+                write!(f, "unknown verified-build export `{name}`")
+            }
+            VerifiedClosureError::ExportNotFunction { name } => {
+                write!(
+                    f,
+                    "verified-build export `{name}` is not an executable `fn`"
+                )
+            }
+            VerifiedClosureError::UnresolvedCall { path, callee } => write!(
+                f,
+                "incomplete verified-build closure: {} calls unresolved `{callee}`",
+                path.join(" -> ")
+            ),
+            VerifiedClosureError::IndirectCall { path } => write!(
+                f,
+                "incomplete verified-build closure: {} contains an unsupported indirect call",
+                path.join(" -> ")
+            ),
+        }
+    }
+}
+
+/// Compute the executable and spec dependency closure rooted at `exports`.
+/// Every free call is classified as an in-file node, a frozen language builtin,
+/// or a hard error. The returned edge set and node sets are sorted and therefore
+/// canonicalizable without depending on hash-map or traversal order.
+pub fn verified_closure(
+    program: &Program,
+    exports: &[String],
+) -> Result<VerifiedClosure, VerifiedClosureError> {
+    let mut item_kinds: BTreeMap<String, bool> = BTreeMap::new();
+    let mut variants = BTreeSet::new();
+    for item in &program.items {
+        match item {
+            Item::Fn(f) => {
+                item_kinds.insert(f.name.clone(), true);
+            }
+            Item::SpecFn(s) => {
+                item_kinds.insert(s.name.clone(), false);
+            }
+            Item::Enum(e) => {
+                for variant in &e.variants {
+                    variants.insert(variant.name.clone());
+                }
+            }
+            Item::Struct(_) | Item::Forge(_) => {}
+        }
+    }
+
+    let mut roots = exports.to_vec();
+    roots.sort();
+    roots.dedup();
+    for root in &roots {
+        match item_kinds.get(root) {
+            None => return Err(VerifiedClosureError::UnknownExport { name: root.clone() }),
+            Some(false) => {
+                return Err(VerifiedClosureError::ExportNotFunction { name: root.clone() })
+            }
+            Some(true) => {}
+        }
+    }
+
+    let mut functions = BTreeSet::new();
+    let mut spec_functions = BTreeSet::new();
+    let mut edges = BTreeSet::new();
+    let mut visited = BTreeSet::new();
+    let mut stack: Vec<(String, Vec<String>)> = roots
+        .iter()
+        .rev()
+        .map(|root| (root.clone(), vec![root.clone()]))
+        .collect();
+
+    while let Some((name, path)) = stack.pop() {
+        if !visited.insert(name.clone()) {
+            continue;
+        }
+        match item_kinds.get(&name) {
+            Some(true) => {
+                functions.insert(name.clone());
+            }
+            Some(false) => {
+                spec_functions.insert(name.clone());
+            }
+            None => continue,
+        }
+
+        let Some(item) = program.items.iter().find(|item| item.name() == name) else {
+            continue;
+        };
+        let calls = collect_verified_calls(item);
+        for call in calls.into_iter().rev() {
+            match call {
+                VerifiedCall::Named(callee) if item_kinds.contains_key(&callee) => {
+                    edges.insert((name.clone(), callee.clone()));
+                    let mut callee_path = path.clone();
+                    callee_path.push(callee.clone());
+                    stack.push((callee, callee_path));
+                }
+                VerifiedCall::Named(callee) if is_verified_builtin(&callee, &variants) => {}
+                VerifiedCall::Named(callee) => {
+                    return Err(VerifiedClosureError::UnresolvedCall { path, callee })
+                }
+                VerifiedCall::Qualified(root) if is_verified_qualified_root(&root, program) => {}
+                VerifiedCall::Qualified(callee) => {
+                    return Err(VerifiedClosureError::UnresolvedCall { path, callee })
+                }
+                VerifiedCall::Indirect => return Err(VerifiedClosureError::IndirectCall { path }),
+            }
+        }
+    }
+
+    Ok(VerifiedClosure {
+        roots,
+        functions,
+        spec_functions,
+        edges,
+    })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum VerifiedCall {
+    Named(String),
+    Qualified(String),
+    Indirect,
+}
+
+fn is_verified_builtin(name: &str, variants: &BTreeSet<String>) -> bool {
+    thermite_spec::lookup(name).is_some()
+        || thermite_spec::schemes::lookup(name).is_some()
+        || variants.contains(name)
+        || matches!(
+            name,
+            "Some"
+                | "None"
+                | "Ok"
+                | "Err"
+                | "parse_u64"
+                | "bytes_eq"
+                | "all_digits"
+                | "is_digit"
+                | "parse_be"
+                | "pow10"
+                | "occurs_at"
+                | "contains_sub"
+                | "count_sep"
+                | "sep_free"
+                | "is_space"
+        )
+}
+
+fn is_verified_qualified_root(root: &str, program: &Program) -> bool {
+    matches!(root, "u32" | "u64" | "usize" | "bool" | "Option" | "Result")
+        || program.items.iter().any(|item| match item {
+            Item::Struct(s) => s.name == root,
+            Item::Enum(e) => e.name == root,
+            _ => false,
+        })
+}
+
+fn collect_verified_calls(item: &Item) -> Vec<VerifiedCall> {
+    let mut calls = Vec::new();
+    match item {
+        Item::Fn(f) => {
+            collect_verified_expr_calls(&f.contract.req.expr, &mut calls);
+            for ens in &f.contract.ens {
+                collect_verified_expr_calls(&ens.expr, &mut calls);
+            }
+            if let Some(dec) = &f.dec {
+                collect_verified_expr_calls(&dec.expr, &mut calls);
+            }
+            if let Some(body) = &f.body {
+                collect_verified_block_calls(body, &mut calls);
+            }
+        }
+        Item::SpecFn(s) => {
+            collect_verified_expr_calls(&s.dec.expr, &mut calls);
+            collect_verified_block_calls(&s.body, &mut calls);
+        }
+        Item::Struct(s) => {
+            if let Some(inv) = &s.inv {
+                collect_verified_expr_calls(&inv.expr, &mut calls);
+            }
+        }
+        Item::Enum(_) | Item::Forge(_) => {}
+    }
+    calls
+}
+
+fn collect_verified_block_calls(block: &Block, calls: &mut Vec<VerifiedCall>) {
+    for stmt in &block.stmts {
+        match stmt {
+            Stmt::Let { init, .. } => collect_verified_expr_calls(init, calls),
+            Stmt::Assign { target, value } => {
+                collect_verified_expr_calls(target, calls);
+                collect_verified_expr_calls(value, calls);
+            }
+            Stmt::Return(value) => {
+                if let Some(value) = value {
+                    collect_verified_expr_calls(value, calls);
+                }
+            }
+            Stmt::If { cond, then, else_ } => {
+                collect_verified_expr_calls(cond, calls);
+                collect_verified_block_calls(then, calls);
+                if let Some(else_) = else_ {
+                    collect_verified_block_calls(else_, calls);
+                }
+            }
+            Stmt::Loop(node) => {
+                for inv in &node.invs {
+                    collect_verified_expr_calls(&inv.expr, calls);
+                }
+                collect_verified_expr_calls(&node.dec.expr, calls);
+                if let thermite_syntax::LoopKind::While(cond) = &node.kind {
+                    collect_verified_expr_calls(cond, calls);
+                }
+                collect_verified_block_calls(&node.body, calls);
+            }
+            Stmt::Expr(expr) => collect_verified_expr_calls(expr, calls),
+            Stmt::Break | Stmt::Continue => {}
+        }
+    }
+    if let Some(tail) = &block.tail {
+        collect_verified_expr_calls(tail, calls);
+    }
+}
+
+fn collect_verified_expr_calls(expr: &Expr, calls: &mut Vec<VerifiedCall>) {
+    match expr {
+        Expr::Call { callee, args } => {
+            match callee.as_ref() {
+                Expr::Path(parts) if parts.len() == 1 => {
+                    if let Some(name) = parts.first() {
+                        calls.push(VerifiedCall::Named(name.clone()));
+                    }
+                }
+                Expr::Path(parts) => {
+                    if let Some(root) = parts.first() {
+                        calls.push(VerifiedCall::Qualified(root.clone()));
+                    }
+                }
+                other => {
+                    calls.push(VerifiedCall::Indirect);
+                    collect_verified_expr_calls(other, calls);
+                }
+            }
+            for arg in args {
+                collect_verified_expr_calls(arg, calls);
+            }
+        }
+        Expr::MethodCall { receiver, args, .. } => {
+            collect_verified_expr_calls(receiver, calls);
+            for arg in args {
+                collect_verified_expr_calls(arg, calls);
+            }
+        }
+        Expr::Field { receiver, .. } | Expr::TupleProj { receiver, .. } => {
+            collect_verified_expr_calls(receiver, calls)
+        }
+        Expr::Closure { body, .. } => collect_verified_expr_calls(body, calls),
+        Expr::Match { scrutinee, arms } => {
+            collect_verified_expr_calls(scrutinee, calls);
+            for arm in arms {
+                if let Some(guard) = &arm.guard {
+                    collect_verified_expr_calls(guard, calls);
+                }
+                collect_verified_expr_calls(&arm.body, calls);
+            }
+        }
+        Expr::If { cond, then, else_ } => {
+            collect_verified_expr_calls(cond, calls);
+            collect_verified_block_calls(then, calls);
+            collect_verified_block_calls(else_, calls);
+        }
+        Expr::Binary { lhs, rhs, .. } => {
+            collect_verified_expr_calls(lhs, calls);
+            collect_verified_expr_calls(rhs, calls);
+        }
+        Expr::Index { base, index } => {
+            collect_verified_expr_calls(base, calls);
+            match index {
+                IndexArg::Single(e) | IndexArg::RangeTo(e) | IndexArg::RangeFrom(e) => {
+                    collect_verified_expr_calls(e, calls)
+                }
+                IndexArg::Range(a, b) => {
+                    collect_verified_expr_calls(a, calls);
+                    collect_verified_expr_calls(b, calls);
+                }
+            }
+        }
+        Expr::Cast { expr, .. }
+        | Expr::Ref { expr, .. }
+        | Expr::Deref(expr)
+        | Expr::Unary { expr, .. }
+        | Expr::Is {
+            scrutinee: expr, ..
+        } => collect_verified_expr_calls(expr, calls),
+        Expr::StructLit { fields, .. } => {
+            for (_, value) in fields {
+                collect_verified_expr_calls(value, calls);
+            }
+        }
+        Expr::Tuple(values) => {
+            for value in values {
+                collect_verified_expr_calls(value, calls);
+            }
+        }
+        Expr::Quantifier { domain, body, .. } => {
+            collect_verified_expr_calls(domain, calls);
+            collect_verified_expr_calls(body, calls);
+        }
+        Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) | Expr::StrLit(_) => {}
+    }
+}
+
 /// Walk a `Block` collecting the names of every in-file callee its expressions
 /// reach (the out-edges for one node, in source order). A name resolving to an
 /// in-file node (`in_file`) is kept; any other callee (a combinator, a cross-file
@@ -685,5 +1023,42 @@ fn h(x: u32) -> u32 req x < 100 ens result == x fx pure { g(x) }";
             reachable_in_file_fns(&prog, "h"),
             reachable_in_file_fns(&prog, "h")
         );
+    }
+
+    #[test]
+    fn verified_closure_is_exact_sorted_and_omits_unreachable_siblings() {
+        let program = parse(
+            "fn helper(x: u64) -> u64 req true ens result == x fx pure { x } \
+             fn root(x: u64) -> u64 req true ens result == x fx pure { helper(x) } \
+             fn unrelated(x: u64) -> u64 req true ens result == x fx pure { x }",
+        );
+        let closure = verified_closure(&program, &["root".to_string()]).unwrap();
+        assert_eq!(closure.roots, vec!["root"]);
+        assert_eq!(
+            closure.functions,
+            BTreeSet::from(["helper".to_string(), "root".to_string()])
+        );
+        assert_eq!(
+            closure.edges,
+            BTreeSet::from([("root".to_string(), "helper".to_string())])
+        );
+        assert!(!closure.functions.contains("unrelated"));
+    }
+
+    #[test]
+    fn verified_closure_fails_closed_on_unknown_and_indirect_calls() {
+        let unresolved =
+            parse("fn root(x: u64) -> u64 req true ens result == x fx pure { missing(x) }");
+        assert!(matches!(
+            verified_closure(&unresolved, &["root".to_string()]),
+            Err(VerifiedClosureError::UnresolvedCall { callee, .. }) if callee == "missing"
+        ));
+
+        let indirect =
+            parse("fn root(x: u64) -> u64 req true ens result == x fx pure { (|y| y)(x) }");
+        assert!(matches!(
+            verified_closure(&indirect, &["root".to_string()]),
+            Err(VerifiedClosureError::IndirectCall { .. })
+        ));
     }
 }

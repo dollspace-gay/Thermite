@@ -732,6 +732,14 @@ comment_prefix = "//! "
 title = "Forge Build Kernel Target Canonical Status References"
 
 [[view]]
+name = "forge-l3-verified-build-status"
+path = ".design/build/l3-verified-artifact.md"
+kind = "reference_list"
+mode = "region"
+region = "forge-l3-verified-build-status"
+title = "Forge L3 Verified Build Canonical Status References"
+
+[[view]]
 name = "forge-audit-status"
 path = "forge/src/audit.rs"
 kind = "reference_list"
@@ -11894,6 +11902,279 @@ note = "L3 path owner left separate"
 kind = "test"
 target = "forge/tests/check_conformance.rs"
 note = "existing check path conformance"
+
+[[requirement]]
+id = "REQ-L3BUILD-1"
+title = "Explicit L3 build mode"
+owner = ".design/build/l3-verified-artifact.md"
+status = "shipped"
+scope = "forge"
+summary = "`forge build --level l3` selects a distinct verified-build path with explicit exports while the existing default remains honestly L1."
+aliases = [".design/build/l3-verified-artifact.md REQ-L3BUILD-1 (explicit L3 build mode)"]
+contributors = [".design/build/l3-verified-artifact.md"]
+generated_to = ["status", "forge-l3-verified-build-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "BuildLevel"
+note = "additive L1/L3 CLI dispatch"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge::cli::tests::parses_strict_l3_build_and_verify_build_surfaces"
+note = "explicit export and verified-build CLI conformance"
+
+[[requirement]]
+id = "REQ-L3BUILD-2"
+title = "Frozen canonical artifact plan"
+owner = ".design/build/l3-verified-artifact.md"
+status = "shipped"
+scope = "forge"
+summary = "A canonical `ArtifactPlanV1` binds the source, target, exports, wrappers, dependencies, executable closure and gate inventory before verification starts."
+aliases = [".design/build/l3-verified-artifact.md REQ-L3BUILD-2 (frozen artifact plan)"]
+contributors = [".design/build/l3-verified-artifact.md"]
+generated_to = ["status", "forge-l3-verified-build-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ArtifactPlanV1"
+note = "canonical frozen build-plan schema and digest"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge::verified_build::tests::canonical_plan_hash_is_json_whitespace_independent"
+note = "canonical plan hash conformance"
+
+[[requirement]]
+id = "REQ-L3BUILD-3"
+title = "Strict end-to-end reachable closure"
+owner = ".design/build/l3-verified-artifact.md"
+status = "shipped"
+scope = "forge"
+summary = "Every executable node reachable from an export must resolve and certify without holes, downgrade, slag, boundary or termination escape hatches."
+aliases = [".design/build/l3-verified-artifact.md REQ-L3BUILD-3 (strict end-to-end closure)"]
+contributors = [".design/build/l3-verified-artifact.md"]
+generated_to = ["status", "forge-l3-verified-build-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "verified_closure"
+note = "fail-closed executable and proof dependency closure"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/verified_build.rs::every_strict_refusal_publishes_nothing"
+note = "direct and transitive closure refusal paths"
+
+[[requirement]]
+id = "REQ-L3BUILD-4"
+title = "Compile the exact verified source"
+owner = ".design/build/l3-verified-artifact.md"
+status = "shipped"
+scope = "forge"
+summary = "One strict Verus invocation verifies and compiles the canonical L3 source, with no independently reconstructed Rust body after proof."
+aliases = [".design/build/l3-verified-artifact.md REQ-L3BUILD-4 (compile the verified source)"]
+contributors = [".design/build/l3-verified-artifact.md"]
+generated_to = ["status", "forge-l3-verified-build-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "compile_verus_source"
+note = "single strict no-cheating Verus proof and codegen invocation"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge::verified_build::tests::l3_orchestrator_has_no_l1_lowering_call"
+note = "structural exact-source and no-L1 pin"
+
+[[requirement]]
+id = "REQ-L3BUILD-5"
+title = "Complete translation-validation coverage"
+owner = ".design/build/l3-verified-artifact.md"
+status = "shipped"
+scope = "verified"
+summary = "Contract, executable-expression, statement/body and loop translation validation must pass for every corresponding reachable node."
+aliases = [".design/build/l3-verified-artifact.md REQ-L3BUILD-5 (complete translation validation)"]
+contributors = [".design/build/l3-verified-artifact.md"]
+generated_to = ["status", "forge-l3-verified-build-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "collect_translation_validation"
+note = "contract, executable, body and loop TV inventory gate"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/verified_build.rs::every_tv_phase_and_nonpass_class_blocks_publication"
+note = "complete phase and non-pass refusal matrix"
+
+[[requirement]]
+id = "REQ-L3BUILD-6"
+title = "Explicit verified exports and ABI fingerprints"
+owner = ".design/build/l3-verified-artifact.md"
+status = "shipped"
+scope = "forge"
+summary = "Only declared exports become public and each exported Rust signature, layout and pinned-toolchain ABI identity is receipt-bound."
+aliases = [".design/build/l3-verified-artifact.md REQ-L3BUILD-6 (explicit verified exports)"]
+contributors = [".design/build/l3-verified-artifact.md"]
+generated_to = ["status", "forge-l3-verified-build-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "plan_exports"
+note = "supported ABI admission and fingerprint planning"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/verified_build.rs::only_the_declared_export_is_public_across_a_transitive_closure"
+note = "independent consumer proves helper privacy and ABI usability"
+
+[[requirement]]
+id = "REQ-L3BUILD-7"
+title = "Total verified precondition boundary"
+owner = ".design/build/l3-verified-artifact.md"
+status = "shipped"
+scope = "verified"
+summary = "A nontrivial exported precondition is enforced by a TV-covered, Verus-verified total `Result` wrapper in the canonical source or the export is rejected."
+aliases = [".design/build/l3-verified-artifact.md REQ-L3BUILD-7 (total precondition boundary)"]
+contributors = [".design/build/l3-verified-artifact.md"]
+generated_to = ["status", "forge-l3-verified-build-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_l3_export_wrapper"
+note = "verified total Result boundary generation"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/verified_build.rs::total_wrapper_returns_ok_or_precondition_without_calling_invalid_body"
+note = "valid and invalid downstream wrapper behavior"
+
+[[requirement]]
+id = "REQ-L3BUILD-8"
+title = "Cryptographically bound verified-build receipt"
+owner = ".design/build/l3-verified-artifact.md"
+status = "shipped"
+scope = "forge"
+summary = "`VerifiedBuildReceiptV1` canonically binds source and IR, closure, proof/TV evidence, tools, flags, exports and final artifact through SHA-256."
+aliases = [".design/build/l3-verified-artifact.md REQ-L3BUILD-8 (cryptographic receipt)"]
+contributors = [".design/build/l3-verified-artifact.md"]
+generated_to = ["status", "forge-l3-verified-build-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "VerifiedBuildReceiptV1"
+note = "versioned canonical receipt and binding root"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/verified_build.rs::hosted_bundle_is_exact_private_linkable_tamper_evident_and_reproducible"
+note = "field and file tampering, replay and reproducibility matrix"
+
+[[requirement]]
+id = "REQ-L3BUILD-9"
+title = "Atomic verified-bundle publication"
+owner = ".design/build/l3-verified-artifact.md"
+status = "shipped"
+scope = "forge"
+summary = "Forge publishes a complete self-validating bundle with one atomic rename only after every proof, compile, hash and receipt check succeeds."
+aliases = [".design/build/l3-verified-artifact.md REQ-L3BUILD-9 (atomic publication)"]
+contributors = [".design/build/l3-verified-artifact.md"]
+generated_to = ["status", "forge-l3-verified-build-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "stage_and_publish"
+note = "staged self-validation, fsync and atomic rename"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/verified_build.rs::every_injected_commitment_failure_is_atomic"
+note = "publication fault matrix and staging cleanup"
+
+[[requirement]]
+id = "REQ-L3BUILD-10"
+title = "Honest artifact assurance aggregate"
+owner = ".design/build/l3-verified-artifact.md"
+status = "shipped"
+scope = "verified"
+summary = "The artifact headline is the minimum over the complete reachable executable closure and generated wrappers, capped at L3, with no downgraded success."
+aliases = [".design/build/l3-verified-artifact.md REQ-L3BUILD-10 (honest artifact assurance)"]
+contributors = [".design/build/l3-verified-artifact.md"]
+generated_to = ["status", "forge-l3-verified-build-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "AssuranceAggregate"
+note = "minimum reachable assurance capped at L3"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/verified_build.rs::every_non_l3_certificate_class_blocks_publication"
+note = "no-downgrade certificate refusal matrix"
+
+[[requirement]]
+id = "REQ-L3BUILD-11"
+title = "Freestanding kernel linkability"
+owner = ".design/build/l3-verified-artifact.md"
+status = "shipped"
+scope = "forge"
+summary = "The kernel profile emits an end-to-end verified `no_std + alloc`, panic-abort rlib and passes a separate downstream no-std final-link test through its exports."
+aliases = [".design/build/l3-verified-artifact.md REQ-L3BUILD-11 (kernel linkability)"]
+contributors = [".design/build/l3-verified-artifact.md"]
+generated_to = ["status", "forge-l3-verified-build-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "L3LibraryTarget::Kernel"
+note = "no-std verified library emission profile"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/verified_build.rs::kernel_bundle_final_links_into_a_separate_no_std_consumer"
+note = "real separate no-std final-link harness"
+
+[[requirement]]
+id = "REQ-L3BUILD-12"
+title = "Post-freeze mutation and tampering rejection"
+owner = ".design/build/l3-verified-artifact.md"
+status = "shipped"
+scope = "verified"
+summary = "Mutation of any executable body, wrapper, helper, source, plan, evidence, tool record or artifact after plan freeze prevents publication."
+aliases = [".design/build/l3-verified-artifact.md REQ-L3BUILD-12 (fault-injection rejection)"]
+contributors = [".design/build/l3-verified-artifact.md"]
+generated_to = ["status", "forge-l3-verified-build-status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/verified_build.rs"
+note = "debug-only post-freeze commitment fault seams"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/verified_build.rs::every_injected_commitment_failure_is_atomic"
+note = "body, helper, wrapper, evidence, toolchain and artifact mutation matrix"
+
+[[requirement]]
+id = "REQ-L3BUILD-13"
+title = "Strict separation from the L1 build"
+owner = ".design/build/l3-verified-artifact.md"
+status = "shipped"
+scope = "forge"
+summary = "The existing `lower_l1` runtime-checked build remains an honest L1 path and cannot seed, substitute for or satisfy the final L3 proof-and-compile step."
+aliases = [".design/build/l3-verified-artifact.md REQ-L3BUILD-13 (L1 separation)"]
+contributors = [".design/build/l3-verified-artifact.md"]
+generated_to = ["status", "forge-l3-verified-build-status"]
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/build_conformance.rs"
+note = "unchanged hosted L1 byte and behavior conformance"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/kernel_target.rs"
+note = "unchanged kernel L1 conformance and L1 labeling"
 
 [[requirement]]
 id = "REQ-FORGE-AUDIT-SCHEMA"

@@ -8,7 +8,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::fs::{self, File};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -243,6 +243,7 @@ pub struct VerusEvidence {
     pub source_relative_path: String,
     pub source_sha256_before: String,
     pub source_sha256_after: String,
+    pub codegen_toolchain_sha256: String,
     pub success: bool,
     pub errors: u64,
     pub stdout: String,
@@ -260,9 +261,9 @@ pub struct ToolchainEvidence {
     pub rustup_path: String,
     pub rustup_sha256: String,
     pub rustup_version: String,
-    pub rustc_version: String,
+    pub host_rustc: HostRustcEvidence,
+    pub artifact_codegen: CodegenRustcEvidence,
     pub target_triple: String,
-    pub target_libdir: String,
     pub target_pointer_width: String,
     pub target_endian: String,
     pub z3_path: String,
@@ -273,6 +274,91 @@ pub struct ToolchainEvidence {
     pub link_dependencies: Vec<ToolchainDependency>,
     pub source_date_epoch: String,
     pub environment: BTreeMap<String, String>,
+}
+
+/// Informational evidence for the Rust compiler selected in Forge's ambient
+/// host environment. It is deliberately separate from `artifact_codegen`: the
+/// host compiler does not define the ABI of an rlib emitted by Verus.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HostRustcEvidence {
+    pub rustc_path: String,
+    pub rustc_sha256: String,
+    pub rustc_version: String,
+}
+
+/// The Rust/LLVM closure that Verus selects for artifact code generation.
+///
+/// `rustup_toolchain` comes from the pinned Verus binary's authoritative
+/// `Toolchain:` version field. All other identities are resolved through that
+/// exact rustup toolchain, never through ambient `rustc` selection.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CodegenRustcEvidence {
+    pub selection: String,
+    pub rustup_toolchain: String,
+    pub rustc_path: String,
+    pub rustc_sha256: String,
+    pub rustc_version: String,
+    pub rustc_release: String,
+    pub rustc_commit_hash: String,
+    pub sysroot: String,
+    pub rustc_component_manifest_path: String,
+    pub rustc_component_manifest_sha256: String,
+    pub rust_std_component_manifest_path: String,
+    pub rust_std_component_manifest_sha256: String,
+    pub rustc_driver_path: String,
+    pub rustc_driver_sha256: String,
+    pub llvm_version: String,
+    pub llvm_library_path: String,
+    pub llvm_library_sha256: String,
+    pub target_triple: String,
+    pub target_pointer_width: String,
+    pub target_endian: String,
+    pub target_libdir: String,
+    pub target_libdir_sha256: String,
+    pub target_libdir_file_count: u64,
+    pub target_libdir_total_bytes: u64,
+    pub linker_identity: String,
+}
+
+impl CodegenRustcEvidence {
+    fn canonical_identity_sha256(&self) -> String {
+        let mut c = Canonical::new("thermite.verus-codegen-toolchain.v1");
+        c.field("selection", &self.selection);
+        c.field("rustup_toolchain", &self.rustup_toolchain);
+        c.field("rustc_sha256", &self.rustc_sha256);
+        c.field("rustc_version", &self.rustc_version);
+        c.field("rustc_release", &self.rustc_release);
+        c.field("rustc_commit_hash", &self.rustc_commit_hash);
+        c.field(
+            "rustc_component_manifest_sha256",
+            &self.rustc_component_manifest_sha256,
+        );
+        c.field(
+            "rust_std_component_manifest_sha256",
+            &self.rust_std_component_manifest_sha256,
+        );
+        c.field("rustc_driver_sha256", &self.rustc_driver_sha256);
+        c.field("llvm_version", &self.llvm_version);
+        c.field("llvm_library_sha256", &self.llvm_library_sha256);
+        c.field("target_triple", &self.target_triple);
+        c.field("target_pointer_width", &self.target_pointer_width);
+        c.field("target_endian", &self.target_endian);
+        c.field("target_libdir_sha256", &self.target_libdir_sha256);
+        c.field(
+            "target_libdir_file_count",
+            &self.target_libdir_file_count.to_string(),
+        );
+        c.field(
+            "target_libdir_total_bytes",
+            &self.target_libdir_total_bytes.to_string(),
+        );
+        c.field("linker_identity", &self.linker_identity);
+        c.finish()
+    }
+
+    fn same_identity(&self, other: &Self) -> bool {
+        self.canonical_identity_sha256() == other.canonical_identity_sha256()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -726,6 +812,7 @@ pub fn build_file(
         target,
         &toolchain.verus_path,
         &toolchain.environment,
+        &toolchain.artifact_codegen.canonical_identity_sha256(),
     )?;
     if !compiled.evidence.success || compiled.evidence.errors != 0 {
         return Ok(reject(
@@ -1792,6 +1879,9 @@ fn expected_contract_loops(
 fn collect_toolchain() -> Result<ToolchainEvidence, ForgeError> {
     let verus = resolve_executable(std::env::var_os("VERUS_BIN").as_deref(), "verus")?;
     let rustup = resolve_executable(None, "rustup")?;
+    let verus_version = command_text(Command::new(&verus).arg("--version"), "verus --version")?;
+    let artifact_codegen = collect_codegen_rustc(&verus_version, &rustup)?;
+    let host_rustc = collect_host_rustc(&rustup)?;
     let current = std::env::current_exe().map_err(|source| ForgeError::Io {
         path: "current forge executable".to_string(),
         source,
@@ -1808,35 +1898,7 @@ fn collect_toolchain() -> Result<ToolchainEvidence, ForgeError> {
         "git rev-parse HEAD",
     )
     .unwrap_or_else(|_| "unavailable".to_string());
-    let home = std::env::var("HOME").map_err(|_| ForgeError::VerusOutput {
-        detail: "HOME is required to pin the rustup-backed Verus launcher".to_string(),
-    })?;
-    let rustup_home = std::env::var("RUSTUP_HOME")
-        .unwrap_or_else(|_| Path::new(&home).join(".rustup").display().to_string());
-    let rustup_dir = rustup.parent().ok_or_else(|| ForgeError::VerusOutput {
-        detail: "the resolved rustup executable has no parent directory".to_string(),
-    })?;
-    let mut path_entries = vec![rustup_dir.to_path_buf()];
-    for system in [PathBuf::from("/usr/bin"), PathBuf::from("/bin")] {
-        if !path_entries.contains(&system) {
-            path_entries.push(system);
-        }
-    }
-    let pinned_path = std::env::join_paths(&path_entries)
-        .map_err(|error| ForgeError::VerusOutput {
-            detail: format!("could not construct the pinned Verus PATH: {error}"),
-        })?
-        .to_string_lossy()
-        .into_owned();
-    let environment = BTreeMap::from([
-        ("HOME".to_string(), home),
-        ("PATH".to_string(), pinned_path),
-        ("RUSTUP_HOME".to_string(), rustup_home),
-        (
-            "SOURCE_DATE_EPOCH".to_string(),
-            SOURCE_DATE_EPOCH.to_string(),
-        ),
-    ]);
+    let environment = closed_verus_environment(&rustup, &artifact_codegen.rustup_toolchain)?;
     let mut link_dependencies = Vec::new();
     let verus_dir = verus.parent().ok_or_else(|| ForgeError::VerusOutput {
         detail: "the resolved Verus binary has no installation directory".to_string(),
@@ -1862,12 +1924,6 @@ fn collect_toolchain() -> Result<ToolchainEvidence, ForgeError> {
             sha256: file_sha256(&path)?.2,
         });
     }
-    let rustc_version = command_text(Command::new("rustc").arg("-vV"), "rustc -vV")?;
-    let target_triple = rustc_version
-        .lines()
-        .find_map(|line| line.strip_prefix("host: "))
-        .unwrap_or("unknown")
-        .to_string();
     let z3 = verus_dir.join("z3");
     if !z3.is_file() {
         return Err(ForgeError::VerusOutput {
@@ -1883,22 +1939,15 @@ fn collect_toolchain() -> Result<ToolchainEvidence, ForgeError> {
         forge_source_identity: source_identity,
         verus_path: verus.display().to_string(),
         verus_sha256: file_sha256(&verus)?.2,
-        verus_version: command_text(Command::new(&verus).arg("--version"), "verus --version")?,
+        verus_version,
         rustup_path: rustup.display().to_string(),
         rustup_sha256: file_sha256(&rustup)?.2,
         rustup_version: command_text(Command::new(&rustup).arg("--version"), "rustup --version")?,
-        rustc_version,
-        target_triple,
-        target_libdir: command_text(
-            Command::new("rustc").args(["--print", "target-libdir"]),
-            "rustc --print target-libdir",
-        )?,
-        target_pointer_width: usize::BITS.to_string(),
-        target_endian: if cfg!(target_endian = "little") {
-            "little".to_string()
-        } else {
-            "big".to_string()
-        },
+        host_rustc,
+        target_triple: artifact_codegen.target_triple.clone(),
+        target_pointer_width: artifact_codegen.target_pointer_width.clone(),
+        target_endian: artifact_codegen.target_endian.clone(),
+        artifact_codegen,
         z3_path: z3.display().to_string(),
         z3_sha256: file_sha256(&z3)?.2,
         z3_version: command_text(Command::new(&z3).arg("--version"), "pinned z3 --version")?,
@@ -1908,6 +1957,454 @@ fn collect_toolchain() -> Result<ToolchainEvidence, ForgeError> {
         source_date_epoch: SOURCE_DATE_EPOCH.to_string(),
         environment,
     })
+}
+
+fn closed_verus_environment(
+    rustup: &Path,
+    rustup_toolchain: &str,
+) -> Result<BTreeMap<String, String>, ForgeError> {
+    let home = std::env::var("HOME").map_err(|_| ForgeError::VerusOutput {
+        detail: "HOME is required to pin the rustup-backed Verus launcher".to_string(),
+    })?;
+    let rustup_home = std::env::var("RUSTUP_HOME")
+        .unwrap_or_else(|_| Path::new(&home).join(".rustup").display().to_string());
+    let rustup_dir = rustup.parent().ok_or_else(|| ForgeError::VerusOutput {
+        detail: "the resolved rustup executable has no parent directory".to_string(),
+    })?;
+    let mut path_entries = vec![rustup_dir.to_path_buf()];
+    for system in [PathBuf::from("/usr/bin"), PathBuf::from("/bin")] {
+        if !path_entries.contains(&system) {
+            path_entries.push(system);
+        }
+    }
+    let pinned_path = std::env::join_paths(&path_entries)
+        .map_err(|error| ForgeError::VerusOutput {
+            detail: format!("could not construct the pinned Verus PATH: {error}"),
+        })?
+        .to_string_lossy()
+        .into_owned();
+    Ok(BTreeMap::from([
+        ("HOME".to_string(), home),
+        ("PATH".to_string(), pinned_path),
+        ("RUSTUP_HOME".to_string(), rustup_home),
+        ("RUSTUP_TOOLCHAIN".to_string(), rustup_toolchain.to_string()),
+        (
+            "SOURCE_DATE_EPOCH".to_string(),
+            SOURCE_DATE_EPOCH.to_string(),
+        ),
+    ]))
+}
+
+fn collect_host_rustc(rustup: &Path) -> Result<HostRustcEvidence, ForgeError> {
+    let selected = command_text(
+        Command::new(rustup).args(["which", "rustc"]),
+        "rustup which rustc",
+    )?;
+    let rustc_path = fs::canonicalize(selected.trim()).map_err(|source| ForgeError::Io {
+        path: selected.clone(),
+        source,
+    })?;
+    let (_, rustc_sha256) = streamed_file_sha256(&rustc_path)?;
+    Ok(HostRustcEvidence {
+        rustc_version: command_text(Command::new(&rustc_path).arg("-vV"), "host rustc -vV")?,
+        rustc_path: rustc_path.display().to_string(),
+        rustc_sha256,
+    })
+}
+
+fn collect_codegen_rustc(
+    verus_version: &str,
+    rustup: &Path,
+) -> Result<CodegenRustcEvidence, ForgeError> {
+    let rustup_toolchain = parse_verus_toolchain(verus_version)?;
+    let selected = command_text(
+        Command::new(rustup).args(["which", "--toolchain", rustup_toolchain.as_str(), "rustc"]),
+        "rustup which Verus codegen rustc",
+    )?;
+    let rustc_path = fs::canonicalize(selected.trim()).map_err(|source| ForgeError::Io {
+        path: selected.clone(),
+        source,
+    })?;
+    let rustc_version = rustup_command_text(
+        rustup,
+        &rustup_toolchain,
+        &["rustc", "-vV"],
+        "Verus codegen rustc -vV",
+    )?;
+    let target_triple = rustc_version_field(&rustc_version, "host: ")?;
+    let rustc_release = rustc_version_field(&rustc_version, "release: ")?;
+    let rustc_commit_hash = rustc_version_field(&rustc_version, "commit-hash: ")?;
+    let llvm_version = rustc_version_field(&rustc_version, "LLVM version: ")?;
+    let cfg = rustup_command_text(
+        rustup,
+        &rustup_toolchain,
+        &["rustc", "--print", "cfg"],
+        "Verus codegen rustc --print cfg",
+    )?;
+    let target_pointer_width = rustc_cfg_value(&cfg, "target_pointer_width")?;
+    let target_endian = rustc_cfg_value(&cfg, "target_endian")?;
+    let sysroot_text = rustup_command_text(
+        rustup,
+        &rustup_toolchain,
+        &["rustc", "--print", "sysroot"],
+        "Verus codegen rustc --print sysroot",
+    )?;
+    let sysroot = fs::canonicalize(sysroot_text.trim()).map_err(|source| ForgeError::Io {
+        path: sysroot_text.clone(),
+        source,
+    })?;
+    if !rustc_path.starts_with(&sysroot) {
+        return Err(ForgeError::VerusOutput {
+            detail: format!(
+                "Verus codegen rustc `{}` escapes its rustup sysroot `{}`",
+                rustc_path.display(),
+                sysroot.display()
+            ),
+        });
+    }
+    let target_libdir_text = rustup_command_text(
+        rustup,
+        &rustup_toolchain,
+        &["rustc", "--print", "target-libdir"],
+        "Verus codegen rustc --print target-libdir",
+    )?;
+    let target_libdir =
+        fs::canonicalize(target_libdir_text.trim()).map_err(|source| ForgeError::Io {
+            path: target_libdir_text.clone(),
+            source,
+        })?;
+    if !target_libdir.starts_with(&sysroot) {
+        return Err(ForgeError::VerusOutput {
+            detail: format!(
+                "Verus codegen target libdir `{}` escapes sysroot `{}`",
+                target_libdir.display(),
+                sysroot.display()
+            ),
+        });
+    }
+
+    let rustlib = sysroot.join("lib/rustlib");
+    let rustc_manifest = rustlib.join(format!("manifest-rustc-{target_triple}"));
+    let rust_std_manifest = rustlib.join(format!("manifest-rust-std-{target_triple}"));
+    let rustc_driver = component_manifest_largest(
+        &rustc_manifest,
+        &sysroot,
+        |name| name.starts_with("librustc_driver"),
+        "rustc driver",
+    )?;
+    let llvm_library = component_manifest_largest(
+        &rustc_manifest,
+        &sysroot,
+        |name| name.starts_with("libLLVM"),
+        "LLVM library",
+    )?;
+    let (_, rustc_sha256) = streamed_file_sha256(&rustc_path)?;
+    let (_, rustc_component_manifest_sha256) = streamed_file_sha256(&rustc_manifest)?;
+    let (_, rust_std_component_manifest_sha256) = streamed_file_sha256(&rust_std_manifest)?;
+    let (_, rustc_driver_sha256) = streamed_file_sha256(&rustc_driver)?;
+    let (_, llvm_library_sha256) = streamed_file_sha256(&llvm_library)?;
+    let (target_libdir_file_count, target_libdir_total_bytes, target_libdir_sha256) =
+        directory_sha256(&target_libdir)?;
+
+    Ok(CodegenRustcEvidence {
+        selection: "verus --version Toolchain".to_string(),
+        rustup_toolchain,
+        rustc_path: rustc_path.display().to_string(),
+        rustc_sha256,
+        rustc_version,
+        rustc_release,
+        rustc_commit_hash,
+        sysroot: sysroot.display().to_string(),
+        rustc_component_manifest_path: rustc_manifest.display().to_string(),
+        rustc_component_manifest_sha256,
+        rust_std_component_manifest_path: rust_std_manifest.display().to_string(),
+        rust_std_component_manifest_sha256,
+        rustc_driver_path: rustc_driver.display().to_string(),
+        rustc_driver_sha256,
+        llvm_version,
+        llvm_library_path: llvm_library.display().to_string(),
+        llvm_library_sha256,
+        target_triple,
+        target_pointer_width,
+        target_endian,
+        target_libdir: target_libdir.display().to_string(),
+        target_libdir_sha256,
+        target_libdir_file_count,
+        target_libdir_total_bytes,
+        linker_identity: "rlib: no final linker invoked by artifact codegen".to_string(),
+    })
+}
+
+fn parse_verus_toolchain(verus_version: &str) -> Result<String, ForgeError> {
+    let mut reported = verus_version
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("Toolchain:").map(str::trim));
+    let toolchain = reported.next().ok_or_else(|| ForgeError::VerusOutput {
+        detail: "pinned Verus did not report an authoritative `Toolchain:` identity".to_string(),
+    })?;
+    if reported.next().is_some()
+        || toolchain.is_empty()
+        || !toolchain
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_'))
+    {
+        return Err(ForgeError::VerusOutput {
+            detail: "pinned Verus did not report a safe authoritative `Toolchain:` identity"
+                .to_string(),
+        });
+    }
+    Ok(toolchain.to_string())
+}
+
+fn rustup_command_text(
+    rustup: &Path,
+    toolchain: &str,
+    args: &[&str],
+    label: &str,
+) -> Result<String, ForgeError> {
+    command_text(
+        Command::new(rustup).arg("run").arg(toolchain).args(args),
+        label,
+    )
+}
+
+fn rustc_version_field(version: &str, prefix: &str) -> Result<String, ForgeError> {
+    version
+        .lines()
+        .find_map(|line| line.strip_prefix(prefix))
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| ForgeError::VerusOutput {
+            detail: format!("codegen rustc -vV omitted `{prefix}`"),
+        })
+}
+
+fn rustc_cfg_value(cfg: &str, key: &str) -> Result<String, ForgeError> {
+    let prefix = format!("{key}=\"");
+    cfg.lines()
+        .find_map(|line| line.strip_prefix(&prefix)?.strip_suffix('"'))
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| ForgeError::VerusOutput {
+            detail: format!("codegen rustc cfg omitted `{key}`"),
+        })
+}
+
+fn component_manifest_largest(
+    manifest: &Path,
+    sysroot: &Path,
+    matches_name: impl Fn(&str) -> bool,
+    label: &str,
+) -> Result<PathBuf, ForgeError> {
+    let text = fs::read_to_string(manifest).map_err(|source| ForgeError::Io {
+        path: manifest.display().to_string(),
+        source,
+    })?;
+    let mut candidates = Vec::new();
+    for relative in text.lines().filter_map(|line| line.strip_prefix("file:")) {
+        let Some(name) = Path::new(relative)
+            .file_name()
+            .and_then(|name| name.to_str())
+        else {
+            continue;
+        };
+        if matches_name(name) {
+            let path = sysroot.join(relative);
+            let metadata = fs::metadata(&path).map_err(|source| ForgeError::Io {
+                path: path.display().to_string(),
+                source,
+            })?;
+            if metadata.is_file() {
+                candidates.push((metadata.len(), path));
+            }
+        }
+    }
+    candidates.sort_by(|left, right| left.1.cmp(&right.1));
+    candidates
+        .into_iter()
+        .max_by_key(|(length, _)| *length)
+        .map(|(_, path)| path)
+        .ok_or_else(|| ForgeError::VerusOutput {
+            detail: format!(
+                "Verus codegen rustc component manifest `{}` contains no {label}",
+                manifest.display()
+            ),
+        })
+}
+
+fn streamed_file_sha256(path: &Path) -> Result<(u64, String), ForgeError> {
+    let mut file = File::open(path).map_err(|source| ForgeError::Io {
+        path: path.display().to_string(),
+        source,
+    })?;
+    let mut hasher = Sha256::new();
+    let mut length = 0_u64;
+    let mut buffer = [0_u8; 128 * 1024];
+    loop {
+        let read = file.read(&mut buffer).map_err(|source| ForgeError::Io {
+            path: path.display().to_string(),
+            source,
+        })?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+        length = length.saturating_add(read as u64);
+    }
+    Ok((length, format!("{:x}", hasher.finalize())))
+}
+
+fn directory_sha256(root: &Path) -> Result<(u64, u64, String), ForgeError> {
+    fn collect(root: &Path, dir: &Path, files: &mut Vec<PathBuf>) -> Result<(), ForgeError> {
+        for entry in fs::read_dir(dir).map_err(|source| ForgeError::Io {
+            path: dir.display().to_string(),
+            source,
+        })? {
+            let entry = entry.map_err(|source| ForgeError::Io {
+                path: dir.display().to_string(),
+                source,
+            })?;
+            let path = entry.path();
+            let kind = entry.file_type().map_err(|source| ForgeError::Io {
+                path: path.display().to_string(),
+                source,
+            })?;
+            if kind.is_symlink() {
+                return Err(ForgeError::VerusOutput {
+                    detail: format!(
+                        "Verus codegen target libdir contains unsupported symlink `{}`",
+                        path.display()
+                    ),
+                });
+            }
+            if kind.is_dir() {
+                collect(root, &path, files)?;
+            } else if kind.is_file() {
+                path.strip_prefix(root)
+                    .map_err(|_| ForgeError::VerusOutput {
+                        detail: "target-lib path escaped its codegen root".to_string(),
+                    })?;
+                files.push(path);
+            }
+        }
+        Ok(())
+    }
+
+    let mut files = Vec::new();
+    collect(root, root, &mut files)?;
+    files.sort_by(|left, right| {
+        left.strip_prefix(root)
+            .unwrap_or(left)
+            .cmp(right.strip_prefix(root).unwrap_or(right))
+    });
+    let mut canonical = Canonical::new("thermite.codegen-target-libdir.v1");
+    let mut total_bytes = 0_u64;
+    for path in &files {
+        let relative = path
+            .strip_prefix(root)
+            .ok()
+            .and_then(Path::to_str)
+            .ok_or_else(|| ForgeError::VerusOutput {
+                detail: format!(
+                    "Verus codegen target lib path `{}` is not portable UTF-8",
+                    path.display()
+                ),
+            })?;
+        let (length, digest) = streamed_file_sha256(path)?;
+        total_bytes = total_bytes.saturating_add(length);
+        canonical.record("file", |c| {
+            c.field("path", relative);
+            c.field("length", &length.to_string());
+            c.field("sha256", &digest);
+        });
+    }
+    Ok((files.len() as u64, total_bytes, canonical.finish()))
+}
+
+fn validate_codegen_evidence(toolchain: &ToolchainEvidence) -> Result<(), String> {
+    let codegen = &toolchain.artifact_codegen;
+    let selected = parse_verus_toolchain(&toolchain.verus_version)
+        .map_err(|error| format!("cannot recover Verus Toolchain identity: {error}"))?;
+    if codegen.selection != "verus --version Toolchain" || codegen.rustup_toolchain != selected {
+        return Err(
+            "recorded rustup toolchain is not the authoritative Verus `Toolchain:` selection"
+                .to_string(),
+        );
+    }
+    let release = rustc_version_field(&codegen.rustc_version, "release: ")
+        .map_err(|error| error.to_string())?;
+    let commit = rustc_version_field(&codegen.rustc_version, "commit-hash: ")
+        .map_err(|error| error.to_string())?;
+    let host =
+        rustc_version_field(&codegen.rustc_version, "host: ").map_err(|error| error.to_string())?;
+    let llvm = rustc_version_field(&codegen.rustc_version, "LLVM version: ")
+        .map_err(|error| error.to_string())?;
+    if codegen.rustc_release != release
+        || codegen.rustc_commit_hash != commit
+        || codegen.target_triple != host
+        || codegen.llvm_version != llvm
+        || toolchain.target_triple != codegen.target_triple
+        || toolchain.target_pointer_width != codegen.target_pointer_width
+        || toolchain.target_endian != codegen.target_endian
+    {
+        return Err(
+            "recorded rustc/LLVM fields disagree with codegen rustc -vV or target facts"
+                .to_string(),
+        );
+    }
+    if !matches!(codegen.target_endian.as_str(), "little" | "big")
+        || !matches!(
+            codegen.target_pointer_width.as_str(),
+            "16" | "32" | "64" | "128"
+        )
+        || codegen.target_libdir_file_count == 0
+        || codegen.target_libdir_total_bytes == 0
+        || codegen.linker_identity != "rlib: no final linker invoked by artifact codegen"
+    {
+        return Err("recorded target-library or rlib-linker policy is invalid".to_string());
+    }
+    for (label, digest) in [
+        ("host rustc", toolchain.host_rustc.rustc_sha256.as_str()),
+        ("codegen rustc", codegen.rustc_sha256.as_str()),
+        (
+            "rustc component manifest",
+            codegen.rustc_component_manifest_sha256.as_str(),
+        ),
+        (
+            "rust-std component manifest",
+            codegen.rust_std_component_manifest_sha256.as_str(),
+        ),
+        ("rustc driver", codegen.rustc_driver_sha256.as_str()),
+        ("LLVM library", codegen.llvm_library_sha256.as_str()),
+        ("target library tree", codegen.target_libdir_sha256.as_str()),
+    ] {
+        if !is_sha256_digest(digest) {
+            return Err(format!("{label} has a malformed SHA-256 identity"));
+        }
+    }
+    if toolchain.host_rustc.rustc_version.is_empty() {
+        return Err("ambient host rustc evidence is empty".to_string());
+    }
+    let sysroot = Path::new(&codegen.sysroot);
+    if !sysroot.is_absolute()
+        || [
+            codegen.rustc_path.as_str(),
+            codegen.rustc_component_manifest_path.as_str(),
+            codegen.rust_std_component_manifest_path.as_str(),
+            codegen.rustc_driver_path.as_str(),
+            codegen.llvm_library_path.as_str(),
+            codegen.target_libdir.as_str(),
+        ]
+        .iter()
+        .any(|path| !Path::new(path).is_absolute() || !Path::new(path).starts_with(sysroot))
+    {
+        return Err("codegen compiler dependency path escapes its recorded sysroot".to_string());
+    }
+    Ok(())
+}
+
+fn is_sha256_digest(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 fn resolve_executable(
@@ -1966,6 +2463,7 @@ fn compile_verus_source(
     target: VerifiedTarget,
     verus_path: &str,
     environment: &BTreeMap<String, String>,
+    codegen_toolchain_sha256: &str,
 ) -> Result<CompiledVerus, ForgeError> {
     let scratch = ScratchTree::new_in_temp(&format!("verified_{crate_name}"))?;
     let source_name = format!("{crate_name}.rs");
@@ -2009,6 +2507,7 @@ fn compile_verus_source(
         source_relative_path: source_name,
         source_sha256_before: before,
         source_sha256_after: after,
+        codegen_toolchain_sha256: codegen_toolchain_sha256.to_string(),
         success,
         errors,
         stdout,
@@ -2721,12 +3220,22 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
         .parent()
         .map(|path| path.display().to_string())
         .unwrap_or_default();
+    validate_codegen_evidence(&toolchain).map_err(|detail| ForgeError::VerusOutput {
+        detail: format!("bound artifact-codegen toolchain is invalid: {detail}"),
+    })?;
     if toolchain.source_date_epoch != SOURCE_DATE_EPOCH
         || toolchain.forge_version != env!("CARGO_PKG_VERSION")
         || toolchain.target_triple != plan.target_triple
         || toolchain.target_pointer_width != plan.target_pointer_width
         || toolchain.target_endian != plan.target_endian
-        || environment_keys != BTreeSet::from(["HOME", "PATH", "RUSTUP_HOME", "SOURCE_DATE_EPOCH"])
+        || environment_keys
+            != BTreeSet::from([
+                "HOME",
+                "PATH",
+                "RUSTUP_HOME",
+                "RUSTUP_TOOLCHAIN",
+                "SOURCE_DATE_EPOCH",
+            ])
         || toolchain
             .environment
             .get("SOURCE_DATE_EPOCH")
@@ -2744,6 +3253,12 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
             .environment
             .get("RUSTUP_HOME")
             .is_none_or(String::is_empty)
+        || toolchain
+            .environment
+            .get("RUSTUP_TOOLCHAIN")
+            .map(String::as_str)
+            != Some(toolchain.artifact_codegen.rustup_toolchain.as_str())
+        || verus.codegen_toolchain_sha256 != toolchain.artifact_codegen.canonical_identity_sha256()
     {
         return Err(ForgeError::VerusOutput {
             detail: "bound toolchain policy or environment whitelist is invalid".to_string(),
@@ -2804,29 +3319,46 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
     }
 
     if replay {
-        let current_verus = resolve_executable(None, "verus")?;
+        let current_verus = resolve_executable(std::env::var_os("VERUS_BIN").as_deref(), "verus")?;
         let current_rustup = resolve_executable(None, "rustup")?;
-        if file_sha256(&current_verus)?.2 != toolchain.verus_sha256 {
+        let current_verus_version = command_text(
+            Command::new(&current_verus).arg("--version"),
+            "replay verus --version",
+        )?;
+        let current_codegen = collect_codegen_rustc(&current_verus_version, &current_rustup)?;
+        if file_sha256(&current_verus)?.2 != toolchain.verus_sha256
+            || current_verus_version != toolchain.verus_version
+            || !current_codegen.same_identity(&toolchain.artifact_codegen)
+        {
             return Err(ForgeError::VerusOutput {
-                detail: "replay Verus binary does not match the bound toolchain".to_string(),
+                detail: "replay Verus or its selected Rust/LLVM codegen closure does not match the bound toolchain"
+                    .to_string(),
             });
         }
         let current_forge = std::env::current_exe().map_err(|source| ForgeError::Io {
             path: "current forge executable".to_string(),
             source,
         })?;
+        let current_z3 = current_verus
+            .parent()
+            .ok_or_else(|| ForgeError::VerusOutput {
+                detail: "replay Verus binary has no installation directory".to_string(),
+            })?
+            .join("z3");
         if file_sha256(&current_forge)?.2 != toolchain.forge_executable_sha256
             || file_sha256(&current_rustup)?.2 != toolchain.rustup_sha256
             || command_text(
                 Command::new(&current_rustup).arg("--version"),
                 "rustup --version",
             )? != toolchain.rustup_version
-            || file_sha256(Path::new(&toolchain.z3_path))?.2 != toolchain.z3_sha256
-            || command_text(Command::new("rustc").arg("-vV"), "rustc -vV")?
-                != toolchain.rustc_version
+            || file_sha256(&current_z3)?.2 != toolchain.z3_sha256
+            || command_text(
+                Command::new(&current_z3).arg("--version"),
+                "replay z3 --version",
+            )? != toolchain.z3_version
         {
             return Err(ForgeError::VerusOutput {
-                detail: "replay Forge, rustc/LLVM, or Z3 does not match the bound toolchain"
+                detail: "replay Forge, rustup, or Z3 does not match the bound toolchain"
                     .to_string(),
             });
         }
@@ -2834,12 +3366,17 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
             .map_err(|error| ForgeError::VerusOutput {
                 detail: format!("bound Verus source is not UTF-8: {error}"),
             })?;
+        let replay_environment = closed_verus_environment(
+            &current_rustup,
+            &toolchain.artifact_codegen.rustup_toolchain,
+        )?;
         let compiled = compile_verus_source(
             &plan.crate_name,
             &source,
             plan.target,
             current_verus.to_string_lossy().as_ref(),
-            &toolchain.environment,
+            &replay_environment,
+            &current_codegen.canonical_identity_sha256(),
         )?;
         if !compiled.evidence.success || sha256(&compiled.artifact) != artifact.sha256 {
             return Err(ForgeError::VerusOutput {
@@ -2980,6 +3517,36 @@ mod tests {
         let parsed = thermite_syntax::parse(source);
         assert!(parsed.is_clean(), "{:?}", parsed.errors);
         parsed.program
+    }
+
+    fn sample_codegen(root: &str) -> CodegenRustcEvidence {
+        CodegenRustcEvidence {
+            selection: "verus --version Toolchain".to_string(),
+            rustup_toolchain: "1.95.0-x86_64-unknown-linux-gnu".to_string(),
+            rustc_path: format!("{root}/bin/rustc"),
+            rustc_sha256: "1".repeat(64),
+            rustc_version: "rustc 1.95.0\nbinary: rustc\ncommit-hash: abc\nrelease: 1.95.0\nhost: x86_64-unknown-linux-gnu\nLLVM version: 21.1.8".to_string(),
+            rustc_release: "1.95.0".to_string(),
+            rustc_commit_hash: "abc".to_string(),
+            sysroot: root.to_string(),
+            rustc_component_manifest_path: format!("{root}/lib/rustlib/manifest-rustc"),
+            rustc_component_manifest_sha256: "2".repeat(64),
+            rust_std_component_manifest_path: format!("{root}/lib/rustlib/manifest-rust-std"),
+            rust_std_component_manifest_sha256: "3".repeat(64),
+            rustc_driver_path: format!("{root}/lib/librustc_driver.so"),
+            rustc_driver_sha256: "4".repeat(64),
+            llvm_version: "21.1.8".to_string(),
+            llvm_library_path: format!("{root}/lib/libLLVM.so"),
+            llvm_library_sha256: "5".repeat(64),
+            target_triple: "x86_64-unknown-linux-gnu".to_string(),
+            target_pointer_width: "64".to_string(),
+            target_endian: "little".to_string(),
+            target_libdir: format!("{root}/lib/rustlib/x86_64-unknown-linux-gnu/lib"),
+            target_libdir_sha256: "6".repeat(64),
+            target_libdir_file_count: 62,
+            target_libdir_total_bytes: 166_568_014,
+            linker_identity: "rlib: no final linker invoked by artifact codegen".to_string(),
+        }
     }
 
     #[test]
@@ -3129,6 +3696,54 @@ mod tests {
                 _ => unreachable!(),
             }
             assert_ne!(digest, changed.canonical_sha256());
+        }
+    }
+
+    #[test]
+    fn verus_toolchain_parser_is_unique_safe_and_fail_closed() {
+        assert_eq!(
+            parse_verus_toolchain(
+                "Verus 0.2026.05.24\nToolchain: 1.95.0-x86_64-unknown-linux-gnu\n"
+            )
+            .unwrap(),
+            "1.95.0-x86_64-unknown-linux-gnu"
+        );
+        assert!(parse_verus_toolchain("Verus without a toolchain").is_err());
+        assert!(parse_verus_toolchain("Toolchain: ../nightly").is_err());
+        assert!(parse_verus_toolchain("Toolchain: stable\nToolchain: nightly").is_err());
+    }
+
+    #[test]
+    fn codegen_identity_ignores_install_prefix_and_binds_the_complete_closure() {
+        let base = sample_codegen("/first/sysroot");
+        let relocated = sample_codegen("/equivalent/prefix");
+        assert!(base.same_identity(&relocated));
+
+        let digest = base.canonical_identity_sha256();
+        for field in 0..18 {
+            let mut changed = base.clone();
+            match field {
+                0 => changed.selection.push_str(" changed"),
+                1 => changed.rustup_toolchain.push_str("-other"),
+                2 => changed.rustc_sha256 = "9".repeat(64),
+                3 => changed.rustc_version.push_str("\nchanged"),
+                4 => changed.rustc_release.push_str("-changed"),
+                5 => changed.rustc_commit_hash.push_str("changed"),
+                6 => changed.rustc_component_manifest_sha256 = "9".repeat(64),
+                7 => changed.rust_std_component_manifest_sha256 = "9".repeat(64),
+                8 => changed.rustc_driver_sha256 = "9".repeat(64),
+                9 => changed.llvm_version.push_str("-changed"),
+                10 => changed.llvm_library_sha256 = "9".repeat(64),
+                11 => changed.target_triple.push_str("-changed"),
+                12 => changed.target_pointer_width = "32".to_string(),
+                13 => changed.target_endian = "big".to_string(),
+                14 => changed.target_libdir_sha256 = "9".repeat(64),
+                15 => changed.target_libdir_file_count += 1,
+                16 => changed.target_libdir_total_bytes += 1,
+                17 => changed.linker_identity.push_str(" changed"),
+                _ => unreachable!(),
+            }
+            assert_ne!(digest, changed.canonical_identity_sha256(), "field {field}");
         }
     }
 }

@@ -3,9 +3,9 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: 8c6e9d22497dae609190eaaad5f5238ff94d071b87f850f588ba9a8d6b958427
+audited-content-sha256: 280a3b9586a3a2b915982ea107ecd9f6a1ec2c8dfe95e7068541b3f54a0489cc
 decision: Option A — compile the canonical Verus executable body that was verified
-issue: github:dollspace-gay/Thermite#101
+issue: github:dollspace-gay/Thermite#101, github:dollspace-gay/Thermite#103
 governs:
   - forge/src/verified_build.rs (new)
   - forge/src/build.rs
@@ -101,6 +101,13 @@ validators, closure planner and emitter, Verus and its erasure/codegen bridge,
 rustc/LLVM, Z3, the selected target libraries, and any pinned vstd components.
 Thermite `#[boundary]` and `#[slag]` bodies are not added to that trust base for
 this mode: reaching either is a build rejection.
+
+The host Rust selection and the artifact code generator are separate trust
+domains. The former is the `rustc` selected by the invoking shell and is
+recorded only as diagnostic provenance. The latter is the rustup toolchain
+named by the pinned Verus distribution's authoritative `Toolchain:` line; its
+compiler, sysroot, target libraries, driver and LLVM closure are assurance
+inputs. Host provenance must never stand in for artifact-codegen evidence.
 
 ## User surface
 
@@ -315,6 +322,38 @@ verification and code generation. If a future Verus integration exposes
 post-erasure Rust/MIR/LLVM material, Forge records its digest as additional
 codegen evidence; it does not make a second compilation from that material.
 
+### Authoritative codegen toolchain binding
+
+Forge obtains the artifact compiler selection from the pinned Verus binary,
+not from ambient `rustc`, `rust-toolchain.toml`, or rustup's current default.
+`verus --version` must contain exactly one nonempty `Toolchain:` field. Forge
+resolves that name with `rustup which --toolchain <name> rustc`, then runs all
+compiler queries through `rustup run <name> rustc`. A missing, ambiguous or
+unresolvable selection is a hard build failure.
+
+`CodegenRustcEvidence` records and canonically binds:
+
+- the Verus-selected rustup toolchain name;
+- rustc's executable digest, full verbose version, release and commit;
+- the sysroot and the digests of its rustc and rust-std component manifests;
+- the rustc driver and LLVM library digests plus LLVM version;
+- target triple, pointer width, endian, linker identity, and a canonical digest
+  of every file in the selected target library directory.
+
+Install paths remain human-readable provenance but are excluded from the
+path-independent codegen identity. File contents, version identities, target
+facts and tree-relative target-library names are included. This permits replay
+from an equivalent installation prefix without weakening compiler identity.
+The closed Verus environment explicitly sets `RUSTUP_TOOLCHAIN` to this bound
+selection, so both build and replay use the receipt-declared ABI domain.
+
+`HostRustcEvidence` separately records the ambient rustc path, digest and
+version for diagnosis. It does not contribute to selection, compatibility or
+replay equivalence. A downstream Rust consumer is compatible only when it uses
+the artifact-codegen compiler recorded by the receipt; a different ambient
+compiler is expected to reject the rlib metadata rather than being treated as
+an interchangeable consumer.
+
 ## Exports and ABI
 
 ### Explicit exports
@@ -499,7 +538,10 @@ verification:
 toolchain:
   Forge version and source identity
   Verus version/source identity
-  rustc and LLVM identity
+  authoritative Verus-selected rustup toolchain
+  artifact rustc, sysroot, component manifests, rustc driver and LLVM identity
+  target-library tree digest and linker identity
+  ambient host rustc as non-authoritative diagnostic provenance
   Z3 identity
   vstd/dependency lock digest
   target triple, data layout, crate options and ordered arguments
@@ -527,10 +569,15 @@ changing the correspondence claim.
 3. rejects missing, extra-path, traversal or symlink escapes;
 4. rehashes every referenced file and the artifact;
 5. recomputes the ABI fingerprints and closure/plan consistency checks;
-6. confirms the recorded policy contains every mandatory strict gate.
+6. confirms the recorded policy contains every mandatory strict gate;
+7. verifies the semantic relations inside the codegen record, including that
+   Verus's `Toolchain:` field names the recorded artifact compiler closure.
 
 `--replay` recreates the private compile input from the bound plan/source,
-reruns the exact pinned Verus command, and compares the new artifact digest.
+resolves the current pinned Verus binary's authoritative codegen selection,
+requires its path-independent identity to match the receipt, explicitly selects
+that toolchain, reruns the exact pinned Verus command, and compares the new
+artifact digest. The ambient host compiler is neither selected nor compared.
 If the pinned tools are unavailable, replay fails as unavailable; it never
 reports structural hash validation as proof replay.
 
@@ -599,6 +646,10 @@ must not print a successful artifact path before the rename completes.
 - **REQ-L3BUILD-13 (L1 separation).** The current `lower_l1` build and its
   runtime checks remain available only as an honest L1 artifact path and cannot
   satisfy, seed or substitute for the final L3 proof-and-compile step.
+- **REQ-L3BUILD-14 (authoritative codegen toolchain).** Forge binds the
+  rustc/sysroot/target-library/rustc-driver/LLVM closure selected by the pinned
+  Verus distribution, distinguishes it from ambient host rustc provenance, and
+  explicitly selects the bound closure for build, replay and ABI consumers.
 
 ## Acceptance criteria
 
@@ -649,6 +700,16 @@ must not print a successful artifact path before the rename completes.
 - **AC-15 (reproducible replay).** Two builds under the same pinned inputs have
   identical canonical source, plan, receipt binding and artifact digests;
   `forge verify-build --replay` reproduces the artifact digest.
+- **AC-16 (ambient mismatch isolation).** With an incompatible rustc selected
+  in the shell, hosted and kernel builds still record and use Verus's pinned
+  codegen rustc, replay succeeds, and repeat builds remain reproducible.
+- **AC-17 (declared consumer ABI).** A separate consumer compiled with the
+  receipt-declared codegen rustc links each hosted and kernel artifact, while
+  the intentionally incompatible ambient compiler fails with an rlib metadata
+  version error.
+- **AC-18 (codegen closure tampering).** Mutating the recorded codegen
+  selection or any compiler, sysroot, component-manifest, driver, LLVM, target
+  or target-library identity causes structural validation or replay to fail.
 
 ## Verification matrix
 
@@ -661,6 +722,7 @@ must not print a successful artifact path before the rename completes.
 | Contract/exec/body/loop TV completeness | phase-specific positive and refusal fixtures |
 | Export wrapper proof and behavior | real Verus compile plus downstream Rust consumer |
 | Receipt canonicalization/tampering | field-by-field mutation/property tests |
+| Verus codegen binding and Rust ABI | ambient-mismatch hosted/kernel builds, receipt-declared consumers and incompatible-consumer rejection |
 | Atomic publication and cleanup | injected-stage failure integration tests |
 | Kernel linkability | separate real `no_std` final-link harness |
 | L1 non-regression | existing `build_conformance` and `kernel_target` suites |
@@ -693,6 +755,10 @@ present. No intermediate increment emitted an artifact labeled L3.
 6. **Kernel and adversarial gate.** Add the final-link harness, mutation seams,
    tampering matrix, known L1/L3 divergence regressions and full non-regression
    gauntlet. Expose `--level l3` only when this gate is green.
+7. **Codegen-toolchain closure.** Split ambient host provenance from the
+   authoritative Verus-selected codegen closure, bind every compiler and target
+   input, select it explicitly during replay, and exercise both matching and
+   incompatible downstream consumers.
 
 ## Resolved design questions
 
@@ -710,6 +776,9 @@ present. No intermediate increment emitted an artifact labeled L3.
 - **Is the Rust ABI globally stable?** No. v1 pins the exact Rust toolchain and
   records an ABI fingerprint. A portable C ABI is a separate verified-wrapper
   design.
+- **Which rustc does the receipt pin?** The rustc selected by pinned Verus's
+  authoritative `Toolchain:` field. Ambient rustc is diagnostic provenance
+  only and cannot authorize build, replay or consumption.
 - **What does Forge publish on a failed build?** Nothing at the requested
   destination.
 
@@ -725,6 +794,7 @@ Source: `.design/reqs/registry.toml`
 | REQ-L3BUILD-11 | shipped | `.design/build/l3-verified-artifact.md` | Freestanding kernel linkability |  |
 | REQ-L3BUILD-12 | shipped | `.design/build/l3-verified-artifact.md` | Post-freeze mutation and tampering rejection |  |
 | REQ-L3BUILD-13 | shipped | `.design/build/l3-verified-artifact.md` | Strict separation from the L1 build |  |
+| REQ-L3BUILD-14 | shipped | `.design/build/l3-verified-artifact.md` | Authoritative Verus codegen-toolchain binding |  |
 | REQ-L3BUILD-2 | shipped | `.design/build/l3-verified-artifact.md` | Frozen canonical artifact plan |  |
 | REQ-L3BUILD-3 | shipped | `.design/build/l3-verified-artifact.md` | Strict end-to-end reachable closure |  |
 | REQ-L3BUILD-4 | shipped | `.design/build/l3-verified-artifact.md` | Compile the exact verified source |  |

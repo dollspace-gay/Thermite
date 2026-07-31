@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: e0f599b064f97c6a2dc919c25087c088cd101390afaa3ea19441f8933a280f61 (re-pinned 2026-07-31 after additive rich-state composition lowering; boundary composition remains regression-covered)
+audited-content-sha256: 3c215866a861f612febff722f0d67817916ed8f8912e65b4ce8dd5768193e349 (re-pinned 2026-07-31 after deterministic composition-enum lowering; boundary composition remains regression-covered)
 governs: thermite-lower/src/lower.rs, forge/src/check.rs
 thesis-refs:
   - thermite-design.md §9

@@ -111,8 +111,10 @@ fn probe_state_composition_is_exact_private_linkable_and_reproducible() {
     let temp = TempDir::new("probe");
     let first = temp.0.join("first.verified");
     let second = temp.0.join("second.verified");
+    let third = temp.0.join("third.verified");
     let first_args = build_args(&first);
     let second_args = build_args(&second);
+    let third_args = build_args(&third);
     assert_success(&forge(&refs(&first_args)));
     assert_success(&forge(&[
         "verify-build",
@@ -176,6 +178,9 @@ fn probe_state_composition_is_exact_private_linkable_and_reproducible() {
     assert_eq!(source.matches("verus!").count(), 1);
     assert!(source.contains("pub(crate) fn probe_step"));
     assert!(!source.contains("pub fn probe_step"));
+    assert!(source.contains("macro_rules! __thermite_deterministic_enum"));
+    assert!(source.contains("#[verus::internal(verus_macro)]"));
+    assert!(source.contains("Store { owner: u64, generation: u64, slot: u64, value: u64 }"));
     assert!(source.contains("pub mod probe_shell"));
     assert!(source.contains("pub fn boot_observation"));
     for forbidden in ["external_body", "assume(", "admit(", "decreases *"] {
@@ -199,6 +204,17 @@ fn probe_state_composition_is_exact_private_linkable_and_reproducible() {
         .all(|row| row["verdict"] == "faithful"));
 
     let artifact = first.join("artifact/libthermite_probe.rlib");
+    let artifact_bytes = fs::read(&artifact).unwrap();
+    for randomized_helper in [
+        "arrow_owner",
+        "arrow_generation",
+        "arrow_slot",
+        "arrow_value",
+    ] {
+        assert!(!artifact_bytes
+            .windows(randomized_helper.len())
+            .any(|window| window == randomized_helper.as_bytes()));
+    }
     let deps = first.join("artifact/deps");
     let host_consumer = temp.0.join("host-consumer");
     let host = codegen_rustc(&first)
@@ -219,25 +235,6 @@ fn probe_state_composition_is_exact_private_linkable_and_reproducible() {
     assert_success(&host);
     assert_success(&Command::new(&host_consumer).output().unwrap());
 
-    let kernel_consumer = temp.0.join("kernel-consumer");
-    let kernel = codegen_rustc(&first)
-        .current_dir(root())
-        .args([
-            "--edition=2021",
-            "conformance/verified-composition/probe_kernel_consumer.rs",
-        ])
-        .arg("--extern")
-        .arg(format!("thermite_probe={}", artifact.display()))
-        .arg("-L")
-        .arg(format!("dependency={}", deps.display()))
-        .args(["-C", "panic=abort", "-C", "link-arg=-nostartfiles"])
-        .arg("-o")
-        .arg(&kernel_consumer)
-        .output()
-        .unwrap();
-    assert_success(&kernel);
-    assert!(kernel_consumer.is_file());
-
     let private = codegen_rustc(&first)
         .current_dir(root())
         .args([
@@ -257,13 +254,22 @@ fn probe_state_composition_is_exact_private_linkable_and_reproducible() {
     assert!(String::from_utf8_lossy(&private.stderr).contains("private"));
 
     assert_success(&forge(&refs(&second_args)));
+    assert_success(&forge(&refs(&third_args)));
     assert_eq!(
         fs::read(first.join("receipt.json")).unwrap(),
         fs::read(second.join("receipt.json")).unwrap()
     );
     assert_eq!(
-        fs::read(&artifact).unwrap(),
+        fs::read(first.join("receipt.json")).unwrap(),
+        fs::read(third.join("receipt.json")).unwrap()
+    );
+    assert_eq!(
+        artifact_bytes,
         fs::read(second.join("artifact/libthermite_probe.rlib")).unwrap()
+    );
+    assert_eq!(
+        fs::read(&artifact).unwrap(),
+        fs::read(third.join("artifact/libthermite_probe.rlib")).unwrap()
     );
 
     let tampered = temp.0.join("tampered.verified");

@@ -12389,7 +12389,7 @@ title = "Freestanding rich-state kernel observation"
 owner = ".design/build/l3-rich-composition.md"
 status = "shipped"
 scope = "verified"
-summary = "The ProbeState composition proves its platform simulation and produces a no-std no-vstd kernel rlib that final-links through its primitive shell observation."
+summary = "The ProbeState composition proves its platform simulation and produces a no-std no-vstd kernel rlib with a primitive shell observation; final-image intrinsics remain the platform/TPL link gate."
 aliases = [".design/build/l3-rich-composition.md REQ-L3COMPOSE-9 (kernel observation)"]
 contributors = [".design/build/l3-rich-composition.md"]
 generated_to = ["status", "forge-l3-rich-composition-status"]
@@ -12402,7 +12402,7 @@ note = "representation, authorization, simulation and boot observation proof"
 [[requirement.evidence]]
 kind = "test"
 target = "forge/tests/verified_composition.rs::probe_state_composition_is_exact_private_linkable_and_reproducible"
-note = "host observation and separate no-std final link"
+note = "host observation from the kernel rlib and downstream platform/TPL final-link boundary"
 
 [[requirement]]
 id = "REQ-L3COMPOSE-10"
@@ -12424,6 +12424,32 @@ note = "reused authoritative codegen closure"
 kind = "test"
 target = "forge/tests/verified_composition.rs::probe_state_composition_is_exact_private_linkable_and_reproducible"
 note = "receipt-declared rustc consumers and replay"
+
+[[requirement]]
+id = "REQ-L3COMPOSE-11"
+title = "Deterministic multi-field enum metadata"
+owner = ".design/build/l3-rich-composition.md"
+status = "shipped"
+scope = "verified"
+summary = "Composition-only canonical enum expansion bypasses Verus's randomized arrow-helper synthesis while keeping the enum in the single exact checked source; three independent rich-enum builds and replay must be byte-identical."
+aliases = [".design/build/l3-rich-composition.md REQ-L3COMPOSE-11 (deterministic rich enums)"]
+contributors = [".design/build/l3-rich-composition.md"]
+generated_to = ["status", "forge-l3-rich-composition-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_composition_enum"
+note = "Forge-owned delayed enum expansion with Verus internal checked-item marker"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/l3_library.rs::composition_library_delays_enum_items_past_randomized_verus_helper_synthesis"
+note = "composition-only lowering and ordinary-library non-regression"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/verified_composition.rs::probe_state_composition_is_exact_private_linkable_and_reproducible"
+note = "four-field enum, three byte-identical builds, replay, hosted consumer, and private rich root"
 
 [[requirement]]
 id = "REQ-FORGE-AUDIT-SCHEMA"

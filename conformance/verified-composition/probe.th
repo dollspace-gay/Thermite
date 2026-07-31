@@ -10,7 +10,7 @@ enum ProbeEvent {
 }
 
 enum ProbeAction {
-  Record(u64),
+  Store { owner: u64, generation: u64, slot: u64, value: u64 },
   Noop,
 }
 
@@ -20,12 +20,16 @@ fn probe_step(state: ProbeState, event: ProbeEvent) -> (ProbeState, ProbeAction)
   ens result.0.generation == state.generation + 1
   ens result.0.payload.len() == state.payload.len()
   ens match event {
-    ProbeEvent::Tick(value) => match result.1 {
-      ProbeAction::Record(observed) => observed == value,
+    ProbeEvent::Tick(expected) => match result.1 {
+      ProbeAction::Store { owner, generation, slot, value } =>
+        owner == state.owner &&
+        generation == state.generation + 1 &&
+        slot == state.generation &&
+        value == expected,
       ProbeAction::Noop => false,
     },
     ProbeEvent::Idle => match result.1 {
-      ProbeAction::Record(observed) => false,
+      ProbeAction::Store { owner, generation, slot, value } => false,
       ProbeAction::Noop => true,
     },
   }
@@ -38,7 +42,12 @@ fn probe_step(state: ProbeState, event: ProbeEvent) -> (ProbeState, ProbeAction)
         generation: state.generation + 1,
         payload: state.payload,
       },
-      ProbeAction::Record(value),
+      ProbeAction::Store {
+        owner: state.owner,
+        generation: state.generation + 1,
+        slot: state.generation,
+        value: value,
+      },
     ),
     ProbeEvent::Idle => (
       ProbeState {

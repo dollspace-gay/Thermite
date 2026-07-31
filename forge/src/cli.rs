@@ -343,6 +343,8 @@ enum Command {
         file: PathBuf,
         level: BuildLevel,
         exports: Vec<String>,
+        composition_exports: Vec<String>,
+        composition_shells: Vec<PathBuf>,
         crate_name: Option<String>,
         entry: Option<String>,
         json: bool,
@@ -903,6 +905,8 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
             let mut target = BuildTarget::Std;
             let mut level = BuildLevel::L1;
             let mut exports = Vec::new();
+            let mut composition_exports = Vec::new();
+            let mut composition_shells = Vec::new();
             let mut crate_name = None;
             let mut sandbox_flag_seen = false;
             let mut iter = iter.peekable();
@@ -930,6 +934,22 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                             ForgeError::Usage("`--export` requires a <fn> value".to_string())
                         })?;
                         exports.push(value.to_string());
+                    }
+                    "--compose-export" => {
+                        let value = iter.next().ok_or_else(|| {
+                            ForgeError::Usage(
+                                "`--compose-export` requires a <fn> value".to_string(),
+                            )
+                        })?;
+                        composition_exports.push(value.to_string());
+                    }
+                    "--compose-shell" => {
+                        let value = iter.next().ok_or_else(|| {
+                            ForgeError::Usage(
+                                "`--compose-shell` requires a <file.rs> value".to_string(),
+                            )
+                        })?;
+                        composition_shells.push(PathBuf::from(value));
                     }
                     "--crate-name" => {
                         let value = iter.next().ok_or_else(|| {
@@ -1022,16 +1042,29 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                                 .to_string(),
                         ));
                     }
-                    if exports.is_empty() {
+                    if exports.is_empty() && composition_exports.is_empty() {
                         return Err(ForgeError::Usage(
-                            "`forge build --level l3` requires at least one `--export <fn>`"
+                            "`forge build --level l3` requires a link or composition export"
+                                .to_string(),
+                        ));
+                    }
+                    if composition_exports.is_empty() != composition_shells.is_empty() {
+                        return Err(ForgeError::Usage(
+                            "composition builds require both `--compose-export <fn>` and \
+                             `--compose-shell <file.rs>`"
                                 .to_string(),
                         ));
                     }
                 }
-                BuildLevel::L1 if !exports.is_empty() || crate_name.is_some() => {
+                BuildLevel::L1
+                    if !exports.is_empty()
+                        || !composition_exports.is_empty()
+                        || !composition_shells.is_empty()
+                        || crate_name.is_some() =>
+                {
                     return Err(ForgeError::Usage(
-                        "`--export` and `--crate-name` require `--level l3`".to_string(),
+                        "L3 export, composition, and crate-name flags require `--level l3`"
+                            .to_string(),
                     ));
                 }
                 BuildLevel::L1 => {}
@@ -1040,6 +1073,8 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                 file,
                 level,
                 exports,
+                composition_exports,
+                composition_shells,
                 crate_name,
                 entry,
                 json,
@@ -1675,6 +1710,8 @@ fn dispatch(args: &[String]) -> Result<ExitCode, ForgeError> {
             file,
             level,
             exports,
+            composition_exports,
+            composition_shells,
             crate_name,
             entry,
             json,
@@ -1685,6 +1722,8 @@ fn dispatch(args: &[String]) -> Result<ExitCode, ForgeError> {
             file: &file,
             level,
             exports: &exports,
+            composition_exports: &composition_exports,
+            composition_shells: &composition_shells,
             crate_name: crate_name.as_deref(),
             entry: entry.as_deref(),
             json,
@@ -2379,6 +2418,8 @@ struct BuildRun<'a> {
     file: &'a Path,
     level: BuildLevel,
     exports: &'a [String],
+    composition_exports: &'a [String],
+    composition_shells: &'a [PathBuf],
     crate_name: Option<&'a str>,
     entry: Option<&'a str>,
     json: bool,
@@ -2392,6 +2433,8 @@ fn run_build(request: BuildRun<'_>) -> Result<ExitCode, ForgeError> {
         file,
         level,
         exports,
+        composition_exports,
+        composition_shells,
         crate_name,
         entry,
         json,
@@ -2417,7 +2460,20 @@ fn run_build(request: BuildRun<'_>) -> Result<ExitCode, ForgeError> {
         BuildTarget::Std => crate::verified_build::VerifiedTarget::Std,
         BuildTarget::Kernel => crate::verified_build::VerifiedTarget::Kernel,
     };
-    match crate::verified_build::build_file(file, exports, crate_name, out, verified_target)? {
+    let outcome = if composition_exports.is_empty() {
+        crate::verified_build::build_file(file, exports, crate_name, out, verified_target)?
+    } else {
+        crate::verified_build::build_composition_file(
+            file,
+            exports,
+            composition_exports,
+            composition_shells,
+            crate_name,
+            out,
+            verified_target,
+        )?
+    };
+    match outcome {
         crate::verified_build::VerifiedBuildOutcome::Built { bundle, receipt } => {
             if json {
                 println!(
@@ -3850,6 +3906,8 @@ mod tests {
                 file: PathBuf::from("a.th"),
                 level: BuildLevel::L1,
                 exports: Vec::new(),
+                composition_exports: Vec::new(),
+                composition_shells: Vec::new(),
                 crate_name: None,
                 entry: Some("f".to_string()),
                 json: false,
@@ -3989,6 +4047,8 @@ mod tests {
                 file: PathBuf::from("a.th"),
                 level: BuildLevel::L3,
                 exports: vec!["f".to_string(), "g".to_string()],
+                composition_exports: Vec::new(),
+                composition_shells: Vec::new(),
                 crate_name: Some("verified_a".to_string()),
                 entry: None,
                 json: true,
@@ -4005,6 +4065,69 @@ mod tests {
                 json: true,
             })
         );
+    }
+
+    #[test]
+    fn parses_rich_state_composition_build_surface() {
+        assert_eq!(
+            parse_args(&argv(&[
+                "build",
+                "probe.th",
+                "--level",
+                "l3",
+                "--compose-export",
+                "probe_step",
+                "--compose-shell",
+                "probe_shell.rs",
+                "--target",
+                "kernel",
+            ]))
+            .ok(),
+            Some(Command::Build {
+                file: PathBuf::from("probe.th"),
+                level: BuildLevel::L3,
+                exports: Vec::new(),
+                composition_exports: vec!["probe_step".to_string()],
+                composition_shells: vec![PathBuf::from("probe_shell.rs")],
+                crate_name: None,
+                entry: None,
+                json: false,
+                sandbox: build::SandboxConfig::default(),
+                out: None,
+                target: BuildTarget::Kernel,
+            })
+        );
+        for args in [
+            vec![
+                "build",
+                "probe.th",
+                "--level",
+                "l3",
+                "--compose-export",
+                "probe_step",
+            ],
+            vec![
+                "build",
+                "probe.th",
+                "--level",
+                "l3",
+                "--compose-shell",
+                "probe_shell.rs",
+            ],
+            vec![
+                "build",
+                "probe.th",
+                "--compose-export",
+                "probe_step",
+                "--compose-shell",
+                "probe_shell.rs",
+            ],
+        ] {
+            assert!(matches!(
+                parse_args(&argv(&args)),
+                Err(ForgeError::Usage(_))
+            ));
+        }
     }
 
     #[test]

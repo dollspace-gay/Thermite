@@ -247,6 +247,32 @@ pub struct L3Export {
     pub source_name: String,
     pub public_name: String,
     pub wrapped: bool,
+    pub visibility: L3ExportVisibility,
+}
+
+/// Visibility of an explicitly selected L3 entry point.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum L3ExportVisibility {
+    /// A standalone Rust link export recorded in the artifact ABI.
+    Public,
+    /// A rich typed entry point callable only by a same-crate Verus shell.
+    Crate,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum L3FnVisibility {
+    Private,
+    Public,
+    Crate,
+}
+
+impl From<L3ExportVisibility> for L3FnVisibility {
+    fn from(value: L3ExportVisibility) -> Self {
+        match value {
+            L3ExportVisibility::Public => Self::Public,
+            L3ExportVisibility::Crate => Self::Crate,
+        }
+    }
 }
 
 /// The codegen profile for an L3 verified library. Both profiles are rlibs;
@@ -692,8 +718,8 @@ fn lower_with_profile(
             out.push_str("#![no_std]\n");
         }
         out.push_str("#![crate_type = \"rlib\"]\n");
-        if matches!(target, L3LibraryTarget::Kernel) && program_needs_alloc(program) {
-            out.push_str("extern crate alloc;\n");
+        if matches!(target, L3LibraryTarget::Kernel) && program_needs_kernel_alloc(program) {
+            out.push_str("extern crate alloc;\nuse alloc::vec::Vec;\n");
         }
     }
     if matches!(
@@ -720,14 +746,18 @@ fn lower_with_profile(
     out.push_str(&scheme_defs);
 
     // (1c) Basis Stage 4 (`.design/basis/04-collections.md` REQ-5): the
-    // bounded-`Vec` wrapper struct + its verified `len`/`spec_get`/`get`/`push`
-    // impl, materialized once per element type the program uses (a `Vec<u64>`
-    // param/return → `TVecU64`), before any fn references it. Empty when the
-    // program uses no `Vec` (byte-stable for the existing corpus — no regression).
-    // The grounded `BVec`-over-`vstd::vec::Vec<u64>` form (verus `verified, 0
-    // errors`): the `well_formed` capacity invariant, the no-OOB `get`, the
-    // capacity-preserving `push` with the `final(self)` &mut postcondition.
-    let vec_wrappers = emit_vec_wrappers(program)?;
+    // bounded-`Vec` wrapper struct, materialized once per element type the program
+    // uses (a `Vec<u64>` param/return -> `TVecU64`), before any fn references it.
+    // Hosted output emits the grounded vstd-backed implementation with verified
+    // element operations. The `--no-vstd` kernel target emits only an
+    // allocation-free bounded-length representation; unavailable element
+    // operations consequently fail closed during whole-crate verification.
+    // Empty when the program uses no `Vec` (byte-stable for the existing corpus).
+    let kernel_minimal_collections = matches!(
+        library.as_ref().map(|(_, target)| target),
+        Some(L3LibraryTarget::Kernel)
+    );
+    let vec_wrappers = emit_vec_wrappers(program, kernel_minimal_collections)?;
     out.push_str(&vec_wrappers);
 
     // (1c.5) Cluster C12 (`.design/basis/13-map.md` REQ-4): the bounded verified
@@ -987,7 +1017,7 @@ fn lower_with_profile(
                         variants: &variants,
                         spec_fn_param_types: &spec_fn_param_types,
                     },
-                    false,
+                    L3FnVisibility::Private,
                 )?
             }
             Item::Fn(f) => {
@@ -1014,7 +1044,9 @@ fn lower_with_profile(
                     library
                         .as_ref()
                         .and_then(|(exports, _)| exports.get(f.name.as_str()))
-                        .is_some_and(|export| !export.wrapped),
+                        .filter(|export| !export.wrapped)
+                        .map(|export| export.visibility.into())
+                        .unwrap_or(L3FnVisibility::Private),
                 )?
             }
             // Basis Stage 1c (`.design/basis/01-adts.md` REQ-8/REQ-10): a
@@ -1072,42 +1104,57 @@ fn lower_with_profile(
     Ok(out)
 }
 
-fn program_needs_alloc(program: &Program) -> bool {
+fn program_needs_kernel_alloc(program: &Program) -> bool {
     program.items.iter().any(|item| match item {
         Item::Fn(function) => {
-            function.params.iter().any(|param| type_needs_alloc(&param.ty))
-                || type_needs_alloc(&function.ret)
-                || matches!(
-                    &function.contract.fx,
-                    thermite_syntax::EffectRow::Set(effects)
-                        if effects.iter().any(|effect| matches!(effect, thermite_syntax::Effect::Alloc))
-                )
+            matches!(
+                &function.contract.fx,
+                thermite_syntax::ast::EffectRow::Set(effects)
+                    if effects.iter().any(|effect| matches!(
+                        effect,
+                        thermite_syntax::ast::Effect::Alloc
+                    ))
+            ) || function
+                .params
+                .iter()
+                .any(|param| type_needs_kernel_alloc(&param.ty))
+                || type_needs_kernel_alloc(&function.ret)
         }
         Item::SpecFn(function) => {
-            function.params.iter().any(|param| type_needs_alloc(&param.ty))
-                || type_needs_alloc(&function.ret)
+            function
+                .params
+                .iter()
+                .any(|param| type_needs_kernel_alloc(&param.ty))
+                || type_needs_kernel_alloc(&function.ret)
         }
-        Item::Struct(item) => item.fields.iter().any(|field| type_needs_alloc(&field.ty)),
+        Item::Struct(item) => item
+            .fields
+            .iter()
+            .any(|field| type_needs_kernel_alloc(&field.ty)),
         Item::Enum(item) => item.variants.iter().any(|variant| match &variant.shape {
             VariantShape::Unit => false,
-            VariantShape::Tuple(types) => types.iter().any(type_needs_alloc),
-            VariantShape::Struct(fields) => {
-                fields.iter().any(|field| type_needs_alloc(&field.ty))
-            }
+            VariantShape::Tuple(types) => types.iter().any(type_needs_kernel_alloc),
+            VariantShape::Struct(fields) => fields
+                .iter()
+                .any(|field| type_needs_kernel_alloc(&field.ty)),
         }),
         Item::Forge(_) => false,
     })
 }
 
-fn type_needs_alloc(ty: &Type) -> bool {
+fn type_needs_kernel_alloc(ty: &Type) -> bool {
     match ty {
-        Type::Box(_) | Type::Vec(_) | Type::String | Type::Map(_, _) => true,
+        Type::Box(_) | Type::String | Type::Map(_, _) => true,
+        // The no-vstd kernel composition representation for `Vec<T>` carries
+        // only its bounded length. It is allocation-free; element operations
+        // are deliberately absent and therefore fail verification.
+        Type::Vec(inner) => type_needs_kernel_alloc(inner),
         Type::Ref { inner, .. }
         | Type::Slice(inner)
         | Type::Generic { arg: inner, .. }
-        | Type::Option(inner) => type_needs_alloc(inner),
-        Type::Result(ok, err) => type_needs_alloc(ok) || type_needs_alloc(err),
-        Type::Tuple(types) => types.iter().any(type_needs_alloc),
+        | Type::Option(inner) => type_needs_kernel_alloc(inner),
+        Type::Result(ok, err) => type_needs_kernel_alloc(ok) || type_needs_kernel_alloc(err),
+        Type::Tuple(types) => types.iter().any(type_needs_kernel_alloc),
         Type::Prim(_) | Type::Unit | Type::Named(_) => false,
     }
 }
@@ -2855,7 +2902,7 @@ fn lower_fn(
     string_fields: &[&str],
     user_string_spec_fns: &[&str],
     call_context: &CallLoweringContext<'_>,
-    public: bool,
+    visibility: L3FnVisibility,
 ) -> Result<String, LowerError> {
     let variants = call_context.variants;
     let spec_fn_param_types = call_context.spec_fn_param_types;
@@ -2901,7 +2948,7 @@ fn lower_fn(
         string_fields,
         user_string_spec_fns,
         spec_fn_param_types,
-        public,
+        visibility,
     )?);
     // `fx pure` emits no annotation (Verus `fn` is pure by default; §4.1).
 
@@ -2951,12 +2998,14 @@ fn lower_fn_signature(
     string_fields: &[&str],
     user_string_spec_fns: &[&str],
     spec_fn_param_types: &[(&str, &[PrimType])],
-    public: bool,
+    visibility: L3FnVisibility,
 ) -> Result<String, LowerError> {
     let mut out = String::new();
     let ret = lower_type(&f.ret)?;
-    if public {
-        out.push_str("pub ");
+    match visibility {
+        L3FnVisibility::Private => {}
+        L3FnVisibility::Public => out.push_str("pub "),
+        L3FnVisibility::Crate => out.push_str("pub(crate) "),
     }
     write!(out, "fn {}(", f.name).ok();
     emit_params(&mut out, &f.params, Pos::Exec)?;
@@ -3338,7 +3387,11 @@ fn lower_external_body_fn(
         string_fields,
         user_string_spec_fns,
         spec_fn_param_types,
-        public,
+        if public {
+            L3FnVisibility::Public
+        } else {
+            L3FnVisibility::Private
+        },
     )?);
     // The body is suppressed: verus does not check an external_body body, so the
     // synthetic `{ unimplemented!() }` stands in for the foreign/fiat body the
@@ -4886,15 +4939,42 @@ fn note_stmt_vec_elems(stmt: &Stmt, elems: &mut Vec<Type>) {
 /// are the Thermite-level additions threaded over vstd's verified `Vec::push`/
 /// `Vec::index`/`Vec::len` (which carry the heap proof). No `assume`/`external_body`
 /// (R-DEFER-9; the broken unguarded forms fail verus, the non-vacuity proof).
-fn emit_vec_wrappers(program: &Program) -> Result<String, LowerError> {
+fn emit_vec_wrappers(program: &Program, kernel_minimal: bool) -> Result<String, LowerError> {
     let elems = collect_vec_elem_types(program);
     if elems.is_empty() {
         return Ok(String::new());
     }
     let mut out = String::new();
     for elem in &elems {
-        out.push_str(&emit_one_vec_wrapper(elem)?);
+        out.push_str(&if kernel_minimal {
+            emit_one_kernel_vec_wrapper(elem)?
+        } else {
+            emit_one_vec_wrapper(elem)?
+        });
     }
+    Ok(out)
+}
+
+/// The `--no-vstd` kernel profile cannot use vstd's `View` model for
+/// `alloc::vec::Vec`. It nevertheless supports moving an owned bounded
+/// collection through rich-state composition and reasoning about its length.
+/// Operations that need element views (`get`/`push`/`insert`/...) remain absent
+/// and therefore fail closed at whole-crate verification instead of acquiring
+/// an unproved kernel implementation.
+fn emit_one_kernel_vec_wrapper(elem: &Type) -> Result<String, LowerError> {
+    let name = tvec_name(elem)?;
+    let _ = lower_type(elem)?;
+    let mut out = String::new();
+    out.push('\n');
+    writeln!(out, "pub struct {name} {{ pub length: usize }}").ok();
+    writeln!(out, "impl {name} {{").ok();
+    writeln!(
+        out,
+        "    pub open spec fn well_formed(&self) -> bool {{ self.length <= {VEC_CAP} }}"
+    )
+    .ok();
+    out.push_str("    pub open spec fn len(&self) -> nat { self.length as nat }\n");
+    out.push_str("}\n");
     Ok(out)
 }
 

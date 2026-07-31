@@ -3,7 +3,7 @@
 tier: 3-component
 status: draft
 audited-sha: 92396428567edc6940a9e2845217f5ff4c2ea3c6 (re-pinned 2026-06-16, user-authorized: the only change to this doc's governed files since the prior pin is the additive stage-1 forge-tier increment 2a — the new Item::Forge surface + inert Item::Forge match arms, verified net-additive with no substantive removal of existing v1 logic (git log <main>..HEAD = the 8 forge commits); the v1 behavior this doc governs is unchanged, and the new forge-tier surface is specified in .design/stage1-forge-tier.md / REQ-S1-3)
-audited-content-sha256: 65855f241fe7f0de161d123d8994527802d6c1379286340cb508e838ab929fe0 (re-pinned 2026-07-31 after additive export-aware L3 library lowering; collection behavior remains covered by the workspace regression suite)
+audited-content-sha256: d03c2d47bbfdaf1935b5135f945c8d38ef85d28f6637481264bb881a087329ab (re-pinned 2026-07-31 for hosted and no-vstd rich-state composition collection profiles)
 governs: thermite-syntax/src/ast.rs
 governs: thermite-syntax/src/parser.rs
 governs: thermite-spec/src/validator.rs
@@ -95,6 +95,16 @@ WITHOUT changing the surface contract or any user `.th` code, exactly because th
 contract is backing-agnostic (the §6/§9 "the contract is the interface" property).
 OQ-1 below records the certificate/golden-stability consequence; OQ-3 the Map
 first-cut depth.
+
+**Kernel composition refinement (#104).** The hosted profile keeps the complete
+vstd-backed representation and operation set. The `--no-vstd` kernel
+composition profile cannot soundly import vstd (its pinned artifact depends on
+`std`), so a rich-state `Vec<T>` transported across the in-crate shell boundary
+uses an allocation-free bounded-length representation. It exposes only
+`well_formed` and `len`; element observation or mutation is absent and therefore
+fails whole-crate verification. This is a deliberately smaller observable
+subset for freestanding composition, not a replacement for the hosted Stage-4
+implementation or an unchecked allocator shim.
 
 ## Requirements
 

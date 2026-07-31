@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use thermite_lower::{L3Export, L3LibraryTarget};
+use thermite_lower::{L3Export, L3ExportVisibility, L3LibraryTarget};
 use thermite_syntax::{
     Block, Effect, EffectRow, Expr, ForgeItem, Item, PrimType, Program, Stmt, Type,
 };
@@ -28,8 +28,12 @@ use crate::contract_tv::{ClauseVerdict, TvReport};
 use crate::exec_tv::{ExecTvReport, ExecVerdict};
 use crate::manifest::{AssuranceScope, Certificate, Level, ObligationStatus};
 
+mod composition;
+
 const PLAN_SCHEMA: &str = "thermite.artifact-plan.v1";
 const RECEIPT_SCHEMA: &str = "thermite.verified-build-receipt.v1";
+const COMPOSITION_PLAN_SCHEMA: &str = "thermite.combined-artifact-plan.v1";
+const COMPOSITION_RECEIPT_SCHEMA: &str = "thermite.verified-composition-receipt.v1";
 const SOURCE_DATE_EPOCH: &str = "0";
 const STRICT_GATES: &[&str] = &[
     "parse-spec-effects",
@@ -42,6 +46,24 @@ const STRICT_GATES: &[&str] = &[
     "exec-tv-complete",
     "body-loop-tv-complete",
     "total-export-wrappers",
+    "whole-crate-no-cheating",
+    "verus-codegen",
+    "cryptographic-binding",
+];
+const COMPOSITION_STRICT_GATES: &[&str] = &[
+    "parse-spec-effects",
+    "complete-end-to-end-closure",
+    "source-completeness",
+    "no-escape-hatches",
+    "termination",
+    "l3-function-certificates",
+    "contract-tv-complete",
+    "exec-tv-complete",
+    "body-loop-tv-complete",
+    "total-export-wrappers",
+    "rich-composition-visibility",
+    "direct-verus-source-policy",
+    "combined-source-inventory",
     "whole-crate-no-cheating",
     "verus-codegen",
     "cryptographic-binding",
@@ -100,6 +122,93 @@ pub struct PlannedItemDisposition {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlannedCompositionExport {
+    pub thermite_name: String,
+    pub semantic_address: String,
+    pub signature: String,
+    pub parameter_types: Vec<String>,
+    pub ownership: Vec<String>,
+    pub return_type: String,
+    pub type_closure: Vec<String>,
+    pub visibility: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlannedShellItem {
+    pub name: String,
+    pub kind: String,
+    pub visibility: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlannedShellModule {
+    pub name: String,
+    pub path: String,
+    pub length: u64,
+    pub sha256: String,
+    pub items: Vec<PlannedShellItem>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CompositionInventoryRow {
+    pub origin: String,
+    pub name: String,
+    pub kind: String,
+    pub visibility: String,
+    pub sha256: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CompositionPlanV1 {
+    pub schema: String,
+    pub composition_exports: Vec<PlannedCompositionExport>,
+    pub shell_modules: Vec<PlannedShellModule>,
+    pub inventory: Vec<CompositionInventoryRow>,
+    pub lowered_thermite_sha256: String,
+    pub combined_source_sha256: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DirectVerusSource {
+    plan: PlannedShellModule,
+    bytes: Vec<u8>,
+}
+
+fn canonical_shell_set_sha256(modules: &[PlannedShellModule]) -> String {
+    let mut c = Canonical::new("thermite.direct-verus-source-set.v1");
+    for module in modules {
+        c.record("module", |c| {
+            c.field("name", &module.name);
+            c.field("path", &module.path);
+            c.field("length", &module.length.to_string());
+            c.field("sha256", &module.sha256);
+            for item in &module.items {
+                c.record("item", |c| {
+                    c.field("name", &item.name);
+                    c.field("kind", &item.kind);
+                    c.field("visibility", &item.visibility);
+                });
+            }
+        });
+    }
+    c.finish()
+}
+
+fn canonical_composition_inventory_sha256(rows: &[CompositionInventoryRow]) -> String {
+    let mut c = Canonical::new("thermite.composition-inventory.v1");
+    for row in rows {
+        c.record("item", |c| {
+            c.field("origin", &row.origin);
+            c.field("name", &row.name);
+            c.field("kind", &row.kind);
+            c.field("visibility", &row.visibility);
+            c.field("sha256", &row.sha256);
+        });
+    }
+    c.finish()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ArtifactPlanV1 {
     pub schema: String,
     pub raw_source_sha256: String,
@@ -119,11 +228,13 @@ pub struct ArtifactPlanV1 {
     pub strict_gates: Vec<String>,
     pub expected_tv_inventory: Vec<PlannedTvGate>,
     pub expected_verus_source_sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub composition: Option<CompositionPlanV1>,
 }
 
 impl ArtifactPlanV1 {
     pub fn canonical_sha256(&self) -> String {
-        let mut c = Canonical::new(PLAN_SCHEMA);
+        let mut c = Canonical::new(&self.schema);
         c.field("raw_source_sha256", &self.raw_source_sha256);
         c.field("parsed_program_sha256", &self.parsed_program_sha256);
         c.field("crate_name", &self.crate_name);
@@ -218,6 +329,61 @@ impl ArtifactPlanV1 {
             "expected_verus_source_sha256",
             &self.expected_verus_source_sha256,
         );
+        if let Some(composition) = &self.composition {
+            c.record("composition", |c| {
+                c.field("schema", &composition.schema);
+                c.field(
+                    "lowered_thermite_sha256",
+                    &composition.lowered_thermite_sha256,
+                );
+                c.field(
+                    "combined_source_sha256",
+                    &composition.combined_source_sha256,
+                );
+                for export in &composition.composition_exports {
+                    c.record("export", |c| {
+                        c.field("thermite_name", &export.thermite_name);
+                        c.field("semantic_address", &export.semantic_address);
+                        c.field("signature", &export.signature);
+                        for ty in &export.parameter_types {
+                            c.field("parameter_type", ty);
+                        }
+                        for ownership in &export.ownership {
+                            c.field("ownership", ownership);
+                        }
+                        c.field("return_type", &export.return_type);
+                        for ty in &export.type_closure {
+                            c.field("type", ty);
+                        }
+                        c.field("visibility", &export.visibility);
+                    });
+                }
+                for module in &composition.shell_modules {
+                    c.record("shell", |c| {
+                        c.field("name", &module.name);
+                        c.field("path", &module.path);
+                        c.field("length", &module.length.to_string());
+                        c.field("sha256", &module.sha256);
+                        for item in &module.items {
+                            c.record("item", |c| {
+                                c.field("name", &item.name);
+                                c.field("kind", &item.kind);
+                                c.field("visibility", &item.visibility);
+                            });
+                        }
+                    });
+                }
+                for item in &composition.inventory {
+                    c.record("inventory", |c| {
+                        c.field("origin", &item.origin);
+                        c.field("name", &item.name);
+                        c.field("kind", &item.kind);
+                        c.field("visibility", &item.visibility);
+                        c.field("sha256", &item.sha256);
+                    });
+                }
+            });
+        }
         c.finish()
     }
 }
@@ -419,11 +585,21 @@ pub struct ReceiptBindingV1 {
     pub exports: Vec<PlannedExport>,
     pub strict_gates: Vec<String>,
     pub files: Vec<BoundFile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub composition: Option<CompositionReceiptBindingV1>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CompositionReceiptBindingV1 {
+    pub lowered_thermite_sha256: String,
+    pub direct_verus_set_sha256: String,
+    pub inventory_sha256: String,
+    pub combined_source_sha256: String,
 }
 
 impl ReceiptBindingV1 {
     pub fn canonical_sha256(&self) -> String {
-        let mut c = Canonical::new(RECEIPT_SCHEMA);
+        let mut c = Canonical::new(&self.schema);
         c.field("assurance", &self.assurance);
         c.field("scope", &self.scope);
         c.field("plan_sha256", &self.plan_sha256);
@@ -493,6 +669,23 @@ impl ReceiptBindingV1 {
                 c.field("path", &file.path);
                 c.field("length", &file.length.to_string());
                 c.field("sha256", &file.sha256);
+            });
+        }
+        if let Some(composition) = &self.composition {
+            c.record("composition", |c| {
+                c.field(
+                    "lowered_thermite_sha256",
+                    &composition.lowered_thermite_sha256,
+                );
+                c.field(
+                    "direct_verus_set_sha256",
+                    &composition.direct_verus_set_sha256,
+                );
+                c.field("inventory_sha256", &composition.inventory_sha256);
+                c.field(
+                    "combined_source_sha256",
+                    &composition.combined_source_sha256,
+                );
             });
         }
         c.finish()
@@ -718,6 +911,7 @@ pub fn build_file(
             source_name: export.thermite_name.clone(),
             public_name: export.public_name.clone(),
             wrapped: export.wrapped,
+            visibility: L3ExportVisibility::Public,
         })
         .collect();
     let lower_target = match target {
@@ -850,12 +1044,35 @@ pub fn build_file(
         tv: &tv,
         compiled: &compiled,
         toolchain: &toolchain,
+        composition: None,
     })?;
 
     Ok(VerifiedBuildOutcome::Built {
         bundle: destination,
         receipt: Box::new(receipt),
     })
+}
+
+/// Build one exact-source L3 crate containing canonical Thermite lowering and
+/// one or more closed direct-Verus shell modules.
+pub fn build_composition_file(
+    path: &Path,
+    link_exports: &[String],
+    composition_exports: &[String],
+    shell_paths: &[PathBuf],
+    crate_name: Option<&str>,
+    out: Option<&Path>,
+    target: VerifiedTarget,
+) -> Result<VerifiedBuildOutcome, ForgeError> {
+    composition::build_file(
+        path,
+        link_exports,
+        composition_exports,
+        shell_paths,
+        crate_name,
+        out,
+        target,
+    )
 }
 
 fn valid_crate_name(name: &str) -> bool {
@@ -1319,6 +1536,7 @@ fn make_plan(input: PlanInput<'_>) -> ArtifactPlanV1 {
             .collect(),
         expected_tv_inventory,
         expected_verus_source_sha256: sha256(verus_source.as_bytes()),
+        composition: None,
     }
 }
 
@@ -1463,27 +1681,27 @@ fn inject_certificate_fault(certificates: &mut Vec<Certificate>) {
             certificates.clear();
         }
         "certificate-l1" => {
-            if let Some(certificate) = certificates.first_mut() {
+            for certificate in certificates.iter_mut() {
                 certificate.level = Level::L1;
             }
         }
         "certificate-l2" => {
-            if let Some(certificate) = certificates.first_mut() {
+            for certificate in certificates.iter_mut() {
                 certificate.level = Level::L2;
             }
         }
         "certificate-timeout" => {
-            if let Some(certificate) = certificates.first_mut() {
+            for certificate in certificates.iter_mut() {
                 certificate.lowered_assurance = true;
             }
         }
         "certificate-counterexample" => {
-            if let Some(certificate) = certificates.first_mut() {
+            for certificate in certificates.iter_mut() {
                 certificate.level = Level::L0;
             }
         }
         "certificate-rejected" => {
-            if let Some(certificate) = certificates.first_mut() {
+            for certificate in certificates.iter_mut() {
                 certificate.reject = Some(crate::manifest::RejectReason {
                     cause: "InjectedReject".to_string(),
                     detail: "controlled rejected certificate".to_string(),
@@ -1491,12 +1709,11 @@ fn inject_certificate_fault(certificates: &mut Vec<Certificate>) {
             }
         }
         "certificate-failed-obligation" => {
-            if let Some(obligation) = certificates
-                .first_mut()
-                .and_then(|certificate| certificate.obligations.first_mut())
-            {
-                obligation.status = ObligationStatus::Failed;
-                obligation.diagnostic = Some("controlled failed obligation".to_string());
+            for certificate in certificates.iter_mut() {
+                if let Some(obligation) = certificate.obligations.first_mut() {
+                    obligation.status = ObligationStatus::Failed;
+                    obligation.diagnostic = Some("controlled failed obligation".to_string());
+                }
             }
         }
         _ => {}
@@ -2636,6 +2853,12 @@ struct StageInput<'a> {
     tv: &'a TranslationValidationEvidence,
     compiled: &'a CompiledVerus,
     toolchain: &'a ToolchainEvidence,
+    composition: Option<CompositionStageInput<'a>>,
+}
+
+struct CompositionStageInput<'a> {
+    lowered_thermite: &'a str,
+    shell_sources: &'a [DirectVerusSource],
 }
 
 fn stage_and_publish(input: StageInput<'_>) -> Result<VerifiedBuildReceiptV1, ForgeError> {
@@ -2651,6 +2874,7 @@ fn stage_and_publish(input: StageInput<'_>) -> Result<VerifiedBuildReceiptV1, Fo
         tv,
         compiled,
         toolchain,
+        composition,
     } = input;
     let parent = destination.parent().unwrap_or(Path::new("."));
     fs::create_dir_all(parent).map_err(|source| ForgeError::Io {
@@ -2688,6 +2912,20 @@ fn stage_and_publish(input: StageInput<'_>) -> Result<VerifiedBuildReceiptV1, Fo
     write_bytes(&evidence.join("input.th"), raw_source)?;
     write_bytes(&evidence.join("artifact-plan.v1"), plan_json.as_bytes())?;
     write_bytes(&evidence.join("source.verus.rs"), verus_source.as_bytes())?;
+    if let Some(composition) = &composition {
+        let shell_dir = evidence.join("direct-verus");
+        fs::create_dir_all(&shell_dir).map_err(|source| ForgeError::Io {
+            path: shell_dir.display().to_string(),
+            source,
+        })?;
+        write_bytes(
+            &evidence.join("lowered-thermite.verus.rs"),
+            composition.lowered_thermite.as_bytes(),
+        )?;
+        for shell in composition.shell_sources {
+            write_bytes(&stage.path.join(&shell.plan.path), &shell.bytes)?;
+        }
+    }
     write_bytes(&evidence.join("certificates.json"), cert_json.as_bytes())?;
     write_bytes(
         &evidence.join("translation-validation.json"),
@@ -2741,11 +2979,7 @@ fn stage_and_publish(input: StageInput<'_>) -> Result<VerifiedBuildReceiptV1, Fo
     let assurance_aggregate = assurance_aggregate(
         certificates,
         &VerifiedClosure {
-            roots: plan
-                .exports
-                .iter()
-                .map(|export| export.thermite_name.clone())
-                .collect(),
+            roots: plan_roots(plan),
             functions: plan
                 .closure_nodes
                 .iter()
@@ -2782,8 +3016,22 @@ fn stage_and_publish(input: StageInput<'_>) -> Result<VerifiedBuildReceiptV1, Fo
         bytes.push(b' ');
         write_bytes(&path, &bytes)?;
     }
+    let receipt_schema = if plan.composition.is_some() {
+        COMPOSITION_RECEIPT_SCHEMA
+    } else {
+        RECEIPT_SCHEMA
+    };
+    let composition_binding =
+        plan.composition
+            .as_ref()
+            .map(|composition| CompositionReceiptBindingV1 {
+                lowered_thermite_sha256: composition.lowered_thermite_sha256.clone(),
+                direct_verus_set_sha256: canonical_shell_set_sha256(&composition.shell_modules),
+                inventory_sha256: canonical_composition_inventory_sha256(&composition.inventory),
+                combined_source_sha256: composition.combined_source_sha256.clone(),
+            });
     let binding = ReceiptBindingV1 {
-        schema: RECEIPT_SCHEMA.to_string(),
+        schema: receipt_schema.to_string(),
         assurance: "L3".to_string(),
         scope: "end_to_end".to_string(),
         plan_sha256: plan_sha256.to_string(),
@@ -2801,9 +3049,10 @@ fn stage_and_publish(input: StageInput<'_>) -> Result<VerifiedBuildReceiptV1, Fo
         exports: plan.exports.clone(),
         strict_gates: plan.strict_gates.clone(),
         files,
+        composition: composition_binding,
     };
     let receipt = VerifiedBuildReceiptV1 {
-        schema: RECEIPT_SCHEMA.to_string(),
+        schema: receipt_schema.to_string(),
         binding_sha256: binding.canonical_sha256(),
         binding,
     };
@@ -2823,6 +3072,25 @@ fn stage_and_publish(input: StageInput<'_>) -> Result<VerifiedBuildReceiptV1, Fo
     stage.disarm();
     sync_dir(parent)?;
     Ok(receipt)
+}
+
+fn plan_roots(plan: &ArtifactPlanV1) -> Vec<String> {
+    let mut roots: Vec<String> = plan
+        .exports
+        .iter()
+        .map(|export| export.thermite_name.clone())
+        .collect();
+    if let Some(composition) = &plan.composition {
+        roots.extend(
+            composition
+                .composition_exports
+                .iter()
+                .map(|export| export.thermite_name.clone()),
+        );
+    }
+    roots.sort();
+    roots.dedup();
+    roots
 }
 
 fn pretty_json<T: Serialize>(value: &T, label: &str) -> Result<String, ForgeError> {
@@ -2920,7 +3188,11 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
         serde_json::from_slice(&receipt_bytes).map_err(|error| ForgeError::VerusOutput {
             detail: format!("invalid verified-build receipt: {error}"),
         })?;
-    if receipt.schema != RECEIPT_SCHEMA || receipt.binding.schema != RECEIPT_SCHEMA {
+    let composition_receipt = receipt.schema == COMPOSITION_RECEIPT_SCHEMA
+        && receipt.binding.schema == COMPOSITION_RECEIPT_SCHEMA;
+    let ordinary_receipt =
+        receipt.schema == RECEIPT_SCHEMA && receipt.binding.schema == RECEIPT_SCHEMA;
+    if !ordinary_receipt && !composition_receipt {
         return Err(ForgeError::VerusOutput {
             detail: format!(
                 "unsupported verified-build receipt schema `{}`",
@@ -2933,7 +3205,12 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
             detail: "verified-build binding digest mismatch".to_string(),
         });
     }
-    let mandatory: Vec<String> = STRICT_GATES
+    let mandatory_policy = if composition_receipt {
+        COMPOSITION_STRICT_GATES
+    } else {
+        STRICT_GATES
+    };
+    let mandatory: Vec<String> = mandatory_policy
         .iter()
         .map(|gate| (*gate).to_string())
         .collect();
@@ -2988,7 +3265,13 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
                 detail: format!("invalid bound ArtifactPlanV1: {error}"),
             }
         })?;
-    if plan.schema != PLAN_SCHEMA || plan.canonical_sha256() != receipt.binding.plan_sha256 {
+    let expected_plan_schema = if composition_receipt {
+        COMPOSITION_PLAN_SCHEMA
+    } else {
+        PLAN_SCHEMA
+    };
+    if plan.schema != expected_plan_schema || plan.canonical_sha256() != receipt.binding.plan_sha256
+    {
         return Err(ForgeError::VerusOutput {
             detail: "bound ArtifactPlanV1 failed its canonical digest".to_string(),
         });
@@ -3001,6 +3284,29 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
         return Err(ForgeError::VerusOutput {
             detail: "receipt binding disagrees with its bound ArtifactPlanV1".to_string(),
         });
+    }
+    match (&plan.composition, &receipt.binding.composition) {
+        (None, None) if !composition_receipt => {}
+        (Some(composition), Some(binding)) if composition_receipt => {
+            if binding.lowered_thermite_sha256 != composition.lowered_thermite_sha256
+                || binding.direct_verus_set_sha256
+                    != canonical_shell_set_sha256(&composition.shell_modules)
+                || binding.inventory_sha256
+                    != canonical_composition_inventory_sha256(&composition.inventory)
+                || binding.combined_source_sha256 != composition.combined_source_sha256
+                || composition.combined_source_sha256 != plan.expected_verus_source_sha256
+            {
+                return Err(ForgeError::VerusOutput {
+                    detail: "composition receipt binding disagrees with its combined artifact plan"
+                        .to_string(),
+                });
+            }
+        }
+        _ => {
+            return Err(ForgeError::VerusOutput {
+                detail: "receipt schema and composition binding disagree".to_string(),
+            })
+        }
     }
     if receipt.binding.assurance != "L3"
         || receipt.binding.scope != "end_to_end"
@@ -3042,11 +3348,12 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
             detail: "bound parsed-program digest disagrees with ArtifactPlanV1".to_string(),
         });
     }
-    let roots: Vec<String> = plan
+    let link_roots: Vec<String> = plan
         .exports
         .iter()
         .map(|export| export.thermite_name.clone())
         .collect();
+    let roots = plan_roots(&plan);
     let closure = closure::verified_closure(&parsed.program, &roots).map_err(|error| {
         ForgeError::VerusOutput {
             detail: format!("bound closure is incomplete: {error}"),
@@ -3059,7 +3366,7 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
     }
     let exports = plan_exports(
         &parsed.program,
-        &roots,
+        &link_roots,
         &plan.crate_name,
         plan.target,
         &plan.target_triple,
@@ -3076,21 +3383,54 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
         });
     }
     let subprogram = closure_program(&parsed.program, &closure);
-    let lower_exports: Vec<L3Export> = exports
-        .iter()
-        .map(|export| L3Export {
-            source_name: export.thermite_name.clone(),
-            public_name: export.public_name.clone(),
-            wrapped: export.wrapped,
-        })
-        .collect();
-    let lower_target = match plan.target {
-        VerifiedTarget::Std => L3LibraryTarget::Std,
-        VerifiedTarget::Kernel => L3LibraryTarget::Kernel,
-    };
-    let independently_emitted =
-        thermite_lower::lower_l3_library(&subprogram, &lower_exports, lower_target)
+    let (independently_emitted, reconstructed_plan) = if composition_receipt {
+        let (reconstructed, lowered, combined, reconstructed_closure, reconstructed_exports) =
+            composition::reconstruct_plan(&parsed.program, &raw_source, &plan, bundle)?;
+        let lowered_bytes = file_sha256(&bundle.join("evidence/lowered-thermite.verus.rs"))?.1;
+        if lowered.as_bytes() != lowered_bytes
+            || plan.composition.as_ref().is_none_or(|composition| {
+                sha256(&lowered_bytes) != composition.lowered_thermite_sha256
+            })
+            || reconstructed_closure != closure
+            || reconstructed_exports != exports
+        {
+            return Err(ForgeError::VerusOutput {
+                detail: "bound Thermite lowering or composition closure failed independent reconstruction"
+                    .to_string(),
+            });
+        }
+        (combined, reconstructed)
+    } else {
+        let lower_exports: Vec<L3Export> = exports
+            .iter()
+            .map(|export| L3Export {
+                source_name: export.thermite_name.clone(),
+                public_name: export.public_name.clone(),
+                wrapped: export.wrapped,
+                visibility: L3ExportVisibility::Public,
+            })
+            .collect();
+        let lower_target = match plan.target {
+            VerifiedTarget::Std => L3LibraryTarget::Std,
+            VerifiedTarget::Kernel => L3LibraryTarget::Kernel,
+        };
+        let emitted = thermite_lower::lower_l3_library(&subprogram, &lower_exports, lower_target)
             .map_err(ForgeError::Lower)?;
+        let reconstructed = make_plan(PlanInput {
+            raw_source: &raw_source,
+            program: &parsed.program,
+            selected_program: &subprogram,
+            closure: &closure,
+            exports: &exports,
+            crate_name: &plan.crate_name,
+            target: plan.target,
+            target_triple: &plan.target_triple,
+            target_pointer_width: &plan.target_pointer_width,
+            target_endian: &plan.target_endian,
+            verus_source: &emitted,
+        });
+        (emitted, reconstructed)
+    };
     let bound_verus_source = String::from_utf8(
         file_sha256(&bundle.join("evidence/source.verus.rs"))?.1,
     )
@@ -3107,19 +3447,6 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
                     .to_string(),
         });
     }
-    let reconstructed_plan = make_plan(PlanInput {
-        raw_source: &raw_source,
-        program: &parsed.program,
-        selected_program: &subprogram,
-        closure: &closure,
-        exports: &exports,
-        crate_name: &plan.crate_name,
-        target: plan.target,
-        target_triple: &plan.target_triple,
-        target_pointer_width: &plan.target_pointer_width,
-        target_endian: &plan.target_endian,
-        verus_source: &independently_emitted,
-    });
     if reconstructed_plan != plan {
         return Err(ForgeError::VerusOutput {
             detail: "ArtifactPlanV1 does not equal the independently reconstructed frozen plan"
@@ -3570,6 +3897,7 @@ mod tests {
             strict_gates: STRICT_GATES.iter().map(|s| (*s).to_string()).collect(),
             expected_tv_inventory: Vec::new(),
             expected_verus_source_sha256: "c".repeat(64),
+            composition: None,
         };
         let compact = serde_json::to_string(&plan).unwrap();
         let pretty = serde_json::to_string_pretty(&plan).unwrap();
@@ -3677,6 +4005,7 @@ mod tests {
             exports: Vec::new(),
             strict_gates: STRICT_GATES.iter().map(|s| (*s).to_string()).collect(),
             files: Vec::new(),
+            composition: None,
         };
         let digest = base.canonical_sha256();
         for field in 0..11 {

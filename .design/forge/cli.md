@@ -4,7 +4,7 @@
 tier: 3-component
 status: shipped
 audited-sha: 5ae0816c042debb01c70eb9b89c775837f0c0f24 (content-sha256 re-pinned 2026-06-23 for stage-3 REQ-7 / AC-8 (#349), the automated Rust→Lean obligation exporter: the change to this doc's governed file (cli.rs) is the additive `forge smt-export [<file>] [--out <path>]` subcommand (`Command::SmtExport` → `run_smt_export`, emitting the `(P_prod) ⟺ (P_ref)` `by smt` Lean theorems + `#print axioms` probes via `lean_smt_export.rs`); every other subcommand + flag parse is unchanged. The legacy commit pin stays at the 5ae0816c stable-main ancestor; only the active content-sha256 digest moves. prior: 2026-06-21 stage-2 REQ-8 / AC-8 (#330) `forge strat-faithful-tv`; 2026-06-20 stage-2 REQ-4 / AC-4 (#326) `forge strat-tv` + `ForgeError::StratDifferential`; 2026-06-18 umbrella REQ-2c / AC-4 rotating-seed `--seed` flag on `forge tv`; §6 metrics dashboard `--metrics` value)
-audited-content-sha256: 5aba507bc05df6fae84ed2774695a281ed52c414b2acd089c66363163e9c42a1 (re-pinned 2026-07-31 for the additive `build --level l3` and `verify-build` commands; existing CLI behavior remains regression-covered)
+audited-content-sha256: 205e522694bee77cc4a74f4ea737c23f7a0df91865f55b3d4287bb54fa016caf (re-pinned 2026-07-31 for paired exact-source composition flags; existing CLI behavior remains regression-covered)
 governs: forge/src/cli.rs
 thesis-refs:
   - thermite-design.md §5
@@ -54,7 +54,10 @@ What the old doc never saw, grouped (each verb cites its issue in the code):
   `forge review` + `--reviewer <cmd>` (#19).
 - **Build + sandbox** — `forge build` + `rustc` artifacts (#56), the seccomp
   runtime sandbox + `--no-sandbox`/`--sandbox-self-test` (#57), `--out`/`-o`
-  (#128), `--target std|kernel` (#197).
+  (#128), `--target std|kernel` (#197), correspondence-backed `--level l3`
+  bundles (#101/#103), and paired repeatable `--compose-export <fn>` /
+  `--compose-shell <file.rs>` exact-source rich-state composition (#104).
+  `forge verify-build <bundle> [--replay]` validates either versioned L3 receipt.
 - **Translation validation** — `forge tv` (#144), `forge exec-tv` (#154/#156),
   `forge body-tv` (#162).
 - **Goal REPL** — `forge goal`/`battery` views + `edit` address-splice (#193

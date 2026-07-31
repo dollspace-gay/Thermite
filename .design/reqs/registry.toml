@@ -740,6 +740,14 @@ region = "forge-l3-verified-build-status"
 title = "Forge L3 Verified Build Canonical Status References"
 
 [[view]]
+name = "forge-l3-rich-composition-status"
+path = ".design/build/l3-rich-composition.md"
+kind = "reference_list"
+mode = "region"
+region = "forge-l3-rich-composition-status"
+title = "Forge L3 Rich Composition Canonical Status References"
+
+[[view]]
 name = "forge-audit-status"
 path = "forge/src/audit.rs"
 kind = "reference_list"
@@ -12201,6 +12209,221 @@ note = "ambient mismatch, declared consumer, incompatible consumer, replay, tamp
 kind = "test"
 target = "forge/tests/verified_build.rs::kernel_bundle_final_links_into_a_separate_no_std_consumer"
 note = "kernel ambient-mismatch build and receipt-declared no-std consumer"
+
+[[requirement]]
+id = "REQ-L3COMPOSE-1"
+title = "Explicit rich-state composition surface"
+owner = ".design/build/l3-rich-composition.md"
+status = "shipped"
+scope = "forge"
+summary = "Repeated compose-export and compose-shell flags select an additive L3 composition build while ordinary L1 and L3 behavior stays distinct."
+aliases = [".design/build/l3-rich-composition.md REQ-L3COMPOSE-1 (composition CLI)"]
+contributors = [".design/build/l3-rich-composition.md"]
+generated_to = ["status", "forge-l3-rich-composition-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "build_composition_file"
+note = "composition build dispatch"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge::cli::tests::parses_rich_state_composition_build_surface"
+note = "paired repeatable composition flag parsing"
+
+[[requirement]]
+id = "REQ-L3COMPOSE-2"
+title = "Separated link and composition visibility"
+owner = ".design/build/l3-rich-composition.md"
+status = "shipped"
+scope = "verified"
+summary = "Primitive link exports remain public while rich composition functions are crate-visible and inaccessible to downstream crates."
+aliases = [".design/build/l3-rich-composition.md REQ-L3COMPOSE-2 (visibility tiers)"]
+contributors = [".design/build/l3-rich-composition.md"]
+generated_to = ["status", "forge-l3-rich-composition-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "L3ExportVisibility"
+note = "public versus crate-visible lowering tier"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/verified_composition.rs::probe_state_composition_is_exact_private_linkable_and_reproducible"
+note = "pub(crate) source pin and external privacy rejection"
+
+[[requirement]]
+id = "REQ-L3COMPOSE-3"
+title = "Complete rich closure and type inventory"
+owner = ".design/build/l3-rich-composition.md"
+status = "shipped"
+scope = "forge"
+summary = "The combined plan binds the union executable/specification closure plus recursively closed ADT, tuple, reference, collection, helper, wrapper and caller inventory."
+aliases = [".design/build/l3-rich-composition.md REQ-L3COMPOSE-3 (rich closure inventory)"]
+contributors = [".design/build/l3-rich-composition.md"]
+generated_to = ["status", "forge-l3-rich-composition-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "CompositionPlanV1"
+note = "composition exports, type closure, shells and inventory"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/verified_composition.rs::probe_state_composition_is_exact_private_linkable_and_reproducible"
+note = "ProbeState ADT/tuple/Vec closure acceptance"
+
+[[requirement]]
+id = "REQ-L3COMPOSE-4"
+title = "Fail-closed direct-Verus policy"
+owner = ".design/build/l3-rich-composition.md"
+status = "shipped"
+scope = "verified"
+summary = "Every exact shell source is closed and rejects proof escapes, unchecked declarations, includes, macros, attributes, unsafe code and unchecked termination."
+aliases = [".design/build/l3-rich-composition.md REQ-L3COMPOSE-4 (shell policy)"]
+contributors = [".design/build/l3-rich-composition.md"]
+generated_to = ["status", "forge-l3-rich-composition-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "analyze_shell"
+note = "token-aware direct-Verus admission and inventory"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge::verified_build::composition::tests::direct_verus_policy_rejects_every_escape_class"
+note = "escape-hatch and declaration-only rejection matrix"
+
+[[requirement]]
+id = "REQ-L3COMPOSE-5"
+title = "Single exact combined Verus source"
+owner = ".design/build/l3-rich-composition.md"
+status = "shipped"
+scope = "verified"
+summary = "Canonical Thermite lowering and exact shell bytes are assembled deterministically into one verus block and passed once to no-cheating proof plus codegen."
+aliases = [".design/build/l3-rich-composition.md REQ-L3COMPOSE-5 (single combined source)"]
+contributors = [".design/build/l3-rich-composition.md"]
+generated_to = ["status", "forge-l3-rich-composition-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "combine_sources"
+note = "deterministic single-verus-block composition"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/verified_composition.rs::probe_state_composition_is_exact_private_linkable_and_reproducible"
+note = "exact lowering prefix, shell bytes and one-macro acceptance"
+
+[[requirement]]
+id = "REQ-L3COMPOSE-6"
+title = "Strict rich proof and TV completion"
+owner = ".design/build/l3-rich-composition.md"
+status = "shipped"
+scope = "verified"
+summary = "Every reachable certificate and TV row passes; rich scalar-frame refusals are completed only by bound canonical lowering, L3 certification and the single whole-crate proof."
+aliases = [".design/build/l3-rich-composition.md REQ-L3COMPOSE-6 (rich proof completion)"]
+contributors = [".design/build/l3-rich-composition.md"]
+generated_to = ["status", "forge-l3-rich-composition-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "complete_rich_composition_tv"
+note = "narrow rich-signature TV completion"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/verified_composition.rs::composition_faults_and_nonpass_evidence_publish_nothing"
+note = "certificate downgrade and divergent TV rejection"
+
+[[requirement]]
+id = "REQ-L3COMPOSE-7"
+title = "Versioned independently validated composition receipt"
+owner = ".design/build/l3-rich-composition.md"
+status = "shipped"
+scope = "forge"
+summary = "The versioned receipt binds lowering, exact shell set, inventory, combined source, codegen closure and artifact and supports independent reconstruction and replay."
+aliases = [".design/build/l3-rich-composition.md REQ-L3COMPOSE-7 (composition receipt)"]
+contributors = [".design/build/l3-rich-composition.md"]
+generated_to = ["status", "forge-l3-rich-composition-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "CompositionReceiptBindingV1"
+note = "composition-specific receipt commitments"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "reconstruct_plan"
+note = "independent plan and source reconstruction"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/verified_composition.rs::probe_state_composition_is_exact_private_linkable_and_reproducible"
+note = "validation, replay, tamper and reproduction"
+
+[[requirement]]
+id = "REQ-L3COMPOSE-8"
+title = "Atomic composition publication"
+owner = ".design/build/l3-rich-composition.md"
+status = "shipped"
+scope = "forge"
+summary = "A composition bundle appears only after plan reassembly, all proof gates, compilation, receipt binding and staged self-validation succeed."
+aliases = [".design/build/l3-rich-composition.md REQ-L3COMPOSE-8 (atomic composition publication)"]
+contributors = [".design/build/l3-rich-composition.md"]
+generated_to = ["status", "forge-l3-rich-composition-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "CompositionStageInput"
+note = "lowering and shell evidence staged before atomic publication"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/verified_composition.rs::composition_faults_and_nonpass_evidence_publish_nothing"
+note = "post-plan mutation and gate failures publish nothing"
+
+[[requirement]]
+id = "REQ-L3COMPOSE-9"
+title = "Freestanding rich-state kernel observation"
+owner = ".design/build/l3-rich-composition.md"
+status = "shipped"
+scope = "verified"
+summary = "The ProbeState composition proves its platform simulation and produces a no-std no-vstd kernel rlib that final-links through its primitive shell observation."
+aliases = [".design/build/l3-rich-composition.md REQ-L3COMPOSE-9 (kernel observation)"]
+contributors = [".design/build/l3-rich-composition.md"]
+generated_to = ["status", "forge-l3-rich-composition-status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "conformance/verified-composition/probe_shell.rs"
+note = "representation, authorization, simulation and boot observation proof"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/verified_composition.rs::probe_state_composition_is_exact_private_linkable_and_reproducible"
+note = "host observation and separate no-std final link"
+
+[[requirement]]
+id = "REQ-L3COMPOSE-10"
+title = "Authoritative artifact-codegen binding"
+owner = ".design/build/l3-rich-composition.md"
+status = "shipped"
+scope = "forge"
+summary = "Composition build, replay and declared consumers use the exact Verus-selected rustc, sysroot, target-library, driver and LLVM identity bound by issue #103."
+aliases = [".design/build/l3-rich-composition.md REQ-L3COMPOSE-10 (codegen binding)"]
+contributors = [".design/build/l3-rich-composition.md"]
+generated_to = ["status", "forge-l3-rich-composition-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "CodegenRustcEvidence"
+note = "reused authoritative codegen closure"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/verified_composition.rs::probe_state_composition_is_exact_private_linkable_and_reproducible"
+note = "receipt-declared rustc consumers and replay"
 
 [[requirement]]
 id = "REQ-FORGE-AUDIT-SCHEMA"

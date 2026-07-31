@@ -92,3 +92,35 @@ fn kernel_library_is_no_std_and_adds_alloc_only_when_needed() {
     assert!(!bounded_kernel.contains("use vstd::"));
     assert!(!bounded_kernel.contains("extern crate alloc"));
 }
+
+#[test]
+fn composition_library_delays_enum_items_past_randomized_verus_helper_synthesis() {
+    let program = parse(
+        "enum Action { Store { owner: u64, generation: u64, slot: u64, value: u64 }, Reject } \
+         fn step(value: u64) -> Action req true ens match result { \
+           Action::Store { owner, generation, slot, value: observed } => \
+             owner == 7 && generation == 11 && slot == 0 && observed == value, \
+           Action::Reject => false, \
+         } fx pure { Action::Store { owner: 7, generation: 11, slot: 0, value: value } }",
+    );
+    let exports = [L3Export {
+        source_name: "step".to_string(),
+        public_name: "step".to_string(),
+        wrapped: false,
+        visibility: L3ExportVisibility::Crate,
+    }];
+
+    let source = lower_l3_library(&program, &exports, L3LibraryTarget::Kernel).unwrap();
+    assert!(source.contains("macro_rules! __thermite_deterministic_enum"));
+    assert!(source.contains("#[verus::internal(verus_macro)]"));
+    assert!(source.contains("__thermite_deterministic_enum! {\npub enum Action"));
+    assert!(source.contains("Store { owner: u64, generation: u64, slot: u64, value: u64 }"));
+
+    let public_exports = [L3Export {
+        visibility: L3ExportVisibility::Public,
+        ..exports[0].clone()
+    }];
+    let ordinary = lower_l3_library(&program, &public_exports, L3LibraryTarget::Kernel).unwrap();
+    assert!(!ordinary.contains("__thermite_deterministic_enum"));
+    assert!(ordinary.contains("pub enum Action"));
+}

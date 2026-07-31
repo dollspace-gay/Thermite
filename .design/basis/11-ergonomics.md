@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: 171a4425eb4c8b3e426a697186fc3dcbb6ad983428e7e9b3d4ce00e08b3b03f9 (re-pinned 2026-07-31 after additive rich-state composition lowering and skill surface; ergonomics behavior remains regression-covered)
+audited-content-sha256: 592727296d81784a956e450e6e61dddddbb7e3a59b4e3ede8d27770aa8e8bf85 (re-pinned 2026-07-31 after deterministic composition-enum lowering; ergonomics behavior remains regression-covered)
 governs: thermite-syntax/src/parser.rs
 governs: thermite-syntax/src/ast.rs
 governs: thermite-lower/src/lower.rs

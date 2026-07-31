@@ -22,7 +22,12 @@ pub fn boot_observation() -> (result: u64)
     };
     assert(represents(stepped.0, platform_after));
     match stepped.1 {
-        ProbeAction::Record(value) => assert(value == 9),
+        ProbeAction::Store { owner, generation, slot, value } => {
+            assert(owner == 7);
+            assert(generation == 1);
+            assert(slot == 0);
+            assert(value == 9);
+        }
         ProbeAction::Noop => assert(false),
     }
     platform_after.generation

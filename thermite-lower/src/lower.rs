@@ -712,6 +712,22 @@ fn lower_with_profile(
     program: &Program,
     library: Option<(BTreeMap<&str, &L3Export>, L3LibraryTarget)>,
 ) -> Result<String, LowerError> {
+    // Verus 0.2026.05.24 synthesizes named-enum projection helpers by iterating
+    // a randomly seeded HashMap. That order reaches `lib.rmeta`, so an otherwise
+    // exact composition replay can change bytes when a rich enum has several
+    // named fields. A crate-visible export identifies the same-crate
+    // composition profile. In that profile only, enum declarations are delayed
+    // through this Forge-owned item macro: rustc expands the enum after the
+    // outer `verus!` rewrite has finished, while the internal marker keeps the
+    // resulting HIR in Verus's checked crate instead of treating it as external.
+    // The declaration remains in the single exact source and is still proved
+    // and compiled by the one strict Verus invocation; only the randomized,
+    // unused `arrow_*` helper synthesis is bypassed.
+    let deterministic_composition_enums = library.as_ref().is_some_and(|(exports, _)| {
+        exports
+            .values()
+            .any(|export| export.visibility == L3ExportVisibility::Crate)
+    });
     let mut out = String::new();
     if let Some((_, target)) = &library {
         if matches!(target, L3LibraryTarget::Kernel) {
@@ -731,6 +747,22 @@ fn lower_with_profile(
         out.push_str("use vstd::prelude::*;\n");
     }
     out.push_str("verus! {\n");
+
+    if deterministic_composition_enums
+        && program
+            .items
+            .iter()
+            .any(|item| matches!(item, Item::Enum(_)))
+    {
+        out.push_str(
+            "macro_rules! __thermite_deterministic_enum {\n\
+             \x20   ($item:item) => {\n\
+             \x20       #[verus::internal(verus_macro)]\n\
+             \x20       $item\n\
+             \x20   };\n\
+             }\n",
+        );
+    }
 
     // (1) combinator spec-fn definitions used anywhere in the program (REQ-6).
     let combinator_defs = emit_combinator_defs(program)?;
@@ -1054,6 +1086,7 @@ fn lower_with_profile(
             // type-invariant predicate (REQ-8); a (recursive) `enum` lowers to a
             // Verus `enum` with `Box<T>` at the recursive occurrence (REQ-10).
             Item::Struct(s) => lower_struct(s, &spec_fn_param_types)?,
+            Item::Enum(e) if deterministic_composition_enums => lower_composition_enum(e)?,
             Item::Enum(e) => lower_enum(e)?,
             // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 lowering/cert
             // consumer yet (increments 2b-3); emit nothing, mirroring the inert
@@ -1693,6 +1726,20 @@ fn lower_enum(e: &EnumItem) -> Result<String, LowerError> {
     }
     out.push_str("}\n");
     Ok(out)
+}
+
+/// Emit a composition enum through the Forge-owned deterministic item frame.
+///
+/// The expanded item carries Verus's internal marker, so it remains part of the
+/// checked HIR even though expansion occurs after the outer syntax macro. This
+/// intentionally suppresses Verus's synthesized `arrow_*` methods: Thermite and
+/// admitted composition shells destructure enum fields with exhaustive patterns,
+/// while an unsupported projection still fails closed during whole-crate proof.
+fn lower_composition_enum(e: &EnumItem) -> Result<String, LowerError> {
+    let declaration = lower_enum(e)?;
+    Ok(format!(
+        "__thermite_deterministic_enum! {{\n{declaration}}}\n"
+    ))
 }
 
 // ---------------------------------------------------------------------------

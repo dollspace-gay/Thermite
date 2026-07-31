@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: 1be93c92981d8a8101e5c03c5cc98f93d7fbb23c4b32925d6d36aa3406fe7994
+audited-content-sha256: a2a4674fe5b8603d30adc2e4e509e4b494341430114da0e096312af83118cff3
 decision: one canonical Verus crate with crate-visible rich Thermite roots and public shell exports
 issue: github:dollspace-gay/Thermite#104
 governs:
@@ -117,6 +117,33 @@ The assembly algorithm is deterministic:
 There is no shell-only proof, second Rust reconstruction, post-proof source
 rewrite, or unbound artifact compilation.
 
+## Deterministic rich-enum expansion
+
+The pinned Verus release synthesizes `arrow_<field>` methods for a named enum
+variant by iterating a randomly seeded `HashMap`. The methods are ghost
+projection conveniences, but their process-random order is retained in
+`lib.rmeta`. A four-field variant can therefore produce identical machine-code
+members and different rlibs from the same exact source, defeating replay.
+Verifier thread count, solver seed, source path remapping, and archive epoch do
+not control this proc-macro hash seed.
+
+For a library with a crate-visible composition export, canonical Thermite
+lowering emits enum declarations through one Forge-owned item macro. Rust
+expands the enum after the outer `verus!` syntax rewrite, and the expanded item
+carries Verus's internal generated-item marker so its HIR remains part of the
+checked crate. This preserves the authored enum, variant shapes, exhaustive
+patterns, contracts, executable bodies, and the single exact-source
+`verus --no-cheating --compile` invocation while bypassing only Verus's
+randomized `arrow_*` convenience-method synthesis. The macro and marker are
+present in the bound lowering and combined-source digests; they are never
+inserted after the plan freezes.
+
+Composition code destructures enum fields through exhaustive patterns. A
+synthetic `value->field` projection on one of these delayed enums is not
+admitted and therefore fails whole-crate verification instead of silently
+reintroducing nondeterministic metadata. Ordinary L3 libraries without a
+crate-visible composition export retain their existing direct enum lowering.
+
 ## Translation validation and proof completion
 
 Ordinary contract, executable-expression, body, loop, and wrapper-guard TV
@@ -139,23 +166,30 @@ row, or non-rich skip into success. Fault-injected non-pass rows still reject.
 
 ## Kernel bounded-state representation
 
-The kernel profile retains `#![no_std]`, `--no-vstd`, and a separate no-std
-final-link check. Because the pinned vstd rlib depends on `std`, it cannot be
-used to justify a kernel artifact. A kernel composition may transport a bounded
-`Vec<T>` through rich state and reason about its bounded length using an
-allocation-free length representation. Element-observing or mutating methods
-are deliberately absent in that target and therefore fail whole-crate
-verification. The hosted target retains the full vstd-backed collection
-lowering. This is an observable-subset refinement, not an unchecked allocator
-shim.
+The kernel profile retains `#![no_std]` and `--no-vstd`. Because the pinned vstd
+rlib depends on `std`, it cannot be used to justify a kernel artifact. A kernel
+composition may transport a bounded `Vec<T>` through rich state and reason
+about its bounded length using an allocation-free length representation.
+Element-observing or mutating methods are deliberately absent in that target
+and therefore fail whole-crate verification. The hosted target retains the
+full vstd-backed collection lowering. This is an observable-subset refinement,
+not an unchecked allocator shim.
+
+Forge promises a verified kernel rlib, not a freestanding final image with an
+empty platform runtime. Larger ADT copies may leave target intrinsics such as
+`memcpy` for the final linker. Selecting, verifying, receipt-binding, and
+allowlisting that implementation belongs to the platform/TPL final-link gate;
+the composition receipt does not substitute an unproved intrinsic body.
 
 The acceptance probe uses `ProbeState { owner, generation, payload: Vec<u64> }`,
-a typed `ProbeEvent`, and a `(ProbeState, ProbeAction)` result. Its shell proves
+a typed `ProbeEvent`, and a `(ProbeState, ProbeAction)` result whose action has a
+four-field `Store { owner, generation, slot, value }` variant. Its shell proves
 the transition precondition, model/platform representation, action
 authorization, and next-state simulation, then exports only a primitive
-`boot_observation`. A host consumer observes the result, a separate `no_std`
-consumer final-links the kernel rlib, and an external rich-function consumer is
-rejected as private.
+`boot_observation`. A host consumer observes the kernel rlib's result, and an
+external rich-function consumer is rejected as private. Three independent
+builds must have byte-identical receipts and rlibs, and replay must reproduce
+the artifact digest.
 
 ## Receipt, validation, and publication
 
@@ -188,6 +222,7 @@ Source: `.design/reqs/registry.toml`
 |---|---|---|---|---|
 | REQ-L3COMPOSE-1 | shipped | `.design/build/l3-rich-composition.md` | Explicit rich-state composition surface |  |
 | REQ-L3COMPOSE-10 | shipped | `.design/build/l3-rich-composition.md` | Authoritative artifact-codegen binding |  |
+| REQ-L3COMPOSE-11 | shipped | `.design/build/l3-rich-composition.md` | Deterministic multi-field enum metadata |  |
 | REQ-L3COMPOSE-2 | shipped | `.design/build/l3-rich-composition.md` | Separated link and composition visibility |  |
 | REQ-L3COMPOSE-3 | shipped | `.design/build/l3-rich-composition.md` | Complete rich closure and type inventory |  |
 | REQ-L3COMPOSE-4 | shipped | `.design/build/l3-rich-composition.md` | Fail-closed direct-Verus policy |  |
@@ -200,11 +235,13 @@ Source: `.design/reqs/registry.toml`
 
 ## Acceptance and adversarial matrix
 
-- The ProbeState composition builds, validates, replays, and reproduces.
+- The ProbeState composition builds three byte-identical bundles, validates,
+  replays, and reproduces its multi-field-enum rlib.
 - The exact combined source contains one `verus!`, a `pub(crate)` rich root,
   and the exact planned shell bytes.
-- A declared consumer observes the public shell result; a no-std consumer
-  final-links; a consumer naming the rich root fails privacy checking.
+- A declared consumer observes the public shell result; a consumer naming the
+  rich root fails privacy checking; final-image platform intrinsics remain a
+  downstream receipt-bound TPL responsibility.
 - Every receipt digest, inventory, source, shell, toolchain, and artifact is
   tamper-evident.
 - Direct-Verus cheating tokens and declaration-only functions are rejected.

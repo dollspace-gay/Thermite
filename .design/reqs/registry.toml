@@ -12177,6 +12177,32 @@ target = "forge/tests/kernel_target.rs"
 note = "unchanged kernel L1 conformance and L1 labeling"
 
 [[requirement]]
+id = "REQ-L3BUILD-14"
+title = "Authoritative Verus codegen-toolchain binding"
+owner = ".design/build/l3-verified-artifact.md"
+status = "shipped"
+scope = "forge"
+summary = "Forge distinguishes ambient host rustc provenance from the rustc/sysroot/target-library/rustc-driver/LLVM closure selected by pinned Verus, binds that closure, and explicitly selects it for build, replay, and ABI consumption."
+aliases = [".design/build/l3-verified-artifact.md REQ-L3BUILD-14 (authoritative codegen toolchain)"]
+contributors = [".design/build/l3-verified-artifact.md"]
+generated_to = ["status", "forge-l3-verified-build-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "CodegenRustcEvidence"
+note = "canonical artifact-codegen compiler, sysroot, target-library, driver, and LLVM evidence"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/verified_build.rs::hosted_bundle_is_exact_private_linkable_tamper_evident_and_reproducible"
+note = "ambient mismatch, declared consumer, incompatible consumer, replay, tamper, and reproducibility conformance"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/verified_build.rs::kernel_bundle_final_links_into_a_separate_no_std_consumer"
+note = "kernel ambient-mismatch build and receipt-declared no-std consumer"
+
+[[requirement]]
 id = "REQ-FORGE-AUDIT-SCHEMA"
 title = "AuditManifest v1 schema and version tag"
 owner = "forge/src/audit.rs"

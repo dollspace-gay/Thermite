@@ -173,6 +173,11 @@ jobs:
       - name: Install toolchain (pinned to rust-toolchain.toml channel)
         uses: dtolnay/rust-toolchain@1.95.0
 
+      # REQ-L3BUILD-14 proves that the host selection cannot silently replace
+      # the Rust 1.95 toolchain selected by the pinned Verus distribution.
+      - name: Install incompatible Rust ABI probe toolchain
+        run: rustup toolchain install 1.96.0 --profile minimal
+
       - name: Rust build cache
         uses: Swatinem/rust-cache@v2
         with:
@@ -348,6 +353,11 @@ jobs:
 
       - name: Install Rust toolchain (pinned)
         uses: dtolnay/rust-toolchain@1.95.0
+
+      # REQ-L3BUILD-14 proves that the host selection cannot silently replace
+      # the Rust 1.95 toolchain selected by the pinned Verus distribution.
+      - name: Install incompatible Rust ABI probe toolchain
+        run: rustup toolchain install 1.96.0 --profile minimal
 
       - name: Rust build cache
         uses: Swatinem/rust-cache@v2

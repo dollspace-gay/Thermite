@@ -5,6 +5,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+const INCOMPATIBLE_RUSTUP_TOOLCHAIN: &str = "1.96.0-x86_64-unknown-linux-gnu";
+
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -18,6 +20,38 @@ fn forge(args: &[&str]) -> Output {
         .current_dir(root())
         .output()
         .unwrap()
+}
+
+fn forge_with_incompatible_host_rustc(args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_forge"))
+        .args(args)
+        .current_dir(root())
+        .env("RUSTUP_TOOLCHAIN", INCOMPATIBLE_RUSTUP_TOOLCHAIN)
+        .output()
+        .unwrap()
+}
+
+fn toolchain_evidence(bundle: &Path) -> serde_json::Value {
+    serde_json::from_slice(&fs::read(bundle.join("evidence/toolchain.json")).unwrap()).unwrap()
+}
+
+fn codegen_rustup_toolchain(bundle: &Path) -> String {
+    toolchain_evidence(bundle)["artifact_codegen"]["rustup_toolchain"]
+        .as_str()
+        .unwrap()
+        .to_string()
+}
+
+fn codegen_rustc(bundle: &Path) -> Command {
+    let mut command = Command::new("rustup");
+    command.args(["run", &codegen_rustup_toolchain(bundle), "rustc"]);
+    command
+}
+
+fn incompatible_rustc() -> Command {
+    let mut command = Command::new("rustup");
+    command.args(["run", INCOMPATIBLE_RUSTUP_TOOLCHAIN, "rustc"]);
+    command
 }
 
 struct TempDir(PathBuf);
@@ -76,7 +110,7 @@ fn hosted_bundle_is_exact_private_linkable_tamper_evident_and_reproducible() {
     let bundle_b = temp.0.join("b.verified");
     let bundle_a_s = bundle_a.to_string_lossy().to_string();
     let bundle_b_s = bundle_b.to_string_lossy().to_string();
-    assert_success(&forge(&[
+    assert_success(&forge_with_incompatible_host_rustc(&[
         "build",
         "conformance/verified-build/identity.th",
         "--level",
@@ -89,7 +123,42 @@ fn hosted_bundle_is_exact_private_linkable_tamper_evident_and_reproducible() {
         &bundle_a_s,
         "--json",
     ]));
-    assert_success(&forge(&["verify-build", &bundle_a_s, "--replay", "--json"]));
+    assert_success(&forge_with_incompatible_host_rustc(&[
+        "verify-build",
+        &bundle_a_s,
+        "--replay",
+        "--json",
+    ]));
+
+    let toolchain = toolchain_evidence(&bundle_a);
+    assert_eq!(
+        toolchain["artifact_codegen"]["rustup_toolchain"],
+        "1.95.0-x86_64-unknown-linux-gnu"
+    );
+    assert!(toolchain["artifact_codegen"]["rustc_version"]
+        .as_str()
+        .unwrap()
+        .contains("release: 1.95.0"));
+    assert!(toolchain["host_rustc"]["rustc_version"]
+        .as_str()
+        .unwrap()
+        .contains("release: 1.96.0"));
+    assert_eq!(
+        toolchain["environment"]["RUSTUP_TOOLCHAIN"],
+        toolchain["artifact_codegen"]["rustup_toolchain"]
+    );
+    for field in [
+        "rustc_sha256",
+        "rustc_driver_sha256",
+        "llvm_library_sha256",
+        "target_libdir_sha256",
+    ] {
+        assert_eq!(
+            toolchain["artifact_codegen"][field].as_str().unwrap().len(),
+            64,
+            "missing codegen digest `{field}`"
+        );
+    }
 
     let source = fs::read_to_string(bundle_a.join("evidence/source.verus.rs")).unwrap();
     assert!(source.contains("pub fn identity"));
@@ -99,7 +168,7 @@ fn hosted_bundle_is_exact_private_linkable_tamper_evident_and_reproducible() {
 
     let consumer = temp.0.join("consumer");
     let artifact = bundle_a.join("artifact/libdeep_identity.rlib");
-    let link = Command::new("rustc")
+    let link = codegen_rustc(&bundle_a)
         .current_dir(root())
         .args([
             "--edition=2021",
@@ -120,7 +189,33 @@ fn hosted_bundle_is_exact_private_linkable_tamper_evident_and_reproducible() {
     assert_success(&link);
     assert_success(&Command::new(&consumer).output().unwrap());
 
-    assert_success(&forge(&[
+    let incompatible = incompatible_rustc()
+        .current_dir(root())
+        .args([
+            "--edition=2021",
+            "conformance/verified-build/host_consumer.rs",
+        ])
+        .arg("--extern")
+        .arg(format!("deep_identity={}", artifact.display()))
+        .arg("-L")
+        .arg(format!(
+            "dependency={}",
+            bundle_a.join("artifact/deps").display()
+        ))
+        .args(["-C", "panic=abort"])
+        .arg("-o")
+        .arg(temp.0.join("incompatible-consumer"))
+        .output()
+        .unwrap();
+    assert!(!incompatible.status.success());
+    let incompatible_stderr = String::from_utf8_lossy(&incompatible.stderr);
+    assert!(
+        incompatible_stderr.contains("incompatible version of rustc")
+            && incompatible_stderr.contains("compiled by rustc 1.95.0"),
+        "{incompatible_stderr}"
+    );
+
+    assert_success(&forge_with_incompatible_host_rustc(&[
         "build",
         "conformance/verified-build/identity.th",
         "--level",
@@ -199,6 +294,22 @@ fn hosted_bundle_is_exact_private_linkable_tamper_evident_and_reproducible() {
                 value["verus_sha256"] = serde_json::Value::String("0".repeat(64));
             }) as fn(&mut serde_json::Value),
         ),
+        (
+            "codegen-rustc-identity",
+            "evidence/toolchain.json",
+            (|value: &mut serde_json::Value| {
+                value["artifact_codegen"]["rustup_toolchain"] =
+                    serde_json::Value::String(INCOMPATIBLE_RUSTUP_TOOLCHAIN.to_string());
+            }) as fn(&mut serde_json::Value),
+        ),
+        (
+            "codegen-rustc-digest",
+            "evidence/toolchain.json",
+            (|value: &mut serde_json::Value| {
+                value["artifact_codegen"]["rustc_sha256"] =
+                    serde_json::Value::String("0".repeat(64));
+            }) as fn(&mut serde_json::Value),
+        ),
     ] {
         let tampered = temp.0.join(format!("semantic-{name}.verified"));
         copy_tree(&bundle_a, &tampered);
@@ -259,7 +370,7 @@ fn total_wrapper_returns_ok_or_precondition_without_calling_invalid_body() {
     assert!(tv.contains("wrapper_guard"));
 
     let consumer = temp.0.join("consumer");
-    let output = Command::new("rustc")
+    let output = codegen_rustc(&bundle)
         .current_dir(root())
         .args([
             "--edition=2021",
@@ -311,7 +422,7 @@ fn only_the_declared_export_is_public_across_a_transitive_closure() {
     let artifact = bundle.join("artifact/libclosure_visibility.rlib");
     let deps = bundle.join("artifact/deps");
     let consumer = temp.0.join("closure-consumer");
-    let link = Command::new("rustc")
+    let link = codegen_rustc(&bundle)
         .current_dir(root())
         .args([
             "--edition=2021",
@@ -329,7 +440,7 @@ fn only_the_declared_export_is_public_across_a_transitive_closure() {
     assert_success(&link);
     assert_success(&Command::new(consumer).output().unwrap());
 
-    let forbidden = Command::new("rustc")
+    let forbidden = codegen_rustc(&bundle)
         .current_dir(root())
         .args([
             "--edition=2021",
@@ -353,7 +464,7 @@ fn kernel_bundle_final_links_into_a_separate_no_std_consumer() {
     let temp = TempDir::new("kernel");
     let bundle = temp.0.join("kernel.verified");
     let bundle_s = bundle.to_string_lossy().to_string();
-    assert_success(&forge(&[
+    assert_success(&forge_with_incompatible_host_rustc(&[
         "build",
         "conformance/verified-build/identity.th",
         "--level",
@@ -372,7 +483,7 @@ fn kernel_bundle_final_links_into_a_separate_no_std_consumer() {
     assert!(!source.contains("use vstd::"));
 
     let consumer = temp.0.join("kernel-consumer");
-    let output = Command::new("rustc")
+    let output = codegen_rustc(&bundle)
         .current_dir(root())
         .args([
             "--edition=2021",
@@ -395,7 +506,41 @@ fn kernel_bundle_final_links_into_a_separate_no_std_consumer() {
         .unwrap();
     assert_success(&output);
     assert!(consumer.is_file());
-    assert_success(&forge(&["verify-build", &bundle_s, "--replay"]));
+
+    let incompatible = incompatible_rustc()
+        .current_dir(root())
+        .args([
+            "--edition=2021",
+            "conformance/verified-build/kernel_consumer.rs",
+        ])
+        .arg("--extern")
+        .arg(format!(
+            "kernel_identity={}",
+            bundle.join("artifact/libkernel_identity.rlib").display()
+        ))
+        .arg("-L")
+        .arg(format!(
+            "dependency={}",
+            bundle.join("artifact/deps").display()
+        ))
+        .args(["-C", "panic=abort", "-C", "link-arg=-nostartfiles"])
+        .arg("-o")
+        .arg(temp.0.join("incompatible-kernel-consumer"))
+        .output()
+        .unwrap();
+    assert!(!incompatible.status.success());
+    let incompatible_stderr = String::from_utf8_lossy(&incompatible.stderr);
+    assert!(
+        incompatible_stderr.contains("incompatible version of rustc")
+            && incompatible_stderr.contains("compiled by rustc 1.95.0"),
+        "{incompatible_stderr}"
+    );
+
+    assert_success(&forge_with_incompatible_host_rustc(&[
+        "verify-build",
+        &bundle_s,
+        "--replay",
+    ]));
 }
 
 #[test]

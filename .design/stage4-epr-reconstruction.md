@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: 06055284876ae87574bd9ed478276356d43acc75d3292e1ad8c3bf5224748b9b (re-pinned 2026-07-31 after exposing exact ADT dependency selection to the additive L3 path; Stage-4 behavior remains regression-covered)
+audited-content-sha256: e7613eb734d347786da25b988b7e8ecddac01e2ea528d338ce63c8e47359da6d (re-pinned 2026-07-31 after adding the Rust 1.96 incompatible-ABI probe toolchain to verified-build CI; Stage-4 behavior remains regression-covered)
 governs: canonical S₂.0 bridge, typed Lean reconstruction, production routing,
          audit boundary, proof tooling, and Gate G4 (see tooling/spec-routes.toml)
 -->

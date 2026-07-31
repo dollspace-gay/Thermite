@@ -1,0 +1,23 @@
+fn helper(x: u64) -> u64
+  req true
+  ens result == x
+  fx pure
+{
+  x
+}
+
+fn closure_root(x: u64) -> u64
+  req true
+  ens result == x
+  fx pure
+{
+  helper(x)
+}
+
+fn unrelated(x: u64) -> u64
+  req true
+  ens result == x
+  fx pure
+{
+  x
+}

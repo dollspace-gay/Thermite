@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: 9629a375440c6e28914775c90610b4e7ce2e6beab3af0139982c5e8833ca4c2f (re-pinned 2026-07-30 for a comment-only clarification of the existing automatic BV/EPR overlay; boundary composition is unchanged)
+audited-content-sha256: 115ba03b21a23ba8381bf593b54257f38208c3909339cf9bd1c238eb2db02c31 (re-pinned 2026-07-31 after additive strict L3 certificate/library paths; boundary composition remains regression-covered)
 governs: thermite-lower/src/lower.rs, forge/src/check.rs
 thesis-refs:
   - thermite-design.md §9

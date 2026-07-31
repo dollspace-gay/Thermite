@@ -1,0 +1,14 @@
+#[boundary("ext::foreign_identity")]
+fn foreign_identity(x: u64) -> u64
+  req true
+  ens result == x
+  fx pure
+;
+
+fn boundary_root(x: u64) -> u64
+  req true
+  ens result == x
+  fx pure
+{
+  foreign_identity(x)
+}

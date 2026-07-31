@@ -1,0 +1,14 @@
+fn count_to(n: u64) -> u64
+  req n <= 100
+  ens result == n
+  fx pure
+{
+  let mut i: u64 = 0;
+  while i < n
+    inv i <= n
+    dec n - i
+  {
+    i = i + 1;
+  }
+  i
+}

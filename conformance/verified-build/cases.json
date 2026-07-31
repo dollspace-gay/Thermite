@@ -1,0 +1,40 @@
+{
+  "schema": "thermite-verified-build-conformance-v1",
+  "positive": [
+    {
+      "file": "identity.th",
+      "exports": ["identity"],
+      "public": ["identity"],
+      "wrapped": []
+    },
+    {
+      "file": "bounded_inc.th",
+      "exports": ["bounded_inc"],
+      "public": ["thermite_export_bounded_inc_v1"],
+      "wrapped": ["bounded_inc"]
+    },
+    {
+      "file": "closure.th",
+      "exports": ["closure_root"],
+      "reachable": ["closure_root", "helper"],
+      "excluded": ["unrelated"]
+    }
+  ],
+  "negative": [
+    {
+      "file": "bad_body.th",
+      "exports": ["bad_identity"],
+      "reason": "whole-crate proof failure"
+    },
+    {
+      "file": "boundary.th",
+      "exports": ["boundary_root"],
+      "reason": "reachable boundary"
+    },
+    {
+      "file": "unresolved.th",
+      "exports": ["unresolved_root"],
+      "reason": "unresolved dependency"
+    }
+  ]
+}

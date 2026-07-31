@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft (v-next architecture — the obligation/engine interface; most REQs NOT-STARTED
-audited-content-sha256: 00615f3a7ed31e346b6763b4fb4fbbe582c24a768d6211076ce304ab15300267 (re-pinned 2026-07-30 for a comment-only clarification that Auto includes Lean fallback and checked BV/EPR overlays; backend behavior is unchanged)
+audited-content-sha256: f2445e4bbd8ffa3421dc33e0d56549b255ff846e5a8fc78058b867fa5bd62c05 (re-pinned 2026-07-31 after exposing exact ADT dependency selection to the additive L3 path; backend behavior remains regression-covered)
         behind build blockers. The SHIPPED substrates this builds on are quoted-code-grounded.)
 governs: forge/src/check.rs + forge/src/degrade.rs + forge/src/manifest.rs (the discharge
          pipeline, the ladder, the certificate this interface generalizes) and

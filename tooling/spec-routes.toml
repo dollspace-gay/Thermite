@@ -470,6 +470,46 @@ design = ".design/build/kernel-target.md"
 reference = ["conformance/build"]
 conformance_ops = ["sum"]
 
+# Correspondence-backed L3 artifacts (issue #101): the additive verified-build
+# orchestrator, CLI surface, strict closure, and export-aware L3 library lowering.
+# The ordinary no-level `forge build` path remains governed by build.md and
+# kernel-target.md; these routes apply only to the new `--level l3` behavior.
+[[route]]
+crate_pattern = "forge/src/verified_build.rs"
+design = ".design/build/l3-verified-artifact.md"
+reference = ["conformance/verified-build"]
+conformance_ops = ["identity", "bounded_inc", "closure", "kernel_link"]
+
+[[route]]
+crate_pattern = "forge/src/cli.rs"
+design = ".design/build/l3-verified-artifact.md"
+reference = ["conformance/verified-build"]
+conformance_ops = ["identity", "bounded_inc"]
+
+[[route]]
+crate_pattern = "forge/src/main.rs"
+design = ".design/build/l3-verified-artifact.md"
+reference = ["conformance/verified-build"]
+conformance_ops = ["identity"]
+
+[[route]]
+crate_pattern = "forge/src/closure.rs"
+design = ".design/build/l3-verified-artifact.md"
+reference = ["conformance/verified-build"]
+conformance_ops = ["closure"]
+
+[[route]]
+crate_pattern = "thermite-lower/src/lower.rs"
+design = ".design/build/l3-verified-artifact.md"
+reference = ["conformance/verified-build"]
+conformance_ops = ["identity", "bounded_inc", "kernel_link"]
+
+[[route]]
+crate_pattern = "thermite-lower/src/lib.rs"
+design = ".design/build/l3-verified-artifact.md"
+reference = ["conformance/verified-build"]
+conformance_ops = ["identity", "bounded_inc", "kernel_link"]
+
 [[route]]
 crate_pattern = "forge/src/effect_wrappers.rs"
 design = ".design/basis/08-runnable-effect-link.md"

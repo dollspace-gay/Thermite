@@ -1,0 +1,7 @@
+fn bad_operator(x: u64) -> u64
+  req x < u64::MAX
+  ens result == x + 1
+  fx pure
+{
+  x / 1
+}

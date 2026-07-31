@@ -1,0 +1,7 @@
+fn bad_identity(x: u64) -> u64
+  req x < u64::MAX
+  ens result == x
+  fx pure
+{
+  x + 1
+}

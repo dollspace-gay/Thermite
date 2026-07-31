@@ -71,6 +71,7 @@ mod tv_signal;
 mod vacuity;
 mod vacuity_solver;
 mod verdict;
+mod verified_build;
 
 use std::process::ExitCode;
 

@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: 18ccaa9ecdaa08c4eea7820121bc06627aec1dd7845237c5295af7400d414a6a (re-pinned 2026-07-30 after the skill audit and the comment-only clarification of automatic BV/EPR routing; Option/Result behavior and renderer arms are unchanged)
+audited-content-sha256: dddc938765b047de47348441e37e6df150a81a124232b003b47732d5d0d2490c (re-pinned 2026-07-31 after additive L3 closure/check/library and skill surfaces; Option/Result behavior remains covered by the workspace regression suite)
 governs: thermite-syntax/src/ast.rs
 governs: thermite-syntax/src/parser.rs
 governs: thermite-spec/src/validator.rs

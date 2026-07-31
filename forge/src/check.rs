@@ -5364,7 +5364,7 @@ pub(crate) fn collect_expr_spec_fn_calls(
 /// terminates) and deterministic (R-CODE-5): the result is returned in source
 /// order. Empty for a referrer set that names no ADT (the pure scalar corpus —
 /// `sum`/`binary_search`), so the existing sub-program is byte-stable (AC-6).
-fn reachable_adt_deps(program: &Program, referrers: &[&Item]) -> Vec<Item> {
+pub(crate) fn reachable_adt_deps(program: &Program, referrers: &[&Item]) -> Vec<Item> {
     // The set of in-file ADT type names → their declaring item, for resolution.
     let adt_decls: std::collections::BTreeMap<&str, &Item> = program
         .items

@@ -341,6 +341,9 @@ enum Command {
     /// runnable path (`./<PATH>`) instead of the /tmp output path.
     Build {
         file: PathBuf,
+        level: BuildLevel,
+        exports: Vec<String>,
+        crate_name: Option<String>,
         entry: Option<String>,
         json: bool,
         /// The #57 sandbox configuration (REQ-4/REQ-6): `--sandbox` (the default for
@@ -359,6 +362,14 @@ enum Command {
         /// library rlib (no `main`/seccomp, `panic=abort`) and refuses ambient-syscall
         /// `fx` rows. `--target kernel` + `--entry` is a usage error.
         target: BuildTarget,
+    },
+    /// `forge verify-build <bundle-dir> [--replay] [--json]` validates the
+    /// canonical receipt and all bound files, and optionally reproduces the
+    /// strict Verus proof/codegen artifact.
+    VerifyBuild {
+        bundle: PathBuf,
+        replay: bool,
+        json: bool,
     },
     /// `forge tv <file> [--generated [N]] [--seed <u64>] [--json]` — the
     /// contract-faithfulness translation-validation deeper audit (epic #139, #144;
@@ -563,6 +574,14 @@ enum CheckLevel {
     L3,
     /// The Kani bounded model check path (`check::check_l2_file`).
     L2,
+}
+
+/// The two intentionally separate artifact pipelines. L1 is the existing
+/// runtime-checking lowerer; L3 is the exact-source Verus proof/codegen path.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+enum BuildLevel {
+    L1,
+    L3,
 }
 
 /// Parse `argv[1..]` (the arguments after the program name) into a [`Command`]
@@ -882,10 +901,42 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
             let mut self_test = false;
             let mut out: Option<PathBuf> = None;
             let mut target = BuildTarget::Std;
+            let mut level = BuildLevel::L1;
+            let mut exports = Vec::new();
+            let mut crate_name = None;
+            let mut sandbox_flag_seen = false;
             let mut iter = iter.peekable();
             while let Some(arg) = iter.next() {
                 match arg.as_str() {
                     "--json" => json = true,
+                    "--level" => {
+                        let value = iter.next().ok_or_else(|| {
+                            ForgeError::Usage(
+                                "`--level` requires a value (`l1` or `l3`)".to_string(),
+                            )
+                        })?;
+                        level = match value.as_str() {
+                            "l1" => BuildLevel::L1,
+                            "l3" => BuildLevel::L3,
+                            other => {
+                                return Err(ForgeError::Usage(format!(
+                                    "unknown build level `{other}` (expected `l1` or `l3`)"
+                                )))
+                            }
+                        };
+                    }
+                    "--export" => {
+                        let value = iter.next().ok_or_else(|| {
+                            ForgeError::Usage("`--export` requires a <fn> value".to_string())
+                        })?;
+                        exports.push(value.to_string());
+                    }
+                    "--crate-name" => {
+                        let value = iter.next().ok_or_else(|| {
+                            ForgeError::Usage("`--crate-name` requires a <name> value".to_string())
+                        })?;
+                        crate_name = Some(value.to_string());
+                    }
                     "--target" => {
                         // `--target std|kernel` (#197; `.design/build/kernel-target.md`
                         // REQ-1). The value is a separate token; a missing or unknown
@@ -931,9 +982,18 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                         })?;
                         out = Some(PathBuf::from(value));
                     }
-                    "--sandbox" => sandbox_mode = SandboxMode::On,
-                    "--no-sandbox" => sandbox_mode = SandboxMode::Off,
-                    "--sandbox-self-test" => self_test = true,
+                    "--sandbox" => {
+                        sandbox_flag_seen = true;
+                        sandbox_mode = SandboxMode::On;
+                    }
+                    "--no-sandbox" => {
+                        sandbox_flag_seen = true;
+                        sandbox_mode = SandboxMode::Off;
+                    }
+                    "--sandbox-self-test" => {
+                        sandbox_flag_seen = true;
+                        self_test = true;
+                    }
                     flag if flag.starts_with('-') => {
                         return Err(ForgeError::Usage(format!("unknown flag `{flag}`")));
                     }
@@ -953,8 +1013,34 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                         .to_string(),
                 )
             })?;
+            match level {
+                BuildLevel::L3 => {
+                    if entry.is_some() || sandbox_flag_seen {
+                        return Err(ForgeError::Usage(
+                            "`forge build --level l3` is a library build and rejects `--entry`, \
+                             `--sandbox`, `--no-sandbox`, and `--sandbox-self-test`"
+                                .to_string(),
+                        ));
+                    }
+                    if exports.is_empty() {
+                        return Err(ForgeError::Usage(
+                            "`forge build --level l3` requires at least one `--export <fn>`"
+                                .to_string(),
+                        ));
+                    }
+                }
+                BuildLevel::L1 if !exports.is_empty() || crate_name.is_some() => {
+                    return Err(ForgeError::Usage(
+                        "`--export` and `--crate-name` require `--level l3`".to_string(),
+                    ));
+                }
+                BuildLevel::L1 => {}
+            }
             Ok(Command::Build {
                 file,
+                level,
+                exports,
+                crate_name,
                 entry,
                 json,
                 sandbox: build::SandboxConfig {
@@ -963,6 +1049,34 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                 },
                 out,
                 target,
+            })
+        }
+        ForgeMethod::VerifyBuild => {
+            let mut bundle = None;
+            let mut replay = false;
+            let mut json = false;
+            for arg in iter {
+                match arg.as_str() {
+                    "--replay" => replay = true,
+                    "--json" => json = true,
+                    flag if flag.starts_with('-') => {
+                        return Err(ForgeError::Usage(format!("unknown flag `{flag}`")));
+                    }
+                    positional if bundle.is_none() => bundle = Some(PathBuf::from(positional)),
+                    positional => {
+                        return Err(ForgeError::Usage(format!(
+                            "`forge verify-build` takes one <bundle-dir>; unexpected `{positional}`"
+                        )));
+                    }
+                }
+            }
+            let bundle = bundle.ok_or_else(|| {
+                ForgeError::Usage("`forge verify-build` requires a <bundle-dir>".to_string())
+            })?;
+            Ok(Command::VerifyBuild {
+                bundle,
+                replay,
+                json,
             })
         }
         ForgeMethod::Tv => {
@@ -1559,19 +1673,30 @@ fn dispatch(args: &[String]) -> Result<ExitCode, ForgeError> {
         } => run_review(&file, item.as_deref(), json, reviewer.as_deref()),
         Command::Build {
             file,
+            level,
+            exports,
+            crate_name,
             entry,
             json,
             sandbox,
             out,
             target,
-        } => run_build(
-            &file,
-            entry.as_deref(),
+        } => run_build(BuildRun {
+            file: &file,
+            level,
+            exports: &exports,
+            crate_name: crate_name.as_deref(),
+            entry: entry.as_deref(),
             json,
             sandbox,
-            out.as_deref(),
+            out: out.as_deref(),
             target,
-        ),
+        }),
+        Command::VerifyBuild {
+            bundle,
+            replay,
+            json,
+        } => run_verify_build(&bundle, replay, json),
         Command::Tv {
             file,
             json,
@@ -2250,22 +2375,93 @@ fn run_review(
 /// spec / effects / lowering), an absent/failing rustc, or an IO error propagates
 /// as a `ForgeError` (the environment exit code, REQ-2 / R-CODE-4), never a silent
 /// success.
-fn run_build(
-    file: &Path,
-    entry: Option<&str>,
+struct BuildRun<'a> {
+    file: &'a Path,
+    level: BuildLevel,
+    exports: &'a [String],
+    crate_name: Option<&'a str>,
+    entry: Option<&'a str>,
     json: bool,
     sandbox: build::SandboxConfig,
-    out: Option<&Path>,
+    out: Option<&'a Path>,
     target: BuildTarget,
-) -> Result<ExitCode, ForgeError> {
-    let manifest = build::build_file(file, entry, sandbox, out, target)?;
+}
+
+fn run_build(request: BuildRun<'_>) -> Result<ExitCode, ForgeError> {
+    let BuildRun {
+        file,
+        level,
+        exports,
+        crate_name,
+        entry,
+        json,
+        sandbox,
+        out,
+        target,
+    } = request;
+    if matches!(level, BuildLevel::L1) {
+        let manifest = build::build_file(file, entry, sandbox, out, target)?;
+        if json {
+            let doc =
+                serde_json::to_string_pretty(&manifest).map_err(|e| ForgeError::RustcOutput {
+                    detail: format!("failed to serialize the build manifest JSON: {e}"),
+                })?;
+            println!("{doc}");
+        } else {
+            print!("{}", render_build(&manifest));
+        }
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    let verified_target = match target {
+        BuildTarget::Std => crate::verified_build::VerifiedTarget::Std,
+        BuildTarget::Kernel => crate::verified_build::VerifiedTarget::Kernel,
+    };
+    match crate::verified_build::build_file(file, exports, crate_name, out, verified_target)? {
+        crate::verified_build::VerifiedBuildOutcome::Built { bundle, receipt } => {
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&receipt).map_err(|e| {
+                        ForgeError::VerusOutput {
+                            detail: format!("failed to serialize verified-build receipt: {e}"),
+                        }
+                    })?
+                );
+            } else {
+                println!("verified L3 bundle: {}", bundle.display());
+                println!("binding sha256: {}", receipt.binding_sha256);
+            }
+            Ok(ExitCode::SUCCESS)
+        }
+        crate::verified_build::VerifiedBuildOutcome::Rejected { stage, detail } => {
+            if json {
+                println!(
+                    "{}",
+                    serde_json::json!({"status":"rejected","stage":stage,"detail":detail})
+                );
+            } else {
+                eprintln!("verified build rejected at {stage}: {detail}");
+            }
+            Ok(ExitCode::from(EXIT_VERIFICATION_FAILURE))
+        }
+    }
+}
+
+fn run_verify_build(bundle: &Path, replay: bool, json: bool) -> Result<ExitCode, ForgeError> {
+    let report = crate::verified_build::validate_bundle(bundle, replay)?;
     if json {
-        let doc = serde_json::to_string_pretty(&manifest).map_err(|e| ForgeError::RustcOutput {
-            detail: format!("failed to serialize the build manifest JSON: {e}"),
-        })?;
-        println!("{doc}");
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&report).map_err(|error| ForgeError::VerusOutput {
+                detail: format!("failed to serialize verify-build report: {error}"),
+            })?
+        );
     } else {
-        print!("{}", render_build(&manifest));
+        println!("verified bundle: {}", report.bundle.display());
+        println!("binding sha256: {}", report.binding_sha256);
+        println!("artifact sha256: {}", report.artifact_sha256);
+        println!("replayed: {}", report.replayed);
     }
     Ok(ExitCode::SUCCESS)
 }
@@ -3652,6 +3848,9 @@ mod tests {
             parse_args(&argv(&["build", "a.th", "--entry", "f"])).ok(),
             Some(Command::Build {
                 file: PathBuf::from("a.th"),
+                level: BuildLevel::L1,
+                exports: Vec::new(),
+                crate_name: None,
                 entry: Some("f".to_string()),
                 json: false,
                 sandbox: build::SandboxConfig {
@@ -3763,6 +3962,75 @@ mod tests {
             parse_args(&argv(&["build", "a.th", "--target"])),
             Err(ForgeError::Usage(_))
         ));
+    }
+
+    #[test]
+    fn parses_strict_l3_build_and_verify_build_surfaces() {
+        assert_eq!(
+            parse_args(&argv(&[
+                "build",
+                "a.th",
+                "--level",
+                "l3",
+                "--export",
+                "f",
+                "--export",
+                "g",
+                "--crate-name",
+                "verified_a",
+                "--target",
+                "kernel",
+                "--out",
+                "a.verified",
+                "--json"
+            ]))
+            .ok(),
+            Some(Command::Build {
+                file: PathBuf::from("a.th"),
+                level: BuildLevel::L3,
+                exports: vec!["f".to_string(), "g".to_string()],
+                crate_name: Some("verified_a".to_string()),
+                entry: None,
+                json: true,
+                sandbox: build::SandboxConfig::default(),
+                out: Some(PathBuf::from("a.verified")),
+                target: BuildTarget::Kernel,
+            })
+        );
+        assert_eq!(
+            parse_args(&argv(&["verify-build", "a.verified", "--replay", "--json"])).ok(),
+            Some(Command::VerifyBuild {
+                bundle: PathBuf::from("a.verified"),
+                replay: true,
+                json: true,
+            })
+        );
+    }
+
+    #[test]
+    fn l3_and_l1_build_flags_cannot_be_mixed() {
+        for args in [
+            vec![
+                "build", "a.th", "--level", "l3", "--export", "f", "--entry", "f",
+            ],
+            vec![
+                "build",
+                "a.th",
+                "--level",
+                "l3",
+                "--export",
+                "f",
+                "--no-sandbox",
+            ],
+            vec!["build", "a.th", "--level", "l3"],
+            vec!["build", "a.th", "--export", "f"],
+            vec!["build", "a.th", "--crate-name", "a"],
+        ] {
+            assert!(matches!(
+                parse_args(&argv(&args)),
+                Err(ForgeError::Usage(_))
+            ));
+        }
     }
 
     // AC-1: no args / unknown verb / missing positional → Usage error, never a

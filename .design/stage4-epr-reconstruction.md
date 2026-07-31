@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: bf98d22e303f34628e7e3daffe7cd2c69fe0765bd0bcd060cfeb6433e1b91413 (re-pinned 2026-07-30 after CI began prebuilding the EPR replay/model modules before parallel nextest processes)
+audited-content-sha256: 06055284876ae87574bd9ed478276356d43acc75d3292e1ad8c3bf5224748b9b (re-pinned 2026-07-31 after exposing exact ADT dependency selection to the additive L3 path; Stage-4 behavior remains regression-covered)
 governs: canonical S₂.0 bridge, typed Lean reconstruction, production routing,
          audit boundary, proof tooling, and Gate G4 (see tooling/spec-routes.toml)
 -->

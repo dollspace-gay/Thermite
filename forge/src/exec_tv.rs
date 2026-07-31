@@ -55,7 +55,7 @@
 use std::path::Path;
 use std::process::Command;
 
-use thermite_syntax::ast::{Expr, FnItem, IndexArg, Item, PrimType, Stmt, Type};
+use thermite_syntax::ast::{Clause, Expr, FnItem, IndexArg, Item, PrimType, Stmt, Type};
 
 use thermite_tv::gen_exec_exprs;
 use thermite_tv::obligation::{exec_equivalence_obligation, ExecObligationFrame, ExecParamDecl};
@@ -292,7 +292,7 @@ pub fn exec_tv_file(path: &Path, seed: u64, rlimit: f64) -> Result<ExecTvReport,
     let mut report = ExecTvReport::default();
     for item in &parsed.program.items {
         match item {
-            Item::Fn(f) => exec_tv_fn(f, seed, rlimit, &mut report),
+            Item::Fn(f) => exec_tv_fn(&parsed.program, f, seed, rlimit, &mut report),
             // A `spec fn` body lowers in spec context (not exec), out of scope for
             // exec-TV; a struct/enum has no exec body.
             Item::SpecFn(_) | Item::Struct(_) | Item::Enum(_) => {}
@@ -302,6 +302,55 @@ pub fn exec_tv_file(path: &Path, seed: u64, rlimit: f64) -> Result<ExecTvReport,
         }
     }
     Ok(report)
+}
+
+/// Translation-validate the exact executable guard used by an L3 total export
+/// wrapper. The guard is checked over the full input domain: the synthetic
+/// frame's `req true` intentionally does not assume the guard being validated.
+/// This is the wrapper-specific bridge between contract-position syntax and
+/// its executable boundary use.
+pub fn exec_tv_export_guard(f: &FnItem, seed: u64, rlimit: f64) -> ExecResult {
+    let label = format!("{}.export_guard", f.name);
+    let mut env = ExecEnv::default();
+    for param in &f.params {
+        let Some((ty, slice)) = exec_type_spelling(&param.ty) else {
+            return ExecResult {
+                label,
+                verdict: ExecVerdict::Skipped {
+                    reason: format!(
+                        "export guard parameter `{}` has an unframable type {:?}",
+                        param.name, param.ty
+                    ),
+                },
+            };
+        };
+        env.bind(&param.name, ty, slice);
+    }
+    let mut frame_fn = f.clone();
+    frame_fn.contract.req = Clause {
+        expr: Expr::BoolLit(true),
+        text: "true".to_string(),
+        span: f.contract.req.span,
+        bv: None,
+    };
+    let mut report = ExecTvReport::default();
+    check_corpus_expr(
+        &f.contract.req.expr,
+        &label,
+        "bool",
+        &env,
+        &frame_fn,
+        &[],
+        seed,
+        rlimit,
+        &mut report,
+    );
+    report.results.pop().unwrap_or(ExecResult {
+        label,
+        verdict: ExecVerdict::Unverifiable {
+            reason: "wrapper guard TV produced no result".to_string(),
+        },
+    })
 }
 
 /// The exec-type environment for a corpus fn body: each in-scope var's
@@ -338,7 +387,13 @@ impl ExecEnv {
 /// rhs` checks `rhs` at ret_type `T` and binds `x`; the body tail / a top-level
 /// `return e` checks `e` at the fn return type. Nested-block statements (loop / if
 /// bodies), assignments, and untyped lets are skipped.
-fn exec_tv_fn(f: &FnItem, seed: u64, rlimit: f64, report: &mut ExecTvReport) {
+fn exec_tv_fn(
+    program: &thermite_syntax::Program,
+    f: &FnItem,
+    seed: u64,
+    rlimit: f64,
+    report: &mut ExecTvReport,
+) {
     let Some(body) = &f.body else {
         return; // a boundary fn has no in-language body.
     };
@@ -358,6 +413,17 @@ fn exec_tv_fn(f: &FnItem, seed: u64, rlimit: f64, report: &mut ExecTvReport) {
         });
         return;
     }
+
+    let support_defs = match crate::body_tv::body_tv_support(program, f) {
+        Ok((defs, _)) => defs,
+        Err(reason) => {
+            report.results.push(ExecResult {
+                label: f.name.clone(),
+                verdict: ExecVerdict::Skipped { reason },
+            });
+            return;
+        }
+    };
 
     // The signature env: each param at its exec value type. A param of a type the
     // exec frame cannot spell (Map/Option/struct/…) is recorded as un-spellable;
@@ -381,7 +447,17 @@ fn exec_tv_fn(f: &FnItem, seed: u64, rlimit: f64, report: &mut ExecTvReport) {
                 let_no += 1;
                 let label = format!("{}.let#{}", f.name, let_no);
                 if let Some((ret_ty, _is_slice)) = exec_type_spelling(ty) {
-                    check_corpus_expr(init, &label, &ret_ty, &env, f, seed, rlimit, report);
+                    check_corpus_expr(
+                        init,
+                        &label,
+                        &ret_ty,
+                        &env,
+                        f,
+                        &support_defs,
+                        seed,
+                        rlimit,
+                        report,
+                    );
                 } else {
                     report.results.push(ExecResult {
                         label,
@@ -415,7 +491,17 @@ fn exec_tv_fn(f: &FnItem, seed: u64, rlimit: f64, report: &mut ExecTvReport) {
             }
             Stmt::Return(Some(e)) => {
                 let label = format!("{}.return", f.name);
-                check_return_like(e, &label, &f.ret, &env, f, seed, rlimit, report);
+                check_return_like(
+                    e,
+                    &label,
+                    &f.ret,
+                    &env,
+                    f,
+                    &support_defs,
+                    seed,
+                    rlimit,
+                    report,
+                );
             }
             // A loop / if / assignment / break / continue / bare-expr statement is
             // out of scope for step 2.1 (statements/loops/mutation are step 2.2)
@@ -448,7 +534,17 @@ fn exec_tv_fn(f: &FnItem, seed: u64, rlimit: f64, report: &mut ExecTvReport) {
     // The body tail expr (the fn's value — `sum`'s final `acc`).
     if let Some(tail) = &body.tail {
         let label = format!("{}.tail", f.name);
-        check_return_like(tail, &label, &f.ret, &env, f, seed, rlimit, report);
+        check_return_like(
+            tail,
+            &label,
+            &f.ret,
+            &env,
+            f,
+            &support_defs,
+            seed,
+            rlimit,
+            report,
+        );
     }
 }
 
@@ -466,12 +562,23 @@ fn check_return_like(
     ret: &Type,
     env: &ExecEnv,
     f: &FnItem,
+    support_defs: &[String],
     seed: u64,
     rlimit: f64,
     report: &mut ExecTvReport,
 ) {
     match exec_type_spelling(ret) {
-        Some((ret_ty, _)) => check_corpus_expr(e, label, &ret_ty, env, f, seed, rlimit, report),
+        Some((ret_ty, _)) => check_corpus_expr(
+            e,
+            label,
+            &ret_ty,
+            env,
+            f,
+            support_defs,
+            seed,
+            rlimit,
+            report,
+        ),
         None => report.results.push(ExecResult {
             label: label.to_string(),
             verdict: ExecVerdict::Skipped {
@@ -498,6 +605,7 @@ fn check_corpus_expr(
     ret_ty: &str,
     env: &ExecEnv,
     f: &FnItem,
+    support_defs: &[String],
     seed: u64,
     rlimit: f64,
     report: &mut ExecTvReport,
@@ -574,7 +682,7 @@ fn check_corpus_expr(
         }
     }
     let frame = ExecObligationFrame {
-        spec_defs: Vec::new(),
+        spec_defs: support_defs.to_vec(),
         params: env
             .params
             .iter()

@@ -4,7 +4,7 @@
 tier: 3-component
 status: shipped
 audited-sha: 5ae0816c042debb01c70eb9b89c775837f0c0f24 (content-sha256 re-pinned 2026-06-23 for stage-3 REQ-7 / AC-8 (#349), the automated Rust→Lean obligation exporter: the change to this doc's governed file (cli.rs) is the additive `forge smt-export [<file>] [--out <path>]` subcommand (`Command::SmtExport` → `run_smt_export`, emitting the `(P_prod) ⟺ (P_ref)` `by smt` Lean theorems + `#print axioms` probes via `lean_smt_export.rs`); every other subcommand + flag parse is unchanged. The legacy commit pin stays at the 5ae0816c stable-main ancestor; only the active content-sha256 digest moves. prior: 2026-06-21 stage-2 REQ-8 / AC-8 (#330) `forge strat-faithful-tv`; 2026-06-20 stage-2 REQ-4 / AC-4 (#326) `forge strat-tv` + `ForgeError::StratDifferential`; 2026-06-18 umbrella REQ-2c / AC-4 rotating-seed `--seed` flag on `forge tv`; §6 metrics dashboard `--metrics` value)
-audited-content-sha256: fde26b43eddd39f0d6afc5e3523898c4c1760fe8f1b96278b4bf48a62f70f953 (re-pinned 2026-07-30 for the shared ForgeMethod registry, the implemented `forge skill` print/write/check command, and current Auto-routing documentation)
+audited-content-sha256: 5aba507bc05df6fae84ed2774695a281ed52c414b2acd089c66363163e9c42a1 (re-pinned 2026-07-31 for the additive `build --level l3` and `verify-build` commands; existing CLI behavior remains regression-covered)
 governs: forge/src/cli.rs
 thesis-refs:
   - thermite-design.md §5

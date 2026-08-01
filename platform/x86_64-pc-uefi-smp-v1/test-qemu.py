@@ -70,18 +70,25 @@ MODEL_PATTERN = re.compile(
 )
 
 
-def firmware_paths() -> tuple[Path, Path]:
-    roots = (
-        Path("/usr/share/edk2/ovmf"),
-        Path("/usr/share/OVMF"),
-        Path("/usr/share/qemu"),
-    )
+FIRMWARE_ROOTS = (
+    Path("/usr/share/edk2/ovmf"),
+    Path("/usr/share/OVMF"),
+    Path("/usr/share/qemu"),
+)
+FIRMWARE_PAIRS = (
+    ("OVMF_CODE.fd", "OVMF_VARS.fd"),
+    ("OVMF_CODE_4M.fd", "OVMF_VARS_4M.fd"),
+)
+
+
+def firmware_paths(roots: tuple[Path, ...] = FIRMWARE_ROOTS) -> tuple[Path, Path]:
     for root in roots:
-        code = root / "OVMF_CODE.fd"
-        variables = root / "OVMF_VARS.fd"
-        if code.is_file() and variables.is_file():
-            return code, variables
-    raise RuntimeError("OVMF_CODE.fd and OVMF_VARS.fd were not found")
+        for code_name, variables_name in FIRMWARE_PAIRS:
+            code = root / code_name
+            variables = root / variables_name
+            if code.is_file() and variables.is_file():
+                return code, variables
+    raise RuntimeError("a compatible OVMF code/variables firmware pair was not found")
 
 
 def validate_transcript(

@@ -35,7 +35,7 @@ governs:
   - platform/x86_64-pc-uefi-smp-v1/runtime/Cargo.*
   - platform/x86_64-pc-uefi-smp-v1/runtime/src/*
   - .github/workflows/ci.yml
-audited-content-sha256: 165ca085d8b373572fc489c129573e5cde3e459f37fe15f2aa243d479bd77a19
+audited-content-sha256: 57214a2c4c466cb21e007a6e4c0d3f7943a8a63d71f944f265f2c14169025a9c
 extends:
   - .design/build/kernel-target.md
   - .design/build/l3-rich-composition.md
@@ -68,6 +68,10 @@ more than one online CPU.
 The image publisher checks the staged boot binary for the stable PE32+, EFI
 application, and x86-64 fields reported by `file`; it does not depend on the
 distribution-specific prose used by a particular libmagic release.
+
+The QEMU gate accepts the paired legacy 2 MiB and current 4 MiB OVMF package
+layouts. Code and variable firmware names are selected as a matched pair; the
+harness never combines incompatible firmware sizes.
 
 Ordinary Thermite code retains the existing surface. It has no raw pointers,
 inline assembly, arbitrary `extern` declarations, or general unsafe escape.

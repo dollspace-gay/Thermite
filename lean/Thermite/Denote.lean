@@ -293,6 +293,8 @@ def arithDenote : ArithOp → Int → Int → Int
 def castDenote : CastTy → Int → Int
   | CastTy.nat,   v => (v.toNat : Int)
   | CastTy.int,   v => v
+  | CastTy.u8,    v => v
+  | CastTy.u16,   v => v
   | CastTy.u64,   v => v
   | CastTy.u32,   v => v
   | CastTy.usize, v => v

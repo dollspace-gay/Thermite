@@ -235,10 +235,7 @@ fn assert_infidel_caught(fixture: &str, program: &str, expect: CatchShape) {
 // ============================================================================
 
 fn e1_source() -> Expr {
-    cast(
-        bin(BinOp::Sub, path("n"), int(1)),
-        Type::Named("u8".to_string()),
-    )
+    cast(bin(BinOp::Sub, path("n"), int(1)), Type::Prim(PrimType::U8))
 }
 
 fn e1_frame() -> ExecObligationFrame {

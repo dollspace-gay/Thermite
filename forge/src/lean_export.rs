@@ -401,6 +401,8 @@ fn encode_binary(
 /// `u64`/`u32`/`usize`/`nat`/`int` is out of S_C.
 fn encode_cast_target(ty: &Type) -> Result<&'static str, ExportRefusal> {
     match ty {
+        Type::Prim(PrimType::U8) => Ok("Thermite.CastTy.u8"),
+        Type::Prim(PrimType::U16) => Ok("Thermite.CastTy.u16"),
         Type::Prim(PrimType::U64) => Ok("Thermite.CastTy.u64"),
         Type::Prim(PrimType::U32) => Ok("Thermite.CastTy.u32"),
         Type::Prim(PrimType::Usize) => Ok("Thermite.CastTy.usize"),
@@ -1003,7 +1005,9 @@ fn collect_all_block_call_names(b: &Block, out: &mut Vec<String>) {
 /// the increment-(iv) `bindBool`/ADT bridge → [`ExportRefusal::NonIntResult`].
 fn result_is_int_sorted(ty: &Type) -> bool {
     match ty {
-        Type::Prim(PrimType::U32 | PrimType::U64 | PrimType::Usize) => true,
+        Type::Prim(
+            PrimType::U8 | PrimType::U16 | PrimType::U32 | PrimType::U64 | PrimType::Usize,
+        ) => true,
         Type::Named(n) => n == "int" || n == "nat",
         _ => false,
     }
@@ -1551,6 +1555,8 @@ fn conjoin(terms: &[String]) -> String {
 fn exec_int_ty(ty: &Type) -> Option<&'static str> {
     match ty {
         Type::Ref { inner, .. } => exec_int_ty(inner),
+        Type::Prim(PrimType::U8) => Some("Thermite.Exec.IntTy.u8"),
+        Type::Prim(PrimType::U16) => Some("Thermite.Exec.IntTy.u16"),
         Type::Prim(PrimType::U32) => Some("Thermite.Exec.IntTy.u32"),
         Type::Prim(PrimType::U64) => Some("Thermite.Exec.IntTy.u64"),
         Type::Prim(PrimType::Usize) => Some("Thermite.Exec.IntTy.usize"),

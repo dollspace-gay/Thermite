@@ -341,6 +341,7 @@ fn effect_atom_name(effect: &thermite_syntax::ast::Effect) -> String {
         Effect::Panic => "panic".to_string(),
         Effect::Diverge => "diverge".to_string(),
         Effect::Term => "term".to_string(),
+        Effect::Platform(domain) => format!("platform({})", domain.surface()),
     }
 }
 
@@ -590,6 +591,8 @@ impl<'a> Ctx<'a> {
             .find(|(name, _)| *name == callee)
             .map(|(_, ps)| *ps)?;
         match params.get(arg_pos)? {
+            PrimType::U8 => Some(Some("u8")),
+            PrimType::U16 => Some(Some("u16")),
             PrimType::U32 => Some(Some("u32")),
             PrimType::U64 => Some(Some("u64")),
             PrimType::Usize => Some(Some("usize")),
@@ -3846,6 +3849,8 @@ fn render_body_as_exec_value(body: &Block, ctx: Ctx, span: Span) -> Result<Strin
 /// `bool`-returning forced-output fn's observable result is its boolean value.
 fn scalar_obligation_type(ty: &Type) -> Option<String> {
     match ty {
+        Type::Prim(PrimType::U8) => Some("u8".to_string()),
+        Type::Prim(PrimType::U16) => Some("u16".to_string()),
         Type::Prim(PrimType::U32) => Some("u32".to_string()),
         Type::Prim(PrimType::U64) => Some("u64".to_string()),
         Type::Prim(PrimType::Usize) => Some("usize".to_string()),
@@ -3858,7 +3863,7 @@ fn scalar_obligation_type(ty: &Type) -> Option<String> {
 /// the `(expr) as <ty>` coercion the design grounded; a `bool` result is left
 /// bare (Verus has no `as bool`).
 fn obligation_coerces(ty: &str) -> bool {
-    matches!(ty, "u32" | "u64" | "usize")
+    matches!(ty, "u8" | "u16" | "u32" | "u64" | "usize")
 }
 
 /// The `name: <ty>` parameter list for an equivalence-obligation spec/proof fn:
@@ -4539,6 +4544,8 @@ fn one_param<'p>(
 /// Lower a `Type` to its Verus/Rust spelling (REQ-2). No lifetimes (§4.4).
 fn lower_type(ty: &Type) -> Result<String, LowerError> {
     match ty {
+        Type::Prim(PrimType::U8) => Ok("u8".to_string()),
+        Type::Prim(PrimType::U16) => Ok("u16".to_string()),
         Type::Prim(PrimType::U32) => Ok("u32".to_string()),
         Type::Prim(PrimType::U64) => Ok("u64".to_string()),
         Type::Prim(PrimType::Usize) => Ok("usize".to_string()),
@@ -4658,6 +4665,8 @@ fn lower_type(ty: &Type) -> Result<String, LowerError> {
 /// `Slice`/`Generic`) is the existing `LowerError::Unsupported` (no panic, REQ-12).
 pub(crate) fn tvec_name(elem: &Type) -> Result<String, LowerError> {
     let suffix = match elem {
+        Type::Prim(PrimType::U8) => "U8".to_string(),
+        Type::Prim(PrimType::U16) => "U16".to_string(),
         Type::Prim(PrimType::U32) => "U32".to_string(),
         Type::Prim(PrimType::U64) => "U64".to_string(),
         Type::Prim(PrimType::Usize) => "Usize".to_string(),
@@ -4713,6 +4722,8 @@ pub(crate) fn tmap_name(key: &Type, val: &Type) -> Result<String, LowerError> {
 /// unlowerable type is the existing `LowerError::Unsupported` (no panic, REQ-6).
 fn tmap_type_suffix(ty: &Type) -> Result<String, LowerError> {
     Ok(match ty {
+        Type::Prim(PrimType::U8) => "U8".to_string(),
+        Type::Prim(PrimType::U16) => "U16".to_string(),
         Type::Prim(PrimType::U32) => "U32".to_string(),
         Type::Prim(PrimType::U64) => "U64".to_string(),
         Type::Prim(PrimType::Usize) => "Usize".to_string(),
@@ -4783,7 +4794,9 @@ pub(crate) fn is_vec_new(expr: &Expr) -> bool {
 pub(crate) fn elem_is_copy(elem: &Type) -> bool {
     matches!(
         elem,
-        Type::Prim(PrimType::U32)
+        Type::Prim(PrimType::U8)
+            | Type::Prim(PrimType::U16)
+            | Type::Prim(PrimType::U32)
             | Type::Prim(PrimType::U64)
             | Type::Prim(PrimType::Usize)
             | Type::Prim(PrimType::Bool)
@@ -7608,6 +7621,22 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
             Ok(segs.join("::"))
         }
         Expr::Call { callee, args } => {
+            // Kernel mutable-storage basis: Verus requires `final(x)` to
+            // disambiguate the post-state of an `&mut` parameter. Preserve the
+            // reference itself here; ordinary spec-call argument lowering would
+            // turn a slice path into `x@`, producing the invalid `final(x@)`.
+            if ctx.is_spec()
+                && matches!(callee.as_ref(), Expr::Path(segs) if segs.as_slice() == ["final"])
+            {
+                let [arg] = args.as_slice() else {
+                    return Err(LowerError::Unsupported {
+                        what: "final expects exactly one mutable-reference argument".to_string(),
+                        span,
+                    });
+                };
+                let raw = lower_expr(arg, ctx, d, span)?;
+                return Ok(format!("final({raw})"));
+            }
             // Basis Stage 2 (`.design/basis/02-recursion-schemes.md` REQ-6): a
             // scheme CALL `fold(l, 0, |x, acc| …)` lowers to a CALL of the
             // generated `fold_<e>` with the step closure lowered to a typed Verus
@@ -8265,7 +8294,11 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
 fn is_int_type(ty: &Type) -> bool {
     matches!(
         ty,
-        Type::Prim(PrimType::U32) | Type::Prim(PrimType::U64) | Type::Prim(PrimType::Usize)
+        Type::Prim(PrimType::U8)
+            | Type::Prim(PrimType::U16)
+            | Type::Prim(PrimType::U32)
+            | Type::Prim(PrimType::U64)
+            | Type::Prim(PrimType::Usize)
     )
 }
 
@@ -10229,10 +10262,7 @@ mod exec_expr_tests {
     // E1 — `(n - 1) as u8`: the #122 inner-paren on the `Binary` inner.
     #[test]
     fn e1_cast_inner_paren_exec() {
-        let e = cast(
-            bin(BinOp::Sub, path("n"), int(1)),
-            Type::Named("u8".to_string()),
-        );
+        let e = cast(bin(BinOp::Sub, path("n"), int(1)), Type::Prim(PrimType::U8));
         assert_eq!(lower_exec_expr(&e).unwrap(), "(n - 1) as u8");
     }
 

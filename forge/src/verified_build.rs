@@ -1403,6 +1403,8 @@ fn supported_public_type(ty: &Type) -> bool {
 
 fn abi_type(ty: &Type) -> String {
     match ty {
+        Type::Prim(PrimType::U8) => "u8".to_string(),
+        Type::Prim(PrimType::U16) => "u16".to_string(),
         Type::Prim(PrimType::U32) => "u32".to_string(),
         Type::Prim(PrimType::U64) => "u64".to_string(),
         Type::Prim(PrimType::Usize) => "usize".to_string(),

@@ -586,16 +586,14 @@ impl ExecTy {
         }
     }
 
-    /// The `Type` a cast to this value type uses (the bounded prims; `u8`/`u16` are
-    /// `Type::Named` since they are not surface `PrimType`s, mirroring the
-    /// `exec_encode`/`lower_exec_expr` cast-target set).
+    /// The `Type` a cast to this value type uses (the bounded primitive set).
     fn cast_type(self) -> Option<Type> {
         match self {
             ExecTy::U64 => Some(Type::Prim(PrimType::U64)),
             ExecTy::Usize => Some(Type::Prim(PrimType::Usize)),
             ExecTy::U32 => Some(Type::Prim(PrimType::U32)),
-            ExecTy::U16 => Some(Type::Named("u16".to_string())),
-            ExecTy::U8 => Some(Type::Named("u8".to_string())),
+            ExecTy::U16 => Some(Type::Prim(PrimType::U16)),
+            ExecTy::U8 => Some(Type::Prim(PrimType::U8)),
             ExecTy::Bool => None,
         }
     }

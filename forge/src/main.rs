@@ -47,6 +47,7 @@ mod exec_tv;
 mod forks;
 mod goal_repl;
 mod kani;
+mod kernel_image;
 mod lean_export;
 mod lean_smt_export;
 mod lemma_library;

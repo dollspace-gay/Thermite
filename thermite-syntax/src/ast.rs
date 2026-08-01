@@ -673,6 +673,85 @@ pub enum Effect {
     /// (runtime-sandbox.md REQ-7); it carries no proof obligation (only the
     /// syscall grant + the §4.1 row-subsumption every atom is subject to).
     Term,
+    /// A privileged operation in one frozen kernel platform domain
+    /// (`.design/build/bootable-multicore-kernel.md` REQ-MKERNEL-3). The domain
+    /// is closed by [`PlatformDomain`]; a source program cannot mint an
+    /// unregistered platform effect by spelling an arbitrary identifier.
+    Platform(PlatformDomain),
+}
+
+/// The closed authority/effect domains of the bootable-kernel target platform
+/// layer (`.design/build/bootable-multicore-kernel.md` REQ-MKERNEL-3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum PlatformDomain {
+    Boot,
+    Memory,
+    Mmio,
+    Pio,
+    Irq,
+    Cpu,
+    Atomic,
+    Smp,
+    Dma,
+    Clock,
+    Entropy,
+    Power,
+}
+
+impl PlatformDomain {
+    /// Every frozen kernel-platform domain, in canonical surface order.
+    pub const ALL: [Self; 12] = [
+        Self::Boot,
+        Self::Memory,
+        Self::Mmio,
+        Self::Pio,
+        Self::Irq,
+        Self::Cpu,
+        Self::Atomic,
+        Self::Smp,
+        Self::Dma,
+        Self::Clock,
+        Self::Entropy,
+        Self::Power,
+    ];
+
+    /// Parse the one canonical surface spelling of a platform domain. The
+    /// parser is the production consumer of this closed mapping.
+    pub fn from_surface(surface: &str) -> Option<Self> {
+        match surface {
+            "boot" => Some(Self::Boot),
+            "memory" => Some(Self::Memory),
+            "mmio" => Some(Self::Mmio),
+            "pio" => Some(Self::Pio),
+            "irq" => Some(Self::Irq),
+            "cpu" => Some(Self::Cpu),
+            "atomic" => Some(Self::Atomic),
+            "smp" => Some(Self::Smp),
+            "dma" => Some(Self::Dma),
+            "clock" => Some(Self::Clock),
+            "entropy" => Some(Self::Entropy),
+            "power" => Some(Self::Power),
+            _ => None,
+        }
+    }
+
+    /// The canonical effect-row spelling used by manifests and lowering.
+    pub fn surface(self) -> &'static str {
+        match self {
+            Self::Boot => "boot",
+            Self::Memory => "memory",
+            Self::Mmio => "mmio",
+            Self::Pio => "pio",
+            Self::Irq => "irq",
+            Self::Cpu => "cpu",
+            Self::Atomic => "atomic",
+            Self::Smp => "smp",
+            Self::Dma => "dma",
+            Self::Clock => "clock",
+            Self::Entropy => "entropy",
+            Self::Power => "power",
+        }
+    }
 }
 
 /// A `{ ... }` block: statements plus an optional trailing tail expression
@@ -1025,6 +1104,8 @@ pub enum SlicePat {
 /// A primitive type name (ast.md REQ-7; §4.4 — no lifetimes, closed set).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrimType {
+    U8,
+    U16,
     U32,
     U64,
     Usize,

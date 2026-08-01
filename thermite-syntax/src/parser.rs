@@ -1695,8 +1695,23 @@ impl<'a> Parser<'a> {
             "panic" => Ok(Effect::Panic),
             "diverge" => Ok(Effect::Diverge),
             "term" => Ok(Effect::Term),
+            "platform" => {
+                self.consume(&TokKind::LParen, "`(` after `platform`")?;
+                let span = self.peek_span();
+                let domain = self.take_ident("a platform domain")?;
+                self.consume(&TokKind::RParen, "`)` after the platform domain")?;
+                let Some(domain) = PlatformDomain::from_surface(&domain) else {
+                    return Err(SyntaxError::Unexpected {
+                        expected: "a platform domain (boot/memory/mmio/pio/irq/cpu/atomic/smp/dma/clock/entropy/power)"
+                            .to_string(),
+                        found: format!("identifier `{domain}`"),
+                        span,
+                    });
+                };
+                Ok(Effect::Platform(domain))
+            }
             _ => Err(SyntaxError::Unexpected {
-                expected: "an effect (read/write/net/alloc/time/rand/panic/diverge/term)"
+                expected: "an effect (read/write/net/alloc/time/rand/panic/diverge/term/platform)"
                     .to_string(),
                 found: format!("identifier `{name}`"),
                 span: self.prev_span(),
@@ -3211,6 +3226,8 @@ impl<'a> Parser<'a> {
             TokKind::Ident(name) => {
                 self.bump();
                 match name.as_str() {
+                    "u8" => Ok(Type::Prim(PrimType::U8)),
+                    "u16" => Ok(Type::Prim(PrimType::U16)),
                     "u32" => Ok(Type::Prim(PrimType::U32)),
                     "u64" => Ok(Type::Prim(PrimType::U64)),
                     "usize" => Ok(Type::Prim(PrimType::Usize)),

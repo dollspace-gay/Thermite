@@ -659,6 +659,8 @@ fn render_fields(fields: &[FieldDef]) -> Result<String, String> {
 
 fn type_spelling(ty: &Type) -> Result<String, String> {
     Ok(match ty {
+        Type::Prim(PrimType::U8) => "u8".to_string(),
+        Type::Prim(PrimType::U16) => "u16".to_string(),
         Type::Prim(PrimType::U32) => "u32".to_string(),
         Type::Prim(PrimType::U64) => "u64".to_string(),
         Type::Prim(PrimType::Usize) => "usize".to_string(),

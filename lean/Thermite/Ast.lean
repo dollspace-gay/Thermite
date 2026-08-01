@@ -244,6 +244,8 @@ inductive CombName where
     `bool` or any other type is `Unsupported` in the encoder, so it is out of `S_C`
     and absent here. -/
 inductive CastTy where
+  | u8
+  | u16
   | u64
   | u32
   | usize

@@ -99,7 +99,7 @@
 /// The bitset is a `u16` (one bit per atom), so bits 0..9 are meaningful and the
 /// relation is total over all 512 masks (the 9-atom domain). Widened `u8`→`u16`
 /// for the 9th atom; the `bit_vector` proofs were re-derived over u16.
-pub const ATOM_COUNT: u16 = 9;
+pub const ATOM_COUNT: u32 = 21;
 
 /// The executable effect-subsumption decision over the 9-atom `u16` bitset
 /// (REQ-5): `caller` subsumes `callee` iff `callee` has no atom the `caller`
@@ -114,7 +114,7 @@ pub const ATOM_COUNT: u16 = 9;
 /// (the production consumer, R-DEFER-1); the exhaustive 512×512 = 131072-pair
 /// equivalence test anchors `effects::subsumes` to this verus-verified relation.
 #[must_use]
-pub fn subsumes_masks(caller: u16, callee: u16) -> bool {
+pub fn subsumes_masks(caller: u32, callee: u32) -> bool {
     let missing = callee & !caller;
     missing == 0
 }
@@ -130,10 +130,10 @@ pub fn subsumes_masks(caller: u16, callee: u16) -> bool {
 /// Non-vacuity: this returns `false` for `caller=0, callee=1` (Pure does not
 /// subsume {Read}), so the relation is constraining (not `true`).
 #[must_use]
-pub fn spec_subsumes_mask(caller: u16, callee: u16) -> bool {
-    let mut i: u16 = 0;
+pub fn spec_subsumes_mask(caller: u32, callee: u32) -> bool {
+    let mut i: u32 = 0;
     while i < ATOM_COUNT {
-        let bit = 1u16 << i;
+        let bit = 1u32 << i;
         if (callee & bit) != 0 && (caller & bit) == 0 {
             return false;
         }
@@ -414,6 +414,120 @@ pub fn meets_floor_60(killed: usize, scored: usize) -> bool {
     s > 0 && k * 100 >= s * 60
 }
 
+// ===========================================================================
+// Frozen multicore-kernel transition predicates.
+// ===========================================================================
+
+/// Overflow-free capability range containment. The subtraction form is the
+/// executable mirror of `base <= query && query + len <= base + cap_len` and
+/// cannot wrap after its guards succeed.
+#[must_use]
+pub fn kernel_range_contains(base: u64, len: u64, query: u64, query_len: u64) -> bool {
+    if query < base || query_len > len {
+        false
+    } else {
+        query - base <= len - query_len
+    }
+}
+
+/// Frozen compare-exchange ordering legality (`0=Relaxed`, `1=Acquire`,
+/// `2=Release`, `3=AcqRel`, `4=SeqCst`). Unknown tags and Release/AcqRel failure
+/// orderings fail closed.
+#[must_use]
+pub fn kernel_cas_order_legal(success: u8, failure: u8) -> bool {
+    match success {
+        0 => failure == 0,
+        1 => failure == 0 || failure == 1,
+        2 => failure == 0,
+        3 => failure == 0 || failure == 1,
+        4 => failure == 0 || failure == 1 || failure == 4,
+        _ => false,
+    }
+}
+
+/// Monotonic AP lifecycle edge (`0=Discovered`, `1=Prepared`, `2=Starting`,
+/// `3=Online`, `4=Failed`). Online and Failed are terminal.
+#[must_use]
+pub fn kernel_cpu_transition_legal(current: u8, next: u8) -> bool {
+    (current == 0 && next == 1)
+        || (current == 1 && (next == 2 || next == 4))
+        || (current == 2 && (next == 3 || next == 4))
+}
+
+/// An IPI/shootdown epoch completes iff it is current and the acknowledgement
+/// mask is exactly the non-empty target mask. Extra, missing, and stale bits all
+/// reject.
+#[must_use]
+pub fn kernel_epoch_complete(
+    targets: u64,
+    acknowledgements: u64,
+    epoch: u64,
+    current: u64,
+) -> bool {
+    targets != 0 && epoch == current && acknowledgements == targets
+}
+
+/// Every ownership-changing capability, frame, mapping, and context transition
+/// consumes exactly one non-wrapping generation.
+#[must_use]
+pub fn kernel_generation_transition(current: u64, next: u64) -> bool {
+    current != u64::MAX && next == current + 1
+}
+
+/// A frame split is a strict, lossless partition of the original page count.
+#[must_use]
+pub fn kernel_frame_partition(pages: u64, left: u64, right: u64) -> bool {
+    left > 0 && left < pages && right == pages - left
+}
+
+/// DMA authority remains bound to the frozen device/domain and exact physical
+/// subrange. Zero-length mappings never authorize a transaction.
+#[must_use]
+pub fn kernel_dma_mapping_legal(
+    capability_base: u64,
+    capability_len: u64,
+    mapping_base: u64,
+    mapping_len: u64,
+    expected_device_domain: u64,
+    mapping_device_domain: u64,
+) -> bool {
+    mapping_len != 0
+        && expected_device_domain == mapping_device_domain
+        && kernel_range_contains(capability_base, capability_len, mapping_base, mapping_len)
+}
+
+/// Event/action identifiers start at one and advance exactly once without
+/// wrapping, making correlation stable and stale IDs rejectable.
+#[must_use]
+pub fn kernel_id_transition(current: u64, next: u64) -> bool {
+    current != 0 && kernel_generation_transition(current, next)
+}
+
+/// A scheduler handoff changes owners and may target only an online CPU. The
+/// queue proof supplies the separate exactly-once membership invariant.
+#[must_use]
+pub fn kernel_task_owner_transition(current: u16, next: u16, next_online: bool) -> bool {
+    current != next && next_online
+}
+
+/// A release/acquire message makes the earlier payload visible only when the
+/// acquire reads from that exact release in the recorded modification trace.
+#[must_use]
+pub fn kernel_release_acquire_visible(
+    payload_event: u64,
+    release_event: u64,
+    acquire_reads_from: u64,
+) -> bool {
+    payload_event != 0 && payload_event < release_event && acquire_reads_from == release_event
+}
+
+/// A user access is non-empty and wholly below the exclusive user ceiling,
+/// expressed without overflowing `base + len`.
+#[must_use]
+pub fn kernel_user_range_legal(base: u64, len: u64, user_ceiling: u64) -> bool {
+    len != 0 && base < user_ceiling && len <= user_ceiling - base
+}
+
 // ---------------------------------------------------------------------------
 // The Verus-verified core (REQ-1/REQ-4/REQ-5/REQ-7/REQ-8/REQ-9/REQ-10/REQ-11).
 // Compiled only by the real `verus` driver, which sets `cfg(verus_keep_ghost)`; a
@@ -431,16 +545,17 @@ mod verus_core {
 
     verus! {
 
-    /// Atom `i` is present in `mask` (bit `i` set). 9 atoms (u16): Read=0 .. Term=8.
-    pub open spec fn has(mask: u16, i: u16) -> bool {
-        (mask & (1u16 << i)) != 0
+    /// Atom `i` is present in `mask` (bit `i` set). Hosted effects occupy
+    /// bits 0..8; the twelve frozen platform domains occupy bits 9..20.
+    pub open spec fn has(mask: u32, i: u32) -> bool {
+        (mask & (1u32 << i)) != 0
     }
 
     /// The subset relation `effects(callee) ⊆ effects(caller)`, as the
-    /// explicit 9-way conjunction over the atom positions (mirrors the plain-Rust
+    /// explicit 21-way conjunction over the atom positions (mirrors the plain-Rust
     /// `spec_subsumes_mask`). Non-vacuous (REQ-4): false when callee has an atom
     /// caller lacks. Bit 8 is the #106 terminal-control atom `Term`.
-    pub open spec fn spec_subsumes(caller: u16, callee: u16) -> bool {
+    pub open spec fn spec_subsumes(caller: u32, callee: u32) -> bool {
         &&& (has(callee, 0) ==> has(caller, 0))
         &&& (has(callee, 1) ==> has(caller, 1))
         &&& (has(callee, 2) ==> has(caller, 2))
@@ -450,6 +565,18 @@ mod verus_core {
         &&& (has(callee, 6) ==> has(caller, 6))
         &&& (has(callee, 7) ==> has(caller, 7))
         &&& (has(callee, 8) ==> has(caller, 8))
+        &&& (has(callee, 9) ==> has(caller, 9))
+        &&& (has(callee, 10) ==> has(caller, 10))
+        &&& (has(callee, 11) ==> has(caller, 11))
+        &&& (has(callee, 12) ==> has(caller, 12))
+        &&& (has(callee, 13) ==> has(caller, 13))
+        &&& (has(callee, 14) ==> has(caller, 14))
+        &&& (has(callee, 15) ==> has(caller, 15))
+        &&& (has(callee, 16) ==> has(caller, 16))
+        &&& (has(callee, 17) ==> has(caller, 17))
+        &&& (has(callee, 18) ==> has(caller, 18))
+        &&& (has(callee, 19) ==> has(caller, 19))
+        &&& (has(callee, 20) ==> has(caller, 20))
     }
 
     /// The executable mask test, proved equal to the subset relation for all
@@ -459,21 +586,21 @@ mod verus_core {
     /// the contract is over `caller < 512 && callee < 512` — the upper bits 9..16
     /// are unused, so the all-16-bit `(callee & !caller) == 0` test agrees with the
     /// 9-way `spec_subsumes` conjunction exactly when no out-of-domain bit is set.
-    pub fn subsumes(caller: u16, callee: u16) -> (r: bool)
-        requires caller < 512, callee < 512,
+    pub fn subsumes(caller: u32, callee: u32) -> (r: bool)
+        requires caller < 0x20_0000, callee < 0x20_0000,
         ensures r == spec_subsumes(caller, callee),
     {
-        assert(caller < 512 && callee < 512 ==>
-            ((callee & !caller & 0x1FF) == 0) == spec_subsumes(caller, callee)) by (bit_vector);
-        assert(caller < 512 && callee < 512 ==>
-            (callee & !caller) == (callee & !caller & 0x1FF)) by (bit_vector);
+        assert(caller < 0x20_0000 && callee < 0x20_0000 ==>
+            ((callee & !caller & 0x1F_FFFF) == 0) == spec_subsumes(caller, callee)) by (bit_vector);
+        assert(caller < 0x20_0000 && callee < 0x20_0000 ==>
+            (callee & !caller) == (callee & !caller & 0x1F_FFFF)) by (bit_vector);
         let missing = callee & !caller;
         missing == 0
     }
 
     /// Lattice law 1 (`.design/lower/effect-subsumption.md` REQ-1): reflexive —
     /// every row subsumes itself.
-    proof fn lattice_reflexive(row: u16)
+    proof fn lattice_reflexive(row: u32)
         ensures spec_subsumes(row, row),
     {
         assert(spec_subsumes(row, row)) by (bit_vector);
@@ -482,18 +609,18 @@ mod verus_core {
     /// Lattice law 2: Pure (the empty set, mask 0) subsumes only Pure (over the
     /// 9-atom domain `callee < 512`; an out-of-domain upper bit is not a modeled
     /// atom).
-    proof fn lattice_pure_subsumes_only_pure(callee: u16)
-        requires callee < 512,
-        ensures spec_subsumes(0u16, callee) == (callee == 0),
+    proof fn lattice_pure_subsumes_only_pure(callee: u32)
+        requires callee < 0x20_0000,
+        ensures spec_subsumes(0u32, callee) == (callee == 0),
     {
-        assert(callee < 512 ==> (spec_subsumes(0u16, callee) == (callee == 0))) by (bit_vector);
+        assert(callee < 0x20_0000 ==> (spec_subsumes(0u32, callee) == (callee == 0))) by (bit_vector);
     }
 
     /// Lattice law 3: the top row (all 9 atoms, mask 0x1FF) subsumes every row.
-    proof fn lattice_top_subsumes_all(callee: u16)
-        ensures spec_subsumes(0x1FFu16, callee),
+    proof fn lattice_top_subsumes_all(callee: u32)
+        ensures spec_subsumes(0x1F_FFFFu32, callee),
     {
-        assert(spec_subsumes(0x1FFu16, callee)) by (bit_vector);
+        assert(spec_subsumes(0x1F_FFFFu32, callee)) by (bit_vector);
     }
 
     // =======================================================================
@@ -879,6 +1006,231 @@ mod verus_core {
         ensures forall|k: nat| !(#[trigger] spec_meets_floor_60(k, 0nat)),
     {
         assert(forall|k: nat| !(#[trigger] spec_meets_floor_60(k, 0nat)));
+    }
+
+    // =======================================================================
+    // Frozen multicore-kernel transition predicates.
+    // =======================================================================
+
+    pub open spec fn spec_kernel_range_contains(
+        base: u64,
+        len: u64,
+        query: u64,
+        query_len: u64,
+    ) -> bool {
+        (base as int) <= (query as int)
+            && (query as int) + (query_len as int) <= (base as int) + (len as int)
+    }
+
+    pub fn kernel_range_contains(
+        base: u64,
+        len: u64,
+        query: u64,
+        query_len: u64,
+    ) -> (r: bool)
+        ensures r == spec_kernel_range_contains(base, len, query, query_len),
+    {
+        if query < base || query_len > len {
+            false
+        } else {
+            query - base <= len - query_len
+        }
+    }
+
+    pub open spec fn spec_kernel_cas_order_legal(success: u8, failure: u8) -> bool {
+        if success == 0 { failure == 0 }
+        else if success == 1 { failure == 0 || failure == 1 }
+        else if success == 2 { failure == 0 }
+        else if success == 3 { failure == 0 || failure == 1 }
+        else if success == 4 { failure == 0 || failure == 1 || failure == 4 }
+        else { false }
+    }
+
+    pub fn kernel_cas_order_legal(success: u8, failure: u8) -> (r: bool)
+        ensures r == spec_kernel_cas_order_legal(success, failure),
+    {
+        if success == 0 { failure == 0 }
+        else if success == 1 { failure == 0 || failure == 1 }
+        else if success == 2 { failure == 0 }
+        else if success == 3 { failure == 0 || failure == 1 }
+        else if success == 4 { failure == 0 || failure == 1 || failure == 4 }
+        else { false }
+    }
+
+    pub open spec fn spec_kernel_cpu_transition_legal(current: u8, next: u8) -> bool {
+        (current == 0 && next == 1)
+            || (current == 1 && (next == 2 || next == 4))
+            || (current == 2 && (next == 3 || next == 4))
+    }
+
+    pub fn kernel_cpu_transition_legal(current: u8, next: u8) -> (r: bool)
+        ensures r == spec_kernel_cpu_transition_legal(current, next),
+    {
+        (current == 0 && next == 1)
+            || (current == 1 && (next == 2 || next == 4))
+            || (current == 2 && (next == 3 || next == 4))
+    }
+
+    pub open spec fn spec_kernel_epoch_complete(
+        targets: u64,
+        acknowledgements: u64,
+        epoch: u64,
+        current: u64,
+    ) -> bool {
+        targets != 0 && epoch == current && acknowledgements == targets
+    }
+
+    pub fn kernel_epoch_complete(
+        targets: u64,
+        acknowledgements: u64,
+        epoch: u64,
+        current: u64,
+    ) -> (r: bool)
+        ensures r == spec_kernel_epoch_complete(targets, acknowledgements, epoch, current),
+    {
+        targets != 0 && epoch == current && acknowledgements == targets
+    }
+
+    pub open spec fn spec_kernel_generation_transition(current: u64, next: u64) -> bool {
+        (current as int) < 0xFFFF_FFFF_FFFF_FFFFint
+            && (next as int) == (current as int) + 1
+    }
+
+    pub fn kernel_generation_transition(current: u64, next: u64) -> (r: bool)
+        ensures r == spec_kernel_generation_transition(current, next),
+    {
+        current != 0xFFFF_FFFF_FFFF_FFFFu64 && next == current + 1
+    }
+
+    pub open spec fn spec_kernel_frame_partition(pages: u64, left: u64, right: u64) -> bool {
+        0 < (left as int)
+            && (left as int) < (pages as int)
+            && (right as int) == (pages as int) - (left as int)
+    }
+
+    pub fn kernel_frame_partition(pages: u64, left: u64, right: u64) -> (r: bool)
+        ensures r == spec_kernel_frame_partition(pages, left, right),
+    {
+        left > 0 && left < pages && right == pages - left
+    }
+
+    pub open spec fn spec_kernel_dma_mapping_legal(
+        capability_base: u64,
+        capability_len: u64,
+        mapping_base: u64,
+        mapping_len: u64,
+        expected_device_domain: u64,
+        mapping_device_domain: u64,
+    ) -> bool {
+        mapping_len != 0
+            && expected_device_domain == mapping_device_domain
+            && spec_kernel_range_contains(
+                capability_base,
+                capability_len,
+                mapping_base,
+                mapping_len,
+            )
+    }
+
+    pub fn kernel_dma_mapping_legal(
+        capability_base: u64,
+        capability_len: u64,
+        mapping_base: u64,
+        mapping_len: u64,
+        expected_device_domain: u64,
+        mapping_device_domain: u64,
+    ) -> (r: bool)
+        ensures r == spec_kernel_dma_mapping_legal(
+            capability_base,
+            capability_len,
+            mapping_base,
+            mapping_len,
+            expected_device_domain,
+            mapping_device_domain,
+        ),
+    {
+        mapping_len != 0
+            && expected_device_domain == mapping_device_domain
+            && kernel_range_contains(
+                capability_base,
+                capability_len,
+                mapping_base,
+                mapping_len,
+            )
+    }
+
+    pub open spec fn spec_kernel_id_transition(current: u64, next: u64) -> bool {
+        current != 0 && spec_kernel_generation_transition(current, next)
+    }
+
+    pub fn kernel_id_transition(current: u64, next: u64) -> (r: bool)
+        ensures r == spec_kernel_id_transition(current, next),
+    {
+        current != 0 && kernel_generation_transition(current, next)
+    }
+
+    pub open spec fn spec_kernel_task_owner_transition(
+        current: u16,
+        next: u16,
+        next_online: bool,
+    ) -> bool {
+        current != next && next_online
+    }
+
+    pub fn kernel_task_owner_transition(
+        current: u16,
+        next: u16,
+        next_online: bool,
+    ) -> (r: bool)
+        ensures r == spec_kernel_task_owner_transition(current, next, next_online),
+    {
+        current != next && next_online
+    }
+
+    pub open spec fn spec_kernel_release_acquire_visible(
+        payload_event: u64,
+        release_event: u64,
+        acquire_reads_from: u64,
+    ) -> bool {
+        payload_event != 0
+            && payload_event < release_event
+            && acquire_reads_from == release_event
+    }
+
+    pub fn kernel_release_acquire_visible(
+        payload_event: u64,
+        release_event: u64,
+        acquire_reads_from: u64,
+    ) -> (r: bool)
+        ensures r == spec_kernel_release_acquire_visible(
+            payload_event,
+            release_event,
+            acquire_reads_from,
+        ),
+    {
+        payload_event != 0
+            && payload_event < release_event
+            && acquire_reads_from == release_event
+    }
+
+    pub open spec fn spec_kernel_user_range_legal(
+        base: u64,
+        len: u64,
+        user_ceiling: u64,
+    ) -> bool {
+        len != 0
+            && (base as int) < (user_ceiling as int)
+            && (base as int) + (len as int) <= (user_ceiling as int)
+    }
+
+    pub fn kernel_user_range_legal(
+        base: u64,
+        len: u64,
+        user_ceiling: u64,
+    ) -> (r: bool)
+        ensures r == spec_kernel_user_range_legal(base, len, user_ceiling),
+    {
+        len != 0 && base < user_ceiling && len <= user_ceiling - base
     }
 
     }

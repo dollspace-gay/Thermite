@@ -4,7 +4,7 @@
 tier: 3-component
 status: draft
 audited-sha: f09f8ca376257cc1e2543b8ebc9fb771bffd04df (content-sha256 re-pinned 2026-07-29 for stage-3 REQ-1..REQ-9 / gate G3 (#80, crosslink #351): the registry and generated status view carry the fixed-width reconstruction requirements and verified evidence; req-registry.py --check is clean (462 requirements, 119 views). The legacy commit pin remains the f09f8ca3 stable-main ancestor; the active content digest tracks the governed files. prior: 2026-06-21 stage-2 REQ-10 / AC-10 (#332), the pin battery and final gate G2 increment)
-audited-content-sha256: 8beefb7b26f30b16b47aed2a457052e8ac31068de5c839859e11d543a8fd328c (re-pinned 2026-08-01 after registering issue #110 invariant-receiver REQ-INVBIND-1..REQ-INVBIND-3)
+audited-content-sha256: df89e60db2d94b118bb171b5ba2a114014bd7641c5c810d78fc4115abdae55b8 (re-pinned 2026-08-01 after registering REQ-MKERNEL-1..REQ-MKERNEL-16 for the bootable multicore kernel design)
 governs:
   - .design/reqs/registry.toml
   - .design/reqs/status.md
@@ -41,6 +41,13 @@ issue: GitHub #17
 > `REQ-VERUSERR-3` bind issue #111's optional structured count, honest frontend
 > diagnostic, and fail-closed unknown-count behavior. The registry now contains
 > 505 validated requirements across 123 generated views.
+
+> **Bootable multicore kernel design (2026-08-01).** `REQ-MKERNEL-1` through
+> `REQ-MKERNEL-16` register the final-image closure, frozen platform calls,
+> capability and effect model, kernel data basis, SMP lifecycle, atomic memory
+> model, user-mode and device path, receipt, and release gate as NOT-STARTED.
+> The registry now contains 524 validated requirements across 125 generated
+> views.
 
 ## Summary
 

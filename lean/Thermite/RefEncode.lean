@@ -137,6 +137,8 @@ inductive VerusArithTok where
     cast-target choice is an explicit, independent step (the faithfulness decision
     point for #177). -/
 inductive VerusCastTok where
+  | u8Tok
+  | u16Tok
   | u64Tok
   | u32Tok
   | usizeTok
@@ -181,6 +183,8 @@ def encArith : ArithOp → VerusArithTok
     `Named "int"→"int"`). The #177 faithfulness decision point: an infidelity
     (e.g. `nat→intTok`) would live here. -/
 def encCast : CastTy → VerusCastTok
+  | CastTy.u8    => VerusCastTok.u8Tok
+  | CastTy.u16   => VerusCastTok.u16Tok
   | CastTy.u64   => VerusCastTok.u64Tok
   | CastTy.u32   => VerusCastTok.u32Tok
   | CastTy.usize => VerusCastTok.usizeTok
@@ -224,6 +228,8 @@ def tokArith : VerusArithTok → Int → Int → Int
     operand value — the meaning `⟦·⟧` of the emitted `as <target>`. Routes through
     the shared `castDenote` (`Denote.lean`). -/
 def tokCast : VerusCastTok → Int → Int
+  | VerusCastTok.u8Tok,    v => castDenote CastTy.u8 v
+  | VerusCastTok.u16Tok,   v => castDenote CastTy.u16 v
   | VerusCastTok.u64Tok,   v => castDenote CastTy.u64 v
   | VerusCastTok.u32Tok,   v => castDenote CastTy.u32 v
   | VerusCastTok.usizeTok, v => castDenote CastTy.usize v

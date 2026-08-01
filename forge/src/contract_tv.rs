@@ -968,6 +968,8 @@ impl SpecType {
 /// outside contract-TV's framed sublanguage.
 fn spec_type_of(ty: &Type) -> Option<SpecType> {
     match ty {
+        Type::Prim(PrimType::U8) => Some(SpecType::BoundedInt("u8".to_string())),
+        Type::Prim(PrimType::U16) => Some(SpecType::BoundedInt("u16".to_string())),
         // Type the bounded int at its declared width (#228) — the obligation param
         // then carries the true domain, so the production `as u32`/`as usize`
         // truncation is identity within that domain (the soundness fix).
@@ -1006,6 +1008,8 @@ fn spec_type_of(ty: &Type) -> Option<SpecType> {
 /// a nested slice/struct element is unframed).
 fn elem_spelling(ty: &Type) -> Option<String> {
     match ty {
+        Type::Prim(PrimType::U8) => Some("u8".to_string()),
+        Type::Prim(PrimType::U16) => Some("u16".to_string()),
         Type::Prim(PrimType::U32) => Some("u32".to_string()),
         Type::Prim(PrimType::U64) => Some("u64".to_string()),
         Type::Prim(PrimType::Usize) => Some("usize".to_string()),
@@ -1021,6 +1025,8 @@ fn elem_spelling(ty: &Type) -> Option<String> {
 /// whole signature falls back to Skip rather than mis-spelling it.
 fn verus_type_spelling(ty: &Type) -> Option<String> {
     match ty {
+        Type::Prim(PrimType::U8) => Some("u8".to_string()),
+        Type::Prim(PrimType::U16) => Some("u16".to_string()),
         Type::Prim(PrimType::U32) => Some("u32".to_string()),
         Type::Prim(PrimType::U64) => Some("u64".to_string()),
         Type::Prim(PrimType::Usize) => Some("usize".to_string()),

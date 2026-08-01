@@ -22,18 +22,18 @@
 //! not anti-pattern-gated.
 
 use thermite_lower::subsumes;
-use thermite_syntax::ast::{Effect, EffectRow};
+use thermite_syntax::ast::{Effect, EffectRow, PlatformDomain};
 
 /// The number of meaningful atom bits in the widened `u16` bitset (Read=0 ..
 /// Term=8). The domain the proved relation is total over is `0..512`.
-const ATOM_DOMAIN: u16 = 512;
+const HOSTED_ATOM_DOMAIN: u32 = 512;
 
 /// Decode a 9-atom `u16` mask to the `EffectRow` `effects::subsumes` consumes.
 /// Bit positions must match `EffectKind::bit` in `effects.rs` and the verus
 /// core's atom ordering: Read=0, Write=1, Net=2, Alloc=3, Time=4, Rand=5,
 /// Panic=6, Diverge=7, Term=8 (the #106 terminal-control atom). Path-carrying
 /// atoms use a representative path (v0.1 subsumption is path-insensitive, OQ-1).
-fn row_from_mask(mask: u16) -> EffectRow {
+fn row_from_mask(mask: u32) -> EffectRow {
     if mask == 0 {
         return EffectRow::Pure;
     }
@@ -65,6 +65,11 @@ fn row_from_mask(mask: u16) -> EffectRow {
     if mask & (1 << 8) != 0 {
         effects.push(Effect::Term);
     }
+    for (offset, domain) in PlatformDomain::ALL.into_iter().enumerate() {
+        if mask & (1 << (9 + offset)) != 0 {
+            effects.push(Effect::Platform(domain));
+        }
+    }
     EffectRow::Set(effects)
 }
 
@@ -75,8 +80,8 @@ fn row_from_mask(mask: u16) -> EffectRow {
 fn subsumes_matches_verified_spec_exhaustively() {
     let mut checked: u32 = 0;
     let mut mismatches: u32 = 0;
-    for caller in 0u16..ATOM_DOMAIN {
-        for callee in 0u16..ATOM_DOMAIN {
+    for caller in 0u32..HOSTED_ATOM_DOMAIN {
+        for callee in 0u32..HOSTED_ATOM_DOMAIN {
             // The external truth: the verus-verified subset relation (proved by
             // `verus --no-cheating`, see tests/verus_verify.rs).
             let expected = thermite_verified::spec_subsumes_mask(caller, callee);
@@ -112,13 +117,37 @@ fn subsumes_matches_verified_spec_exhaustively() {
 /// oracle.)
 #[test]
 fn verified_mirror_equals_spec_exhaustively() {
-    for caller in 0u16..ATOM_DOMAIN {
-        for callee in 0u16..ATOM_DOMAIN {
+    for caller in 0u32..HOSTED_ATOM_DOMAIN {
+        for callee in 0u32..HOSTED_ATOM_DOMAIN {
             assert_eq!(
                 thermite_verified::subsumes_masks(caller, callee),
                 thermite_verified::spec_subsumes_mask(caller, callee),
                 "verified exec mirror must equal the proved subset relation at \
                  caller={caller}, callee={callee}"
+            );
+        }
+    }
+}
+
+/// Every platform domain remains an independent lattice atom. In particular,
+/// authority for one domain never subsumes another domain.
+#[test]
+fn platform_domains_are_pairwise_isolated() {
+    for (caller_index, caller_domain) in PlatformDomain::ALL.into_iter().enumerate() {
+        for (callee_index, callee_domain) in PlatformDomain::ALL.into_iter().enumerate() {
+            let caller_mask = 1u32 << (9 + caller_index);
+            let callee_mask = 1u32 << (9 + callee_index);
+            let expected = caller_index == callee_index;
+            assert_eq!(
+                subsumes(
+                    &EffectRow::Set(vec![Effect::Platform(caller_domain)]),
+                    &EffectRow::Set(vec![Effect::Platform(callee_domain)]),
+                ),
+                expected
+            );
+            assert_eq!(
+                thermite_verified::spec_subsumes_mask(caller_mask, callee_mask),
+                expected
             );
         }
     }
@@ -145,8 +174,8 @@ fn verified_spec_is_not_vacuous() {
         "a term caller subsumes a term callee (reflexive on the new atom)"
     );
     assert!(
-        thermite_verified::spec_subsumes_mask(0x1FF, 0x1FF),
-        "top (all 9 atoms) subsumes top (sanity)"
+        thermite_verified::spec_subsumes_mask(0x1F_FFFF, 0x1F_FFFF),
+        "top (all 21 atoms) subsumes top (sanity)"
     );
     assert!(
         thermite_verified::spec_subsumes_mask(0, 0),

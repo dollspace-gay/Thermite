@@ -1188,6 +1188,33 @@ design = ".design/stage4-epr-reconstruction.md"
 reference = []
 conformance_ops = []
 
+# Bootable multicore kernel language foundation. The first increment adds the
+# byte/word primitive widths and the closed platform-effect domain carried by
+# registered kernel boundaries.
+[[route]]
+crate_pattern = "thermite-syntax/src/ast.rs"
+design = ".design/build/bootable-multicore-kernel.md"
+reference = []
+conformance_ops = ["kernel-scalars", "platform-effects"]
+
+[[route]]
+crate_pattern = "thermite-syntax/src/parser.rs"
+design = ".design/build/bootable-multicore-kernel.md"
+reference = []
+conformance_ops = ["kernel-scalars", "platform-effects"]
+
+[[route]]
+crate_pattern = "thermite-syntax/src/lib.rs"
+design = ".design/build/bootable-multicore-kernel.md"
+reference = []
+conformance_ops = ["platform-domain-api"]
+
+[[route]]
+crate_pattern = "thermite-syntax/tests/kernel_surface.rs"
+design = ".design/build/bootable-multicore-kernel.md"
+reference = []
+conformance_ops = ["closed-platform-domain"]
+
 [[route]]
 crate_pattern = ".github/workflows/ci.yml"
 design = ".design/stage4-epr-reconstruction.md"

@@ -3,9 +3,9 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: a7db569b23ff270a41828b4da0575d4d064132387b9ffab1ba51226e73ce5fb8
+audited-content-sha256: 06366a2fda0c48042301ba15ed0a02acc07a08a57c6101f24c8119ec365bddd7
 decision: Option A — compile the canonical Verus executable body that was verified
-issue: github:dollspace-gay/Thermite#101, github:dollspace-gay/Thermite#103, github:dollspace-gay/Thermite#104
+issue: github:dollspace-gay/Thermite#101, github:dollspace-gay/Thermite#103, github:dollspace-gay/Thermite#104, github:dollspace-gay/Thermite#108
 governs:
   - forge/src/verified_build.rs (new)
   - forge/src/build.rs
@@ -59,6 +59,13 @@ input. Ordinary L3 builds omit the optional composition fields and retain this
 document's original schemas and semantics. The composition-specific policy,
 visibility, inventory, and acceptance contract live in
 `.design/build/l3-rich-composition.md`.
+
+Issue #108 extends only the kernel composition toolchain boundary. Kernel
+builds still use `--no-vstd --no-cheating`, but explicitly import the pinned
+vstd VIR proof model and pair it with a deterministic erased `no_std` metadata
+rlib. This makes native `&[u8]` length and indexing specifications available
+without adding hosted runtime code. The model/source/metadata binding and byte
+slice acceptance matrix live in `.design/build/kernel-byte-slice.md`.
 
 ## Decision
 
@@ -327,6 +334,13 @@ The final whole-crate result is authoritative. Existing per-item certificates
 remain useful evidence and diagnostics, but they do not replace proof of the
 exact emitted crate, including generated wrappers and executable helpers.
 
+For a kernel target, the exact invocation additionally carries `--no-vstd`, an
+explicit `--import vstd=<pinned-vstd.vir>`, and
+`--extern vstd=<generated-no-std-rlib>`. The imported VIR is the semantic
+authority. The erased rlib supplies only the matching Rust metadata needed by
+code generation; it is built deterministically from a Forge-owned source whose
+digest and normalized command are receipt-bound.
+
 No independently reconstructed Rust source may appear between successful
 verification and code generation. If a future Verus integration exposes
 post-erasure Rust/MIR/LLVM material, Forge records its digest as additional
@@ -476,6 +490,12 @@ sample `main` functions and seccomp injection remain features of the L1
 - no ambient `read`/`write`/`net`/`term`/`time`/`rand` effects;
 - no `#[boundary]`, `#[slag]`, unresolved calls or diverging exemptions.
 
+Kernel proof dependencies are explicit. Forge binds the pinned `vstd.vir`, the
+complete pinned vstd source-tree digest, its deterministic erased `no_std`
+metadata source and rlib, and the portable final argument shape. This
+dependency contributes no allocator or hosted slice adapter; executable
+`&[u8]` reads remain Rust core operations.
+
 The kernel host supplies its panic handler and allocator at final link as
 needed. A conformance harness links the produced rlib into a separate
 `no_std` consumer crate, calls every declared export with an ABI-compatible
@@ -513,7 +533,12 @@ defined specifically for proof-to-artifact correspondence.
     translation-validation.json
     verus-result.json
     toolchain.json
+    kernel-vstd-link.rs   # kernel target only
 ```
+
+Kernel bundles also place the generated metadata dependency at
+`artifact/deps/libvstd.rlib`. Both conditional files are covered by the
+ordinary receipt inventory and binding root.
 
 The receipt uses bundle-relative paths only. Optional human-readable logs may
 be included under `evidence/`, but no unbound field may contribute to an
@@ -554,6 +579,7 @@ toolchain:
   ambient host rustc as non-authoritative diagnostic provenance
   Z3 identity
   vstd/dependency lock digest
+  kernel-only pinned vstd VIR/source-tree and generated no_std metadata evidence
   target triple, data layout, crate options and ordered arguments
 artifact:
   relative path, kind, length and SHA-256
@@ -586,8 +612,10 @@ changing the correspondence claim.
 `--replay` recreates the private compile input from the bound plan/source,
 resolves the current pinned Verus binary's authoritative codegen selection,
 requires its path-independent identity to match the receipt, explicitly selects
-that toolchain, reruns the exact pinned Verus command, and compares the new
-artifact digest. The ambient host compiler is neither selected nor compared.
+that toolchain, and, for a kernel receipt, re-hashes the pinned VIR and source
+tree and independently rebuilds the erased metadata rlib. It then reruns the
+exact pinned Verus command and compares the new artifact digest. The ambient
+host compiler is neither selected nor compared.
 If the pinned tools are unavailable, replay fails as unavailable; it never
 reports structural hash validation as proof replay.
 

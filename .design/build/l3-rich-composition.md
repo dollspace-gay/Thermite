@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: a2a4674fe5b8603d30adc2e4e509e4b494341430114da0e096312af83118cff3
+audited-content-sha256: 4425c466eaf0db00b141b68ea4e6955c07260327ffba7b84f5c39239d8bc8ae1
 decision: one canonical Verus crate with crate-visible rich Thermite roots and public shell exports
 issue: github:dollspace-gay/Thermite#104
 governs:
@@ -166,14 +166,21 @@ row, or non-rich skip into success. Fault-injected non-pass rows still reject.
 
 ## Kernel bounded-state representation
 
-The kernel profile retains `#![no_std]` and `--no-vstd`. Because the pinned vstd
-rlib depends on `std`, it cannot be used to justify a kernel artifact. A kernel
-composition may transport a bounded `Vec<T>` through rich state and reason
-about its bounded length using an allocation-free length representation.
-Element-observing or mutating methods are deliberately absent in that target
-and therefore fail whole-crate verification. The hosted target retains the
-full vstd-backed collection lowering. This is an observable-subset refinement,
-not an unchecked allocator shim.
+The kernel profile retains `#![no_std]` and `--no-vstd`. Because the distributed
+vstd rlib depends on `std`, it is not linked into a kernel artifact. Forge now
+explicitly imports the pinned, receipt-bound `vstd.vir` proof model and pairs it
+with a deterministic erased `no_std` metadata rlib for the slice subset; the
+architecture and replay boundary are specified in
+`.design/build/kernel-byte-slice.md`. This enables native executable `&[u8]`
+length/index operations with exact content contracts without introducing a
+runtime adapter or allocator.
+
+A kernel composition may still transport a bounded `Vec<T>` through rich state
+and reason about its bounded length using an allocation-free length
+representation. Element-observing or mutating `Vec` methods remain deliberately
+absent in that target and therefore fail whole-crate verification. The hosted
+target retains the full vstd-backed collection lowering. This is an
+observable-subset refinement, not an unchecked allocator shim.
 
 Forge promises a verified kernel rlib, not a freestanding final image with an
 empty platform runtime. Larger ADT copies may leave target intrinsics such as

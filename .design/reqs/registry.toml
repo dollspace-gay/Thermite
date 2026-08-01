@@ -748,6 +748,14 @@ region = "forge-l3-rich-composition-status"
 title = "Forge L3 Rich Composition Canonical Status References"
 
 [[view]]
+name = "forge-kernel-byte-slice-status"
+path = ".design/build/kernel-byte-slice.md"
+kind = "reference_list"
+mode = "region"
+region = "forge-kernel-byte-slice-status"
+title = "Forge Kernel Byte-Slice Canonical Status References"
+
+[[view]]
 name = "forge-audit-status"
 path = "forge/src/audit.rs"
 kind = "reference_list"
@@ -12450,6 +12458,101 @@ note = "composition-only lowering and ordinary-library non-regression"
 kind = "test"
 target = "forge/tests/verified_composition.rs::probe_state_composition_is_exact_private_linkable_and_reproducible"
 note = "four-field enum, three byte-identical builds, replay, hosted consumer, and private rich root"
+
+[[requirement]]
+id = "REQ-KERNELBYTES-1"
+title = "Pinned no-std kernel slice proof model"
+owner = ".design/build/kernel-byte-slice.md"
+status = "shipped"
+scope = "verified"
+summary = "Kernel builds keep --no-vstd while explicitly importing the pinned vstd VIR slice model and linking a deterministic erased no-std metadata crate, never the hosted vstd rlib."
+aliases = ["github:dollspace-gay/Thermite#108", ".design/build/kernel-byte-slice.md REQ-1 (slice model)"]
+contributors = [".design/build/kernel-byte-slice.md"]
+generated_to = ["status", "forge-kernel-byte-slice-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "KernelVstdModelEvidence"
+note = "pinned VIR, full model source tree, erased link source/build and no-std rlib identity"
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/kernel_vstd_link.rs"
+note = "minimal deterministic no-std Rust metadata skeleton for the imported slice model"
+
+[[requirement]]
+id = "REQ-KERNELBYTES-2"
+title = "Exact executable byte-slice content contracts"
+owner = ".design/build/kernel-byte-slice.md"
+status = "shipped"
+scope = "verified"
+summary = "A strict exact-source kernel shell proves allocation-free native slice length and indexing for little-endian u32/u64 decoders against exact byte-view postconditions."
+aliases = [".design/build/kernel-byte-slice.md REQ-2 (exact reads)"]
+contributors = [".design/build/kernel-byte-slice.md"]
+generated_to = ["status", "forge-kernel-byte-slice-status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "conformance/verified-composition/kernel_bytes_shell.rs"
+note = "verified little-endian u32/u64 slice decoders and exact byte-content specifications"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/kernel_byte_slice.rs::kernel_byte_slice_is_verified_executable_freestanding_and_reproducible"
+note = "strict combined proof, exact source pins, and known-byte execution"
+
+[[requirement]]
+id = "REQ-KERNELBYTES-3"
+title = "Receipt-bound model source and replay"
+owner = ".design/build/kernel-byte-slice.md"
+status = "shipped"
+scope = "forge"
+summary = "The receipt binds the official VIR, complete model source tree, link skeleton, normalized build, generated dependency and codegen closure; replay rebuilds and compares them before artifact proof/codegen."
+aliases = [".design/build/kernel-byte-slice.md REQ-3 (binding and replay)"]
+contributors = [".design/build/kernel-byte-slice.md"]
+generated_to = ["status", "forge-kernel-byte-slice-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "build_kernel_vstd_link"
+note = "closed-environment deterministic no-std dependency build and evidence capture"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "validate_bundle"
+note = "model/dependency consistency validation and exact replay rebuild"
+
+[[requirement]]
+id = "REQ-KERNELBYTES-4"
+title = "Bounds and content negatives reject publication"
+owner = ".design/build/kernel-byte-slice.md"
+status = "shipped"
+scope = "verified"
+summary = "A wrong-endian content postcondition and a deliberately out-of-bounds slice call both fail strict verification and publish no bundle."
+aliases = [".design/build/kernel-byte-slice.md REQ-4 (negative controls)"]
+contributors = [".design/build/kernel-byte-slice.md"]
+generated_to = ["status", "forge-kernel-byte-slice-status"]
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/kernel_byte_slice.rs::wrong_content_and_out_of_bounds_shells_are_rejected"
+note = "load-bearing endian/content and bounds proof failures"
+
+[[requirement]]
+id = "REQ-KERNELBYTES-5"
+title = "Reproducible hosted and freestanding consumption"
+owner = ".design/build/kernel-byte-slice.md"
+status = "shipped"
+scope = "verified"
+summary = "Known bytes decode to the expected host values, low/high freestanding gates link without hosted runtime, and independent builds plus replay reproduce receipts, source, artifact and model dependency bytes."
+aliases = [".design/build/kernel-byte-slice.md REQ-5 (execution and reproducibility)"]
+contributors = [".design/build/kernel-byte-slice.md"]
+generated_to = ["status", "forge-kernel-byte-slice-status"]
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/kernel_byte_slice.rs::kernel_byte_slice_is_verified_executable_freestanding_and_reproducible"
+note = "host observation, no-std rlib gate, final-link gate, byte-for-byte rebuild and replay"
 
 [[requirement]]
 id = "REQ-FORGE-AUDIT-SCHEMA"

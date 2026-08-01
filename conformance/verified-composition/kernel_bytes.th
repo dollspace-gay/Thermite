@@ -1,0 +1,7 @@
+fn model_identity(value: u64) -> u64
+  req true
+  ens result == value
+  fx pure
+{
+  value
+}

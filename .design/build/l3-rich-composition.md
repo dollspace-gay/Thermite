@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: 4425c466eaf0db00b141b68ea4e6955c07260327ffba7b84f5c39239d8bc8ae1
+audited-content-sha256: 4b67e5d17627df4fd1eabcd96f9bef3e38ac03b536615d9d3280b94f37e797c2
 decision: one canonical Verus crate with crate-visible rich Thermite roots and public shell exports
 issue: github:dollspace-gay/Thermite#104
 governs:
@@ -219,6 +219,12 @@ and artifact drift.
 Publication reuses the staging/fsync/self-validation/atomic-rename protocol.
 No destination appears on any planning, policy, certificate, TV, proof,
 codegen, binding, validation, or injected-fault failure.
+
+Composition rejection diagnostics follow the shared structured-count rule in
+`.design/build/verus-error-accounting.md`: a numeric `errors=N` claim appears
+only when Verus supplies that field. A frontend rejection with an omitted count
+remains a hard failure and publishes nothing, but is reported without a
+fabricated sentinel value.
 
 ## Requirements
 

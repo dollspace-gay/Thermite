@@ -3,9 +3,9 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: 06366a2fda0c48042301ba15ed0a02acc07a08a57c6101f24c8119ec365bddd7
+audited-content-sha256: 4bbbb4b2893b2afb89349579d12b7abb3319d3ad8ad3cd6ac4ff42fa285d9e23
 decision: Option A — compile the canonical Verus executable body that was verified
-issue: github:dollspace-gay/Thermite#101, github:dollspace-gay/Thermite#103, github:dollspace-gay/Thermite#104, github:dollspace-gay/Thermite#108
+issue: github:dollspace-gay/Thermite#101, github:dollspace-gay/Thermite#103, github:dollspace-gay/Thermite#104, github:dollspace-gay/Thermite#108, github:dollspace-gay/Thermite#111
 governs:
   - forge/src/verified_build.rs (new)
   - forge/src/build.rs
@@ -333,6 +333,13 @@ merely contract-breaking changes.
 The final whole-crate result is authoritative. Existing per-item certificates
 remain useful evidence and diagnostics, but they do not replace proof of the
 exact emitted crate, including generated wrappers and executable helpers.
+
+Whole-crate error counts are structured evidence, not inferred presentation.
+Forge records `verification-results.errors` when Verus supplies it and treats a
+missing field as unknown. A frontend rejection therefore retains its diagnostic
+without a fabricated numeric suffix, while strict success and receipt validation
+still require an explicit zero. The detailed compatibility and negative matrix
+are specified in `.design/build/verus-error-accounting.md`.
 
 For a kernel target, the exact invocation additionally carries `--no-vstd`, an
 explicit `--import vstd=<pinned-vstd.vir>`, and

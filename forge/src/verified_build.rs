@@ -413,7 +413,8 @@ pub struct VerusEvidence {
     pub source_sha256_after: String,
     pub codegen_toolchain_sha256: String,
     pub success: bool,
-    pub errors: u64,
+    #[serde(default)]
+    pub errors: Option<u64>,
     pub stdout: String,
     pub stderr: String,
 }
@@ -1046,13 +1047,10 @@ pub fn build_file(
         &toolchain.artifact_codegen.canonical_identity_sha256(),
         collected_toolchain.dependency_path("libvstd.rlib"),
     )?;
-    if !compiled.evidence.success || compiled.evidence.errors != 0 {
+    if !compiled.evidence.success || compiled.evidence.errors != Some(0) {
         return Ok(reject(
             "whole-crate-verus",
-            format!(
-                "strict Verus proof/codegen failed (errors={}): {}",
-                compiled.evidence.errors, compiled.evidence.stderr
-            ),
+            verus_failure_detail("strict Verus proof/codegen failed", &compiled.evidence),
         ));
     }
     if compiled.evidence.source_sha256_before != plan.expected_verus_source_sha256
@@ -2904,7 +2902,7 @@ fn compile_verus_source(
     let stdout = normalize_json_output(&stdout_raw).unwrap_or(stdout_raw);
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
     let (reported_success, errors) = parse_verus_summary(&stdout);
-    let success = output.status.success() && reported_success && errors == 0;
+    let success = output.status.success() && reported_success && errors == Some(0);
     if stdout.contains("cheating") || stderr.contains("cheating") {
         return Err(ForgeError::VerusOutput {
             detail: format!("strict Verus invocation reported cheating: {stderr}"),
@@ -2995,9 +2993,9 @@ fn expected_verus_args(crate_name: &str, target: VerifiedTarget) -> Vec<String> 
     args
 }
 
-fn parse_verus_summary(stdout: &str) -> (bool, u64) {
+fn parse_verus_summary(stdout: &str) -> (bool, Option<u64>) {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(stdout.trim()) else {
-        return (false, u64::MAX);
+        return (false, None);
     };
     if let Some(summary) = value.get("verification-results") {
         return (
@@ -3005,13 +3003,17 @@ fn parse_verus_summary(stdout: &str) -> (bool, u64) {
                 .get("success")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false),
-            summary
-                .get("errors")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(u64::MAX),
+            summary.get("errors").and_then(|v| v.as_u64()),
         );
     }
-    (false, u64::MAX)
+    (false, None)
+}
+
+fn verus_failure_detail(label: &str, evidence: &VerusEvidence) -> String {
+    match evidence.errors {
+        Some(errors) => format!("{label} (errors={errors}): {}", evidence.stderr),
+        None => format!("{label}: {}", evidence.stderr),
+    }
 }
 
 fn normalize_json_output(text: &str) -> Option<String> {
@@ -3731,13 +3733,13 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
             detail: format!("invalid bound whole-crate Verus evidence: {error}"),
         })?;
     if !verus.success
-        || verus.errors != 0
+        || verus.errors != Some(0)
         || verus.args != plan.expected_verus_args
         || plan.expected_verus_args != expected_verus_args(&plan.crate_name, plan.target)
         || verus.source_relative_path != format!("{}.rs", plan.crate_name)
         || verus.source_sha256_before != plan.expected_verus_source_sha256
         || verus.source_sha256_after != plan.expected_verus_source_sha256
-        || parse_verus_summary(&verus.stdout) != (true, 0)
+        || parse_verus_summary(&verus.stdout) != (true, Some(0))
     {
         return Err(ForgeError::VerusOutput {
             detail: "bound whole-crate result does not prove strict no-cheating codegen of the canonical source"
@@ -4121,6 +4123,68 @@ mod tests {
         let parsed = thermite_syntax::parse(source);
         assert!(parsed.is_clean(), "{:?}", parsed.errors);
         parsed.program
+    }
+
+    fn sample_verus_evidence(errors: Option<u64>) -> VerusEvidence {
+        VerusEvidence {
+            args: Vec::new(),
+            source_relative_path: "sample.rs".to_string(),
+            source_sha256_before: "a".repeat(64),
+            source_sha256_after: "a".repeat(64),
+            codegen_toolchain_sha256: "b".repeat(64),
+            success: false,
+            errors,
+            stdout: String::new(),
+            stderr: "frontend rejected the crate".to_string(),
+        }
+    }
+
+    #[test]
+    fn verus_summary_distinguishes_reported_and_unknown_error_counts() {
+        assert_eq!(
+            parse_verus_summary(
+                r#"{"verification-results":{"success":true,"verified":2,"errors":0}}"#,
+            ),
+            (true, Some(0)),
+        );
+        assert_eq!(
+            parse_verus_summary(
+                r#"{"verification-results":{"success":false,"verified":1,"errors":3}}"#,
+            ),
+            (false, Some(3)),
+        );
+        assert_eq!(
+            parse_verus_summary(
+                r#"{"verification-results":{"success":false,"encountered-vir-error":true}}"#,
+            ),
+            (false, None),
+        );
+        assert_eq!(parse_verus_summary("not json"), (false, None));
+        assert_eq!(parse_verus_summary("{}"), (false, None));
+    }
+
+    #[test]
+    fn verus_failure_detail_claims_only_structured_counts() {
+        let known = verus_failure_detail("strict Verus failed", &sample_verus_evidence(Some(3)));
+        assert_eq!(
+            known,
+            "strict Verus failed (errors=3): frontend rejected the crate"
+        );
+
+        let unknown = verus_failure_detail("strict Verus failed", &sample_verus_evidence(None));
+        assert_eq!(unknown, "strict Verus failed: frontend rejected the crate");
+        assert!(!unknown.contains(&u64::MAX.to_string()));
+        assert!(!unknown.contains("errors="));
+    }
+
+    #[test]
+    fn verus_evidence_keeps_numeric_success_compatibility_and_defaults_to_unknown() {
+        let evidence = sample_verus_evidence(Some(0));
+        let mut encoded = serde_json::to_value(&evidence).unwrap();
+        assert_eq!(encoded["errors"], serde_json::json!(0));
+        encoded.as_object_mut().unwrap().remove("errors");
+        let decoded: VerusEvidence = serde_json::from_value(encoded).unwrap();
+        assert_eq!(decoded.errors, None);
     }
 
     fn sample_codegen(root: &str) -> CodegenRustcEvidence {

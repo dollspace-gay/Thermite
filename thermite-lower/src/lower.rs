@@ -1594,6 +1594,27 @@ fn lower_inv_expr(
             }
             Ok(format!("{c}({})", parts.join(", ")))
         }
+        // A unary operator inside the receiver-bound invariant predicate (#110):
+        // recurse through this invariant-specific lowerer so a declared field in
+        // `!flag` becomes `!self.flag`. Falling through to the shared spec
+        // lowerer loses the struct receiver context and emits an unbound `flag`.
+        // Preserve the shared unary grouping rule for a binary operand.
+        Expr::Unary { op, expr: inner } => {
+            let UnaryOp::Not = op;
+            let inner_src = lower_inv_expr(
+                inner,
+                field_names,
+                string_fields,
+                spec_fn_param_types,
+                d,
+                span,
+            )?;
+            if matches!(inner.as_ref(), Expr::Binary { .. }) {
+                Ok(format!("!({inner_src})"))
+            } else {
+                Ok(format!("!{inner_src}"))
+            }
+        }
         // A cast inside the `well_formed` predicate (`inv (x as u32) < cap`,
         // blocker #148): the cast inner must recurse through `lower_inv_expr` so a
         // bare field name is rewritten to `self.<field>` (the catch-all

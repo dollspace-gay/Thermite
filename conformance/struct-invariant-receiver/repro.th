@@ -1,0 +1,15 @@
+struct State {
+  panic_latched: bool,
+  reschedule_pending: bool,
+} inv !panic_latched || !reschedule_pending
+
+fn clear(s: State) -> State
+  req true
+  ens !result.reschedule_pending
+  fx pure
+{
+  State {
+    panic_latched: s.panic_latched,
+    reschedule_pending: false,
+  }
+}

@@ -435,6 +435,14 @@ comment_prefix = "//! "
 title = "ADT Lowering Canonical Status References"
 
 [[view]]
+name = "struct-invariant-receiver-binding-status"
+path = ".design/lower/struct-invariant-receiver-binding.md"
+kind = "reference_list"
+mode = "region"
+region = "struct-invariant-receiver-binding-status"
+title = "Struct-Invariant Receiver Binding Canonical Status References"
+
+[[view]]
 name = "thermite-lower-recursion-schemes-status"
 path = "thermite-lower/src/lower.rs"
 kind = "reference_list"
@@ -5719,7 +5727,7 @@ status = "shipped"
 scope = "lower"
 summary = "Struct items lower to Verus structs with public fields and a `well_formed` predicate threaded into relevant signatures."
 aliases = ["thermite-lower/src/lower.rs REQ-8 (struct → Verus struct; type-invariant → enforced predicate)"]
-contributors = [".design/basis/01-adts.md", "thermite-lower/tests/adt_lower_conformance.rs"]
+contributors = [".design/basis/01-adts.md", ".design/lower/struct-invariant-receiver-binding.md", "thermite-lower/tests/adt_lower_conformance.rs", "forge/tests/struct_invariant_receiver.rs"]
 generated_to = ["status", "thermite-lower-adt-status"]
 
 [[requirement.evidence]]
@@ -5736,6 +5744,64 @@ note = "type-invariant predicate lowerer"
 kind = "test"
 target = "thermite-lower/tests/adt_lower_conformance.rs"
 note = "bank-account invariant conformance"
+
+[[requirement]]
+id = "REQ-INVBIND-1"
+title = "Canonical receiver binding under unary operators"
+owner = ".design/lower/struct-invariant-receiver-binding.md"
+status = "shipped"
+scope = "lower"
+summary = "The canonical struct-invariant lowerer recursively qualifies declared field paths through unary operators, preserving receiver semantics and expression grouping."
+aliases = ["issue #110 invariant unary field binding"]
+contributors = [".design/basis/01-adts.md", "thermite-lower/src/lower.rs", "thermite-lower/tests/adt_lower_conformance.rs"]
+generated_to = ["status", "struct-invariant-receiver-binding-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_inv_expr"
+note = "receiver-aware recursive invariant expression lowering"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/adt_lower_conformance.rs::unary_struct_invariant_binds_fields_and_verifies_l3"
+note = "Verus-backed canonical lowering regression"
+
+[[requirement]]
+id = "REQ-INVBIND-2"
+title = "Solver-vacuity harness reuses bound invariants"
+owner = ".design/lower/struct-invariant-receiver-binding.md"
+status = "shipped"
+scope = "forge"
+summary = "Solver-vacuity harnesses consume the canonical lowered ADT preamble, so receiver-qualified invariants elaborate under the same semantics as the ordinary L3 artifact."
+aliases = ["issue #110 solver-vacuity invariant preamble"]
+contributors = [".design/forge/solver-vacuity.md", "forge/src/vacuity_solver.rs", "forge/tests/struct_invariant_receiver.rs"]
+generated_to = ["status", "struct-invariant-receiver-binding-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "extract_lowered_fn"
+note = "canonical lowered ADT preamble extraction"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/struct_invariant_receiver.rs::check_and_battery_accept_unary_struct_invariant"
+note = "live solver-vacuity elaboration regression"
+
+[[requirement]]
+id = "REQ-INVBIND-3"
+title = "Check and battery regression coverage"
+owner = ".design/lower/struct-invariant-receiver-binding.md"
+status = "shipped"
+scope = "forge"
+summary = "The exact issue reproduction reaches a structured post-vacuity verdict, while the strengthened companion completes L3 and the named battery view without unresolved invariant-field diagnostics."
+aliases = ["issue #110 CLI regression"]
+contributors = ["conformance/struct-invariant-receiver/repro.th", "conformance/struct-invariant-receiver/accept.th", "forge/tests/struct_invariant_receiver.rs"]
+generated_to = ["status", "struct-invariant-receiver-binding-status"]
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/struct_invariant_receiver.rs"
+note = "check and battery end-to-end conformance"
 
 [[requirement]]
 id = "REQ-LOWER-ADT-ENUM"

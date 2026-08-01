@@ -169,6 +169,12 @@ design = ".design/lower/verus-lowering.md"
 reference = ["tests/golden/lower"]
 conformance_ops = ["sum", "binary_search"]
 
+[[route]]
+crate_pattern = "thermite-lower/src/lower.rs"
+design = ".design/lower/struct-invariant-receiver-binding.md"
+reference = ["conformance/struct-invariant-receiver/repro.th"]
+conformance_ops = ["clear"]
+
 # Basis Stage 2 (recursion schemes, issue #70 / epic #62): lower.rs ALSO carries
 # the generated per-(ADT,scheme) Verus recursive spec fns (fold_<e>/for_all_<e>)
 # + the fold_bound_<e> law + the scheme-call lowering, governed by
@@ -595,6 +601,12 @@ crate_pattern = "forge/tests/verus_error_accounting.rs"
 design = ".design/build/verus-error-accounting.md"
 reference = ["conformance/verified-composition"]
 conformance_ops = ["unknown-frontend-count", "atomic-rejection"]
+
+[[route]]
+crate_pattern = "forge/tests/struct_invariant_receiver.rs"
+design = ".design/lower/struct-invariant-receiver-binding.md"
+reference = ["conformance/struct-invariant-receiver/repro.th", "conformance/struct-invariant-receiver/accept.th"]
+conformance_ops = ["clear"]
 
 [[route]]
 crate_pattern = "forge/src/effect_wrappers.rs"

@@ -756,6 +756,14 @@ region = "forge-kernel-byte-slice-status"
 title = "Forge Kernel Byte-Slice Canonical Status References"
 
 [[view]]
+name = "forge-verus-error-accounting-status"
+path = ".design/build/verus-error-accounting.md"
+kind = "reference_list"
+mode = "region"
+region = "forge-verus-error-accounting-status"
+title = "Forge Whole-Crate Verus Error Accounting Canonical Status References"
+
+[[view]]
 name = "forge-audit-status"
 path = "forge/src/audit.rs"
 kind = "reference_list"
@@ -12553,6 +12561,74 @@ generated_to = ["status", "forge-kernel-byte-slice-status"]
 kind = "test"
 target = "forge/tests/kernel_byte_slice.rs::kernel_byte_slice_is_verified_executable_freestanding_and_reproducible"
 note = "host observation, no-std rlib gate, final-link gate, byte-for-byte rebuild and replay"
+
+[[requirement]]
+id = "REQ-VERUSERR-1"
+title = "Structured optional Verus error counts"
+owner = ".design/build/verus-error-accounting.md"
+status = "shipped"
+scope = "forge"
+summary = "Whole-crate evidence preserves a numeric error count only when verification-results.errors is present and represents a missing or malformed structured count as unknown."
+aliases = ["github:dollspace-gay/Thermite#111", ".design/build/verus-error-accounting.md REQ-1 (optional structured count)"]
+contributors = [".design/build/verus-error-accounting.md"]
+generated_to = ["status", "forge-verus-error-accounting-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "VerusEvidence"
+note = "receipt evidence retains the errors field as Option<u64>"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "parse_verus_summary"
+note = "structured zero, positive and omitted counts remain distinct"
+
+[[requirement]]
+id = "REQ-VERUSERR-2"
+title = "No fabricated frontend diagnostic count"
+owner = ".design/build/verus-error-accounting.md"
+status = "shipped"
+scope = "forge"
+summary = "Whole-crate rejection diagnostics include errors=N only for a structured numeric count and retain stderr without a numeric claim when the frontend omits that field."
+aliases = [".design/build/verus-error-accounting.md REQ-2 (honest diagnostic)"]
+contributors = [".design/build/verus-error-accounting.md"]
+generated_to = ["status", "forge-verus-error-accounting-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "verus_failure_detail"
+note = "shared ordinary/composition failure formatter"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/verus_error_accounting.rs::frontend_rejection_omits_an_unknown_error_count_and_publishes_nothing"
+note = "live pinned-Verus frontend rejection has no u64::MAX or fabricated count"
+
+[[requirement]]
+id = "REQ-VERUSERR-3"
+title = "Unknown counts remain fail-closed"
+owner = ".design/build/verus-error-accounting.md"
+status = "shipped"
+scope = "verified"
+summary = "Strict proof/codegen and bundle validation require an explicit structured zero count; an unknown count can never authorize publication or replay acceptance."
+aliases = [".design/build/verus-error-accounting.md REQ-3 (fail-closed unknown)"]
+contributors = [".design/build/verus-error-accounting.md"]
+generated_to = ["status", "forge-verus-error-accounting-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "compile_verus_source"
+note = "success requires process success, summary success and Some(0)"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "validate_bundle"
+note = "bound evidence and reparsed stdout must both carry explicit zero"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/verus_error_accounting.rs::frontend_rejection_omits_an_unknown_error_count_and_publishes_nothing"
+note = "unknown-count frontend failures publish no destination"
 
 [[requirement]]
 id = "REQ-FORGE-AUDIT-SCHEMA"

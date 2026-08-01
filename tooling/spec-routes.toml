@@ -576,6 +576,26 @@ design = ".design/build/kernel-byte-slice.md"
 reference = ["conformance/verified-composition"]
 conformance_ops = ["exact-content", "bounds-rejection", "freestanding-link", "replay"]
 
+# Honest whole-crate Verus error accounting (issue #111): structured counts are
+# preserved when present; frontend omissions remain explicitly unknown.
+[[route]]
+crate_pattern = "forge/src/verified_build.rs"
+design = ".design/build/verus-error-accounting.md"
+reference = ["conformance/verified-composition"]
+conformance_ops = ["known-error-count", "unknown-frontend-count"]
+
+[[route]]
+crate_pattern = "forge/src/verified_build/composition.rs"
+design = ".design/build/verus-error-accounting.md"
+reference = ["conformance/verified-composition"]
+conformance_ops = ["unknown-frontend-count"]
+
+[[route]]
+crate_pattern = "forge/tests/verus_error_accounting.rs"
+design = ".design/build/verus-error-accounting.md"
+reference = ["conformance/verified-composition"]
+conformance_ops = ["unknown-frontend-count", "atomic-rejection"]
+
 [[route]]
 crate_pattern = "forge/src/effect_wrappers.rs"
 design = ".design/basis/08-runnable-effect-link.md"

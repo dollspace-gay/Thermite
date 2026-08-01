@@ -4,7 +4,7 @@
 tier: 3-component
 status: draft
 audited-sha: f09f8ca376257cc1e2543b8ebc9fb771bffd04df (content-sha256 re-pinned 2026-07-29 for stage-3 REQ-1..REQ-9 / gate G3 (#80, crosslink #351): the registry and generated status view carry the fixed-width reconstruction requirements and verified evidence; req-registry.py --check is clean (462 requirements, 119 views). The legacy commit pin remains the f09f8ca3 stable-main ancestor; the active content digest tracks the governed files. prior: 2026-06-21 stage-2 REQ-10 / AC-10 (#332), the pin battery and final gate G2 increment)
-audited-content-sha256: 97cdb29abe7211f41c787696709e04f229ef8aaf50f94eecb3d0c18690783704 (re-pinned 2026-07-31 after registering issue #108 kernel byte-slice REQ-KERNELBYTES-1..REQ-KERNELBYTES-5)
+audited-content-sha256: 11600c0ab738fd4e0bb681e8da52646bc8154bc08882890350a921b9d911936d (re-pinned 2026-08-01 after registering issue #111 Verus error-accounting REQ-VERUSERR-1..REQ-VERUSERR-3)
 governs:
   - .design/reqs/registry.toml
   - .design/reqs/status.md
@@ -36,6 +36,11 @@ issue: GitHub #17
 > reads, receipt/replay boundary, negative rejection matrix, and deterministic
 > hosted/freestanding consumers. The registry now contains 502 validated
 > requirements across 122 generated views.
+
+> **Verus error-accounting increment (2026-08-01).** `REQ-VERUSERR-1` through
+> `REQ-VERUSERR-3` bind issue #111's optional structured count, honest frontend
+> diagnostic, and fail-closed unknown-count behavior. The registry now contains
+> 505 validated requirements across 123 generated views.
 
 ## Summary
 

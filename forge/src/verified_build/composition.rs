@@ -198,12 +198,12 @@ pub(super) fn build_file(
         &toolchain.artifact_codegen.canonical_identity_sha256(),
         collected_toolchain.dependency_path("libvstd.rlib"),
     )?;
-    if !compiled.evidence.success || compiled.evidence.errors != 0 {
+    if !compiled.evidence.success || compiled.evidence.errors != Some(0) {
         return Ok(reject(
             "whole-crate-verus",
-            format!(
-                "strict combined Verus proof/codegen failed (errors={}): {}",
-                compiled.evidence.errors, compiled.evidence.stderr
+            verus_failure_detail(
+                "strict combined Verus proof/codegen failed",
+                &compiled.evidence,
             ),
         ));
     }

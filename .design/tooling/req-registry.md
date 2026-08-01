@@ -4,7 +4,7 @@
 tier: 3-component
 status: draft
 audited-sha: f09f8ca376257cc1e2543b8ebc9fb771bffd04df (content-sha256 re-pinned 2026-07-29 for stage-3 REQ-1..REQ-9 / gate G3 (#80, crosslink #351): the registry and generated status view carry the fixed-width reconstruction requirements and verified evidence; req-registry.py --check is clean (462 requirements, 119 views). The legacy commit pin remains the f09f8ca3 stable-main ancestor; the active content digest tracks the governed files. prior: 2026-06-21 stage-2 REQ-10 / AC-10 (#332), the pin battery and final gate G2 increment)
-audited-content-sha256: 1bcb015bbb3afe85251ba12401056360e90940aa19cc0dd2254bfa0f8011e289 (re-pinned 2026-07-31 after registering and shipping deterministic rich-enum REQ-L3COMPOSE-11)
+audited-content-sha256: 97cdb29abe7211f41c787696709e04f229ef8aaf50f94eecb3d0c18690783704 (re-pinned 2026-07-31 after registering issue #108 kernel byte-slice REQ-KERNELBYTES-1..REQ-KERNELBYTES-5)
 governs:
   - .design/reqs/registry.toml
   - .design/reqs/status.md
@@ -30,6 +30,12 @@ issue: GitHub #17
 > `REQ-L3COMPOSE-10` bind issue #104's CLI, closure, policy, exact-source,
 > receipt, publication, kernel-link, and codegen acceptance evidence. The
 > generated registry now contains 496 validated requirements.
+
+> **Kernel byte-slice increment (2026-07-31).** `REQ-KERNELBYTES-1` through
+> `REQ-KERNELBYTES-5` bind issue #108's pinned no-std proof model, exact-content
+> reads, receipt/replay boundary, negative rejection matrix, and deterministic
+> hosted/freestanding consumers. The registry now contains 502 validated
+> requirements across 122 generated views.
 
 ## Summary
 

@@ -35,6 +35,8 @@ const RECEIPT_SCHEMA: &str = "thermite.verified-build-receipt.v1";
 const COMPOSITION_PLAN_SCHEMA: &str = "thermite.combined-artifact-plan.v1";
 const COMPOSITION_RECEIPT_SCHEMA: &str = "thermite.verified-composition-receipt.v1";
 const SOURCE_DATE_EPOCH: &str = "0";
+const KERNEL_VSTD_LINK_SOURCE_NAME: &str = "kernel-vstd-link.rs";
+const KERNEL_VSTD_LINK_SOURCE: &str = include_str!("kernel_vstd_link.rs");
 const STRICT_GATES: &[&str] = &[
     "parse-spec-effects",
     "complete-end-to-end-closure",
@@ -438,8 +440,30 @@ pub struct ToolchainEvidence {
     pub cargo_lock_path: String,
     pub cargo_lock_sha256: String,
     pub link_dependencies: Vec<ToolchainDependency>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kernel_vstd_model: Option<KernelVstdModelEvidence>,
     pub source_date_epoch: String,
     pub environment: BTreeMap<String, String>,
+}
+
+/// Exact proof-model and erased-link identities used by a kernel build.
+///
+/// `vstd.vir` supplies the already-verified slice semantics. The full pinned
+/// source-tree digest makes that model auditable, while `link_source_sha256`
+/// and `link_rlib_sha256` bind the tiny `no_std` Rust metadata crate used only
+/// for rustc name resolution and final linking.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KernelVstdModelEvidence {
+    pub vir_path: String,
+    pub vir_sha256: String,
+    pub source_root: String,
+    pub source_file_count: u64,
+    pub source_total_bytes: u64,
+    pub source_sha256: String,
+    pub link_source_name: String,
+    pub link_source_sha256: String,
+    pub link_build_args: Vec<String>,
+    pub link_rlib_sha256: String,
 }
 
 /// Informational evidence for the Rust compiler selected in Forge's ambient
@@ -532,6 +556,18 @@ pub struct ToolchainDependency {
     pub name: String,
     pub source_path: String,
     pub sha256: String,
+}
+
+struct CollectedToolchain {
+    evidence: ToolchainEvidence,
+    dependency_paths: BTreeMap<String, PathBuf>,
+    _kernel_vstd_scratch: Option<ScratchTree>,
+}
+
+impl CollectedToolchain {
+    fn dependency_path(&self, name: &str) -> Option<&Path> {
+        self.dependency_paths.get(name).map(PathBuf::as_path)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -891,7 +927,8 @@ pub fn build_file(
         return Ok(reject("closure", detail));
     }
 
-    let toolchain = collect_toolchain()?;
+    let collected_toolchain = collect_toolchain(target)?;
+    let toolchain = &collected_toolchain.evidence;
     let planned_exports = match plan_exports(
         &parsed.program,
         &closure.roots,
@@ -1007,6 +1044,7 @@ pub fn build_file(
         &toolchain.verus_path,
         &toolchain.environment,
         &toolchain.artifact_codegen.canonical_identity_sha256(),
+        collected_toolchain.dependency_path("libvstd.rlib"),
     )?;
     if !compiled.evidence.success || compiled.evidence.errors != 0 {
         return Ok(reject(
@@ -1043,7 +1081,8 @@ pub fn build_file(
         certificates: &certificates,
         tv: &tv,
         compiled: &compiled,
-        toolchain: &toolchain,
+        toolchain,
+        dependency_paths: &collected_toolchain.dependency_paths,
         composition: None,
     })?;
 
@@ -2093,7 +2132,7 @@ fn expected_contract_loops(
     }
 }
 
-fn collect_toolchain() -> Result<ToolchainEvidence, ForgeError> {
+fn collect_toolchain(target: VerifiedTarget) -> Result<CollectedToolchain, ForgeError> {
     let verus = resolve_executable(std::env::var_os("VERUS_BIN").as_deref(), "verus")?;
     let rustup = resolve_executable(None, "rustup")?;
     let verus_version = command_text(Command::new(&verus).arg("--version"), "verus --version")?;
@@ -2117,11 +2156,36 @@ fn collect_toolchain() -> Result<ToolchainEvidence, ForgeError> {
     .unwrap_or_else(|_| "unavailable".to_string());
     let environment = closed_verus_environment(&rustup, &artifact_codegen.rustup_toolchain)?;
     let mut link_dependencies = Vec::new();
+    let mut dependency_paths = BTreeMap::new();
+    let mut kernel_vstd_model = None;
+    let mut kernel_vstd_scratch = None;
     let verus_dir = verus.parent().ok_or_else(|| ForgeError::VerusOutput {
         detail: "the resolved Verus binary has no installation directory".to_string(),
     })?;
+    if matches!(target, VerifiedTarget::Kernel) {
+        let (scratch, dependency, model) = build_kernel_vstd_link(&verus, verus_dir, &environment)?;
+        dependency_paths.insert(dependency.name.clone(), scratch.path.join("libvstd.rlib"));
+        link_dependencies.push(dependency);
+        kernel_vstd_model = Some(model);
+        kernel_vstd_scratch = Some(scratch);
+    } else {
+        let path = verus_dir.join("libvstd.rlib");
+        if !path.is_file() {
+            return Err(ForgeError::VerusOutput {
+                detail: format!(
+                    "the pinned Verus installation is missing link dependency `{}`",
+                    path.display()
+                ),
+            });
+        }
+        link_dependencies.push(ToolchainDependency {
+            name: "libvstd.rlib".to_string(),
+            source_path: path.display().to_string(),
+            sha256: file_sha256(&path)?.2,
+        });
+        dependency_paths.insert("libvstd.rlib".to_string(), path);
+    }
     for name in [
-        "libvstd.rlib",
         "libverus_builtin.rlib",
         "libverus_builtin_macros.so",
         "libverus_state_machines_macros.so",
@@ -2140,6 +2204,7 @@ fn collect_toolchain() -> Result<ToolchainEvidence, ForgeError> {
             source_path: path.display().to_string(),
             sha256: file_sha256(&path)?.2,
         });
+        dependency_paths.insert(name.to_string(), path);
     }
     let z3 = verus_dir.join("z3");
     if !z3.is_file() {
@@ -2150,7 +2215,7 @@ fn collect_toolchain() -> Result<ToolchainEvidence, ForgeError> {
             ),
         });
     }
-    Ok(ToolchainEvidence {
+    let evidence = ToolchainEvidence {
         forge_version: env!("CARGO_PKG_VERSION").to_string(),
         forge_executable_sha256: file_sha256(&current)?.2,
         forge_source_identity: source_identity,
@@ -2171,9 +2236,107 @@ fn collect_toolchain() -> Result<ToolchainEvidence, ForgeError> {
         cargo_lock_path: cargo_lock.display().to_string(),
         cargo_lock_sha256: file_sha256(&cargo_lock)?.2,
         link_dependencies,
+        kernel_vstd_model,
         source_date_epoch: SOURCE_DATE_EPOCH.to_string(),
         environment,
+    };
+    Ok(CollectedToolchain {
+        evidence,
+        dependency_paths,
+        _kernel_vstd_scratch: kernel_vstd_scratch,
     })
+}
+
+fn kernel_vstd_link_build_args() -> Vec<String> {
+    vec![
+        KERNEL_VSTD_LINK_SOURCE_NAME.to_string(),
+        "--is-vstd".to_string(),
+        "--no-verify".to_string(),
+        "--compile".to_string(),
+        "--crate-type=rlib".to_string(),
+        "--crate-name".to_string(),
+        "vstd".to_string(),
+        "--out-dir".to_string(),
+        "<SCRATCH>".to_string(),
+        "--remap-path-prefix=<SCRATCH>=.".to_string(),
+    ]
+}
+
+fn build_kernel_vstd_link(
+    verus: &Path,
+    verus_dir: &Path,
+    environment: &BTreeMap<String, String>,
+) -> Result<(ScratchTree, ToolchainDependency, KernelVstdModelEvidence), ForgeError> {
+    let vir = verus_dir.join("vstd.vir");
+    let source_root = verus_dir.join("vstd");
+    if !vir.is_file() || !source_root.is_dir() {
+        return Err(ForgeError::VerusOutput {
+            detail: format!(
+                "kernel slice model requires `{}` and `{}`",
+                vir.display(),
+                source_root.display()
+            ),
+        });
+    }
+    let (source_file_count, source_total_bytes, source_sha256) =
+        directory_sha256_named(&source_root, "thermite.kernel-vstd-source-tree.v1")?;
+    let scratch = ScratchTree::new_in_temp("kernel_vstd_link")?;
+    let link_source = scratch.path.join(KERNEL_VSTD_LINK_SOURCE_NAME);
+    write_bytes(&link_source, KERNEL_VSTD_LINK_SOURCE.as_bytes())?;
+
+    let mut command = Command::new(verus);
+    command
+        .arg(KERNEL_VSTD_LINK_SOURCE_NAME)
+        .args([
+            "--is-vstd",
+            "--no-verify",
+            "--compile",
+            "--crate-type=rlib",
+            "--crate-name",
+            "vstd",
+            "--out-dir",
+            ".",
+        ])
+        .arg(format!("--remap-path-prefix={}=.", scratch.path.display()))
+        .current_dir(&scratch.path)
+        .env_clear()
+        .envs(environment);
+    let output = command
+        .output()
+        .map_err(|source| ForgeError::VerusSpawn { source })?;
+    if !output.status.success() {
+        return Err(ForgeError::VerusOutput {
+            detail: format!(
+                "building the no_std vstd link crate failed: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            ),
+        });
+    }
+    let rlib = scratch.path.join("libvstd.rlib");
+    if !rlib.is_file() {
+        return Err(ForgeError::VerusOutput {
+            detail: "building the no_std vstd link crate produced no libvstd.rlib".to_string(),
+        });
+    }
+    let link_rlib_sha256 = file_sha256(&rlib)?.2;
+    let dependency = ToolchainDependency {
+        name: "libvstd.rlib".to_string(),
+        source_path: "<forge-generated:kernel-vstd-link.rs>".to_string(),
+        sha256: link_rlib_sha256.clone(),
+    };
+    let model = KernelVstdModelEvidence {
+        vir_path: vir.display().to_string(),
+        vir_sha256: file_sha256(&vir)?.2,
+        source_root: source_root.display().to_string(),
+        source_file_count,
+        source_total_bytes,
+        source_sha256,
+        link_source_name: KERNEL_VSTD_LINK_SOURCE_NAME.to_string(),
+        link_source_sha256: sha256(KERNEL_VSTD_LINK_SOURCE.as_bytes()),
+        link_build_args: kernel_vstd_link_build_args(),
+        link_rlib_sha256,
+    };
+    Ok((scratch, dependency, model))
 }
 
 fn closed_verus_environment(
@@ -2472,6 +2635,10 @@ fn streamed_file_sha256(path: &Path) -> Result<(u64, String), ForgeError> {
 }
 
 fn directory_sha256(root: &Path) -> Result<(u64, u64, String), ForgeError> {
+    directory_sha256_named(root, "thermite.codegen-target-libdir.v1")
+}
+
+fn directory_sha256_named(root: &Path, schema: &str) -> Result<(u64, u64, String), ForgeError> {
     fn collect(root: &Path, dir: &Path, files: &mut Vec<PathBuf>) -> Result<(), ForgeError> {
         for entry in fs::read_dir(dir).map_err(|source| ForgeError::Io {
             path: dir.display().to_string(),
@@ -2514,7 +2681,7 @@ fn directory_sha256(root: &Path) -> Result<(u64, u64, String), ForgeError> {
             .unwrap_or(left)
             .cmp(right.strip_prefix(root).unwrap_or(right))
     });
-    let mut canonical = Canonical::new("thermite.codegen-target-libdir.v1");
+    let mut canonical = Canonical::new(schema);
     let mut total_bytes = 0_u64;
     for path in &files {
         let relative = path
@@ -2681,6 +2848,7 @@ fn compile_verus_source(
     verus_path: &str,
     environment: &BTreeMap<String, String>,
     codegen_toolchain_sha256: &str,
+    kernel_vstd_rlib: Option<&Path>,
 ) -> Result<CompiledVerus, ForgeError> {
     let scratch = ScratchTree::new_in_temp(&format!("verified_{crate_name}"))?;
     let source_name = format!("{crate_name}.rs");
@@ -2689,8 +2857,31 @@ fn compile_verus_source(
     let before = file_sha256(&source_path)?.2;
     let args = expected_verus_args(crate_name, target);
     let mut command = Command::new(verus_path);
+    for arg in &args[..args.len() - 2] {
+        match arg.as_str() {
+            "vstd=<KERNEL_VSTD_VIR>" => {
+                let verus_dir =
+                    Path::new(verus_path)
+                        .parent()
+                        .ok_or_else(|| ForgeError::VerusOutput {
+                            detail: "the resolved Verus binary has no installation directory"
+                                .to_string(),
+                        })?;
+                command.arg(format!("vstd={}", verus_dir.join("vstd.vir").display()));
+            }
+            "vstd=<KERNEL_VSTD_RLIB>" => {
+                let rlib = kernel_vstd_rlib.ok_or_else(|| ForgeError::VerusOutput {
+                    detail: "kernel verification has no generated no_std vstd link crate"
+                        .to_string(),
+                })?;
+                command.arg(format!("vstd={}", rlib.display()));
+            }
+            _ => {
+                command.arg(arg);
+            }
+        }
+    }
     command
-        .args(&args[..args.len() - 2])
         .arg(format!("--remap-path-prefix={}=.", scratch.path.display()))
         .arg(&source_name)
         .current_dir(&scratch.path);
@@ -2781,7 +2972,13 @@ fn compile_verus_source(
 fn expected_verus_args(crate_name: &str, target: VerifiedTarget) -> Vec<String> {
     let mut args = vec!["--output-json".to_string(), "--profile".to_string()];
     if matches!(target, VerifiedTarget::Kernel) {
-        args.push("--no-vstd".to_string());
+        args.extend([
+            "--no-vstd".to_string(),
+            "--import".to_string(),
+            "vstd=<KERNEL_VSTD_VIR>".to_string(),
+            "--extern".to_string(),
+            "vstd=<KERNEL_VSTD_RLIB>".to_string(),
+        ]);
     }
     args.extend([
         "--no-cheating".to_string(),
@@ -2853,6 +3050,7 @@ struct StageInput<'a> {
     tv: &'a TranslationValidationEvidence,
     compiled: &'a CompiledVerus,
     toolchain: &'a ToolchainEvidence,
+    dependency_paths: &'a BTreeMap<String, PathBuf>,
     composition: Option<CompositionStageInput<'a>>,
 }
 
@@ -2874,6 +3072,7 @@ fn stage_and_publish(input: StageInput<'_>) -> Result<VerifiedBuildReceiptV1, Fo
         tv,
         compiled,
         toolchain,
+        dependency_paths,
         composition,
     } = input;
     let parent = destination.parent().unwrap_or(Path::new("."));
@@ -2933,6 +3132,12 @@ fn stage_and_publish(input: StageInput<'_>) -> Result<VerifiedBuildReceiptV1, Fo
     )?;
     write_bytes(&evidence.join("verus-result.json"), verus_json.as_bytes())?;
     write_bytes(&evidence.join("toolchain.json"), toolchain_json.as_bytes())?;
+    if toolchain.kernel_vstd_model.is_some() {
+        write_bytes(
+            &evidence.join(KERNEL_VSTD_LINK_SOURCE_NAME),
+            KERNEL_VSTD_LINK_SOURCE.as_bytes(),
+        )?;
+    }
     let cargo_lock = fs::read(&toolchain.cargo_lock_path).map_err(|source| ForgeError::Io {
         path: toolchain.cargo_lock_path.clone(),
         source,
@@ -2946,8 +3151,17 @@ fn stage_and_publish(input: StageInput<'_>) -> Result<VerifiedBuildReceiptV1, Fo
     let artifact_relative = format!("artifact/{}", compiled.artifact_name);
     write_bytes(&stage.path.join(&artifact_relative), &compiled.artifact)?;
     for dependency in &toolchain.link_dependencies {
-        let bytes = fs::read(&dependency.source_path).map_err(|source| ForgeError::Io {
-            path: dependency.source_path.clone(),
+        let source_path =
+            dependency_paths
+                .get(&dependency.name)
+                .ok_or_else(|| ForgeError::VerusOutput {
+                    detail: format!(
+                        "no captured source for link dependency `{}`",
+                        dependency.name
+                    ),
+                })?;
+        let bytes = fs::read(source_path).map_err(|source| ForgeError::Io {
+            path: source_path.display().to_string(),
             source,
         })?;
         if sha256(&bytes) != dependency.sha256 {
@@ -3625,6 +3839,45 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
             });
         }
     }
+    match (plan.target, toolchain.kernel_vstd_model.as_ref()) {
+        (VerifiedTarget::Kernel, Some(model)) => {
+            let vstd_dependency = toolchain
+                .link_dependencies
+                .iter()
+                .find(|dependency| dependency.name == "libvstd.rlib")
+                .ok_or_else(|| ForgeError::VerusOutput {
+                    detail: "kernel model has no bound libvstd.rlib".to_string(),
+                })?;
+            if model.link_source_name != KERNEL_VSTD_LINK_SOURCE_NAME
+                || model.link_source_sha256 != sha256(KERNEL_VSTD_LINK_SOURCE.as_bytes())
+                || model.link_build_args != kernel_vstd_link_build_args()
+                || model.link_rlib_sha256 != vstd_dependency.sha256
+                || vstd_dependency.source_path != "<forge-generated:kernel-vstd-link.rs>"
+                || model.source_file_count == 0
+                || model.source_total_bytes == 0
+                || model.source_sha256.len() != 64
+                || model.vir_sha256.len() != 64
+            {
+                return Err(ForgeError::VerusOutput {
+                    detail: "bound kernel vstd model identity is malformed or inconsistent"
+                        .to_string(),
+                });
+            }
+            if file_sha256(&bundle.join("evidence").join(&model.link_source_name))?.2
+                != model.link_source_sha256
+            {
+                return Err(ForgeError::VerusOutput {
+                    detail: "bound kernel vstd link source has the wrong digest".to_string(),
+                });
+            }
+        }
+        (VerifiedTarget::Std, None) => {}
+        _ => {
+            return Err(ForgeError::VerusOutput {
+                detail: "kernel vstd model presence disagrees with the verified target".to_string(),
+            });
+        }
+    }
     let artifact_file = receipt
         .binding
         .files
@@ -3697,6 +3950,29 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
             &current_rustup,
             &toolchain.artifact_codegen.rustup_toolchain,
         )?;
+        let replay_kernel_vstd = if matches!(plan.target, VerifiedTarget::Kernel) {
+            let current_verus_dir =
+                current_verus
+                    .parent()
+                    .ok_or_else(|| ForgeError::VerusOutput {
+                        detail: "replay Verus binary has no installation directory".to_string(),
+                    })?;
+            let rebuilt =
+                build_kernel_vstd_link(&current_verus, current_verus_dir, &replay_environment)?;
+            if Some(&rebuilt.2) != toolchain.kernel_vstd_model.as_ref() {
+                return Err(ForgeError::VerusOutput {
+                    detail:
+                        "replay kernel vstd model/source/link identity does not match the receipt"
+                            .to_string(),
+                });
+            }
+            Some(rebuilt)
+        } else {
+            None
+        };
+        let replay_kernel_vstd_path = replay_kernel_vstd
+            .as_ref()
+            .map(|(scratch, _, _)| scratch.path.join("libvstd.rlib"));
         let compiled = compile_verus_source(
             &plan.crate_name,
             &source,
@@ -3704,6 +3980,7 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
             current_verus.to_string_lossy().as_ref(),
             &replay_environment,
             &current_codegen.canonical_identity_sha256(),
+            replay_kernel_vstd_path.as_deref(),
         )?;
         if !compiled.evidence.success || sha256(&compiled.artifact) != artifact.sha256 {
             return Err(ForgeError::VerusOutput {

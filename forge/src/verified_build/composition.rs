@@ -91,7 +91,8 @@ pub(super) fn build_file(
         ));
     }
 
-    let toolchain = collect_toolchain()?;
+    let collected_toolchain = collect_toolchain(target)?;
+    let toolchain = &collected_toolchain.evidence;
     let assembly = match assemble_from_paths(
         &parsed.program,
         link_export_names,
@@ -99,7 +100,7 @@ pub(super) fn build_file(
         shell_paths,
         &crate_name,
         target,
-        &toolchain,
+        toolchain,
     ) {
         Ok(assembly) => assembly,
         Err(detail) => return Ok(reject("composition-plan", detail)),
@@ -130,7 +131,7 @@ pub(super) fn build_file(
         shell_paths,
         &crate_name,
         target,
-        &toolchain,
+        toolchain,
     ) {
         Ok(assembly) => assembly,
         Err(detail) => return Ok(reject("binding", detail)),
@@ -195,6 +196,7 @@ pub(super) fn build_file(
         &toolchain.verus_path,
         &toolchain.environment,
         &toolchain.artifact_codegen.canonical_identity_sha256(),
+        collected_toolchain.dependency_path("libvstd.rlib"),
     )?;
     if !compiled.evidence.success || compiled.evidence.errors != 0 {
         return Ok(reject(
@@ -231,7 +233,8 @@ pub(super) fn build_file(
         certificates: &certificates,
         tv: &tv,
         compiled: &compiled,
-        toolchain: &toolchain,
+        toolchain,
+        dependency_paths: &collected_toolchain.dependency_paths,
         composition: Some(CompositionStageInput {
             lowered_thermite: &fresh.lowered_thermite,
             shell_sources: &fresh.shell_sources,

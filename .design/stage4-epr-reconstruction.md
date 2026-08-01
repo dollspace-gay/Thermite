@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: e7613eb734d347786da25b988b7e8ecddac01e2ea528d338ce63c8e47359da6d (re-pinned 2026-07-31 after adding the Rust 1.96 incompatible-ABI probe toolchain to verified-build CI; Stage-4 behavior remains regression-covered)
+audited-content-sha256: adba1a733f08c9644914fad439fcaf367e972adeebc3039b37fd9dea8c8c233f (re-pinned 2026-08-01 after restoring the Rust cache before the pinned Stage 4 tools; Gate G4 identities remain enforced)
 governs: canonical S₂.0 bridge, typed Lean reconstruction, production routing,
          audit boundary, proof tooling, and Gate G4 (see tooling/spec-routes.toml)
 -->
@@ -22,6 +22,11 @@ theorem. `scripts/install-g4-tools.sh` builds CaDiCaL 2.1.3 at
 `f13d74439a5b5c963ac5b02d05ce93a8098018b8` and drat-trim at
 `effa1dcce85c878236f8313133dff1a2b766cd7c`; the gate accepts only those
 identities.
+
+CI restores the general Rust build cache before the separately keyed Stage 4
+tool cache. The installer then validates both executable identities immediately
+before Gate G4, so a stale Cargo `target` snapshot cannot replace the pinned
+solver pair after validation.
 
 False clauses take the other path. CaDiCaL supplies a Boolean assignment, Forge
 realizes its QF_LIA and QF_BV leaves, and Lean checks the concrete source model.

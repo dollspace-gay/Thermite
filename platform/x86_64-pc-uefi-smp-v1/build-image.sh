@@ -49,13 +49,16 @@ touch -d "@$source_epoch" "$efi_stage"
 touch -d "@$source_epoch" "$pdb_stage"
 
 efi_kind=$(file -b "$efi_stage")
-case "$efi_kind" in
-    *"PE32+ executable for EFI (application), x86-64"*) ;;
-    *)
-        echo "UEFI closure has the wrong executable kind: $efi_kind" >&2
-        exit 1
-        ;;
-esac
+# libmagic formats this description differently across distributions (for
+# example, `for EFI (application)` versus `(EFI application)`). Validate the
+# stable semantic fields instead of one host-specific sentence.
+if [[ "$efi_kind" != *"PE32+"* ||
+      "$efi_kind" != *"EFI"* ||
+      "$efi_kind" != *"application"* ||
+      "$efi_kind" != *"x86-64"* ]]; then
+    echo "UEFI closure has the wrong executable kind: $efi_kind" >&2
+    exit 1
+fi
 section_table=$(llvm-objdump -h "$efi_stage")
 printf '%s\n' "$section_table" \
     | sed "s|$efi_stage|thermite-kernel.efi|" \

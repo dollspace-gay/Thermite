@@ -533,6 +533,14 @@ jobs:
           sudo apt-get install --yes z3
           z3 --version
 
+      # Restore the Cargo target tree before the separately pinned proof tools.
+      # rust-cache owns `target` and can otherwise replace target/g4-tools with
+      # an older snapshot after the dedicated proof-tool cache is validated.
+      - name: Rust build cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: g4
+
       - name: Cache Stage 4 proof tools
         uses: actions/cache@v4
         with:
@@ -541,11 +549,6 @@ jobs:
 
       - name: Install pinned CaDiCaL and drat-trim
         run: bash scripts/install-g4-tools.sh
-
-      - name: Rust build cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: g4
 
       - name: Gate G4
         run: bash scripts/g4-gate.sh

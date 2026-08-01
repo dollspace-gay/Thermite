@@ -5,32 +5,37 @@ tier: 3-component
 status: shipped
 decision: frozen registry-backed platform boundaries with a receipt-bound bootable SMP image
 governs:
+  - Cargo.toml
+  - Cargo.lock
+  - THERMITE.skill.md
   - thermite-syntax/src/ast.rs
   - thermite-syntax/src/parser.rs
   - thermite-syntax/src/lib.rs
   - thermite-syntax/tests/kernel_surface.rs
+  - thermite-syntax/tests/conformance.rs
   - thermite-lower/src/effects.rs
   - thermite-lower/src/lower.rs
   - thermite-lower/tests/kernel_mutable_slice.rs
+  - thermite-lower/tests/effects_verified.rs
   - thermite-verified/src/lib.rs
-  - thermite-kernel/src/lib.rs
-  - thermite-kernel/src/registry.rs
-  - thermite-kernel/tests/model.rs
+  - lean/Thermite/Ast.lean
+  - lean/Thermite/Denote.lean
+  - lean/Thermite/RefEncode.lean
+  - thermite-kernel/Cargo.toml
+  - thermite-kernel/src/*.rs
+  - thermite-kernel/tests/*.rs
+  - forge/Cargo.toml
   - forge/src/kernel_image.rs
   - forge/src/cli.rs
   - forge/src/main.rs
   - conformance/bootable_kernel.th
   - conformance/kernel_primitives.th
-  - platform/x86_64-pc-uefi-smp-v1/profile.toml
-  - platform/x86_64-pc-uefi-smp-v1/registry.toml
-  - platform/x86_64-pc-uefi-smp-v1/kernel_shell.rs
-  - platform/x86_64-pc-uefi-smp-v1/build-image.sh
-  - platform/x86_64-pc-uefi-smp-v1/test-qemu.py
-  - platform/x86_64-pc-uefi-smp-v1/runtime/src/main.rs
-  - platform/x86_64-pc-uefi-smp-v1/runtime/src/post_firmware.rs
-  - platform/x86_64-pc-uefi-smp-v1/runtime/src/ap_trampoline.S
+  - platform/x86_64-pc-uefi-smp-v1/*
+  - platform/x86_64-pc-uefi-smp-v1/runtime/.cargo/config.toml
+  - platform/x86_64-pc-uefi-smp-v1/runtime/Cargo.*
+  - platform/x86_64-pc-uefi-smp-v1/runtime/src/*
   - .github/workflows/ci.yml
-audited-content-sha256: b58cd04ccd9ea1fe627f5ea9779c5a6a65f328c781362b22268c0c2d553c633a
+audited-content-sha256: 165ca085d8b373572fc489c129573e5cde3e459f37fe15f2aa243d479bd77a19
 extends:
   - .design/build/kernel-target.md
   - .design/build/l3-rich-composition.md
@@ -59,6 +64,10 @@ gate boots with 1, 2, 4, and 8 logical CPUs. The 4-CPU run is the normative SMP
 acceptance case. Every discovered application processor must reach a named
 online or failed state, and useful kernel work must execute concurrently on
 more than one online CPU.
+
+The image publisher checks the staged boot binary for the stable PE32+, EFI
+application, and x86-64 fields reported by `file`; it does not depend on the
+distribution-specific prose used by a particular libmagic release.
 
 Ordinary Thermite code retains the existing surface. It has no raw pointers,
 inline assembly, arbitrary `extern` declarations, or general unsafe escape.

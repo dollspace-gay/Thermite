@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: 3c215866a861f612febff722f0d67817916ed8f8912e65b4ce8dd5768193e349 (re-pinned 2026-07-31 after deterministic composition-enum lowering; mutual-recursion behavior remains regression-covered)
+audited-content-sha256: ba54470fc6ad2cc28720ea80def4185eb2b5b6c90a7109fbc51523f3f00410b3 (re-pinned 2026-08-01 after #110 unary invariant receiver binding; mutual-recursion behavior remains regression-covered)
 governs: forge/src/check.rs
 governs: thermite-lower/src/lower.rs
 thesis-refs:

@@ -81,7 +81,8 @@ fn run_verus(file: &Path) -> Option<(bool, String)> {
 /// (R-CODE-4: status checked, never swallowed). Returns the emitted source.
 fn lower_and_verify(name: &str) -> String {
     let emitted = lower_l3(name);
-    let tmp = std::env::temp_dir().join(format!("{name}_adt_lower.rs"));
+    let temp_name = name.replace(['/', '\\'], "_");
+    let tmp = std::env::temp_dir().join(format!("{temp_name}_adt_lower.rs"));
     std::fs::write(&tmp, &emitted).unwrap_or_else(|e| panic!("write temp for {name}: {e}"));
     match run_verus(&tmp) {
         Some((ok, output)) => {
@@ -149,6 +150,24 @@ fn bank_account_lowers_struct_invariant_and_verifies_l3() {
         "struct-literal construction (REQ-2):\n{emitted}"
     );
     assert_no_cheats(&emitted, "bank_account");
+}
+
+// Issue #110: field binding is recursive through unary `!`. The expected
+// predicate is hand-derived from the source invariant in the conformance
+// fixture; real Verus then proves that the complete ordinary L3 artifact is
+// well-formed and verifies.
+#[test]
+fn unary_struct_invariant_binds_fields_and_verifies_l3() {
+    let emitted = lower_and_verify("struct-invariant-receiver/repro");
+    assert!(
+        emitted.contains("!self.panic_latched || !self.reschedule_pending"),
+        "unary invariant fields must bind to the well_formed receiver:\n{emitted}"
+    );
+    assert!(
+        emitted.contains("s.well_formed(),") && emitted.contains("result.well_formed(),"),
+        "the corrected predicate must remain threaded through the function contract:\n{emitted}"
+    );
+    assert_no_cheats(&emitted, "struct-invariant-receiver/repro");
 }
 
 // ---- AC-1 cert oracle: deposit → L3, the stable subset matches the golden ----

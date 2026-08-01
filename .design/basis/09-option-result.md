@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: 592727296d81784a956e450e6e61dddddbb7e3a59b4e3ede8d27770aa8e8bf85 (re-pinned 2026-07-31 after deterministic composition-enum lowering; Option/Result behavior remains regression-covered)
+audited-content-sha256: 163f1dcc94f25e72ac28a98da3f920f9bfdc87dd1bde3426d68f44169225f7bb (re-pinned 2026-08-01 after #110 unary invariant receiver binding; Option/Result behavior remains regression-covered)
 governs: thermite-syntax/src/ast.rs
 governs: thermite-syntax/src/parser.rs
 governs: thermite-spec/src/validator.rs

@@ -953,6 +953,8 @@ impl OpaqueSorts {
 
     fn type_sort(&self, ty: &Type, context: &str) -> Result<Sort2, BridgeError> {
         match ty {
+            Type::Prim(PrimType::U8) => Ok(Sort2::Mach(Mach::U8)),
+            Type::Prim(PrimType::U16) => Ok(Sort2::Mach(Mach::U16)),
             Type::Prim(PrimType::U32) => Ok(Sort2::Mach(Mach::U32)),
             Type::Prim(PrimType::U64) => Ok(Sort2::Mach(Mach::U64)),
             Type::Prim(PrimType::Usize) => Ok(Sort2::Mach(Mach::Usize)),
@@ -1566,6 +1568,8 @@ fn write_stmt(stmt: &Stmt, out: &mut String) {
 fn write_type(ty: &Type, out: &mut String) {
     match ty {
         Type::Prim(prim) => out.push_str(match prim {
+            PrimType::U8 => "(u8)",
+            PrimType::U16 => "(u16)",
             PrimType::U32 => "(u32)",
             PrimType::U64 => "(u64)",
             PrimType::Usize => "(usize)",

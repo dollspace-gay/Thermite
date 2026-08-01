@@ -4,7 +4,7 @@
 tier: 3-component
 status: draft
 audited-sha: a728d95ca3dbd4fbbee1cb496c003f408d82f327 (re-pinned 2026-06-16 for stage-1 increment 2f, REQ-8: the only change to this doc's governed file (manifest.rs) is the additive Level::L4 kernel-grounded rung (REQ-S1-8); the relax route is reached only via --engine nlsat, so the v1 corpus stays L3 and oracle_subset is byte-identical (check_conformance green).)
-audited-content-sha256: 11cbbcfc4bb765edfe746c0a5e69e18c12ecb8322a2bf4be019b1b2335c78936 (re-pinned 2026-07-30 after the Level::L4 documentation was brought current with automatic BV and finite EPR reconstruction; schema and behavior are unchanged)
+audited-content-sha256: 1b78069cfb3366771bfc869082ca8f3f4619333a7a4ce7645065cae3d4fdb317 (re-pinned 2026-08-01 after auditing the bootable multicore kernel integration; existing behavior remains regression-covered)
 governs: forge/src/manifest.rs
 thesis-refs:
   - thermite-design.md §5.1

@@ -41,7 +41,7 @@
 use std::collections::BTreeMap;
 
 use thermite_syntax::ast::{
-    Block, Effect, EffectRow, Expr, IndexArg, Item, LoopKind, Program, Stmt,
+    Block, Effect, EffectRow, Expr, IndexArg, Item, LoopKind, PlatformDomain, Program, Stmt,
 };
 use thermite_syntax::lexer::Span;
 
@@ -74,6 +74,7 @@ pub enum EffectKind {
     Panic,
     Diverge,
     Term,
+    Platform(PlatformDomain),
 }
 
 impl EffectKind {
@@ -85,8 +86,8 @@ impl EffectKind {
     /// delegates the subset test to `thermite_verified::subsumes_masks`, the
     /// plain-Rust mirror of the `verus`-proved exec body. Widened `u8`→`u16` for
     /// the 9th atom `Term` (#106), so the proved bitset is now `u16`.
-    fn bit(self) -> u16 {
-        let index: u16 = match self {
+    fn bit(self) -> u32 {
+        let index: u32 = match self {
             EffectKind::Read => 0,
             EffectKind::Write => 1,
             EffectKind::Net => 2,
@@ -96,8 +97,24 @@ impl EffectKind {
             EffectKind::Panic => 6,
             EffectKind::Diverge => 7,
             EffectKind::Term => 8,
+            EffectKind::Platform(domain) => {
+                9 + match domain {
+                    PlatformDomain::Boot => 0,
+                    PlatformDomain::Memory => 1,
+                    PlatformDomain::Mmio => 2,
+                    PlatformDomain::Pio => 3,
+                    PlatformDomain::Irq => 4,
+                    PlatformDomain::Cpu => 5,
+                    PlatformDomain::Atomic => 6,
+                    PlatformDomain::Smp => 7,
+                    PlatformDomain::Dma => 8,
+                    PlatformDomain::Clock => 9,
+                    PlatformDomain::Entropy => 10,
+                    PlatformDomain::Power => 11,
+                }
+            }
         };
-        1u16 << index
+        1u32 << index
     }
 
     /// The atom-kind of a concrete `Effect`, dropping the path/domain argument
@@ -113,6 +130,7 @@ impl EffectKind {
             Effect::Panic => EffectKind::Panic,
             Effect::Diverge => EffectKind::Diverge,
             Effect::Term => EffectKind::Term,
+            Effect::Platform(domain) => EffectKind::Platform(*domain),
         }
     }
 
@@ -132,6 +150,7 @@ impl EffectKind {
             EffectKind::Panic => Effect::Panic,
             EffectKind::Diverge => Effect::Diverge,
             EffectKind::Term => Effect::Term,
+            EffectKind::Platform(domain) => Effect::Platform(domain),
         }
     }
 }
@@ -155,10 +174,10 @@ fn effects(row: &EffectRow) -> Vec<EffectKind> {
 /// `mask(Set(v))` ORs in `EffectKind::of(e).bit()` for each `e`. Path-insensitive
 /// (OQ-1), the projection `effects` already performs. Widened `u8`→`u16`
 /// for the 9th atom `Term` (#106).
-fn mask(row: &EffectRow) -> u16 {
+fn mask(row: &EffectRow) -> u32 {
     match row {
         EffectRow::Pure => 0,
-        EffectRow::Set(v) => v.iter().fold(0u16, |m, e| m | EffectKind::of(e).bit()),
+        EffectRow::Set(v) => v.iter().fold(0u32, |m, e| m | EffectKind::of(e).bit()),
     }
 }
 

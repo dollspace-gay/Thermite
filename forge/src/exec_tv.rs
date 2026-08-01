@@ -806,6 +806,8 @@ fn collect_free_paths(e: &Expr, out: &mut Vec<String>) {
 /// (non-derivable frame).
 fn exec_type_spelling(ty: &Type) -> Option<(String, bool)> {
     match ty {
+        Type::Prim(PrimType::U8) => Some(("u8".to_string(), false)),
+        Type::Prim(PrimType::U16) => Some(("u16".to_string(), false)),
         Type::Prim(PrimType::U32) => Some(("u32".to_string(), false)),
         Type::Prim(PrimType::U64) => Some(("u64".to_string(), false)),
         Type::Prim(PrimType::Usize) => Some(("usize".to_string(), false)),
@@ -813,14 +815,14 @@ fn exec_type_spelling(ty: &Type) -> Option<(String, bool)> {
         Type::Ref { inner, .. } => match inner.as_ref() {
             // `&[u32]` → the exec slice binding (indexed element-wise as `xs[i as
             // int]` in the reference, AC-5). Only a `u32` element slice is framed.
-            Type::Slice(elem) if matches!(elem.as_ref(), Type::Prim(PrimType::U32)) => {
-                Some(("&[u32]".to_string(), true))
+            Type::Slice(elem) => {
+                exec_type_spelling(elem).map(|(spelling, _)| (format!("&[{spelling}]"), true))
             }
             // A `&u64`/`&usize` borrow frames as the inner scalar.
             other => exec_type_spelling(other),
         },
-        Type::Slice(elem) if matches!(elem.as_ref(), Type::Prim(PrimType::U32)) => {
-            Some(("&[u32]".to_string(), true))
+        Type::Slice(elem) => {
+            exec_type_spelling(elem).map(|(spelling, _)| (format!("&[{spelling}]"), true))
         }
         _ => None,
     }
@@ -1178,7 +1180,7 @@ mod divergent_teeth {
         }
         let source = Expr::Cast {
             expr: Box::new(bin(BinOp::Sub, path("n"), int(1))),
-            ty: Type::Named("u8".to_string()),
+            ty: Type::Prim(PrimType::U8),
         };
         let frame = ExecObligationFrame {
             params: vec![ExecParamDecl::new("n", "u64")],

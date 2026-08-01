@@ -53,6 +53,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "thermite-kernel",
  "thermite-lower",
  "thermite-skill",
  "thermite-spec",
@@ -170,6 +171,13 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
+]
+
+[[package]]
+name = "thermite-kernel"
+version = "0.0.1"
+dependencies = [
+ "thermite-verified",
 ]
 
 [[package]]

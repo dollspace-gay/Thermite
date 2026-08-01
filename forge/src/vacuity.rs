@@ -442,6 +442,9 @@ fn effect_row_is_maximal(fx: &EffectRow) -> bool {
             // `Term` (#106) is not part of the broad maximal set: a narrow
             // terminal-control grant, exempt from the §7.1 (d) heuristic.
             Effect::Term => {}
+            // Kernel platform authorities are narrow, domain-scoped grants and
+            // do not participate in the hosted maximal-row heuristic.
+            Effect::Platform(_) => {}
         }
     }
     read && write && net && alloc && time && rand && panic && diverge

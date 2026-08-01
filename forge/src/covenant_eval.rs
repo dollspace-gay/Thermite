@@ -133,6 +133,10 @@ impl Value {
 /// (`x as u32` reduces mod 2³²) and for the `falsify` input generator's range bound.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IntWidth {
+    /// `u8` — 8-bit, max `u8::MAX`.
+    U8,
+    /// `u16` — 16-bit, max `u16::MAX`.
+    U16,
     /// `u32` — 32-bit, max `u32::MAX`.
     U32,
     /// `u64` — 64-bit, max `u64::MAX`.
@@ -147,6 +151,8 @@ impl IntWidth {
     #[must_use]
     pub fn max_value(self) -> u128 {
         match self {
+            IntWidth::U8 => u128::from(u8::MAX),
+            IntWidth::U16 => u128::from(u16::MAX),
             IntWidth::U32 => u128::from(u32::MAX),
             IntWidth::U64 | IntWidth::Usize => u128::from(u64::MAX),
         }
@@ -155,6 +161,8 @@ impl IntWidth {
     /// The modulus `2^bits` for truncating an `as`-cast to this width.
     fn modulus(self) -> i128 {
         match self {
+            IntWidth::U8 => 1_i128 << 8,
+            IntWidth::U16 => 1_i128 << 16,
             IntWidth::U32 => 1_i128 << 32,
             IntWidth::U64 | IntWidth::Usize => 1_i128 << 64,
         }
@@ -165,6 +173,8 @@ impl IntWidth {
     #[must_use]
     pub fn of_prim(p: PrimType) -> Option<IntWidth> {
         match p {
+            PrimType::U8 => Some(IntWidth::U8),
+            PrimType::U16 => Some(IntWidth::U16),
             PrimType::U32 => Some(IntWidth::U32),
             PrimType::U64 => Some(IntWidth::U64),
             PrimType::Usize => Some(IntWidth::Usize),

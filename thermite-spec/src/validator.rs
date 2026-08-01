@@ -307,6 +307,10 @@ const BUILTIN_METHODS: &[&str] = &[
 const THERMITE_RESERVED_PREFIX: &str = "__thermite_";
 
 const GENERATED_SPEC_FNS: &[&str] = &[
+    // Verus state-view primitive for `&mut` postconditions. It is not emitted by
+    // the lowerer; admitting it here keeps mutable-slice contracts inside the
+    // closed spec-call cage while the backend resolves the built-in directly.
+    "final",
     "parse_be",
     "parse_le",
     "pow10",

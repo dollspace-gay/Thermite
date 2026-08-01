@@ -116,6 +116,10 @@ pub enum BuildTarget {
     /// `main`/seccomp prelude, suitable for linking into a verified microkernel. An
     /// ambient-syscall `fx` row (`read`/`write`/`net`/`term`) is refused (REQ-3).
     Kernel,
+    /// A receipt-bound bootable image. The CLI handles this profile before the
+    /// ordinary Rust-crate lowerer; treating it as the kernel prelude here keeps
+    /// internal exhaustive matches fail-closed if it is ever routed incorrectly.
+    KernelImage,
 }
 
 /// The freestanding `#![no_std] + alloc` crate prelude prepended to `lower_l1`'s
@@ -292,7 +296,7 @@ pub fn build_file(
     // `.design/build/kernel-target.md` REQ-1/REQ-3: a kernel build is a library
     // (no `main`), so `--target kernel` + `--entry` is a usage error — a kernel
     // crate has no userspace process entry point / seccomp sandbox.
-    if matches!(target, BuildTarget::Kernel) {
+    if matches!(target, BuildTarget::Kernel | BuildTarget::KernelImage) {
         if let Some(name) = entry {
             return Err(ForgeError::Usage(format!(
                 "`forge build --target kernel` emits a no_std LIBRARY crate and takes no \
@@ -313,7 +317,7 @@ pub fn build_file(
     // (#198: their std-bodied effect wrappers leak into `#![no_std]`; OQ-2 amended).
     // Every in-language fn is scanned (the whole class, not just an `--entry` closure) so
     // a library exporting an ambient-`fx` fn is refused regardless of call site.
-    if matches!(target, BuildTarget::Kernel) {
+    if matches!(target, BuildTarget::Kernel | BuildTarget::KernelImage) {
         reject_ambient_fx_for_kernel(&program)?;
     }
 
@@ -456,7 +460,7 @@ pub fn emit_source(
     // `panic!` is `alloc`-clean — OQ-3 — and resolves against the prelude).
     let mut source = match target {
         BuildTarget::Std => String::new(),
-        BuildTarget::Kernel => KERNEL_PRELUDE.to_string(),
+        BuildTarget::Kernel | BuildTarget::KernelImage => KERNEL_PRELUDE.to_string(),
     };
 
     // Basis Stage 8 (`.design/basis/08-runnable-effect-link.md` REQ-2): emit a
@@ -684,6 +688,8 @@ fn synthesize_entry_main(
 /// error). Covers the corpus shapes + the primitive scalars.
 fn synthesize_arg(ty: &Type) -> Option<String> {
     match ty {
+        Type::Prim(PrimType::U8) => Some("1u8".to_string()),
+        Type::Prim(PrimType::U16) => Some("1u16".to_string()),
         Type::Prim(PrimType::U32) => Some("1u32".to_string()),
         Type::Prim(PrimType::U64) => Some("1u64".to_string()),
         Type::Prim(PrimType::Usize) => Some("1usize".to_string()),
@@ -692,12 +698,16 @@ fn synthesize_arg(ty: &Type) -> Option<String> {
         // corpus `sum(&[1,2,3]) == 6` is this case.
         Type::Ref { inner, .. } => match inner.as_ref() {
             Type::Slice(elem) => match elem.as_ref() {
+                Type::Prim(PrimType::U8) => Some("&[1u8, 2, 3]".to_string()),
+                Type::Prim(PrimType::U16) => Some("&[1u16, 2, 3]".to_string()),
                 Type::Prim(PrimType::U32) => Some("&[1u32, 2, 3]".to_string()),
                 Type::Prim(PrimType::U64) => Some("&[1u64, 2, 3]".to_string()),
                 Type::Prim(PrimType::Usize) => Some("&[1usize, 2, 3]".to_string()),
                 _ => None,
             },
             // `&u32` etc. — a referenced scalar.
+            Type::Prim(PrimType::U8) => Some("&1u8".to_string()),
+            Type::Prim(PrimType::U16) => Some("&1u16".to_string()),
             Type::Prim(PrimType::U32) => Some("&1u32".to_string()),
             Type::Prim(PrimType::U64) => Some("&1u64".to_string()),
             Type::Prim(PrimType::Usize) => Some("&1usize".to_string()),
@@ -823,7 +833,7 @@ fn invoke_rustc(
     // (AC-4). The kernel `#![no_std]` rlib needs no `#[panic_handler]`/allocator to
     // compile (only a final bin/staticlib link does — OQ-1; the test harness supplies
     // a stub for the freestanding-compile AC).
-    if matches!(target, BuildTarget::Kernel) {
+    if matches!(target, BuildTarget::Kernel | BuildTarget::KernelImage) {
         command.arg("-C").arg("panic=abort");
     }
 

@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: 163f1dcc94f25e72ac28a98da3f920f9bfdc87dd1bde3426d68f44169225f7bb (re-pinned 2026-08-01 after #110 unary invariant receiver binding; ergonomics behavior remains regression-covered)
+audited-content-sha256: 49c3911fe674113b046c0056a739441f36e45cd4a445001ede0ebedf327bd89e (re-pinned 2026-08-01 after auditing the bootable multicore kernel integration; existing behavior remains regression-covered)
 governs: thermite-syntax/src/parser.rs
 governs: thermite-syntax/src/ast.rs
 governs: thermite-lower/src/lower.rs

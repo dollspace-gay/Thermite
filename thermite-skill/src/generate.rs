@@ -64,7 +64,7 @@
 use thermite_spec::schemes::{SchemeResult, SchemeSig, StepShape};
 use thermite_spec::{ArgKind, CombinatorSig, ResultKind};
 use thermite_syntax::ast::{
-    BinOp, Effect, Expr, IndexArg, Item, Pattern, PrimType, SlicePat, Type, UnaryOp,
+    BinOp, Effect, Expr, IndexArg, Item, Pattern, PlatformDomain, PrimType, SlicePat, Type, UnaryOp,
 };
 use thermite_syntax::lexer::Span;
 
@@ -367,7 +367,7 @@ impl SkillFragment {
 fn render_type_arm(ty: &Type) -> SkillFragment {
     match ty {
         Type::Prim(_) => SkillFragment {
-            fragment: "u32 | u64 | usize | bool",
+            fragment: "u8 | u16 | u32 | u64 | usize | bool",
             description: "the closed primitive scalar set (no implicit widening)",
             example: "let n: u64 = 0;",
         },
@@ -449,6 +449,16 @@ fn render_type_arm(ty: &Type) -> SkillFragment {
 /// over the closed primitive set so a new primitive also compile-forces an entry.
 fn render_prim_arm(prim: PrimType) -> SkillFragment {
     match prim {
+        PrimType::U8 => SkillFragment {
+            fragment: "u8",
+            description: "an 8-bit unsigned integer",
+            example: "byte: u8",
+        },
+        PrimType::U16 => SkillFragment {
+            fragment: "u16",
+            description: "a 16-bit unsigned integer",
+            example: "port: u16",
+        },
         PrimType::U32 => SkillFragment {
             fragment: "u32",
             description: "a 32-bit unsigned integer",
@@ -843,6 +853,28 @@ fn render_effect_arm(effect: &Effect) -> SkillFragment {
             description: "controls the terminal (raw mode via the `ioctl` syscall)",
             example: "fx term",
         },
+        Effect::Platform(domain) => match domain {
+            PlatformDomain::Boot => platform_fragment("platform(boot)"),
+            PlatformDomain::Memory => platform_fragment("platform(memory)"),
+            PlatformDomain::Mmio => platform_fragment("platform(mmio)"),
+            PlatformDomain::Pio => platform_fragment("platform(pio)"),
+            PlatformDomain::Irq => platform_fragment("platform(irq)"),
+            PlatformDomain::Cpu => platform_fragment("platform(cpu)"),
+            PlatformDomain::Atomic => platform_fragment("platform(atomic)"),
+            PlatformDomain::Smp => platform_fragment("platform(smp)"),
+            PlatformDomain::Dma => platform_fragment("platform(dma)"),
+            PlatformDomain::Clock => platform_fragment("platform(clock)"),
+            PlatformDomain::Entropy => platform_fragment("platform(entropy)"),
+            PlatformDomain::Power => platform_fragment("platform(power)"),
+        },
+    }
+}
+
+fn platform_fragment(fragment: &'static str) -> SkillFragment {
+    SkillFragment {
+        fragment,
+        description: "uses one frozen kernel platform authority domain",
+        example: "fx platform(memory)",
     }
 }
 
@@ -890,8 +922,10 @@ fn type_inventory() -> Vec<Type> {
 }
 
 /// The closed `PrimType` set, in declaration order (REQ-10 leaf inventory).
-fn prim_inventory() -> [PrimType; 4] {
+fn prim_inventory() -> [PrimType; 6] {
     [
+        PrimType::U8,
+        PrimType::U16,
         PrimType::U32,
         PrimType::U64,
         PrimType::Usize,
@@ -1104,6 +1138,18 @@ fn effect_inventory() -> Vec<Effect> {
         Effect::Panic,
         Effect::Diverge,
         Effect::Term,
+        Effect::Platform(PlatformDomain::Boot),
+        Effect::Platform(PlatformDomain::Memory),
+        Effect::Platform(PlatformDomain::Mmio),
+        Effect::Platform(PlatformDomain::Pio),
+        Effect::Platform(PlatformDomain::Irq),
+        Effect::Platform(PlatformDomain::Cpu),
+        Effect::Platform(PlatformDomain::Atomic),
+        Effect::Platform(PlatformDomain::Smp),
+        Effect::Platform(PlatformDomain::Dma),
+        Effect::Platform(PlatformDomain::Clock),
+        Effect::Platform(PlatformDomain::Entropy),
+        Effect::Platform(PlatformDomain::Power),
     ]
 }
 
@@ -1735,7 +1781,7 @@ mod tests {
         assert!(!expr_inventory().is_empty());
         assert!(!pattern_inventory().is_empty());
         assert!(!effect_inventory().is_empty());
-        assert_eq!(prim_inventory().len(), 4);
+        assert_eq!(prim_inventory().len(), 6);
         // 12 base BinOps + the 6 #92 integer operators = 18.
         assert_eq!(binop_inventory().len(), 18);
         // The closed `UnaryOp` set (#92): exactly the prefix `!`.

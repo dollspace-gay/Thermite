@@ -8,6 +8,7 @@ members = [
     "thermite-skill",
     "thermite-verified",
     "thermite-tv",
+    "thermite-kernel",
 ]
 
 # Shared metadata for every member crate (REQ-1, REQ-4). Each crate inherits

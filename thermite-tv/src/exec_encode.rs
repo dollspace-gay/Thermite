@@ -349,17 +349,14 @@ fn encode_cast(inner: &Expr, ty: &Type, ctx: &ExecRefCtx) -> Result<String, RefE
 /// narrowing/wrapping cast (the #122 surface) is encodable.
 fn cast_target(ty: &Type) -> Result<String, RefEncodeError> {
     match ty {
+        Type::Prim(PrimType::U8) => Ok("u8".to_string()),
+        Type::Prim(PrimType::U16) => Ok("u16".to_string()),
         Type::Prim(PrimType::U32) => Ok("u32".to_string()),
         Type::Prim(PrimType::U64) => Ok("u64".to_string()),
         Type::Prim(PrimType::Usize) => Ok("usize".to_string()),
         Type::Prim(PrimType::Bool) => Err(RefEncodeError::Unsupported(
             "cast to bool (not an arithmetic exec cast)".to_string(),
         )),
-        // The narrower bounded byte/half targets a narrowing cast (#122) uses
-        // (`(n - 1) as u8`). They are not surface `PrimType`s but are valid Verus
-        // exec cast targets; spelled as the bounded Rust int names. Keyed on the
-        // named-type spelling so a non-bounded named type is rejected.
-        Type::Named(n) if matches!(n.as_str(), "u8" | "u16") => Ok(n.clone()),
         other => Err(RefEncodeError::Unsupported(format!(
             "exec cast to unsupported type {other:?} (the exec cast targets are \
              the bounded `u8`/`u16`/`u32`/`u64`/`usize`, NEVER `nat`/`int`)"
@@ -430,10 +427,7 @@ mod tests {
     /// `u8` target (never `nat`). The reference means the faithful production form.
     #[test]
     fn e1_cast_inner_paren() {
-        let e = cast(
-            bin(BinOp::Sub, path("n"), int(1)),
-            Type::Named("u8".to_string()),
-        );
+        let e = cast(bin(BinOp::Sub, path("n"), int(1)), Type::Prim(PrimType::U8));
         assert_eq!(
             exec_ref_value(&e, &ExecRefCtx::default()).unwrap(),
             "(n - 1) as u8"

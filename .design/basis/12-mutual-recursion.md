@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: ba54470fc6ad2cc28720ea80def4185eb2b5b6c90a7109fbc51523f3f00410b3 (re-pinned 2026-08-01 after #110 unary invariant receiver binding; mutual-recursion behavior remains regression-covered)
+audited-content-sha256: b695da1b202c0b04c467c1553aaefece94978a3ab23709445ffbf68d7198ed6a (re-pinned 2026-08-01 after auditing the bootable multicore kernel integration; existing behavior remains regression-covered)
 governs: forge/src/check.rs
 governs: thermite-lower/src/lower.rs
 thesis-refs:

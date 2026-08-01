@@ -1188,6 +1188,190 @@ design = ".design/stage4-epr-reconstruction.md"
 reference = []
 conformance_ops = []
 
+# Bootable multicore kernel language foundation and complete image closure.
+# Shared compiler files retain their existing routes and are co-governed here;
+# the new kernel crate and platform tree are pinned as globs so later modules
+# cannot enter the trusted closure without refreshing the design audit.
+[[route]]
+crate_pattern = "thermite-syntax/src/ast.rs"
+design = ".design/build/bootable-multicore-kernel.md"
+reference = []
+conformance_ops = ["kernel-scalars", "platform-effects"]
+
+[[route]]
+crate_pattern = "thermite-syntax/src/parser.rs"
+design = ".design/build/bootable-multicore-kernel.md"
+reference = []
+conformance_ops = ["kernel-scalars", "platform-effects"]
+
+[[route]]
+crate_pattern = "thermite-syntax/src/lib.rs"
+design = ".design/build/bootable-multicore-kernel.md"
+reference = []
+conformance_ops = ["platform-domain-api"]
+
+[[route]]
+crate_pattern = "thermite-syntax/tests/kernel_surface.rs"
+design = ".design/build/bootable-multicore-kernel.md"
+reference = []
+conformance_ops = ["closed-platform-domain"]
+
+[[route]]
+crate_pattern = "thermite-syntax/tests/conformance.rs"
+design = ".design/build/bootable-multicore-kernel.md"
+reference = ["conformance/kernel_primitives.th"]
+conformance_ops = ["kernel-scalars", "platform-effects"]
+
+[[route]]
+crate_pattern = "thermite-lower/src/effects.rs"
+design = ".design/build/bootable-multicore-kernel.md"
+reference = ["conformance/kernel_primitives.th"]
+conformance_ops = ["platform-effects"]
+
+[[route]]
+crate_pattern = "thermite-lower/src/lower.rs"
+design = ".design/build/bootable-multicore-kernel.md"
+reference = ["conformance/kernel_primitives.th"]
+conformance_ops = ["kernel-scalars", "kernel-mutable-slice"]
+
+[[route]]
+crate_pattern = "thermite-lower/tests/kernel_mutable_slice.rs"
+design = ".design/build/bootable-multicore-kernel.md"
+reference = ["conformance/kernel_primitives.th"]
+conformance_ops = ["kernel-mutable-slice"]
+
+[[route]]
+crate_pattern = "thermite-lower/tests/effects_verified.rs"
+design = ".design/build/bootable-multicore-kernel.md"
+reference = ["conformance/kernel_primitives.th"]
+conformance_ops = ["platform-effects"]
+
+[[route]]
+crate_pattern = "thermite-verified/src/lib.rs"
+design = ".design/build/bootable-multicore-kernel.md"
+reference = ["conformance/kernel_primitives.th"]
+conformance_ops = ["kernel-scalars"]
+
+[[route]]
+crate_pattern = "lean/Thermite/Ast.lean"
+design = ".design/build/bootable-multicore-kernel.md"
+reference = []
+conformance_ops = ["kernel-scalars"]
+
+[[route]]
+crate_pattern = "lean/Thermite/Denote.lean"
+design = ".design/build/bootable-multicore-kernel.md"
+reference = []
+conformance_ops = ["kernel-scalars"]
+
+[[route]]
+crate_pattern = "lean/Thermite/RefEncode.lean"
+design = ".design/build/bootable-multicore-kernel.md"
+reference = []
+conformance_ops = ["kernel-scalars"]
+
+[[route]]
+crate_pattern = "thermite-kernel/Cargo.toml"
+design = ".design/build/bootable-multicore-kernel.md"
+reference = []
+conformance_ops = ["kernel-crate"]
+
+[[route]]
+crate_pattern = "thermite-kernel/src/*.rs"
+design = ".design/build/bootable-multicore-kernel.md"
+reference = ["conformance/bootable_kernel.th", "conformance/kernel_primitives.th"]
+conformance_ops = ["kernel-model", "frozen-boundaries"]
+
+[[route]]
+crate_pattern = "thermite-kernel/tests/*.rs"
+design = ".design/build/bootable-multicore-kernel.md"
+reference = []
+conformance_ops = ["kernel-model"]
+
+[[route]]
+crate_pattern = "forge/src/kernel_image.rs"
+design = ".design/build/bootable-multicore-kernel.md"
+reference = ["conformance/bootable_kernel.th"]
+conformance_ops = ["kernel-image"]
+
+[[route]]
+crate_pattern = "forge/src/cli.rs"
+design = ".design/build/bootable-multicore-kernel.md"
+reference = ["conformance/bootable_kernel.th"]
+conformance_ops = ["kernel-image-cli"]
+
+[[route]]
+crate_pattern = "forge/src/main.rs"
+design = ".design/build/bootable-multicore-kernel.md"
+reference = ["conformance/bootable_kernel.th"]
+conformance_ops = ["kernel-image-publication"]
+
+[[route]]
+crate_pattern = "conformance/bootable_kernel.th"
+design = ".design/build/bootable-multicore-kernel.md"
+reference = []
+conformance_ops = ["kernel-image"]
+
+[[route]]
+crate_pattern = "conformance/kernel_primitives.th"
+design = ".design/build/bootable-multicore-kernel.md"
+reference = []
+conformance_ops = ["kernel-scalars", "platform-effects"]
+
+[[route]]
+crate_pattern = "THERMITE.skill.md"
+design = ".design/build/bootable-multicore-kernel.md"
+reference = ["conformance/kernel_primitives.th"]
+conformance_ops = ["kernel-skill-reference"]
+
+[[route]]
+crate_pattern = "Cargo.toml"
+design = ".design/build/bootable-multicore-kernel.md"
+reference = []
+conformance_ops = ["kernel-workspace"]
+
+[[route]]
+crate_pattern = "Cargo.lock"
+design = ".design/build/bootable-multicore-kernel.md"
+reference = []
+conformance_ops = ["kernel-workspace"]
+
+[[route]]
+crate_pattern = "forge/Cargo.toml"
+design = ".design/build/bootable-multicore-kernel.md"
+reference = []
+conformance_ops = ["kernel-image"]
+
+[[route]]
+crate_pattern = "platform/x86_64-pc-uefi-smp-v1/*"
+design = ".design/build/bootable-multicore-kernel.md"
+reference = ["conformance/bootable_kernel.th"]
+conformance_ops = ["platform-closure"]
+
+[[route]]
+crate_pattern = "platform/x86_64-pc-uefi-smp-v1/runtime/.cargo/config.toml"
+design = ".design/build/bootable-multicore-kernel.md"
+reference = []
+conformance_ops = ["frozen-runtime-build"]
+
+[[route]]
+crate_pattern = "platform/x86_64-pc-uefi-smp-v1/runtime/Cargo.*"
+design = ".design/build/bootable-multicore-kernel.md"
+reference = []
+conformance_ops = ["frozen-runtime-build"]
+
+[[route]]
+crate_pattern = "platform/x86_64-pc-uefi-smp-v1/runtime/src/*"
+design = ".design/build/bootable-multicore-kernel.md"
+reference = ["conformance/bootable_kernel.th"]
+conformance_ops = ["uefi-runtime", "smp-runtime"]
+
+[[route]]
+crate_pattern = ".github/workflows/ci.yml"
+design = ".design/build/bootable-multicore-kernel.md"
+reference = ["conformance/bootable_kernel.th"]
+conformance_ops = ["kernel-image-gate"]
+
 [[route]]
 crate_pattern = ".github/workflows/ci.yml"
 design = ".design/stage4-epr-reconstruction.md"

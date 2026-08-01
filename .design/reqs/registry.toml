@@ -764,6 +764,14 @@ region = "forge-kernel-byte-slice-status"
 title = "Forge Kernel Byte-Slice Canonical Status References"
 
 [[view]]
+name = "forge-bootable-multicore-kernel-status"
+path = ".design/build/bootable-multicore-kernel.md"
+kind = "reference_list"
+mode = "region"
+region = "forge-bootable-multicore-kernel-status"
+title = "Forge Bootable Multicore Kernel Canonical Status References"
+
+[[view]]
 name = "forge-verus-error-accounting-status"
 path = ".design/build/verus-error-accounting.md"
 kind = "reference_list"
@@ -17359,3 +17367,328 @@ note = "The g4 job installs Lean, Z3, pinned CaDiCaL/drat-trim, then runs the ga
 kind = "command"
 target = "bash scripts/g4-gate.sh"
 note = "Gate G4; exits nonzero on any failed check or missing dependency."
+
+[[requirement]]
+id = "REQ-MKERNEL-1"
+title = "Bootable kernel-image build target"
+owner = ".design/build/bootable-multicore-kernel.md"
+status = "shipped"
+scope = "forge"
+summary = "Forge closes a verified kernel rlib over one frozen platform profile and deterministically publishes a UEFI-loadable image."
+contributors = [".design/build/kernel-target.md", ".design/build/l3-rich-composition.md"]
+generated_to = ["status", "forge-bootable-multicore-kernel-status"]
+
+[[requirement.evidence]]
+kind = "doc"
+target = ".design/build/bootable-multicore-kernel.md"
+note = "Final-image user surface and selected architecture."
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/kernel_image.rs"
+note = "Kernel-image construction, deterministic rebuild, boot gate, receipt, and atomic image-sentinel publication."
+
+[[requirement]]
+id = "REQ-MKERNEL-2"
+title = "Frozen platform registry and exact boundary closure"
+owner = ".design/build/bootable-multicore-kernel.md"
+status = "shipped"
+scope = "forge"
+summary = "Every reachable kernel boundary exactly matches a versioned registry entry whose contract, effect, model, ABI, implementation, and evidence are digest-bound."
+contributors = [".design/build/l3-rich-composition.md"]
+generated_to = ["status", "forge-bootable-multicore-kernel-status"]
+
+[[requirement.evidence]]
+kind = "doc"
+target = ".design/build/bootable-multicore-kernel.md"
+note = "Frozen platform registry specification."
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-kernel/src/registry.rs"
+note = "Canonical 104-operation v1 registry with exact source-contract digest, ABI, ownership, model, failure, and evidence metadata."
+
+[[requirement]]
+id = "REQ-MKERNEL-3"
+title = "Sealed capability ledger and platform effects"
+owner = ".design/build/bootable-multicore-kernel.md"
+status = "shipped"
+scope = "spec"
+summary = "Kernel authority uses sealed generation-tracked capabilities and one closed platform(domain) effect family under existing effect subsumption."
+contributors = ["thermite-syntax/src/ast.rs", "thermite-spec/src/lib.rs"]
+generated_to = ["status", "forge-bootable-multicore-kernel-status"]
+
+[[requirement.evidence]]
+kind = "doc"
+target = ".design/build/bootable-multicore-kernel.md"
+note = "Capability and effect model."
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-kernel/src/capability.rs"
+note = "Sealed private-field capabilities and fail-closed owner, rights, range, generation, transfer, and release ledger."
+
+[[requirement]]
+id = "REQ-MKERNEL-4"
+title = "Kernel scalar, mutable-storage, and collection basis"
+owner = ".design/build/bootable-multicore-kernel.md"
+status = "shipped"
+scope = "verified"
+summary = "The verified kernel profile supports u8/u16, exact mutable storage, fixed-capacity boot storage, and content-preserving collections needed by kernel algorithms."
+contributors = [".design/build/kernel-byte-slice.md", "thermite-syntax/src/ast.rs", "thermite-lower/src/lower.rs"]
+generated_to = ["status", "forge-bootable-multicore-kernel-status"]
+
+[[requirement.evidence]]
+kind = "doc"
+target = ".design/build/bootable-multicore-kernel.md"
+note = "Kernel language and proof basis."
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-kernel/src/storage.rs"
+note = "Allocation-free fixed vectors, maps, bitmaps, and ring buffers exercised by kernel model tests."
+
+[[requirement]]
+id = "REQ-MKERNEL-5"
+title = "Boot entry and freestanding compiler runtime"
+owner = ".design/build/bootable-multicore-kernel.md"
+status = "shipped"
+scope = "runtime"
+summary = "The frozen profile supplies BSP/AP entry, stacks, BSS initialization, normalized firmware handoff, terminal handlers, memory intrinsics, and allocator bridge."
+contributors = [".design/build/kernel-target.md"]
+generated_to = ["status", "forge-bootable-multicore-kernel-status"]
+
+[[requirement.evidence]]
+kind = "doc"
+target = ".design/build/bootable-multicore-kernel.md"
+note = "Image, boot, and compiler runtime primitive specification."
+
+[[requirement.evidence]]
+kind = "file"
+target = "platform/x86_64-pc-uefi-smp-v1/runtime/src/main.rs"
+note = "UEFI entry, normalized handoff, allocator bridge, runtime intrinsics, terminal panic path, and post-firmware transfer."
+
+[[requirement]]
+id = "REQ-MKERNEL-6"
+title = "Capability-bounded physical and virtual memory"
+owner = ".design/build/bootable-multicore-kernel.md"
+status = "shipped"
+scope = "runtime"
+summary = "Registered memory primitives mediate frames, temporary mappings, address spaces, page permissions, activation, user copies, and TLB invalidation."
+contributors = [".design/build/kernel-byte-slice.md"]
+generated_to = ["status", "forge-bootable-multicore-kernel-status"]
+
+[[requirement.evidence]]
+kind = "doc"
+target = ".design/build/bootable-multicore-kernel.md"
+note = "Physical and virtual memory primitive specification."
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-kernel/src/memory.rs"
+note = "Capability-bounded address-space lifecycle, temporary maps, translation, activation, and all-or-nothing user copies."
+
+[[requirement]]
+id = "REQ-MKERNEL-7"
+title = "Volatile MMIO, PIO, and device ordering"
+owner = ".design/build/bootable-multicore-kernel.md"
+status = "shipped"
+scope = "runtime"
+summary = "Width-, alignment-, range-, and rights-checked registry calls provide volatile MMIO, x86 PIO, device barriers, and bounded discovery access."
+contributors = []
+generated_to = ["status", "forge-bootable-multicore-kernel-status"]
+
+[[requirement.evidence]]
+kind = "doc"
+target = ".design/build/bootable-multicore-kernel.md"
+note = "Volatile device access primitive specification."
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-kernel/src/device.rs"
+note = "Width-, alignment-, range-, and rights-checked MMIO/PIO plus the four device barrier classes."
+
+[[requirement]]
+id = "REQ-MKERNEL-8"
+title = "CPU, interrupt, trap, and privilege transitions"
+owner = ".design/build/bootable-multicore-kernel.md"
+status = "shipped"
+scope = "runtime"
+summary = "Frozen CPU and trap primitives cover feature and control state, descriptors, CPU-local interrupt state, interrupt routing, context entry, and kernel or user return."
+contributors = []
+generated_to = ["status", "forge-bootable-multicore-kernel-status"]
+
+[[requirement.evidence]]
+kind = "doc"
+target = ".design/build/bootable-multicore-kernel.md"
+note = "CPU, interrupt, trap, and user-mode primitive specification."
+
+[[requirement.evidence]]
+kind = "file"
+target = "platform/x86_64-pc-uefi-smp-v1/runtime/src/post_firmware.rs"
+note = "GDT/TSS/IDT/APIC, trap/context assembly, per-CPU GS state, ring-3 SYSCALL/SYSRET, and page-fault recovery."
+
+[[requirement]]
+id = "REQ-MKERNEL-9"
+title = "Verified atomic memory model and synchronization basis"
+owner = ".design/build/bootable-multicore-kernel.md"
+status = "shipped"
+scope = "verified"
+summary = "Sealed bool/u32/u64/usize atomics expose checked operations and five frozen orderings with modification-order, reads-from, happens-before, and SeqCst proof models."
+contributors = []
+generated_to = ["status", "forge-bootable-multicore-kernel-status"]
+
+[[requirement.evidence]]
+kind = "doc"
+target = ".design/build/bootable-multicore-kernel.md"
+note = "Atomic and SMP memory-model specification."
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-kernel/src/atomic.rs"
+note = "Closed widths and orderings, strong/weak CAS, RMW operations, fences, modification order, reads-from, happens-before, and SeqCst traces."
+
+[[requirement]]
+id = "REQ-MKERNEL-10"
+title = "Application-processor lifecycle, IPIs, and shootdown"
+owner = ".design/build/bootable-multicore-kernel.md"
+status = "shipped"
+scope = "verified"
+summary = "The kernel discovers and starts APs, installs per-CPU state, coordinates epoch-bound IPIs and rendezvous, and completes TLB shootdown over the current online set."
+contributors = []
+generated_to = ["status", "forge-bootable-multicore-kernel-status"]
+
+[[requirement.evidence]]
+kind = "doc"
+target = ".design/build/bootable-multicore-kernel.md"
+note = "Multicore lifecycle and coordination specification."
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-kernel/src/smp.rs"
+note = "Monotonic AP lifecycle, online sets, epoch-correlated IPI and TLB acknowledgement models with named negatives."
+
+[[requirement]]
+id = "REQ-MKERNEL-11"
+title = "Concurrent scheduler, contexts, and user-mode syscall path"
+owner = ".design/build/bootable-multicore-kernel.md"
+status = "shipped"
+scope = "verified"
+summary = "Verified per-CPU scheduling and ownership transfer drive frozen context operations, user entry, syscalls, faults, and cross-CPU wakeups."
+contributors = []
+generated_to = ["status", "forge-bootable-multicore-kernel-status"]
+
+[[requirement.evidence]]
+kind = "doc"
+target = ".design/build/bootable-multicore-kernel.md"
+note = "Scheduler and user-mode execution specification."
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-kernel/src/scheduler.rs"
+note = "Per-CPU runqueues, work stealing, unique task ownership, cross-CPU wake, block, yield, dispatch, and exit invariants."
+
+[[requirement]]
+id = "REQ-MKERNEL-12"
+title = "Generation-safe DMA and IOMMU mediation"
+owner = ".design/build/bootable-multicore-kernel.md"
+status = "shipped"
+scope = "runtime"
+summary = "DMA calls bind device, direction, region, coherence, translation domain, and generation while verified drivers own descriptor protocols."
+contributors = []
+generated_to = ["status", "forge-bootable-multicore-kernel-status"]
+
+[[requirement.evidence]]
+kind = "doc"
+target = ".design/build/bootable-multicore-kernel.md"
+note = "DMA primitive and ownership specification."
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-kernel/src/dma.rs"
+note = "Generation-safe pin/map/segments/sync/unmap/unpin for present-IOMMU and absent-identity profiles."
+
+[[requirement]]
+id = "REQ-MKERNEL-13"
+title = "Explicit clock, entropy, and power authority"
+owner = ".design/build/bootable-multicore-kernel.md"
+status = "shipped"
+scope = "runtime"
+summary = "Capability-bounded platform calls provide monotonic time, per-CPU deadlines, entropy with health failure, reboot, power-off, and terminal halt."
+contributors = [".design/build/kernel-target.md"]
+generated_to = ["status", "forge-bootable-multicore-kernel-status"]
+
+[[requirement.evidence]]
+kind = "doc"
+target = ".design/build/bootable-multicore-kernel.md"
+note = "Time, entropy, and power primitive specification."
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-kernel/src/services.rs"
+note = "Capability-bounded monotonic clock, exact entropy fill with health failure, and one-way terminal power state."
+
+[[requirement]]
+id = "REQ-MKERNEL-14"
+title = "Typed per-CPU event and action ABI"
+owner = ".design/build/bootable-multicore-kernel.md"
+status = "shipped"
+scope = "verified"
+summary = "TPL ingress validates typed events for a per-CPU deterministic transition core and executes bounded capability-checked actions with correlated completions."
+contributors = [".design/build/l3-rich-composition.md"]
+generated_to = ["status", "forge-bootable-multicore-kernel-status"]
+
+[[requirement.evidence]]
+kind = "doc"
+target = ".design/build/bootable-multicore-kernel.md"
+note = "Kernel event and action ABI specification."
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-kernel/src/event.rs"
+note = "Closed typed event/action ABI, strict ingress, monotonic correlation, typed completion, and capability-checking action executor."
+
+[[requirement]]
+id = "REQ-MKERNEL-15"
+title = "Final-image receipt, validation, replay, and honest assurance"
+owner = ".design/build/bootable-multicore-kernel.md"
+status = "shipped"
+scope = "forge"
+summary = "A bootable-kernel receipt binds proof artifacts, registry closure, privileged sources, toolchain, PE/PDB and section/symbol inventories, boot files, final image, replay, and to-platform-boundary assurance."
+contributors = [".design/build/l3-rich-composition.md", ".design/build/kernel-byte-slice.md"]
+generated_to = ["status", "forge-bootable-multicore-kernel-status"]
+
+[[requirement.evidence]]
+kind = "doc"
+target = ".design/build/bootable-multicore-kernel.md"
+note = "Build receipt, trust boundary, validation, and replay specification."
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/kernel_image.rs"
+note = "Receipt binds proof, registry, TPL, shell, toolchain, PE/PDB/sections/symbols/image, transcripts, reproducibility, and replay."
+
+[[requirement]]
+id = "REQ-MKERNEL-16"
+title = "Bootable SMP release and adversarial gate"
+owner = ".design/build/bootable-multicore-kernel.md"
+status = "shipped"
+scope = "forge"
+summary = "The release image passes deterministic 1/2/4/8-CPU boot, useful-work, user-mode, block-DMA, atomic, IPI, TLB, failure, capability, tamper, and no-publication tests."
+contributors = []
+generated_to = ["status", "forge-bootable-multicore-kernel-status"]
+
+[[requirement.evidence]]
+kind = "doc"
+target = ".design/build/bootable-multicore-kernel.md"
+note = "Boot, SMP, boundary, image, and adversarial acceptance matrix."
+
+[[requirement.evidence]]
+kind = "file"
+target = ".github/workflows/ci.yml"
+note = "The kernel-image job builds a fresh tracked-source image, verifies deterministic reconstruction and replay, and runs nominal 1/2/4/8 CPU, AP-failure, and reboot QEMU/OVMF scenarios."
+
+[[requirement.evidence]]
+kind = "file"
+target = "platform/x86_64-pc-uefi-smp-v1/test-qemu.py"
+note = "Fail-closed serial protocol validator for the complete release matrix and terminal power actions."

@@ -3,7 +3,7 @@
 tier: 3-component
 status: complete (epic #60 CLOSED 2026-06-05 — Tier-1 MAXED at six verified cores, verus --no-cheating `26 verified, 0 errors`: `subsumes` REQ-5, `ladder_action` REQ-7, `io_allow`/`syscall_allowlist` REQ-8, `should_emit_external_body` boundary-honesty, `aggregate_level` honest-min, `meets_floor_60` the 0/0 gate. The rest of the original REQ-2 list was adjudicated OUT by the Tier-1 boundary rule "soundness reduces to a finite enumerable domain": `cache_key` is cryptographic (SHA-256), `triage`/`mutation::generate` walk unbounded ASTs (Tier-2-adjacent), `is_strictly_stronger` is structural — an honest coverage boundary, not a deferral; see the #60 closing comment.)
 audited-sha: 39967df868c4a228894efdd48f136358db23e49d (re-pinned 2026-06-15: batch source status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: 488103d4382815b85141d17bc01b60917ba744e7 (bootstrap pin: decision 4; status header amended at #262 — the stale "epic #60 open" claim corrected against the epic's closing record))
-audited-content-sha256: 8523af19df2b45af54d874cf964842f50195dd070a8c55c339ac6dfa6c55492f
+audited-content-sha256: 1b50700c6314fcaa8e4ab31ae8af6ec571c9e63365729cbdf5d204c5c6a26aa8
 governs: thermite-verified/src/lib.rs (the verified core — six soundness-critical pure functions proved + production-anchored)
 thesis-refs:
   - thermite-design.md §6   (Verus is the L3 prover)

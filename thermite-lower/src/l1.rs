@@ -1952,6 +1952,8 @@ fn precedence(op: BinOp) -> u8 {
 /// plain Rust form. Mirrors `lower.rs::lower_type`.
 pub(crate) fn lower_type(ty: &Type) -> Result<String, LowerError> {
     match ty {
+        Type::Prim(PrimType::U8) => Ok("u8".to_string()),
+        Type::Prim(PrimType::U16) => Ok("u16".to_string()),
         Type::Prim(PrimType::U32) => Ok("u32".to_string()),
         Type::Prim(PrimType::U64) => Ok("u64".to_string()),
         Type::Prim(PrimType::Usize) => Ok("usize".to_string()),

@@ -1462,6 +1462,7 @@ fn effect_token(effect: &Effect) -> String {
         // The #106 terminal-control atom (`fx term` → the `ioctl` seccomp grant,
         // runtime-sandbox.md REQ-7). A bare atom like `alloc`/`time`.
         Effect::Term => "term".to_string(),
+        Effect::Platform(domain) => format!("platform({})", domain.surface()),
     }
 }
 

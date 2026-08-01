@@ -64,7 +64,11 @@ impl RelaxVerdict {
 fn is_integer_scalar(ty: &Type) -> bool {
     matches!(
         ty,
-        Type::Prim(PrimType::U32) | Type::Prim(PrimType::U64) | Type::Prim(PrimType::Usize)
+        Type::Prim(PrimType::U8)
+            | Type::Prim(PrimType::U16)
+            | Type::Prim(PrimType::U32)
+            | Type::Prim(PrimType::U64)
+            | Type::Prim(PrimType::Usize)
     )
 }
 

@@ -483,6 +483,8 @@ fn empty_string_value() -> (Expr, String) {
 /// an over-gate.
 fn empty_vec_value(elem: &Type) -> Option<(Expr, String)> {
     let suffix = match elem {
+        Type::Prim(PrimType::U8) => "U8",
+        Type::Prim(PrimType::U16) => "U16",
         Type::Prim(PrimType::U32) => "U32",
         Type::Prim(PrimType::U64) => "U64",
         Type::Prim(PrimType::Usize) => "Usize",
@@ -521,7 +523,9 @@ fn empty_slice_literal() -> Expr {
 /// it, not the type checker).
 fn zero_value_for(ret: &Type) -> Option<Expr> {
     match ret {
-        Type::Prim(PrimType::U32 | PrimType::U64 | PrimType::Usize) => Some(Expr::IntLit {
+        Type::Prim(
+            PrimType::U8 | PrimType::U16 | PrimType::U32 | PrimType::U64 | PrimType::Usize,
+        ) => Some(Expr::IntLit {
             value: 0,
             raw: "0".to_string(),
         }),
@@ -647,7 +651,9 @@ fn zero_value_with_defs(ty: &Type, adt_deps: &[Item]) -> Option<Expr> {
 /// The human description of the early-return zero value (matches `zero_value_for`).
 fn zero_desc(ret: &Type) -> &'static str {
     match ret {
-        Type::Prim(PrimType::U32 | PrimType::U64 | PrimType::Usize) => "0",
+        Type::Prim(
+            PrimType::U8 | PrimType::U16 | PrimType::U32 | PrimType::U64 | PrimType::Usize,
+        ) => "0",
         Type::Prim(PrimType::Bool) => "false",
         // Cluster C7 (`.design/basis/09-option-result.md` REQ-1): the description of
         // the `Option`-returning early-return zero, keyed on `Type::Option` (the

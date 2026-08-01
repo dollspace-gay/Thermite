@@ -442,6 +442,18 @@ fn encode_call(callee: &Expr, args: &[Expr], ctx: &RefCtx) -> Result<String, Ref
     };
     let name = segments.join("::");
 
+    // Verus state-view primitives take the reference itself, never its `@` view.
+    if name == "final" {
+        let [arg] = args else {
+            return Err(RefEncodeError::Unsupported(format!(
+                "final/{} (expected exactly 1 arg)",
+                args.len()
+            )));
+        };
+        let inner = encode(arg, ctx)?;
+        return Ok(format!("final({inner})"));
+    }
+
     // (1) old(x) — a single-arg `old` call.
     if name == "old" {
         if args.len() != 1 {
@@ -895,6 +907,10 @@ fn encode_receiver(receiver: &Expr, ctx: &RefCtx) -> Result<String, RefEncodeErr
             return Ok(format!("{}@", segments[0]));
         }
     }
+    if matches!(receiver, Expr::Call { callee, .. } if matches!(callee.as_ref(), Expr::Path(segs) if segs.as_slice() == ["final"]))
+    {
+        return Ok(format!("{}@", encode(receiver, ctx)?));
+    }
     encode(receiver, ctx)
 }
 
@@ -1000,6 +1016,8 @@ fn encode_cast(
 fn cast_target(ty: &thermite_syntax::ast::Type) -> Result<String, RefEncodeError> {
     use thermite_syntax::ast::{PrimType, Type};
     match ty {
+        Type::Prim(PrimType::U8) => Ok("u8".to_string()),
+        Type::Prim(PrimType::U16) => Ok("u16".to_string()),
         Type::Prim(PrimType::U32) => Ok("u32".to_string()),
         Type::Prim(PrimType::U64) => Ok("u64".to_string()),
         Type::Prim(PrimType::Usize) => Ok("usize".to_string()),

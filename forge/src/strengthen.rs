@@ -310,7 +310,10 @@ pub fn generate_candidates(
         // length pinning). A weak length-bounded `ens` is strengthened to the
         // exact length where the body returns one.
         for p in &f.params {
-            if is_slice_param(&p.ty) {
+            // A mutable-reference postcondition must use Verus `final(p)`;
+            // this generic strengthening family intentionally emits a bare
+            // receiver, so keep it limited to shared slices.
+            if is_shared_slice_param(&p.ty) {
                 let len_call = Expr::MethodCall {
                     receiver: Box::new(Expr::Path(vec![p.name.clone()])),
                     name: "len".to_string(),
@@ -416,7 +419,7 @@ fn survivor_is_early_return_zero(score: &MutationScore) -> bool {
 fn is_integer_return(ret: &Type) -> bool {
     matches!(
         ret,
-        Type::Prim(PrimType::U32 | PrimType::U64 | PrimType::Usize)
+        Type::Prim(PrimType::U8 | PrimType::U16 | PrimType::U32 | PrimType::U64 | PrimType::Usize)
     )
 }
 
@@ -427,10 +430,8 @@ fn param_matches_return(param: &Type, ret: &Type) -> bool {
     param == ret
 }
 
-/// `true` iff a parameter is a reference-to-slice (`&[T]`) — the `len()` family-2c
-/// candidate's domain.
-fn is_slice_param(ty: &Type) -> bool {
-    matches!(ty, Type::Ref { inner, .. } if matches!(inner.as_ref(), Type::Slice(_)))
+fn is_shared_slice_param(ty: &Type) -> bool {
+    matches!(ty, Type::Ref { mutable: false, inner } if matches!(inner.as_ref(), Type::Slice(_)))
 }
 
 /// `true` iff `f`'s parameter types match `params` in order and `f`'s return type

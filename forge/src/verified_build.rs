@@ -3640,7 +3640,8 @@ fn verify_verus_scope(
     let stdout_raw = String::from_utf8_lossy(&output.stdout).to_string();
     let stdout = normalize_json_output(&stdout_raw).unwrap_or(stdout_raw);
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-    let (reported_success, errors) = parse_verus_summary(&stdout);
+    let (reported_success, errors, _) = parse_verus_scope_summary(&stdout);
+    let exit_status = output.status.code();
     let success = output.status.success() && reported_success && errors == Some(0);
     if stdout.contains("cheating") || stderr.contains("cheating") {
         return Err(ForgeError::VerusOutput {
@@ -3663,8 +3664,9 @@ fn verify_verus_scope(
     if !evidence.success {
         return Err(ForgeError::VerusOutput {
             detail: format!(
-                "scoped Verus attribution `{scope}` failed (errors={:?}): {}",
-                evidence.errors, evidence.stderr
+                "scoped Verus attribution `{scope}` failed (exit={exit_status:?}, errors={:?}): \
+                 stdout={} stderr={}",
+                evidence.errors, evidence.stdout, evidence.stderr
             ),
         });
     }
@@ -3733,6 +3735,30 @@ fn parse_verus_verified_count(stdout: &str) -> Option<u64> {
         .as_u64()
 }
 
+fn parse_verus_scope_summary(stdout: &str) -> (bool, Option<u64>, Option<u64>) {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(stdout.trim()) else {
+        return (false, None, None);
+    };
+    let Some(summary) = value.get("verification-results") else {
+        return (false, None, None);
+    };
+    let errors = summary.get("errors").and_then(serde_json::Value::as_u64);
+    let verified = summary.get("verified").and_then(serde_json::Value::as_u64);
+    let encountered_error = summary
+        .get("encountered-error")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(true);
+    let encountered_vir_error = summary
+        .get("encountered-vir-error")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(true);
+    let success = errors == Some(0)
+        && verified.is_some_and(|count| count > 0)
+        && !encountered_error
+        && !encountered_vir_error;
+    (success, errors, verified)
+}
+
 fn validate_verus_scope_evidence(
     plan: &ArtifactPlanV1,
     evidence: &VerusEvidence,
@@ -3785,7 +3811,7 @@ fn validate_verus_scope_evidence(
             || scope.codegen_toolchain_sha256 != evidence.codegen_toolchain_sha256
             || !scope.success
             || scope.errors != Some(0)
-            || parse_verus_summary(&scope.stdout) != (true, Some(0))
+            || parse_verus_scope_summary(&scope.stdout) != (true, Some(0), Some(verified))
             || verified == 0
         {
             return Err(ForgeError::VerusOutput {
@@ -5234,6 +5260,32 @@ mod tests {
         );
         assert_eq!(parse_verus_summary("not json"), (false, None));
         assert_eq!(parse_verus_summary("{}"), (false, None));
+    }
+
+    #[test]
+    fn scoped_verus_summary_accepts_zero_error_partial_results_without_success_field() {
+        let partial = r#"{
+            "verification-results": {
+                "encountered-error": false,
+                "encountered-vir-error": false,
+                "errors": 0,
+                "is-verifying-entire-crate": false,
+                "verified": 130
+            }
+        }"#;
+        assert_eq!(
+            parse_verus_scope_summary(partial),
+            (true, Some(0), Some(130))
+        );
+
+        let failed = partial.replace(
+            "\"encountered-error\": false",
+            "\"encountered-error\": true",
+        );
+        assert_eq!(
+            parse_verus_scope_summary(&failed),
+            (false, Some(0), Some(130))
+        );
     }
 
     #[test]

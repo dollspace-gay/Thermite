@@ -236,7 +236,16 @@ fn body_tv_fn(
     };
 
     if is_loop {
-        loop_body_tv(f, body, &support_defs, &support_names, seed, rlimit, report);
+        loop_body_tv(
+            program,
+            f,
+            body,
+            &support_defs,
+            &support_names,
+            seed,
+            rlimit,
+            report,
+        );
     } else {
         straight_line_body_tv(
             program,
@@ -635,6 +644,7 @@ pub(crate) fn lowered_body_req(f: &FnItem) -> Result<Option<String>, String> {
 /// mid-body `return`s) reaches here as Skipped-with-reason, the expected
 /// result.
 fn loop_body_tv(
+    program: &thermite_syntax::Program,
     f: &FnItem,
     body: &Block,
     support_defs: &[String],
@@ -664,7 +674,7 @@ fn loop_body_tv(
     // rebinds, in the sorted order `loop_ref_obligations` reports them). A param /
     // cell of a non-exec-frame type makes the frame non-derivable → Skip. An
     // out-of-v1 loop surfaces its `Unsupported` here (the recognizer refuses).
-    let frame = match build_loop_frame(f, body, loop_node, support_defs, support_names) {
+    let frame = match build_loop_frame(program, f, body, loop_node, support_defs, support_names) {
         Ok(frame) => frame,
         Err(reason) => {
             report.results.push(BodyResult {
@@ -700,6 +710,7 @@ fn loop_body_tv(
 /// body-local `let mut`, not a signature param). A param of a non-exec-frame type is
 /// a non-derivable frame.
 fn build_loop_frame(
+    program: &thermite_syntax::Program,
     f: &FnItem,
     body: &Block,
     _loop_node: &LoopNode,
@@ -708,7 +719,11 @@ fn build_loop_frame(
 ) -> Result<LoopObligationFrame, String> {
     // The mutated cells (+ the v1-subset recognition) come from the shipped
     // `loop_ref_obligations` — its `Unsupported` Err is the out-of-v1 reason.
-    let ctx = loop_body_ref_ctx(f);
+    let call_decls = exec_call_decls(program)
+        .into_iter()
+        .filter(|declaration| support_names.contains(&declaration.name))
+        .collect::<Vec<_>>();
+    let ctx = loop_body_ref_ctx(f, &call_decls);
     let obs = loop_ref_obligations(body, &ctx).map_err(|e| {
         format!(
             "the loop is OUTSIDE the v1 frozen subset (a `loop`-kind / `break` / \
@@ -778,13 +793,14 @@ fn build_loop_frame(
         cells,
         req: corpus_req(f),
         slice_params,
+        call_decls,
     })
 }
 
 /// The [`BodyRefCtx`] for the loop reference encoder of a fn: the slice-bound param
 /// names (so an index in the inv / cond / cell encodes to the spec-view element
 /// value). Derived from the fn signature.
-fn loop_body_ref_ctx(f: &FnItem) -> BodyRefCtx {
+fn loop_body_ref_ctx(f: &FnItem, call_decls: &[ExecCallDecl]) -> BodyRefCtx {
     let slice_params: Vec<String> = f
         .params
         .iter()
@@ -793,7 +809,7 @@ fn loop_body_ref_ctx(f: &FnItem) -> BodyRefCtx {
             _ => None,
         })
         .collect();
-    BodyRefCtx::with_slice_bound(slice_params)
+    BodyRefCtx::with_slice_bound(slice_params).with_calls(call_decls.iter().cloned())
 }
 
 /// Shape the production single-iteration loop-body lowering to the preservation
@@ -1306,7 +1322,8 @@ fn discharge_loop(
 /// the continuation reads — it is implied by, not stronger than, `inv ∧ ¬cond`). An
 /// out-of-v1 loop surfaces its `Unsupported`.
 fn loop_after_loop_claim(block: &Block, frame: &LoopObligationFrame) -> Result<String, String> {
-    let ctx = BodyRefCtx::with_slice_bound(frame.slice_params.iter().cloned());
+    let ctx = BodyRefCtx::with_slice_bound(frame.slice_params.iter().cloned())
+        .with_calls(frame.call_decls.iter().cloned());
     let obs = loop_ref_obligations(block, &ctx).map_err(|e| {
         format!("the loop is OUTSIDE the v1 frozen subset (after-loop claim refused): {e}")
     })?;
@@ -1599,6 +1616,61 @@ fn fixed_local(value: u64) -> u64
             assert!(
                 matches!(report.results[0].verdict, BodyVerdict::Faithful),
                 "direct fixed-array use must have a complete proof frame: {:#?}",
+                report.results
+            );
+        }
+    }
+
+    #[test]
+    fn loop_helper_calls_receive_exact_transitive_declarations() {
+        if Command::new("verus").arg("--version").output().is_err() {
+            eprintln!("SKIP: verus not on PATH -- loop call frame not discharged.");
+            return;
+        }
+        let source = r#"
+fn below(value: u64, limit: u64) -> bool
+  req true
+  ens result == (value < limit)
+  fx pure
+{
+  value < limit
+}
+
+fn count_to(limit: u64) -> u64
+  req limit <= 32
+  ens result == limit
+  fx pure
+{
+  let mut value: u64 = 0;
+  while below(value, limit)
+    inv value <= limit
+    dec limit - value
+  {
+    value = (value + 1) as u64;
+  }
+  value
+}
+"#;
+        let parsed = thermite_syntax::parse(source);
+        assert!(parsed.is_clean(), "parse errors: {:?}", parsed.errors);
+        let function = parsed.program.items.iter().find_map(|item| match item {
+            Item::Fn(function) if function.name == "count_to" => Some(function),
+            _ => None,
+        });
+        assert!(function.is_some(), "count_to must parse");
+        if let Some(function) = function {
+            let mut report = BodyTvReport::default();
+            body_tv_fn(
+                &parsed.program,
+                function,
+                BODY_TV_DEFAULT_SEED,
+                BODY_TV_DEFAULT_RLIMIT,
+                &mut report,
+            );
+            assert_eq!(report.results.len(), 1, "{:#?}", report.results);
+            assert!(
+                matches!(report.results[0].verdict, BodyVerdict::Faithful),
+                "a framed helper call must remain faithful: {:#?}",
                 report.results
             );
         }

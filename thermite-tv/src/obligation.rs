@@ -649,7 +649,8 @@ impl LoopParamDecl {
 /// the same sorted order [`crate::exec_stmt_encode::loop_ref_obligations`] uses), the
 /// enclosing fn `requires` (the well-formedness frame the entry obligation discharges
 /// `inv` under), and the slice-param set (so an index in the inv/cond/cell encodes to
-/// the spec-view element value).
+/// the spec-view element value). Exact executable-call declarations close the frame
+/// for helper calls appearing in the loop condition, invariants, prefix, or step.
 ///
 /// This is the loop analogue of [`BodyObligationFrame`]. The cells are distinguished
 /// from the inputs because they play a structurally different role: in the entry
@@ -677,14 +678,20 @@ pub struct LoopObligationFrame {
     /// cell encodes to the spec-view element value (`xs[i as int]`). Read by
     /// [`BodyRefCtx::with_slice_bound`].
     pub slice_params: Vec<String>,
+    /// Exact executable helper signatures available in this obligation frame. A call
+    /// without a declaration remains unsupported rather than receiving a guessed
+    /// signature or an uninterpreted model.
+    pub call_decls: Vec<ExecCallDecl>,
 }
 
 impl LoopObligationFrame {
     /// Build the [`BodyRefCtx`] the reference state-denotation + predicate encoder use
     /// for this frame: the `slice_params` are the names indexed as the spec-view
-    /// element value.
+    /// element value, and `call_decls` are the only executable helpers the independent
+    /// reference is permitted to invoke.
     fn body_ref_ctx(&self) -> BodyRefCtx {
         BodyRefCtx::with_slice_bound(self.slice_params.iter().cloned())
+            .with_calls(self.call_decls.iter().cloned())
     }
 
     /// The Verus parameter list for the entry obligation: the fn inputs only (the

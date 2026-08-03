@@ -146,3 +146,23 @@ fn ipc_runtime_accept(cpu: u64, payload: u64) -> bool
     false
   }
 }
+
+fn ipc_worker_dispatch(
+  cpu: u64,
+  payload: &Atomic,
+  stale_count: &Atomic,
+  delivered_mask: &Atomic
+) -> u64
+  req cpu < 8
+  ens result == 1
+  fx platform(atomic)
+{
+  let observed: u64 = atomic_boundary_load(payload, Ordering::SeqCst);
+  let accepted: bool = ipc_runtime_accept(cpu, observed);
+  if !accepted {
+    atomic_boundary_fetch(stale_count, FetchOp::Add, 1, Ordering::SeqCst);
+  }
+  let cpu_bit: u64 = ap_cpu_bit(cpu);
+  atomic_boundary_fetch(delivered_mask, FetchOp::Or, cpu_bit, Ordering::SeqCst);
+  1
+}

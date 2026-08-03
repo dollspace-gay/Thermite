@@ -34,6 +34,7 @@ use thermite_kernel_policy::kernel_policy_ingress::{
     thermite_dma_register_port as dma_register_port, thermite_dma_used_offset as dma_used_offset,
     thermite_kernel_signature_policy_flags as signature_policy_flags,
     thermite_kernel_signature_task_base as signature_task_base,
+    thermite_ipc_worker_dispatch as ipc_worker_dispatch,
     thermite_mapping_identity_huge_entry as mapping_identity_huge_entry,
     thermite_mapping_identity_physical as mapping_identity_physical,
     thermite_mapping_kernel_data_entry as mapping_kernel_data_entry,
@@ -956,18 +957,12 @@ fn run_tasks(cpu: usize) {
 }
 
 fn message_probe(cpu: usize) {
-    while thermite_kernel_policy::kernel_policy_ingress::thermite_atomic_load(&POST_MESSAGE_READY)
-        == 0
-    {
-        core::hint::spin_loop();
-    }
-    if !thermite_kernel_policy::kernel_policy_ingress::thermite_ipc_cell_accept(
+    let _ = ipc_worker_dispatch(
         cpu as u64,
         &POST_MESSAGE_PAYLOAD,
-    ) {
-        exact_fetch_add(&POST_MESSAGE_STALE, 1);
-    }
-    exact_fetch_or(&POST_MESSAGE_MASK, 1_u64 << cpu);
+        &POST_MESSAGE_STALE,
+        &POST_MESSAGE_MASK,
+    );
 }
 
 fn lock_once(cpu: usize) {

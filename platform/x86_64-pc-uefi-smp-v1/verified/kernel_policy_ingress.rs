@@ -217,6 +217,20 @@ pub fn thermite_ipc_cell_accept(
     super::ipc_runtime_accept(cpu, loaded)
 }
 
+pub fn thermite_ipc_worker_dispatch(
+    cpu: u64,
+    payload: &super::atomic::ExactAtomicU64,
+    stale_count: &super::atomic::ExactAtomicU64,
+    delivered_mask: &super::atomic::ExactAtomicU64,
+) -> (result: u64)
+    requires
+        cpu < 8,
+    ensures
+        result == 1,
+{
+    super::ipc_worker_dispatch(cpu, payload, stale_count, delivered_mask)
+}
+
 pub fn thermite_ticket_lock_can_enter(owner_ticket: u64, issued_ticket: u64) -> (result: bool)
     ensures
         result == (owner_ticket == issued_ticket),

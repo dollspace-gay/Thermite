@@ -19,7 +19,6 @@ use thermite_kernel_policy::kernel_policy_ingress::{
     thermite_apic_physical_base as apic_physical_base,
     thermite_apic_profile_supported as apic_profile_supported,
     thermite_atomic_claim_once as exact_claim_once,
-    thermite_atomic_compare_exchange as exact_compare_exchange,
     thermite_atomic_fetch_add as exact_fetch_add, thermite_atomic_fetch_and as exact_fetch_and,
     thermite_atomic_fetch_or as exact_fetch_or, thermite_atomic_fetch_sub as exact_fetch_sub,
     thermite_atomic_load as exact_load, thermite_atomic_store as exact_store,
@@ -48,6 +47,7 @@ use thermite_kernel_policy::kernel_policy_ingress::{
     thermite_pci_legacy_io_base as pci_legacy_io_base,
     thermite_pci_virtio_block_identity as pci_virtio_block_identity,
     thermite_scheduler_release_gate as scheduler_release_gate,
+    thermite_scheduler_observe_max as scheduler_observe_max,
     thermite_scheduler_required_ap_workers as scheduler_required_ap_workers,
     thermite_scheduler_required_parallel_cpus as scheduler_required_parallel_cpus,
     thermite_scheduler_seed_admitted as scheduler_seed_admitted,
@@ -901,19 +901,6 @@ unsafe fn arm_timer() -> Result<(), PostFirmwareError> {
     Ok(())
 }
 
-fn observe_max(candidate: usize) {
-    let candidate = candidate as u64;
-    let mut observed = exact_load(&POST_MAX_ACTIVE);
-    while candidate > observed {
-        let compared = exact_compare_exchange(&POST_MAX_ACTIVE, observed, candidate);
-        if compared.previous == observed {
-            return;
-        } else {
-            observed = compared.previous;
-        }
-    }
-}
-
 fn run_tasks(cpu: usize) {
     let seed_index = exact_fetch_add(&POST_TASK_READY, 1);
     let expected_workers = exact_load(&POST_EXPECTED_WORKERS);
@@ -927,7 +914,7 @@ fn run_tasks(cpu: usize) {
     exact_fetch_add(&POST_TASK_SUM, seed_task);
     exact_fetch_or(&POST_TASK_WORKERS, 1_u64 << cpu);
     let active = exact_fetch_add(&POST_ACTIVE, 1) + 1;
-    observe_max(active as usize);
+    let _ = scheduler_observe_max(&POST_MAX_ACTIVE, active);
     // Every online CPU holds an active scheduler interval until the complete
     // post-firmware set has entered. Unlike the UEFI MP-services probe, these
     // APs are kernel-owned and cannot time out a firmware callback.

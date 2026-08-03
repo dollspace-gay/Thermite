@@ -108,6 +108,18 @@ pub fn thermite_scheduler_claim(
     super::scheduler_claim(counter)
 }
 
+pub fn thermite_scheduler_observe_max(
+    maximum: &super::atomic::ExactAtomicU64,
+    candidate: u64,
+) -> (result: u64)
+    requires
+        candidate <= 8,
+    ensures
+        result == candidate + 1,
+{
+    super::scheduler_observe_max(maximum, candidate)
+}
+
 pub fn thermite_atomic_load(cell: &super::atomic::ExactAtomicU64) -> (result: u64) {
     super::atomic_boundary_load(cell, super::Ordering::SeqCst)
 }

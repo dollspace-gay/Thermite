@@ -23,6 +23,7 @@ cargo run -p forge -- build conformance/thermite-kernel.thpkg.json \
   --platform x86_64-pc-uefi-smp-v1 \
   --compose-export kernel_acceptance_slice \
   --compose-export ipc_worker_dispatch \
+  --compose-export scheduler_observe_max \
   --compose-export service_write_user_byte \
   --compose-export ap_expected_mask \
   --compose-export apic_profile_supported \
@@ -76,8 +77,10 @@ MSR. The four source-reachable
 atomic load/store/fetch/strong-compare-exchange boundaries map to exact checked
 Verus implementations and retained final PE symbols. The live per-CPU IPC worker
 dispatch now executes generated Thermite for payload validation, stale-message
-accounting, and delivery-mask publication. Rust-managed scheduler, AP, and
-shootdown state uses those sealed atomics; the allocator retains only
+accounting, and delivery-mask publication. The scheduler's live maximum-active
+publication also executes generated Thermite through an exact atomic maximum
+primitive. Rust-managed scheduler orchestration, AP, and shootdown state uses
+those sealed atomics; the allocator retains only
 pointer/provenance and zeroing operations in Rust. Interrupt assembly still has
 raw atomic operations awaiting exact refinement. QEMU checks
 execution with 1, 2, 4, and 8 CPUs. The runtime no longer links the parallel

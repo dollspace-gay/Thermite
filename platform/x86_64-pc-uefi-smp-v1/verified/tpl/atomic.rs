@@ -181,6 +181,20 @@ impl ExactAtomicU64 {
             }
         )
     }
+
+    pub fn fetch_max_seqcst(&self, value: u64) -> (previous: u64)
+        requires
+            self.well_formed(),
+    {
+        vstd::atomic_ghost::atomic_with_ghost!(
+            &self.inner => fetch_max(value);
+            update old_value -> new_value;
+            returning result;
+            ghost tracked_value => {
+                tracked_value = Ghost(new_value);
+            }
+        )
+    }
 }
 
 pub fn establish_well_formed(cell: &ExactAtomicU64)
@@ -249,5 +263,6 @@ pub extern "C" fn tpl_atomic_fetch(
         super::FetchOp::And => cell.fetch_and_seqcst(value),
         super::FetchOp::Or => cell.fetch_or_seqcst(value),
         super::FetchOp::Xor => cell.fetch_xor_seqcst(value),
+        super::FetchOp::Max => cell.fetch_max_seqcst(value),
     }
 }

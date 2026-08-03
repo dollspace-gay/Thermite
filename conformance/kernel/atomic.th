@@ -13,7 +13,8 @@ enum FetchOp {
   Sub,
   And,
   Or,
-  Xor
+  Xor,
+  Max
 }
 
 #[sealed] struct Cas {

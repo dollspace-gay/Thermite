@@ -124,6 +124,15 @@ fn scheduler_claim(counter: &Atomic) -> u64
   }
 }
 
+fn scheduler_observe_max(maximum: &Atomic, candidate: u64) -> u64
+  req candidate <= 8
+  ens result == candidate + 1
+  fx platform(atomic)
+{
+  let previous: u64 = atomic_boundary_fetch(maximum, FetchOp::Max, candidate, Ordering::SeqCst);
+  candidate + 1
+}
+
 fn scheduler_expected_sum(task_base: u64) -> u64
   req task_base > 0 && task_base <= 1000
   ens result == 4096 * 4095 / 2 + 4096 * task_base

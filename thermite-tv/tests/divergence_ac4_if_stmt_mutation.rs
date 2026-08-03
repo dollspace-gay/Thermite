@@ -111,9 +111,22 @@ fn divergence_ac4_if_stmt_mutation_obligation_builds() {
     });
     // The reference final state of the AC-4 body is the branch-composed
     // `if x < 10 { (x + 1) } else { (x + 2) }` (REQ-2 state-transformer + AC-4).
+    let ensures = prog
+        .lines()
+        .find(|line| line.trim_start().starts_with("ensures result =="))
+        .unwrap_or_else(|| panic!("AC-4 obligation has no result refinement:\n{prog}"));
+    let condition = ensures.find("if x < 10");
+    let then_value = ensures.find("x + 1");
+    let otherwise = ensures.find("else");
+    let else_value = ensures.find("x + 2");
     assert!(
-        prog.contains("if x < 10 { (x + 1) } else { (x + 2) }"),
-        "AC-4 obligation `ensures` must compare `result` to the branch-composed \
-         reference `if x < 10 {{ (x + 1) }} else {{ (x + 2) }}` (REQ-2 / AC-4); got:\n{prog}"
+        matches!(
+            (condition, then_value, otherwise, else_value),
+            (Some(condition), Some(then_value), Some(otherwise), Some(else_value))
+                if condition < then_value && then_value < otherwise && otherwise < else_value
+        ),
+        "AC-4 obligation `ensures` must compare `result` to the ordered \
+         branch-composed reference (REQ-2 / AC-4), independent of explicit bounded \
+         integer casts; got:\n{prog}"
     );
 }

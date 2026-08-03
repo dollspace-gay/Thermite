@@ -24,6 +24,7 @@ cargo run -p forge -- build conformance/thermite-kernel.thpkg.json \
   --compose-export kernel_acceptance_slice \
   --compose-export ipc_worker_dispatch \
   --compose-export scheduler_observe_max \
+  --compose-export scheduler_worker_enter \
   --compose-export service_write_user_byte \
   --compose-export ap_expected_mask \
   --compose-export apic_profile_supported \
@@ -79,7 +80,9 @@ Verus implementations and retained final PE symbols. The live per-CPU IPC worker
 dispatch now executes generated Thermite for payload validation, stale-message
 accounting, and delivery-mask publication. The scheduler's live maximum-active
 publication also executes generated Thermite through an exact atomic maximum
-primitive. Rust-managed scheduler orchestration, AP, and shootdown state uses
+primitive. Generated Thermite owns the live worker-admission transaction,
+including seed-task accounting, worker publication, and final barrier release.
+Rust-managed scheduler wait/drain orchestration, AP, and shootdown state uses
 those sealed atomics; the allocator retains only
 pointer/provenance and zeroing operations in Rust. Interrupt assembly still has
 raw atomic operations awaiting exact refinement. QEMU checks

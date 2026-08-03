@@ -133,6 +133,40 @@ fn scheduler_observe_max(maximum: &Atomic, candidate: u64) -> u64
   candidate + 1
 }
 
+fn scheduler_worker_enter(
+  cpu: u64,
+  ready: &Atomic,
+  expected_workers: &Atomic,
+  task_base: &Atomic,
+  task_sum: &Atomic,
+  worker_mask: &Atomic,
+  maximum_active: &Atomic,
+  release_gate: &Atomic
+) -> u64
+  req cpu < 8
+  ens result == cpu + 10
+  fx platform(atomic)
+{
+  let admission_delta: u64 = 1;
+  let seed_index: u64 = atomic_boundary_fetch(ready, FetchOp::Add, admission_delta, Ordering::SeqCst);
+  let expected: u64 = atomic_boundary_load(expected_workers, Ordering::SeqCst);
+  if expected > 0 && expected <= 8 && scheduler_seed_admitted(seed_index, expected) {
+    let base: u64 = atomic_boundary_load(task_base, Ordering::SeqCst);
+    if base > 0 && base <= 1000 {
+      let seed_task: u64 = scheduler_task_value(base, seed_index);
+      atomic_boundary_fetch(task_sum, FetchOp::Add, seed_task, Ordering::SeqCst);
+    }
+    let cpu_bit: u64 = ap_cpu_bit(cpu);
+    atomic_boundary_fetch(worker_mask, FetchOp::Or, cpu_bit, Ordering::SeqCst);
+    let active: u64 = seed_index + admission_delta;
+    scheduler_observe_max(maximum_active, active);
+    if scheduler_release_gate(seed_index, expected) {
+      atomic_boundary_store(release_gate, admission_delta, Ordering::SeqCst);
+    }
+  }
+  cpu + admission_delta + 9
+}
+
 fn scheduler_expected_sum(task_base: u64) -> u64
   req task_base > 0 && task_base <= 1000
   ens result == 4096 * 4095 / 2 + 4096 * task_base

@@ -120,6 +120,33 @@ pub fn thermite_scheduler_observe_max(
     super::scheduler_observe_max(maximum, candidate)
 }
 
+pub fn thermite_scheduler_worker_enter(
+    cpu: u64,
+    ready: &super::atomic::ExactAtomicU64,
+    expected_workers: &super::atomic::ExactAtomicU64,
+    task_base: &super::atomic::ExactAtomicU64,
+    task_sum: &super::atomic::ExactAtomicU64,
+    worker_mask: &super::atomic::ExactAtomicU64,
+    maximum_active: &super::atomic::ExactAtomicU64,
+    release_gate: &super::atomic::ExactAtomicU64,
+) -> (result: u64)
+    requires
+        cpu < 8,
+    ensures
+        result == cpu + 10,
+{
+    super::scheduler_worker_enter(
+        cpu,
+        ready,
+        expected_workers,
+        task_base,
+        task_sum,
+        worker_mask,
+        maximum_active,
+        release_gate,
+    )
+}
+
 pub fn thermite_atomic_load(cell: &super::atomic::ExactAtomicU64) -> (result: u64) {
     super::atomic_boundary_load(cell, super::Ordering::SeqCst)
 }

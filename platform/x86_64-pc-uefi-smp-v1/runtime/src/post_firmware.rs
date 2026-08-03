@@ -20,8 +20,8 @@ use thermite_kernel_policy::kernel_policy_ingress::{
     thermite_apic_profile_supported as apic_profile_supported,
     thermite_atomic_claim_once as exact_claim_once,
     thermite_atomic_fetch_add as exact_fetch_add, thermite_atomic_fetch_and as exact_fetch_and,
-    thermite_atomic_fetch_or as exact_fetch_or, thermite_atomic_fetch_sub as exact_fetch_sub,
-    thermite_atomic_load as exact_load, thermite_atomic_store as exact_store,
+    thermite_atomic_fetch_or as exact_fetch_or, thermite_atomic_load as exact_load,
+    thermite_atomic_store as exact_store,
     thermite_dma_descriptor_bytes as dma_descriptor_bytes,
     thermite_dma_descriptor_flags as dma_descriptor_flags,
     thermite_dma_descriptor_length as dma_descriptor_length,
@@ -46,11 +46,9 @@ use thermite_kernel_policy::kernel_policy_ingress::{
     thermite_pci_legacy_io_bar_valid as pci_legacy_io_bar_valid,
     thermite_pci_legacy_io_base as pci_legacy_io_base,
     thermite_pci_virtio_block_identity as pci_virtio_block_identity,
-    thermite_scheduler_release_gate as scheduler_release_gate,
-    thermite_scheduler_observe_max as scheduler_observe_max,
     thermite_scheduler_required_ap_workers as scheduler_required_ap_workers,
     thermite_scheduler_required_parallel_cpus as scheduler_required_parallel_cpus,
-    thermite_scheduler_seed_admitted as scheduler_seed_admitted,
+    thermite_scheduler_worker_enter as scheduler_worker_enter,
     thermite_service_finish_value as service_finish_value,
     thermite_service_syscall_value as service_syscall_value,
     thermite_service_user_base as service_user_base,
@@ -484,7 +482,6 @@ static POST_EXPECTED_WORKERS: ExactAtomicU64 = ExactAtomicU64::new(0);
 static POST_TASK_SUM: ExactAtomicU64 = ExactAtomicU64::new(0);
 static POST_TASK_WORKERS: ExactAtomicU64 = ExactAtomicU64::new(0);
 static POST_TASK_DONE: ExactAtomicU64 = ExactAtomicU64::new(0);
-static POST_ACTIVE: ExactAtomicU64 = ExactAtomicU64::new(0);
 static POST_MAX_ACTIVE: ExactAtomicU64 = ExactAtomicU64::new(0);
 static POST_LOCK_NEXT: ExactAtomicU64 = ExactAtomicU64::new(0);
 static POST_LOCK_OWNER: ExactAtomicU64 = ExactAtomicU64::new(0);
@@ -902,25 +899,16 @@ unsafe fn arm_timer() -> Result<(), PostFirmwareError> {
 }
 
 fn run_tasks(cpu: usize) {
-    let seed_index = exact_fetch_add(&POST_TASK_READY, 1);
-    let expected_workers = exact_load(&POST_EXPECTED_WORKERS);
-    if !scheduler_seed_admitted(seed_index, expected_workers) {
-        return;
-    }
-    let task_base = exact_load(&POST_TASK_BASE);
-    let seed_task = thermite_kernel_policy::kernel_policy_ingress::thermite_scheduler_task_value(
-        task_base, seed_index,
+    let _ = scheduler_worker_enter(
+        cpu as u64,
+        &POST_TASK_READY,
+        &POST_EXPECTED_WORKERS,
+        &POST_TASK_BASE,
+        &POST_TASK_SUM,
+        &POST_TASK_WORKERS,
+        &POST_MAX_ACTIVE,
+        &POST_TASK_GATE,
     );
-    exact_fetch_add(&POST_TASK_SUM, seed_task);
-    exact_fetch_or(&POST_TASK_WORKERS, 1_u64 << cpu);
-    let active = exact_fetch_add(&POST_ACTIVE, 1) + 1;
-    let _ = scheduler_observe_max(&POST_MAX_ACTIVE, active);
-    // Every online CPU holds an active scheduler interval until the complete
-    // post-firmware set has entered. Unlike the UEFI MP-services probe, these
-    // APs are kernel-owned and cannot time out a firmware callback.
-    if scheduler_release_gate(seed_index, expected_workers) {
-        exact_store(&POST_TASK_GATE, 1);
-    }
     while exact_load(&POST_TASK_GATE) == 0 {
         core::hint::spin_loop();
     }
@@ -940,7 +928,6 @@ fn run_tasks(cpu: usize) {
             core::hint::spin_loop();
         }
     }
-    exact_fetch_sub(&POST_ACTIVE, 1);
 }
 
 fn message_probe(cpu: usize) {
@@ -2030,7 +2017,6 @@ pub unsafe fn run(
     exact_store(&POST_TASK_SUM, 0);
     exact_store(&POST_TASK_WORKERS, 0);
     exact_store(&POST_TASK_DONE, 0);
-    exact_store(&POST_ACTIVE, 0);
     exact_store(&POST_MAX_ACTIVE, 0);
     exact_store(&POST_READY, 0);
     thermite_kernel_policy::kernel_policy_ingress::thermite_atomic_store(

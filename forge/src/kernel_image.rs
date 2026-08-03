@@ -2,14 +2,14 @@
 
 use std::ffi::OsStr;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thermite_kernel::{lookup, X86_64_PC_UEFI_SMP_V1};
-use thermite_syntax::{Effect, Item, PrimType, Type};
+use thermite_syntax::{Contract, Effect, EffectRow, Item, PrimType, Type};
 
 use crate::cli::ForgeError;
 use crate::manifest::Level;
@@ -71,12 +71,35 @@ pub struct KernelCertificateBinding {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KernelAuthorshipMetrics {
+    pub thermite_loc: u64,
+    pub thermite_function_count: u64,
+    pub verus_composition_loc: u64,
+    pub verus_composition_function_count: u64,
+    pub verus_composition_discharged_obligations: u64,
+    pub direct_verus_tpl_loc: u64,
+    pub direct_verus_tpl_function_count: u64,
+    pub direct_verus_discharged_obligations: u64,
+    pub rust_assembly_tpl_loc_upper_bound: u64,
+    pub ordinary_rust_kernel_logic_loc_upper_bound: u64,
+    pub ordinary_rust_kernel_logic_target: u64,
+    pub ordinary_rust_kernel_logic_target_met: bool,
+    pub declared_platform_boundary_count: u64,
+    pub reachable_boundary_count: u64,
+    pub reachable_assurance: String,
+    pub counting_method: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ThermiteBootableKernelReceiptV1 {
     pub schema: String,
+    pub artifact_class: String,
+    pub migration_complete: bool,
     pub profile: String,
     pub assurance_scope: String,
     pub trusted_computing_base: Vec<String>,
     pub source: BoundFile,
+    pub thermite_sources: Vec<BoundFile>,
     pub l3_exports: Vec<String>,
     pub boundaries: Vec<BoundBoundary>,
     pub certificates: Vec<KernelCertificateBinding>,
@@ -84,6 +107,10 @@ pub struct ThermiteBootableKernelReceiptV1 {
     pub registry_sha256: String,
     pub platform_files: Vec<BoundFile>,
     pub composition_shells: Vec<BoundFile>,
+    pub verified_policy_binding_sha256: String,
+    pub verified_policy_artifact_sha256: String,
+    pub verified_policy_files: Vec<BoundFile>,
+    pub metrics: KernelAuthorshipMetrics,
     pub toolchain: Vec<String>,
     pub image_path: String,
     pub image_size: u64,
@@ -119,7 +146,12 @@ pub fn build_image(
         ));
     }
 
-    let source_bytes = read(request.source)?;
+    let loaded_input = crate::thermite_package::load(request.source)?;
+    let source_bytes = loaded_input.bytes;
+    let package = loaded_input.package;
+    let source_file_bytes = read(request.source)?;
+    let workspace = workspace_root()?;
+    let thermite_sources = bind_thermite_sources(&workspace, request.source, package.as_ref())?;
     let parsed = thermite_syntax::parse(std::str::from_utf8(&source_bytes).map_err(|error| {
         ForgeError::RustcOutput {
             detail: format!("kernel source is not UTF-8: {error}"),
@@ -185,7 +217,6 @@ pub fn build_image(
             }
         })?);
 
-    let workspace = workspace_root()?;
     let profile_root = workspace.join("platform").join(PROFILE);
     let builder = profile_root.join("build-image.sh");
     let qemu_gate = profile_root.join("test-qemu.py");
@@ -204,9 +235,32 @@ pub fn build_image(
     let staged_image = scratch.join("thermite-kernel.img");
     let staged_evidence = scratch.join("boot-evidence");
     let result = (|| {
+        let verified_policy_bundle = scratch.join("thermite-kernel-policy.verified");
+        let verified_policy = match crate::verified_build::build_composition_file(
+            request.source,
+            &[],
+            request.composition_exports,
+            request.composition_shells,
+            Some("thermite_kernel_policy"),
+            Some(&verified_policy_bundle),
+            crate::verified_build::VerifiedTarget::KernelUefi,
+        )? {
+            crate::verified_build::VerifiedBuildOutcome::Built { receipt, .. } => receipt,
+            crate::verified_build::VerifiedBuildOutcome::Rejected { stage, detail } => {
+                return Err(ForgeError::RustcOutput {
+                    detail: format!(
+                        "UEFI Thermite policy composition was rejected at {stage}: {detail}"
+                    ),
+                });
+            }
+        };
+        let policy_rlib = verified_policy_bundle.join(&verified_policy.binding.artifact.path);
+        let policy_deps = verified_policy_bundle.join("artifact/deps");
         run_checked(
             Command::new(&builder)
                 .arg(&staged_image)
+                .env("THERMITE_VERIFIED_POLICY_RLIB", &policy_rlib)
+                .env("THERMITE_VERIFIED_POLICY_DEPS", &policy_deps)
                 .current_dir(&workspace),
             "frozen kernel image builder",
         )?;
@@ -230,6 +284,8 @@ pub fn build_image(
         let section_bytes = read(&staged_sections)?;
         let symbol_bytes = read(&staged_symbols)?;
         let platform_receipt_bytes = read(&staged_platform_receipt)?;
+        let policy_plan = load_verified_policy_plan(&verified_policy_bundle)?;
+        validate_direct_refined_symbols(&policy_plan, &symbol_bytes)?;
         if image_bytes.len() != 64 * 1024 * 1024 {
             return Err(ForgeError::RustcOutput {
                 detail: format!(
@@ -239,7 +295,17 @@ pub fn build_image(
             });
         }
 
-        let platform_files = bind_tree(&profile_root, &["target"])?;
+        let platform_files = bind_source_allowlist(&workspace, &profile_root)?;
+        let verified_policy_files = bind_tree(&verified_policy_bundle, &[])?;
+        let metrics = authorship_metrics(
+            &workspace,
+            &source_bytes,
+            &parsed.program,
+            request.composition_shells,
+            boundaries.len(),
+            &verified_policy,
+            &verified_policy_bundle,
+        )?;
         let mut composition_shells = Vec::new();
         for shell in request.composition_shells {
             let bytes = read(shell)?;
@@ -261,12 +327,14 @@ pub fn build_image(
         let uefi_sha256 = sha256(&efi_bytes);
         let source = BoundFile {
             path: normalize(request.source),
-            sha256: sha256(&source_bytes),
+            sha256: sha256(&source_file_bytes),
         };
         let mut receipt = ThermiteBootableKernelReceiptV1 {
-            schema: "ThermiteBootableKernelReceiptV1".to_string(),
+            schema: "ThermitePlatformConformanceReceiptV2".to_string(),
+            artifact_class: "platform_conformance_demonstration".to_string(),
+            migration_complete: false,
             profile: PROFILE.to_string(),
-            assurance_scope: "to_platform_boundary".to_string(),
+            assurance_scope: "platform_conformance_to_boundary".to_string(),
             trusted_computing_base: [
                 "firmware",
                 "hardware",
@@ -278,6 +346,7 @@ pub fn build_image(
             .map(str::to_string)
             .collect(),
             source,
+            thermite_sources,
             l3_exports: request.composition_exports.to_vec(),
             boundaries,
             certificates: certificate_bindings,
@@ -285,6 +354,10 @@ pub fn build_image(
             registry_sha256,
             platform_files,
             composition_shells,
+            verified_policy_binding_sha256: verified_policy.binding_sha256.clone(),
+            verified_policy_artifact_sha256: verified_policy.binding.artifact.sha256.clone(),
+            verified_policy_files,
+            metrics,
             toolchain,
             image_path: normalize(request.output),
             image_size: image_bytes.len() as u64,
@@ -305,6 +378,8 @@ pub fn build_image(
         run_checked(
             Command::new(&builder)
                 .arg(&replay_image)
+                .env("THERMITE_VERIFIED_POLICY_RLIB", &policy_rlib)
+                .env("THERMITE_VERIFIED_POLICY_DEPS", &policy_deps)
                 .current_dir(&workspace),
             "kernel image reproducibility rebuild",
         )?;
@@ -325,7 +400,13 @@ pub fn build_image(
             });
         }
 
-        publish(&receipt, &staged_image, &staged_evidence, request.output)?;
+        publish(
+            &receipt,
+            &staged_image,
+            &staged_evidence,
+            &verified_policy_bundle,
+            request.output,
+        )?;
         Ok(receipt)
     })();
     let cleanup = fs::remove_dir_all(&scratch);
@@ -373,9 +454,11 @@ pub fn validate_image(
         serde_json::from_slice(&receipt_bytes).map_err(|error| ForgeError::RustcOutput {
             detail: format!("invalid kernel-image receipt JSON: {error}"),
         })?;
-    if receipt.schema != "ThermiteBootableKernelReceiptV1"
+    if receipt.schema != "ThermitePlatformConformanceReceiptV2"
+        || receipt.artifact_class != "platform_conformance_demonstration"
+        || receipt.migration_complete
         || receipt.profile != PROFILE
-        || receipt.assurance_scope != "to_platform_boundary"
+        || receipt.assurance_scope != "platform_conformance_to_boundary"
     {
         return Err(ForgeError::RustcOutput {
             detail: "kernel-image receipt schema, profile, or assurance scope drifted".to_string(),
@@ -409,6 +492,31 @@ pub fn validate_image(
         .ok_or_else(|| ForgeError::RustcOutput {
             detail: "receipt image path has no UTF-8 stem".to_string(),
         })?;
+    let policy_bundle = image_parent.join(format!("{image_stem}.policy"));
+    if bind_tree(&policy_bundle, &[])? != receipt.verified_policy_files {
+        return Err(ForgeError::RustcOutput {
+            detail: "verified Thermite policy bundle differs from the receipt".to_string(),
+        });
+    }
+    let policy_report = crate::verified_build::validate_bundle(&policy_bundle, replay)?;
+    let policy_receipt: crate::verified_build::VerifiedBuildReceiptV1 =
+        serde_json::from_slice(&read(&policy_bundle.join("receipt.json"))?).map_err(|error| {
+            ForgeError::RustcOutput {
+                detail: format!("invalid verified Thermite policy receipt: {error}"),
+            }
+        })?;
+    if policy_report.binding_sha256 != receipt.verified_policy_binding_sha256
+        || policy_report.artifact_sha256 != receipt.verified_policy_artifact_sha256
+    {
+        return Err(ForgeError::RustcOutput {
+            detail: "verified Thermite policy identity differs from the image receipt".to_string(),
+        });
+    }
+    let policy_plan = load_verified_policy_plan(&policy_bundle)?;
+    validate_direct_refined_symbols(
+        &policy_plan,
+        &read(&image_parent.join(format!("{image_stem}.symbols")))?,
+    )?;
     let efi_path = image_parent.join(format!("{image_stem}.efi"));
     if sha256(&read(&efi_path)?) != receipt.uefi_sha256 {
         return Err(ForgeError::RustcOutput {
@@ -438,17 +546,27 @@ pub fn validate_image(
     }
 
     let source_path = resolve_workspace_path(&workspace, Path::new(&receipt.source.path));
-    if sha256(&read(&source_path)?) != receipt.source.sha256 {
+    let current_source_file_bytes = read(&source_path)?;
+    if sha256(&current_source_file_bytes) != receipt.source.sha256 {
         return Err(ForgeError::RustcOutput {
             detail: "Thermite source differs from the receipt".to_string(),
         });
     }
-    let parsed = thermite_syntax::parse(&fs::read_to_string(&source_path).map_err(|source| {
-        ForgeError::Io {
-            path: source_path.display().to_string(),
-            source,
-        }
-    })?);
+    let loaded_input = crate::thermite_package::load(&source_path)?;
+    let current_source_bytes = loaded_input.bytes;
+    if bind_thermite_sources(&workspace, &source_path, loaded_input.package.as_ref())?
+        != receipt.thermite_sources
+    {
+        return Err(ForgeError::RustcOutput {
+            detail: "Thermite package source inventory differs from the receipt".to_string(),
+        });
+    }
+    let parsed =
+        thermite_syntax::parse(std::str::from_utf8(&current_source_bytes).map_err(|error| {
+            ForgeError::RustcOutput {
+                detail: format!("Thermite source is not UTF-8: {error}"),
+            }
+        })?);
     if !parsed.is_clean() {
         return Err(ForgeError::Parse(parsed.errors));
     }
@@ -460,9 +578,9 @@ pub fn validate_image(
     }
 
     let profile_root = workspace.join("platform").join(PROFILE);
-    if bind_tree(&profile_root, &["target"])? != receipt.platform_files {
+    if bind_source_allowlist(&workspace, &profile_root)? != receipt.platform_files {
         return Err(ForgeError::RustcOutput {
-            detail: "target-platform-layer source closure differs from the receipt".to_string(),
+            detail: "canonical transitive source closure differs from the receipt".to_string(),
         });
     }
     for shell in &receipt.composition_shells {
@@ -472,6 +590,25 @@ pub fn validate_image(
                 detail: format!("composition shell differs from receipt: {}", shell.path),
             });
         }
+    }
+    let shell_paths: Vec<PathBuf> = receipt
+        .composition_shells
+        .iter()
+        .map(|shell| resolve_workspace_path(&workspace, Path::new(&shell.path)))
+        .collect();
+    let metrics = authorship_metrics(
+        &workspace,
+        &current_source_bytes,
+        &parsed.program,
+        &shell_paths,
+        boundaries.len(),
+        &policy_receipt,
+        &policy_bundle,
+    )?;
+    if metrics != receipt.metrics {
+        return Err(ForgeError::RustcOutput {
+            detail: "authorship metrics differ from the receipt".to_string(),
+        });
     }
     let evidence_path = image_parent.join(format!("{image_stem}.evidence"));
     if bind_evidence(&evidence_path)? != receipt.boot_evidence {
@@ -520,6 +657,14 @@ pub fn validate_image(
             run_checked(
                 Command::new(profile_root.join("build-image.sh"))
                     .arg(&replay_image)
+                    .env(
+                        "THERMITE_VERIFIED_POLICY_RLIB",
+                        policy_bundle.join("artifact/libthermite_kernel_policy.rlib"),
+                    )
+                    .env(
+                        "THERMITE_VERIFIED_POLICY_DEPS",
+                        policy_bundle.join("artifact/deps"),
+                    )
                     .current_dir(&workspace),
                 "kernel-image validation rebuild",
             )?;
@@ -559,7 +704,7 @@ pub fn validate_image(
     }
 
     Ok(KernelImageValidationReport {
-        schema: "ThermiteBootableKernelValidationV1",
+        schema: "ThermitePlatformConformanceValidationV2",
         profile: receipt.profile,
         image: normalize(&image_path),
         image_sha256: receipt.image_sha256,
@@ -662,7 +807,7 @@ fn validate_boundaries(
                 ),
             });
         }
-        let source_contract_sha256 = sha256(format!("{:#?}", function.contract).as_bytes());
+        let source_contract_sha256 = source_contract_digest(&function.contract);
         let registry_source_contract_sha256 =
             operation
                 .source_contract_sha256
@@ -719,6 +864,45 @@ fn validate_boundaries(
         });
     }
     Ok(names)
+}
+
+/// Hash the semantic contract surface without source-location spans. Receipts
+/// must remain stable when an identical boundary declaration moves between
+/// receipt-bound package modules, while any requirement, guarantee, bitvector
+/// tag, or effect-row change must still alter the identity.
+fn source_contract_digest(contract: &Contract) -> String {
+    fn field(bytes: &mut Vec<u8>, label: &str, value: &str) {
+        bytes.extend_from_slice(label.as_bytes());
+        bytes.push(b':');
+        bytes.extend_from_slice(value.len().to_string().as_bytes());
+        bytes.push(b':');
+        bytes.extend_from_slice(value.as_bytes());
+        bytes.push(b'\n');
+    }
+
+    fn bv_tag(clause: &thermite_syntax::Clause) -> String {
+        clause.bv.map_or_else(
+            || "none".to_string(),
+            |tag| format!("{}:{}", tag.width.spelling(), tag.nowrap),
+        )
+    }
+
+    let mut bytes = b"ThermiteBoundaryContractV2\n".to_vec();
+    field(&mut bytes, "req", &contract.req.text);
+    field(&mut bytes, "req-bv", &bv_tag(&contract.req));
+    for clause in &contract.ens {
+        field(&mut bytes, "ens", &clause.text);
+        field(&mut bytes, "ens-bv", &bv_tag(clause));
+    }
+    match &contract.fx {
+        EffectRow::Pure => field(&mut bytes, "fx", "pure"),
+        EffectRow::Set(effects) => {
+            for effect in effects {
+                field(&mut bytes, "fx", &format!("{effect:?}"));
+            }
+        }
+    }
+    sha256(&bytes)
 }
 
 fn bind_certificates(
@@ -903,6 +1087,336 @@ fn bind_tree(root: &Path, excluded_components: &[&str]) -> Result<Vec<BoundFile>
     Ok(files)
 }
 
+fn bind_source_allowlist(
+    workspace: &Path,
+    profile_root: &Path,
+) -> Result<Vec<BoundFile>, ForgeError> {
+    let allowlist_path = profile_root.join("source-allowlist.txt");
+    let text = fs::read_to_string(&allowlist_path).map_err(|source| ForgeError::Io {
+        path: allowlist_path.display().to_string(),
+        source,
+    })?;
+    let mut previous: Option<&str> = None;
+    let mut files = Vec::new();
+    for entry in text.lines() {
+        if entry.is_empty()
+            || entry.trim() != entry
+            || previous.is_some_and(|last| last >= entry)
+            || entry
+                .split('/')
+                .any(|component| matches!(component, "target" | "dist" | "__pycache__" | ".git"))
+        {
+            return Err(ForgeError::RustcOutput {
+                detail: format!(
+                    "source allowlist must be strictly sorted, canonical, and incidental-free near `{entry}`"
+                ),
+            });
+        }
+        let relative = Path::new(entry);
+        if relative.is_absolute()
+            || relative.components().any(|component| {
+                matches!(
+                    component,
+                    Component::ParentDir | Component::RootDir | Component::Prefix(_)
+                )
+            })
+        {
+            return Err(ForgeError::RustcOutput {
+                detail: format!("source allowlist contains unsafe path `{entry}`"),
+            });
+        }
+        let path = workspace.join(relative);
+        let metadata = fs::symlink_metadata(&path).map_err(|source| ForgeError::Io {
+            path: path.display().to_string(),
+            source,
+        })?;
+        if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+            return Err(ForgeError::RustcOutput {
+                detail: format!("source allowlist entry is not a regular file: `{entry}`"),
+            });
+        }
+        files.push(BoundFile {
+            path: entry.to_string(),
+            sha256: sha256(&read(&path)?),
+        });
+        previous = Some(entry);
+    }
+    if files.is_empty() {
+        return Err(ForgeError::RustcOutput {
+            detail: "source allowlist is empty".to_string(),
+        });
+    }
+    Ok(files)
+}
+
+fn bind_thermite_sources(
+    workspace: &Path,
+    root_source: &Path,
+    package: Option<&crate::thermite_package::LoadedPackage>,
+) -> Result<Vec<BoundFile>, ForgeError> {
+    let absolute_root = resolve_workspace_path(workspace, root_source);
+    let root_relative =
+        absolute_root
+            .strip_prefix(workspace)
+            .map_err(|_| ForgeError::RustcOutput {
+                detail: "Thermite package root is outside the workspace".to_string(),
+            })?;
+    let mut files = vec![BoundFile {
+        path: normalize(root_relative),
+        sha256: sha256(&read(&absolute_root)?),
+    }];
+    if let Some(package) = package {
+        let root = absolute_root.parent().unwrap_or_else(|| Path::new("."));
+        for module in &package.modules {
+            let absolute_module = root.join(&module.declaration.path);
+            let relative_module =
+                absolute_module
+                    .strip_prefix(workspace)
+                    .map_err(|_| ForgeError::RustcOutput {
+                        detail: format!(
+                            "Thermite package module `{}` is outside the workspace",
+                            module.declaration.name
+                        ),
+                    })?;
+            files.push(BoundFile {
+                path: normalize(relative_module),
+                sha256: sha256(&module.bytes),
+            });
+        }
+    }
+    files.sort_by(|left, right| left.path.cmp(&right.path));
+    if files.windows(2).any(|pair| pair[0].path == pair[1].path) {
+        return Err(ForgeError::RustcOutput {
+            detail: "Thermite package source inventory contains a duplicate path".to_string(),
+        });
+    }
+    Ok(files)
+}
+
+fn authorship_metrics(
+    workspace: &Path,
+    thermite_source: &[u8],
+    program: &thermite_syntax::Program,
+    shell_paths: &[PathBuf],
+    declared_boundary_count: usize,
+    verified_policy: &crate::verified_build::VerifiedBuildReceiptV1,
+    verified_policy_bundle: &Path,
+) -> Result<KernelAuthorshipMetrics, ForgeError> {
+    fn source_loc(bytes: &[u8]) -> Result<u64, ForgeError> {
+        let text = std::str::from_utf8(bytes).map_err(|error| ForgeError::RustcOutput {
+            detail: format!("authorship metric input is not UTF-8: {error}"),
+        })?;
+        Ok(text.lines().filter(|line| !line.trim().is_empty()).count() as u64)
+    }
+
+    fn verus_obligation_function_count(bytes: &[u8]) -> Result<u64, ForgeError> {
+        let text = std::str::from_utf8(bytes).map_err(|error| ForgeError::RustcOutput {
+            detail: format!("Verus obligation metric input is not UTF-8: {error}"),
+        })?;
+        Ok(text
+            .lines()
+            .map(str::trim_start)
+            .filter(|line| {
+                [
+                    "fn ",
+                    "pub fn ",
+                    "pub(crate) fn ",
+                    "extern \"C\" fn ",
+                    "pub extern \"C\" fn ",
+                    "pub(crate) extern \"C\" fn ",
+                    "const fn ",
+                    "pub const fn ",
+                    "pub(crate) const fn ",
+                    "exec fn ",
+                    "pub exec fn ",
+                    "pub(crate) exec fn ",
+                    "proof fn ",
+                    "pub proof fn ",
+                    "pub(crate) proof fn ",
+                    "pub open proof fn ",
+                    "pub closed proof fn ",
+                ]
+                .iter()
+                .any(|prefix| line.starts_with(prefix))
+            })
+            .count() as u64)
+    }
+
+    let direct_tpl_root = Path::new("platform")
+        .join(PROFILE)
+        .join("verified")
+        .join("tpl");
+    let mut verus_composition_loc = 0_u64;
+    let mut verus_composition_function_count = 0_u64;
+    let mut direct_verus_tpl_loc = 0_u64;
+    let mut direct_verus_tpl_function_count = 0_u64;
+    for path in shell_paths {
+        let bytes = read(path)?;
+        let loc = source_loc(&bytes)?;
+        let functions = verus_obligation_function_count(&bytes)?;
+        let relative = if path.is_absolute() {
+            path.strip_prefix(workspace)
+                .map_err(|_| ForgeError::RustcOutput {
+                    detail: format!(
+                        "composition shell is outside the workspace: {}",
+                        path.display()
+                    ),
+                })?
+        } else {
+            path.as_path()
+        };
+        if relative.starts_with(&direct_tpl_root) {
+            direct_verus_tpl_loc += loc;
+            direct_verus_tpl_function_count += functions;
+        } else {
+            verus_composition_loc += loc;
+            verus_composition_function_count += functions;
+        }
+    }
+
+    let runtime_sources = [
+        "platform/x86_64-pc-uefi-smp-v1/runtime/src/main.rs",
+        "platform/x86_64-pc-uefi-smp-v1/runtime/src/post_firmware.rs",
+    ];
+    let mut ordinary_rust_kernel_logic_loc_upper_bound = 0_u64;
+    for relative in runtime_sources {
+        ordinary_rust_kernel_logic_loc_upper_bound +=
+            source_loc(&read(&workspace.join(relative))?)?;
+    }
+    let rust_assembly_tpl_loc_upper_bound = ordinary_rust_kernel_logic_loc_upper_bound
+        + source_loc(&read(
+            &workspace.join("platform/x86_64-pc-uefi-smp-v1/runtime/src/ap_trampoline.S"),
+        )?)?
+        + source_loc(&read(
+            &workspace.join("platform/x86_64-pc-uefi-smp-v1/kernel_shell.rs"),
+        )?)?;
+
+    if verified_policy.binding.assurance_aggregate.scope != "end_to_end"
+        || verified_policy.binding.assurance_aggregate.headline != "L3"
+        || verified_policy.binding.target != crate::verified_build::VerifiedTarget::KernelUefi
+    {
+        return Err(ForgeError::RustcOutput {
+            detail: "verified policy metrics require an end-to-end L3 UEFI composition".to_string(),
+        });
+    }
+    let thermite_function_count = program
+        .items
+        .iter()
+        .filter(|item| matches!(item, Item::Fn(function) if function.body.is_some()))
+        .count() as u64;
+    let verus_evidence: crate::verified_build::VerusEvidence = serde_json::from_slice(&read(
+        &verified_policy_bundle.join("evidence/verus-result.json"),
+    )?)
+    .map_err(|error| ForgeError::RustcOutput {
+        detail: format!("invalid whole-crate Verus evidence for metrics: {error}"),
+    })?;
+    let verus_stdout: serde_json::Value =
+        serde_json::from_str(&verus_evidence.stdout).map_err(|error| ForgeError::RustcOutput {
+            detail: format!("invalid whole-crate Verus result payload for metrics: {error}"),
+        })?;
+    let verified_functions = verus_stdout
+        .pointer("/verification-results/verified")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| ForgeError::RustcOutput {
+            detail: "whole-crate Verus result omitted its verified-function count".to_string(),
+        })?;
+    // Verus reports one aggregate whole-crate count. Attribute it without the
+    // old `verified - source .th functions` shortcut: lowering can synthesize
+    // verified language definitions (for example FixedArray8 fill/get/set), and
+    // those are neither direct-Verus TPL nor one-for-one source functions. Count
+    // the exact receipt-bound lowered definitions, then require the remainder to
+    // equal the complete direct-Verus source inventory. Composition proofs and
+    // exact TPL refinements are deliberately reported as separate subsets:
+    // merely composing generated Thermite is not a proof of a machine
+    // operation. Whole-crate success means every member of all three disjoint
+    // sets discharged.
+    let lowered_thermite_functions = verus_obligation_function_count(&read(
+        &verified_policy_bundle.join("evidence/lowered-thermite.verus.rs"),
+    )?)?;
+    let expected_verified_functions = lowered_thermite_functions
+        .checked_add(verus_composition_function_count)
+        .and_then(|count| count.checked_add(direct_verus_tpl_function_count))
+        .ok_or_else(|| ForgeError::RustcOutput {
+            detail: "whole-crate verified-function inventory overflowed".to_string(),
+        })?;
+    if verified_functions != expected_verified_functions {
+        return Err(ForgeError::RustcOutput {
+            detail: format!(
+                "direct-Verus function inventory disagrees with discharged whole-crate obligations: \
+                 Verus reported {verified_functions}, receipt-bound lowered Thermite contributes \
+                 {lowered_thermite_functions}, Verus composition declares \
+                 {verus_composition_function_count}, and direct-Verus TPL declares \
+                 {direct_verus_tpl_function_count}"
+            ),
+        });
+    }
+    let artifact_plan = load_verified_policy_plan(verified_policy_bundle)?;
+    let directly_refined_boundaries = artifact_plan
+        .composition
+        .as_ref()
+        .map(|composition| composition.direct_refined_boundaries.len() as u64)
+        .unwrap_or(0);
+    let reachable_assurance = if directly_refined_boundaries == 0 {
+        "L3 end_to_end (generated acceptance slice)".to_string()
+    } else {
+        format!("L3 direct-Verus exact refinement ({directly_refined_boundaries} frozen boundary)")
+    };
+    let direct_verus_discharged_obligations = direct_verus_tpl_function_count;
+    Ok(KernelAuthorshipMetrics {
+        thermite_loc: source_loc(thermite_source)?,
+        thermite_function_count,
+        verus_composition_loc,
+        verus_composition_function_count,
+        verus_composition_discharged_obligations: verus_composition_function_count,
+        direct_verus_tpl_loc,
+        direct_verus_tpl_function_count,
+        direct_verus_discharged_obligations,
+        rust_assembly_tpl_loc_upper_bound,
+        ordinary_rust_kernel_logic_loc_upper_bound,
+        ordinary_rust_kernel_logic_target: 0,
+        ordinary_rust_kernel_logic_target_met: ordinary_rust_kernel_logic_loc_upper_bound == 0,
+        declared_platform_boundary_count: declared_boundary_count as u64,
+        reachable_boundary_count: directly_refined_boundaries,
+        reachable_assurance,
+        counting_method: "nonblank physical LOC; Verus composition excludes exact TPL sources under platform/<profile>/verified/tpl; runtime Rust/assembly and ordinary-Rust values are conservative overlapping upper bounds until the remaining platform/policy code is mechanically partitioned"
+            .to_string(),
+    })
+}
+
+fn load_verified_policy_plan(
+    verified_policy_bundle: &Path,
+) -> Result<crate::verified_build::ArtifactPlanV1, ForgeError> {
+    serde_json::from_slice(&read(
+        &verified_policy_bundle.join("evidence/artifact-plan.v1"),
+    )?)
+    .map_err(|error| ForgeError::RustcOutput {
+        detail: format!("invalid verified-policy artifact plan: {error}"),
+    })
+}
+
+fn validate_direct_refined_symbols(
+    plan: &crate::verified_build::ArtifactPlanV1,
+    symbol_bytes: &[u8],
+) -> Result<(), ForgeError> {
+    let text = std::str::from_utf8(symbol_bytes).map_err(|error| ForgeError::RustcOutput {
+        detail: format!("final-image public-symbol inventory is not UTF-8: {error}"),
+    })?;
+    if let Some(composition) = &plan.composition {
+        for boundary in &composition.direct_refined_boundaries {
+            let quoted = format!("`{}`", boundary.implementation_symbol);
+            if !text.contains(&quoted) {
+                return Err(ForgeError::RustcOutput {
+                    detail: format!(
+                        "final image omits direct-refinement symbol `{}` for `{}`",
+                        boundary.implementation_symbol, boundary.registry_target
+                    ),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
 fn bind_evidence(path: &Path) -> Result<Vec<BootEvidence>, ForgeError> {
     let mut evidence = Vec::new();
     for cpus in [1_u8, 2, 4, 8] {
@@ -934,9 +1448,22 @@ fn bind_evidence(path: &Path) -> Result<Vec<BootEvidence>, ForgeError> {
                 .as_bytes(),
             &format!("{cpus}-CPU nominal transcript"),
         )?;
+        let policy_flags = 127_u64;
+        let signature = policy_flags * 10_000_000 + 1_010_100 + (u64::from(cpus) - 1) * 10 + 41;
         require_transcript_marker(
             &bytes,
-            b"THERMITE_MODEL event_action=1 atomic=1 frame=1 dma_iommu=1 scheduler=1 registry_entries=",
+            format!(
+                "THERMITE_AUTHORED slice=capability+scheduler+ipc+runtime-policy \
+                 signature={signature} policy_flags={policy_flags} task_base=41 \
+                 applied=generated-dispatch+allocator-mapping-ap-scheduler-shootdown-dma-service-verdicts \
+                 functions=receipt assurance=L3+direct-atomic-boundaries migration=partial source=thermite"
+            )
+            .as_bytes(),
+            &format!("{cpus}-CPU nominal transcript"),
+        )?;
+        require_transcript_marker(
+            &bytes,
+            b"THERMITE_POST_SCHED tasks=4096 sum=8554496 worker_cpus=",
             &format!("{cpus}-CPU nominal transcript"),
         )?;
         require_transcript_marker(
@@ -1024,6 +1551,7 @@ fn publish(
     receipt: &ThermiteBootableKernelReceiptV1,
     staged_image: &Path,
     staged_evidence: &Path,
+    staged_policy: &Path,
     output: &Path,
 ) -> Result<(), ForgeError> {
     let parent = output.parent().unwrap_or_else(|| Path::new("."));
@@ -1038,6 +1566,7 @@ fn publish(
     let final_platform_receipt = parent.join(format!("{stem}.receipt"));
     let final_receipt = parent.join(format!("{stem}.receipt.json"));
     let final_evidence = parent.join(format!("{stem}.evidence"));
+    let final_policy = parent.join(format!("{stem}.policy"));
     for path in [
         output,
         &final_efi,
@@ -1047,6 +1576,7 @@ fn publish(
         &final_platform_receipt,
         &final_receipt,
         &final_evidence,
+        &final_policy,
     ] {
         if path.exists() {
             return Err(ForgeError::Usage(format!(
@@ -1082,12 +1612,40 @@ fn publish(
         })?;
     }
     copy_tree(staged_evidence, &final_evidence)?;
+    copy_tree_recursive(staged_policy, &final_policy)?;
     // The image is the publication sentinel and is renamed only after proof,
     // reproducibility, receipt, and every boot gate have succeeded.
     fs::rename(staged_image, output).map_err(|source| ForgeError::Io {
         path: output.display().to_string(),
         source,
     })?;
+    Ok(())
+}
+
+fn copy_tree_recursive(source: &Path, destination: &Path) -> Result<(), ForgeError> {
+    fs::create_dir(destination).map_err(|source_error| ForgeError::Io {
+        path: destination.display().to_string(),
+        source: source_error,
+    })?;
+    for entry in fs::read_dir(source).map_err(|source_error| ForgeError::Io {
+        path: source.display().to_string(),
+        source: source_error,
+    })? {
+        let entry = entry.map_err(|source_error| ForgeError::Io {
+            path: source.display().to_string(),
+            source: source_error,
+        })?;
+        let source_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+        if source_path.is_dir() {
+            copy_tree_recursive(&source_path, &destination_path)?;
+        } else {
+            fs::copy(&source_path, &destination_path).map_err(|source_error| ForgeError::Io {
+                path: destination_path.display().to_string(),
+                source: source_error,
+            })?;
+        }
+    }
     Ok(())
 }
 
@@ -1122,7 +1680,12 @@ fn create_scratch(parent: &Path) -> Result<PathBuf, ForgeError> {
             std::process::id()
         ));
         match fs::create_dir(&path) {
-            Ok(()) => return Ok(path),
+            Ok(()) => {
+                return fs::canonicalize(&path).map_err(|source| ForgeError::Io {
+                    path: path.display().to_string(),
+                    source,
+                });
+            }
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
             Err(source) => {
                 return Err(ForgeError::Io {
@@ -1201,14 +1764,20 @@ mod tests {
 
     fn sample_receipt() -> ThermiteBootableKernelReceiptV1 {
         ThermiteBootableKernelReceiptV1 {
-            schema: "ThermiteBootableKernelReceiptV1".to_string(),
+            schema: "ThermitePlatformConformanceReceiptV2".to_string(),
+            artifact_class: "platform_conformance_demonstration".to_string(),
+            migration_complete: false,
             profile: PROFILE.to_string(),
-            assurance_scope: "to_platform_boundary".to_string(),
+            assurance_scope: "platform_conformance_to_boundary".to_string(),
             trusted_computing_base: vec!["hardware".to_string()],
             source: BoundFile {
                 path: "kernel.th".to_string(),
                 sha256: "source".to_string(),
             },
+            thermite_sources: vec![BoundFile {
+                path: "kernel.th".to_string(),
+                sha256: "source".to_string(),
+            }],
             l3_exports: vec!["kernel_step".to_string()],
             boundaries: vec![BoundBoundary {
                 name: "kernel::clock::read@v1".to_string(),
@@ -1247,6 +1816,30 @@ mod tests {
                 path: "kernel_shell.rs".to_string(),
                 sha256: "shell".to_string(),
             }],
+            verified_policy_binding_sha256: "policy-binding".to_string(),
+            verified_policy_artifact_sha256: "policy-artifact".to_string(),
+            verified_policy_files: vec![BoundFile {
+                path: "receipt.json".to_string(),
+                sha256: "policy-file".to_string(),
+            }],
+            metrics: KernelAuthorshipMetrics {
+                thermite_loc: 1,
+                thermite_function_count: 1,
+                verus_composition_loc: 1,
+                verus_composition_function_count: 1,
+                verus_composition_discharged_obligations: 1,
+                direct_verus_tpl_loc: 1,
+                direct_verus_tpl_function_count: 1,
+                direct_verus_discharged_obligations: 1,
+                rust_assembly_tpl_loc_upper_bound: 1,
+                ordinary_rust_kernel_logic_loc_upper_bound: 1,
+                ordinary_rust_kernel_logic_target: 0,
+                ordinary_rust_kernel_logic_target_met: false,
+                declared_platform_boundary_count: 1,
+                reachable_boundary_count: 0,
+                reachable_assurance: "L3 end_to_end".to_string(),
+                counting_method: "nonblank".to_string(),
+            },
             toolchain: vec!["rustc".to_string()],
             image_path: "kernel.img".to_string(),
             image_size: 1,
@@ -1274,6 +1867,17 @@ mod tests {
             X86_64_PC_UEFI_SMP_V1.len(),
             thermite_kernel::X86_64_PC_UEFI_SMP_V1_OPERATION_COUNT
         );
+        for operation in X86_64_PC_UEFI_SMP_V1
+            .iter()
+            .filter(|operation| operation.source_reachable)
+        {
+            assert_eq!(
+                thermite_lower::frozen_kernel_boundary_symbol(operation.name()).as_deref(),
+                Some(operation.symbol),
+                "source boundary symbol drift for {}",
+                operation.name()
+            );
+        }
     }
 
     #[test]
@@ -1293,19 +1897,31 @@ mod tests {
 
     #[test]
     fn boundary_inventory_pins_contract_digest_and_reachable_set() {
-        let exact = thermite_syntax::parse(include_str!("../../conformance/bootable_kernel.th"));
-        assert!(exact.is_clean());
-        let bound = validate_boundaries(&exact.program).expect("exact frozen boundary");
-        assert_eq!(bound.len(), 1);
-        assert_eq!(
-            bound[0].source_contract_sha256,
-            bound[0].registry_source_contract_sha256
+        let package_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("workspace root")
+            .join("conformance/thermite-kernel.thpkg.json");
+        let package = crate::thermite_package::load(&package_path).expect("load kernel package");
+        let packaged = thermite_syntax::parse(
+            std::str::from_utf8(&package.bytes).expect("UTF-8 package program"),
         );
+        assert!(packaged.is_clean());
+        let packaged_bound =
+            validate_boundaries(&packaged.program).expect("packaged frozen boundary");
+        assert_eq!(packaged_bound.len(), 9);
+        assert!(packaged_bound
+            .iter()
+            .any(|boundary| boundary.name == "kernel::clock::read@v1"));
+        assert!(packaged_bound.iter().all(|boundary| {
+            boundary.source_contract_sha256 == boundary.registry_source_contract_sha256
+        }));
 
-        let weaker_source = include_str!("../../conformance/bootable_kernel.th").replace(
-            "ens result.scale_denominator > 0",
-            "ens result.scale_denominator >= 0",
-        );
+        let weaker_source = std::str::from_utf8(&package.bytes)
+            .expect("UTF-8 package program")
+            .replace(
+                "ens result.scale_denominator > 0",
+                "ens result.scale_denominator >= 0",
+            );
         let weaker = thermite_syntax::parse(&weaker_source);
         assert!(weaker.is_clean());
         assert!(validate_boundaries(&weaker.program).is_err());
@@ -1332,6 +1948,7 @@ mod tests {
             }};
         }
         changed!(|r: &mut ThermiteBootableKernelReceiptV1| r.source.sha256.push('x'));
+        changed!(|r: &mut ThermiteBootableKernelReceiptV1| r.thermite_sources[0].sha256.push('x'));
         changed!(|r: &mut ThermiteBootableKernelReceiptV1| r.boundaries[0]
             .source_contract_sha256
             .push('x'));
@@ -1344,6 +1961,16 @@ mod tests {
         changed!(
             |r: &mut ThermiteBootableKernelReceiptV1| r.composition_shells[0].sha256.push('x')
         );
+        changed!(|r: &mut ThermiteBootableKernelReceiptV1| r
+            .verified_policy_binding_sha256
+            .push('x'));
+        changed!(|r: &mut ThermiteBootableKernelReceiptV1| r
+            .verified_policy_artifact_sha256
+            .push('x'));
+        changed!(
+            |r: &mut ThermiteBootableKernelReceiptV1| r.verified_policy_files[0].sha256.push('x')
+        );
+        changed!(|r: &mut ThermiteBootableKernelReceiptV1| r.metrics.thermite_loc += 1);
         changed!(|r: &mut ThermiteBootableKernelReceiptV1| r.toolchain[0].push('x'));
         changed!(|r: &mut ThermiteBootableKernelReceiptV1| r.image_sha256.push('x'));
         changed!(|r: &mut ThermiteBootableKernelReceiptV1| r.uefi_sha256.push('x'));
@@ -1371,5 +1998,22 @@ mod tests {
         .expect("write truncated evidence");
         assert!(bind_evidence(&parent).is_err());
         fs::remove_dir_all(parent).expect("remove negative evidence directory");
+    }
+
+    #[test]
+    fn scratch_paths_are_absolute_even_for_relative_output_parents() {
+        let parent = PathBuf::from("target").join(format!(
+            "thermite-kernel-relative-scratch-{}-{}",
+            std::process::id(),
+            SCRATCH_NONCE.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir_all(&parent).expect("create relative scratch parent");
+
+        let scratch = create_scratch(&parent).expect("create canonical scratch directory");
+
+        assert!(scratch.is_absolute());
+        assert!(scratch
+            .starts_with(fs::canonicalize(&parent).expect("canonicalize relative scratch parent")));
+        fs::remove_dir_all(parent).expect("remove relative scratch parent");
     }
 }

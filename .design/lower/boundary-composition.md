@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: b695da1b202c0b04c467c1553aaefece94978a3ab23709445ffbf68d7198ed6a (re-pinned 2026-08-01 after auditing the bootable multicore kernel integration; existing behavior remains regression-covered)
+audited-content-sha256: 295fe33407a7f7a5526aae7547038cb1efe7f30c006adebac9ff1c0d0496e145 (re-pinned 2026-08-01 after auditing frozen exact-TPL kernel composition; standalone behavior remains regression-covered)
 governs: thermite-lower/src/lower.rs, forge/src/check.rs
 thesis-refs:
   - thermite-design.md §9
@@ -41,6 +41,16 @@ lower.rs` is the external_body emission arm, and `item_subprogram in check.rs`
 weaves the transitively-referenced boundary/slag siblings into the caller's
 sub-program. Every REQ below is **SHIPPED** (REQ-status table). The pre-#52
 state is described in past tense where it appears below.
+
+> **Receipt-bound kernel amendment (2026-08-01).** The rule above remains the
+> standalone certificate rule. A `L3LibraryTarget::Kernel` composition treats a
+> canonical frozen registry crossing more strictly: its frozen type lowers to
+> the checked platform representation and its boundary wrapper contains an
+> ordinary call to the exact TPL symbol, not `external_body`. Forge accepts the
+> upgrade only when the combined source contains an `exact_tpl_v1` module with
+> the matching checked public C-ABI function and the final PE/PDB inventory
+> retains that symbol. Thus the source certificate remains honestly L1/
+> to-boundary, while the image plan can separately record L3 direct refinement.
 
 ## The verus mechanism (GROUNDED — `verus 0.2026.05.24`)
 

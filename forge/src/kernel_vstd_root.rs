@@ -1,0 +1,128 @@
+//! Receipt-bound kernel link root for the pinned Verus standard library.
+//!
+//! This is the upstream `vstd.rs` module inventory with only the resource,
+//! rwlock, shared, and token modules omitted. Those modules are not in the
+//! kernel policy's transitive Verus closure and their generated metadata order
+//! is nondeterministic on the UEFI target. All selected module bodies remain
+//! the exact pinned upstream sources bound in the receipt.
+#![cfg_attr(not(feature = "std"), no_std)]
+#![allow(unused_parens)]
+#![allow(unused_imports)]
+#![allow(dead_code)]
+#![allow(unused_attributes)]
+#![allow(rustdoc::invalid_rust_codeblocks)]
+#![cfg_attr(verus_keep_ghost, feature(core_intrinsics))]
+#![cfg_attr(any(verus_keep_ghost, feature = "allocator"), feature(allocator_api))]
+#![cfg_attr(verus_keep_ghost, feature(step_trait))]
+#![cfg_attr(verus_keep_ghost, feature(ptr_metadata))]
+#![cfg_attr(verus_keep_ghost, feature(sized_hierarchy))]
+#![cfg_attr(verus_keep_ghost, feature(freeze))]
+#![cfg_attr(verus_keep_ghost, feature(derive_clone_copy_internals))]
+#![cfg_attr(verus_keep_ghost, feature(derive_eq_internals))]
+#![cfg_attr(verus_keep_ghost, feature(slice_index_methods))]
+#![cfg_attr(all(feature = "alloc", verus_keep_ghost), feature(liballoc_internals))]
+#![cfg_attr(verus_keep_ghost, feature(new_range_api))]
+
+#[cfg(feature = "alloc")]
+extern crate alloc;
+
+pub mod arithmetic;
+pub mod array;
+pub mod atomic;
+pub mod atomic_ghost;
+pub mod bits;
+pub mod bytes;
+pub mod calc_macro;
+pub mod cell;
+pub mod compute;
+pub mod contrib;
+pub mod endian;
+pub mod float;
+pub mod function;
+#[cfg(feature = "std")]
+pub mod future;
+#[cfg(all(feature = "alloc", feature = "std"))]
+pub mod hash_map;
+#[cfg(all(feature = "alloc", feature = "std"))]
+pub mod hash_set;
+pub mod invariant;
+#[cfg(verus_keep_ghost)]
+pub mod laws_cmp;
+#[cfg(verus_keep_ghost)]
+pub mod laws_eq;
+pub mod layout;
+pub mod logatom;
+pub mod map;
+pub mod map_lib;
+pub mod math;
+pub mod modes;
+pub mod multiset;
+pub mod multiset_lib;
+pub mod pervasive;
+pub mod predicate;
+pub mod proph;
+pub mod raw_ptr;
+pub mod relations;
+pub mod seq;
+pub mod seq_lib;
+pub mod set;
+pub mod set_lib;
+#[cfg(feature = "alloc")]
+pub mod simple_pptr;
+pub mod slice;
+pub mod state_machine_internal;
+pub mod string;
+#[cfg(feature = "std")]
+pub mod thread;
+pub mod utf8;
+pub mod view;
+pub mod wrapping;
+
+#[cfg(verus_keep_ghost)]
+pub mod std_specs;
+
+pub mod prelude;
+
+use prelude::*;
+
+verus! {
+
+#[cfg_attr(verus_keep_ghost, verifier::broadcast_use_by_default_when_this_crate_is_imported)]
+pub broadcast group group_vstd_default {
+    seq::group_seq_axioms,
+    seq_lib::group_seq_lib_default,
+    map::group_map_axioms,
+    set::group_set_axioms,
+    set_lib::group_set_lib_default,
+    multiset::group_multiset_axioms,
+    compute::all_spec_ensures,
+    function::group_function_axioms,
+    laws_eq::group_laws_eq,
+    laws_cmp::group_laws_cmp,
+    slice::group_slice_axioms,
+    array::group_array_axioms,
+    #[cfg(not(verus_verify_core))]
+    string::group_string_axioms,
+    raw_ptr::group_raw_ptr_axioms,
+    layout::group_layout_axioms,
+    std_specs::range::group_range_axioms,
+    std_specs::bits::group_bits_axioms,
+    std_specs::control_flow::group_control_flow_axioms,
+    std_specs::slice::group_slice_axioms,
+    std_specs::manually_drop::group_manually_drop_axioms,
+    std_specs::iter::group_iter_axioms,
+    #[cfg(feature = "alloc")]
+    std_specs::vec::group_vec_axioms,
+    #[cfg(feature = "alloc")]
+    std_specs::vecdeque::group_vec_dequeue_axioms,
+    #[cfg(all(feature = "alloc", feature = "std"))]
+    std_specs::hash::group_hash_axioms,
+    #[cfg(feature = "alloc")]
+    std_specs::btree::group_btree_axioms,
+}
+
+} // verus!
+
+#[cfg(not(verus_verify_core))]
+#[doc(hidden)]
+pub use crate as vstd;

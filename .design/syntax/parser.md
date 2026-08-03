@@ -3,7 +3,7 @@
 tier: 3-component
 status: draft
 audited-sha: 92396428567edc6940a9e2845217f5ff4c2ea3c6 (re-pinned 2026-06-16, user-authorized: the only change to this doc's governed files since the prior pin is the additive stage-1 forge-tier increment 2a — the new Item::Forge surface + inert Item::Forge match arms, verified net-additive with no substantive removal of existing v1 logic (git log <main>..HEAD = the 8 forge commits); the v1 behavior this doc governs is unchanged, and the new forge-tier surface is specified in .design/stage1-forge-tier.md / REQ-S1-3)
-audited-content-sha256: ebfb68b57a588a0d3bb0c8914697e9c68c4d423fc27c5cac729347aa1ca990b6
+audited-content-sha256: ab8730ed9addf1228c4458ca3b6530359cfdc021e4e3494a7b6858754531e081
 governs: thermite-syntax/src/parser.rs
 thesis-refs:
   - thermite-design.md §4.1
@@ -29,6 +29,13 @@ combinator calls (`forall_in`, `sorted`) as generic call expressions.
 
 This doc's REQs are SHIPPED (`thermite-syntax/src/parser.rs`, issue #3 + the
 #92/#93 amendments) — see the REQ status table.
+
+> **Kernel-composition amendment (2026-08-01).** The attribute parser accepts
+> `#[frozen("kernel::domain::type@v1")]` only immediately before a fieldless
+> `struct`. It records the registry target, forces the AST's sealed bit, and
+> rejects attachment to a function, enum, stateful struct, or malformed target.
+> Registry lookup and representation selection remain downstream checks; the
+> parser does not acquire ambient platform authority.
 
 > **AMENDMENT (#262 re-audit, 2026-06-12 — post-pin currency).** The parser has
 > since grown ADDITIVE surface owned by OTHER design docs (each contracted in

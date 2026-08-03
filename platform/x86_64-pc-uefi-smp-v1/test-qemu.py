@@ -16,23 +16,12 @@ import time
 
 
 CPU_MATRIX = (1, 2, 4, 8)
-SMP_PATTERN = re.compile(
-    r"^THERMITE_SMP online=(?P<online>\d+) aps=(?P<aps>\d+) "
-    r"unique=(?P<unique>\d+) work=(?P<work>\d+) expected=(?P<expected>\d+) "
-    r"parallel_aps=(?P<parallel>\d+) stale=(?P<stale>\d+) "
-    r"duplicate=(?P<duplicate>\d+) bad_ids=(?P<bad_ids>\d+)$"
-)
 CPU_PATTERN = re.compile(r"^THERMITE_CPUS discovered=(\d+) enabled=(\d+)$")
 HANDOFF_PATTERN = re.compile(
     r"^THERMITE_HANDOFF memory_map=1 acpi_bytes=(\d+) firmware_entries=(\d+) "
     r"firmware_bytes=(\d+) framebuffer=absent command_line_bytes=(\d+) "
     r"initrd_bytes=(\d+) image_bytes=(\d+) bounds=exact$"
 )
-SCHED_PATTERN = re.compile(
-    r"^THERMITE_SCHED tasks=(\d+) sum=(\d+) worker_cpus=(\d+) "
-    r"lock_entries=(\d+) once=1 bsp_work=1$"
-)
-IPI_PATTERN = re.compile(r"^THERMITE_IPI epoch=1 acked=(\d+) expected=(\d+)$")
 KERNEL_PATTERN = re.compile(
     r"^THERMITE_KERNEL mode=freestanding online=(\d+) failed=(\d+) "
     r"failed_apic=(\d+) firmware_calls=0$"
@@ -64,9 +53,10 @@ DEVICE_MARKER = (
 CPU_LOCAL_PATTERN = re.compile(
     r"^THERMITE_CPU_LOCAL installed=(\d+) gs_verified=(\d+) generation=1$"
 )
-MODEL_PATTERN = re.compile(
-    r"^THERMITE_MODEL event_action=1 atomic=1 frame=1 dma_iommu=1 scheduler=1 "
-    r"registry_entries=(\d+) linked=thermite-kernel$"
+AUTHORED_PATTERN = re.compile(
+    r"^THERMITE_AUTHORED slice=capability\+scheduler\+ipc\+runtime-policy signature=(\d+) "
+    r"policy_flags=(\d+) task_base=(\d+) applied=generated-dispatch\+allocator-mapping-ap-scheduler-shootdown-dma-service-verdicts "
+    r"functions=receipt assurance=L3\+direct-atomic-boundaries migration=partial source=thermite$"
 )
 
 
@@ -119,50 +109,8 @@ def validate_transcript(
     cpu_line = next((CPU_PATTERN.match(line) for line in lines if CPU_PATTERN.match(line)), None)
     if cpu_line is None or tuple(map(int, cpu_line.groups())) != (cpus, cpus):
         raise RuntimeError(f"{cpus}-CPU discovery marker is absent or inconsistent")
-    smp = next((SMP_PATTERN.match(line) for line in lines if SMP_PATTERN.match(line)), None)
-    if smp is None:
-        raise RuntimeError(f"{cpus}-CPU run did not emit a parseable SMP marker")
-    values = {name: int(value) for name, value in smp.groupdict().items()}
-    required_parallel = min(1, max(0, cpus - 1))
-    expected = {
-        "online": cpus,
-        "aps": cpus - 1,
-        "unique": cpus,
-        "work": cpus * 2_048,
-        "expected": cpus * 2_048,
-        "stale": 0,
-        "duplicate": 0,
-        "bad_ids": 0,
-    }
-    for field, wanted in expected.items():
-        if values[field] != wanted:
-            raise RuntimeError(
-                f"{cpus}-CPU {field} mismatch: got {values[field]}, expected {wanted}"
-            )
-    if values["parallel"] < required_parallel:
-        raise RuntimeError(
-            f"{cpus}-CPU run reached only {values['parallel']} concurrent APs; "
-            f"expected at least {required_parallel}"
-        )
     if "THERMITE_SUCCESS gate=boot-smp-v1" not in lines:
         raise RuntimeError(f"{cpus}-CPU run did not reach its success marker")
-    scheduler = next(
-        (SCHED_PATTERN.match(line) for line in lines if SCHED_PATTERN.match(line)), None
-    )
-    required_workers = 2 if cpus >= 4 else 1
-    if scheduler is None:
-        raise RuntimeError(f"{cpus}-CPU firmware scheduler marker is absent")
-    tasks, task_sum, workers, lock_entries = map(int, scheduler.groups())
-    if (
-        tasks != 4_096
-        or task_sum != 4_096 * 4_095 // 2
-        or workers < required_workers
-        or lock_entries != cpus - 1
-    ):
-        raise RuntimeError(f"{cpus}-CPU firmware scheduler invariants failed: {scheduler.group(0)}")
-    ipi = next((IPI_PATTERN.match(line) for line in lines if IPI_PATTERN.match(line)), None)
-    if ipi is None or tuple(map(int, ipi.groups())) != (cpus, cpus):
-        raise RuntimeError(f"{cpus}-CPU IPI epoch did not receive every acknowledgement")
     required_markers = (
         f"THERMITE_CLOCK monotonic=1 per_cpu={cpus}",
         "THERMITE_EXIT_BOOT_SERVICES ownership=kernel",
@@ -196,11 +144,15 @@ def validate_transcript(
     )
     if cpu_local is None or tuple(map(int, cpu_local.groups())) != (online, online):
         raise RuntimeError(f"{cpus}-CPU local-storage evidence is incomplete")
-    model = next(
-        (MODEL_PATTERN.match(line) for line in lines if MODEL_PATTERN.match(line)), None
+    authored = next(
+        (AUTHORED_PATTERN.match(line) for line in lines if AUTHORED_PATTERN.match(line)),
+        None,
     )
-    if model is None or int(model.group(1)) != 104:
-        raise RuntimeError(f"{cpus}-CPU linked safe-kernel model evidence is incomplete")
+    expected_signature = 127 * 10_000_000 + 1_010_100 + (online - 1) * 10 + 41
+    if authored is None or tuple(map(int, authored.groups())) != (expected_signature, 127, 41):
+        raise RuntimeError(
+            f"{cpus}-CPU generated Thermite policy did not execute with the expected semantics"
+        )
     if not any(
         line.startswith("THERMITE_DMA device=boot-disk generation=0 ownership=cpu ")
         and line.endswith("signature=55aa stale_rejected=1")
@@ -243,7 +195,7 @@ def validate_transcript(
     )
     if (
         post_tasks != 4_096
-        or post_sum != 4_096 * 4_095 // 2
+        or post_sum != 4_096 * 4_095 // 2 + 4_096 * 41
         or post_workers != online
         or ap_workers != online - 1
         or parallel_cpus != online

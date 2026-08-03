@@ -9,7 +9,55 @@ use core::alloc::{GlobalAlloc, Layout};
 use core::arch::{asm, global_asm};
 use core::ffi::c_void;
 use core::ptr;
-use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicU64, Ordering};
+use thermite_kernel_policy::atomic::ExactAtomicU64;
+use thermite_kernel_policy::kernel_policy_ingress::{
+    thermite_allocator_claim_first as allocator_claim_first,
+    thermite_allocator_run_mask as allocator_run_mask, thermite_ap_cpu_bit as ap_cpu_bit,
+    thermite_ap_expected_mask as ap_expected_mask,
+    thermite_ap_should_start as ap_should_start,
+    thermite_apic_physical_base as apic_physical_base,
+    thermite_apic_profile_supported as apic_profile_supported,
+    thermite_atomic_claim_once as exact_claim_once,
+    thermite_atomic_compare_exchange as exact_compare_exchange,
+    thermite_atomic_fetch_add as exact_fetch_add, thermite_atomic_fetch_and as exact_fetch_and,
+    thermite_atomic_fetch_or as exact_fetch_or, thermite_atomic_fetch_sub as exact_fetch_sub,
+    thermite_atomic_load as exact_load, thermite_atomic_store as exact_store,
+    thermite_dma_descriptor_bytes as dma_descriptor_bytes,
+    thermite_dma_descriptor_flags as dma_descriptor_flags,
+    thermite_dma_descriptor_length as dma_descriptor_length,
+    thermite_dma_descriptor_next as dma_descriptor_next,
+    thermite_dma_device_ready as dma_device_ready, thermite_dma_device_status as dma_device_status,
+    thermite_dma_publish_available as dma_publish_available,
+    thermite_dma_queue_layout_valid as dma_queue_layout_valid,
+    thermite_dma_queue_pfn as dma_queue_pfn, thermite_dma_queue_size_valid as dma_queue_size_valid,
+    thermite_dma_register_port as dma_register_port, thermite_dma_used_offset as dma_used_offset,
+    thermite_kernel_signature_policy_flags as signature_policy_flags,
+    thermite_kernel_signature_task_base as signature_task_base,
+    thermite_mapping_identity_huge_entry as mapping_identity_huge_entry,
+    thermite_mapping_identity_physical as mapping_identity_physical,
+    thermite_mapping_kernel_data_entry as mapping_kernel_data_entry,
+    thermite_mapping_kernel_table_entry as mapping_kernel_table_entry,
+    thermite_mapping_user_code_entry as mapping_user_code_entry,
+    thermite_mapping_user_stack_entry as mapping_user_stack_entry,
+    thermite_mapping_user_table_entry as mapping_user_table_entry,
+    thermite_pci_config_address as pci_config_address,
+    thermite_pci_enable_io_bus_master as pci_enable_io_bus_master,
+    thermite_pci_legacy_io_bar_valid as pci_legacy_io_bar_valid,
+    thermite_pci_legacy_io_base as pci_legacy_io_base,
+    thermite_pci_virtio_block_identity as pci_virtio_block_identity,
+    thermite_scheduler_release_gate as scheduler_release_gate,
+    thermite_scheduler_required_ap_workers as scheduler_required_ap_workers,
+    thermite_scheduler_required_parallel_cpus as scheduler_required_parallel_cpus,
+    thermite_scheduler_seed_admitted as scheduler_seed_admitted,
+    thermite_service_finish_value as service_finish_value,
+    thermite_service_syscall_value as service_syscall_value,
+    thermite_service_user_base as service_user_base,
+    thermite_service_user_fault_address as service_user_fault_address,
+    thermite_service_user_stack as service_user_stack,
+    thermite_service_user_stack_pointer as service_user_stack_pointer,
+    thermite_service_write_user_byte as service_write_user_byte,
+};
 
 use crate::{BootServices, Handle, Serial, Status, SUCCESS};
 
@@ -98,7 +146,7 @@ thermite_page_fault_handler:
     pushq %rax
     pushq %rcx
     movq %cr2, %rax
-    movabsq $0x0000400000002000, %rcx
+    movq USER_EXPECTED_FAULT_ADDRESS(%rip), %rcx
     cmpq %rcx, %rax
     jne thermite_unexpected_page_fault
     cmpq $0x23, 32(%rsp)
@@ -163,7 +211,6 @@ thermite_enter_user:
 
 const MAX_CPUS: usize = 64;
 const STACK_BYTES: usize = 16 * 1024;
-const POST_TASKS: usize = 4_096;
 const TRAMPOLINE_BASE: usize = 0x0008_0000;
 const TRAMPOLINE_PARAMETERS: usize = TRAMPOLINE_BASE + 0x0c00;
 const APIC_BASE_MSR: u32 = 0x1b;
@@ -173,8 +220,6 @@ const LSTAR_MSR: u32 = 0xc000_0082;
 const SFMASK_MSR: u32 = 0xc000_0084;
 const GS_BASE_MSR: u32 = 0xc000_0101;
 const TSC_DEADLINE_MSR: u32 = 0x6e0;
-const APIC_ENABLE: u64 = 1 << 11;
-const X2APIC_ENABLE: u64 = 1 << 10;
 const APIC_EOI: usize = 0xb0;
 const APIC_TPR: usize = 0x80;
 const APIC_SPURIOUS: usize = 0xf0;
@@ -185,20 +230,26 @@ const APIC_TIMER_INITIAL: usize = 0x380;
 const APIC_TIMER_DIVIDE: usize = 0x3e0;
 const IPI_VECTOR: u8 = 0xf1;
 const TIMER_VECTOR: u8 = 0xf2;
-const USER_BASE: u64 = 0x0000_4000_0000_0000;
-const USER_STACK: u64 = USER_BASE + 0x1000;
-const USER_FAULT_ADDRESS: u64 = USER_BASE + 0x2000;
 const SHOOTDOWN_ADDRESS: u64 = 0x0000_4080_0000_0000;
-const PAGE_PRESENT: u64 = 1;
-const PAGE_WRITE: u64 = 1 << 1;
-const PAGE_USER: u64 = 1 << 2;
-const PAGE_HUGE: u64 = 1 << 7;
-const PAGE_NX: u64 = 1 << 63;
 const EFI_ALLOCATE_ADDRESS: u32 = 2;
 const EFI_ALLOCATE_MAX_ADDRESS: u32 = 1;
 const EFI_LOADER_DATA: u32 = 2;
 const HEAP_PAGES: usize = 64;
 const HEAP_BYTES: usize = HEAP_PAGES * 4096;
+const POLICY_ALLOCATOR: u64 = 1;
+const POLICY_MAPPING: u64 = 2;
+const POLICY_SYNCHRONIZATION: u64 = 4;
+const POLICY_AP_LIFECYCLE: u64 = 8;
+const POLICY_SHOOTDOWN: u64 = 16;
+const POLICY_DMA: u64 = 32;
+const POLICY_SERVICES: u64 = 64;
+const POLICY_KNOWN: u64 = POLICY_ALLOCATOR
+    | POLICY_MAPPING
+    | POLICY_SYNCHRONIZATION
+    | POLICY_AP_LIFECYCLE
+    | POLICY_SHOOTDOWN
+    | POLICY_DMA
+    | POLICY_SERVICES;
 
 type AllocatePages = unsafe extern "efiapi" fn(
     allocation_type: u32,
@@ -223,6 +274,9 @@ pub struct PostFirmwareReport {
     pub worker_cpus: usize,
     pub parallel_cpus: usize,
     pub task_sum: u64,
+    pub thermite_policy_signature: u64,
+    pub thermite_policy_flags: u64,
+    pub thermite_task_base: usize,
     pub heap_bytes: usize,
     pub heap_allocations: usize,
     pub heap_oom_rejected: usize,
@@ -231,7 +285,6 @@ pub struct PostFirmwareReport {
     pub device_negative_checks: usize,
     pub cpu_local_cpus: usize,
     pub power_action: PowerAction,
-    pub model_registry_entries: usize,
     pub lock_entries: usize,
     pub ipi_acks: usize,
     pub timer_cpus: usize,
@@ -263,7 +316,7 @@ pub enum PostFirmwareError {
     UserMode,
     Heap(Status),
     Device,
-    Model,
+    Memory,
 }
 
 impl PostFirmwareError {
@@ -286,7 +339,7 @@ impl PostFirmwareError {
             Self::UserMode => 15,
             Self::Heap(status) => status,
             Self::Device => 16,
-            Self::Model => 17,
+            Self::Memory => 17,
         }
     }
 }
@@ -419,36 +472,37 @@ static mut CPU_LOCALS: [CpuLocalRecord; MAX_CPUS] = [CpuLocalRecord {
     interrupt_depth: 0,
 }; MAX_CPUS];
 
-static POST_ONLINE_MASK: AtomicU64 = AtomicU64::new(0);
-static POST_PHASE: AtomicUsize = AtomicUsize::new(0);
-static POST_READY: AtomicUsize = AtomicUsize::new(0);
-static POST_NEXT_TASK: AtomicUsize = AtomicUsize::new(0);
-static POST_TASK_READY: AtomicUsize = AtomicUsize::new(0);
-static POST_TASK_GATE: AtomicUsize = AtomicUsize::new(0);
-static POST_EXPECTED_WORKERS: AtomicUsize = AtomicUsize::new(0);
-static POST_TASK_SUM: AtomicU64 = AtomicU64::new(0);
-static POST_TASK_WORKERS: AtomicU64 = AtomicU64::new(0);
-static POST_TASK_DONE: AtomicUsize = AtomicUsize::new(0);
-static POST_ACTIVE: AtomicUsize = AtomicUsize::new(0);
-static POST_MAX_ACTIVE: AtomicUsize = AtomicUsize::new(0);
-static POST_LOCK_NEXT: AtomicUsize = AtomicUsize::new(0);
-static POST_LOCK_OWNER: AtomicUsize = AtomicUsize::new(0);
-static POST_LOCK_ENTRIES: AtomicUsize = AtomicUsize::new(0);
-static POST_ONCE: AtomicUsize = AtomicUsize::new(0);
-static POST_TLB_PRE_MASK: AtomicU64 = AtomicU64::new(0);
-static POST_TLB_POST_MASK: AtomicU64 = AtomicU64::new(0);
-static POST_TLB_STALE: AtomicUsize = AtomicUsize::new(0);
-static POST_TLB_OBSERVED: [AtomicU64; MAX_CPUS] = [const { AtomicU64::new(0) }; MAX_CPUS];
-static POST_IPI_EPOCH: AtomicU64 = AtomicU64::new(0);
-static POST_TIMER_IPI_FALLBACKS: AtomicUsize = AtomicUsize::new(0);
-static POST_MESSAGE_PAYLOAD: AtomicU64 = AtomicU64::new(0);
-static POST_MESSAGE_READY: AtomicUsize = AtomicUsize::new(0);
-static POST_MESSAGE_MASK: AtomicU64 = AtomicU64::new(0);
-static POST_MESSAGE_STALE: AtomicUsize = AtomicUsize::new(0);
-static POST_CPU_LOCAL_MASK: AtomicU64 = AtomicU64::new(0);
-static HEAP_BASE: AtomicUsize = AtomicUsize::new(0);
-static HEAP_BITMAP: AtomicU64 = AtomicU64::new(0);
-static HEAP_ALLOCATIONS: AtomicUsize = AtomicUsize::new(0);
+static POST_ONLINE_MASK: ExactAtomicU64 = ExactAtomicU64::new(0);
+static POST_PHASE: ExactAtomicU64 = ExactAtomicU64::new(0);
+static POST_READY: ExactAtomicU64 = ExactAtomicU64::new(0);
+static POST_NEXT_TASK: ExactAtomicU64 = ExactAtomicU64::new(0);
+static POST_TASK_BASE: ExactAtomicU64 = ExactAtomicU64::new(0);
+static POST_TASK_READY: ExactAtomicU64 = ExactAtomicU64::new(0);
+static POST_TASK_GATE: ExactAtomicU64 = ExactAtomicU64::new(0);
+static POST_EXPECTED_WORKERS: ExactAtomicU64 = ExactAtomicU64::new(0);
+static POST_TASK_SUM: ExactAtomicU64 = ExactAtomicU64::new(0);
+static POST_TASK_WORKERS: ExactAtomicU64 = ExactAtomicU64::new(0);
+static POST_TASK_DONE: ExactAtomicU64 = ExactAtomicU64::new(0);
+static POST_ACTIVE: ExactAtomicU64 = ExactAtomicU64::new(0);
+static POST_MAX_ACTIVE: ExactAtomicU64 = ExactAtomicU64::new(0);
+static POST_LOCK_NEXT: ExactAtomicU64 = ExactAtomicU64::new(0);
+static POST_LOCK_OWNER: ExactAtomicU64 = ExactAtomicU64::new(0);
+static POST_LOCK_ENTRIES: ExactAtomicU64 = ExactAtomicU64::new(0);
+static POST_ONCE: ExactAtomicU64 = ExactAtomicU64::new(0);
+static POST_TLB_PRE_MASK: ExactAtomicU64 = ExactAtomicU64::new(0);
+static POST_TLB_POST_MASK: ExactAtomicU64 = ExactAtomicU64::new(0);
+static POST_TLB_STALE: ExactAtomicU64 = ExactAtomicU64::new(0);
+static POST_TLB_OBSERVED: [ExactAtomicU64; MAX_CPUS] = [const { ExactAtomicU64::new(0) }; MAX_CPUS];
+static POST_IPI_EPOCH: ExactAtomicU64 = ExactAtomicU64::new(0);
+static POST_TIMER_IPI_FALLBACKS: ExactAtomicU64 = ExactAtomicU64::new(0);
+static POST_MESSAGE_PAYLOAD: ExactAtomicU64 = ExactAtomicU64::new(0);
+static POST_MESSAGE_READY: ExactAtomicU64 = ExactAtomicU64::new(0);
+static POST_MESSAGE_MASK: ExactAtomicU64 = ExactAtomicU64::new(0);
+static POST_MESSAGE_STALE: ExactAtomicU64 = ExactAtomicU64::new(0);
+static POST_CPU_LOCAL_MASK: ExactAtomicU64 = ExactAtomicU64::new(0);
+static HEAP_BASE: ExactAtomicU64 = ExactAtomicU64::new(0);
+static HEAP_BITMAP: ExactAtomicU64 = ExactAtomicU64::new(0);
+static HEAP_ALLOCATIONS: ExactAtomicU64 = ExactAtomicU64::new(0);
 
 #[no_mangle]
 static POST_IPI_ACK_MASK: AtomicU64 = AtomicU64::new(0);
@@ -464,6 +518,8 @@ static USER_FINISHED: AtomicU64 = AtomicU64::new(0);
 static USER_SYSCALL_VALUE: AtomicU64 = AtomicU64::new(0);
 #[no_mangle]
 static USER_FINISH_VALUE: AtomicU64 = AtomicU64::new(0);
+#[no_mangle]
+static USER_EXPECTED_FAULT_ADDRESS: AtomicU64 = AtomicU64::new(0);
 #[no_mangle]
 static KERNEL_RETURN_RSP: AtomicU64 = AtomicU64::new(0);
 #[no_mangle]
@@ -492,48 +548,31 @@ static KERNEL_ALLOCATOR: KernelAllocator = KernelAllocator;
 
 unsafe impl GlobalAlloc for KernelAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let base = HEAP_BASE.load(Ordering::Acquire);
-        if base == 0 || layout.align() > 4096 {
+        let base = exact_load(&HEAP_BASE) as usize;
+        if base == 0 {
             return ptr::null_mut();
         }
-        let pages = layout.size().max(1).div_ceil(4096);
-        if pages > HEAP_PAGES {
+        let pages = thermite_kernel_policy::kernel_policy_ingress::thermite_allocator_request_pages(
+            layout.size() as u64,
+            layout.align() as u64,
+        ) as usize;
+        if pages == 0 {
             return ptr::null_mut();
         }
-        for first in 0..=HEAP_PAGES - pages {
-            let mask = if pages == 64 {
-                u64::MAX
-            } else {
-                ((1_u64 << pages) - 1) << first
-            };
-            let mut observed = HEAP_BITMAP.load(Ordering::Acquire);
-            loop {
-                if observed & mask != 0 {
-                    break;
-                }
-                match HEAP_BITMAP.compare_exchange_weak(
-                    observed,
-                    observed | mask,
-                    Ordering::AcqRel,
-                    Ordering::Acquire,
-                ) {
-                    Ok(_) => {
-                        let allocation = (base + first * 4096) as *mut u8;
-                        // SAFETY: the successful bitmap transition grants this
-                        // caller exclusive ownership of the whole page run.
-                        unsafe { ptr::write_bytes(allocation, 0, pages * 4096) };
-                        HEAP_ALLOCATIONS.fetch_add(1, Ordering::AcqRel);
-                        return allocation;
-                    }
-                    Err(current) => observed = current,
-                }
-            }
+        let first = allocator_claim_first(&HEAP_BITMAP, pages as u64) as usize;
+        if first >= HEAP_PAGES {
+            return ptr::null_mut();
         }
-        ptr::null_mut()
+        let allocation = (base + first * 4096) as *mut u8;
+        // SAFETY: the generated bounded CAS state machine grants this caller
+        // exclusive ownership of the returned first-fit page run.
+        unsafe { ptr::write_bytes(allocation, 0, pages * 4096) };
+        exact_fetch_add(&HEAP_ALLOCATIONS, 1);
+        allocation
     }
 
     unsafe fn dealloc(&self, allocation: *mut u8, layout: Layout) {
-        let base = HEAP_BASE.load(Ordering::Acquire);
+        let base = exact_load(&HEAP_BASE) as usize;
         let address = allocation as usize;
         if base == 0
             || address < base
@@ -542,25 +581,25 @@ unsafe impl GlobalAlloc for KernelAllocator {
         {
             return;
         }
-        let pages = layout.size().max(1).div_ceil(4096);
+        let pages = thermite_kernel_policy::kernel_policy_ingress::thermite_allocator_request_pages(
+            layout.size() as u64,
+            layout.align() as u64,
+        ) as usize;
         let first = (address - base) / 4096;
-        if pages > HEAP_PAGES || first + pages > HEAP_PAGES {
+        if pages == 0 || first + pages > HEAP_PAGES {
             return;
         }
-        let mask = if pages == 64 {
-            u64::MAX
-        } else {
-            ((1_u64 << pages) - 1) << first
-        };
-        HEAP_BITMAP.fetch_and(!mask, Ordering::AcqRel);
+        let mask = allocator_run_mask(first as u64, pages as u64, u64::MAX);
+        exact_fetch_and(&HEAP_BITMAP, !mask);
     }
 }
 
 #[inline]
 fn bit(cpu: usize) -> Result<u64, PostFirmwareError> {
-    1_u64
-        .checked_shl(cpu as u32)
-        .ok_or(PostFirmwareError::InvalidCpuId)
+    if cpu >= 64 {
+        return Err(PostFirmwareError::InvalidCpuId);
+    }
+    Ok(ap_cpu_bit(cpu as u64))
 }
 
 fn cpu_id() -> usize {
@@ -606,10 +645,10 @@ unsafe fn apic_base() -> Result<usize, PostFirmwareError> {
     // SAFETY: APIC_BASE_MSR is architectural and available after CPUID APIC
     // validation performed by `run`.
     let value = unsafe { rdmsr(APIC_BASE_MSR) };
-    if value & APIC_ENABLE == 0 || value & X2APIC_ENABLE != 0 {
+    if !apic_profile_supported(value) {
         return Err(PostFirmwareError::UnsupportedApic);
     }
-    Ok((value & 0xffff_f000) as usize)
+    Ok(apic_physical_base(value) as usize)
 }
 
 unsafe fn apic_read(offset: usize) -> Result<u32, PostFirmwareError> {
@@ -765,7 +804,7 @@ unsafe fn install_cpu_local(logical_id: usize) -> Result<(), PostFirmwareError> 
     if observed != logical_id as u64 {
         return Err(PostFirmwareError::InvalidCpuId);
     }
-    POST_CPU_LOCAL_MASK.fetch_or(bit(logical_id)?, Ordering::Release);
+    exact_fetch_or(&POST_CPU_LOCAL_MASK, bit(logical_id)?);
     Ok(())
 }
 
@@ -852,7 +891,7 @@ unsafe fn arm_timer() -> Result<(), PostFirmwareError> {
             // QEMU's TCG LAPIC timer can remain quiescent after firmware exits.
             // Preserve deadline semantics by delivering the expired per-CPU
             // timer through the same hardware APIC gate as a self-directed IPI.
-            POST_TIMER_IPI_FALLBACKS.fetch_add(1, Ordering::AcqRel);
+            exact_fetch_add(&POST_TIMER_IPI_FALLBACKS, 1);
             wait_icr()?;
             apic_write(APIC_ICR_LOW, (1 << 18) | u32::from(TIMER_VECTOR))?;
             wait_icr()?;
@@ -862,81 +901,101 @@ unsafe fn arm_timer() -> Result<(), PostFirmwareError> {
 }
 
 fn observe_max(candidate: usize) {
-    let mut observed = POST_MAX_ACTIVE.load(Ordering::Relaxed);
+    let candidate = candidate as u64;
+    let mut observed = exact_load(&POST_MAX_ACTIVE);
     while candidate > observed {
-        match POST_MAX_ACTIVE.compare_exchange_weak(
-            observed,
-            candidate,
-            Ordering::AcqRel,
-            Ordering::Relaxed,
-        ) {
-            Ok(_) => return,
-            Err(next) => observed = next,
+        let compared = exact_compare_exchange(&POST_MAX_ACTIVE, observed, candidate);
+        if compared.previous == observed {
+            return;
+        } else {
+            observed = compared.previous;
         }
     }
 }
 
 fn run_tasks(cpu: usize) {
-    let seed_task = POST_TASK_READY.fetch_add(1, Ordering::AcqRel);
-    let expected_workers = POST_EXPECTED_WORKERS.load(Ordering::Acquire);
-    if seed_task >= expected_workers {
+    let seed_index = exact_fetch_add(&POST_TASK_READY, 1);
+    let expected_workers = exact_load(&POST_EXPECTED_WORKERS);
+    if !scheduler_seed_admitted(seed_index, expected_workers) {
         return;
     }
-    POST_TASK_SUM.fetch_add(seed_task as u64, Ordering::AcqRel);
-    POST_TASK_WORKERS.fetch_or(1_u64 << cpu, Ordering::Release);
-    let active = POST_ACTIVE.fetch_add(1, Ordering::AcqRel) + 1;
-    observe_max(active);
+    let task_base = exact_load(&POST_TASK_BASE);
+    let seed_task = thermite_kernel_policy::kernel_policy_ingress::thermite_scheduler_task_value(
+        task_base, seed_index,
+    );
+    exact_fetch_add(&POST_TASK_SUM, seed_task);
+    exact_fetch_or(&POST_TASK_WORKERS, 1_u64 << cpu);
+    let active = exact_fetch_add(&POST_ACTIVE, 1) + 1;
+    observe_max(active as usize);
     // Every online CPU holds an active scheduler interval until the complete
     // post-firmware set has entered. Unlike the UEFI MP-services probe, these
     // APs are kernel-owned and cannot time out a firmware callback.
-    if seed_task + 1 == expected_workers {
-        POST_TASK_GATE.store(1, Ordering::Release);
+    if scheduler_release_gate(seed_index, expected_workers) {
+        exact_store(&POST_TASK_GATE, 1);
     }
-    while POST_TASK_GATE.load(Ordering::Acquire) == 0 {
+    while exact_load(&POST_TASK_GATE) == 0 {
         core::hint::spin_loop();
     }
     loop {
-        let task = POST_NEXT_TASK.fetch_add(1, Ordering::AcqRel);
-        if task >= POST_TASKS {
+        let task = thermite_kernel_policy::kernel_policy_ingress::thermite_scheduler_claim(
+            &POST_NEXT_TASK,
+        );
+        if !thermite_kernel_policy::kernel_policy_ingress::thermite_scheduler_task_available(task) {
             break;
         }
-        POST_TASK_SUM.fetch_add(task as u64, Ordering::AcqRel);
+        let task_value =
+            thermite_kernel_policy::kernel_policy_ingress::thermite_scheduler_task_value(
+                task_base, task,
+            );
+        exact_fetch_add(&POST_TASK_SUM, task_value);
         for _ in 0..32 {
             core::hint::spin_loop();
         }
     }
-    POST_ACTIVE.fetch_sub(1, Ordering::AcqRel);
+    exact_fetch_sub(&POST_ACTIVE, 1);
 }
 
 fn message_probe(cpu: usize) {
-    while POST_MESSAGE_READY.load(Ordering::Acquire) == 0 {
+    while thermite_kernel_policy::kernel_policy_ingress::thermite_atomic_load(&POST_MESSAGE_READY)
+        == 0
+    {
         core::hint::spin_loop();
     }
-    if POST_MESSAGE_PAYLOAD.load(Ordering::Relaxed) != 0x5245_4c45_4153_4544 {
-        POST_MESSAGE_STALE.fetch_add(1, Ordering::AcqRel);
+    if !thermite_kernel_policy::kernel_policy_ingress::thermite_ipc_cell_accept(
+        cpu as u64,
+        &POST_MESSAGE_PAYLOAD,
+    ) {
+        exact_fetch_add(&POST_MESSAGE_STALE, 1);
     }
-    POST_MESSAGE_MASK.fetch_or(1_u64 << cpu, Ordering::Release);
+    exact_fetch_or(&POST_MESSAGE_MASK, 1_u64 << cpu);
 }
 
 fn lock_once(cpu: usize) {
-    let ticket = POST_LOCK_NEXT.fetch_add(1, Ordering::AcqRel);
-    while POST_LOCK_OWNER.load(Ordering::Acquire) != ticket {
+    let ticket =
+        thermite_kernel_policy::kernel_policy_ingress::thermite_ticket_issue(&POST_LOCK_NEXT);
+    while !thermite_kernel_policy::kernel_policy_ingress::thermite_ticket_lock_cell_can_enter(
+        &POST_LOCK_OWNER,
+        ticket,
+    ) {
         core::hint::spin_loop();
     }
-    POST_LOCK_ENTRIES.fetch_add(1, Ordering::Relaxed);
-    POST_LOCK_OWNER.store(ticket + 1, Ordering::Release);
-    let _ = POST_ONCE.compare_exchange(0, cpu + 1, Ordering::AcqRel, Ordering::Acquire);
+    exact_fetch_add(&POST_LOCK_ENTRIES, 1);
+    thermite_kernel_policy::kernel_policy_ingress::thermite_ticket_lock_cell_release(
+        &POST_LOCK_OWNER,
+        ticket,
+    );
+    exact_claim_once(&POST_ONCE, (cpu + 1) as u64);
 }
 
-fn shootdown_probe(cpu: usize, expected: u64, mask: &AtomicU64) {
+fn shootdown_probe(cpu: usize, expected: u64, mask: &ExactAtomicU64) {
     // SAFETY: SHOOTDOWN_ADDRESS is a profile-owned test mapping present in the
     // active page table and points to one immutable test word in this phase.
     let observed = unsafe { ptr::read_volatile(SHOOTDOWN_ADDRESS as *const u64) };
-    POST_TLB_OBSERVED[cpu].store(observed, Ordering::Release);
+    exact_store(&POST_TLB_OBSERVED[cpu], observed);
     if observed != expected {
-        POST_TLB_STALE.fetch_add(1, Ordering::AcqRel);
+        exact_fetch_add(&POST_TLB_STALE, 1);
     }
-    mask.fetch_or(1_u64 << cpu, Ordering::Release);
+    exact_fetch_or(mask, 1_u64 << cpu);
 }
 
 #[no_mangle]
@@ -958,19 +1017,19 @@ extern "C" fn thermite_ap_rust_entry(apic_id: usize) -> ! {
         asm!("sti", options(nomem, nostack));
     }
     if let Ok(cpu_bit) = bit(apic_id) {
-        POST_ONLINE_MASK.fetch_or(cpu_bit, Ordering::Release);
+        exact_fetch_or(&POST_ONLINE_MASK, cpu_bit);
     }
-    POST_READY.fetch_add(1, Ordering::AcqRel);
-    while POST_PHASE.load(Ordering::Acquire) < 1 {
+    exact_fetch_add(&POST_READY, 1);
+    while exact_load(&POST_PHASE) < 1 {
         core::hint::spin_loop();
     }
     message_probe(apic_id);
     run_tasks(apic_id);
     lock_once(apic_id);
     shootdown_probe(apic_id, 0xaaaa_5555_1111_2222, &POST_TLB_PRE_MASK);
-    POST_TASK_DONE.fetch_add(1, Ordering::Release);
+    exact_fetch_add(&POST_TASK_DONE, 1);
 
-    while POST_PHASE.load(Ordering::Acquire) < 2 {
+    while exact_load(&POST_PHASE) < 2 {
         core::hint::spin_loop();
     }
     shootdown_probe(apic_id, 0xbbbb_6666_3333_4444, &POST_TLB_POST_MASK);
@@ -982,7 +1041,7 @@ extern "C" fn thermite_ap_rust_entry(apic_id: usize) -> ! {
     }
 }
 
-unsafe fn setup_page_tables() -> Result<u64, PostFirmwareError> {
+unsafe fn setup_page_tables(user_base: u64) -> Result<u64, PostFirmwareError> {
     // SAFETY: only the BSP can reach setup and APs have not been released.
     let (
         pml4,
@@ -1013,57 +1072,44 @@ unsafe fn setup_page_tables() -> Result<u64, PostFirmwareError> {
     unsafe {
         ptr::write(
             pml4.add(0),
-            identity_pdpt as u64 | PAGE_PRESENT | PAGE_WRITE,
+            mapping_kernel_table_entry(identity_pdpt as u64),
         );
         for pdpt_index in 0..4 {
             let pd = ptr::addr_of_mut!((*identity_pds.add(pdpt_index)).0).cast::<u64>();
             ptr::write(
                 identity_pdpt.add(pdpt_index),
-                pd as u64 | PAGE_PRESENT | PAGE_WRITE,
+                mapping_kernel_table_entry(pd as u64),
             );
             for entry in 0..512 {
-                let physical = ((pdpt_index * 512 + entry) as u64) << 21;
-                ptr::write(
-                    pd.add(entry),
-                    physical | PAGE_PRESENT | PAGE_WRITE | PAGE_HUGE,
-                );
+                let physical = mapping_identity_physical(pdpt_index as u64, entry as u64);
+                ptr::write(pd.add(entry), mapping_identity_huge_entry(physical));
             }
         }
 
         ptr::write(
-            pml4.add(((USER_BASE >> 39) & 0x1ff) as usize),
-            user_pdpt as u64 | PAGE_PRESENT | PAGE_WRITE | PAGE_USER,
+            pml4.add(((user_base >> 39) & 0x1ff) as usize),
+            mapping_user_table_entry(user_pdpt as u64),
         );
-        ptr::write(
-            user_pdpt,
-            user_pd as u64 | PAGE_PRESENT | PAGE_WRITE | PAGE_USER,
-        );
-        ptr::write(
-            user_pd,
-            user_pt as u64 | PAGE_PRESENT | PAGE_WRITE | PAGE_USER,
-        );
+        ptr::write(user_pdpt, mapping_user_table_entry(user_pd as u64));
+        ptr::write(user_pd, mapping_user_table_entry(user_pt as u64));
         ptr::write(
             user_pt,
-            ptr::addr_of!(USER_CODE_PAGE.0) as u64 | PAGE_PRESENT | PAGE_USER,
+            mapping_user_code_entry(ptr::addr_of!(USER_CODE_PAGE.0) as u64),
         );
         ptr::write(
             user_pt.add(1),
-            ptr::addr_of!(USER_STACK_PAGE.0) as u64
-                | PAGE_PRESENT
-                | PAGE_WRITE
-                | PAGE_USER
-                | PAGE_NX,
+            mapping_user_stack_entry(ptr::addr_of!(USER_STACK_PAGE.0) as u64),
         );
 
         ptr::write(
             pml4.add(((SHOOTDOWN_ADDRESS >> 39) & 0x1ff) as usize),
-            shoot_pdpt as u64 | PAGE_PRESENT | PAGE_WRITE,
+            mapping_kernel_table_entry(shoot_pdpt as u64),
         );
-        ptr::write(shoot_pdpt, shoot_pd as u64 | PAGE_PRESENT | PAGE_WRITE);
-        ptr::write(shoot_pd, shoot_pt as u64 | PAGE_PRESENT | PAGE_WRITE);
+        ptr::write(shoot_pdpt, mapping_kernel_table_entry(shoot_pd as u64));
+        ptr::write(shoot_pd, mapping_kernel_table_entry(shoot_pt as u64));
         ptr::write(
             shoot_pt,
-            ptr::addr_of!(TEST_PAGE_A.0) as u64 | PAGE_PRESENT | PAGE_WRITE | PAGE_NX,
+            mapping_kernel_data_entry(ptr::addr_of!(TEST_PAGE_A.0) as u64),
         );
 
         ptr::write_unaligned(
@@ -1078,23 +1124,36 @@ unsafe fn setup_page_tables() -> Result<u64, PostFirmwareError> {
     Ok(pml4 as u64)
 }
 
-unsafe fn setup_user_code() {
-    let mut bytes = [0_u8; 32];
-    bytes[0..5].copy_from_slice(&[0xb8, 0x34, 0x12, 0, 0]);
-    bytes[5..7].copy_from_slice(&[0x0f, 0x05]);
-    bytes[7..9].copy_from_slice(&[0x48, 0xa1]);
-    bytes[9..17].copy_from_slice(&USER_FAULT_ADDRESS.to_le_bytes());
-    bytes[17..22].copy_from_slice(&[0xb8, 0x78, 0x56, 0, 0]);
-    bytes[22..24].copy_from_slice(&[0xcd, 0x81]);
-    bytes[24..27].copy_from_slice(&[0xf4, 0xeb, 0xfd]);
-    // SAFETY: the user page is not reachable until CR3 and the IDT are ready.
-    unsafe {
-        ptr::copy_nonoverlapping(
-            bytes.as_ptr(),
-            ptr::addr_of_mut!(USER_CODE_PAGE.0).cast::<u8>(),
-            bytes.len(),
-        );
+unsafe fn setup_user_code(fault_address: u64, syscall_value: u64, finish_value: u64) {
+    // SAFETY: the BSP uniquely owns the page before it becomes reachable from
+    // CR3. Raw provenance creation stays in the TPL; every bounded byte store
+    // is performed by the generated Thermite mutable-slice operation.
+    let bytes = unsafe {
+        core::slice::from_raw_parts_mut(ptr::addr_of_mut!(USER_CODE_PAGE.0).cast::<u8>(), 32)
+    };
+    let syscall_bytes = syscall_value.to_le_bytes();
+    let fault_bytes = fault_address.to_le_bytes();
+    let finish_bytes = finish_value.to_le_bytes();
+    service_write_user_byte(bytes, 0, 0xb8);
+    for (offset, byte) in syscall_bytes[..4].iter().enumerate() {
+        service_write_user_byte(bytes, 1 + offset, *byte);
     }
+    service_write_user_byte(bytes, 5, 0x0f);
+    service_write_user_byte(bytes, 6, 0x05);
+    service_write_user_byte(bytes, 7, 0x48);
+    service_write_user_byte(bytes, 8, 0xa1);
+    for (offset, byte) in fault_bytes.iter().enumerate() {
+        service_write_user_byte(bytes, 9 + offset, *byte);
+    }
+    service_write_user_byte(bytes, 17, 0xb8);
+    for (offset, byte) in finish_bytes[..4].iter().enumerate() {
+        service_write_user_byte(bytes, 18 + offset, *byte);
+    }
+    service_write_user_byte(bytes, 22, 0xcd);
+    service_write_user_byte(bytes, 23, 0x81);
+    service_write_user_byte(bytes, 24, 0xf4);
+    service_write_user_byte(bytes, 25, 0xeb);
+    service_write_user_byte(bytes, 26, 0xfd);
 }
 
 unsafe fn setup_descriptor_tables() {
@@ -1279,14 +1338,14 @@ unsafe fn reserve_boot_heap(boot_services: *mut BootServices) -> Result<usize, P
     if status != SUCCESS || address == 0 || address > u64::from(u32::MAX) || address & 0xfff != 0 {
         return Err(PostFirmwareError::Heap(status));
     }
-    HEAP_BASE.store(address as usize, Ordering::Release);
-    HEAP_BITMAP.store(0, Ordering::Release);
-    HEAP_ALLOCATIONS.store(0, Ordering::Release);
+    exact_store(&HEAP_BASE, address);
+    exact_store(&HEAP_BITMAP, 0);
+    exact_store(&HEAP_ALLOCATIONS, 0);
     Ok(address as usize)
 }
 
 fn allocator_probe() -> Result<(usize, usize, usize), PostFirmwareError> {
-    let heap_base = HEAP_BASE.load(Ordering::Acquire);
+    let heap_base = exact_load(&HEAP_BASE) as usize;
     if heap_base == 0 {
         return Err(PostFirmwareError::Heap(usize::MAX));
     }
@@ -1294,14 +1353,7 @@ fn allocator_probe() -> Result<(usize, usize, usize), PostFirmwareError> {
     let mut second = Box::new([0_u64; 128]);
     let first_address = first.as_ptr() as usize;
     let second_address = second.as_ptr() as usize;
-    if first_address < heap_base
-        || first_address >= heap_base + HEAP_BYTES
-        || second_address < heap_base
-        || second_address >= heap_base + HEAP_BYTES
-        || first_address == second_address
-        || first.iter().any(|value| *value != 0)
-        || second.iter().any(|value| *value != 0)
-    {
+    if first.iter().any(|value| *value != 0) || second.iter().any(|value| *value != 0) {
         return Err(PostFirmwareError::Heap(usize::MAX));
     }
     first[0] = 0x5448_4552_4d49_5445;
@@ -1315,7 +1367,13 @@ fn allocator_probe() -> Result<(usize, usize, usize), PostFirmwareError> {
     }
     drop(first);
     drop(second);
-    if HEAP_BITMAP.load(Ordering::Acquire) != 0 {
+    if !thermite_kernel_policy::kernel_policy_ingress::thermite_allocator_runtime_accept(
+        heap_base as u64,
+        first_address as u64,
+        second_address as u64,
+        HEAP_BYTES as u64,
+        exact_load(&HEAP_BITMAP),
+    ) {
         return Err(PostFirmwareError::Heap(usize::MAX));
     }
     let reclaimed = Box::new([0_u64; 128]);
@@ -1323,7 +1381,7 @@ fn allocator_probe() -> Result<(usize, usize, usize), PostFirmwareError> {
         return Err(PostFirmwareError::Heap(usize::MAX));
     }
     drop(reclaimed);
-    if HEAP_BITMAP.load(Ordering::Acquire) != 0 {
+    if exact_load(&HEAP_BITMAP) != 0 {
         return Err(PostFirmwareError::Heap(usize::MAX));
     }
     let oversized_layout = Layout::from_size_align(HEAP_BYTES + 4096, 4096)
@@ -1332,172 +1390,10 @@ fn allocator_probe() -> Result<(usize, usize, usize), PostFirmwareError> {
     // contract. The requested 65-page run exceeds its 64-page arena, so it
     // must return null without changing allocator ownership state.
     let oversized = unsafe { KERNEL_ALLOCATOR.alloc(oversized_layout) };
-    if !oversized.is_null() || HEAP_BITMAP.load(Ordering::Acquire) != 0 {
+    if !oversized.is_null() || exact_load(&HEAP_BITMAP) != 0 {
         return Err(PostFirmwareError::Heap(usize::MAX));
     }
-    Ok((HEAP_BYTES, HEAP_ALLOCATIONS.load(Ordering::Acquire), 1))
-}
-
-fn kernel_model_probe(online: usize) -> Result<usize, PostFirmwareError> {
-    use thermite_kernel::{
-        Action, ActionExecutor, AtomicMemoryModel, AtomicOrdering, CapabilityKind,
-        CapabilityLedger, DmaDirection, DmaPin, DmaState, EventKind, EventSequencer,
-        FrameAllocator, IommuDomain, IommuMode, KernelPolicy, Rights, Scheduler,
-        X86_64_PC_UEFI_SMP_V1, X86_64_PC_UEFI_SMP_V1_OPERATION_COUNT,
-    };
-
-    {
-        let cpus = thermite_kernel::CpuSet::from_ids((0..online).map(|cpu| cpu as u16));
-        let mut ingress = EventSequencer::with_topology(cpus.clone(), 8);
-        let mut policy = KernelPolicy::default();
-        for cpu in cpus.iter() {
-            policy.add_cpu(cpu).map_err(|_| PostFirmwareError::Model)?;
-        }
-        let boot = ingress
-            .ingress(0, EventKind::Boot, None)
-            .map_err(|_| PostFirmwareError::Model)?;
-        let actions = policy.step(boot).map_err(|_| PostFirmwareError::Model)?;
-        if actions.len() != 1
-            || !matches!(
-                actions.iter().next(),
-                Some(Action::ArmTimer { deadline: 1 })
-            )
-        {
-            return Err(PostFirmwareError::Model);
-        }
-        let mut ledger = CapabilityLedger::new();
-        let clock = ledger
-            .mint_root(CapabilityKind::Clock, 1, 0, Rights::CONTROL, 0, 0)
-            .map_err(|_| PostFirmwareError::Model)?;
-        let authorized = ActionExecutor::new()
-            .authorize(&ledger, 0, &clock, Action::ArmTimer { deadline: 1 })
-            .map_err(|_| PostFirmwareError::Model)?;
-        let issued = ingress
-            .issue(authorized.action)
-            .map_err(|_| PostFirmwareError::Model)?;
-        let (completion, event) = ingress
-            .complete(&issued, 0, Ok(()))
-            .map_err(|_| PostFirmwareError::Model)?;
-        if completion.action != issued.id
-            || event.correlation != Some(issued.id)
-            || event.kind != EventKind::Timer
-        {
-            return Err(PostFirmwareError::Model);
-        }
-        let mut scheduler = Scheduler::with_online_cpus(&cpus);
-        scheduler
-            .create_task(1, 0)
-            .map_err(|_| PostFirmwareError::Model)?;
-        if scheduler
-            .dispatch(0)
-            .map_err(|_| PostFirmwareError::Model)?
-            != Some(1)
-            || !scheduler.invariant_holds()
-        {
-            return Err(PostFirmwareError::Model);
-        }
-    }
-    {
-        let mut atomics = AtomicMemoryModel::new();
-        atomics
-            .register(1, 0)
-            .map_err(|_| PostFirmwareError::Model)?;
-        let release = atomics
-            .store(0, 1, 7, AtomicOrdering::Release)
-            .map_err(|_| PostFirmwareError::Model)?;
-        let (value, acquire) = atomics
-            .load(1, 1, AtomicOrdering::Acquire)
-            .map_err(|_| PostFirmwareError::Model)?;
-        let observed = atomics
-            .events()
-            .iter()
-            .find(|event| event.id == acquire)
-            .ok_or(PostFirmwareError::Model)?;
-        if value != 7 || observed.happens_after_release != Some(release) {
-            return Err(PostFirmwareError::Model);
-        }
-    }
-    {
-        let mut frames = FrameAllocator::new();
-        frames
-            .add_region(0x20_0000, 8)
-            .map_err(|_| PostFirmwareError::Model)?;
-        let run = frames
-            .allocate(8, 1)
-            .map_err(|_| PostFirmwareError::Model)?;
-        let (left, right) = frames
-            .split_allocated(run, 3)
-            .map_err(|_| PostFirmwareError::Model)?;
-        let joined = frames
-            .join_allocated(left, right)
-            .map_err(|_| PostFirmwareError::Model)?;
-        let lent = frames
-            .lend(joined, 9)
-            .map_err(|_| PostFirmwareError::Model)?;
-        let reclaimed = frames
-            .reclaim(lent, 9)
-            .map_err(|_| PostFirmwareError::Model)?;
-        frames
-            .release(reclaimed)
-            .map_err(|_| PostFirmwareError::Model)?;
-    }
-    {
-        let mut ledger = CapabilityLedger::new();
-        let region = ledger
-            .mint_root(
-                CapabilityKind::Dma,
-                1,
-                0,
-                Rights::READ.union(Rights::WRITE),
-                0x40_0000,
-                4096,
-            )
-            .map_err(|_| PostFirmwareError::Model)?;
-        let domain = ledger
-            .mint_root(
-                CapabilityKind::IommuDomain,
-                7,
-                0,
-                Rights::MAP,
-                0x1_0000_0000,
-                0x10_000,
-            )
-            .map_err(|_| PostFirmwareError::Model)?;
-        let mut dma = DmaState::new();
-        dma.register_domain(IommuDomain {
-            id: 7,
-            device: 4,
-            aperture_base: 0x1_0000_0000,
-            aperture_len: 0x10_000,
-            mode: IommuMode::Present,
-        })
-        .map_err(|_| PostFirmwareError::Model)?;
-        let mapping = dma
-            .pin(
-                &region,
-                DmaPin {
-                    slot: 2,
-                    device: 4,
-                    domain: 7,
-                    base: 0x40_0000,
-                    len: 4096,
-                    direction: DmaDirection::Bidirectional,
-                },
-            )
-            .map_err(|_| PostFirmwareError::Model)?;
-        dma.map_domain(2, &mapping, Some(&domain), 0x1_0000_0000)
-            .map_err(|_| PostFirmwareError::Model)?;
-        dma.unmap_domain(2, &mapping)
-            .map_err(|_| PostFirmwareError::Model)?;
-        dma.unpin(2, &mapping)
-            .map_err(|_| PostFirmwareError::Model)?;
-    }
-    if HEAP_BITMAP.load(Ordering::Acquire) != 0
-        || X86_64_PC_UEFI_SMP_V1.len() != X86_64_PC_UEFI_SMP_V1_OPERATION_COUNT
-    {
-        return Err(PostFirmwareError::Model);
-    }
-    Ok(X86_64_PC_UEFI_SMP_V1.len())
+    Ok((HEAP_BYTES, exact_load(&HEAP_ALLOCATIONS) as usize, 1))
 }
 
 unsafe fn exit_boot_services(
@@ -1536,15 +1432,25 @@ unsafe fn exit_boot_services(
 }
 
 fn expected_mask(apic_ids: &[u32]) -> Result<u64, PostFirmwareError> {
-    let mut mask = 0_u64;
-    for &apic in apic_ids {
-        let member = bit(apic as usize)?;
-        if mask & member != 0 {
-            return Err(PostFirmwareError::InvalidCpuId);
-        }
-        mask |= member;
+    if apic_ids.is_empty() || apic_ids.len() > 8 {
+        return Err(PostFirmwareError::InvalidCpuId);
     }
-    Ok(mask)
+    let mask = ap_expected_mask(apic_ids);
+    if mask == 0 {
+        Err(PostFirmwareError::InvalidCpuId)
+    } else {
+        Ok(mask)
+    }
+}
+
+fn wait_for_exact_mask(value: &ExactAtomicU64, wanted: u64) -> bool {
+    for _ in 0..50_000_000 {
+        if exact_load(value) & wanted == wanted {
+            return true;
+        }
+        core::hint::spin_loop();
+    }
+    false
 }
 
 fn wait_for_mask(value: &AtomicU64, wanted: u64) -> bool {
@@ -1557,9 +1463,9 @@ fn wait_for_mask(value: &AtomicU64, wanted: u64) -> bool {
     false
 }
 
-fn wait_for_count(value: &AtomicUsize, wanted: usize) -> bool {
+fn wait_for_exact_count(value: &ExactAtomicU64, wanted: u64) -> bool {
     for _ in 0..50_000_000 {
-        if value.load(Ordering::Acquire) >= wanted {
+        if exact_load(value) >= wanted {
             return true;
         }
         core::hint::spin_loop();
@@ -1715,11 +1621,12 @@ unsafe fn fw_cfg_power_action() -> Result<PowerAction, PostFirmwareError> {
 }
 
 unsafe fn pci_read32(bus: u8, device: u8, function: u8, offset: u8) -> u32 {
-    let address = 0x8000_0000_u32
-        | (u32::from(bus) << 16)
-        | (u32::from(device) << 11)
-        | (u32::from(function) << 8)
-        | u32::from(offset & 0xfc);
+    let address = pci_config_address(
+        u64::from(bus),
+        u64::from(device),
+        u64::from(function),
+        u64::from(offset),
+    ) as u32;
     // SAFETY: 0xcf8/0xcfc are the profile-owned PCI configuration mechanism.
     unsafe {
         pio_write32(0xcf8, address);
@@ -1728,11 +1635,12 @@ unsafe fn pci_read32(bus: u8, device: u8, function: u8, offset: u8) -> u32 {
 }
 
 unsafe fn pci_write32(bus: u8, device: u8, function: u8, offset: u8, value: u32) {
-    let address = 0x8000_0000_u32
-        | (u32::from(bus) << 16)
-        | (u32::from(device) << 11)
-        | (u32::from(function) << 8)
-        | u32::from(offset & 0xfc);
+    let address = pci_config_address(
+        u64::from(bus),
+        u64::from(device),
+        u64::from(function),
+        u64::from(offset),
+    ) as u32;
     // SAFETY: 0xcf8/0xcfc are the profile-owned PCI configuration mechanism.
     unsafe {
         pio_write32(0xcf8, address);
@@ -1746,21 +1654,25 @@ unsafe fn find_legacy_virtio_block() -> Result<(u8, u8, u8, u16), PostFirmwareEr
             // The frozen QEMU device is function zero.  Header inspection keeps
             // this bounded inventory extensible without probing absent functions.
             let identity = unsafe { pci_read32(bus, device, 0, 0) };
-            if identity & 0xffff != 0x1af4 {
-                continue;
-            }
-            let device_id = identity >> 16;
-            if device_id != 0x1001 && device_id != 0x1042 {
+            if !pci_virtio_block_identity(u64::from(identity)) {
                 continue;
             }
             let bar0 = unsafe { pci_read32(bus, device, 0, 0x10) };
-            if bar0 & 1 == 0 || bar0 & 0xffff_0000 != 0 {
+            if !pci_legacy_io_bar_valid(u64::from(bar0)) {
                 return Err(PostFirmwareError::Dma);
             }
-            let base = (bar0 & 0xfffc) as u16;
+            let base = pci_legacy_io_base(u64::from(bar0)) as u16;
             let command = unsafe { pci_read32(bus, device, 0, 0x04) };
             // I/O-space decode and bus mastering are the only rights granted.
-            unsafe { pci_write32(bus, device, 0, 0x04, command | 0x0000_0005) };
+            unsafe {
+                pci_write32(
+                    bus,
+                    device,
+                    0,
+                    0x04,
+                    pci_enable_io_bus_master(u64::from(command)) as u32,
+                )
+            };
             return Ok((bus, device, 0, base));
         }
     }
@@ -1769,26 +1681,26 @@ unsafe fn find_legacy_virtio_block() -> Result<(u8, u8, u8, u16), PostFirmwareEr
 
 unsafe fn virtio_block_dma_probe() -> Result<(usize, u64), PostFirmwareError> {
     let (_bus, _device, _function, io) = unsafe { find_legacy_virtio_block()? };
-    let host_features = io.checked_add(0).ok_or(PostFirmwareError::Dma)?;
-    let guest_features = io.checked_add(4).ok_or(PostFirmwareError::Dma)?;
-    let queue_pfn = io.checked_add(8).ok_or(PostFirmwareError::Dma)?;
-    let queue_size_port = io.checked_add(12).ok_or(PostFirmwareError::Dma)?;
-    let queue_select = io.checked_add(14).ok_or(PostFirmwareError::Dma)?;
-    let queue_notify = io.checked_add(16).ok_or(PostFirmwareError::Dma)?;
-    let device_status = io.checked_add(18).ok_or(PostFirmwareError::Dma)?;
+    let host_features = dma_register_port(u64::from(io), 0) as u16;
+    let guest_features = dma_register_port(u64::from(io), 4) as u16;
+    let queue_pfn_port = dma_register_port(u64::from(io), 8) as u16;
+    let queue_size_port = dma_register_port(u64::from(io), 12) as u16;
+    let queue_select = dma_register_port(u64::from(io), 14) as u16;
+    let queue_notify = dma_register_port(u64::from(io), 16) as u16;
+    let device_status = dma_register_port(u64::from(io), 18) as u16;
 
     // SAFETY: these ports are within BAR0 and the device is reset before queue
     // configuration.  Feature zero is sufficient for the legacy read request.
     unsafe {
-        pio_write8(device_status, 0);
-        pio_write8(device_status, 1);
-        pio_write8(device_status, 3);
+        pio_write8(device_status, dma_device_status(0) as u8);
+        pio_write8(device_status, dma_device_status(1) as u8);
+        pio_write8(device_status, dma_device_status(2) as u8);
         let _available_features = pio_read32(host_features);
         pio_write32(guest_features, 0);
         pio_write16(queue_select, 0);
     }
-    let queue_size = unsafe { pio_read16(queue_size_port) } as usize;
-    if !(3..=256).contains(&queue_size) {
+    let queue_size = u64::from(unsafe { pio_read16(queue_size_port) });
+    if !dma_queue_size_valid(queue_size) {
         return Err(PostFirmwareError::Dma);
     }
 
@@ -1804,10 +1716,9 @@ unsafe fn virtio_block_dma_probe() -> Result<(usize, u64), PostFirmwareError> {
     if queue as u64 > u64::from(u32::MAX) || request as u64 > u64::from(u32::MAX) {
         return Err(PostFirmwareError::Dma);
     }
-    let descriptor_bytes = queue_size * core::mem::size_of::<VirtqDescriptor>();
-    let available_offset = descriptor_bytes;
-    let used_offset = (available_offset + 6 + queue_size * 2 + 4095) & !4095;
-    if used_offset + 6 + queue_size * 8 > 16 * 1024 {
+    let available_offset = dma_descriptor_bytes(queue_size) as usize;
+    let used_offset = dma_used_offset(queue_size) as usize;
+    if !dma_queue_layout_valid(queue_size, (16 * 1024) as u64) {
         return Err(PostFirmwareError::Dma);
     }
     unsafe {
@@ -1824,27 +1735,27 @@ unsafe fn virtio_block_dma_probe() -> Result<(usize, u64), PostFirmwareError> {
             descriptors.add(0),
             VirtqDescriptor {
                 address: ptr::addr_of!((*request).request_type) as u64,
-                length: 16,
-                flags: 1,
-                next: 1,
+                length: dma_descriptor_length(0) as u32,
+                flags: dma_descriptor_flags(0) as u16,
+                next: dma_descriptor_next(0) as u16,
             },
         );
         ptr::write_volatile(
             descriptors.add(1),
             VirtqDescriptor {
                 address: ptr::addr_of!((*request).data) as u64,
-                length: 512,
-                flags: 1 | 2,
-                next: 2,
+                length: dma_descriptor_length(1) as u32,
+                flags: dma_descriptor_flags(1) as u16,
+                next: dma_descriptor_next(1) as u16,
             },
         );
         ptr::write_volatile(
             descriptors.add(2),
             VirtqDescriptor {
                 address: ptr::addr_of!((*request).status) as u64,
-                length: 1,
-                flags: 2,
-                next: 0,
+                length: dma_descriptor_length(2) as u32,
+                flags: dma_descriptor_flags(2) as u16,
+                next: dma_descriptor_next(2) as u16,
             },
         );
         let available = queue.add(available_offset);
@@ -1852,15 +1763,18 @@ unsafe fn virtio_block_dma_probe() -> Result<(usize, u64), PostFirmwareError> {
         ptr::write_volatile(available.cast::<u16>().add(2), 0);
         ptr::write_volatile(available.cast::<u16>().add(4), 0);
 
-        pio_write32(queue_pfn, (queue as u32) >> 12);
-        pio_write8(device_status, 7);
-        if pio_read8(device_status) & 7 != 7 {
+        pio_write32(queue_pfn_port, dma_queue_pfn(queue as u64) as u32);
+        pio_write8(device_status, dma_device_status(3) as u8);
+        if !dma_device_ready(u64::from(pio_read8(device_status))) {
             return Err(PostFirmwareError::Dma);
         }
         core::sync::atomic::fence(Ordering::SeqCst);
         asm!("mfence", options(nostack));
         // Ownership passes from CPU to device when avail.idx becomes visible.
-        ptr::write_volatile(available.cast::<u16>().add(1), 1);
+        ptr::write_volatile(
+            available.cast::<u16>().add(1),
+            dma_publish_available(0) as u16,
+        );
         pio_write16(queue_notify, 0);
     }
 
@@ -1876,12 +1790,21 @@ unsafe fn virtio_block_dma_probe() -> Result<(usize, u64), PostFirmwareError> {
     }
     core::sync::atomic::fence(Ordering::SeqCst);
     // SAFETY: used.idx returned ownership of the request and data buffers.
-    let valid = unsafe {
-        complete
-            && ptr::read_volatile(ptr::addr_of!((*request).status)) == 0
-            && ptr::read_volatile(ptr::addr_of!((*request).data).cast::<u8>().add(510)) == 0x55
-            && ptr::read_volatile(ptr::addr_of!((*request).data).cast::<u8>().add(511)) == 0xaa
+    let (status, signature_low, signature_high) = unsafe {
+        (
+            ptr::read_volatile(ptr::addr_of!((*request).status)),
+            ptr::read_volatile(ptr::addr_of!((*request).data).cast::<u8>().add(510)),
+            ptr::read_volatile(ptr::addr_of!((*request).data).cast::<u8>().add(511)),
+        )
     };
+    let valid = thermite_kernel_policy::kernel_policy_ingress::thermite_dma_runtime_complete(
+        complete,
+        u64::from(status),
+        u64::from(signature_low),
+        u64::from(signature_high),
+        512,
+        1,
+    );
     if !valid {
         return Err(PostFirmwareError::Dma);
     }
@@ -1928,7 +1851,7 @@ fn entropy_probe() -> Result<usize, PostFirmwareError> {
     Ok(32)
 }
 
-unsafe fn run_user_mode() -> Result<(u64, u64), PostFirmwareError> {
+unsafe fn run_user_mode(user_base: u64, user_stack: u64) -> Result<(u64, u64), PostFirmwareError> {
     USER_SYSCALLS.store(0, Ordering::Release);
     USER_FAULTS.store(0, Ordering::Release);
     USER_FINISHED.store(0, Ordering::Release);
@@ -1938,16 +1861,17 @@ unsafe fn run_user_mode() -> Result<(u64, u64), PostFirmwareError> {
     // SAFETY: USER_BASE and USER_STACK are user-accessible mappings, the TSS
     // supplies a bounded ring-0 stack, and both software-interrupt gates carry
     // DPL 3.  The completion gate returns to this exact call frame.
-    unsafe { thermite_enter_user(USER_BASE, USER_STACK + 4096 - 16) };
+    unsafe { thermite_enter_user(user_base, service_user_stack_pointer(user_stack)) };
     let syscalls = USER_SYSCALLS.load(Ordering::Acquire);
     let faults = USER_FAULTS.load(Ordering::Acquire);
-    if syscalls != 1
-        || faults != 1
-        || USER_FINISHED.load(Ordering::Acquire) != 1
-        || USER_SYSCALL_VALUE.load(Ordering::Acquire) != 0x1234
-        || USER_FINISH_VALUE.load(Ordering::Acquire) != 0x5678
-        || KERNEL_FAULTS.load(Ordering::Acquire) != 0
-    {
+    if !thermite_kernel_policy::kernel_policy_ingress::thermite_service_runtime_complete(
+        syscalls,
+        faults,
+        USER_FINISHED.load(Ordering::Acquire),
+        USER_SYSCALL_VALUE.load(Ordering::Acquire),
+        USER_FINISH_VALUE.load(Ordering::Acquire),
+        KERNEL_FAULTS.load(Ordering::Acquire),
+    ) {
         return Err(PostFirmwareError::UserMode);
     }
     Ok((syscalls, faults))
@@ -1971,35 +1895,63 @@ pub unsafe fn run(
     // set after one named AP startup failure.
     let failed_apic = unsafe { fw_cfg_failure_apic()? };
     let power_action = unsafe { fw_cfg_power_action()? };
-    if failed_apic == Some(bsp_apic_id)
-        || failed_apic.is_some_and(|failed| !apic_ids.contains(&failed))
-    {
-        return Err(PostFirmwareError::Injection);
-    }
+    let bsp_failed = failed_apic == Some(bsp_apic_id);
+    let failed_outside_set = failed_apic.is_some_and(|failed| !apic_ids.contains(&failed));
+    let discovered_count = apic_ids.len();
     let mut effective_ids = [0_u32; MAX_CPUS];
     let mut effective_count = 0;
     for &apic_id in apic_ids {
-        if Some(apic_id) != failed_apic {
+        if ap_should_start(
+            apic_id as u64,
+            failed_apic.is_some(),
+            u64::from(failed_apic.unwrap_or(0)),
+        ) {
             effective_ids[effective_count] = apic_id;
             effective_count += 1;
         }
     }
-    if effective_count == 0 {
+    if !thermite_kernel_policy::kernel_policy_ingress::thermite_ap_failure_selection_valid(
+        discovered_count as u64,
+        bsp_failed,
+        failed_outside_set,
+        effective_count as u64,
+    ) {
         return Err(PostFirmwareError::Injection);
     }
     let apic_ids = &effective_ids[..effective_count];
+    let thermite_policy_signature = crate::thermite_policy_execute(apic_ids.len() as u64);
+    let thermite_policy_flags = signature_policy_flags(thermite_policy_signature);
+    if thermite_policy_flags & !POLICY_KNOWN != 0 {
+        return Err(PostFirmwareError::Scheduler);
+    }
+    let thermite_task_base = signature_task_base(thermite_policy_signature, apic_ids.len() as u64);
+    if thermite_task_base == 0 {
+        return Err(PostFirmwareError::Scheduler);
+    }
+    let thermite_task_base = thermite_task_base as usize;
     let full_mask = expected_mask(apic_ids)?;
     let bsp_bit = bit(bsp_apic_id as usize)?;
     // SAFETY: these architectural reads only validate the frozen xAPIC profile.
     let apic = unsafe { rdmsr(APIC_BASE_MSR) };
-    if apic & APIC_ENABLE == 0 || apic & X2APIC_ENABLE != 0 {
+    if !apic_profile_supported(apic) {
         return Err(PostFirmwareError::UnsupportedApic);
     }
 
+    if thermite_policy_flags & (POLICY_ALLOCATOR | POLICY_MAPPING)
+        != POLICY_ALLOCATOR | POLICY_MAPPING
+    {
+        return Err(PostFirmwareError::Memory);
+    }
+    let user_base = service_user_base();
+    let user_stack = service_user_stack(user_base);
+    let user_fault_address = service_user_fault_address(user_base);
+    let user_syscall_value = service_syscall_value();
+    let user_finish_value = service_finish_value();
+    USER_EXPECTED_FAULT_ADDRESS.store(user_fault_address, Ordering::Release);
     // SAFETY: initialization occurs on the BSP before AP release.
-    let cr3 = unsafe { setup_page_tables()? };
+    let cr3 = unsafe { setup_page_tables(user_base)? };
     unsafe {
-        setup_user_code();
+        setup_user_code(user_fault_address, user_syscall_value, user_finish_value);
         setup_descriptor_tables();
         install_trampoline(boot_services, cr3, apic_ids)?;
         reserve_boot_heap(boot_services)?;
@@ -2037,12 +1989,13 @@ pub unsafe fn run(
 
     let (heap_bytes, heap_allocations, heap_oom_rejected) = allocator_probe()?;
     serial.bytes(b"THERMITE_POST_STAGE allocator=1\n");
-    let model_registry_entries = kernel_model_probe(apic_ids.len())?;
-    serial.bytes(b"THERMITE_POST_STAGE verified_model=1\n");
     let device_negative_checks = unsafe { volatile_device_probe()? };
     serial.bytes(b"THERMITE_POST_STAGE device_widths=1\n");
 
-    POST_ONLINE_MASK.store(bsp_bit, Ordering::Release);
+    exact_store(&POST_ONLINE_MASK, bsp_bit);
+    if thermite_policy_flags & POLICY_AP_LIFECYCLE == 0 {
+        return Err(PostFirmwareError::ApStartup);
+    }
     for &apic_id in apic_ids {
         if apic_id != bsp_apic_id {
             // SAFETY: each target is a unique discovered AP with a prepared
@@ -2052,17 +2005,23 @@ pub unsafe fn run(
     }
     let ap_count = apic_ids.len() - 1;
     let ap_mask = full_mask & !bsp_bit;
-    if !wait_for_mask(&POST_ONLINE_MASK, full_mask) || !wait_for_count(&POST_READY, ap_count) {
-        return Err(PostFirmwareError::ApStartup);
-    }
-    if !wait_for_mask(&POST_CPU_LOCAL_MASK, full_mask) {
+    let _online_arrived = wait_for_exact_mask(&POST_ONLINE_MASK, full_mask);
+    let _ready_arrived = wait_for_exact_count(&POST_READY, ap_count as u64);
+    let _cpu_locals_arrived = wait_for_exact_mask(&POST_CPU_LOCAL_MASK, full_mask);
+    if !thermite_kernel_policy::kernel_policy_ingress::thermite_ap_runtime_ready(
+        exact_load(&POST_ONLINE_MASK).count_ones() as u64,
+        apic_ids.len() as u64,
+        exact_load(&POST_READY),
+        ap_count as u64,
+        exact_load(&POST_CPU_LOCAL_MASK).count_ones() as u64,
+    ) {
         return Err(PostFirmwareError::ApStartup);
     }
     // SAFETY: IDT/LAPIC are ready before enabling BSP interrupts.
     unsafe { asm!("sti", options(nomem, nostack)) };
 
     POST_IPI_ACK_MASK.store(0, Ordering::Release);
-    POST_IPI_EPOCH.store(1, Ordering::Release);
+    exact_store(&POST_IPI_EPOCH, 1);
     for &apic_id in apic_ids {
         if apic_id != bsp_apic_id {
             // SAFETY: all APs reported online after loading IPI_VECTOR.
@@ -2073,21 +2032,31 @@ pub unsafe fn run(
         return Err(PostFirmwareError::Ipi);
     }
 
+    if thermite_policy_flags & POLICY_SYNCHRONIZATION == 0 {
+        return Err(PostFirmwareError::Scheduler);
+    }
     // Assign one dense seed task to every online CPU, then release the shared
     // remainder only after all of them enter the active scheduler interval.
-    POST_NEXT_TASK.store(apic_ids.len(), Ordering::Release);
-    POST_TASK_READY.store(0, Ordering::Release);
-    POST_TASK_GATE.store(0, Ordering::Release);
-    POST_EXPECTED_WORKERS.store(apic_ids.len(), Ordering::Release);
-    POST_TASK_SUM.store(0, Ordering::Release);
-    POST_TASK_WORKERS.store(0, Ordering::Release);
-    POST_TASK_DONE.store(0, Ordering::Release);
-    POST_ACTIVE.store(0, Ordering::Release);
-    POST_MAX_ACTIVE.store(0, Ordering::Release);
-    POST_READY.store(0, Ordering::Release);
-    POST_MESSAGE_PAYLOAD.store(0x5245_4c45_4153_4544, Ordering::Relaxed);
-    POST_MESSAGE_READY.store(1, Ordering::Release);
-    POST_PHASE.store(1, Ordering::Release);
+    thermite_kernel_policy::kernel_policy_ingress::thermite_atomic_store(
+        &POST_NEXT_TASK,
+        apic_ids.len() as u64,
+    );
+    exact_store(&POST_TASK_BASE, thermite_task_base as u64);
+    exact_store(&POST_TASK_READY, 0);
+    exact_store(&POST_TASK_GATE, 0);
+    exact_store(&POST_EXPECTED_WORKERS, apic_ids.len() as u64);
+    exact_store(&POST_TASK_SUM, 0);
+    exact_store(&POST_TASK_WORKERS, 0);
+    exact_store(&POST_TASK_DONE, 0);
+    exact_store(&POST_ACTIVE, 0);
+    exact_store(&POST_MAX_ACTIVE, 0);
+    exact_store(&POST_READY, 0);
+    thermite_kernel_policy::kernel_policy_ingress::thermite_atomic_store(
+        &POST_MESSAGE_PAYLOAD,
+        0x5245_4c45_4153_4544,
+    );
+    thermite_kernel_policy::kernel_policy_ingress::thermite_atomic_store(&POST_MESSAGE_READY, 1);
+    exact_store(&POST_PHASE, 1);
     message_probe(bsp_apic_id as usize);
     run_tasks(bsp_apic_id as usize);
     lock_once(bsp_apic_id as usize);
@@ -2096,56 +2065,68 @@ pub unsafe fn run(
         0xaaaa_5555_1111_2222,
         &POST_TLB_PRE_MASK,
     );
-    if !wait_for_count(&POST_TASK_DONE, ap_count) || !wait_for_mask(&POST_TLB_PRE_MASK, full_mask) {
-        return Err(PostFirmwareError::Scheduler);
-    }
-    if !wait_for_mask(&POST_MESSAGE_MASK, full_mask)
-        || POST_MESSAGE_STALE.load(Ordering::Acquire) != 0
+    if !wait_for_exact_count(&POST_TASK_DONE, ap_count as u64)
+        || !wait_for_exact_mask(&POST_TLB_PRE_MASK, full_mask)
     {
         return Err(PostFirmwareError::Scheduler);
     }
-    if POST_TLB_STALE.swap(0, Ordering::AcqRel) != 0 {
+    if !wait_for_exact_mask(&POST_MESSAGE_MASK, full_mask) || exact_load(&POST_MESSAGE_STALE) != 0 {
+        return Err(PostFirmwareError::Scheduler);
+    }
+    if exact_fetch_and(&POST_TLB_STALE, 0) != 0 {
         serial.bytes(b"THERMITE_POST_DIAG tlb_pre_stale=1 observed_bsp=");
-        serial.usize(POST_TLB_OBSERVED[bsp_apic_id as usize].load(Ordering::Acquire) as usize);
+        serial.usize(exact_load(&POST_TLB_OBSERVED[bsp_apic_id as usize]) as usize);
         for &apic_id in apic_ids {
             if apic_id != bsp_apic_id {
                 serial.bytes(b" observed_ap=");
-                serial.usize(POST_TLB_OBSERVED[apic_id as usize].load(Ordering::Acquire) as usize);
+                serial.usize(exact_load(&POST_TLB_OBSERVED[apic_id as usize]) as usize);
                 break;
             }
         }
         serial.bytes(b"\n");
         return Err(PostFirmwareError::Tlb);
     }
-    let expected_sum = (POST_TASKS as u64) * ((POST_TASKS - 1) as u64) / 2;
-    let worker_mask = POST_TASK_WORKERS.load(Ordering::Acquire);
+    let expected_sum =
+        thermite_kernel_policy::kernel_policy_ingress::thermite_scheduler_expected_sum(
+            thermite_task_base as u64,
+        );
+    let worker_mask = exact_load(&POST_TASK_WORKERS);
     let worker_cpus = worker_mask.count_ones() as usize;
     let ap_workers = (worker_mask & ap_mask).count_ones() as usize;
-    let required_ap_workers = if ap_count >= 2 { 2 } else { ap_count };
-    if POST_TASK_SUM.load(Ordering::Acquire) != expected_sum
-        || worker_cpus < 1 + required_ap_workers
-        || POST_LOCK_ENTRIES.load(Ordering::Acquire) != apic_ids.len()
-        || POST_ONCE.load(Ordering::Acquire) == 0
-        || (ap_count >= 2 && POST_MAX_ACTIVE.load(Ordering::Acquire) < 2)
-    {
+    let required_ap_workers = scheduler_required_ap_workers(ap_count as u64);
+    let required_parallel_cpus = scheduler_required_parallel_cpus(ap_count as u64);
+    if !thermite_kernel_policy::kernel_policy_ingress::thermite_scheduler_runtime_complete(
+        exact_load(&POST_TASK_SUM),
+        expected_sum,
+        worker_cpus as u64,
+        1 + required_ap_workers,
+        exact_load(&POST_LOCK_ENTRIES),
+        apic_ids.len() as u64,
+        exact_load(&POST_ONCE),
+        exact_load(&POST_MAX_ACTIVE),
+        required_parallel_cpus,
+    ) {
         return Err(PostFirmwareError::Scheduler);
     }
     serial.bytes(b"THERMITE_POST_STAGE scheduler=1\n");
 
+    if thermite_policy_flags & POLICY_SHOOTDOWN == 0 {
+        return Err(PostFirmwareError::Tlb);
+    }
     // Replace one executable mapping, then require an interrupt-driven local
     // invalidation and same-epoch acknowledgement from every AP.
     // SAFETY: the BSP exclusively owns this PTE transition.
     unsafe {
         ptr::write_volatile(
             ptr::addr_of_mut!(SHOOT_PT.0).cast::<u64>(),
-            ptr::addr_of!(TEST_PAGE_B.0) as u64 | PAGE_PRESENT | PAGE_WRITE | PAGE_NX,
+            mapping_kernel_data_entry(ptr::addr_of!(TEST_PAGE_B.0) as u64),
         );
         core::sync::atomic::fence(Ordering::SeqCst);
         asm!("mfence", options(nostack));
         asm!("invlpg [{}]", in(reg) SHOOTDOWN_ADDRESS, options(nostack));
     }
     POST_IPI_ACK_MASK.store(0, Ordering::Release);
-    POST_IPI_EPOCH.store(2, Ordering::Release);
+    exact_store(&POST_IPI_EPOCH, 2);
     for &apic_id in apic_ids {
         if apic_id != bsp_apic_id {
             // SAFETY: the same vector now carries mapping epoch 2.
@@ -2156,18 +2137,26 @@ pub unsafe fn run(
         serial.bytes(b"THERMITE_POST_DIAG tlb_ack_timeout=1\n");
         return Err(PostFirmwareError::Tlb);
     }
-    POST_PHASE.store(2, Ordering::Release);
+    exact_store(&POST_PHASE, 2);
     shootdown_probe(
         bsp_apic_id as usize,
         0xbbbb_6666_3333_4444,
         &POST_TLB_POST_MASK,
     );
-    if !wait_for_mask(&POST_TLB_POST_MASK, full_mask) || POST_TLB_STALE.load(Ordering::Acquire) != 0
-    {
+    let _shootdown_observed = wait_for_exact_mask(&POST_TLB_POST_MASK, full_mask);
+    if !thermite_kernel_policy::kernel_policy_ingress::thermite_shootdown_runtime_complete(
+        exact_load(&POST_TLB_POST_MASK).count_ones() as u64,
+        apic_ids.len() as u64,
+        exact_load(&POST_TLB_STALE),
+        POST_IPI_ACK_MASK.load(Ordering::Acquire).count_ones() as u64,
+        ap_count as u64,
+        exact_load(&POST_IPI_EPOCH),
+        2,
+    ) {
         serial.bytes(b"THERMITE_POST_DIAG tlb_post_count=");
-        serial.usize(POST_TLB_POST_MASK.load(Ordering::Acquire).count_ones() as usize);
+        serial.usize(exact_load(&POST_TLB_POST_MASK).count_ones() as usize);
         serial.bytes(b" stale=");
-        serial.usize(POST_TLB_STALE.load(Ordering::Acquire));
+        serial.usize(exact_load(&POST_TLB_STALE) as usize);
         serial.bytes(b"\n");
         return Err(PostFirmwareError::Tlb);
     }
@@ -2199,12 +2188,15 @@ pub unsafe fn run(
         serial.bytes(b"THERMITE_POST_DIAG timer_count=");
         serial.usize(POST_TIMER_MASK.load(Ordering::Acquire).count_ones() as usize);
         serial.bytes(b" fallbacks=");
-        serial.usize(POST_TIMER_IPI_FALLBACKS.load(Ordering::Acquire));
+        serial.usize(exact_load(&POST_TIMER_IPI_FALLBACKS) as usize);
         serial.bytes(b"\n");
         return Err(PostFirmwareError::Timer);
     }
     serial.bytes(b"THERMITE_POST_STAGE timer=1\n");
 
+    if thermite_policy_flags & POLICY_DMA == 0 {
+        return Err(PostFirmwareError::Dma);
+    }
     // SAFETY: the BSP owns PCI configuration and the single synchronous
     // virtio-blk queue; all APs are quiescent in their interruptible idle loop.
     let (dma_bytes, dma_generation) = unsafe { virtio_block_dma_probe()? };
@@ -2212,31 +2204,36 @@ pub unsafe fn run(
     let entropy_bytes = entropy_probe()?;
     serial.bytes(b"THERMITE_POST_STAGE entropy=1\n");
 
+    if thermite_policy_flags & POLICY_SERVICES == 0 {
+        return Err(PostFirmwareError::UserMode);
+    }
     // SAFETY: paging, TSS, GDT, and all relevant IDT gates are now live.
     serial.bytes(b"THERMITE_POST_STAGE user_enter=1\n");
-    let (syscalls, faults) = unsafe { run_user_mode()? };
+    let (syscalls, faults) = unsafe { run_user_mode(user_base, user_stack)? };
     Ok(PostFirmwareReport {
-        online: POST_ONLINE_MASK.load(Ordering::Acquire).count_ones() as usize,
+        online: exact_load(&POST_ONLINE_MASK).count_ones() as usize,
         failed: usize::from(failed_apic.is_some()),
         failed_apic_id: failed_apic.unwrap_or(u32::MAX),
         ap_workers,
         worker_cpus,
-        parallel_cpus: POST_MAX_ACTIVE.load(Ordering::Acquire),
-        task_sum: POST_TASK_SUM.load(Ordering::Acquire),
+        parallel_cpus: exact_load(&POST_MAX_ACTIVE) as usize,
+        task_sum: exact_load(&POST_TASK_SUM),
+        thermite_policy_signature,
+        thermite_policy_flags,
+        thermite_task_base,
         heap_bytes,
         heap_allocations,
         heap_oom_rejected,
-        atomic_message_cpus: POST_MESSAGE_MASK.load(Ordering::Acquire).count_ones() as usize,
-        atomic_message_stale: POST_MESSAGE_STALE.load(Ordering::Acquire),
+        atomic_message_cpus: exact_load(&POST_MESSAGE_MASK).count_ones() as usize,
+        atomic_message_stale: exact_load(&POST_MESSAGE_STALE) as usize,
         device_negative_checks,
-        cpu_local_cpus: POST_CPU_LOCAL_MASK.load(Ordering::Acquire).count_ones() as usize,
+        cpu_local_cpus: exact_load(&POST_CPU_LOCAL_MASK).count_ones() as usize,
         power_action,
-        model_registry_entries,
-        lock_entries: POST_LOCK_ENTRIES.load(Ordering::Acquire),
+        lock_entries: exact_load(&POST_LOCK_ENTRIES) as usize,
         ipi_acks: POST_IPI_ACK_MASK.load(Ordering::Acquire).count_ones() as usize,
         timer_cpus: POST_TIMER_MASK.load(Ordering::Acquire).count_ones() as usize,
-        timer_ipi_fallbacks: POST_TIMER_IPI_FALLBACKS.load(Ordering::Acquire),
-        tlb_cpus: POST_TLB_POST_MASK.load(Ordering::Acquire).count_ones() as usize,
+        timer_ipi_fallbacks: exact_load(&POST_TIMER_IPI_FALLBACKS) as usize,
+        tlb_cpus: exact_load(&POST_TLB_POST_MASK).count_ones() as usize,
         dma_bytes,
         dma_generation,
         entropy_bytes,

@@ -1,0 +1,169 @@
+enum ServicePhase {
+  Created,
+  Starting,
+  Running,
+  Failed,
+  Stopped
+}
+
+struct ServiceState {
+  service_id: u64,
+  generation: u64,
+  requests: u64,
+  phase: u64
+}
+
+fn service_user_base() -> u64
+  req true
+  ens result == 70368744177664
+  fx pure
+{
+  70368744177664
+}
+
+fn service_user_stack(user_base: u64) -> u64
+  req user_base <= 18446744073709547519
+  ens result == user_base + 4096
+  fx pure
+{
+  (user_base + 4096) as u64
+}
+
+fn service_user_fault_address(user_base: u64) -> u64
+  req user_base <= 18446744073709543423
+  ens result == user_base + 8192
+  fx pure
+{
+  (user_base + 8192) as u64
+}
+
+fn service_user_stack_pointer(user_stack: u64) -> u64
+  req user_stack <= 18446744073709547535
+  ens result == user_stack + 4080
+  fx pure
+{
+  (user_stack + 4080) as u64
+}
+
+fn service_syscall_value() -> u64
+  req true
+  ens result == 4660
+  fx pure
+{
+  4660
+}
+
+fn service_finish_value() -> u64
+  req true
+  ens result == 22136
+  fx pure
+{
+  22136
+}
+
+fn service_write_user_byte(data: &mut [u8], at: usize, value: u8) -> u8
+  req at < data.len()
+  ens result == value
+  ens final(data)[at] == value
+  fx platform(memory)
+{
+  data[at] = value;
+  value
+}
+
+fn service_create(service_id: u64) -> ServiceState
+  req service_id > 0 && service_id <= 16
+  ens result.service_id == service_id
+  ens result.generation == 0
+  ens result.requests == 0
+  ens result.phase == 0
+  fx pure
+{
+  ServiceState {
+    service_id: service_id,
+    generation: 0,
+    requests: 0,
+    phase: 0
+  }
+}
+
+fn service_start(state: ServiceState) -> ServiceState
+  req state.phase == 0 && state.generation < 18446744073709551615
+  ens result.service_id == state.service_id
+  ens result.generation == state.generation + 1
+  ens result.requests == state.requests
+  ens result.phase == 1
+  fx pure
+{
+  ServiceState {
+    service_id: state.service_id,
+    generation: state.generation + 1,
+    requests: state.requests,
+    phase: 1
+  }
+}
+
+fn service_ready(state: ServiceState) -> ServiceState
+  req state.phase == 1
+  ens result.service_id == state.service_id
+  ens result.generation == state.generation
+  ens result.requests == state.requests
+  ens result.phase == 2
+  fx pure
+{
+  ServiceState {
+    service_id: state.service_id,
+    generation: state.generation,
+    requests: state.requests,
+    phase: 2
+  }
+}
+
+fn service_dispatch(state: ServiceState) -> ServiceState
+  req state.phase == 2 && state.requests < 18446744073709551615
+  ens result.service_id == state.service_id
+  ens result.generation == state.generation
+  ens result.requests == state.requests + 1
+  ens result.phase == 2
+  fx pure
+{
+  ServiceState {
+    service_id: state.service_id,
+    generation: state.generation,
+    requests: state.requests + 1,
+    phase: 2
+  }
+}
+
+fn service_policy_bootstrap() -> u64
+  req true
+  ens result == 64
+  fx pure
+{
+  let created: ServiceState = service_create(1);
+  let starting: ServiceState = service_start(created);
+  let running: ServiceState = service_ready(starting);
+  let dispatched: ServiceState = service_dispatch(running);
+  let user_base: u64 = service_user_base();
+  let user_stack: u64 = service_user_stack(user_base);
+  if dispatched.phase == 2 && dispatched.generation == 1 && dispatched.requests == 1 && user_stack == 70368744181760 && service_user_fault_address(user_base) == 70368744185856 && service_user_stack_pointer(user_stack) == 70368744185840 && service_syscall_value() == 4660 && service_finish_value() == 22136 {
+    64
+  } else {
+    0
+  }
+}
+
+fn service_runtime_complete(
+  syscalls: u64,
+  faults: u64,
+  finished: u64,
+  syscall_value: u64,
+  finish_value: u64,
+  kernel_faults: u64
+) -> bool
+  req true
+  ens result == (syscalls == 1 && faults == 1 && finished == 1 && syscall_value == 4660 && finish_value == 22136 && kernel_faults == 0)
+  fx pure
+{
+  syscalls == 1 && faults == 1 && finished == 1 && syscall_value == service_syscall_value() && finish_value == service_finish_value() && kernel_faults == 0
+}

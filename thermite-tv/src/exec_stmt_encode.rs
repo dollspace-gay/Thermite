@@ -106,9 +106,14 @@
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
-use thermite_syntax::ast::{BinOp, Block, Clause, Expr, IndexArg, LoopKind, LoopNode, Stmt};
+use thermite_syntax::ast::{
+    BinOp, Block, Clause, Expr, IndexArg, LoopKind, LoopNode, PrimType, Stmt, Type,
+};
 
-use crate::exec_encode::{exec_ref_value, ExecRefCtx, RefEncodeError};
+use crate::exec_encode::{
+    exec_ref_ensures_value, exec_ref_value, ExecCallDecl, ExecRefCtx, ExecStructFieldDecl,
+    RefEncodeError,
+};
 
 /// The body-reference-encoding context (REQ-2). Carries the slice-bound names (so a
 /// slice index in an RHS / tail encodes to the spec-view element value `xs[i as
@@ -128,6 +133,17 @@ pub struct BodyRefCtx {
     /// value `xs[i as int]` (delegated to [`exec_ref_value`] via the [`ExecRefCtx`]
     /// this ctx builds). Empty for the scalar-only B1-B4 bodies.
     slice_bound: BTreeSet<String>,
+    /// Slice parameters that are exclusive borrows and may therefore appear as
+    /// indexed assignment targets in the frozen mutable-slice body subset.
+    mutable_slice_bound: BTreeSet<String>,
+    /// Bare parameter/local names with exact named-type spellings, used by the
+    /// independent exec encoder for enum discriminant tests.
+    named_bound: BTreeMap<String, String>,
+    /// Exact named-aggregate field declarations reachable in the obligation.
+    struct_fields: Vec<ExecStructFieldDecl>,
+    call_decls: Vec<ExecCallDecl>,
+    /// Named aggregate returned by the surrounding body obligation, when any.
+    result_struct: Option<String>,
 }
 
 impl BodyRefCtx {
@@ -139,13 +155,107 @@ impl BodyRefCtx {
     {
         BodyRefCtx {
             slice_bound: names.into_iter().map(Into::into).collect(),
+            mutable_slice_bound: BTreeSet::new(),
+            named_bound: BTreeMap::new(),
+            struct_fields: Vec::new(),
+            call_decls: Vec::new(),
+            result_struct: None,
+        }
+    }
+
+    /// Build a body frame with all readable slices plus the subset that may be
+    /// mutated through an exclusive borrow.
+    pub fn with_slice_bounds<I, S, J, T>(names: I, mutable_names: J) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+        J: IntoIterator<Item = T>,
+        T: Into<String>,
+    {
+        BodyRefCtx {
+            slice_bound: names.into_iter().map(Into::into).collect(),
+            mutable_slice_bound: mutable_names.into_iter().map(Into::into).collect(),
+            named_bound: BTreeMap::new(),
+            struct_fields: Vec::new(),
+            call_decls: Vec::new(),
+            result_struct: None,
+        }
+    }
+
+    /// Build a complete body frame with readable/mutable slices and exact named
+    /// parameter type bindings for enum discriminant tests.
+    pub fn with_bounds<I, S, J, T, K, N, U>(slices: I, mutable_slices: J, named: K) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+        J: IntoIterator<Item = T>,
+        T: Into<String>,
+        K: IntoIterator<Item = (N, U)>,
+        N: Into<String>,
+        U: Into<String>,
+    {
+        BodyRefCtx {
+            slice_bound: slices.into_iter().map(Into::into).collect(),
+            mutable_slice_bound: mutable_slices.into_iter().map(Into::into).collect(),
+            named_bound: named
+                .into_iter()
+                .map(|(name, ty)| (name.into(), ty.into()))
+                .collect(),
+            struct_fields: Vec::new(),
+            call_decls: Vec::new(),
+            result_struct: None,
+        }
+    }
+
+    /// Add the exact aggregate declarations available in this body frame.
+    pub fn with_struct_fields<I>(mut self, fields: I) -> Self
+    where
+        I: IntoIterator<Item = ExecStructFieldDecl>,
+    {
+        self.struct_fields = fields.into_iter().collect();
+        self
+    }
+
+    pub fn with_calls<I>(mut self, calls: I) -> Self
+    where
+        I: IntoIterator<Item = ExecCallDecl>,
+    {
+        self.call_decls = calls.into_iter().collect();
+        self
+    }
+
+    /// Record the surrounding result aggregate for field-by-field equality.
+    pub fn with_result_struct(mut self, result: impl Into<String>) -> Self {
+        self.result_struct = Some(result.into());
+        self
+    }
+
+    fn is_mutable_slice_bound(&self, name: &str) -> bool {
+        self.mutable_slice_bound.contains(name)
+    }
+
+    fn numeric_result_type(&self) -> Option<&str> {
+        match self.result_struct.as_deref() {
+            Some(ty @ ("u8" | "u16" | "u32" | "u64" | "usize")) => Some(ty),
+            _ => None,
         }
     }
 
     /// Build the [`ExecRefCtx`] the per-RHS value encoder uses (the slice-bound set
     /// passes straight through — every RHS / tail value is a step-2.1 exec value).
     fn exec_ref_ctx(&self) -> ExecRefCtx {
-        ExecRefCtx::with_slice_bound(self.slice_bound.iter().cloned())
+        let ctx = ExecRefCtx::with_bounds(
+            self.slice_bound.iter().cloned(),
+            self.named_bound
+                .iter()
+                .map(|(name, ty)| (name.clone(), ty.clone())),
+        )
+        .with_struct_fields(self.struct_fields.iter().cloned())
+        .with_calls(self.call_decls.iter().cloned());
+        match &self.result_struct {
+            Some(result) => ctx.with_result_type(result.clone()),
+            None => ctx,
+        }
     }
 }
 
@@ -157,6 +267,15 @@ impl BodyRefCtx {
 /// independence boundary (the per-RHS bounded-value reference is unchanged), so the
 /// only new logic is the substitution + threading.
 type Env = BTreeMap<String, Expr>;
+
+#[derive(Debug)]
+struct AggregateMutationState {
+    variable: String,
+    type_name: String,
+    base: Expr,
+    whole_field_updates: BTreeMap<String, Expr>,
+    fixed_sets: BTreeMap<String, Vec<(Expr, Expr)>>,
+}
 
 /// Encode a straight-line [`Block`] (the frozen 2.2.1 subset) to a Verus exec
 /// expression string giving the body's final state (the tail value) as a closed-form
@@ -171,10 +290,311 @@ type Env = BTreeMap<String, Expr>;
 /// unchanged; the new logic is only the state threading. Returns
 /// [`RefEncodeError::Unsupported`] (never a panic / silent wrong encoding) for a
 /// construct outside the frozen straight-line subset (a loop, a mid-branch early
-/// return, a `match`-stmt, a non-scalar mutation, a re-shadow).
+/// return, an unmodeled aggregate mutation, a re-shadow). A single-index write to a
+/// frame-declared mutable slice is admitted; its complete sequence effect is checked
+/// by [`body_ref_state_ensures`].
 pub fn body_ref_state(block: &Block, ctx: &BodyRefCtx) -> Result<String, RefEncodeError> {
+    if let Some(reference) = aggregate_mutation_reference(block, ctx)? {
+        return Ok(reference);
+    }
     let mut env: Env = Env::new();
     encode_block_tail(block, &mut env, ctx)
+}
+
+/// Recognize and exactly denote an owned aggregate update body of the kernel form
+/// `let mut updated: S = base; updated.arr.set(i,v); updated.count = ...; updated`.
+/// Every fixed array is reconstructed as eight named slots, so no mutation or
+/// collateral cell can be hidden behind structural equality.
+fn aggregate_mutation_reference(
+    block: &Block,
+    ctx: &BodyRefCtx,
+) -> Result<Option<String>, RefEncodeError> {
+    let Some(Expr::Path(tail_path)) = block.tail.as_deref() else {
+        return Ok(None);
+    };
+    if tail_path.len() != 1 {
+        return Ok(None);
+    }
+    let tail_name = &tail_path[0];
+    let mut scalar_env = Env::new();
+    let mut aggregate: Option<AggregateMutationState> = None;
+    let mut changed = false;
+
+    for stmt in &block.stmts {
+        if aggregate.is_none() {
+            if let Stmt::Let {
+                mutable: true,
+                name,
+                ty: Some(Type::Named(type_name)),
+                init,
+            } = stmt
+            {
+                if name == tail_name {
+                    let base = specialize_fixed_array_fill(
+                        &substitute(init, &scalar_env)?,
+                        Some(&Type::Named(type_name.clone())),
+                    );
+                    aggregate = Some(AggregateMutationState {
+                        variable: name.clone(),
+                        type_name: type_name.clone(),
+                        base,
+                        whole_field_updates: BTreeMap::new(),
+                        fixed_sets: BTreeMap::new(),
+                    });
+                    continue;
+                }
+            }
+            thread_stmt(stmt, &mut scalar_env, ctx)?;
+            continue;
+        }
+
+        let state = aggregate.as_mut().expect("aggregate state is present");
+        match stmt {
+            Stmt::Expr(Expr::MethodCall {
+                receiver,
+                name,
+                args,
+            }) if name == "set" && args.len() == 2 => {
+                let Expr::Field {
+                    receiver: aggregate_receiver,
+                    name: field,
+                } = receiver.as_ref()
+                else {
+                    return Err(unsupported_aggregate_mutation());
+                };
+                if !matches!(aggregate_receiver.as_ref(), Expr::Path(path)
+                    if path.as_slice() == [state.variable.as_str()])
+                {
+                    return Err(unsupported_aggregate_mutation());
+                }
+                let field_ty = aggregate_field_type(ctx, &state.type_name, field)
+                    .ok_or_else(unsupported_aggregate_mutation)?;
+                if !field_ty.starts_with("TFixedArray8") {
+                    return Err(unsupported_aggregate_mutation());
+                }
+                let index = resolve_aggregate_expr(&substitute(&args[0], &scalar_env)?, state)?;
+                let value = resolve_aggregate_expr(&substitute(&args[1], &scalar_env)?, state)?;
+                state
+                    .fixed_sets
+                    .entry(field.clone())
+                    .or_default()
+                    .push((index, value));
+                changed = true;
+            }
+            Stmt::Assign {
+                target: Expr::Field { receiver, name },
+                value,
+            } if matches!(receiver.as_ref(), Expr::Path(path)
+                if path.as_slice() == [state.variable.as_str()]) =>
+            {
+                if aggregate_field_type(ctx, &state.type_name, name).is_none() {
+                    return Err(unsupported_aggregate_mutation());
+                }
+                let value = resolve_aggregate_expr(&substitute(value, &scalar_env)?, state)?;
+                state.whole_field_updates.insert(name.clone(), value);
+                changed = true;
+            }
+            _ => return Err(unsupported_aggregate_mutation()),
+        }
+    }
+
+    let Some(state) = aggregate else {
+        return Ok(None);
+    };
+    if !changed {
+        return Ok(None);
+    }
+    render_aggregate_state(&state, ctx).map(Some)
+}
+
+fn aggregate_field_type<'a>(ctx: &'a BodyRefCtx, type_name: &str, field: &str) -> Option<&'a str> {
+    ctx.struct_fields
+        .iter()
+        .find(|decl| decl.struct_path == type_name && decl.field == field)
+        .map(|decl| decl.type_str.as_str())
+}
+
+fn aggregate_base_field(state: &AggregateMutationState, field: &str) -> Expr {
+    state
+        .whole_field_updates
+        .get(field)
+        .cloned()
+        .unwrap_or_else(|| Expr::Field {
+            receiver: Box::new(state.base.clone()),
+            name: field.to_string(),
+        })
+}
+
+fn resolve_aggregate_expr(
+    expr: &Expr,
+    state: &AggregateMutationState,
+) -> Result<Expr, RefEncodeError> {
+    match expr {
+        Expr::Field { receiver, name }
+            if matches!(receiver.as_ref(), Expr::Path(path)
+                if path.as_slice() == [state.variable.as_str()]) =>
+        {
+            if state.fixed_sets.contains_key(name) {
+                return Err(RefEncodeError::Unsupported(format!(
+                    "aggregate field `{name}` is read after an in-place fixed-array update; \
+                     the exact frozen subset requires an explicit `.get` reference model"
+                )));
+            }
+            Ok(aggregate_base_field(state, name))
+        }
+        Expr::Binary { op, lhs, rhs } => Ok(Expr::Binary {
+            op: *op,
+            lhs: Box::new(resolve_aggregate_expr(lhs, state)?),
+            rhs: Box::new(resolve_aggregate_expr(rhs, state)?),
+        }),
+        Expr::Unary { op, expr } => Ok(Expr::Unary {
+            op: *op,
+            expr: Box::new(resolve_aggregate_expr(expr, state)?),
+        }),
+        Expr::Cast { expr, ty } => Ok(Expr::Cast {
+            expr: Box::new(resolve_aggregate_expr(expr, state)?),
+            ty: ty.clone(),
+        }),
+        Expr::Field { receiver, name } => Ok(Expr::Field {
+            receiver: Box::new(resolve_aggregate_expr(receiver, state)?),
+            name: name.clone(),
+        }),
+        Expr::Call { callee, args } => Ok(Expr::Call {
+            callee: Box::new(resolve_aggregate_expr(callee, state)?),
+            args: args
+                .iter()
+                .map(|arg| resolve_aggregate_expr(arg, state))
+                .collect::<Result<Vec<_>, _>>()?,
+        }),
+        Expr::MethodCall {
+            receiver,
+            name,
+            args,
+        } => Ok(Expr::MethodCall {
+            receiver: Box::new(resolve_aggregate_expr(receiver, state)?),
+            name: name.clone(),
+            args: args
+                .iter()
+                .map(|arg| resolve_aggregate_expr(arg, state))
+                .collect::<Result<Vec<_>, _>>()?,
+        }),
+        Expr::Index { base, index } => {
+            let index = match index {
+                IndexArg::Single(value) => {
+                    IndexArg::Single(Box::new(resolve_aggregate_expr(value, state)?))
+                }
+                _ => return Err(unsupported_aggregate_mutation()),
+            };
+            Ok(Expr::Index {
+                base: Box::new(resolve_aggregate_expr(base, state)?),
+                index,
+            })
+        }
+        Expr::StructLit { path, fields } => Ok(Expr::StructLit {
+            path: path.clone(),
+            fields: fields
+                .iter()
+                .map(|(name, value)| Ok((name.clone(), resolve_aggregate_expr(value, state)?)))
+                .collect::<Result<Vec<_>, RefEncodeError>>()?,
+        }),
+        Expr::Is { scrutinee, variant } => Ok(Expr::Is {
+            scrutinee: Box::new(resolve_aggregate_expr(scrutinee, state)?),
+            variant: variant.clone(),
+        }),
+        Expr::Path(_) | Expr::IntLit { .. } | Expr::BoolLit(_) => Ok(expr.clone()),
+        _ => Err(unsupported_aggregate_mutation()),
+    }
+}
+
+fn render_aggregate_state(
+    state: &AggregateMutationState,
+    ctx: &BodyRefCtx,
+) -> Result<String, RefEncodeError> {
+    let fields: Vec<&ExecStructFieldDecl> = ctx
+        .struct_fields
+        .iter()
+        .filter(|decl| decl.struct_path == state.type_name)
+        .collect();
+    if fields.is_empty() {
+        return Err(unsupported_aggregate_mutation());
+    }
+    let exec_ctx = ctx.exec_ref_ctx();
+    let mut rendered = Vec::new();
+    for field in fields {
+        let base = aggregate_base_field(state, &field.field);
+        let value = if field.type_str.starts_with("TFixedArray8") {
+            render_fixed_array_state(
+                &field.type_str,
+                &base,
+                state
+                    .fixed_sets
+                    .get(&field.field)
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]),
+                &exec_ctx,
+            )?
+        } else {
+            let value = exec_ref_value(&base, &exec_ctx)?;
+            typed_reference_value(&value, &field.type_str)
+        };
+        rendered.push(format!("{}: {value}", field.field));
+    }
+    Ok(format!("{} {{ {} }}", state.type_name, rendered.join(", ")))
+}
+
+fn render_fixed_array_state(
+    type_name: &str,
+    base: &Expr,
+    updates: &[(Expr, Expr)],
+    ctx: &ExecRefCtx,
+) -> Result<String, RefEncodeError> {
+    if updates.is_empty() {
+        return exec_ref_value(base, ctx);
+    }
+    let base = exec_ref_value(base, ctx)?;
+    let element_type =
+        fixed_array_element_type(type_name).ok_or_else(unsupported_aggregate_mutation)?;
+    let mut slots = Vec::new();
+    for slot in 0..8 {
+        let mut value = format!("({base}).spec_get({slot})");
+        for (index, update) in updates {
+            let index = exec_ref_value(index, ctx)?;
+            let update = typed_reference_value(&exec_ref_value(update, ctx)?, element_type);
+            value = format!("if {index} == {slot} {{ {update} }} else {{ {value} }}");
+        }
+        slots.push(format!("slot{slot}: {value}"));
+    }
+    Ok(format!("{type_name} {{ {} }}", slots.join(", ")))
+}
+
+fn fixed_array_element_type(type_name: &str) -> Option<&str> {
+    match type_name.strip_prefix("TFixedArray8")? {
+        "U8" => Some("u8"),
+        "U16" => Some("u16"),
+        "U32" => Some("u32"),
+        "U64" => Some("u64"),
+        "Usize" => Some("usize"),
+        "Bool" => Some("bool"),
+        other if !other.is_empty() => Some(other),
+        _ => None,
+    }
+}
+
+fn typed_reference_value(value: &str, type_name: &str) -> String {
+    match type_name {
+        "u8" | "u16" | "u32" | "u64" | "usize" => {
+            format!("({value}) as {type_name}")
+        }
+        _ => value.to_string(),
+    }
+}
+
+fn unsupported_aggregate_mutation() -> RefEncodeError {
+    RefEncodeError::Unsupported(
+        "aggregate mutation is outside the exact frozen subset (admitted form is an owned \
+         named aggregate local, direct field assignment, and FixedArray8 field `.set(i, value)`)"
+            .to_string(),
+    )
 }
 
 /// Build the body-refinement obligation's `ensures` predicate comparing the exec fn
@@ -198,6 +618,7 @@ pub fn body_ref_state_ensures(
     result_name: &str,
     ctx: &BodyRefCtx,
 ) -> Result<String, RefEncodeError> {
+    let mut conjuncts = Vec::new();
     // A multi-cell body is one whose tail is a tuple (the final state spans cells).
     // Each cell is encoded under the body's final env (the same threading), then
     // compared to the matching `result.<i>` projection at the bounded type.
@@ -205,22 +626,199 @@ pub fn body_ref_state_ensures(
         if let Expr::Tuple(elems) = tail.as_ref() {
             let mut env: Env = Env::new();
             for stmt in &block.stmts {
-                thread_stmt(stmt, &mut env)?;
+                thread_stmt(stmt, &mut env, ctx)?;
             }
-            let conjuncts = elems
-                .iter()
-                .enumerate()
-                .map(|(i, e)| {
-                    let cell = encode_value(e, &env, ctx)?;
-                    Ok(format!("{result_name}.{i} == {cell}"))
-                })
-                .collect::<Result<Vec<_>, RefEncodeError>>()?;
-            return Ok(conjuncts.join(" && "));
+            conjuncts.extend(
+                elems
+                    .iter()
+                    .enumerate()
+                    .map(|(i, e)| {
+                        let cell = encode_value(e, &env, ctx)?;
+                        Ok(format!("{result_name}.{i} == {cell}"))
+                    })
+                    .collect::<Result<Vec<_>, RefEncodeError>>()?,
+            );
         }
     }
-    // The single-cell (scalar / bool / if-tail) body: the plain scalar equality.
-    let reference = body_ref_state(block, ctx)?;
-    Ok(format!("{result_name} == {reference}"))
+    if conjuncts.is_empty() {
+        // The single-cell (scalar / bool / if-tail) body: the plain scalar equality.
+        let reference = body_ref_state(block, ctx)?;
+        conjuncts.push(exec_ref_ensures_value(
+            &reference,
+            result_name,
+            &ctx.exec_ref_ctx(),
+        ));
+    }
+    conjuncts.extend(slice_write_ensures(block, ctx)?);
+    Ok(conjuncts.join(" && "))
+}
+
+/// Independently encode the final state of the frozen mutable-slice assignment
+/// subset. Each top-level `data[i] = value` updates a symbolic sequence beginning at
+/// `old(data)@`; the obligation compares the complete final slice view to that update
+/// chain. This catches a dropped write, wrong index/value, reordering, and collateral
+/// writes. Indexed writes nested under control flow remain unsupported until the
+/// reference carries branch-composed sequence states. A write index/value may not
+/// read any mutable slice: such a read denotes the pre-write sequence in the source
+/// but an unqualified sequence name in a postcondition denotes the final sequence;
+/// rejecting it keeps this initial effect subset exact instead of conflating states.
+fn slice_write_ensures(block: &Block, ctx: &BodyRefCtx) -> Result<Vec<String>, RefEncodeError> {
+    if ctx.mutable_slice_bound.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut scalar_env = Env::new();
+    let mut states: BTreeMap<String, String> = ctx
+        .mutable_slice_bound
+        .iter()
+        .map(|name| (name.clone(), format!("old({name})@")))
+        .collect();
+    let mut written = BTreeSet::new();
+
+    for stmt in &block.stmts {
+        if let Stmt::Assign {
+            target:
+                Expr::Index {
+                    base,
+                    index: IndexArg::Single(index),
+                },
+            value,
+        } = stmt
+        {
+            let Expr::Path(segments) = base.as_ref() else {
+                return Err(unsupported_assignment_target());
+            };
+            if segments.len() != 1 || !ctx.is_mutable_slice_bound(&segments[0]) {
+                return Err(unsupported_assignment_target());
+            }
+            let name = &segments[0];
+            let index = substitute(index, &scalar_env)?;
+            if expr_references_mutable_slice(&index, ctx)
+                || expr_references_mutable_slice(value, ctx)
+            {
+                return Err(RefEncodeError::Unsupported(
+                    "a mutable-slice write index/value reads a mutable slice; the frozen \
+                     slice-effect subset does not conflate its pre-write and final views"
+                        .to_string(),
+                ));
+            }
+            let index_is_literal = matches!(index, Expr::IntLit { .. });
+            let index = exec_ref_value(&index, &ctx.exec_ref_ctx())?;
+            let index = if index_is_literal {
+                index
+            } else {
+                format!("({index}) as int")
+            };
+            let value = encode_value(value, &scalar_env, ctx)?;
+            let previous = states
+                .get(name)
+                .cloned()
+                .ok_or_else(unsupported_assignment_target)?;
+            states.insert(
+                name.clone(),
+                format!("({previous}).update({index}, {value})"),
+            );
+            written.insert(name.clone());
+            continue;
+        }
+        if stmt_contains_index_assignment(stmt) {
+            return Err(RefEncodeError::Unsupported(
+                "mutable-slice assignment nested under control flow is outside the \
+                 frozen straight-line slice-effect subset"
+                    .to_string(),
+            ));
+        }
+        thread_stmt(stmt, &mut scalar_env, ctx)?;
+    }
+
+    written
+        .into_iter()
+        .map(|name| {
+            states
+                .remove(&name)
+                .map(|state| format!("final({name})@ == {state}"))
+                .ok_or_else(unsupported_assignment_target)
+        })
+        .collect()
+}
+
+fn stmt_contains_index_assignment(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Assign {
+            target: Expr::Index { .. },
+            ..
+        } => true,
+        Stmt::If { then, else_, .. } => {
+            then.stmts.iter().any(stmt_contains_index_assignment)
+                || else_
+                    .as_ref()
+                    .is_some_and(|block| block.stmts.iter().any(stmt_contains_index_assignment))
+        }
+        Stmt::Loop(loop_node) => loop_node
+            .body
+            .stmts
+            .iter()
+            .any(stmt_contains_index_assignment),
+        _ => false,
+    }
+}
+
+/// Whether an expression in the independently encodable value subset reads a
+/// mutable slice parameter. Unsupported expression forms are deliberately ignored
+/// here because the subsequent `exec_ref_value` call rejects them; every form that
+/// encoder admits is traversed exhaustively.
+fn expr_references_mutable_slice(expr: &Expr, ctx: &BodyRefCtx) -> bool {
+    match expr {
+        Expr::Path(segments) => segments.len() == 1 && ctx.is_mutable_slice_bound(&segments[0]),
+        Expr::Binary { lhs, rhs, .. } => {
+            expr_references_mutable_slice(lhs, ctx) || expr_references_mutable_slice(rhs, ctx)
+        }
+        Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => {
+            expr_references_mutable_slice(expr, ctx)
+        }
+        Expr::Call { callee, args } => {
+            expr_references_mutable_slice(callee, ctx)
+                || args
+                    .iter()
+                    .any(|arg| expr_references_mutable_slice(arg, ctx))
+        }
+        Expr::MethodCall { receiver, args, .. } => {
+            expr_references_mutable_slice(receiver, ctx)
+                || args
+                    .iter()
+                    .any(|arg| expr_references_mutable_slice(arg, ctx))
+        }
+        Expr::If { cond, then, else_ } => {
+            expr_references_mutable_slice(cond, ctx)
+                || then
+                    .tail
+                    .as_deref()
+                    .is_some_and(|tail| expr_references_mutable_slice(tail, ctx))
+                || else_
+                    .tail
+                    .as_deref()
+                    .is_some_and(|tail| expr_references_mutable_slice(tail, ctx))
+        }
+        Expr::Index { base, index } => {
+            expr_references_mutable_slice(base, ctx)
+                || match index {
+                    IndexArg::Single(index)
+                    | IndexArg::RangeTo(index)
+                    | IndexArg::RangeFrom(index) => expr_references_mutable_slice(index, ctx),
+                    IndexArg::Range(start, end) => {
+                        expr_references_mutable_slice(start, ctx)
+                            || expr_references_mutable_slice(end, ctx)
+                    }
+                }
+        }
+        Expr::Field { receiver, .. } => expr_references_mutable_slice(receiver, ctx),
+        Expr::StructLit { fields, .. } => fields
+            .iter()
+            .any(|(_, value)| expr_references_mutable_slice(value, ctx)),
+        Expr::IntLit { .. } | Expr::BoolLit(_) => false,
+        // These forms are outside `exec_ref_value`; it reports the actual unsupported
+        // construct after this narrow pre/post-state ambiguity gate.
+        _ => false,
+    }
 }
 
 // =============================================================================
@@ -291,7 +889,7 @@ pub fn loop_ref_obligations(
     block: &Block,
     ctx: &BodyRefCtx,
 ) -> Result<LoopObligations, RefEncodeError> {
-    let (prefix, loop_node) = recognize_v1_loop(block)?;
+    let (prefix, loop_node) = recognize_v1_loop(block, ctx)?;
     let cond_expr = match &loop_node.kind {
         LoopKind::While(c) => c.as_ref(),
         LoopKind::Loop => {
@@ -343,7 +941,7 @@ pub fn loop_ref_obligations(
     // Return Err otherwise.
     let mut entry_env: Env = Env::new();
     for stmt in prefix {
-        thread_stmt(stmt, &mut entry_env)?;
+        thread_stmt(stmt, &mut entry_env, ctx)?;
     }
     for cell in &cells {
         if !entry_env.contains_key(cell) {
@@ -365,7 +963,7 @@ pub fn loop_ref_obligations(
         step_env.insert(cell.clone(), Expr::Path(vec![cell.clone()]));
     }
     for stmt in &loop_node.body.stmts {
-        thread_stmt(stmt, &mut step_env)?;
+        thread_stmt(stmt, &mut step_env, ctx)?;
     }
     // The per-cell stepped closed form (in the entry cells) + the cell→stepped-form
     // substitution env — both read from `step_env`, where every `cell` is present (it
@@ -409,7 +1007,10 @@ pub fn loop_ref_obligations(
 /// Returns the pre-loop prefix statements + the loop node, or an
 /// [`RefEncodeError::Unsupported`] naming the out-of-v1 reason (Skipped, never
 /// silently Faithful — R-HONEST-3).
-fn recognize_v1_loop(block: &Block) -> Result<(&[Stmt], &LoopNode), RefEncodeError> {
+fn recognize_v1_loop<'a>(
+    block: &'a Block,
+    ctx: &BodyRefCtx,
+) -> Result<(&'a [Stmt], &'a LoopNode), RefEncodeError> {
     let Some((last, prefix)) = block.stmts.split_last() else {
         return Err(RefEncodeError::Unsupported(
             "no loop statement (the v1 loop arm requires a `while` loop as the last \
@@ -429,7 +1030,7 @@ fn recognize_v1_loop(block: &Block) -> Result<(&[Stmt], &LoopNode), RefEncodeErr
     // mid-body return) — reuse the shipped thread_stmt rejection by threading it.
     let mut probe: Env = Env::new();
     for stmt in prefix {
-        thread_stmt(stmt, &mut probe)?;
+        thread_stmt(stmt, &mut probe, ctx)?;
     }
     if !matches!(loop_node.kind, LoopKind::While(_)) {
         return Err(RefEncodeError::Unsupported(
@@ -605,7 +1206,7 @@ fn encode_block_tail(
     ctx: &BodyRefCtx,
 ) -> Result<String, RefEncodeError> {
     for stmt in &block.stmts {
-        thread_stmt(stmt, env)?;
+        thread_stmt(stmt, env, ctx)?;
     }
     match &block.tail {
         Some(tail) => encode_value(tail, env, ctx),
@@ -624,11 +1225,9 @@ fn encode_block_tail(
 /// [`encode_value`] / the tail), so an `If`/`Return` in non-tail (statement)
 /// position — a mid-body branch / early return — is out of v1 (the multi-exit CPS
 /// form) and an `Err`. A `Loop`/`Break`/`Continue` is step 2.2.2.
-fn thread_stmt(stmt: &Stmt, env: &mut Env) -> Result<(), RefEncodeError> {
+fn thread_stmt(stmt: &Stmt, env: &mut Env, ctx: &BodyRefCtx) -> Result<(), RefEncodeError> {
     match stmt {
-        Stmt::Let {
-            name, init, ty: _, ..
-        } => {
+        Stmt::Let { name, init, ty, .. } => {
             // A re-shadow `let x = ..; let x = ..` in the same block is out of v1
             // (the flat name->value env can't represent two distinct `x` cells) —
             // `Err`, never a silent wrong substitution.
@@ -640,23 +1239,45 @@ fn thread_stmt(stmt: &Stmt, env: &mut Env) -> Result<(), RefEncodeError> {
                 )));
             }
             let substituted = substitute(init, env)?;
+            let substituted = specialize_fixed_array_fill(&substituted, ty.as_ref());
             env.insert(name.clone(), substituted);
             Ok(())
         }
         Stmt::Assign { target, value } => {
+            if let Expr::Index { base, index } = target {
+                let Expr::Path(segments) = base.as_ref() else {
+                    return Err(unsupported_assignment_target());
+                };
+                let IndexArg::Single(index) = index else {
+                    return Err(unsupported_assignment_target());
+                };
+                if segments.len() != 1 || !ctx.is_mutable_slice_bound(&segments[0]) {
+                    return Err(unsupported_assignment_target());
+                }
+                if expr_references_mutable_slice(index, ctx)
+                    || expr_references_mutable_slice(value, ctx)
+                {
+                    return Err(RefEncodeError::Unsupported(
+                        "a mutable-slice write index/value reads a mutable slice; the \
+                         frozen slice-effect subset does not conflate its pre-write and \
+                         final views"
+                            .to_string(),
+                    ));
+                }
+                // Validate both address and value through the independent bounded
+                // expression encoder. The effect itself is compared by
+                // `slice_write_ensures`; this scalar environment has no sequence cell.
+                let _ = encode_value(index, env, ctx)?;
+                let _ = encode_value(value, env, ctx)?;
+                return Ok(());
+            }
             // v1 mutation is a scalar-cell rebind: the target must be a bare
             // in-scope name (a non-scalar mutation — `xs[i] = ..`, `m.field = ..` —
             // is out of v1, a v2 sequence/struct theory).
             let name = match target {
                 Expr::Path(segments) if segments.len() == 1 => segments[0].clone(),
                 _ => {
-                    return Err(RefEncodeError::Unsupported(
-                        "assignment to a non-scalar / non-bare-name target (the v1 \
-                         frozen subset mutates only bare scalar cells; an indexed / \
-                         field / projection target is OUT — a v2 sequence/struct \
-                         theory)"
-                            .to_string(),
-                    ));
+                    return Err(unsupported_assignment_target());
                 }
             };
             // The cell must already be in scope (a `let mut` introduced it). An
@@ -706,10 +1327,10 @@ fn thread_stmt(stmt: &Stmt, env: &mut Env) -> Result<(), RefEncodeError> {
             // mutation subset — an `Err` (the state-denotation only composes a
             // branch that mutates cells, never a discarded branch value).
             let mut then_env = env.clone();
-            thread_branch(then, &mut then_env)?;
+            thread_branch(then, &mut then_env, ctx)?;
             let mut else_env = env.clone();
             if let Some(else_block) = else_ {
-                thread_branch(else_block, &mut else_env)?;
+                thread_branch(else_block, &mut else_env, ctx)?;
             }
 
             // For each cell already in scope before the `if` (a branch-local `let`
@@ -770,6 +1391,58 @@ fn thread_stmt(stmt: &Stmt, env: &mut Env) -> Result<(), RefEncodeError> {
     }
 }
 
+fn fixed_array8_type_name(ty: &Type) -> Option<String> {
+    let Type::Generic { name, arg } = ty else {
+        return None;
+    };
+    if name != "FixedArray8" {
+        return None;
+    }
+    let suffix = match arg.as_ref() {
+        Type::Prim(PrimType::U8) => "U8",
+        Type::Prim(PrimType::U16) => "U16",
+        Type::Prim(PrimType::U32) => "U32",
+        Type::Prim(PrimType::U64) => "U64",
+        Type::Prim(PrimType::Usize) => "Usize",
+        Type::Prim(PrimType::Bool) => "Bool",
+        Type::Named(name) => name,
+        _ => return None,
+    };
+    Some(format!("TFixedArray8{suffix}"))
+}
+
+/// The surface constructor has no element type in its path; the typed `let`
+/// annotation supplies the exact monomorphized frozen wrapper name. This mirrors
+/// the language rule independently of production lowering.
+fn specialize_fixed_array_fill(expr: &Expr, ty: Option<&Type>) -> Expr {
+    let Some(wrapper) = ty.and_then(fixed_array8_type_name) else {
+        return expr.clone();
+    };
+    let Expr::Call { callee, args } = expr else {
+        return expr.clone();
+    };
+    let Expr::Path(path) = callee.as_ref() else {
+        return expr.clone();
+    };
+    if path.as_slice() != ["FixedArray8", "fill"] || args.len() != 1 {
+        return expr.clone();
+    }
+    Expr::StructLit {
+        path: vec![wrapper],
+        fields: (0..8)
+            .map(|index| (format!("slot{index}"), args[0].clone()))
+            .collect(),
+    }
+}
+
+fn unsupported_assignment_target() -> RefEncodeError {
+    RefEncodeError::Unsupported(
+        "assignment target is outside the frozen state subset (admitted targets are a \
+         bare scalar cell or a single index into a frame-declared mutable slice)"
+            .to_string(),
+    )
+}
+
 /// Thread an `if`-statement branch `Block`'s statements through `env` (in order),
 /// reusing the per-statement [`thread_stmt`] recursively (so a nested `if`-statement
 /// in the branch is composed, and an out-of-subset branch construct — a loop, a
@@ -778,9 +1451,9 @@ fn thread_stmt(stmt: &Stmt, env: &mut Env) -> Result<(), RefEncodeError> {
 /// cells via `Stmt::Assign`, it does not produce a discarded value. A branch with a
 /// tail value (`if c { ..; v }` as a statement) is out of the v1 mutation subset — an
 /// [`RefEncodeError::Unsupported`], never a silent discard.
-fn thread_branch(branch: &Block, env: &mut Env) -> Result<(), RefEncodeError> {
+fn thread_branch(branch: &Block, env: &mut Env, ctx: &BodyRefCtx) -> Result<(), RefEncodeError> {
     for stmt in &branch.stmts {
-        thread_stmt(stmt, env)?;
+        thread_stmt(stmt, env, ctx)?;
     }
     match &branch.tail {
         None => Ok(()),
@@ -871,13 +1544,17 @@ fn encode_value(expr: &Expr, env: &Env, ctx: &BodyRefCtx) -> Result<String, RefE
             // comparison coerces fine). When both arms are arithmetic (the grounded
             // AC-4 `(x + 1)`/`(x + 2)`, B3 `(x + 1)`/`(x - 1)`) no coercion is applied —
             // the pinned reference form is preserved.
-            let t_int = branch_is_int_typed(then, env)?;
-            let e_int = branch_is_int_typed(else_, env)?;
-            let (t, e) = match (t_int, e_int) {
+            let t_int = branch_is_int_typed(then, env, ctx)?;
+            let e_int = branch_is_int_typed(else_, env, ctx)?;
+            let (mut t, mut e) = match (t_int, e_int) {
                 (true, false) => (t, format!("({e} as int)")),
                 (false, true) => (format!("({t} as int)"), e),
                 _ => (t, e),
             };
+            if let Some(ty) = ctx.numeric_result_type() {
+                t = format!("({t}) as {ty}");
+                e = format!("({e}) as {ty}");
+            }
             Ok(format!("if {c} {{ {t} }} else {{ {e} }}"))
         }
         // The multi-cell tuple projection (`exec-stmt-tv.md` REQ-2, the design's
@@ -907,10 +1584,10 @@ fn encode_value(expr: &Expr, env: &Env, ctx: &BodyRefCtx) -> Result<String, RefE
 /// everything else (a bare path cell, a literal, a cast, an index, a call) is the
 /// bounded type (not `int`). A branch with no tail value would already be an `Err`
 /// from [`encode_block_tail`]; here an absent tail is conservatively not-`int`.
-fn branch_is_int_typed(block: &Block, env: &Env) -> Result<bool, RefEncodeError> {
+fn branch_is_int_typed(block: &Block, env: &Env, ctx: &BodyRefCtx) -> Result<bool, RefEncodeError> {
     let mut branch_env = env.clone();
     for stmt in &block.stmts {
-        thread_stmt(stmt, &mut branch_env)?;
+        thread_stmt(stmt, &mut branch_env, ctx)?;
     }
     let Some(tail) = &block.tail else {
         return Ok(false);
@@ -967,11 +1644,38 @@ fn substitute(expr: &Expr, env: &Env) -> Result<Expr, RefEncodeError> {
             expr: Box::new(substitute(inner, env)?),
             ty: ty.clone(),
         }),
+        Expr::Field { receiver, name } => Ok(Expr::Field {
+            receiver: Box::new(substitute(receiver, env)?),
+            name: name.clone(),
+        }),
+        Expr::StructLit { path, fields } => Ok(Expr::StructLit {
+            path: path.clone(),
+            fields: fields
+                .iter()
+                .map(|(name, value)| Ok((name.clone(), substitute(value, env)?)))
+                .collect::<Result<Vec<_>, RefEncodeError>>()?,
+        }),
+        Expr::Is { scrutinee, variant } => Ok(Expr::Is {
+            scrutinee: Box::new(substitute(scrutinee, env)?),
+            variant: variant.clone(),
+        }),
         Expr::Call { callee, args } => Ok(Expr::Call {
             callee: Box::new(substitute(callee, env)?),
             args: args
                 .iter()
                 .map(|a| substitute(a, env))
+                .collect::<Result<Vec<_>, _>>()?,
+        }),
+        Expr::MethodCall {
+            receiver,
+            name,
+            args,
+        } => Ok(Expr::MethodCall {
+            receiver: Box::new(substitute(receiver, env)?),
+            name: name.clone(),
+            args: args
+                .iter()
+                .map(|argument| substitute(argument, env))
                 .collect::<Result<Vec<_>, _>>()?,
         }),
         Expr::Index { base, index } => {
@@ -994,8 +1698,8 @@ fn substitute(expr: &Expr, env: &Env) -> Result<Expr, RefEncodeError> {
                 .map(|e| substitute(e, env))
                 .collect::<Result<Vec<_>, _>>()?,
         )),
-        // An out-of-subset value node (a method call, a struct literal, a closure, a
-        // match-expr, a field/projection, a deref, a ref) is passed through
+        // An out-of-subset value node (a closure, a match-expr, a tuple projection,
+        // a deref, a ref) is passed through
         // unchanged — [`exec_ref_value`] will reject it (the frozen RHS
         // sublanguage is the step-2.1 pure-exec subset). Passing it through keeps the
         // rejection in one place (the value encoder) with the precise node tag.

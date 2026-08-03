@@ -376,6 +376,10 @@ enum ParsedAttr {
     /// `StructItem.sealed`; the struct's own `span` covers the attribute, so the
     /// marker needs no payload.
     Sealed,
+    /// `#[frozen("kernel::domain::type@v1")]` on a fieldless struct. The
+    /// validator/lowerer bind the exact registry type; parsing also marks the
+    /// type sealed so source cannot construct it.
+    Frozen(String),
 }
 
 struct Parser<'a> {
@@ -659,17 +663,18 @@ impl<'a> Parser<'a> {
         // `#[sealed]` abstraction-barrier attribute (REQ-8) and no other; an
         // `enum` (REQ-2) carries no attribute (only `fn`/sealed-`struct` do).
         if self.check(&TokKind::Struct) {
-            let sealed = match &attr {
-                Some(ParsedAttr::Sealed) => true,
+            let (sealed, frozen) = match &attr {
+                Some(ParsedAttr::Sealed) => (true, None),
+                Some(ParsedAttr::Frozen(target)) => (true, Some(target.clone())),
                 Some(ParsedAttr::Slag(_)) => {
                     return Err(self.unexpected("`fn` after `#[slag(...)]`"));
                 }
                 Some(ParsedAttr::Boundary(_)) => {
                     return Err(self.unexpected("`fn` after `#[boundary(\"...\")]`"));
                 }
-                None => false,
+                None => (false, None),
             };
-            return self.parse_struct(start_span, sealed);
+            return self.parse_struct(start_span, sealed, frozen);
         }
         if self.check(&TokKind::Enum) {
             match &attr {
@@ -683,6 +688,9 @@ impl<'a> Parser<'a> {
                 // (REQ-8); it does not attach to an `enum`.
                 Some(ParsedAttr::Sealed) => {
                     return Err(self.unexpected("`struct` after `#[sealed]`"));
+                }
+                Some(ParsedAttr::Frozen(_)) => {
+                    return Err(self.unexpected("`struct` after `#[frozen(\"...\")]`"));
                 }
                 None => {}
             }
@@ -733,6 +741,9 @@ impl<'a> Parser<'a> {
                 Some(ParsedAttr::Sealed) => {
                     return Err(self.unexpected("`struct` after `#[sealed]`"));
                 }
+                Some(ParsedAttr::Frozen(_)) => {
+                    return Err(self.unexpected("`struct` after `#[frozen(\"...\")]`"));
+                }
                 None => {}
             }
             self.parse_spec_fn(start_span)
@@ -745,12 +756,15 @@ impl<'a> Parser<'a> {
                 Some(ParsedAttr::Sealed) => {
                     return Err(self.unexpected("`struct` after `#[sealed]`"));
                 }
+                Some(ParsedAttr::Frozen(_)) => {
+                    return Err(self.unexpected("`struct` after `#[frozen(\"...\")]`"));
+                }
                 None => (None, None),
             };
             self.parse_fn(slag, boundary, start_span)
         } else {
             Err(self.unexpected(
-                "`fn`, `spec fn`, `#[slag(...)]`, `#[boundary(\"...\")]`, or `#[sealed] struct`",
+                "`fn`, `spec fn`, `#[slag(...)]`, `#[boundary(\"...\")]`, `#[sealed] struct`, or `#[frozen(\"...\")] struct`",
             ))
         }
     }
@@ -773,12 +787,24 @@ impl<'a> Parser<'a> {
                 self.consume(&TokKind::RBracket, "`]`")?;
                 Ok(ParsedAttr::Sealed)
             }
+            "frozen" => {
+                let target = self.parse_frozen_body()?;
+                Ok(ParsedAttr::Frozen(target))
+            }
             _ => Err(SyntaxError::Unexpected {
-                expected: "`slag`, `boundary`, or `sealed`".to_string(),
+                expected: "`slag`, `boundary`, `sealed`, or `frozen`".to_string(),
                 found: format!("identifier `{name}`"),
                 span: start,
             }),
         }
+    }
+
+    fn parse_frozen_body(&mut self) -> PResult<String> {
+        self.consume(&TokKind::LParen, "`(`")?;
+        let target = self.take_string("a frozen registry type string")?;
+        self.consume(&TokKind::RParen, "`)`")?;
+        self.consume(&TokKind::RBracket, "`]`")?;
+        Ok(target)
     }
 
     /// Parse a `#[boundary("crate::path")]` attribute body: a single positional
@@ -980,7 +1006,12 @@ impl<'a> Parser<'a> {
     /// attribute (REQ-8). The validator rules (field well-formedness; the
     /// sealed-construction reject) are stage 1b / Stage 6; here we only parse the
     /// surface into the right AST.
-    fn parse_struct(&mut self, start_span: Span, sealed: bool) -> PResult<Item> {
+    fn parse_struct(
+        &mut self,
+        start_span: Span,
+        sealed: bool,
+        frozen: Option<String>,
+    ) -> PResult<Item> {
         self.consume(&TokKind::Struct, "`struct`")?;
         let name = self.take_ident("a struct name")?;
         let fields = self.parse_field_defs()?;
@@ -997,6 +1028,7 @@ impl<'a> Parser<'a> {
             fields,
             inv,
             sealed,
+            frozen,
             span,
         }))
     }

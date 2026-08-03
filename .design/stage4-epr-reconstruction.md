@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: adba1a733f08c9644914fad439fcaf367e972adeebc3039b37fd9dea8c8c233f (re-pinned 2026-08-01 after restoring the Rust cache before the pinned Stage 4 tools; Gate G4 identities remain enforced)
+audited-content-sha256: 49bab1984a2a096aae3ea8af5bea42a5f4504239a4ca87a88c76dfb737675948 (re-pinned 2026-08-01 after auditing the kernel-image CI replay update; Gate G4 identities remain enforced)
 governs: canonical S₂.0 bridge, typed Lean reconstruction, production routing,
          audit boundary, proof tooling, and Gate G4 (see tooling/spec-routes.toml)
 -->

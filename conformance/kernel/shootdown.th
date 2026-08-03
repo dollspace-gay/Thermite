@@ -1,0 +1,92 @@
+struct ShootdownState {
+  epoch: u64,
+  target_count: u64,
+  acknowledged: u64,
+  published: bool,
+  complete: bool
+}
+
+fn shootdown_new() -> ShootdownState
+  req true
+  ens result.epoch == 0
+  ens result.target_count == 0
+  ens result.acknowledged == 0
+  ens !result.published
+  ens !result.complete
+  fx pure
+{
+  ShootdownState {
+    epoch: 0,
+    target_count: 0,
+    acknowledged: 0,
+    published: false,
+    complete: false
+  }
+}
+
+fn shootdown_publish(state: ShootdownState, targets: u64) -> ShootdownState
+  req !state.published && !state.complete && targets > 0 && targets <= 8 && state.epoch < 18446744073709551615
+  ens result.epoch == state.epoch + 1
+  ens result.target_count == targets
+  ens result.acknowledged == 0
+  ens result.published
+  ens !result.complete
+  fx pure
+{
+  ShootdownState {
+    epoch: state.epoch + 1,
+    target_count: targets,
+    acknowledged: 0,
+    published: true,
+    complete: false
+  }
+}
+
+fn shootdown_acknowledge(state: ShootdownState, acknowledgements: u64) -> ShootdownState
+  req state.published && !state.complete && acknowledgements == state.target_count && state.target_count > 0
+  ens result.epoch == state.epoch
+  ens result.target_count == state.target_count
+  ens result.acknowledged == acknowledgements
+  ens result.published
+  ens result.complete
+  fx pure
+{
+  ShootdownState {
+    epoch: state.epoch,
+    target_count: state.target_count,
+    acknowledged: acknowledgements,
+    published: true,
+    complete: true
+  }
+}
+
+fn shootdown_policy_bootstrap(cpus: u64) -> u64
+  req cpus > 0 && cpus <= 8
+  ens result == 16
+  fx pure
+{
+  let empty: ShootdownState = shootdown_new();
+  let published: ShootdownState = shootdown_publish(empty, cpus);
+  let completed: ShootdownState = shootdown_acknowledge(published, cpus);
+  if completed.complete && completed.acknowledged == cpus && completed.epoch == 1 {
+    16
+  } else {
+    0
+  }
+}
+
+fn shootdown_runtime_complete(
+  observed_cpus: u64,
+  expected_cpus: u64,
+  stale_cpus: u64,
+  acknowledged_cpus: u64,
+  expected_acknowledgements: u64,
+  epoch: u64,
+  expected_epoch: u64
+) -> bool
+  req expected_cpus > 0 && expected_cpus <= 8 && expected_acknowledgements < expected_cpus
+  ens result == (observed_cpus == expected_cpus && stale_cpus == 0 && acknowledged_cpus == expected_acknowledgements && epoch == expected_epoch)
+  fx pure
+{
+  observed_cpus == expected_cpus && stale_cpus == 0 && acknowledged_cpus == expected_acknowledgements && epoch == expected_epoch
+}

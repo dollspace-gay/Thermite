@@ -78,6 +78,7 @@ use thermite_tv::obligation::{
     LoopParamDecl,
 };
 use thermite_tv::{loop_ref_obligations, BodyRefCtx};
+use thermite_tv::{ExecCallDecl, ExecStructFieldDecl};
 
 use crate::check::{unique_scratch_dir, ScratchDir, DEFAULT_RLIMIT, DEFAULT_SOLVER_SEED};
 use crate::cli::ForgeError;
@@ -200,6 +201,12 @@ fn body_tv_fn(
     let Some(body) = &f.body else {
         return; // a boundary fn has no in-language body.
     };
+    let is_loop = matches!(body.stmts.last(), Some(Stmt::Loop(_)));
+    let structural_label = if is_loop {
+        format!("{}.loop", f.name)
+    } else {
+        f.name.clone()
+    };
 
     // #193/#195 open-hole gate (`.design/forge/goal-repl.md` REQ-5; the four-way's
     // out-of-subset class): a fn carrying any open body hole (`?N`) is incomplete.
@@ -211,7 +218,7 @@ fn body_tv_fn(
     // (the shared `goal_repl::open_hole_reason`, the #192 single-copy lesson).
     if let Some(reason) = crate::goal_repl::open_hole_reason(f) {
         report.results.push(BodyResult {
-            label: f.name.clone(),
+            label: structural_label.clone(),
             verdict: BodyVerdict::Skipped { reason },
         });
         return;
@@ -221,17 +228,26 @@ fn body_tv_fn(
         Ok(support) => support,
         Err(reason) => {
             report.results.push(BodyResult {
-                label: f.name.clone(),
+                label: structural_label,
                 verdict: BodyVerdict::Skipped { reason },
             });
             return;
         }
     };
 
-    if matches!(body.stmts.last(), Some(Stmt::Loop(_))) {
+    if is_loop {
         loop_body_tv(f, body, &support_defs, &support_names, seed, rlimit, report);
     } else {
-        straight_line_body_tv(f, body, &support_defs, &support_names, seed, rlimit, report);
+        straight_line_body_tv(
+            program,
+            f,
+            body,
+            &support_defs,
+            &support_names,
+            seed,
+            rlimit,
+            report,
+        );
     }
 }
 
@@ -259,14 +275,11 @@ pub(crate) fn body_tv_support(
         .chain(closure.spec_functions.iter())
         .cloned()
         .collect();
-    if support_names.is_empty() {
-        return Ok((Vec::new(), support_names));
-    }
     let referrers: Vec<&Item> = program
         .items
         .iter()
         .filter(|item| match item {
-            Item::Fn(dep) => support_names.contains(&dep.name),
+            Item::Fn(dep) => dep.name == f.name || support_names.contains(&dep.name),
             Item::SpecFn(dep) => support_names.contains(&dep.name),
             Item::Struct(_) | Item::Enum(_) | Item::Forge(_) => false,
         })
@@ -275,6 +288,9 @@ pub(crate) fn body_tv_support(
         .into_iter()
         .map(|item| item.name().to_string())
         .collect();
+    if support_names.is_empty() && adt_names.is_empty() {
+        return Ok((Vec::new(), support_names));
+    }
     let support = thermite_syntax::Program {
         items: program
             .items
@@ -303,6 +319,8 @@ pub(crate) fn body_tv_support(
         .ok_or_else(|| "body-TV dependency frame had no canonical closing".to_string())?;
     let mut inner = lowered[start..end].to_string();
     let mut reference_defs = String::new();
+    let struct_fields = exec_struct_field_decls(&support);
+    let call_decls = exec_call_decls(&support);
     for item in &support.items {
         let Item::Fn(dep) = item else {
             continue;
@@ -315,6 +333,7 @@ pub(crate) fn body_tv_support(
         };
         let mut params = Vec::new();
         let mut slices = Vec::new();
+        let mut named = Vec::new();
         for param in &dep.params {
             let Some((ty, is_slice)) = exec_type_spelling(&param.ty) else {
                 return Err(format!(
@@ -325,6 +344,9 @@ pub(crate) fn body_tv_support(
             if is_slice {
                 slices.push(param.name.clone());
             }
+            if let Type::Named(name) = &param.ty {
+                named.push((param.name.clone(), name.clone()));
+            }
             params.push(format!("{}: {ty}", param.name));
         }
         let Some((ret, _)) = exec_type_spelling(&dep.ret) else {
@@ -333,13 +355,16 @@ pub(crate) fn body_tv_support(
                 dep.name
             ));
         };
-        let reference = thermite_tv::body_ref_state(body, &BodyRefCtx::with_slice_bound(slices))
-            .map_err(|error| {
-                format!(
-                    "body-TV dependency `{}` is outside the independent body reference: {error}",
-                    dep.name
-                )
-            })?;
+        let reference_ctx = BodyRefCtx::with_bounds(slices, std::iter::empty::<String>(), named)
+            .with_struct_fields(struct_fields.iter().cloned())
+            .with_calls(call_decls.iter().cloned())
+            .with_result_struct(ret.clone());
+        let reference = thermite_tv::body_ref_state(body, &reference_ctx).map_err(|error| {
+            format!(
+                "body-TV dependency `{}` is outside the independent body reference: {error}",
+                dep.name
+            )
+        })?;
         let spec_name = format!("thermite_tv_ref_{}", dep.name);
         reference_defs.push_str(&format!(
             "\nspec fn {spec_name}({}) -> {ret} {{ {reference} }}\n",
@@ -373,6 +398,7 @@ pub(crate) fn body_tv_support(
 /// lowerer does not cover (a non-scalar mutation, a re-shadow, a mid-body return) is
 /// Skipped.
 fn straight_line_body_tv(
+    program: &thermite_syntax::Program,
     f: &FnItem,
     body: &Block,
     support_defs: &[String],
@@ -406,11 +432,15 @@ fn straight_line_body_tv(
     // non-derivable → Skip (never a guessed binding).
     let mut params: Vec<BodyParamDecl> = Vec::new();
     let mut slice_params: Vec<String> = Vec::new();
+    let mut mutable_slice_params: Vec<String> = Vec::new();
     for p in &f.params {
         match exec_type_spelling(&p.ty) {
             Some((ty_str, is_slice)) => {
                 if is_slice {
                     slice_params.push(p.name.clone());
+                    if is_mutable_slice(&p.ty) {
+                        mutable_slice_params.push(p.name.clone());
+                    }
                 }
                 params.push(BodyParamDecl::new(p.name.clone(), ty_str));
             }
@@ -434,7 +464,7 @@ fn straight_line_body_tv(
     // under test, the non-test consumer of `lower_exec_body`). A body the exec body
     // lowering does not cover (a `Stmt::Loop` it cannot lower standalone, a non-scalar
     // construct) → Skip (out of the frozen straight-line subset), not a verdict.
-    let p_production = match thermite_lower::lower_exec_body(body) {
+    let p_production = match thermite_lower::lower_exec_body_in_program(program, body) {
         Ok(p) => p,
         Err(e) => {
             report.results.push(BodyResult {
@@ -483,12 +513,34 @@ fn straight_line_body_tv(
         return;
     }
 
+    let req = match lowered_body_req(f) {
+        Ok(req) => req,
+        Err(reason) => {
+            report.results.push(BodyResult {
+                label,
+                verdict: BodyVerdict::Skipped { reason },
+            });
+            return;
+        }
+    };
+
     let frame = BodyObligationFrame {
         spec_defs: support_defs.to_vec(),
         params,
         ret_type: ret_ty,
-        req: corpus_req(f),
+        req,
         slice_params,
+        mutable_slice_params,
+        named_params: f
+            .params
+            .iter()
+            .filter_map(|param| match &param.ty {
+                Type::Named(name) => Some((param.name.clone(), name.clone())),
+                _ => None,
+            })
+            .collect(),
+        struct_fields: exec_struct_field_decls(program),
+        call_decls: exec_call_decls(program),
     };
 
     // Build the body state-refinement obligation. The reference state-denotation
@@ -514,6 +566,42 @@ fn straight_line_body_tv(
 
     let verdict = discharge(&program, &label, seed, rlimit);
     report.results.push(BodyResult { label, verdict });
+}
+
+/// Lower the source precondition into the same Verus spec position occupied by a
+/// body obligation's `requires`. Contract-TV independently proves this lowering;
+/// reusing that certified predicate here is the composition bridge. In particular,
+/// frozen `FixedArray8.get(i)` becomes its callable spec accessor rather than an
+/// illegal exec-method call in a specification.
+pub(crate) fn lowered_body_req(f: &FnItem) -> Result<Option<String>, String> {
+    if f.contract.req.text.trim().is_empty() || f.contract.req.text.trim() == "true" {
+        return Ok(None);
+    }
+    let slice_names: Vec<&str> = f
+        .params
+        .iter()
+        .filter(|param| matches!(param.ty, Type::Ref { ref inner, .. } if matches!(inner.as_ref(), Type::Slice(_))))
+        .map(|param| param.name.as_str())
+        .collect();
+    let string_names: Vec<&str> = f
+        .params
+        .iter()
+        .filter(|param| matches!(param.ty, Type::String))
+        .map(|param| param.name.as_str())
+        .collect();
+    thermite_lower::lower_contract_expr(
+        &f.contract.req.expr,
+        &slice_names,
+        &[],
+        &string_names,
+        &[],
+        &[],
+        &[],
+    )
+    .map(Some)
+    .map_err(|error| {
+        format!("the source `req` cannot be lowered into the body-TV Verus frame: {error}")
+    })
 }
 
 // ---- the loop arm (loop-tv REQ-5 / increment 2.2.2-iii) --------------------
@@ -828,12 +916,31 @@ fn exec_type_spelling(ty: &Type) -> Option<(String, bool)> {
         Type::Prim(PrimType::U64) => Some(("u64".to_string(), false)),
         Type::Prim(PrimType::Usize) => Some(("usize".to_string(), false)),
         Type::Prim(PrimType::Bool) => Some(("bool".to_string(), false)),
-        Type::Ref { inner, .. } => match inner.as_ref() {
+        Type::Named(name) => Some((name.clone(), false)),
+        Type::Generic { name, arg } if name == "FixedArray8" => {
+            let suffix = match arg.as_ref() {
+                Type::Prim(PrimType::U8) => "U8",
+                Type::Prim(PrimType::U16) => "U16",
+                Type::Prim(PrimType::U32) => "U32",
+                Type::Prim(PrimType::U64) => "U64",
+                Type::Prim(PrimType::Usize) => "Usize",
+                Type::Prim(PrimType::Bool) => "Bool",
+                Type::Named(name) => name,
+                _ => return None,
+            };
+            Some((format!("TFixedArray8{suffix}"), false))
+        }
+        Type::Ref { mutable, inner } => match inner.as_ref() {
             // `&[u32]` → the exec slice binding (indexed element-wise as `xs[i as
             // int]` in the reference). Only a `u32` element slice is framed.
-            Type::Slice(elem) => {
-                exec_type_spelling(elem).map(|(spelling, _)| (format!("&[{spelling}]"), true))
-            }
+            Type::Slice(elem) => exec_type_spelling(elem).map(|(spelling, _)| {
+                let borrowed = if *mutable {
+                    format!("&mut [{spelling}]")
+                } else {
+                    format!("&[{spelling}]")
+                };
+                (borrowed, true)
+            }),
             // A `&u64`/`&usize` borrow frames as the inner scalar.
             other => exec_type_spelling(other),
         },
@@ -842,6 +949,83 @@ fn exec_type_spelling(ty: &Type) -> Option<(String, bool)> {
         }
         _ => None,
     }
+}
+
+/// Exact named-struct field declarations available to exec/body-TV. A field whose
+/// type cannot be represented in the frozen exec frame is omitted; construction of
+/// that struct then fails closed in the independent reference rather than guessing.
+pub(crate) fn exec_struct_field_decls(
+    program: &thermite_syntax::Program,
+) -> Vec<ExecStructFieldDecl> {
+    let mut fields: Vec<ExecStructFieldDecl> = Vec::new();
+    for item in &program.items {
+        let Item::Struct(item) = item else {
+            continue;
+        };
+        for field in &item.fields {
+            if let Some((type_str, _)) = exec_type_spelling(&field.ty) {
+                if type_str.starts_with("TFixedArray8") {
+                    let Type::Generic { arg, .. } = &field.ty else {
+                        continue;
+                    };
+                    let Some((element, _)) = exec_type_spelling(arg) else {
+                        continue;
+                    };
+                    for index in 0..8 {
+                        let slot = format!("slot{index}");
+                        if !fields
+                            .iter()
+                            .any(|decl| decl.struct_path == type_str && decl.field == slot)
+                        {
+                            fields.push(ExecStructFieldDecl::new(
+                                type_str.clone(),
+                                slot,
+                                element.clone(),
+                            ));
+                        }
+                    }
+                }
+                fields.push(ExecStructFieldDecl::new(
+                    item.name.clone(),
+                    field.name.clone(),
+                    type_str,
+                ));
+            }
+        }
+    }
+    fields
+}
+
+/// Exact executable signatures for every framable Thermite function in a program.
+/// An unframable signature is omitted so its call remains a loud type/proof failure
+/// rather than receiving a guessed cast.
+pub(crate) fn exec_call_decls(program: &thermite_syntax::Program) -> Vec<ExecCallDecl> {
+    program
+        .items
+        .iter()
+        .filter_map(|item| {
+            let Item::Fn(function) = item else {
+                return None;
+            };
+            let params = function
+                .params
+                .iter()
+                .map(|param| exec_type_spelling(&param.ty).map(|(ty, _)| ty))
+                .collect::<Option<Vec<_>>>()?;
+            let (ret, _) = exec_type_spelling(&function.ret)?;
+            Some(ExecCallDecl::new(function.name.clone(), params, ret))
+        })
+        .collect()
+}
+
+fn is_mutable_slice(ty: &Type) -> bool {
+    matches!(
+        ty,
+        Type::Ref {
+            mutable: true,
+            inner,
+        } if matches!(inner.as_ref(), Type::Slice(_))
+    )
 }
 
 // ---- verus discharge (mirrors exec_tv::discharge) --------------------------
@@ -1212,6 +1396,48 @@ pub fn render_report(report: &BodyTvReport, header: &str) -> String {
 pub const BODY_TV_DEFAULT_SEED: u64 = DEFAULT_SOLVER_SEED;
 pub const BODY_TV_DEFAULT_RLIMIT: f64 = DEFAULT_RLIMIT;
 
+#[cfg(test)]
+mod structural_label_tests {
+    use super::*;
+
+    #[test]
+    fn loop_keeps_loop_label_when_its_rich_dependency_frame_is_unavailable() {
+        let source = format!(
+            "{}\n{}\n{}\n",
+            include_str!("../../conformance/kernel/atomic.th"),
+            include_str!("../../conformance/kernel/memory.th"),
+            include_str!("../../conformance/kernel/allocator.th"),
+        );
+        let parsed = thermite_syntax::parse(&source);
+        assert!(parsed.is_clean(), "parse errors: {:?}", parsed.errors);
+        let allocator = parsed
+            .program
+            .items
+            .iter()
+            .find_map(|item| match item {
+                Item::Fn(function) if function.name == "allocator_claim_first" => Some(function),
+                _ => None,
+            })
+            .expect("allocator claim function");
+        let mut report = BodyTvReport::default();
+
+        body_tv_fn(
+            &parsed.program,
+            allocator,
+            BODY_TV_DEFAULT_SEED,
+            BODY_TV_DEFAULT_RLIMIT,
+            &mut report,
+        );
+
+        assert_eq!(report.results.len(), 1, "{:#?}", report.results);
+        assert_eq!(report.results[0].label, "allocator_claim_first.loop");
+        assert!(
+            matches!(report.results[0].verdict, BodyVerdict::Skipped { .. }),
+            "the rich Atomic frame is expected to be completed only by exact composition"
+        );
+    }
+}
+
 // ---- forge-level Divergent regression tests (REQ-5; blocker #189) ----------
 //
 // The obligation-layer tests (`thermite-tv/tests/body_teeth.rs` / `loop_teeth.rs`)
@@ -1238,7 +1464,7 @@ pub const BODY_TV_DEFAULT_RLIMIT: f64 = DEFAULT_RLIMIT;
 #[cfg(test)]
 mod divergent_teeth {
     use super::*;
-    use thermite_syntax::ast::{BinOp, Expr};
+    use thermite_syntax::ast::{BinOp, Expr, IndexArg};
 
     /// `true` iff a bare `verus` is spawnable (the same resolution `discharge` uses).
     /// Skips with a printed reason when the solver cannot be reached.
@@ -1309,6 +1535,335 @@ mod divergent_teeth {
             req: Some("x <= 1000".to_string()),
             ..Default::default()
         }
+    }
+
+    fn slice_write_body(index: Expr, value: Expr) -> Block {
+        Block {
+            stmts: vec![Stmt::Assign {
+                target: Expr::Index {
+                    base: Box::new(path("data")),
+                    index: IndexArg::Single(Box::new(index)),
+                },
+                value,
+            }],
+            tail: Some(Box::new(path("value"))),
+        }
+    }
+
+    fn slice_write_frame() -> BodyObligationFrame {
+        BodyObligationFrame {
+            params: vec![
+                BodyParamDecl::new("data", "&mut [u8]"),
+                BodyParamDecl::new("at", "usize"),
+                BodyParamDecl::new("value", "u8"),
+            ],
+            ret_type: "u8".to_string(),
+            req: Some("at < data.len()".to_string()),
+            slice_params: vec!["data".to_string()],
+            mutable_slice_params: vec!["data".to_string()],
+            ..Default::default()
+        }
+    }
+
+    fn pair_body() -> Block {
+        Block {
+            stmts: vec![],
+            tail: Some(Box::new(Expr::StructLit {
+                path: vec!["Pair".to_string()],
+                fields: vec![
+                    ("first".to_string(), path("a")),
+                    ("second".to_string(), path("b")),
+                ],
+            })),
+        }
+    }
+
+    fn pair_frame() -> BodyObligationFrame {
+        BodyObligationFrame {
+            spec_defs: vec!["struct Pair { first: u64, second: u64 }".to_string()],
+            params: vec![
+                BodyParamDecl::new("a", "u64"),
+                BodyParamDecl::new("b", "u64"),
+            ],
+            ret_type: "Pair".to_string(),
+            struct_fields: vec![
+                ExecStructFieldDecl::new("Pair", "first", "u64"),
+                ExecStructFieldDecl::new("Pair", "second", "u64"),
+            ],
+            ..Default::default()
+        }
+    }
+
+    fn bounded_call_body() -> Block {
+        Block {
+            stmts: vec![],
+            tail: Some(Box::new(Expr::Call {
+                callee: Box::new(path("dep")),
+                args: vec![bin(BinOp::Sub, path("a"), int(1))],
+            })),
+        }
+    }
+
+    fn bounded_call_frame() -> BodyObligationFrame {
+        BodyObligationFrame {
+            spec_defs: vec!["spec fn dep_spec(x: u64) -> u64 { x }\n\
+                 #[verifier::when_used_as_spec(dep_spec)]\n\
+                 fn dep(x: u64) -> (result: u64)\n\
+                     ensures result == x,\n\
+                 { x }"
+                .to_string()],
+            params: vec![BodyParamDecl::new("a", "u64")],
+            ret_type: "u64".to_string(),
+            req: Some("a > 0 && a < 100".to_string()),
+            call_decls: vec![ExecCallDecl::new("dep", vec!["u64".to_string()], "u64")],
+            ..Default::default()
+        }
+    }
+
+    fn aggregate_call_body() -> Block {
+        Block {
+            stmts: vec![],
+            tail: Some(Box::new(Expr::Call {
+                callee: Box::new(path("pair_seed")),
+                args: vec![path("a")],
+            })),
+        }
+    }
+
+    fn aggregate_call_frame(complete_contract: bool) -> BodyObligationFrame {
+        let second_ensure = if complete_contract {
+            "        result.second == 0,\n"
+        } else {
+            ""
+        };
+        BodyObligationFrame {
+            spec_defs: vec![format!(
+                "struct Pair {{ first: u64, second: u64 }}\n\
+                 spec fn pair_seed_spec(a: u64) -> Pair {{ Pair {{ first: a, second: 0 }} }}\n\
+                 #[verifier::when_used_as_spec(pair_seed_spec)]\n\
+                 fn pair_seed(a: u64) -> (result: Pair)\n\
+                     ensures\n\
+                         result.first == a,\n\
+                 {second_ensure}\
+                 {{ Pair {{ first: a, second: 0 }} }}"
+            )],
+            params: vec![BodyParamDecl::new("a", "u64")],
+            ret_type: "Pair".to_string(),
+            struct_fields: vec![
+                ExecStructFieldDecl::new("Pair", "first", "u64"),
+                ExecStructFieldDecl::new("Pair", "second", "u64"),
+            ],
+            call_decls: vec![ExecCallDecl::new(
+                "pair_seed",
+                vec!["u64".to_string()],
+                "Pair",
+            )],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn faithful_bounded_call_argument_classifies_faithful() {
+        if !verus_on_path() {
+            eprintln!("SKIP: verus not on PATH -- bounded-call control not discharged.");
+            return;
+        }
+        let built = build(
+            &bounded_call_body(),
+            "    dep(a - 1)\n",
+            &bounded_call_frame(),
+        )
+        .expect("the faithful bounded-call obligation builds");
+        assert_eq!(
+            discharge(&built, "teeth.call.faithful", SEED, RLIMIT),
+            BodyVerdict::Faithful
+        );
+    }
+
+    #[test]
+    fn wrong_bounded_call_argument_classifies_divergent() {
+        if !verus_on_path() {
+            eprintln!("SKIP: verus not on PATH -- bounded-call wrong-arg tooth not discharged.");
+            return;
+        }
+        let built = build(
+            &bounded_call_body(),
+            "    dep(a + 1)\n",
+            &bounded_call_frame(),
+        )
+        .expect("the wrong bounded-call obligation builds");
+        let verdict = discharge(&built, "teeth.call.wrong-arg", SEED, RLIMIT);
+        assert!(
+            matches!(verdict, BodyVerdict::Divergent { .. }),
+            "a changed bounded call argument must be Divergent; got {verdict:?}"
+        );
+    }
+
+    #[test]
+    fn complete_aggregate_callee_contract_classifies_faithful() {
+        if !verus_on_path() {
+            eprintln!("SKIP: verus not on PATH -- aggregate-call control not discharged.");
+            return;
+        }
+        let built = build(
+            &aggregate_call_body(),
+            "    pair_seed(a)\n",
+            &aggregate_call_frame(true),
+        )
+        .expect("the complete aggregate-call obligation builds");
+        assert_eq!(
+            discharge(&built, "teeth.call.aggregate-complete", SEED, RLIMIT),
+            BodyVerdict::Faithful
+        );
+    }
+
+    #[test]
+    fn omitted_aggregate_callee_field_classifies_divergent() {
+        if !verus_on_path() {
+            eprintln!(
+                "SKIP: verus not on PATH -- aggregate-call omitted-field tooth not discharged."
+            );
+            return;
+        }
+        let built = build(
+            &aggregate_call_body(),
+            "    pair_seed(a)\n",
+            &aggregate_call_frame(false),
+        )
+        .expect("the incomplete aggregate-call obligation builds");
+        let verdict = discharge(&built, "teeth.call.aggregate-omitted-field", SEED, RLIMIT);
+        assert!(
+            matches!(verdict, BodyVerdict::Divergent { .. }),
+            "an aggregate callee contract that omits a referenced field must be Divergent; got {verdict:?}"
+        );
+    }
+
+    #[test]
+    fn faithful_struct_construction_classifies_faithful() {
+        if !verus_on_path() {
+            eprintln!("SKIP: verus not on PATH -- struct construction control not discharged.");
+            return;
+        }
+        let built = build(
+            &pair_body(),
+            "    Pair { first: a, second: b }\n",
+            &pair_frame(),
+        )
+        .expect("the faithful struct obligation builds");
+        assert_eq!(
+            discharge(&built, "teeth.struct.faithful", SEED, RLIMIT),
+            BodyVerdict::Faithful
+        );
+    }
+
+    #[test]
+    fn swapped_struct_fields_classify_divergent() {
+        if !verus_on_path() {
+            eprintln!("SKIP: verus not on PATH -- struct wrong-field tooth not discharged.");
+            return;
+        }
+        let built = build(
+            &pair_body(),
+            "    Pair { first: b, second: a }\n",
+            &pair_frame(),
+        )
+        .expect("the wrong-field struct obligation builds");
+        let verdict = discharge(&built, "teeth.struct.swapped", SEED, RLIMIT);
+        assert!(
+            matches!(verdict, BodyVerdict::Divergent { .. }),
+            "swapped aggregate fields must be Divergent; got {verdict:?}"
+        );
+    }
+
+    /// The complete mutable-slice post-state is part of the body refinement, not
+    /// merely the scalar return value. This positive control proves the production
+    /// write at the source index with the source value.
+    #[test]
+    fn faithful_mutable_slice_write_classifies_faithful() {
+        if !verus_on_path() {
+            eprintln!(
+                "SKIP: verus not on PATH — the mutable-slice Faithful control not discharged."
+            );
+            return;
+        }
+        let built = build(
+            &slice_write_body(path("at"), path("value")),
+            "    data[at] = value;\n    value\n",
+            &slice_write_frame(),
+        );
+        assert!(
+            built.is_ok(),
+            "the slice body obligation must build: {built:?}"
+        );
+        let verdict = discharge(
+            &built.unwrap_or_default(),
+            "teeth.slice.faithful",
+            SEED,
+            RLIMIT,
+        );
+        assert_eq!(verdict, BodyVerdict::Faithful);
+    }
+
+    /// A production write to `0` still returns the expected scalar, but disagrees
+    /// with the complete source sequence effect whenever `at != 0`.
+    #[test]
+    fn wrong_mutable_slice_index_classifies_divergent() {
+        if !verus_on_path() {
+            eprintln!(
+                "SKIP: verus not on PATH — the mutable-slice wrong-index tooth not discharged."
+            );
+            return;
+        }
+        let built = build(
+            &slice_write_body(path("at"), path("value")),
+            "    data[0] = value;\n    value\n",
+            &slice_write_frame(),
+        );
+        assert!(
+            built.is_ok(),
+            "the slice body obligation must build: {built:?}"
+        );
+        let verdict = discharge(
+            &built.unwrap_or_default(),
+            "teeth.slice.wrong-index",
+            SEED,
+            RLIMIT,
+        );
+        assert!(
+            matches!(verdict, BodyVerdict::Divergent { .. }),
+            "a wrong slice index must be Divergent; got {verdict:?}"
+        );
+    }
+
+    /// A production write of zero still returns the expected scalar, but disagrees
+    /// with the source sequence effect whenever `value != 0`.
+    #[test]
+    fn wrong_mutable_slice_value_classifies_divergent() {
+        if !verus_on_path() {
+            eprintln!(
+                "SKIP: verus not on PATH — the mutable-slice wrong-value tooth not discharged."
+            );
+            return;
+        }
+        let built = build(
+            &slice_write_body(path("at"), path("value")),
+            "    data[at] = 0;\n    value\n",
+            &slice_write_frame(),
+        );
+        assert!(
+            built.is_ok(),
+            "the slice body obligation must build: {built:?}"
+        );
+        let verdict = discharge(
+            &built.unwrap_or_default(),
+            "teeth.slice.wrong-value",
+            SEED,
+            RLIMIT,
+        );
+        assert!(
+            matches!(verdict, BodyVerdict::Divergent { .. }),
+            "a wrong slice value must be Divergent; got {verdict:?}"
+        );
     }
 
     /// Positive control: a faithful production (`let a = x + 1; let b = a * 2; b`) ->

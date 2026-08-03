@@ -1,0 +1,313 @@
+struct FrameAllocatorState {
+  free_mask: u64,
+  allocated_frame: u64,
+  generation: u64,
+  allocations: u64
+}
+
+struct MappingPolicyState {
+  virtual_page: u64,
+  physical_page: u64,
+  epoch: u64,
+  mapped: bool
+}
+
+fn frame_allocator_new() -> FrameAllocatorState
+  req true
+  ens result.free_mask == 255
+  ens result.allocated_frame == 0
+  ens result.generation == 0
+  ens result.allocations == 0
+  fx pure
+{
+  FrameAllocatorState {
+    free_mask: 255,
+    allocated_frame: 0,
+    generation: 0,
+    allocations: 0
+  }
+}
+
+fn frame_allocate_first(state: FrameAllocatorState) -> FrameAllocatorState
+  req state.free_mask > 0 && state.allocations == 0 && state.generation < 18446744073709551615
+  ens result.free_mask == state.free_mask - 1
+  ens result.allocated_frame == 0
+  ens result.generation == state.generation + 1
+  ens result.allocations == 1
+  fx pure
+{
+  FrameAllocatorState {
+    free_mask: state.free_mask - 1,
+    allocated_frame: 0,
+    generation: state.generation + 1,
+    allocations: 1
+  }
+}
+
+fn frame_reclaim(state: FrameAllocatorState) -> FrameAllocatorState
+  req state.allocations == 1 && state.allocated_frame == 0 && state.free_mask < 18446744073709551615 && state.generation < 18446744073709551615
+  ens result.free_mask == state.free_mask + 1
+  ens result.allocated_frame == 0
+  ens result.generation == state.generation + 1
+  ens result.allocations == 0
+  fx pure
+{
+  FrameAllocatorState {
+    free_mask: state.free_mask + 1,
+    allocated_frame: 0,
+    generation: state.generation + 1,
+    allocations: 0
+  }
+}
+
+fn mapping_policy_new() -> MappingPolicyState
+  req true
+  ens result.virtual_page == 0
+  ens result.physical_page == 0
+  ens result.epoch == 0
+  ens !result.mapped
+  fx pure
+{
+  MappingPolicyState {
+    virtual_page: 0,
+    physical_page: 0,
+    epoch: 0,
+    mapped: false
+  }
+}
+
+fn mapping_install(state: MappingPolicyState, virtual_page: u64, physical_page: u64) -> MappingPolicyState
+  req !state.mapped && virtual_page > 0 && physical_page > 0 && state.epoch < 18446744073709551615
+  ens result.virtual_page == virtual_page
+  ens result.physical_page == physical_page
+  ens result.epoch == state.epoch + 1
+  ens result.mapped
+  fx pure
+{
+  MappingPolicyState {
+    virtual_page: virtual_page,
+    physical_page: physical_page,
+    epoch: state.epoch + 1,
+    mapped: true
+  }
+}
+
+fn mapping_replace(state: MappingPolicyState, physical_page: u64) -> MappingPolicyState
+  req state.mapped && physical_page > 0 && physical_page != state.physical_page && state.epoch < 18446744073709551615
+  ens result.virtual_page == state.virtual_page
+  ens result.physical_page == physical_page
+  ens result.epoch == state.epoch + 1
+  ens result.mapped
+  fx pure
+{
+  MappingPolicyState {
+    virtual_page: state.virtual_page,
+    physical_page: physical_page,
+    epoch: state.epoch + 1,
+    mapped: true
+  }
+}
+
+fn memory_policy_bootstrap() -> u64
+  req true
+  ens result == 3
+  fx pure
+{
+  let fresh: FrameAllocatorState = frame_allocator_new();
+  let allocated: FrameAllocatorState = frame_allocate_first(fresh);
+  let allocated_valid: bool = allocated.free_mask == 254 && allocated.generation == 1 && allocated.allocations == 1;
+  let empty_mapping: MappingPolicyState = mapping_policy_new();
+  let installed: MappingPolicyState = mapping_install(empty_mapping, 1048576, 2097152);
+  let installed_valid: bool = installed.virtual_page == 1048576 && installed.physical_page == 2097152 && installed.epoch == 1;
+  let replaced: MappingPolicyState = mapping_replace(installed, 2101248);
+  let reclaimed: FrameAllocatorState = frame_reclaim(allocated);
+  if allocated_valid && installed_valid && replaced.virtual_page == 1048576 && replaced.physical_page == 2101248 && replaced.epoch == 2 && reclaimed.free_mask == 255 && reclaimed.generation == 2 && reclaimed.allocations == 0 {
+    3
+  } else {
+    0
+  }
+}
+
+fn allocator_request_pages(size: u64, alignment: u64) -> u64
+  req true
+  ens ((alignment > 4096 || size > 262144) && result == 0) || (alignment <= 4096 && size <= 262144 && size == 0 && result == 1) || (alignment <= 4096 && size > 0 && size <= 262144 && result == (size + 4095) / 4096)
+  fx pure
+{
+  let mut pages: u64 = 0;
+  if alignment > 4096 || size > 262144 {
+    pages = 0;
+  } else {
+    if size == 0 {
+      pages = 1;
+    } else {
+      pages = (size + 4095) / 4096;
+    }
+  }
+  pages
+}
+
+fn allocator_run_mask(first: u64, pages: u64, all_bits: u64) -> u64
+  req pages > 0 && pages <= 64 && first < 64 && first + pages <= 64 && all_bits == 18446744073709551615
+  ens result == (all_bits >> ((64 as u64) - pages)) << first
+  fx pure
+{
+  let low_mask: u64 = all_bits >> ((64 as u64) - pages);
+  low_mask << first
+}
+
+fn allocator_candidate_available(observed: u64, mask: u64) -> bool
+  req true
+  ens result == (observed & mask == 0)
+  fx pure
+{
+  observed & mask == 0
+}
+
+spec fn allocator_first_available_spec(observed: u64, pages: u64, first: u64) -> u64
+  dec if first < 64 { 64 - first } else { 0 }
+{
+  if pages == 0 || pages > 64 || first >= 64 || first > 64 - pages {
+    64
+  } else {
+    let mask: u64 = ((18446744073709551615 as u64) >> (64 - pages)) << first;
+    if observed & mask == 0 {
+      first
+    } else {
+      allocator_first_available_spec(observed, pages, first + 1)
+    }
+  }
+}
+
+fn allocator_first_available(observed: u64, pages: u64) -> u64
+  req pages > 0 && pages <= 64
+  ens result == allocator_first_available_spec(observed, pages, 0)
+  fx pure
+{
+  let mut first: u64 = 0;
+  while first < 64 && first <= 64 - pages && !allocator_candidate_available(observed, allocator_run_mask(first, pages, 18446744073709551615))
+    inv first <= 64
+    inv allocator_first_available_spec(observed, pages, 0) == allocator_first_available_spec(observed, pages, first)
+    dec 64 - first
+  {
+    first = (first + 1) as u64;
+  }
+  if first < 64 && first <= 64 - pages {
+    first
+  } else {
+    64
+  }
+}
+
+fn allocator_claim_value(observed: u64, mask: u64) -> u64
+  req true
+  ens result == (observed | mask)
+  fx pure
+{
+  observed | mask
+}
+
+fn allocator_runtime_accept(
+  heap_base: u64,
+  first_address: u64,
+  second_address: u64,
+  heap_bytes: u64,
+  bitmap: u64
+) -> bool
+  req heap_bytes > 0 && heap_base <= 18446744073709551615 - heap_bytes
+  ens result == (heap_base > 0 && first_address >= heap_base && first_address < heap_base + heap_bytes && second_address >= heap_base && second_address < heap_base + heap_bytes && first_address != second_address && bitmap == 0)
+  fx pure
+{
+  heap_base > 0 && first_address >= heap_base && first_address < heap_base + heap_bytes && second_address >= heap_base && second_address < heap_base + heap_bytes && first_address != second_address && bitmap == 0
+}
+
+fn mapping_kernel_table_entry(physical: u64) -> u64
+  req true
+  ens ((physical > 4294967295 || physical % 4096 != 0) && result == 0) || (physical <= 4294967295 && physical % 4096 == 0 && result == physical + 3)
+  fx pure
+{
+  let mut entry: u64 = 0;
+  if physical > 4294967295 || physical % 4096 != 0 {
+    entry = 0;
+  } else {
+    entry = physical + 3;
+  }
+  entry
+}
+
+fn mapping_identity_physical(pdpt_index: u64, entry_index: u64) -> u64
+  req pdpt_index < 4 && entry_index < 512
+  ens result == (pdpt_index * 512 + entry_index) * 2097152
+  fx pure
+{
+  (pdpt_index * 512 + entry_index) * 2097152
+}
+
+fn mapping_user_table_entry(physical: u64) -> u64
+  req true
+  ens ((physical > 4294967295 || physical % 4096 != 0) && result == 0) || (physical <= 4294967295 && physical % 4096 == 0 && result == physical + 7)
+  fx pure
+{
+  let mut entry: u64 = 0;
+  if physical > 4294967295 || physical % 4096 != 0 {
+    entry = 0;
+  } else {
+    entry = physical + 7;
+  }
+  entry
+}
+
+fn mapping_identity_huge_entry(physical: u64) -> u64
+  req true
+  ens ((physical > 4294967295 || physical % 4096 != 0) && result == 0) || (physical <= 4294967295 && physical % 4096 == 0 && result == physical + 131)
+  fx pure
+{
+  let mut entry: u64 = 0;
+  if physical > 4294967295 || physical % 4096 != 0 {
+    entry = 0;
+  } else {
+    entry = physical + 131;
+  }
+  entry
+}
+
+fn mapping_user_code_entry(physical: u64) -> u64
+  req true
+  ens ((physical > 4294967295 || physical % 4096 != 0) && result == 0) || (physical <= 4294967295 && physical % 4096 == 0 && result == physical + 5)
+  fx pure
+{
+  let mut entry: u64 = 0;
+  if physical > 4294967295 || physical % 4096 != 0 {
+    entry = 0;
+  } else {
+    entry = physical + 5;
+  }
+  entry
+}
+
+fn mapping_user_stack_entry(physical: u64) -> u64
+  req true
+  ens ((physical > 4294967295 || physical % 4096 != 0) && result == 0) || (physical <= 4294967295 && physical % 4096 == 0 && result == physical + 9223372036854775815)
+  fx pure
+{
+  let mut entry: u64 = 0;
+  if physical > 4294967295 || physical % 4096 != 0 {
+    entry = 0;
+  } else {
+    entry = physical + 9223372036854775815;
+  }
+  entry
+}
+
+fn mapping_kernel_data_entry(physical: u64) -> u64
+  req true
+  ens ((physical > 4294967295 || physical % 4096 != 0) && result == 0) || (physical <= 4294967295 && physical % 4096 == 0 && result == physical + 9223372036854775811)
+  fx pure
+{
+  let mut entry: u64 = 0;
+  if physical > 4294967295 || physical % 4096 != 0 {
+    entry = 0;
+  } else {
+    entry = physical + 9223372036854775811;
+  }
+  entry
+}

@@ -186,8 +186,8 @@ effects).
   `body_ref_sound` UNCHANGED, NO new `Stmt` inductive case, so no reproving over a changed type).
   TERMINATION is the per-run Verus `decreases` residual (the `h_run` loop-EXITS hypothesis, NOT a
   Lean premise — partial correctness is the honest v1, `loop-tv.md` REQ-4). The `loop`-kind /
-  `break`/`continue` / a mid-body early `return` (multi-exit CPS) / nested loops / non-scalar
-  mutation `xs[i]=e` remain OUT (Skipped honestly; `Unsupported` in `body_ref_state` /
+  `break`/`continue` / a mid-body early `return` (multi-exit CPS) / nested loops / aggregate
+  mutation other than the top-level fixed mutable-slice write subset remain OUT (Skipped honestly; `Unsupported` in `body_ref_state` /
   `loop_ref_obligations`).
 - **The whole-translation universal forward-simulation proof is EXPLICITLY NOT the target.** We do
   not verify the production lowerer, and we do not commit to a once-for-all simulation proof of the
@@ -367,6 +367,7 @@ always-active L1 overflow semantics (`thermite-design.md` §6):
                                                             a wrapping_add is a DIFFERENT denotation)
 ⟦ Cast(e, T) ⟧_{S_E}          = narrow_T(⟦e⟧)             (narrowing/wrapping AT the target type T)
 ⟦ Binary(Lt, a, b) ⟧_{S_E}    = ( ⟦a⟧ < ⟦b⟧ ) : bool
+⟦ MethodCall(xs, len, []) ⟧_{S_E} = bounded_usize(length(⟦xs⟧))
 ⟦ Index(xs, Single(i)) ⟧_{S_E} = ⟦xs⟧[⟦i⟧]               (the element value; the spec view xs[i as int]
                                                             denotes the SAME element)
 ⟦ Call(f, args) ⟧_{S_E}       = the exec value of f applied to ⟦args⟧
@@ -402,6 +403,11 @@ sequencing/tail. Inference rules (big-step `⟨B, σ⟩ ⇓ ⟨σ', v⟩`):
 ─────────────────────────────────────────────────  (ASSIGN — update cell, ORDER-SENSITIVE)
 ⟨ Assign{target=x, value} ; rest, σ⟩ ⇓ ⟨σ'', v''⟩   where ⟨rest, σ[x ↦ v]⟩ ⇓ ⟨σ'', v''⟩
 
+       ⟨index, σ⟩ ⇓_{S_E} i       ⟨value, σ⟩ ⇓_{S_E} v       0 ≤ i < len(σ[xs])
+────────────────────────────────────────────────────────────────────────────────────  (SLICE-ASSIGN)
+⟨ Assign{target=xs[index], value} ; rest, σ⟩ ⇓ ⟨σ'', v''⟩
+                                      where ⟨rest, σ[xs ↦ update(σ[xs], i, v)]⟩ ⇓ ⟨σ'', v''⟩
+
 ⟨cond, σ⟩ ⇓_{S_E} true     ⟨then, σ⟩ ⇓ ⟨σ', _⟩
 ─────────────────────────────────────────────────  (IF-THEN; IF-ELSE symmetric — branch compose)
 ⟨ If{cond, then, else_} ; rest, σ⟩ ⇓ ⟨σ'', v''⟩     where ⟨rest, σ', ⟩ ⇓ ⟨σ'', v''⟩
@@ -425,9 +431,10 @@ fragment, in Lean 4 (`lean/Thermite/Exec/Stmt.lean`, namespace `Thermite.Exec`).
 big-step state transformer `bodyDenote : Block → State → Option ExecVal`, where a `State` is 2a's
 `ExecEnv` (var → bounded `ExecVal`, slices → element sequences) PLUS the in-scope cell set (the
 re-shadow / unbound-target guards `body_ref_state` enforces). The straight-line `Stmt`/`Block`
-forms are `letS` (bind a fresh cell), `assign` (ORDER-SENSITIVE scalar-cell rebind — the v1
-mutation; a non-scalar `xs[i]=e` is `Unsupported` in `body_ref_state`, so it is honestly ABSENT,
-not embed-then-`sorry`), `exprS` (no state effect, well-formedness only), `ifElse` (branch
+forms are `letS` (bind a fresh cell), `assign` (ORDER-SENSITIVE scalar-cell rebind),
+`sliceAssign` (a bounds-checked exact indexed update of a frame-declared mutable-slice sequence;
+the Rust encoder initially admits it only at top level and only when index/value do not read a
+mutable slice), `exprS` (no state effect, well-formedness only), `ifElse` (branch
 composition), sequencing (`blockThread`), and the tail value (`execDenote` in the final state).
 `bodyRefState` models `body_ref_state`'s operational threading independently (it routes each value
 position through 2a's `execRefValue`), and `theorem body_ref_sound : bodyRefState b st =
@@ -435,10 +442,11 @@ bodyDenote b st` lifts 2a's `exec_ref_sound` through the threading (axioms `prop
 only — standard, no `sorry`/`native_decide`/custom axiom). The state transformer is GENUINE (not
 blanket vacuity): the obligation-`none` of 2a (overflow / div-zero / out-of-range) PROPAGATES
 through the body (`body_overflow_rhs_has_no_result` vs `body_in_range_rhs_has_result`), and three
-negative lemmas bite — `wrong_var_assign_breaks_soundness` (a wrong-cell assign), 
+negative lemmas bite — `wrong_var_assign_breaks_soundness` (a wrong-cell assign),
 `sequencing_order_breaks_soundness` (the assign order reordered), `mutation_not_applied_breaks_
-soundness` (a dropped assign). LOOPS (`Stmt::Loop`/`Break`/`Continue`) + a mid-body early `return`
-(multi-exit CPS) + a non-scalar mutation remain OUT (2c #163, kernel-gated).
+soundness` (a dropped assign), plus `wrong_slice_index_breaks_state_refinement` and
+`wrong_slice_value_breaks_state_refinement`. LOOPS (`Stmt::Loop`/`Break`/`Continue`) + a mid-body
+early `return` (multi-exit CPS) + other aggregate mutation remain OUT (2c #163, kernel-gated).
 
 `S = S_C ⊔ S_E ⊔ S_B` is the unified program meaning. A whole fn's meaning is: its `req`/`ens`
 clauses denote under `S_C` (the predicate the body must satisfy), its body denotes under `S_B` (the
@@ -549,8 +557,8 @@ the highest-value preservation content lives) and respects the dependency order 
 | # | Increment | Sub-denotation | Encoder to prove (in Lean) | Blocker | Why this order |
 |---|---|---|---|---|---|
 | (a) | spec/contract-sublanguage `S_C` + prove `ref_contract_pred` sound | `S_C` | `ref_contract_pred` | **#170 (SHIPPED-CLOSED — S_C 8/8)** | SMALLEST + most stable (a clause is a pure predicate, no state); HIGHEST value (the boss's `==`-vs-`<=`, the #122/#127 classes); closed 8-combinator induction (Case 2) most tractable. Also stands up the `lean/` project (REQ-6). FIRST. |
-| (b) | exec-expression `S_E` + prove `exec_ref_value` sound | `S_E` | `exec_ref_value` | **#171 (SHIPPED — Layer 2 OPENED)** | bounded-value denotation (`Thermite.Exec`, `lean/Thermite/Exec.lean`); `theorem exec_ref_sound` kernel-checked; `S_E ≠ S_C` (BOUNDED, overflow-as-OBLIGATION, NEVER nat-coerced); the nat-coercion negative lemma `nat_coercion_underflow_breaks_soundness` bites; reuses the (a) Lean project. |
-| (c) | exec-statement `S_B` + prove `body_ref_state` sound | `S_B` (straight-line) | `body_ref_state` | **#172 (SHIPPED — straight-line block fragment)** | the big-step STATE TRANSFORMER (`Thermite.Exec.Stmt`, `lean/Thermite/Exec/Stmt.lean`); `theorem body_ref_sound` kernel-checked (axioms `propext`/`Quot.sound` only, no `sorry`). `S_B` is a `State → Option (State × tail value)` over the frozen straight-line `Stmt`/`Block` forms (`letS`/`assign`/`exprS`/`ifElse`/sequencing/tail), UNIFIED from exec-stmt-tv.md REQ-2; composes 2a's `execDenote` per RHS / condition / tail (the obligation-`none` PROPAGATES). 3 negative lemmas bite: `wrong_var_assign_breaks_soundness`, `sequencing_order_breaks_soundness`, `mutation_not_applied_breaks_soundness`. The v1 single-`while` LOOP extension (2c, #163) is now SHIPPED SEPARATELY as `S_Loop` (`lean/Thermite/Exec/Loop.lean`: `loopDenote` iterating `blockThread` + `theorem while_rule` partial-correctness, axioms `[propext, Quot.sound]`) — composed AROUND this proven `blockThread`, `Exec/Stmt.lean` UNCHANGED; the `loop`-kind / multi-exit / nested / non-scalar forms stay OUT. |
+| (b) | exec-expression `S_E` + prove `exec_ref_value` sound | `S_E` | `exec_ref_value` | **#171 (SHIPPED — Layer 2 OPENED)** | bounded-value denotation (`Thermite.Exec`, `lean/Thermite/Exec.lean`); `theorem exec_ref_sound` kernel-checked, including frozen parameter-slice `.len()` and single-index reads; `S_E ≠ S_C` (BOUNDED, overflow-as-OBLIGATION, NEVER nat-coerced); the nat-coercion negative lemma `nat_coercion_underflow_breaks_soundness` bites; reuses the (a) Lean project. |
+| (c) | exec-statement `S_B` + prove `body_ref_state` sound | `S_B` (straight-line) | `body_ref_state` | **#172 (SHIPPED — straight-line block fragment)** | the big-step STATE TRANSFORMER (`Thermite.Exec.Stmt`, `lean/Thermite/Exec/Stmt.lean`); `theorem body_ref_sound` and the stronger state-thread equality `refBlockThread_eq_blockThread` are kernel-checked (no `sorry`). `S_B` covers `letS`/scalar `assign`/exact `sliceAssign`/`exprS`/`ifElse`/sequencing/tail and composes 2a's `execDenote`. Five negative lemmas bite, including wrong slice index/value. The v1 single-`while` LOOP extension remains separate as `S_Loop`; post-v1 loop/multi-exit/nested/other aggregate forms stay OUT. |
 | (d) | COMPOSE → the whole-frozen-subset semantic-preservation theorem | `S = S_C ⊔ S_E ⊔ S_B` | all three | **#174 + #183 (SHIPPED — the T2 capstone for the straight-line frozen subset)** | the capstone (T2) `∀ P passing TV, ⟦lower(P)⟧ = ⟦P⟧_S` over the whole straight-line frozen subset, MECHANIZED in `lean/Thermite/Faithfulness.lean` as `tv_meta_{contract,exec,body}` (per-layer `h_tv.trans (T1)`) + the composed `lowering_faithful (w : FnTvWitness)`. The existential→universal conversion, relative to {Z3, S = intended meaning, the Lean kernel}; `h_tv` is the Z3-discharged premise (the trust boundary, EXPLICIT; #184 demotes Z3). `#print axioms lowering_faithful → [propext, Classical.choice, Quot.sound]` (standard only). Loops (#163) remain OUT (`tv_meta_body` ranges over the straight-line `Block`). |
 
 All four increments are SHIPPED-CLOSED (epic #169 COMPLETE): the whole frozen-subset spine —

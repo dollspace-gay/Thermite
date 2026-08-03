@@ -556,8 +556,9 @@ reference = ["conformance/verified-composition"]
 conformance_ops = ["probe_step", "boot_observation", "private-rich-root"]
 
 # Receipt-bound kernel byte-slice proof model (issue #108): Forge explicitly
-# imports the pinned vstd VIR while pairing it with deterministic no_std erased
-# metadata, then proves exact native &[u8] reads in the combined crate.
+# imports the pinned vstd VIR while pairing it with a deterministic selected
+# no_std upstream source closure, then proves exact native &[u8] reads and
+# exact vstd atomic execution in the combined crate.
 [[route]]
 crate_pattern = "forge/src/verified_build.rs"
 design = ".design/build/kernel-byte-slice.md"
@@ -571,10 +572,16 @@ reference = ["conformance/verified-composition"]
 conformance_ops = ["read_le_u32", "read_le_u64"]
 
 [[route]]
-crate_pattern = "forge/src/kernel_vstd_link.rs"
+crate_pattern = "forge/src/kernel_vstd_root.rs"
 design = ".design/build/kernel-byte-slice.md"
 reference = ["conformance/verified-composition"]
-conformance_ops = ["Seq", "View", "slice-index"]
+conformance_ops = ["selected-vstd-root", "atomic_ghost", "slice-index"]
+
+[[route]]
+crate_pattern = "forge/src/kernel_vstd_prelude.rs"
+design = ".design/build/kernel-byte-slice.md"
+reference = ["conformance/verified-composition"]
+conformance_ops = ["selected-vstd-prelude", "atomic_ghost", "slice-index"]
 
 [[route]]
 crate_pattern = "forge/tests/kernel_byte_slice.rs"

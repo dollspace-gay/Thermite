@@ -1,0 +1,50 @@
+{
+  "schema": "ThermitePackageV1",
+  "name": "thermite_kernel",
+  "modules": [
+    {
+      "name": "allocator",
+      "path": "kernel/allocator.th"
+    },
+    {
+      "name": "atomic",
+      "path": "kernel/atomic.th"
+    },
+    {
+      "name": "boundary",
+      "path": "kernel/platform.th"
+    },
+    {
+      "name": "capability",
+      "path": "kernel/capability.th"
+    },
+    {
+      "name": "dma",
+      "path": "kernel/dma.th"
+    },
+    {
+      "name": "event",
+      "path": "kernel/event.th"
+    },
+    {
+      "name": "memory",
+      "path": "kernel/memory.th"
+    },
+    {
+      "name": "scheduler",
+      "path": "kernel/scheduler.th"
+    },
+    {
+      "name": "services",
+      "path": "kernel/services.th"
+    },
+    {
+      "name": "shootdown",
+      "path": "kernel/shootdown.th"
+    },
+    {
+      "name": "smp",
+      "path": "kernel/smp.th"
+    }
+  ]
+}

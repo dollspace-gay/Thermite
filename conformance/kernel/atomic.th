@@ -1,0 +1,240 @@
+enum Ordering {
+  Relaxed,
+  Acquire,
+  Release,
+  AcqRel,
+  SeqCst
+}
+
+#[frozen("kernel::atomic::cell@v1")] struct Atomic {}
+
+enum FetchOp {
+  Add,
+  Sub,
+  And,
+  Or,
+  Xor
+}
+
+#[sealed] struct Cas {
+  previous: u64,
+  exchanged: bool
+}
+
+struct TicketLockState {
+  next_ticket: u64,
+  owner_ticket: u64,
+  held: bool
+}
+
+fn atomic_load_order_legal(order: Ordering) -> bool
+  req true
+  ens result == (!(order is Release) && !(order is AcqRel))
+  fx pure
+{
+  !(order is Release) && !(order is AcqRel)
+}
+
+fn atomic_store_order_legal(order: Ordering) -> bool
+  req true
+  ens result == (!(order is Acquire) && !(order is AcqRel))
+  fx pure
+{
+  !(order is Acquire) && !(order is AcqRel)
+}
+
+fn atomic_cas_orders_legal(success: Ordering, failure: Ordering) -> bool
+  req true
+  ens result == (!(failure is Release) && !(failure is AcqRel) && ((success is Relaxed && failure is Relaxed) || (success is Acquire && (failure is Relaxed || failure is Acquire)) || (success is Release && failure is Relaxed) || (success is AcqRel && (failure is Relaxed || failure is Acquire)) || (success is SeqCst && (failure is Relaxed || failure is Acquire || failure is SeqCst))))
+  fx pure
+{
+  !(failure is Release) && !(failure is AcqRel) && ((success is Relaxed && failure is Relaxed) || (success is Acquire && (failure is Relaxed || failure is Acquire)) || (success is Release && failure is Relaxed) || (success is AcqRel && (failure is Relaxed || failure is Acquire)) || (success is SeqCst && (failure is Relaxed || failure is Acquire || failure is SeqCst)))
+}
+
+fn atomic_fence_order_legal(order: Ordering) -> bool
+  req true
+  ens result == !(order is Relaxed)
+  fx pure
+{
+  !(order is Relaxed)
+}
+
+fn ticket_lock_new() -> TicketLockState
+  req true
+  ens result.next_ticket == 0
+  ens result.owner_ticket == 0
+  ens !result.held
+  fx pure
+{
+  TicketLockState {
+    next_ticket: 0,
+    owner_ticket: 0,
+    held: false
+  }
+}
+
+fn ticket_lock_issue(state: TicketLockState) -> TicketLockState
+  req !state.held && state.next_ticket == state.owner_ticket && state.next_ticket < 18446744073709551615
+  ens result.next_ticket == state.next_ticket + 1
+  ens result.owner_ticket == state.owner_ticket
+  ens !result.held
+  fx pure
+{
+  TicketLockState {
+    next_ticket: state.next_ticket + 1,
+    owner_ticket: state.owner_ticket,
+    held: false
+  }
+}
+
+fn ticket_lock_enter(state: TicketLockState, ticket: u64) -> TicketLockState
+  req !state.held && ticket == state.owner_ticket && state.next_ticket == ticket + 1
+  ens result.next_ticket == state.next_ticket
+  ens result.owner_ticket == ticket
+  ens result.held
+  fx pure
+{
+  TicketLockState {
+    next_ticket: state.next_ticket,
+    owner_ticket: ticket,
+    held: true
+  }
+}
+
+fn ticket_lock_release(state: TicketLockState) -> TicketLockState
+  req state.held && state.next_ticket == state.owner_ticket + 1
+  ens result.next_ticket == state.next_ticket
+  ens result.owner_ticket == state.owner_ticket + 1
+  ens !result.held
+  fx pure
+{
+  TicketLockState {
+    next_ticket: state.next_ticket,
+    owner_ticket: state.owner_ticket + 1,
+    held: false
+  }
+}
+
+fn synchronization_bootstrap() -> u64
+  req true
+  ens result == 1
+  fx pure
+{
+  let empty: TicketLockState = ticket_lock_new();
+  let issued: TicketLockState = ticket_lock_issue(empty);
+  let entered: TicketLockState = ticket_lock_enter(issued, 0);
+  let released: TicketLockState = ticket_lock_release(entered);
+  if atomic_load_order_legal(Ordering::Acquire) && atomic_store_order_legal(Ordering::Release) {
+    released.owner_ticket
+  } else {
+    0
+  }
+}
+
+fn synchronization_policy_bootstrap() -> u64
+  req true
+  ens result == 4
+  fx pure
+{
+  if synchronization_bootstrap() == 1 {
+    4
+  } else {
+    0
+  }
+}
+
+fn ticket_lock_can_enter(owner_ticket: u64, issued_ticket: u64) -> bool
+  req true
+  ens result == (owner_ticket == issued_ticket)
+  fx pure
+{
+  owner_ticket == issued_ticket
+}
+
+fn ticket_lock_release_value(issued_ticket: u64) -> u64
+  req issued_ticket < 18446744073709551615
+  ens result == issued_ticket + 1
+  fx pure
+{
+  issued_ticket + 1
+}
+
+fn atomic_compare_exchange(cell: &Atomic, current: u64, value: u64) -> Cas
+  req true
+  ens result.exchanged == (result.previous == current)
+  fx platform(atomic)
+{
+  atomic_boundary_compare_exchange(cell, current, value, Ordering::SeqCst, Ordering::SeqCst)
+}
+
+fn atomic_claim_once(cell: &Atomic, owner: u64) -> u64
+  req owner > 0
+  ens result > 0
+  fx platform(atomic)
+{
+  let compared: Cas = atomic_compare_exchange(cell, 0, owner);
+  if compared.exchanged {
+    owner
+  } else {
+    compared.previous
+  }
+}
+
+#[boundary("kernel::atomic::load@v1")]
+fn atomic_boundary_load(cell: &Atomic, order: Ordering) -> u64
+  req !(order is Release) && !(order is AcqRel)
+  ens result <= 18446744073709551615
+  fx platform(atomic)
+;
+
+#[boundary("kernel::atomic::store@v1")]
+fn atomic_boundary_store(cell: &Atomic, value: u64, order: Ordering) -> ()
+  req !(order is Acquire) && !(order is AcqRel)
+  ens order is Relaxed || order is Release || order is SeqCst
+  fx platform(atomic)
+;
+
+#[boundary("kernel::atomic::swap@v1")]
+fn atomic_boundary_swap(cell: &Atomic, value: u64, order: Ordering) -> u64
+  req true
+  ens result <= 18446744073709551615
+  fx platform(atomic)
+;
+
+#[boundary("kernel::atomic::compare_exchange@v1")]
+fn atomic_boundary_compare_exchange(cell: &Atomic, current: u64, value: u64, success: Ordering, failure: Ordering) -> Cas
+  req !(failure is Release) && !(failure is AcqRel) && ((success is Relaxed && failure is Relaxed) || (success is Acquire && (failure is Relaxed || failure is Acquire)) || (success is Release && failure is Relaxed) || (success is AcqRel && (failure is Relaxed || failure is Acquire)) || (success is SeqCst && (failure is Relaxed || failure is Acquire || failure is SeqCst)))
+  ens !(failure is Release) && !(failure is AcqRel)
+  ens result.previous <= 18446744073709551615
+  ens result.exchanged == (result.previous == current)
+  fx platform(atomic)
+;
+
+#[boundary("kernel::atomic::compare_exchange_weak@v1")]
+fn atomic_boundary_compare_exchange_weak(cell: &Atomic, current: u64, value: u64, success: Ordering, failure: Ordering) -> Cas
+  req !(failure is Release) && !(failure is AcqRel) && ((success is Relaxed && failure is Relaxed) || (success is Acquire && (failure is Relaxed || failure is Acquire)) || (success is Release && failure is Relaxed) || (success is AcqRel && (failure is Relaxed || failure is Acquire)) || (success is SeqCst && (failure is Relaxed || failure is Acquire || failure is SeqCst)))
+  ens !(failure is Release) && !(failure is AcqRel)
+  ens result.previous <= 18446744073709551615
+  fx platform(atomic)
+;
+
+#[boundary("kernel::atomic::fetch@v1")]
+fn atomic_boundary_fetch(cell: &Atomic, operation: FetchOp, value: u64, order: Ordering) -> u64
+  req true
+  ens result <= 18446744073709551615
+  fx platform(atomic)
+;
+
+#[boundary("kernel::atomic::compiler_fence@v1")]
+fn atomic_boundary_compiler_fence(order: Ordering) -> ()
+  req !(order is Relaxed)
+  ens order is Acquire || order is Release || order is AcqRel || order is SeqCst
+  fx platform(atomic)
+;
+
+#[boundary("kernel::atomic::hardware_fence@v1")]
+fn atomic_boundary_hardware_fence(order: Ordering) -> ()
+  req !(order is Relaxed)
+  ens order is Acquire || order is Release || order is AcqRel || order is SeqCst
+  fx platform(atomic)
+;

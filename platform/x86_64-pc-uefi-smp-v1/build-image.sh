@@ -6,6 +6,14 @@ workspace_root=$(cd "$profile_root/../.." && pwd)
 runtime_manifest="$profile_root/runtime/Cargo.toml"
 output_path=${1:-"$workspace_root/dist/thermite-kernel.img"}
 source_epoch=${SOURCE_DATE_EPOCH:-1704067200}
+policy_rlib=${THERMITE_VERIFIED_POLICY_RLIB:?THERMITE_VERIFIED_POLICY_RLIB is required}
+policy_deps=${THERMITE_VERIFIED_POLICY_DEPS:?THERMITE_VERIFIED_POLICY_DEPS is required}
+
+if [[ ! -f "$policy_rlib" || ! -d "$policy_deps" ]]; then
+    echo "verified Thermite policy artifact or dependency closure is absent" >&2
+    exit 2
+fi
+policy_root=$(cd "$(dirname "$policy_rlib")/.." && pwd)
 
 case "$source_epoch" in
     ''|*[!0-9]*)
@@ -33,6 +41,19 @@ trap cleanup EXIT
 
 export SOURCE_DATE_EPOCH="$source_epoch"
 export TZ=UTC
+encoded_flags=$'-C\x1fpanic=abort\x1f-C\x1fno-redzone=yes\x1f-C\x1ftarget-feature=+sse2\x1f--extern\x1f'
+encoded_flags+="thermite_kernel_policy=$policy_rlib"
+encoded_flags+=$'\x1f-L\x1f'
+encoded_flags+="dependency=$policy_deps"
+encoded_flags+=$'\x1f'
+encoded_flags+="--remap-path-prefix=$workspace_root=."
+encoded_flags+=$'\x1f'
+encoded_flags+="--remap-path-prefix=$policy_root=thermite-policy"
+encoded_flags+=$'\x1f-C\x1flink-arg=/include:tpl_atomic_fetch'
+encoded_flags+=$'\x1f-C\x1flink-arg=/include:tpl_atomic_compare_exchange'
+encoded_flags+=$'\x1f-C\x1flink-arg=/include:tpl_atomic_load'
+encoded_flags+=$'\x1f-C\x1flink-arg=/include:tpl_atomic_store'
+export CARGO_ENCODED_RUSTFLAGS="$encoded_flags"
 cargo build --manifest-path "$runtime_manifest" --target x86_64-unknown-uefi --release --locked
 
 runtime_target="$profile_root/runtime/target/x86_64-unknown-uefi/release"
@@ -85,6 +106,8 @@ for symbol in \
     efi_main thermite_ap_trampoline_start thermite_ap_trampoline_end \
     thermite_ap_rust_entry thermite_ipi_handler thermite_timer_handler \
     thermite_page_fault_handler thermite_syscall_entry thermite_enter_user \
+    thermite_policy_execute tpl_atomic_compare_exchange tpl_atomic_fetch \
+    tpl_atomic_load tpl_atomic_store \
     tpl_clock_read memcpy memmove memset; do
     grep -F "\`$symbol\`" "$symbols_stage" >/dev/null || {
         echo "debug symbol closure is missing required symbol $symbol" >&2
@@ -111,19 +134,25 @@ efi_sha=$(sha256sum "$efi_stage" | cut -d' ' -f1)
 pdb_sha=$(sha256sum "$pdb_stage" | cut -d' ' -f1)
 sections_sha=$(sha256sum "$sections_stage" | cut -d' ' -f1)
 symbols_sha=$(sha256sum "$symbols_stage" | cut -d' ' -f1)
-runtime_sha=$(find "$profile_root/runtime/src" -type f -print0 \
-    | LC_ALL=C sort -z \
-    | xargs -0 sha256sum \
-    | sha256sum \
-    | cut -d' ' -f1)
+source_closure_sha=$(
+    cd "$workspace_root"
+    while IFS= read -r relative; do
+        sha256sum "$relative"
+    done <"platform/x86_64-pc-uefi-smp-v1/source-allowlist.txt" \
+        | sha256sum \
+        | cut -d' ' -f1
+)
 
 receipt_stage="$scratch/receipt"
 {
-    printf 'schema=ThermiteBootableKernelReceiptV1\n'
+    printf 'schema=ThermitePlatformConformanceReceiptV2\n'
     printf 'profile=x86_64-pc-uefi-smp-v1\n'
-    printf 'assurance_scope=to_platform_boundary\n'
+    printf 'artifact_class=platform_conformance_demonstration\n'
+    printf 'migration_complete=false\n'
+    printf 'assurance_scope=platform_conformance_to_boundary\n'
     printf 'source_date_epoch=%s\n' "$source_epoch"
-    printf 'runtime_source_sha256=%s\n' "$runtime_sha"
+    printf 'canonical_source_allowlist=platform/x86_64-pc-uefi-smp-v1/source-allowlist.txt\n'
+    printf 'source_closure_sha256=%s\n' "$source_closure_sha"
     printf 'uefi_sha256=%s\n' "$efi_sha"
     printf 'debug_symbols_sha256=%s\n' "$pdb_sha"
     printf 'section_table_sha256=%s\n' "$sections_sha"

@@ -1,0 +1,298 @@
+enum ApLifecycle {
+  Discovered,
+  Prepared,
+  Starting,
+  Online,
+  Failed
+}
+
+struct ApSetState {
+  discovered: u64,
+  prepared: u64,
+  starting: u64,
+  online: u64,
+  failed: u64,
+  phase: u64
+}
+
+spec fn ap_mask_first_spec(cpu: u64) -> u64
+  dec cpu
+{
+  if cpu < 64 {
+    (1 as u64) << cpu
+  } else {
+    0
+  }
+}
+
+spec fn ap_mask_next_spec(mask: u64, cpu: u64) -> u64
+  dec cpu
+{
+  if mask == 0 || cpu >= 64 {
+    0
+  } else {
+    if mask & ((1 as u64) << cpu) != 0 {
+      0
+    } else {
+      mask | ((1 as u64) << cpu)
+    }
+  }
+}
+
+spec fn ap_expected_mask_spec(apic_ids: &[u32]) -> u64
+  dec apic_ids.len()
+{
+  if apic_ids.len() == 1 {
+    ap_mask_first_spec(apic_ids[0] as u64)
+  } else {
+    if apic_ids.len() == 2 {
+      ap_mask_next_spec(ap_mask_first_spec(apic_ids[0] as u64), apic_ids[1] as u64)
+    } else {
+      if apic_ids.len() == 3 {
+        ap_mask_next_spec(ap_mask_next_spec(ap_mask_first_spec(apic_ids[0] as u64), apic_ids[1] as u64), apic_ids[2] as u64)
+      } else {
+        if apic_ids.len() == 4 {
+          ap_mask_next_spec(ap_mask_next_spec(ap_mask_next_spec(ap_mask_first_spec(apic_ids[0] as u64), apic_ids[1] as u64), apic_ids[2] as u64), apic_ids[3] as u64)
+        } else {
+          if apic_ids.len() == 5 {
+            ap_mask_next_spec(ap_mask_next_spec(ap_mask_next_spec(ap_mask_next_spec(ap_mask_first_spec(apic_ids[0] as u64), apic_ids[1] as u64), apic_ids[2] as u64), apic_ids[3] as u64), apic_ids[4] as u64)
+          } else {
+            if apic_ids.len() == 6 {
+              ap_mask_next_spec(ap_mask_next_spec(ap_mask_next_spec(ap_mask_next_spec(ap_mask_next_spec(ap_mask_first_spec(apic_ids[0] as u64), apic_ids[1] as u64), apic_ids[2] as u64), apic_ids[3] as u64), apic_ids[4] as u64), apic_ids[5] as u64)
+            } else {
+              if apic_ids.len() == 7 {
+                ap_mask_next_spec(ap_mask_next_spec(ap_mask_next_spec(ap_mask_next_spec(ap_mask_next_spec(ap_mask_next_spec(ap_mask_first_spec(apic_ids[0] as u64), apic_ids[1] as u64), apic_ids[2] as u64), apic_ids[3] as u64), apic_ids[4] as u64), apic_ids[5] as u64), apic_ids[6] as u64)
+              } else {
+                if apic_ids.len() == 8 {
+                  ap_mask_next_spec(ap_mask_next_spec(ap_mask_next_spec(ap_mask_next_spec(ap_mask_next_spec(ap_mask_next_spec(ap_mask_next_spec(ap_mask_first_spec(apic_ids[0] as u64), apic_ids[1] as u64), apic_ids[2] as u64), apic_ids[3] as u64), apic_ids[4] as u64), apic_ids[5] as u64), apic_ids[6] as u64), apic_ids[7] as u64)
+                } else {
+                  0
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+fn ap_cpu_bit(cpu: u64) -> u64
+  req cpu < 64
+  ens result == (1 as u64) << cpu
+  fx pure
+{
+  (1 as u64) << cpu
+}
+
+fn ap_mask_insert(mask: u64, cpu: u64) -> u64
+  req cpu < 64
+  ens result == mask | ((1 as u64) << cpu)
+  fx pure
+{
+  mask | ap_cpu_bit(cpu)
+}
+
+fn ap_expected_mask(apic_ids: &[u32]) -> u64
+  req apic_ids.len() > 0 && apic_ids.len() <= 8
+  ens result == ap_expected_mask_spec(apic_ids)
+  fx pure
+{
+  let mut mask: u64 = ap_mask_first(apic_ids[0] as u64);
+  if apic_ids.len() > 1 {
+    mask = ap_mask_next(mask, apic_ids[1] as u64);
+  }
+  if apic_ids.len() > 2 {
+    mask = ap_mask_next(mask, apic_ids[2] as u64);
+  }
+  if apic_ids.len() > 3 {
+    mask = ap_mask_next(mask, apic_ids[3] as u64);
+  }
+  if apic_ids.len() > 4 {
+    mask = ap_mask_next(mask, apic_ids[4] as u64);
+  }
+  if apic_ids.len() > 5 {
+    mask = ap_mask_next(mask, apic_ids[5] as u64);
+  }
+  if apic_ids.len() > 6 {
+    mask = ap_mask_next(mask, apic_ids[6] as u64);
+  }
+  if apic_ids.len() > 7 {
+    mask = ap_mask_next(mask, apic_ids[7] as u64);
+  }
+  mask
+}
+
+fn ap_mask_first(cpu: u64) -> u64
+  req true
+  ens result == ap_mask_first_spec(cpu)
+  fx pure
+{
+  let mut selected: u64 = 0;
+  if cpu < 64 {
+    selected = ap_cpu_bit(cpu);
+  }
+  selected
+}
+
+fn ap_mask_next(mask: u64, cpu: u64) -> u64
+  req true
+  ens result == ap_mask_next_spec(mask, cpu)
+  fx pure
+{
+  let mut selected: u64 = 0;
+  if mask != 0 && cpu < 64 {
+    let member: u64 = ap_cpu_bit(cpu);
+    if mask & member == 0 {
+      selected = ap_mask_insert(mask, cpu);
+    }
+  }
+  selected
+}
+
+fn apic_profile_supported(msr_value: u64) -> bool
+  req true
+  ens result == (msr_value & 2048 != 0 && msr_value & 1024 == 0)
+  fx pure
+{
+  msr_value & 2048 != 0 && msr_value & 1024 == 0
+}
+
+fn apic_physical_base(msr_value: u64) -> u64
+  req msr_value & 2048 != 0 && msr_value & 1024 == 0
+  ens result == msr_value & 4294963200
+  fx pure
+{
+  msr_value & 4294963200
+}
+
+fn ap_should_start(apic_id: u64, failure_present: bool, failed_apic_id: u64) -> bool
+  req true
+  ens result == (!failure_present || apic_id != failed_apic_id)
+  fx pure
+{
+  !failure_present || apic_id != failed_apic_id
+}
+
+fn ap_discover(cpus: u64) -> ApSetState
+  req cpus > 0 && cpus <= 8
+  ens result.discovered == cpus
+  ens result.prepared == 0
+  ens result.starting == 0
+  ens result.online == 1
+  ens result.failed == 0
+  ens result.phase == 0
+  fx pure
+{
+  ApSetState {
+    discovered: cpus,
+    prepared: 0,
+    starting: 0,
+    online: 1,
+    failed: 0,
+    phase: 0
+  }
+}
+
+fn ap_prepare(state: ApSetState) -> ApSetState
+  req state.phase == 0 && state.discovered > 0 && state.discovered <= 8 && state.online == 1
+  ens result.discovered == state.discovered
+  ens result.prepared == state.discovered - 1
+  ens result.starting == 0
+  ens result.online == 1
+  ens result.failed == 0
+  ens result.phase == 1
+  fx pure
+{
+  ApSetState {
+    discovered: state.discovered,
+    prepared: state.discovered - 1,
+    starting: 0,
+    online: 1,
+    failed: 0,
+    phase: 1
+  }
+}
+
+fn ap_start(state: ApSetState) -> ApSetState
+  req state.phase == 1 && state.prepared + 1 == state.discovered && state.discovered <= 8
+  ens result.discovered == state.discovered
+  ens result.prepared == 0
+  ens result.starting == state.prepared
+  ens result.online == 1
+  ens result.failed == 0
+  ens result.phase == 2
+  fx pure
+{
+  ApSetState {
+    discovered: state.discovered,
+    prepared: 0,
+    starting: state.prepared,
+    online: 1,
+    failed: 0,
+    phase: 2
+  }
+}
+
+fn ap_complete(state: ApSetState) -> ApSetState
+  req state.phase == 2 && state.starting + state.online == state.discovered && state.discovered <= 8
+  ens result.discovered == state.discovered
+  ens result.prepared == 0
+  ens result.starting == 0
+  ens result.online == state.discovered
+  ens result.failed == 0
+  ens result.phase == 3
+  fx pure
+{
+  ApSetState {
+    discovered: state.discovered,
+    prepared: 0,
+    starting: 0,
+    online: state.discovered,
+    failed: 0,
+    phase: 3
+  }
+}
+
+fn ap_policy_bootstrap(cpus: u64) -> u64
+  req cpus > 0 && cpus <= 8
+  ens result == 8
+  fx pure
+{
+  let discovered: ApSetState = ap_discover(cpus);
+  let prepared: ApSetState = ap_prepare(discovered);
+  let starting: ApSetState = ap_start(prepared);
+  let online: ApSetState = ap_complete(starting);
+  if online.online == cpus && online.failed == 0 && online.phase == 3 {
+    8
+  } else {
+    0
+  }
+}
+
+fn ap_runtime_ready(
+  online_cpus: u64,
+  expected_cpus: u64,
+  ready_aps: u64,
+  expected_aps: u64,
+  cpu_local_cpus: u64
+) -> bool
+  req expected_cpus > 0 && expected_cpus <= 8 && expected_aps < expected_cpus
+  ens result == (online_cpus == expected_cpus && ready_aps >= expected_aps && cpu_local_cpus == expected_cpus)
+  fx pure
+{
+  online_cpus == expected_cpus && ready_aps >= expected_aps && cpu_local_cpus == expected_cpus
+}
+
+fn ap_failure_selection_valid(
+  cpu_count: u64,
+  bsp_failed: bool,
+  failed_outside_set: bool,
+  effective_count: u64
+) -> bool
+  req true
+  ens result == (cpu_count > 0 && cpu_count <= 8 && !bsp_failed && !failed_outside_set && effective_count > 0 && effective_count <= cpu_count)
+  fx pure
+{
+  cpu_count > 0 && cpu_count <= 8 && !bsp_failed && !failed_outside_set && effective_count > 0 && effective_count <= cpu_count
+}

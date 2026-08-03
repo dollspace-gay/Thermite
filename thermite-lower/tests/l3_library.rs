@@ -113,7 +113,7 @@ fn composition_library_delays_enum_items_past_randomized_verus_helper_synthesis(
     let source = lower_l3_library(&program, &exports, L3LibraryTarget::Kernel).unwrap();
     assert!(source.contains("macro_rules! __thermite_deterministic_enum"));
     assert!(source.contains("#[verus::internal(verus_macro)]"));
-    assert!(source.contains("__thermite_deterministic_enum! {\npub enum Action"));
+    assert!(source.contains("__thermite_deterministic_enum! {\n#[repr(C)]\npub enum Action"));
     assert!(source.contains("Store { owner: u64, generation: u64, slot: u64, value: u64 }"));
 
     let public_exports = [L3Export {
@@ -122,5 +122,5 @@ fn composition_library_delays_enum_items_past_randomized_verus_helper_synthesis(
     }];
     let ordinary = lower_l3_library(&program, &public_exports, L3LibraryTarget::Kernel).unwrap();
     assert!(!ordinary.contains("__thermite_deterministic_enum"));
-    assert!(ordinary.contains("pub enum Action"));
+    assert!(ordinary.contains("#[repr(C)]\npub enum Action"));
 }

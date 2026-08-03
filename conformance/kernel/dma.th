@@ -1,0 +1,306 @@
+enum DmaPhase {
+  CpuOwned,
+  Pinned,
+  DeviceOwned,
+  Completed,
+  Reclaimed
+}
+
+struct DmaTransferState {
+  bytes: u64,
+  generation: u64,
+  phase: u64,
+  synchronized: bool
+}
+
+fn pci_config_address(bus: u64, device: u64, function: u64, offset: u64) -> u64
+  req bus <= 255 && device < 32 && function < 8 && offset <= 255
+  ens result == 2147483648 + bus * 65536 + device * 2048 + function * 256 + (offset / 4) * 4
+  fx pure
+{
+  (2147483648 + bus * 65536 + device * 2048 + function * 256 + (offset / 4) * 4) as u64
+}
+
+fn pci_virtio_block_identity(identity: u64) -> bool
+  req identity <= 4294967295
+  ens result == (identity % 65536 == 6900 && (identity / 65536 == 4097 || identity / 65536 == 4162))
+  fx pure
+{
+  identity % 65536 == 6900 && (identity / 65536 == 4097 || identity / 65536 == 4162)
+}
+
+fn pci_legacy_io_bar_valid(bar: u64) -> bool
+  req bar <= 4294967295
+  ens result == (bar % 2 == 1 && bar < 65536)
+  fx pure
+{
+  bar % 2 == 1 && bar < 65536
+}
+
+fn pci_legacy_io_base(bar: u64) -> u64
+  req bar <= 4294967295 && bar % 2 == 1 && bar < 65536
+  ens result == (bar / 4) * 4
+  fx pure
+{
+  ((bar / 4) * 4) as u64
+}
+
+fn pci_enable_io_bus_master(command: u64) -> u64
+  req command <= 4294967295
+  ens result == command + (1 - command % 2) + (1 - (command / 4) % 2) * 4
+  fx pure
+{
+  (command + (1 - command % 2) + (1 - (command / 4) % 2) * 4) as u64
+}
+
+fn dma_register_port(io_base: u64, offset: u64) -> u64
+  req io_base < 65536 && io_base % 4 == 0 && offset <= 18 && io_base + offset < 65536
+  ens result == io_base + offset
+  fx pure
+{
+  (io_base + offset) as u64
+}
+
+fn dma_queue_pfn(queue_address: u64) -> u64
+  req queue_address <= 4294967295 && queue_address % 4096 == 0
+  ens result == queue_address / 4096
+  fx pure
+{
+  (queue_address / 4096) as u64
+}
+
+fn dma_descriptor_length(index: u64) -> u64
+  req index < 3
+  ens (index == 0 && result == 16) || (index == 1 && result == 512) || (index == 2 && result == 1)
+  fx pure
+{
+  let mut length: u64 = 1;
+  if index == 0 {
+    length = 16 as u64;
+  } else {
+    if index == 1 {
+      length = 512 as u64;
+    }
+  }
+  length
+}
+
+fn dma_descriptor_flags(index: u64) -> u64
+  req index < 3
+  ens (index == 0 && result == 1) || (index == 1 && result == 3) || (index == 2 && result == 2)
+  fx pure
+{
+  let mut flags: u64 = 2;
+  if index == 0 {
+    flags = 1 as u64;
+  } else {
+    if index == 1 {
+      flags = 3 as u64;
+    }
+  }
+  flags
+}
+
+fn dma_descriptor_next(index: u64) -> u64
+  req index < 3
+  ens (index == 0 && result == 1) || (index == 1 && result == 2) || (index == 2 && result == 0)
+  fx pure
+{
+  let mut next: u64 = 0;
+  if index == 0 {
+    next = 1 as u64;
+  } else {
+    if index == 1 {
+      next = 2 as u64;
+    }
+  }
+  next
+}
+
+fn dma_device_status(step: u64) -> u64
+  req step < 4
+  ens (step == 0 && result == 0) || (step == 1 && result == 1) || (step == 2 && result == 3) || (step == 3 && result == 7)
+  fx pure
+{
+  let mut status: u64 = 7;
+  if step == 0 {
+    status = 0 as u64;
+  } else {
+    if step == 1 {
+      status = 1 as u64;
+    } else {
+      if step == 2 {
+        status = 3 as u64;
+      }
+    }
+  }
+  status
+}
+
+fn dma_device_ready(status: u64) -> bool
+  req status <= 255
+  ens result == (status % 8 == 7)
+  fx pure
+{
+  status % 8 == 7
+}
+
+fn dma_publish_available(current_index: u64) -> u64
+  req current_index < 65535
+  ens result == current_index + 1
+  fx pure
+{
+  (current_index + 1) as u64
+}
+
+fn dma_configuration_policy_bootstrap() -> bool
+  req true
+  ens result == true
+  fx pure
+{
+  pci_config_address(0, 1, 0, 16) == 2147485712 && pci_virtio_block_identity(268507892) && pci_legacy_io_bar_valid(49153) && pci_legacy_io_base(49153) == 49152 && pci_enable_io_bus_master(0) == 5 && dma_register_port(49152, 18) == 49170 && dma_queue_pfn(16777216) == 4096 && dma_descriptor_length(0) == 16 && dma_descriptor_length(1) == 512 && dma_descriptor_length(2) == 1 && dma_descriptor_flags(0) == 1 && dma_descriptor_flags(1) == 3 && dma_descriptor_flags(2) == 2 && dma_descriptor_next(0) == 1 && dma_descriptor_next(1) == 2 && dma_descriptor_next(2) == 0 && dma_device_status(0) == 0 && dma_device_status(1) == 1 && dma_device_status(2) == 3 && dma_device_status(3) == 7 && dma_device_ready(7) && dma_publish_available(0) == 1
+}
+
+fn dma_queue_size_valid(queue_size: u64) -> bool
+  req true
+  ens result == (queue_size >= 3 && queue_size <= 256)
+  fx pure
+{
+  queue_size >= 3 && queue_size <= 256
+}
+
+fn dma_descriptor_bytes(queue_size: u64) -> u64
+  req queue_size >= 3 && queue_size <= 256
+  ens result == queue_size * 16
+  fx pure
+{
+  (queue_size * 16) as u64
+}
+
+fn dma_used_offset(queue_size: u64) -> u64
+  req queue_size >= 3 && queue_size <= 256
+  ens result == ((queue_size * 18 + 4101) / 4096) * 4096
+  fx pure
+{
+  (((queue_size * 18 + 4101) / 4096) * 4096) as u64
+}
+
+fn dma_queue_layout_valid(queue_size: u64, capacity: u64) -> bool
+  req queue_size >= 3 && queue_size <= 256
+  ens result == (((queue_size * 18 + 4101) / 4096) * 4096 + 6 + queue_size * 8 <= capacity)
+  fx pure
+{
+  dma_used_offset(queue_size) + 6 + queue_size * 8 <= capacity
+}
+
+fn dma_transfer_new(bytes: u64) -> DmaTransferState
+  req bytes > 0 && bytes <= 4096
+  ens result.bytes == bytes
+  ens result.generation == 0
+  ens result.phase == 0
+  ens !result.synchronized
+  fx pure
+{
+  DmaTransferState {
+    bytes: bytes,
+    generation: 0,
+    phase: 0,
+    synchronized: false
+  }
+}
+
+fn dma_pin(state: DmaTransferState) -> DmaTransferState
+  req state.phase == 0 && state.bytes > 0 && state.bytes <= 4096
+  ens result.bytes == state.bytes
+  ens result.generation == state.generation
+  ens result.phase == 1
+  ens !result.synchronized
+  fx pure
+{
+  DmaTransferState {
+    bytes: state.bytes,
+    generation: state.generation,
+    phase: 1,
+    synchronized: false
+  }
+}
+
+fn dma_give_device(state: DmaTransferState) -> DmaTransferState
+  req state.phase == 1
+  ens result.bytes == state.bytes
+  ens result.generation == state.generation
+  ens result.phase == 2
+  ens result.synchronized
+  fx pure
+{
+  DmaTransferState {
+    bytes: state.bytes,
+    generation: state.generation,
+    phase: 2,
+    synchronized: true
+  }
+}
+
+fn dma_complete(state: DmaTransferState) -> DmaTransferState
+  req state.phase == 2 && state.synchronized
+  ens result.bytes == state.bytes
+  ens result.generation == state.generation
+  ens result.phase == 3
+  ens result.synchronized
+  fx pure
+{
+  DmaTransferState {
+    bytes: state.bytes,
+    generation: state.generation,
+    phase: 3,
+    synchronized: true
+  }
+}
+
+fn dma_reclaim(state: DmaTransferState) -> DmaTransferState
+  req state.phase == 3 && state.synchronized && state.generation < 18446744073709551615
+  ens result.bytes == state.bytes
+  ens result.generation == state.generation + 1
+  ens result.phase == 4
+  ens !result.synchronized
+  fx pure
+{
+  DmaTransferState {
+    bytes: state.bytes,
+    generation: state.generation + 1,
+    phase: 4,
+    synchronized: false
+  }
+}
+
+fn dma_policy_bootstrap() -> u64
+  req true
+  ens result == 32
+  fx pure
+{
+  let fresh: DmaTransferState = dma_transfer_new(512);
+  let pinned: DmaTransferState = dma_pin(fresh);
+  let device: DmaTransferState = dma_give_device(pinned);
+  let completed: DmaTransferState = dma_complete(device);
+  let reclaimed: DmaTransferState = dma_reclaim(completed);
+  if reclaimed.phase == 4 && reclaimed.generation == 1 && reclaimed.bytes == 512 {
+    32
+  } else {
+    0
+  }
+}
+
+fn dma_runtime_complete(
+  completion_seen: bool,
+  status: u64,
+  signature_low: u64,
+  signature_high: u64,
+  bytes: u64,
+  generation: u64
+) -> bool
+  req true
+  ens result == (completion_seen && status == 0 && signature_low == 85 && signature_high == 170 && bytes == 512 && generation == 1)
+  fx pure
+{
+  completion_seen && status == 0 && signature_low == 85 && signature_high == 170 && bytes == 512 && generation == 1
+}

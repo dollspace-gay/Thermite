@@ -2,8 +2,8 @@
 
 <!--
 tier: 3-component
-status: shipped
-decision: frozen registry-backed platform boundaries with a receipt-bound bootable SMP image
+status: migration-in-progress
+decision: a platform/conformance demonstration is retained while kernel policy migrates from Rust into receipt-bound Thermite
 governs:
   - Cargo.toml
   - Cargo.lock
@@ -30,12 +30,13 @@ governs:
   - forge/src/main.rs
   - conformance/bootable_kernel.th
   - conformance/kernel_primitives.th
+  - conformance/thermite-kernel.thpkg.json
   - platform/x86_64-pc-uefi-smp-v1/*
   - platform/x86_64-pc-uefi-smp-v1/runtime/.cargo/config.toml
   - platform/x86_64-pc-uefi-smp-v1/runtime/Cargo.*
   - platform/x86_64-pc-uefi-smp-v1/runtime/src/*
   - .github/workflows/ci.yml
-audited-content-sha256: 57214a2c4c466cb21e007a6e4c0d3f7943a8a63d71f944f265f2c14169025a9c
+audited-content-sha256: 9ceeb3590bc4a0105562c306cb09316fed5af0343539759eb1c1866a4a509881
 extends:
   - .design/build/kernel-target.md
   - .design/build/l3-rich-composition.md
@@ -51,12 +52,12 @@ thesis-refs:
 
 ## Summary
 
-Thermite's complete kernel product is a bootable, reproducible multicore image.
-The current `--target kernel` rlib remains the verified freestanding library
-stage. A new `kernel-image` target closes that library over one frozen target
-platform layer, a boot adapter, target identity and link policy, compiler
-runtime, and image packager. Forge publishes the image only with a receipt that
-binds every member of that closure.
+The current artifact is a bootable, reproducible multicore
+**platform/conformance demonstration**. It is not yet the complete
+Thermite-authored formally verified kernel described by this document. The
+image proves that generated Thermite logic can be verified for the exact UEFI
+target, linked into the boot image, and executed across the SMP matrix. Much of
+the remaining kernel behavior is still ordinary Rust and assembly.
 
 The first conformance profile is `x86_64-pc-uefi-smp-v1`. It produces a UEFI
 disk image that can boot on a PC-class machine and under QEMU/OVMF. Its release
@@ -83,23 +84,27 @@ target platform layer (TPL) and trust boundary.
 
 ## Product and assurance boundary
 
-The image has four layers:
+The target architecture has four layers. Only the first vertical slice of the
+first layer is implemented in Thermite today:
 
 | Layer | Contents | Assurance |
 |---|---|---|
-| verified kernel core | resource policy, parsers, allocators, schedulers, drivers, protocols, filesystems, syscalls | L3 where the current exact-source rules admit the code |
-| verified concurrency runtime | per-CPU state machines, queues, locks, ownership transfer, IPI and shootdown protocols | L3 against the frozen atomic and interrupt models |
-| target platform layer | entry stubs, context/trap assembly, privileged instructions, atomics, MMIO/PIO, page-table and CPU control adapters | registered L1 boundary contracts plus target-specific review or external proof evidence |
+| generated kernel slice | capability ledger, scheduler/IPC/event policy, plus live allocator first-fit/CAS claim orchestration, page-entry flags, exact bounded APIC-ID set validation, xAPIC MSR interpretation, scheduler-completion, shootdown, DMA, and service verdicts | exact-source L3 Thermite/direct-Verus composition, compiled for `x86_64-unknown-uefi` |
+| remaining kernel logic | allocator reclaim checks, page-table traversal/writes, scheduler orchestration, synchronization, AP/shootdown execution, DMA setup, drivers, and protocols | ordinary Rust today; must migrate to Thermite; allocation claim and page-entry flag policy are generated Thermite |
+| target platform layer | entry stubs, context/trap assembly, privileged instructions, atomics, MMIO/PIO, page-table and CPU control adapters | reachable atomic load, store, fetch, and strong compare-exchange carry exact direct-Verus refinement; raw interrupt-assembly atomics and other reachable machine operations remain source-bound/runtime-tested and must migrate to the same proof rule |
 | image closure | compiler runtime, linker, boot adapter, firmware ABI, image packager | digest-bound build evidence and runtime acceptance |
 
-The final receipt reports the artifact scope as `to_platform_boundary`. It may
+The final receipt reports the artifact class as
+`platform_conformance_demonstration`, `migration_complete=false`, and the scope
+as `platform_conformance_to_boundary`. It may
 also report the L3 result for the verified core. It cannot describe the whole
 image as end-to-end L3 while registered platform calls remain boundary
 assumptions. A TPL implementation can carry stronger evidence, but that
 evidence is recorded separately and does not change the Thermite assurance
 ladder.
 
-The hardware, firmware, compiler backend, linker, and frozen TPL bodies remain
+The hardware, firmware, compiler backend, linker, and not-yet-directly-proved
+TPL bodies remain
 in the trusted computing base. This limitation is stated in the receipt and in
 `forge audit` output.
 
@@ -111,14 +116,16 @@ mean end-to-end L3 for its complete rlib closure.
 
 The image builder constructs a separate pair of closures from the same roots:
 
-1. The proof closure uses the shipped boundary-composition rule. Forge emits a
-   generated `external_body` signature only for a declared boundary, and Verus
-   proves each caller against that boundary's exact contract. The caller can
-   achieve L3 while its orthogonal assurance scope is `to_boundary`.
+1. A standalone source check records a declared frozen boundary at L1 and its
+   callers at L3-to-boundary. In a kernel composition, however, the lowerer
+   emits an ordinary checked call to the exact TPL module rather than an
+   `external_body`. The whole combined crate proves that Thermite caller and
+   emitted implementation together.
 2. The implementation closure resolves that declaration to exactly one frozen
-   registry entry and links the bound Rust or assembly body. The registry
-   signature, contract, model, effects, ABI, object, and symbol must agree with
-   the proof closure.
+   registry entry and one checked public symbol in an `exact_tpl_v1` shell.
+   The registry signature, contract, model, effects, ABI, object, and final PE
+   symbol must agree with the proof closure. Ordinary checked shells cannot
+   claim direct refinement.
 
 The receipt binds both inventories and their one-to-one correspondence. Slag
 is excluded from an image closure. A declared boundary without a frozen entry,
@@ -152,6 +159,51 @@ table parsers, syscall policy, and recovery logic stay in Thermite. The TPL
 contains only operations that intrinsically require a privileged instruction,
 volatile or physical access, a foreign ABI, entry/return assembly, or a
 compiler runtime hook.
+
+## Current migration slice and non-claims
+
+`conformance/thermite-kernel.thpkg.json` is the receipt-bound multi-file package
+for the migration. Its executable functions implement capability
+mint/transfer/authorization, bounded scheduler transitions, correlated
+IPC/event dispatch, and live acceptance predicates for allocator ownership,
+AP failure and online sets, scheduler completion, shootdowns, DMA completion,
+and user-service completion. The complete one-to-eight-entry APIC-ID fold now
+executes in generated Thermite, with an exact recursive-free bounded
+specification that rejects IDs above 63 and duplicates. Thermite also decides
+whether the architectural APIC-base MSR selects supported xAPIC mode and
+extracts the physical LAPIC base. Forge lowers
+that closure together with the directly verified ingress module, verifies the
+exact combined source without cheating, and compiles the same source for
+`x86_64-unknown-uefi`. The UEFI runtime links that rlib and emits a semantic
+signature derived from the online CPU count. The generated scheduler decision
+is decoded as the base task identifier for the real post-firmware multicore
+work queue. The QEMU gate checks both the distinct 1, 2, 4, and 8 CPU
+signatures and the resulting task sum, so changing the Thermite operation
+changes runtime behavior rather than only changing a marker.
+
+The earlier Rust capability/scheduler/event model probe and its runtime crate
+dependency are removed. The booted runtime now calls the generated Thermite
+verdicts on observed machine state; changing one changes acceptance rather than
+only a serial marker. The remaining post-firmware Rust still contains
+substantial page-table traversal and writes, scheduling/synchronization orchestration,
+AP/shootdown execution, DMA setup, device, and protocol behavior. Those are
+conformance implementations, not proof that the complete kernel is
+Thermite-authored.
+
+The receipt publishes conservative, reproducible authorship metrics. The
+ordinary-Rust kernel-logic target is zero; it remains explicitly unmet. Runtime
+Rust and Rust/assembly TPL metrics are overlapping upper bounds until every
+remaining function is mechanically classified as either policy or an
+irreducible platform operation.
+
+The latest canonical receipt for this slice reports 1,717 Thermite LOC across
+117 functions, 792 direct composition-Verus LOC across 74 discharged function
+obligations, 232 exact-TPL Verus LOC across 16 discharged function obligations,
+a 3,049 LOC Rust/assembly TPL upper bound, and a 2,950 LOC ordinary-Rust
+kernel-logic upper bound. It declares nine platform boundaries, reaches four,
+and records all four as exact L3 direct-Verus refinements. The overlapping Rust
+upper bounds are intentionally conservative; the ordinary-Rust target remains
+zero and remains unmet.
 
 ## Frozen platform registry
 
@@ -404,11 +456,17 @@ not silently mutate the modeled state.
 The additive command is:
 
 ```text
-forge build kernel.th --level l3 \
+forge build conformance/thermite-kernel.thpkg.json --level l3 \
   --target kernel-image \
   --platform x86_64-pc-uefi-smp-v1 \
-  --compose-export kernel_step \
-  --compose-shell platform_shell.rs \
+  --compose-export kernel_acceptance_slice \
+  --compose-export service_write_user_byte \
+  --compose-export ap_expected_mask \
+  --compose-export apic_profile_supported \
+  --compose-export apic_physical_base \
+  --compose-export allocator_claim_first \
+  --compose-shell platform/x86_64-pc-uefi-smp-v1/verified/kernel_policy_ingress.rs \
+  --compose-shell platform/x86_64-pc-uefi-smp-v1/verified/tpl/atomic.rs \
   --out dist/thermite-kernel.img
 ```
 
@@ -418,11 +476,13 @@ It has no hosted fallback and no ambient toolchain discovery. Tool paths,
 target features, CPU baseline, code model, relocation model, red-zone policy,
 linker arguments, boot files, and image layout come from the frozen profile.
 
-`ThermiteBootableKernelReceiptV1` binds:
+`ThermitePlatformConformanceReceiptV2` binds:
 
 - all Thermite sources, roots, closure inventories, proof certificates,
   translation-validation evidence, and generated rlibs;
 - the complete boundary inventory and registry entry for each reachable call;
+- the canonical allowlisted transitive source closure, rejecting incidental
+  `target`, `dist`, `__pycache__`, symlinks, unsorted entries, and path escapes;
 - every TPL Rust and assembly source plus the linked PE/PDB, section, and
   public-symbol inventories;
 - kernel vstd model, erased metadata, compiler runtime, allocator bridge, panic
@@ -446,21 +506,28 @@ after every proof, link, reproducibility, and boot gate succeeds.
 
 ## Landed implementation
 
-The `x86_64-pc-uefi-smp-v1` profile is implemented as a 104-operation frozen
-registry. The source-reachable `kernel::clock::read@v1` boundary is pinned by
-name, exact Thermite signature, one `platform(clock)` effect, capability and
-rights metadata, C ABI symbol, and the exact source-contract digest. The same
-`kernel_shell.rs` bound by Forge is compiled and exercised by the UEFI runtime.
-Implementation-only operations are supplied by the linked `thermite-kernel`
-models and the digest-bound Rust/assembly TPL.
+The `x86_64-pc-uefi-smp-v1` conformance profile has a large frozen registry,
+but declarations and model tests alone are not direct refinement proofs. The
+current Thermite closure reaches atomic load, store, fetch, and strong
+compare-exchange. Each maps in the canonical composition plan to its
+`tpl_atomic_*` implementation in `verified/tpl/atomic.rs`; Verus checks those
+exact bodies, the linker retains them, and Forge requires all four public
+symbols in the final PE/PDB inventory. The receipt reports those four
+boundaries separately at `L3_direct_refinement` and does not promote
+unreachable registry entries. Rust-managed scheduler, allocator, IPC, AP, and
+shootdown state now uses this sealed surface. Atomic instructions inside the
+interrupt assembly remain a declared proof gap rather than being counted as
+directly refined.
 
-The safe core implements generation-tracked capabilities, frame and address
-space state, temporary mappings, all-or-nothing user copies, volatile device
-models, interrupt tokens, atomic traces, AP/IPI/shootdown state, concurrent
-scheduling and synchronization, DMA/IOMMU ownership, services, typed ingress,
-and the capability-checking action executor. Executable mirrors of the critical
-transition predicates are proved by `verus --no-cheating` and exercised against
-those production models.
+The authored package spans `conformance/kernel/*.th`. Its exact generated rlib
+is linked into the UEFI image and supplies both the first capability/
+scheduler/IPC vertical slice and the live subsystem behavior described above.
+The allocator now invokes a generated, recursively specified 64-page first-fit
+search inside a bounded generated strong-CAS claim state machine. Rust retains
+raw pointer/provenance arithmetic and zeroing but no longer implements the
+free-run traversal or allocation-claim orchestration policy.
+The old linked safe-Rust model crate is absent from the runtime dependency
+closure.
 
 The freestanding image performs real post-firmware paging, descriptor and APIC
 setup, INIT/SIPI AP startup, per-CPU stacks and GS bases, scheduler work,
@@ -471,7 +538,7 @@ at 1, 2, 4, and 8 CPUs and also runs named AP-start-failure and reboot cases.
 
 Forge publishes the image, PE/COFF executable, PDB, section and public-symbol
 inventories, platform receipt, boot transcripts, and
-`ThermiteBootableKernelReceiptV1`. Validation recomputes every bound closure;
+`ThermitePlatformConformanceReceiptV2`. Validation recomputes every bound closure;
 replay rebuilds byte-identical artifacts and reruns all six QEMU scenarios.
 Receipt-field, transcript-marker, boundary-name, effect, signature, and exact
 contract-digest mutations are permanent negative tests, and CI runs the
@@ -538,27 +605,32 @@ boot ABI remain suitable for a PC-class UEFI machine. Hardware smoke evidence
 may be attached to a release receipt, but simulator success does not claim
 verification of a particular physical platform.
 
-## Implementation order
+## Migration order
 
-The implementation is one release program with the following dependency
-order. SMP is part of its completion gate.
-
-1. Add `u8`/`u16`, kernel mutable-storage models, platform effects, sealed
-   atomic types, and ordering validation.
-2. Define the registry schema, boundary matcher, capability ledger model, and
-   image-specific closure rule.
-3. Add Verus models and lowering for storage, atomics, capabilities, per-CPU
-   ownership, queues, and locks.
-4. Add the frozen x86_64 target identity, linker/image pipeline, runtime
-   symbols, receipt, validation, and replay.
-5. Bring up BSP boot, console, normalized firmware bytes, physical memory,
-   paging, the verified heap, interrupts, and timers.
-6. Bring up APs, per-CPU state, atomics, IPIs, rendezvous, TLB shootdown, and
-   concurrent scheduler execution.
-7. Add contexts, user mode, syscall/trap paths, DMA, the conformance block
-   device, and terminal power actions.
-8. Run the complete negative matrix and 1/2/4/8-CPU boot gate, then publish the
-   first receipt-bound image.
+1. **Landed:** exact-source UEFI codegen and the capability/scheduler/IPC event
+   slice, canonical closure binding, authorship metrics, and the 1/2/4/8 gate.
+2. **Landed:** receipt-bound multi-file Thermite packages, fixed-capacity kernel
+   storage, sealed atomics/orderings, mutable slices with `final(...)`, and
+   usable frozen-registry declarations.
+3. **In progress:** allocator request/mask/claim, exact bounded first-fit and CAS
+   orchestration, and page-entry policy are generated; migrate the remaining
+   reclaim policy, page-table policy, synchronization, and full scheduler
+   orchestration.
+4. **In progress:** AP lifecycle models, exact APIC-ID set construction, xAPIC
+   MSR interpretation, and shootdown verdicts are generated; migrate the
+   remaining AP startup, IPI/rendezvous, interrupt acknowledgement, and
+   shootdown execution state machines.
+5. **In progress:** DMA queue/device policy and service/user-code construction
+   are generated; migrate the remaining driver, DMA execution, syscall, and
+   service state machines.
+6. Reduce Rust/assembly to firmware ABI, raw pointer/provenance and volatile
+   access, privileged instructions, atomics, entry/return assembly, and
+   compiler-runtime necessities.
+7. Supply a direct-Verus model/refinement proof for every reachable TPL
+   operation, tied to the exact emitted implementation. L1 contracts, source
+   review, model tests, and QEMU remain useful but are not substitutes.
+8. Declare migration complete only when ordinary Rust policy/algorithm LOC is
+   zero and the receipt independently reconstructs that result.
 
 ## Requirements
 
@@ -567,20 +639,20 @@ Source: `.design/reqs/registry.toml`
 
 | ID | Status | Owner | Title | Follow-up |
 |---|---|---|---|---|
-| REQ-MKERNEL-1 | shipped | `.design/build/bootable-multicore-kernel.md` | Bootable kernel-image build target |  |
-| REQ-MKERNEL-10 | shipped | `.design/build/bootable-multicore-kernel.md` | Application-processor lifecycle, IPIs, and shootdown |  |
-| REQ-MKERNEL-11 | shipped | `.design/build/bootable-multicore-kernel.md` | Concurrent scheduler, contexts, and user-mode syscall path |  |
-| REQ-MKERNEL-12 | shipped | `.design/build/bootable-multicore-kernel.md` | Generation-safe DMA and IOMMU mediation |  |
-| REQ-MKERNEL-13 | shipped | `.design/build/bootable-multicore-kernel.md` | Explicit clock, entropy, and power authority |  |
-| REQ-MKERNEL-14 | shipped | `.design/build/bootable-multicore-kernel.md` | Typed per-CPU event and action ABI |  |
-| REQ-MKERNEL-15 | shipped | `.design/build/bootable-multicore-kernel.md` | Final-image receipt, validation, replay, and honest assurance |  |
-| REQ-MKERNEL-16 | shipped | `.design/build/bootable-multicore-kernel.md` | Bootable SMP release and adversarial gate |  |
-| REQ-MKERNEL-2 | shipped | `.design/build/bootable-multicore-kernel.md` | Frozen platform registry and exact boundary closure |  |
-| REQ-MKERNEL-3 | shipped | `.design/build/bootable-multicore-kernel.md` | Sealed capability ledger and platform effects |  |
-| REQ-MKERNEL-4 | shipped | `.design/build/bootable-multicore-kernel.md` | Kernel scalar, mutable-storage, and collection basis |  |
-| REQ-MKERNEL-5 | shipped | `.design/build/bootable-multicore-kernel.md` | Boot entry and freestanding compiler runtime |  |
-| REQ-MKERNEL-6 | shipped | `.design/build/bootable-multicore-kernel.md` | Capability-bounded physical and virtual memory |  |
-| REQ-MKERNEL-7 | shipped | `.design/build/bootable-multicore-kernel.md` | Volatile MMIO, PIO, and device ordering |  |
-| REQ-MKERNEL-8 | shipped | `.design/build/bootable-multicore-kernel.md` | CPU, interrupt, trap, and privilege transitions |  |
-| REQ-MKERNEL-9 | shipped | `.design/build/bootable-multicore-kernel.md` | Verified atomic memory model and synchronization basis |  |
+| REQ-MKERNEL-1 | partial | `.design/build/bootable-multicore-kernel.md` | Bootable kernel-image build target | Migrate the remaining kernel policy and algorithms into Thermite before treating kernel-image as a complete kernel product. |
+| REQ-MKERNEL-10 | partial | `.design/build/bootable-multicore-kernel.md` | Application-processor lifecycle, IPIs, and shootdown | Migrate the remaining AP startup, IPI rendezvous, interrupt acknowledgement, and TLB shootdown execution state machines after the generated AP-set/APIC-policy slice. |
+| REQ-MKERNEL-11 | partial | `.design/build/bootable-multicore-kernel.md` | Concurrent scheduler, contexts, and user-mode syscall path | Expand the acceptance scheduler slice into the complete multicore scheduler and context ownership policy. |
+| REQ-MKERNEL-12 | partial | `.design/build/bootable-multicore-kernel.md` | Generation-safe DMA and IOMMU mediation | Migrate the remaining DMA execution, driver, and IOMMU ownership state machines into Thermite and directly prove raw device adapters. |
+| REQ-MKERNEL-13 | partial | `.design/build/bootable-multicore-kernel.md` | Explicit clock, entropy, and power authority | Move service state machines into Thermite and directly prove clock, entropy, and power implementations. |
+| REQ-MKERNEL-14 | partial | `.design/build/bootable-multicore-kernel.md` | Typed per-CPU event and action ABI | Generalize the acceptance event slice to the complete typed per-CPU event/action ABI. |
+| REQ-MKERNEL-15 | partial | `.design/build/bootable-multicore-kernel.md` | Final-image receipt, validation, replay, and honest assurance | Finish exact TPL proof binding and reach zero ordinary-Rust policy LOC while preserving canonical source closure. |
+| REQ-MKERNEL-16 | partial | `.design/build/bootable-multicore-kernel.md` | Bootable SMP release and adversarial gate | Run the same boot and adversarial matrix after every remaining policy subsystem is generated from Thermite. |
+| REQ-MKERNEL-2 | partial | `.design/build/bootable-multicore-kernel.md` | Frozen platform registry and exact boundary closure | Tie every source-reachable TPL registry operation to a direct-Verus refinement proof of its exact implementation. |
+| REQ-MKERNEL-3 | partial | `.design/build/bootable-multicore-kernel.md` | Sealed capability ledger and platform effects | Replace the remaining Rust capability policy with fixed-storage Thermite ledger state and generated execution. |
+| REQ-MKERNEL-4 | partial | `.design/build/bootable-multicore-kernel.md` | Kernel scalar, mutable-storage, and collection basis | Add receipt-bound modules, fixed-capacity Thermite storage, and sealed atomics/orderings needed by the full kernel. |
+| REQ-MKERNEL-5 | partial | `.design/build/bootable-multicore-kernel.md` | Boot entry and freestanding compiler runtime | Reduce the runtime to irreducible machine operations and directly prove each reachable adapter. |
+| REQ-MKERNEL-6 | partial | `.design/build/bootable-multicore-kernel.md` | Capability-bounded physical and virtual memory | Migrate the remaining allocator traversal, page-table ownership transitions, and virtual-memory mapping algorithms into generated Thermite code. |
+| REQ-MKERNEL-7 | partial | `.design/build/bootable-multicore-kernel.md` | Volatile MMIO, PIO, and device ordering | Directly refine the exact volatile MMIO, PIO, and ordering implementations in Verus. |
+| REQ-MKERNEL-8 | partial | `.design/build/bootable-multicore-kernel.md` | CPU, interrupt, trap, and privilege transitions | Move CPU, interrupt, trap, and context policy to Thermite and prove the remaining assembly adapters. |
+| REQ-MKERNEL-9 | partial | `.design/build/bootable-multicore-kernel.md` | Verified atomic memory model and synchronization basis | Extend the sealed atomic declarations and exact load/store/fetch/strong-CAS refinements to the remaining operations, then migrate all synchronization algorithms and raw interrupt atomics. |
 <!-- /generated:reqs -->

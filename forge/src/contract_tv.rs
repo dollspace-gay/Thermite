@@ -271,7 +271,8 @@ fn tv_fn(
                         None => r,
                     });
                 }
-                SpecType::Bool | SpecType::Opt(_) | SpecType::Res(_, _) => {}
+                SpecType::Bool | SpecType::Opt(_) | SpecType::Res(_, _) | SpecType::Concrete(_) => {
+                }
             }
             loop_frame
                 .params
@@ -709,6 +710,8 @@ fn extract_spec_defs(lowered: &str) -> Vec<String> {
                 || trimmed.starts_with("proof fn ")
                 || trimmed.starts_with("pub struct ")
                 || trimmed.starts_with("struct ")
+                || trimmed.starts_with("pub enum ")
+                || trimmed.starts_with("enum ")
                 || trimmed.starts_with("impl "));
         if is_def_header {
             let (block, next) = capture_block(&lines, i);
@@ -725,19 +728,36 @@ fn extract_spec_defs(lowered: &str) -> Vec<String> {
 /// block text and the index PAST it.
 fn capture_block(lines: &[&str], start: usize) -> (String, usize) {
     let mut depth: i64 = 0;
-    let mut seen_open = false;
+    let header = lines[start].trim_start();
+    let function_like = header.starts_with("spec fn ")
+        || header.starts_with("pub open spec fn ")
+        || header.starts_with("pub closed spec fn ")
+        || header.starts_with("proof fn ");
+    // Function-like definitions can carry braced expressions in signature clauses
+    // before their body, notably `decreases if c { a } else { b }`. Ignore those
+    // groups and begin brace balancing at the emitted body opener. Struct/enum/impl
+    // definitions open on their header line and retain the original path.
+    let mut body_open = !function_like;
     let mut end = start;
     for (j, line) in lines.iter().enumerate().skip(start) {
+        if !body_open {
+            let trimmed = line.trim();
+            if trimmed == "{" || (j == start && trimmed.ends_with('{')) {
+                body_open = true;
+            } else {
+                end = j;
+                continue;
+            }
+        }
         for ch in line.chars() {
             if ch == '{' {
                 depth += 1;
-                seen_open = true;
             } else if ch == '}' {
                 depth -= 1;
             }
         }
         end = j;
-        if seen_open && depth <= 0 {
+        if body_open && depth <= 0 {
             break;
         }
     }
@@ -794,7 +814,7 @@ fn signature_frame(f: &FnItem, preamble: &[String]) -> Option<ObligationFrame> {
             }
             // An `Option`/`Result` param is bound as the native Verus type (#150
             // gap #3); no invariant weave (the enum carries its own discriminant).
-            SpecType::Opt(_) | SpecType::Res(_, _) => {}
+            SpecType::Opt(_) | SpecType::Res(_, _) | SpecType::Concrete(_) => {}
         }
         params.push(ParamDecl::new(
             p.name.clone(),
@@ -827,7 +847,7 @@ fn signature_frame(f: &FnItem, preamble: &[String]) -> Option<ObligationFrame> {
                     map_params.push("result".to_string());
                     reqs.push("result.well_formed()".to_string());
                 }
-                SpecType::Opt(_) | SpecType::Res(_, _) => {}
+                SpecType::Opt(_) | SpecType::Res(_, _) | SpecType::Concrete(_) => {}
             }
             params.push(ParamDecl::new("result", ret_ty.verus_param_spelling()));
         }
@@ -907,6 +927,10 @@ enum SpecType {
     /// A `Result<T, E>` bound as the native Verus `Result<…, …>` (#150 gap #3). The
     /// string is the full Verus spelling (`Result<u64, ParseErr>`).
     Res(String, String),
+    /// A concrete emitted Verus type: a user struct/enum or a monomorphic frozen
+    /// storage wrapper such as `TFixedArray8U64`. Its complete definition is in
+    /// the obligation preamble, so field and `spec_get` clauses are not opaque.
+    Concrete(String),
 }
 
 impl SpecType {
@@ -924,6 +948,7 @@ impl SpecType {
             SpecType::Map(_, _) => self.map_wrapper_name(),
             SpecType::Opt(inner) => format!("Option<{inner}>"),
             SpecType::Res(ok, err) => format!("Result<{ok}, {err}>"),
+            SpecType::Concrete(name) => name.clone(),
         }
     }
 
@@ -1000,6 +1025,11 @@ fn spec_type_of(ty: &Type) -> Option<SpecType> {
             verus_type_spelling(k)?,
             verus_type_spelling(v)?,
         )),
+        Type::Named(name) => Some(SpecType::Concrete(name.clone())),
+        Type::Generic { name, arg } if name == "FixedArray8" => Some(SpecType::Concrete(format!(
+            "TFixedArray8{}",
+            fixed_array_suffix(arg)?
+        ))),
         _ => None,
     }
 }
@@ -1033,6 +1063,24 @@ fn verus_type_spelling(ty: &Type) -> Option<String> {
         Type::Prim(PrimType::Bool) => Some("bool".to_string()),
         Type::String => Some("TString".to_string()),
         Type::Named(n) => Some(n.clone()),
+        Type::Generic { name, arg } if name == "FixedArray8" => {
+            Some(format!("TFixedArray8{}", fixed_array_suffix(arg)?))
+        }
+        _ => None,
+    }
+}
+
+/// Independent spelling of the frozen fixed-array monomorphization suffix. This
+/// is the language ABI (`FixedArray8<u64>` -> `TFixedArray8U64`), restated here
+/// without importing the production lowerer's helper.
+fn fixed_array_suffix(ty: &Type) -> Option<String> {
+    match ty {
+        Type::Prim(PrimType::U8) => Some("U8".to_string()),
+        Type::Prim(PrimType::U16) => Some("U16".to_string()),
+        Type::Prim(PrimType::U32) => Some("U32".to_string()),
+        Type::Prim(PrimType::U64) => Some("U64".to_string()),
+        Type::Prim(PrimType::Usize) => Some("Usize".to_string()),
+        Type::Prim(PrimType::Bool) => Some("Bool".to_string()),
         _ => None,
     }
 }
@@ -1041,9 +1089,12 @@ fn verus_type_spelling(ty: &Type) -> Option<String> {
 /// mirroring production's `tmap_type_suffix` (`Type::Prim(U64)` → `"U64"`).
 fn cap_prim(spelling: &str) -> String {
     match spelling {
+        "u8" => "U8".to_string(),
+        "u16" => "U16".to_string(),
         "u32" => "U32".to_string(),
         "u64" => "U64".to_string(),
         "usize" => "Usize".to_string(),
+        "bool" => "Bool".to_string(),
         other => other.to_string(),
     }
 }
@@ -1273,6 +1324,39 @@ pub fn render_report(report: &TvReport, header: &str) -> String {
 /// defaults — the deterministic config, §5.3 / R-CODE-5).
 pub const TV_DEFAULT_SEED: u64 = DEFAULT_SOLVER_SEED;
 pub const TV_DEFAULT_RLIMIT: f64 = DEFAULT_RLIMIT;
+
+#[cfg(test)]
+mod preamble_tests {
+    use super::extract_spec_defs;
+
+    #[test]
+    fn conditional_decreases_braces_do_not_terminate_a_spec_definition() {
+        let lowered = r#"
+pub open spec fn scan(first: u64) -> u64
+    decreases if first < 64 { 64 - first } else { 0 }
+{
+    if first < 64 { scan((first + 1) as u64) } else { first }
+}
+
+fn executable() -> u64
+{
+    0
+}
+"#;
+        let defs = extract_spec_defs(lowered);
+        assert_eq!(defs.len(), 1, "unexpected definitions: {defs:#?}");
+        assert!(
+            defs[0].contains("if first < 64 { scan((first + 1) as u64) }"),
+            "the extracted definition lost its body:\n{}",
+            defs[0]
+        );
+        assert!(
+            defs[0].ends_with("\n}"),
+            "definition is not closed: {}",
+            defs[0]
+        );
+    }
+}
 
 // ---- forge-level contract Divergent regression tests (REQ-5; blocker #166) -
 //

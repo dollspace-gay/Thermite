@@ -1,0 +1,36 @@
+fn allocator_claim_first(cell: &Atomic, pages: u64) -> u64
+  req pages > 0 && pages <= 64
+  ens result <= 64
+  ens result == 64 || result + pages <= 64
+  fx platform(atomic)
+{
+  let mut attempts: u64 = 0;
+  let mut first: u64 = 64;
+  while attempts < 64 && first == 64
+    inv attempts <= 64
+    inv first <= 64
+    inv first == 64 || first + pages <= 64
+    dec 64 - attempts
+  {
+    let observed: u64 = atomic_boundary_load(cell, Ordering::SeqCst);
+    let candidate: u64 = allocator_first_available(observed, pages);
+    if candidate < 64 && candidate <= 64 - pages {
+      let mask: u64 = allocator_run_mask(
+        candidate,
+        pages,
+        18446744073709551614 + 1
+      );
+      let claimed: u64 = allocator_claim_value(observed, mask);
+      let compared: Cas = atomic_compare_exchange(cell, observed, claimed);
+      if compared.exchanged {
+        first = candidate;
+      }
+    } else {
+      attempts = 64;
+    }
+    if attempts < 64 {
+      attempts = (attempts + 1) as u64;
+    }
+  }
+  first
+}

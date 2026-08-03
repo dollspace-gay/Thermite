@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: cef3f68835ed4cd28d8457fde798db3026de833b6e31fb7230ac7b0e68206de4
+audited-content-sha256: 11199c7e1b915c5f2245f353bfaf4c7585c3ba1b422052741a32784e4e80386f
 decision: one canonical Verus crate with crate-visible rich Thermite roots and public shell exports
 issue: github:dollspace-gay/Thermite#104
 governs:
@@ -28,6 +28,13 @@ tuples, and bounded collections. They lower as `pub(crate)` and are callable by
 the shell only because both sources are verified and compiled in the same
 crate. Only explicitly selected link exports and public shell items cross the
 crate boundary.
+
+For receipt-bound kernel composition, a canonical frozen boundary is the one
+exception to the ordinary boundary rejection rule. Its representation and
+implementation are supplied by an `exact_tpl_v1` shell in the same combined
+crate, so Verus checks the emitted Thermite wrapper against that exact body.
+The plan records the Thermite name, registry target, module, and final symbol.
+This exception is unavailable to `std` builds and to non-canonical boundaries.
 
 The combined source is not a second lowering. Forge takes the unchanged,
 target-specific result of `lower_l3_library`, removes only its final `verus!`
@@ -74,8 +81,10 @@ There are two distinct roots:
 Every root participates in one union closure. Forge resolves and binds every
 reachable executable function, specification function, ADT, generated bounded
 type/helper, wrapper, caller edge, body, contract, and effect row. Slag,
-boundaries, holes, unresolved calls, divergence, panic, hosted effects in a
-kernel target, or any sub-L3 certificate reject the whole build.
+holes, unresolved calls, divergence, panic, hosted effects in a kernel target,
+or any sub-L3 certificate reject the whole build. Ordinary boundaries also
+reject; a kernel-only canonical frozen boundary is admitted only with its exact
+checked TPL mapping and final-symbol gate.
 
 For each composition export the plan records its semantic address, exact
 signature, parameter ownership (`by_value`, `shared_borrow`, or
@@ -90,12 +99,16 @@ Forge hashes its exact UTF-8 bytes and inventories each top-level function,
 struct, enum, type, const, static, or trait. Module names and evidence paths are
 canonicalized and sorted.
 
-The shell policy rejects attributes, nested `verus!` invocations, nested or
+The ordinary shell policy rejects attributes, nested `verus!` invocations, nested or
 external modules, declarations without checked bodies, `external_body`,
 `assume`, `admit`, axioms, unsafe code, unchecked decreases, include macros,
 unimplemented/todo markers, erasure bypasses, and macro definitions. Comments
 and literals do not create false escape-hatch matches. This policy is checked
 when planning and checked again from the bound files during receipt validation.
+An exact TPL shell has a separately bound `exact_tpl_v1` policy. It retains all
+proof-escape and unsafe-code rejections while allowing only
+`#[verifier::type_invariant]` and `#[no_mangle] pub extern "C" fn` forms needed
+to prove and retain the exact machine-facing atomic implementation.
 
 ## Exact-source construction
 
@@ -151,9 +164,11 @@ rows remain mandatory over the complete union closure. A divergent,
 unverifiable, skipped, missing, duplicate, or injected non-pass row prevents
 publication.
 
-The scalar contract/exec/body TV obligation frames intentionally cannot spell a
-rich ADT or tuple signature. For exactly those signature/frame refusals—and no
-other refusal—the composition path completes the row from the conjunction of:
+The scalar contract/exec/body/loop TV obligation frames intentionally cannot
+spell a rich ADT, frozen reference, or tuple signature, and standalone TV cannot
+execute a boundary declaration whose exact body exists only in the composition
+TPL. For exactly those signature/frame refusals—and no other refusal—the
+composition path completes the row from the conjunction of:
 
 - the normalized Thermite AST and complete closure bound by the plan;
 - the canonical target lowering bound byte-for-byte;

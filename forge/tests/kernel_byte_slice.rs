@@ -126,16 +126,32 @@ fn kernel_byte_slice_is_verified_executable_freestanding_and_reproducible() {
         "vir_sha256",
         "source_sha256",
         "link_source_sha256",
+        "link_prelude_sha256",
         "link_rlib_sha256",
     ] {
         assert_eq!(model[digest].as_str().unwrap().len(), 64);
     }
-    assert_eq!(model["link_source_name"], "kernel-vstd-link.rs");
-    assert!(model["source_file_count"].as_u64().unwrap() > 0);
-    assert_eq!(
-        fs::read(first.join("evidence/kernel-vstd-link.rs")).unwrap(),
-        fs::read(root().join("forge/src/kernel_vstd_link.rs")).unwrap(),
+    assert_eq!(model["link_source_name"], "vstd.rs");
+    assert!(model["source_file_count"].as_u64().unwrap() > 100);
+    assert_eq!(model["source_root"], "<VERUS>/vstd");
+    assert!(
+        fs::read_to_string(first.join("evidence/kernel-vstd-source/vstd.rs"))
+            .unwrap()
+            .contains("pub mod atomic_ghost;")
     );
+    assert!(first
+        .join("evidence/kernel-vstd-source/atomic.rs")
+        .is_file());
+    assert!(first
+        .join("evidence/kernel-vstd-source/atomic_ghost.rs")
+        .is_file());
+    assert!(first.join("evidence/kernel-vstd.vir").is_file());
+    assert!(first
+        .join("evidence/kernel-vstd-link-source/vstd.rs")
+        .is_file());
+    assert!(first
+        .join("evidence/kernel-vstd-link-source/prelude.rs")
+        .is_file());
 
     let source = fs::read_to_string(first.join("evidence/source.verus.rs")).unwrap();
     assert!(source.starts_with("#![no_std]\n#![crate_type = \"rlib\"]"));

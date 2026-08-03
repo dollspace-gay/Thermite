@@ -1,0 +1,218 @@
+struct CapabilityRecord {
+  slot: u64,
+  owner: u64,
+  rights: u64,
+  generation: u64,
+  live: bool
+}
+
+struct CapabilityLedger {
+  slots: FixedArray8<u64>,
+  owners: FixedArray8<u64>,
+  rights: FixedArray8<u64>,
+  generations: FixedArray8<u64>,
+  live: FixedArray8<bool>,
+  used: u64
+}
+
+fn capability_mint(slot: u64, owner: u64, rights: u64) -> CapabilityRecord
+  req rights <= 127
+  ens result.slot == slot
+  ens result.owner == owner
+  ens result.rights == rights
+  ens result.generation == 0
+  ens result.live
+  fx pure
+{
+  CapabilityRecord {
+    slot: slot,
+    owner: owner,
+    rights: rights,
+    generation: 0,
+    live: true
+  }
+}
+
+fn capability_allows(record: CapabilityRecord, owner: u64, required: u64) -> bool
+  req required <= 127
+  ens result == (record.live && record.owner == owner && record.rights >= required)
+  fx pure
+{
+  record.live && record.owner == owner && record.rights >= required
+}
+
+fn capability_transfer(
+  record: CapabilityRecord,
+  new_owner: u64,
+  new_rights: u64
+) -> CapabilityRecord
+  req record.live && new_rights <= record.rights && record.rights <= 127 && record.generation < 18446744073709551615
+  ens result.slot == record.slot
+  ens result.owner == new_owner
+  ens result.rights == new_rights
+  ens result.generation == record.generation + 1
+  ens result.live
+  fx pure
+{
+  CapabilityRecord {
+    slot: record.slot,
+    owner: new_owner,
+    rights: new_rights,
+    generation: record.generation + 1,
+    live: true
+  }
+}
+
+fn capability_ledger_new() -> CapabilityLedger
+  req true
+  ens result.used == 0
+  ens result.slots.get(0) == 0
+  ens result.slots.get(1) == 0
+  ens result.slots.get(2) == 0
+  ens result.slots.get(3) == 0
+  ens result.slots.get(4) == 0
+  ens result.slots.get(5) == 0
+  ens result.slots.get(6) == 0
+  ens result.slots.get(7) == 0
+  ens result.owners.get(0) == 0
+  ens result.owners.get(1) == 0
+  ens result.owners.get(2) == 0
+  ens result.owners.get(3) == 0
+  ens result.owners.get(4) == 0
+  ens result.owners.get(5) == 0
+  ens result.owners.get(6) == 0
+  ens result.owners.get(7) == 0
+  ens result.rights.get(0) == 0
+  ens result.rights.get(1) == 0
+  ens result.rights.get(2) == 0
+  ens result.rights.get(3) == 0
+  ens result.rights.get(4) == 0
+  ens result.rights.get(5) == 0
+  ens result.rights.get(6) == 0
+  ens result.rights.get(7) == 0
+  ens result.generations.get(0) == 0
+  ens result.generations.get(1) == 0
+  ens result.generations.get(2) == 0
+  ens result.generations.get(3) == 0
+  ens result.generations.get(4) == 0
+  ens result.generations.get(5) == 0
+  ens result.generations.get(6) == 0
+  ens result.generations.get(7) == 0
+  ens !result.live.get(0)
+  ens !result.live.get(1)
+  ens !result.live.get(2)
+  ens !result.live.get(3)
+  ens !result.live.get(4)
+  ens !result.live.get(5)
+  ens !result.live.get(6)
+  ens !result.live.get(7)
+  fx pure
+{
+  let slots: FixedArray8<u64> = FixedArray8::fill(0);
+  let owners: FixedArray8<u64> = FixedArray8::fill(0);
+  let rights: FixedArray8<u64> = FixedArray8::fill(0);
+  let generations: FixedArray8<u64> = FixedArray8::fill(0);
+  let live: FixedArray8<bool> = FixedArray8::fill(false);
+  CapabilityLedger {
+    slots: slots,
+    owners: owners,
+    rights: rights,
+    generations: generations,
+    live: live,
+    used: 0
+  }
+}
+
+fn capability_ledger_store(
+  ledger: CapabilityLedger,
+  at: usize,
+  record: CapabilityRecord
+) -> CapabilityLedger
+  req at < 8 && ledger.used < 8 && record.live && record.rights <= 127
+  ens result.used == ledger.used + 1
+  ens (at == 0 && result.slots.get(0) == record.slot) || (at != 0 && result.slots.get(0) == ledger.slots.get(0))
+  ens (at == 1 && result.slots.get(1) == record.slot) || (at != 1 && result.slots.get(1) == ledger.slots.get(1))
+  ens (at == 2 && result.slots.get(2) == record.slot) || (at != 2 && result.slots.get(2) == ledger.slots.get(2))
+  ens (at == 3 && result.slots.get(3) == record.slot) || (at != 3 && result.slots.get(3) == ledger.slots.get(3))
+  ens (at == 4 && result.slots.get(4) == record.slot) || (at != 4 && result.slots.get(4) == ledger.slots.get(4))
+  ens (at == 5 && result.slots.get(5) == record.slot) || (at != 5 && result.slots.get(5) == ledger.slots.get(5))
+  ens (at == 6 && result.slots.get(6) == record.slot) || (at != 6 && result.slots.get(6) == ledger.slots.get(6))
+  ens (at == 7 && result.slots.get(7) == record.slot) || (at != 7 && result.slots.get(7) == ledger.slots.get(7))
+  ens (at == 0 && result.owners.get(0) == record.owner) || (at != 0 && result.owners.get(0) == ledger.owners.get(0))
+  ens (at == 1 && result.owners.get(1) == record.owner) || (at != 1 && result.owners.get(1) == ledger.owners.get(1))
+  ens (at == 2 && result.owners.get(2) == record.owner) || (at != 2 && result.owners.get(2) == ledger.owners.get(2))
+  ens (at == 3 && result.owners.get(3) == record.owner) || (at != 3 && result.owners.get(3) == ledger.owners.get(3))
+  ens (at == 4 && result.owners.get(4) == record.owner) || (at != 4 && result.owners.get(4) == ledger.owners.get(4))
+  ens (at == 5 && result.owners.get(5) == record.owner) || (at != 5 && result.owners.get(5) == ledger.owners.get(5))
+  ens (at == 6 && result.owners.get(6) == record.owner) || (at != 6 && result.owners.get(6) == ledger.owners.get(6))
+  ens (at == 7 && result.owners.get(7) == record.owner) || (at != 7 && result.owners.get(7) == ledger.owners.get(7))
+  ens (at == 0 && result.rights.get(0) == record.rights) || (at != 0 && result.rights.get(0) == ledger.rights.get(0))
+  ens (at == 1 && result.rights.get(1) == record.rights) || (at != 1 && result.rights.get(1) == ledger.rights.get(1))
+  ens (at == 2 && result.rights.get(2) == record.rights) || (at != 2 && result.rights.get(2) == ledger.rights.get(2))
+  ens (at == 3 && result.rights.get(3) == record.rights) || (at != 3 && result.rights.get(3) == ledger.rights.get(3))
+  ens (at == 4 && result.rights.get(4) == record.rights) || (at != 4 && result.rights.get(4) == ledger.rights.get(4))
+  ens (at == 5 && result.rights.get(5) == record.rights) || (at != 5 && result.rights.get(5) == ledger.rights.get(5))
+  ens (at == 6 && result.rights.get(6) == record.rights) || (at != 6 && result.rights.get(6) == ledger.rights.get(6))
+  ens (at == 7 && result.rights.get(7) == record.rights) || (at != 7 && result.rights.get(7) == ledger.rights.get(7))
+  ens (at == 0 && result.generations.get(0) == record.generation) || (at != 0 && result.generations.get(0) == ledger.generations.get(0))
+  ens (at == 1 && result.generations.get(1) == record.generation) || (at != 1 && result.generations.get(1) == ledger.generations.get(1))
+  ens (at == 2 && result.generations.get(2) == record.generation) || (at != 2 && result.generations.get(2) == ledger.generations.get(2))
+  ens (at == 3 && result.generations.get(3) == record.generation) || (at != 3 && result.generations.get(3) == ledger.generations.get(3))
+  ens (at == 4 && result.generations.get(4) == record.generation) || (at != 4 && result.generations.get(4) == ledger.generations.get(4))
+  ens (at == 5 && result.generations.get(5) == record.generation) || (at != 5 && result.generations.get(5) == ledger.generations.get(5))
+  ens (at == 6 && result.generations.get(6) == record.generation) || (at != 6 && result.generations.get(6) == ledger.generations.get(6))
+  ens (at == 7 && result.generations.get(7) == record.generation) || (at != 7 && result.generations.get(7) == ledger.generations.get(7))
+  ens (at == 0 && result.live.get(0) == record.live) || (at != 0 && result.live.get(0) == ledger.live.get(0))
+  ens (at == 1 && result.live.get(1) == record.live) || (at != 1 && result.live.get(1) == ledger.live.get(1))
+  ens (at == 2 && result.live.get(2) == record.live) || (at != 2 && result.live.get(2) == ledger.live.get(2))
+  ens (at == 3 && result.live.get(3) == record.live) || (at != 3 && result.live.get(3) == ledger.live.get(3))
+  ens (at == 4 && result.live.get(4) == record.live) || (at != 4 && result.live.get(4) == ledger.live.get(4))
+  ens (at == 5 && result.live.get(5) == record.live) || (at != 5 && result.live.get(5) == ledger.live.get(5))
+  ens (at == 6 && result.live.get(6) == record.live) || (at != 6 && result.live.get(6) == ledger.live.get(6))
+  ens (at == 7 && result.live.get(7) == record.live) || (at != 7 && result.live.get(7) == ledger.live.get(7))
+  fx pure
+{
+  let mut updated: CapabilityLedger = ledger;
+  updated.slots.set(at, record.slot);
+  updated.owners.set(at, record.owner);
+  updated.rights.set(at, record.rights);
+  updated.generations.set(at, record.generation);
+  updated.live.set(at, record.live);
+  updated.used = updated.used + 1;
+  updated
+}
+
+fn capability_ledger_load(ledger: CapabilityLedger, at: usize) -> CapabilityRecord
+  req at < 8 && at < ledger.used && ledger.live.get(at)
+  ens result.slot == ledger.slots.get(at)
+  ens result.owner == ledger.owners.get(at)
+  ens result.rights == ledger.rights.get(at)
+  ens result.generation == ledger.generations.get(at)
+  ens result.live == ledger.live.get(at)
+  fx pure
+{
+  CapabilityRecord {
+    slot: ledger.slots.get(at),
+    owner: ledger.owners.get(at),
+    rights: ledger.rights.get(at),
+    generation: ledger.generations.get(at),
+    live: ledger.live.get(at)
+  }
+}
+
+fn capability_bootstrap(owner: u64) -> CapabilityRecord
+  req owner > 0 && owner <= 8
+  ens result.slot == 7
+  ens result.owner == owner
+  ens result.rights == 1
+  ens result.rights >= 1
+  ens result.generation == 1
+  ens result.live
+  fx pure
+{
+  let root: CapabilityRecord = capability_mint(7, 0, 3);
+  let transferred: CapabilityRecord = capability_transfer(root, owner, 1);
+  let empty: CapabilityLedger = capability_ledger_new();
+  let stored: CapabilityLedger = capability_ledger_store(empty, 0, transferred);
+  capability_ledger_load(stored, 0)
+}

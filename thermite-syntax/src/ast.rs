@@ -366,12 +366,18 @@ pub struct Falsify {
 /// only way to obtain one is through its `#[boundary]` door's return value (the
 /// door body is foreign/`external_body`, with no in-language `StructLit`). It is
 /// `false` for an ordinary struct (the parser sets it `true` only on `#[sealed]`).
+///
+/// `frozen` names a registry-owned platform type whose executable representation
+/// is supplied by the verified platform composition. A frozen type is also
+/// sealed and must be fieldless: Thermite can borrow and pass it but cannot mint
+/// or inspect a representation independently of the registry binding.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StructItem {
     pub name: Ident,
     pub fields: Vec<FieldDef>,
     pub inv: Option<Clause>,
     pub sealed: bool,
+    pub frozen: Option<String>,
     pub span: Span,
 }
 

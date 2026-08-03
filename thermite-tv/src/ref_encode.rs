@@ -634,6 +634,22 @@ fn encode_method_call(
     }
 
     match name {
+        // Frozen bounded-storage accessor. Both `Vec<T>` and the allocation-free
+        // kernel `FixedArray8<T>` expose an exec `.get(i)` whose contract meaning
+        // is the wrapper's `spec_get(i: int)`. The reference encoder states that
+        // rewrite independently of thermite-lower; a production off-by-one or
+        // wrong-receiver rewrite therefore remains observable to contract TV.
+        "get" => {
+            if args.len() != 1 {
+                return Err(RefEncodeError::Unsupported(format!(
+                    "get/{} (expected exactly 1 arg)",
+                    args.len()
+                )));
+            }
+            let recv = encode(receiver, ctx)?;
+            let idx = encode_index_value(&args[0], ctx)?;
+            Ok(format!("{recv}.spec_get({idx})"))
+        }
         // The byte-view accessor (#127): `s.byte_at(i)` is the i-th byte of the
         // sequence view, `recv[i]`. F3 covers a production misdispatch
         // to index `1` for source index `0` differs from this. This is the

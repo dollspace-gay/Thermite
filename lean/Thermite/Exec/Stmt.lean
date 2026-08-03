@@ -5,8 +5,8 @@
   builds on increment 2a (`Thermite.Exec`): the RHS of a `let`/`assign`, an
   `if` condition, and a tail value are all exec expressions, denoted by 2a's
   `execDenote` / `ExecVal` / `ExecEnv`. `S_B` adds the state-threading,
-  scalar-mutation rebind, branch composition, and tail projection on top of 2a's
-  per-RHS bounded-value denotation.
+  scalar-mutation rebind, fixed mutable-slice indexed update, branch composition,
+  and tail projection on top of 2a's per-RHS bounded-value denotation.
 
   Governing design: `.design/verified/thermite-semantics.md` Architecture §"S_B — the
   exec-body sublanguage (state transformer; unified from exec-stmt-tv.md)",
@@ -33,6 +33,11 @@
     - `assign x = e`— update an existing scalar binding `x` to `execDenote e` (the
                       order-sensitive mutation: the rhs reads the state before this
                       assign; `s = s+1; s = s*2` ≠ `s = s*2; s = s+1`).
+    - `sliceAssign xs i e` — evaluate `i` and `e` in the pre-write state, require
+                      `0 ≤ i < xs.length`, and replace exactly cell `i`. This is the
+                      top-level fixed mutable-slice effect admitted by the Rust
+                      reference encoder; nested branch slice effects remain outside
+                      that encoder's initial subset.
     - `ifElse c B₁ B₂` — branch on `execDenote c`: run `B₁` (then) or `B₂` (else) as a
                       sub-block state-transformer over the same state, recompose.
     - sequencing (`Block.stmts` in order) — compose the per-statement transformers.
@@ -59,12 +64,13 @@
       rejects a re-shadow `let x=..; let x=..`; modelled: `bodyRefState` is `none`
       when `name` is already bound, matching `env.contains_key(name)` → `Err`).
     - `Stmt::Assign { Path[x], value }` → `Stmt.assign` : rebind an existing bare
-      scalar `x` (the encoder rejects a non-bare / non-scalar target `xs[i]=..` and an
-      unbound target; modelled: `bodyRefState` is `none` when `x` is not already
-      bound). A non-scalar mutation `xs[i] = e` is `Unsupported` in
-      `body_ref_state` (the v1 frozen subset mutates only bare scalar cells; a
-      sequence theory is v2), so it is not a `Stmt` form here (an absence, not
-      embed-then-`sorry`). The mutation `S_B` models is the scalar-cell rebind.
+      scalar `x` (the encoder rejects an unbound target; modelled: `bodyRefState` is
+      `none` when `x` is not already bound).
+    - `Stmt::Assign { Index(slice, i), value }` → `Stmt.sliceAssign` for a bare,
+      frame-declared mutable-slice name: evaluate `i`/`value` in the pre-write state,
+      bounds-check, and replace exactly one sequence cell. The Rust recognizer is
+      narrower than the operational form: top-level writes only, with no mutable-slice
+      read in the index/value; other non-bare targets remain `Unsupported`.
     - `Stmt::If { cond, then, else_ }` (statement position) → `Stmt.ifElse` : run each
       branch over the state, recompose. (The Rust composes the per-cell branch values
       into a Verus `if`-expression; under any concrete state that `if`-expression
@@ -102,9 +108,11 @@ namespace Thermite.Exec
 /-! ## The exec-body AST (`body_ref_state`'s straight-line statement subset)
 
   The straight-line forms `body_ref_state` / `thread_stmt` handle. Loops (`Stmt::Loop`/
-  `Break`/`Continue`) are absent (2c #163, kernel-gated). A non-scalar mutation
-  `xs[i]=e` and a mid-body early `return` are absent (`Unsupported` in the encoder;
-  documented out, not embed-then-`sorry`). -/
+  `Break`/`Continue`) are absent (2c #163, kernel-gated). A single-index assignment
+  to a frame-declared mutable slice is represented by `sliceAssign`; field writes,
+  range writes, slice writes nested under control flow, and a mid-body early `return`
+  remain absent (`Unsupported` in the encoder; documented out, not
+  embed-then-`sorry`). -/
 
 /-! A straight-line exec statement (the frozen 2.2.1 subset `body_ref_state` admits).
     The RHS / condition are 2a `ExecExpr`s (denoted by `execDenote`), so `S_B` reuses
@@ -121,9 +129,13 @@ inductive Stmt where
   /-- `x = e` — update an existing bare scalar binding `x` to the bounded value of `e`
       in the current state (`Stmt::Assign` over a `Path[x]` target). Order-sensitive:
       `e` reads the state before this assign. `x` must already be in scope (the encoder
-      `Err`s on an unbound target). The v1 mutation form; a non-scalar `xs[i]=e` is
-      `Unsupported` (out, documented). -/
+      `Err`s on an unbound target). -/
   | assign (name : String) (value : ExecExpr)
+  /-- `slice[index] = value` for a frame-declared mutable slice. Both expressions
+      are evaluated in the pre-write state; the index must be in range, then exactly
+      that list cell is replaced. The Rust reference emits the corresponding full
+      sequence post-state `final(slice)@ == old(slice)@.update(index, value)`. -/
+  | sliceAssign (slice : String) (index value : ExecExpr)
   /-- a bare expression statement `e;` (`Stmt::Expr`): no state effect, but `e` must
       be well-formed (the encoder encodes-and-discards to surface a value error). -/
   | exprS (e : ExecExpr)
@@ -172,6 +184,10 @@ structure State where
 def State.setVar (st : State) (name : String) (v : ExecVal) : State :=
   { st with env := { st.env with vars := fun s => if s = name then v else st.env.vars s } }
 
+/-- Replace one named slice sequence in the state's valuation. -/
+def State.setSlice (st : State) (name : String) (xs : List BVal) : State :=
+  { st with env := { st.env with slices := fun s => if s = name then xs else st.env.slices s } }
+
 /-- Mark a name as in-scope (a `let`-bound cell). -/
 def State.bind (st : State) (name : String) : State :=
   { st with scope := fun s => if s = name then true else st.scope s }
@@ -189,7 +205,8 @@ def State.bind (st : State) (name : String) : State :=
     REQ-2). -/
 def State.restoreScope (pre branch : State) : State :=
   { env := { vars := fun s => if pre.scope s then branch.env.vars s else pre.env.vars s
-             slices := pre.env.slices }
+             slices := branch.env.slices
+             variants := pre.env.variants }
     scope := pre.scope }
 
 /-! The source `S_B` denotation — the big-step state transformer over a straight-line
@@ -216,6 +233,13 @@ mutual
         if st.scope name then do
           let v ← execDenote value st.env
           some (st.setVar name v)
+        else none
+    | .sliceAssign slice index value, st => do
+        let iv ← asInt (← execDenote index st.env)
+        let vv ← asInt (← execDenote value st.env)
+        let xs := st.env.slices slice
+        if 0 ≤ iv.value ∧ iv.value < (xs.length : Int) then
+          some (st.setSlice slice (xs.set iv.value.toNat vv))
         else none
     | .exprS e, st => do
         -- No state effect, but `e` must be well-formed (encode-and-discard). `none`
@@ -282,6 +306,13 @@ mutual
           let v ← execRefValue value st.env        -- the encoder's per-RHS value (2a)
           some (st.setVar name v)
         else none
+    | .sliceAssign slice index value, st => do
+        let iv ← asInt (← execRefValue index st.env)
+        let vv ← asInt (← execRefValue value st.env)
+        let xs := st.env.slices slice
+        if 0 ≤ iv.value ∧ iv.value < (xs.length : Int) then
+          some (st.setSlice slice (xs.set iv.value.toNat vv))
+        else none
     | .exprS e, st => do
         let _ ← execRefValue e st.env
         some st
@@ -340,6 +371,8 @@ mutual
         simp only [refStmt, stmtDenote, execRefValue_eq_execDenote]
     | .assign name value, st => by
         simp only [refStmt, stmtDenote, execRefValue_eq_execDenote]
+    | .sliceAssign slice index value, st => by
+        simp only [refStmt, stmtDenote, execRefValue_eq_execDenote]
     | .exprS e, st => by
         simp only [refStmt, stmtDenote, execRefValue_eq_execDenote]
     | .ifElse cond thenB elseB, st => by
@@ -391,6 +424,38 @@ theorem body_ref_sound (b : Block) (st : State) :
       | some t =>
           show execRefValue t stf.env = execDenote t stf.env
           exact exec_ref_sound t stf.env
+
+/-! ## Aggregate-valued body results
+
+  A struct-returning straight-line body uses the same statement transformer and an
+  aggregate tail relation rather than forcing a struct through the scalar `ExecVal`
+  result-binding bridge. This matches `body_ref_state_ensures`: thread statements,
+  independently encode each named initializer, then compare every result field.
+-/
+
+/-- Source meaning of a straight-line statement sequence with a named-aggregate
+    result expression. -/
+def structBodyDenote (stmts : List Stmt) (fields : StructExpr) (st : State) :
+    Option StructVal := do
+  let stf ← blockThread (.mk stmts none) st
+  structDenote fields stf.env
+
+/-- Independent body-reference meaning for that aggregate-valued result. -/
+def structBodyRefState (stmts : List Stmt) (fields : StructExpr) (st : State) :
+    Option StructVal := do
+  let stf ← refBlockThread (.mk stmts none) st
+  structRefValue fields stf.env
+
+/-- Aggregate body refinement composes the already-proved statement transformer
+    with exact field construction. No aggregate result is dropped at `bindResult`;
+    it is discharged here by per-field equality before the contract bridge. -/
+theorem struct_body_ref_sound (stmts : List Stmt) (fields : StructExpr) (st : State) :
+    structBodyRefState stmts fields st = structBodyDenote stmts fields st := by
+  unfold structBodyRefState structBodyDenote
+  rw [refBlockThread_eq_blockThread (.mk stmts none) st]
+  cases blockThread (.mk stmts none) st with
+  | none => rfl
+  | some stf => exact struct_ref_sound fields stf.env
 
 /-! ## The state transformer is non-vacuous — positive witnesses (B1/B2/B3 grounded)
 
@@ -466,6 +531,66 @@ theorem b3_if_branch_taken :
   simp only [bodyDenote, blockThread, stmtDenote, inputState, State.setVar, State.bind,
         execDenote, asInt, asBool, evalArith, rawArith, cmpVal, IntTy.bound, IntTy.width]
   decide
+
+/-! ## Mutable-slice state effects are exact (the service-write vertical slice) -/
+
+/-- A concrete mutable-slice call state: `data = [1,2,3]`, `at = 1`, `value = 7`.
+    The index is a bounded `usize`; the stored value and slice elements are `u8`. -/
+def sliceWriteState : State :=
+  { env :=
+      { vars := fun s =>
+          if s = "at" then .int ⟨.usize, 1⟩
+          else if s = "value" then .int ⟨.u8, 7⟩
+          else .int ⟨.u64, 0⟩
+        slices := fun s =>
+          if s = "data" then [⟨.u8, 1⟩, ⟨.u8, 2⟩, ⟨.u8, 3⟩] else [] }
+    scope := fun _ => false }
+
+def correctSliceWrite : Block :=
+  .mk [.sliceAssign "data" (.var "at") (.var "value")] (some (.var "value"))
+
+/-- The source transformer replaces exactly `data[1]` and preserves both other
+    cells. This is the list meaning of the Rust/Verus
+    `old(data)@.update(at as int, value)` post-state. -/
+theorem slice_write_updates_exact_cell :
+    Option.map (fun st => st.env.slices "data")
+      (blockThread correctSliceWrite sliceWriteState)
+      = some [⟨.u8, 1⟩, ⟨.u8, 7⟩, ⟨.u8, 3⟩] := by
+  simp [correctSliceWrite, blockThread, stmtDenote, sliceWriteState, State.setSlice,
+        execDenote, asInt]
+
+/-- The independent reference-state thread has the same complete final slice, by
+    the general statement-refinement theorem (not merely the same scalar return). -/
+theorem slice_write_reference_state_is_sound :
+    refBlockThread correctSliceWrite sliceWriteState
+      = blockThread correctSliceWrite sliceWriteState :=
+  refBlockThread_eq_blockThread _ _
+
+/-- Wrong-index tooth: changing the generated write target to cell zero changes the
+    complete final sequence even though the scalar return remains `value`. -/
+theorem wrong_slice_index_breaks_state_refinement :
+    Option.map (fun st => st.env.slices "data")
+      (blockThread
+        (.mk [.sliceAssign "data" (.intLit .usize 0) (.var "value")]
+             (some (.var "value")))
+        sliceWriteState)
+    ≠ Option.map (fun st => st.env.slices "data")
+      (blockThread correctSliceWrite sliceWriteState) := by
+  simp [correctSliceWrite, blockThread, stmtDenote, sliceWriteState, State.setSlice,
+        execDenote, asInt, IntTy.bound, IntTy.width]
+
+/-- Wrong-value tooth: storing zero instead of the source value changes the final
+    sequence even though the generated body can still return the expected scalar. -/
+theorem wrong_slice_value_breaks_state_refinement :
+    Option.map (fun st => st.env.slices "data")
+      (blockThread
+        (.mk [.sliceAssign "data" (.var "at") (.intLit .u8 0)]
+             (some (.var "value")))
+        sliceWriteState)
+    ≠ Option.map (fun st => st.env.slices "data")
+      (blockThread correctSliceWrite sliceWriteState) := by
+  simp [correctSliceWrite, blockThread, stmtDenote, sliceWriteState, State.setSlice,
+        execDenote, asInt, IntTy.bound, IntTy.width]
 
 /-! ## The obligation-none propagates through the body (not blanket vacuity)
 

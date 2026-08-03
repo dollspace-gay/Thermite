@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: 46ee0151535566ef908765f13a921ed530117ff5535a70ec5fa4934c5baa4073
+audited-content-sha256: f18fd4597292c71ea4cb53d6090684ef5d8d726e6cfc30ccdd3bb4a5e99ad652
 decision: Option A — compile the canonical Verus executable body that was verified
 issue: github:dollspace-gay/Thermite#101, github:dollspace-gay/Thermite#103, github:dollspace-gay/Thermite#104, github:dollspace-gay/Thermite#108, github:dollspace-gay/Thermite#111
 governs:
@@ -540,7 +540,8 @@ defined specifically for proof-to-artifact correspondence.
     translation-validation.json
     verus-result.json
     toolchain.json
-    kernel-vstd-link.rs   # kernel target only
+    kernel-vstd-link-source/ # selected root + prelude, kernel target only
+    kernel-vstd-source/      # complete pinned upstream source tree
 ```
 
 Kernel bundles also place the generated metadata dependency at

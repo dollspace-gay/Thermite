@@ -83,7 +83,10 @@
 
 use thermite_syntax::ast::{Block, Expr};
 
-use crate::exec_encode::{exec_ref_value, ExecRefCtx, RefEncodeError as ExecRefEncodeError};
+use crate::exec_encode::{
+    exec_ref_ensures, ExecCallDecl, ExecRefCtx, ExecStructFieldDecl,
+    RefEncodeError as ExecRefEncodeError,
+};
 use crate::exec_stmt_encode::{
     body_ref_state_ensures, loop_ref_obligations, negate_condition, BodyRefCtx,
 };
@@ -294,17 +297,36 @@ pub struct ExecObligationFrame {
     /// precondition, authored from the source's `req`/index-bound, not lowered
     /// here — `exec-tv.md` REQ-2).
     pub req: Option<String>,
+    /// Exact source-semantic relations for locals bound before this expression.
+    /// Forge derives each relation independently from the preceding Thermite
+    /// initializer (for aggregates, field by field). They recover the lexical
+    /// execution state needed to prove a later callee's precondition without
+    /// treating an earlier local as an arbitrary value.
+    pub local_assumptions: Vec<String>,
     /// The names of params bound as a slice (`&[T]`) — their index encodes to the
     /// spec-view element value (`xs[i as int]`) in the exec reference encoder
     /// (`exec-tv.md` AC-5). Read by [`ExecRefCtx::with_slice_bound`].
     pub slice_params: Vec<String>,
+    /// Bare parameter name → exact named type, used to qualify exec enum `is`
+    /// variants in the independent reference.
+    pub named_params: Vec<(String, String)>,
+    /// Exact aggregate field declarations reachable in this obligation.
+    pub struct_fields: Vec<ExecStructFieldDecl>,
+    /// Exact executable signatures for reachable Thermite callees.
+    pub call_decls: Vec<ExecCallDecl>,
 }
 
 impl ExecObligationFrame {
     /// Build the [`ExecRefCtx`] the exec reference encoder uses for this frame: the
     /// `slice_params` are the names indexed as the spec-view element value.
     fn exec_ref_ctx(&self) -> ExecRefCtx {
-        ExecRefCtx::with_slice_bound(self.slice_params.iter().cloned())
+        ExecRefCtx::with_bounds(
+            self.slice_params.iter().cloned(),
+            self.named_params.iter().cloned(),
+        )
+        .with_struct_fields(self.struct_fields.iter().cloned())
+        .with_calls(self.call_decls.iter().cloned())
+        .with_result_type(self.ret_type.clone())
     }
 
     /// The Verus parameter list `name: type, …`.
@@ -323,7 +345,7 @@ impl ExecObligationFrame {
 /// via [`exec_ref_value`]); `p_production` is the verbatim production exec-lowered
 /// expression text (the artifact under test — `thermite_lower::lower_exec_expr`);
 /// `frame` carries the param decls (at exec types), the return type, the optional
-/// `requires`, and the slice-param set.
+/// `requires`, exact prior-local source relations, and the slice-param set.
 ///
 /// The emitted shape is the exec-fn form (`exec-tv.md` REQ-2 / Architecture), not
 /// the contract `proof fn { assert(_ <==> _); }` form (an exec value is not a
@@ -362,7 +384,7 @@ pub fn exec_equivalence_obligation(
     p_production: &str,
     frame: &ExecObligationFrame,
 ) -> Result<String, ExecRefEncodeError> {
-    let reference = exec_ref_value(source, &frame.exec_ref_ctx())?;
+    let ensures = exec_ref_ensures(source, "result", &frame.exec_ref_ctx())?;
 
     let mut out = String::new();
     out.push_str("use vstd::prelude::*;\n");
@@ -379,16 +401,27 @@ pub fn exec_equivalence_obligation(
     out.push_str(") -> (result: ");
     out.push_str(&frame.ret_type);
     out.push(')');
-    if let Some(req) = &frame.req {
+    let requirements = frame
+        .req
+        .iter()
+        .chain(frame.local_assumptions.iter())
+        .collect::<Vec<_>>();
+    if !requirements.is_empty() {
         out.push_str("\n    requires ");
-        out.push_str(req);
+        out.push_str(
+            &requirements
+                .iter()
+                .map(|requirement| requirement.as_str())
+                .collect::<Vec<_>>()
+                .join(",\n        "),
+        );
         out.push(',');
     }
     // The obligation: the production exec value equals the independent exec
     // reference value for all inputs (Z3), at the bounded production type. Verified
     // iff faithful; a postcondition counterexample / type / parse error is infidelity.
-    out.push_str("\n    ensures result == ");
-    out.push_str(&reference);
+    out.push_str("\n    ensures ");
+    out.push_str(&ensures);
     out.push_str(",\n{\n    ");
     out.push_str(p_production);
     out.push_str("\n}\n");
@@ -457,13 +490,29 @@ pub struct BodyObligationFrame {
     /// encodes to the spec-view element value (`xs[i as int]`) in the reference
     /// state-denotation. Read by [`BodyRefCtx::with_slice_bound`].
     pub slice_params: Vec<String>,
+    /// The subset of `slice_params` bound as `&mut [T]`; indexed assignments are
+    /// admitted only for these names and contribute complete final-sequence ensures.
+    pub mutable_slice_params: Vec<String>,
+    /// Bare parameter name → exact named type for enum discriminant references.
+    pub named_params: Vec<(String, String)>,
+    /// Exact aggregate field declarations reachable in this obligation.
+    pub struct_fields: Vec<ExecStructFieldDecl>,
+    /// Exact executable signatures for reachable Thermite callees.
+    pub call_decls: Vec<ExecCallDecl>,
 }
 
 impl BodyObligationFrame {
     /// Build the [`BodyRefCtx`] the reference state-denotation uses for this frame:
     /// the `slice_params` are the names indexed as the spec-view element value.
     fn body_ref_ctx(&self) -> BodyRefCtx {
-        BodyRefCtx::with_slice_bound(self.slice_params.iter().cloned())
+        BodyRefCtx::with_bounds(
+            self.slice_params.iter().cloned(),
+            self.mutable_slice_params.iter().cloned(),
+            self.named_params.iter().cloned(),
+        )
+        .with_struct_fields(self.struct_fields.iter().cloned())
+        .with_calls(self.call_decls.iter().cloned())
+        .with_result_struct(self.ret_type.clone())
     }
 
     /// The Verus parameter list `name: type, ...`.

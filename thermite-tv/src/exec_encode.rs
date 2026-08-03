@@ -47,17 +47,66 @@
 //! | REQ-TV-EXEC-REF-ENCODER | shipped | `thermite-tv/src/exec_encode.rs` | Exec-TV independent reference encoder |  |
 //! <!-- /generated:reqs -->
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-use thermite_syntax::ast::{BinOp, Expr, IndexArg, PrimType, Type, UnaryOp};
+use thermite_syntax::ast::{BinOp, Block, Expr, IndexArg, PrimType, Type, UnaryOp};
+
+/// One exact field declaration for a named aggregate in an exec/body-TV frame.
+/// The reference encoder uses it to recover bounded field types in spec position
+/// and rejects aggregate construction when no declaration was framed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExecStructFieldDecl {
+    pub struct_path: String,
+    pub field: String,
+    pub type_str: String,
+}
+
+impl ExecStructFieldDecl {
+    pub fn new(
+        struct_path: impl Into<String>,
+        field: impl Into<String>,
+        type_str: impl Into<String>,
+    ) -> Self {
+        Self {
+            struct_path: struct_path.into(),
+            field: field.into(),
+            type_str: type_str.into(),
+        }
+    }
+}
+
+/// Exact executable signature for a framed Thermite callee. It supplies the
+/// bounded parameter types needed when a body reference call appears in Verus spec
+/// position, and the return type needed for subsequent field projection.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExecCallDecl {
+    pub name: String,
+    pub param_types: Vec<String>,
+    pub ret_type: String,
+}
+
+impl ExecCallDecl {
+    pub fn new(
+        name: impl Into<String>,
+        param_types: Vec<String>,
+        ret_type: impl Into<String>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            param_types,
+            ret_type: ret_type.into(),
+        }
+    }
+}
 
 /// An failure to encode a construct outside the pure-exec subset (REQ-1).
 /// The exec reference encoder never panics and never silently emits a wrong
 /// encoding: an unsupported construct is a real `Err` carrying the offending shape
 /// (R-CODE-2 / R-APG-1). A silent wrong encoding would compare a wrong reference
-/// and either spuriously pass or spuriously fail. Method calls / Vec-String
-/// accessors are out of scope for step 2.1 (the #154/#156 territory) → an
+/// and either spuriously pass or spuriously fail. The one frozen method form is
+/// parameter-slice `.len()`; other method calls / Vec-String accessors are out of
+/// scope for step 2.1 (the #154/#156 territory) and produce an
 /// [`RefEncodeError::Unsupported`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RefEncodeError {
@@ -98,6 +147,18 @@ pub struct ExecRefCtx {
     /// element value the production `xs[i]` computes); a non-slice base is indexed
     /// verbatim.
     slice_bound: BTreeSet<String>,
+    /// Bare exec parameter names whose source type is a named enum/ADT. The
+    /// independent `is` reference uses this declaration to qualify a bare variant;
+    /// it never guesses a type from the variant spelling.
+    named_bound: BTreeMap<String, String>,
+    /// Exact aggregate path -> field name -> emitted bounded type.
+    struct_fields: BTreeMap<String, BTreeMap<String, String>>,
+    /// Exact callee name -> executable signature.
+    calls: BTreeMap<String, ExecCallDecl>,
+    /// Exact return type of the surrounding obligation, when framed.
+    result_type: Option<String>,
+    /// Named aggregate returned by the surrounding obligation, when any.
+    result_struct: Option<String>,
 }
 
 impl ExecRefCtx {
@@ -111,11 +172,136 @@ impl ExecRefCtx {
     {
         ExecRefCtx {
             slice_bound: names.into_iter().map(Into::into).collect(),
+            named_bound: BTreeMap::new(),
+            struct_fields: BTreeMap::new(),
+            calls: BTreeMap::new(),
+            result_type: None,
+            result_struct: None,
         }
+    }
+
+    /// A context carrying both slice parameters and exact bare-name → named-type
+    /// bindings for enum discriminant tests.
+    pub fn with_bounds<I, S, J, N, T>(slices: I, named: J) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+        J: IntoIterator<Item = (N, T)>,
+        N: Into<String>,
+        T: Into<String>,
+    {
+        ExecRefCtx {
+            slice_bound: slices.into_iter().map(Into::into).collect(),
+            named_bound: named
+                .into_iter()
+                .map(|(name, ty)| (name.into(), ty.into()))
+                .collect(),
+            struct_fields: BTreeMap::new(),
+            calls: BTreeMap::new(),
+            result_type: None,
+            result_struct: None,
+        }
+    }
+
+    /// Add the aggregate declarations available in this exact obligation frame.
+    pub fn with_struct_fields<I>(mut self, fields: I) -> Self
+    where
+        I: IntoIterator<Item = ExecStructFieldDecl>,
+    {
+        for field in fields {
+            self.struct_fields
+                .entry(field.struct_path)
+                .or_default()
+                .insert(field.field, field.type_str);
+        }
+        self
+    }
+
+    /// Add exact executable call signatures available in this obligation frame.
+    pub fn with_calls<I>(mut self, calls: I) -> Self
+    where
+        I: IntoIterator<Item = ExecCallDecl>,
+    {
+        self.calls = calls
+            .into_iter()
+            .map(|call| (call.name.clone(), call))
+            .collect();
+        self
+    }
+
+    /// Record the surrounding result type. Numeric references are narrowed back to
+    /// this bounded type in spec position; a framed aggregate is projected.
+    pub fn with_result_type(mut self, result: impl Into<String>) -> Self {
+        let result = result.into();
+        self.result_type = Some(result.clone());
+        if self.struct_fields.contains_key(&result) {
+            self.result_struct = Some(result);
+        }
+        self
     }
 
     fn is_slice_bound(&self, name: &str) -> bool {
         self.slice_bound.contains(name)
+    }
+
+    fn named_type_bound(&self, name: &str) -> Option<&str> {
+        self.named_bound.get(name).map(String::as_str)
+    }
+
+    fn struct_field_type(&self, path: &str, field: &str) -> Option<&str> {
+        self.struct_fields
+            .get(path)
+            .and_then(|fields| fields.get(field))
+            .map(String::as_str)
+    }
+
+    fn result_struct_fields(&self) -> Option<&BTreeMap<String, String>> {
+        self.result_struct
+            .as_ref()
+            .and_then(|name| self.struct_fields.get(name))
+    }
+
+    fn expr_type<'a>(&'a self, expr: &Expr) -> Option<&'a str> {
+        match expr {
+            Expr::Path(path) if path.len() == 1 => self.named_type_bound(&path[0]),
+            Expr::StructLit { path, .. } => {
+                let path = path.join("::");
+                self.struct_fields.contains_key(&path).then_some(())?;
+                self.struct_fields
+                    .get_key_value(&path)
+                    .map(|(name, _)| name.as_str())
+            }
+            Expr::Field { receiver, name } => {
+                let receiver_ty = self.expr_type(receiver)?;
+                self.struct_field_type(receiver_ty, name)
+            }
+            Expr::Call { callee, .. } => {
+                let Expr::Path(path) = callee.as_ref() else {
+                    return None;
+                };
+                self.calls
+                    .get(&path.join("::"))
+                    .map(|call| call.ret_type.as_str())
+            }
+            _ => None,
+        }
+    }
+
+    fn numeric_result_type(&self) -> Option<&str> {
+        match self.result_type.as_deref() {
+            Some(ty @ ("u8" | "u16" | "u32" | "u64" | "usize")) => Some(ty),
+            _ => None,
+        }
+    }
+
+    fn for_value_type(&self, ty: &str) -> Self {
+        let mut nested = self.clone();
+        nested.result_type = Some(ty.to_string());
+        nested.result_struct = nested
+            .struct_fields
+            .contains_key(ty)
+            .then(|| ty.to_string());
+        nested
     }
 }
 
@@ -134,14 +320,78 @@ impl ExecRefCtx {
 ///   `Binary`/`Unary` inner and the #146 outer-paren when a `Cast` is the left
 ///   operand of a `<`-leading op — [`is_lt_leading`], re-implemented independently);
 /// - calls ([`Expr::Call`] with a path callee — the exec callee verbatim);
+/// - `.len()` on a parameter bound as a slice in [`ExecRefCtx`];
+/// - pure `if` expressions whose two branch blocks contain only a tail value;
 /// - indexing ([`Expr::Index`] single-element over a slice param → `xs[i as int]`,
 ///   the bounded element value).
 ///
-/// Anything else (a method call, a Vec/String accessor, a struct literal, an `if`/
-/// `match`, a closure, …) is an [`RefEncodeError::Unsupported`] (never a
+/// Anything else (another method call, a Vec/String accessor, a struct literal, a
+/// statement-bearing `if`, a `match`, a closure, …) is an
+/// [`RefEncodeError::Unsupported`] (never a
 /// panic, never a silent wrong encoding — #154/#156 territory).
 pub fn exec_ref_value(expr: &Expr, ctx: &ExecRefCtx) -> Result<String, RefEncodeError> {
     encode(expr, ctx)
+}
+
+/// Encode an exact result relation for an exec expression. Aggregate construction
+/// is compared field-by-field, while another aggregate-valued expression is
+/// projected through every declared result field.
+pub fn exec_ref_ensures(
+    expr: &Expr,
+    result_name: &str,
+    ctx: &ExecRefCtx,
+) -> Result<String, RefEncodeError> {
+    if let Expr::StructLit { path, fields } = expr {
+        let head = path.join("::");
+        let mut relations = Vec::new();
+        for (name, value) in encode_struct_fields(path, fields, ctx)? {
+            let ty = ctx.struct_field_type(&head, &name).ok_or_else(|| {
+                RefEncodeError::Unsupported(format!(
+                    "struct literal field `{head}.{name}` has no exact aggregate frame declaration"
+                ))
+            })?;
+            relations.extend(aggregate_field_relations(
+                &format!("{result_name}.{name}"),
+                &value,
+                ty,
+            ));
+        }
+        return Ok(relations.join(" && "));
+    }
+    let reference = encode(expr, ctx)?;
+    Ok(exec_ref_ensures_value(&reference, result_name, ctx))
+}
+
+/// Relate a result to an already encoded reference value. This is used by body-TV,
+/// whose state-threading produces a reference string rather than one source node.
+pub fn exec_ref_ensures_value(reference: &str, result_name: &str, ctx: &ExecRefCtx) -> String {
+    if let Some(fields) = ctx.result_struct_fields() {
+        let mut relations = Vec::new();
+        for (field, ty) in fields {
+            relations.extend(aggregate_field_relations(
+                &format!("{result_name}.{field}"),
+                &format!("({reference}).{field}"),
+                ty,
+            ));
+        }
+        return relations.join(" && ");
+    }
+    let reference = match ctx.result_type.as_deref() {
+        Some(ty @ ("u8" | "u16" | "u32" | "u64" | "usize")) => {
+            format!("(({reference}) as {ty})")
+        }
+        _ => format!("({reference})"),
+    };
+    format!("{result_name} == {reference}")
+}
+
+fn aggregate_field_relations(lhs: &str, rhs: &str, ty: &str) -> Vec<String> {
+    if ty.starts_with("TFixedArray8") {
+        return (0..8)
+            .map(|index| format!("{lhs}.spec_get({index}) == ({rhs}).spec_get({index})"))
+            .collect();
+    }
+    vec![format!("{lhs} == {rhs}")]
 }
 
 fn encode(expr: &Expr, ctx: &ExecRefCtx) -> Result<String, RefEncodeError> {
@@ -152,10 +402,138 @@ fn encode(expr: &Expr, ctx: &ExecRefCtx) -> Result<String, RefEncodeError> {
         Expr::Binary { op, lhs, rhs } => encode_binary(*op, lhs, rhs, ctx),
         Expr::Unary { op, expr } => encode_unary(*op, expr, ctx),
         Expr::Call { callee, args } => encode_call(callee, args, ctx),
+        Expr::MethodCall {
+            receiver,
+            name,
+            args,
+        } => encode_method_call(receiver, name, args, ctx),
+        Expr::If { cond, then, else_ } => encode_pure_if(cond, then, else_, ctx),
         Expr::Index { base, index } => encode_index(base, index, ctx),
         Expr::Cast { expr, ty } => encode_cast(expr, ty, ctx),
+        Expr::Is { scrutinee, variant } => encode_is(scrutinee, variant, ctx),
+        Expr::Field { receiver, name } => {
+            let receiver = encode(receiver, ctx)?;
+            Ok(format!("{receiver}.{name}"))
+        }
+        Expr::StructLit { path, fields } => encode_struct_literal(path, fields, ctx),
         other => Err(RefEncodeError::Unsupported(node_kind(other))),
     }
+}
+
+/// Independently encode a named struct/struct-variant construction. Field order and
+/// names are preserved exactly, and every initializer is recursively encoded by the
+/// bounded exec reference. A missing type path is rejected rather than guessed.
+fn encode_struct_literal(
+    path: &[String],
+    fields: &[(String, Expr)],
+    ctx: &ExecRefCtx,
+) -> Result<String, RefEncodeError> {
+    let head = path.join("::");
+    let fields = encode_struct_fields(path, fields, ctx)?
+        .into_iter()
+        .map(|(name, value)| format!("{name}: {value}"))
+        .collect::<Vec<_>>();
+    Ok(format!("{head} {{ {} }}", fields.join(", ")))
+}
+
+fn encode_struct_fields(
+    path: &[String],
+    fields: &[(String, Expr)],
+    ctx: &ExecRefCtx,
+) -> Result<Vec<(String, String)>, RefEncodeError> {
+    if path.is_empty() {
+        return Err(RefEncodeError::Unsupported(
+            "struct literal with an empty type path".to_string(),
+        ));
+    }
+    let head = path.join("::");
+    fields
+        .iter()
+        .map(|(name, value)| {
+            let ty = ctx.struct_field_type(&head, name).ok_or_else(|| {
+                RefEncodeError::Unsupported(format!(
+                    "struct literal field `{head}.{name}` has no exact aggregate frame declaration"
+                ))
+            })?;
+            let value_ctx = ctx.for_value_type(ty);
+            let value = bounded_field_value(&encode(value, &value_ctx)?, ty);
+            Ok((name.clone(), value))
+        })
+        .collect()
+}
+
+fn bounded_field_value(value: &str, ty: &str) -> String {
+    match ty {
+        "u8" | "u16" | "u32" | "u64" | "usize" => format!("({value}) as {ty}"),
+        _ => value.to_string(),
+    }
+}
+
+/// Independently encode an exec-position enum discriminant. Production lowers
+/// `order is Release` to `matches!(order, Ordering::Release { .. })`; the reference
+/// reconstructs that pattern only when the scrutinee is a bare parameter with an
+/// exact named-type binding in the obligation frame. A qualified source variant is
+/// preserved; a bare one is qualified by the declared scrutinee type.
+fn encode_is(
+    scrutinee: &Expr,
+    variant: &[String],
+    ctx: &ExecRefCtx,
+) -> Result<String, RefEncodeError> {
+    let Expr::Path(segments) = scrutinee else {
+        return Err(RefEncodeError::Unsupported(
+            "is-test over a non-bare scrutinee".to_string(),
+        ));
+    };
+    if segments.len() != 1 || variant.is_empty() {
+        return Err(RefEncodeError::Unsupported(
+            "is-test without a bare framed scrutinee and non-empty variant".to_string(),
+        ));
+    }
+    let scrutinee_name = &segments[0];
+    let head = if variant.len() > 1 {
+        variant.join("::")
+    } else {
+        let ty = ctx.named_type_bound(scrutinee_name).ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "is-test scrutinee `{scrutinee_name}` has no named-type frame binding"
+            ))
+        })?;
+        format!("{ty}::{}", variant[0])
+    };
+    Ok(format!("matches!({scrutinee_name}, {head} {{ .. }})"))
+}
+
+/// Independently encode the value semantics of a pure `if` expression. Branch
+/// blocks with statements remain outside the per-expression subset: their state
+/// sequencing belongs to `exec_stmt_encode`, while this encoder admits exactly a
+/// condition and two recursively encoded tail values.
+fn encode_pure_if(
+    cond: &Expr,
+    then: &Block,
+    else_: &Block,
+    ctx: &ExecRefCtx,
+) -> Result<String, RefEncodeError> {
+    let c = encode(cond, ctx)?;
+    let t = pure_branch_tail(then, "then")?;
+    let e = pure_branch_tail(else_, "else")?;
+    let mut t = encode(t, ctx)?;
+    let mut e = encode(e, ctx)?;
+    if let Some(ty) = ctx.numeric_result_type() {
+        t = bounded_field_value(&t, ty);
+        e = bounded_field_value(&e, ty);
+    }
+    Ok(format!("(if {c} {{ {t} }} else {{ {e} }})"))
+}
+
+fn pure_branch_tail<'a>(block: &'a Block, branch: &str) -> Result<&'a Expr, RefEncodeError> {
+    if !block.stmts.is_empty() {
+        return Err(RefEncodeError::Unsupported(format!(
+            "statement-bearing `{branch}` branch in if expression"
+        )));
+    }
+    block.tail.as_deref().ok_or_else(|| {
+        RefEncodeError::Unsupported(format!("value-less `{branch}` branch in if expression"))
+    })
 }
 
 /// A path reference: a var or a `::`-qualified name. A pure exec value path is a
@@ -263,11 +641,69 @@ fn encode_call(callee: &Expr, args: &[Expr], ctx: &ExecRefCtx) -> Result<String,
         )));
     };
     let name = segments.join("::");
+    let signature = ctx.calls.get(&name);
+    if let Some(signature) = signature {
+        if signature.param_types.len() != args.len() {
+            return Err(RefEncodeError::Unsupported(format!(
+                "call `{name}` has {} arguments but its exact frame declares {}",
+                args.len(),
+                signature.param_types.len()
+            )));
+        }
+    }
     let encoded_args = args
         .iter()
-        .map(|a| encode(a, ctx))
-        .collect::<Result<Vec<_>, _>>()?;
+        .enumerate()
+        .map(|(index, argument)| {
+            let Some(expected) = signature.and_then(|call| call.param_types.get(index)) else {
+                return encode(argument, ctx);
+            };
+            let argument_ctx = ctx.for_value_type(expected);
+            let value = encode(argument, &argument_ctx)?;
+            Ok(typed_call_argument(&value, expected))
+        })
+        .collect::<Result<Vec<_>, RefEncodeError>>()?;
     Ok(format!("{name}({})", encoded_args.join(", ")))
+}
+
+fn typed_call_argument(value: &str, ty: &str) -> String {
+    match ty {
+        "u8" | "u16" | "u32" | "u64" | "usize" => format!("({value}) as {ty}"),
+        _ => value.to_string(),
+    }
+}
+
+/// The sole frozen exec-method reference is `xs.len()` for a name the obligation
+/// frame binds as a slice. Its bounded `usize` result is exactly the value returned
+/// by the production slice-length call. Receiver shape and arity are checked here;
+/// accepting a general `.len()` would silently assign slice semantics to Vec/String
+/// or user-defined methods.
+fn encode_method_call(
+    receiver: &Expr,
+    name: &str,
+    args: &[Expr],
+    ctx: &ExecRefCtx,
+) -> Result<String, RefEncodeError> {
+    if name == "get"
+        && args.len() == 1
+        && ctx
+            .expr_type(receiver)
+            .is_some_and(|ty| ty.starts_with("TFixedArray8"))
+    {
+        let receiver = encode(receiver, ctx)?;
+        let index = encode_index_value(&args[0], ctx)?;
+        return Ok(format!("{receiver}.spec_get({index})"));
+    }
+    if name == "len" && args.is_empty() {
+        if let Expr::Path(segments) = receiver {
+            if segments.len() == 1 && ctx.is_slice_bound(&segments[0]) {
+                return Ok(format!("{}.len()", segments[0]));
+            }
+        }
+    }
+    Err(RefEncodeError::Unsupported(
+        "method call (the frozen exec subset admits fixed-array `.get(i)` and `.len()` on a parameter slice)".to_string(),
+    ))
 }
 
 /// `xs[i]` in exec position (REQ-1). A single index over a slice-bound base is the
@@ -423,6 +859,44 @@ mod tests {
         }
     }
 
+    #[test]
+    fn pure_if_expression_is_encoded_recursively() {
+        let e = Expr::If {
+            cond: Box::new(bin(BinOp::Lt, path("first"), int(64))),
+            then: Block {
+                stmts: vec![],
+                tail: Some(Box::new(path("first"))),
+            },
+            else_: Block {
+                stmts: vec![],
+                tail: Some(Box::new(int(64))),
+            },
+        };
+        assert_eq!(
+            exec_ref_value(&e, &ExecRefCtx::default()).unwrap(),
+            "(if (first < 64) { first } else { 64 })"
+        );
+    }
+
+    #[test]
+    fn statement_bearing_if_branch_is_unsupported() {
+        let e = Expr::If {
+            cond: Box::new(path("ready")),
+            then: Block {
+                stmts: vec![thermite_syntax::ast::Stmt::Expr(int(1))],
+                tail: Some(Box::new(int(2))),
+            },
+            else_: Block {
+                stmts: vec![],
+                tail: Some(Box::new(int(3))),
+            },
+        };
+        assert!(matches!(
+            exec_ref_value(&e, &ExecRefCtx::default()),
+            Err(RefEncodeError::Unsupported(_))
+        ));
+    }
+
     /// E1: `(n - 1) as u8` → the #122 inner-paren on the `Binary` inner, bounded
     /// `u8` target (never `nat`). The reference means the faithful production form.
     #[test]
@@ -470,8 +944,19 @@ mod tests {
         assert_eq!(exec_ref_value(&e, &ctx).unwrap(), "xs[i as int]");
     }
 
-    /// A method call (exec / Vec-String accessor) is out of scope for step 2.1 →
-    /// an `Err`, never a silent wrong encoding (REQ-1 / R-CODE-2).
+    #[test]
+    fn parameter_slice_len_has_a_bounded_exec_reference() {
+        let e = Expr::MethodCall {
+            receiver: Box::new(path("xs")),
+            name: "len".to_string(),
+            args: vec![],
+        };
+        let ctx = ExecRefCtx::with_slice_bound(["xs"]);
+        assert_eq!(exec_ref_value(&e, &ctx).unwrap(), "xs.len()");
+    }
+
+    /// A non-slice method call (exec / Vec-String accessor) is out of scope for
+    /// step 2.1 → an `Err`, never a silent wrong encoding (REQ-1 / R-CODE-2).
     #[test]
     fn method_call_is_unsupported_not_panic() {
         let e = Expr::MethodCall {

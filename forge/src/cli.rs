@@ -2504,7 +2504,10 @@ fn run_build(request: BuildRun<'_>) -> Result<ExitCode, ForgeError> {
                 })?
             );
         } else {
-            println!("bootable kernel image: {}", receipt.image_path);
+            println!(
+                "bootable platform/conformance image: {}",
+                receipt.image_path
+            );
             println!("image sha256: {}", receipt.image_sha256);
             println!("assurance scope: {}", receipt.assurance_scope);
         }
@@ -2591,7 +2594,10 @@ fn run_verify_build(bundle: &Path, replay: bool, json: bool) -> Result<ExitCode,
                 })?
             );
         } else {
-            println!("valid bootable kernel image: {}", report.image);
+            println!(
+                "valid bootable platform/conformance image: {}",
+                report.image
+            );
             println!("binding sha256: {}", report.binding_sha256);
             println!("replayed: {}", report.replayed);
         }

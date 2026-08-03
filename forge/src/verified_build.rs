@@ -35,8 +35,17 @@ const RECEIPT_SCHEMA: &str = "thermite.verified-build-receipt.v1";
 const COMPOSITION_PLAN_SCHEMA: &str = "thermite.combined-artifact-plan.v1";
 const COMPOSITION_RECEIPT_SCHEMA: &str = "thermite.verified-composition-receipt.v1";
 const SOURCE_DATE_EPOCH: &str = "0";
-const KERNEL_VSTD_LINK_SOURCE_NAME: &str = "kernel-vstd-link.rs";
-const KERNEL_VSTD_LINK_SOURCE: &str = include_str!("kernel_vstd_link.rs");
+const KERNEL_VSTD_LINK_SOURCE_NAME: &str = "vstd.rs";
+const KERNEL_VSTD_LINK_PRELUDE_NAME: &str = "prelude.rs";
+const KERNEL_VSTD_LINK_ROOT_SOURCE: &str = include_str!("kernel_vstd_root.rs");
+const KERNEL_VSTD_LINK_PRELUDE_SOURCE: &str = include_str!("kernel_vstd_prelude.rs");
+const KERNEL_VSTD_SOURCE_EVIDENCE_DIR: &str = "kernel-vstd-source";
+const KERNEL_VSTD_LINK_EVIDENCE_DIR: &str = "kernel-vstd-link-source";
+const KERNEL_VSTD_VIR_EVIDENCE_NAME: &str = "kernel-vstd.vir";
+const KERNEL_BUILTIN_EVIDENCE_NAME: &str = "kernel-verus-builtin/lib.rs";
+const KERNEL_VSTD_SOURCE_PATH_KEY: &str = "<kernel-vstd-source-root>";
+const KERNEL_VSTD_VIR_PATH_KEY: &str = "<kernel-vstd-vir>";
+const KERNEL_BUILTIN_SOURCE_PATH_KEY: &str = "<kernel-verus-builtin-source>";
 const STRICT_GATES: &[&str] = &[
     "parse-spec-effects",
     "complete-end-to-end-closure",
@@ -76,6 +85,7 @@ const COMPOSITION_STRICT_GATES: &[&str] = &[
 pub enum VerifiedTarget {
     Std,
     Kernel,
+    KernelUefi,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -146,9 +156,18 @@ pub struct PlannedShellItem {
 pub struct PlannedShellModule {
     pub name: String,
     pub path: String,
+    pub source_policy: String,
     pub length: u64,
     pub sha256: String,
     pub items: Vec<PlannedShellItem>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlannedDirectRefinedBoundary {
+    pub thermite_name: String,
+    pub registry_target: String,
+    pub implementation_module: String,
+    pub implementation_symbol: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -165,9 +184,26 @@ pub struct CompositionPlanV1 {
     pub schema: String,
     pub composition_exports: Vec<PlannedCompositionExport>,
     pub shell_modules: Vec<PlannedShellModule>,
+    pub direct_refined_boundaries: Vec<PlannedDirectRefinedBoundary>,
     pub inventory: Vec<CompositionInventoryRow>,
     pub lowered_thermite_sha256: String,
     pub combined_source_sha256: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ThermitePackagePlanV1 {
+    pub schema: String,
+    pub name: String,
+    pub manifest_sha256: String,
+    pub modules: Vec<ThermitePackageModulePlanV1>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ThermitePackageModulePlanV1 {
+    pub name: String,
+    pub path: String,
+    pub length: u64,
+    pub sha256: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -182,6 +218,7 @@ fn canonical_shell_set_sha256(modules: &[PlannedShellModule]) -> String {
         c.record("module", |c| {
             c.field("name", &module.name);
             c.field("path", &module.path);
+            c.field("source_policy", &module.source_policy);
             c.field("length", &module.length.to_string());
             c.field("sha256", &module.sha256);
             for item in &module.items {
@@ -230,6 +267,8 @@ pub struct ArtifactPlanV1 {
     pub strict_gates: Vec<String>,
     pub expected_tv_inventory: Vec<PlannedTvGate>,
     pub expected_verus_source_sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thermite_package: Option<ThermitePackagePlanV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub composition: Option<CompositionPlanV1>,
 }
@@ -331,6 +370,21 @@ impl ArtifactPlanV1 {
             "expected_verus_source_sha256",
             &self.expected_verus_source_sha256,
         );
+        if let Some(package) = &self.thermite_package {
+            c.record("thermite_package", |c| {
+                c.field("schema", &package.schema);
+                c.field("name", &package.name);
+                c.field("manifest_sha256", &package.manifest_sha256);
+                for module in &package.modules {
+                    c.record("module", |c| {
+                        c.field("name", &module.name);
+                        c.field("path", &module.path);
+                        c.field("length", &module.length.to_string());
+                        c.field("sha256", &module.sha256);
+                    });
+                }
+            });
+        }
         if let Some(composition) = &self.composition {
             c.record("composition", |c| {
                 c.field("schema", &composition.schema);
@@ -364,6 +418,7 @@ impl ArtifactPlanV1 {
                     c.record("shell", |c| {
                         c.field("name", &module.name);
                         c.field("path", &module.path);
+                        c.field("source_policy", &module.source_policy);
                         c.field("length", &module.length.to_string());
                         c.field("sha256", &module.sha256);
                         for item in &module.items {
@@ -373,6 +428,14 @@ impl ArtifactPlanV1 {
                                 c.field("visibility", &item.visibility);
                             });
                         }
+                    });
+                }
+                for boundary in &composition.direct_refined_boundaries {
+                    c.record("direct_refined_boundary", |c| {
+                        c.field("thermite_name", &boundary.thermite_name);
+                        c.field("registry_target", &boundary.registry_target);
+                        c.field("implementation_module", &boundary.implementation_module);
+                        c.field("implementation_symbol", &boundary.implementation_symbol);
                     });
                 }
                 for item in &composition.inventory {
@@ -449,12 +512,12 @@ pub struct ToolchainEvidence {
 
 /// Exact proof-model and erased-link identities used by a kernel build.
 ///
-/// `vstd.vir` supplies the already-verified slice semantics. The full pinned
-/// source-tree digest makes that model auditable, while `link_source_sha256`
-/// and `link_rlib_sha256` bind the tiny `no_std` Rust metadata crate used only
-/// for rustc name resolution and final linking.
+/// `vstd.vir` supplies the already-verified semantics. The full pinned source
+/// tree is also compiled for the kernel target: `link_source_sha256` binds its
+/// real crate root and `link_rlib_sha256` binds the exact emitted library.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KernelVstdModelEvidence {
+    pub target_triple: String,
     pub vir_path: String,
     pub vir_sha256: String,
     pub source_root: String,
@@ -463,8 +526,15 @@ pub struct KernelVstdModelEvidence {
     pub source_sha256: String,
     pub link_source_name: String,
     pub link_source_sha256: String,
+    pub link_prelude_sha256: String,
     pub link_build_args: Vec<String>,
     pub link_rlib_sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_builtin_source_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_builtin_source_sha256: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub target_builtin_build_args: Vec<String>,
 }
 
 /// Informational evidence for the Rust compiler selected in Forge's ambient
@@ -854,6 +924,7 @@ fn target_name(target: VerifiedTarget) -> &'static str {
     match target {
         VerifiedTarget::Std => "std",
         VerifiedTarget::Kernel => "kernel",
+        VerifiedTarget::KernelUefi => "kernel_uefi",
     }
 }
 
@@ -873,10 +944,9 @@ pub fn build_file(
     out: Option<&Path>,
     target: VerifiedTarget,
 ) -> Result<VerifiedBuildOutcome, ForgeError> {
-    let raw_source = fs::read(path).map_err(|source| ForgeError::Io {
-        path: path.display().to_string(),
-        source,
-    })?;
+    let loaded_input = crate::thermite_package::load(path)?;
+    let raw_source = loaded_input.bytes;
+    let package = loaded_input.package;
     let source_text =
         std::str::from_utf8(&raw_source).map_err(|error| ForgeError::VerusOutput {
             detail: format!("Thermite source is not UTF-8: {error}"),
@@ -924,7 +994,7 @@ pub fn build_file(
         Ok(closure) => closure,
         Err(error) => return Ok(reject("closure", error.to_string())),
     };
-    if let Some(detail) = strict_source_checks(&parsed.program, &closure, target) {
+    if let Some(detail) = strict_source_checks(&parsed.program, &closure, target, false) {
         return Ok(reject("closure", detail));
     }
 
@@ -954,7 +1024,7 @@ pub fn build_file(
         .collect();
     let lower_target = match target {
         VerifiedTarget::Std => L3LibraryTarget::Std,
-        VerifiedTarget::Kernel => L3LibraryTarget::Kernel,
+        VerifiedTarget::Kernel | VerifiedTarget::KernelUefi => L3LibraryTarget::Kernel,
     };
     let verus_source =
         thermite_lower::lower_l3_library(&subprogram, &lowering_exports, lower_target)
@@ -968,6 +1038,7 @@ pub fn build_file(
 
     let plan = make_plan(PlanInput {
         raw_source: &raw_source,
+        package: package.as_ref(),
         program: &parsed.program,
         selected_program: &subprogram,
         closure: &closure,
@@ -1009,16 +1080,19 @@ pub fn build_file(
     // path here would permit a filesystem race between planning and the
     // per-item proof passes even though the final Verus source itself is frozen.
     let frozen_input = ScratchTree::new_in_temp(&format!("verified_input_{crate_name}"))?;
-    let input_name = path
-        .file_name()
-        .filter(|name| !name.is_empty())
-        .unwrap_or_else(|| std::ffi::OsStr::new("input.th"));
+    let input_name = if package.is_some() {
+        std::ffi::OsStr::new("input.th")
+    } else {
+        path.file_name()
+            .filter(|name| !name.is_empty())
+            .unwrap_or_else(|| std::ffi::OsStr::new("input.th"))
+    };
     let frozen_input_path = frozen_input.path.join(input_name);
     write_bytes(&frozen_input_path, &raw_source)?;
 
     let mut certificates = check::check_file(&frozen_input_path)?;
     inject_certificate_fault(&mut certificates);
-    if let Some(detail) = reject_certificates(&certificates, &closure, &parsed.program) {
+    if let Some(detail) = reject_certificates(&certificates, &closure, &parsed.program, false) {
         return Ok(reject("certificates", detail));
     }
 
@@ -1045,7 +1119,11 @@ pub fn build_file(
         &toolchain.verus_path,
         &toolchain.environment,
         &toolchain.artifact_codegen.canonical_identity_sha256(),
-        collected_toolchain.dependency_path("libvstd.rlib"),
+        KernelCompileDependencies {
+            vstd_vir: collected_toolchain.dependency_path(KERNEL_VSTD_VIR_PATH_KEY),
+            vstd_rlib: collected_toolchain.dependency_path("libvstd.rlib"),
+            verus_builtin_rlib: collected_toolchain.dependency_path("libverus_builtin.rlib"),
+        },
     )?;
     if !compiled.evidence.success || compiled.evidence.errors != Some(0) {
         return Ok(reject(
@@ -1073,6 +1151,7 @@ pub fn build_file(
         crate_name: &crate_name,
         target,
         raw_source: &raw_source,
+        package: package.as_ref(),
         plan: &plan,
         plan_sha256: &frozen_plan_sha,
         verus_source: &verus_source,
@@ -1173,6 +1252,7 @@ fn strict_source_checks(
     program: &Program,
     closure: &VerifiedClosure,
     target: VerifiedTarget,
+    direct_frozen_boundaries: bool,
 ) -> Option<String> {
     for item in &program.items {
         match item {
@@ -1184,10 +1264,20 @@ fn strict_source_checks(
                         f.name
                     ));
                 }
-                if f.boundary.is_some() || f.body.is_none() {
+                let directly_refined_boundary = direct_frozen_boundaries
+                    && f.boundary.as_ref().is_some_and(|boundary| {
+                        thermite_lower::frozen_kernel_boundary_symbol(&boundary.target).is_some()
+                    });
+                if f.boundary.is_some() && !directly_refined_boundary {
                     return Some(format!(
                         "reachable path `{}` crosses #[boundary] function `{}`",
                         closure_path(closure, &f.name).join(" -> "),
+                        f.name
+                    ));
+                }
+                if f.body.is_none() && f.boundary.is_none() {
+                    return Some(format!(
+                        "reachable function `{}` has no checked body",
                         f.name
                     ));
                 }
@@ -1214,7 +1304,7 @@ fn strict_source_checks(
                 if effects.iter().any(|effect| matches!(effect, Effect::Panic)) {
                     return Some(format!("reachable function `{}` declares fx panic", f.name));
                 }
-                if matches!(target, VerifiedTarget::Kernel)
+                if matches!(target, VerifiedTarget::Kernel | VerifiedTarget::KernelUefi)
                     && effects.iter().any(|effect| {
                         matches!(
                             effect,
@@ -1427,6 +1517,7 @@ fn executable_precondition(expr: &Expr) -> bool {
 
 struct PlanInput<'a> {
     raw_source: &'a [u8],
+    package: Option<&'a crate::thermite_package::LoadedPackage>,
     program: &'a Program,
     selected_program: &'a Program,
     closure: &'a VerifiedClosure,
@@ -1442,6 +1533,7 @@ struct PlanInput<'a> {
 fn make_plan(input: PlanInput<'_>) -> ArtifactPlanV1 {
     let PlanInput {
         raw_source,
+        package,
         program,
         selected_program,
         closure,
@@ -1575,7 +1667,28 @@ fn make_plan(input: PlanInput<'_>) -> ArtifactPlanV1 {
             .collect(),
         expected_tv_inventory,
         expected_verus_source_sha256: sha256(verus_source.as_bytes()),
+        thermite_package: package.map(thermite_package_plan),
         composition: None,
+    }
+}
+
+fn thermite_package_plan(
+    package: &crate::thermite_package::LoadedPackage,
+) -> ThermitePackagePlanV1 {
+    ThermitePackagePlanV1 {
+        schema: package.manifest.schema.clone(),
+        name: package.manifest.name.clone(),
+        manifest_sha256: sha256(&package.manifest_bytes),
+        modules: package
+            .modules
+            .iter()
+            .map(|module| ThermitePackageModulePlanV1 {
+                name: module.declaration.name.clone(),
+                path: module.declaration.path.clone(),
+                length: module.bytes.len() as u64,
+                sha256: sha256(&module.bytes),
+            })
+            .collect(),
     }
 }
 
@@ -1639,6 +1752,7 @@ fn reject_certificates(
     certs: &[Certificate],
     closure: &VerifiedClosure,
     program: &Program,
+    direct_frozen_boundaries: bool,
 ) -> Option<String> {
     let required: BTreeSet<&str> = closure
         .functions
@@ -1665,6 +1779,25 @@ fn reject_certificates(
                 "missing certificate for reachable node `{name}`{source_range}"
             ));
         };
+        let directly_refined_boundary =
+            direct_frozen_boundaries && is_frozen_boundary_function(program, name);
+        if directly_refined_boundary {
+            if cert.level < Level::L1
+                || !cert.boundary
+                || cert.slag
+                || cert.reject.is_some()
+                || cert.lowered_assurance
+                || cert
+                    .obligations
+                    .iter()
+                    .any(|obligation| obligation.status != ObligationStatus::Discharged)
+            {
+                return Some(format!(
+                    "reachable frozen boundary `{name}` lacks valid L1 declaration evidence"
+                ));
+            }
+            continue;
+        }
         if cert.level < Level::L3 {
             let proof_diagnostic = cert
                 .obligations
@@ -1694,7 +1827,15 @@ fn reject_certificates(
                 "reachable node `{name}` has degraded, rejected, slag, or boundary evidence"
             ));
         }
-        if !matches!(cert.assurance_scope, None | Some(AssuranceScope::EndToEnd)) {
+        let scope_is_directly_refined = direct_frozen_boundaries
+            && matches!(
+                &cert.assurance_scope,
+                Some(AssuranceScope::ToBoundary { via })
+                    if is_frozen_boundary_function(program, via)
+            );
+        if !matches!(cert.assurance_scope, None | Some(AssuranceScope::EndToEnd))
+            && !scope_is_directly_refined
+        {
             return Some(format!("reachable node `{name}` is not end-to-end"));
         }
         if cert
@@ -1706,6 +1847,17 @@ fn reject_certificates(
         }
     }
     None
+}
+
+fn is_frozen_boundary_function(program: &Program, name: &str) -> bool {
+    program.items.iter().any(|item| match item {
+        Item::Fn(function) if function.name == name => {
+            function.boundary.as_ref().is_some_and(|boundary| {
+                thermite_lower::frozen_kernel_boundary_symbol(&boundary.target).is_some()
+            })
+        }
+        _ => false,
+    })
 }
 
 fn inject_certificate_fault(certificates: &mut Vec<Certificate>) {
@@ -1763,6 +1915,7 @@ fn assurance_aggregate(
     certificates: &[Certificate],
     closure: &VerifiedClosure,
     exports: &[PlannedExport],
+    direct_refined_boundaries: &BTreeSet<String>,
 ) -> Result<AssuranceAggregate, ForgeError> {
     let required: BTreeSet<&str> = closure
         .functions
@@ -1779,15 +1932,34 @@ fn assurance_aggregate(
             .ok_or_else(|| ForgeError::VerusOutput {
                 detail: format!("missing certificate while aggregating `{name}`"),
             })?;
-        minimum = minimum.min(certificate.level);
+        let directly_refined = direct_refined_boundaries.contains(name);
+        if directly_refined && !certificate.boundary {
+            return Err(ForgeError::VerusOutput {
+                detail: format!(
+                    "direct-refinement inventory names non-boundary certificate `{name}`"
+                ),
+            });
+        }
+        let effective_level = if directly_refined {
+            Level::L3
+        } else {
+            certificate.level
+        };
+        minimum = minimum.min(effective_level);
         members.push(AssuranceMember {
             name: name.to_string(),
-            kind: if closure.functions.contains(name) {
+            kind: if directly_refined {
+                "frozen_boundary_direct_verus".to_string()
+            } else if closure.functions.contains(name) {
                 "executable".to_string()
             } else {
                 "specification".to_string()
             },
-            achieved: level_name(certificate.level).to_string(),
+            achieved: if directly_refined {
+                "L3_direct_refinement".to_string()
+            } else {
+                level_name(certificate.level).to_string()
+            },
         });
     }
     for export in exports.iter().filter(|export| export.wrapped) {
@@ -2136,7 +2308,7 @@ fn collect_toolchain(target: VerifiedTarget) -> Result<CollectedToolchain, Forge
     let verus = resolve_executable(std::env::var_os("VERUS_BIN").as_deref(), "verus")?;
     let rustup = resolve_executable(None, "rustup")?;
     let verus_version = command_text(Command::new(&verus).arg("--version"), "verus --version")?;
-    let artifact_codegen = collect_codegen_rustc(&verus_version, &rustup)?;
+    let artifact_codegen = collect_codegen_rustc(&verus_version, &rustup, target)?;
     let host_rustc = collect_host_rustc(&rustup)?;
     let current = std::env::current_exe().map_err(|source| ForgeError::Io {
         path: "current forge executable".to_string(),
@@ -2162,10 +2334,35 @@ fn collect_toolchain(target: VerifiedTarget) -> Result<CollectedToolchain, Forge
     let verus_dir = verus.parent().ok_or_else(|| ForgeError::VerusOutput {
         detail: "the resolved Verus binary has no installation directory".to_string(),
     })?;
-    if matches!(target, VerifiedTarget::Kernel) {
-        let (scratch, dependency, model) = build_kernel_vstd_link(&verus, verus_dir, &environment)?;
-        dependency_paths.insert(dependency.name.clone(), scratch.path.join("libvstd.rlib"));
-        link_dependencies.push(dependency);
+    if matches!(target, VerifiedTarget::Kernel | VerifiedTarget::KernelUefi) {
+        let (scratch, dependencies, model) = build_kernel_vstd_link(KernelVstdLinkRequest {
+            verus: &verus,
+            verus_dir,
+            environment: &environment,
+            target,
+            codegen: &artifact_codegen,
+            source_root_override: None,
+            vir_override: None,
+            builtin_source_override: None,
+        })?;
+        for dependency in dependencies {
+            dependency_paths.insert(dependency.name.clone(), scratch.path.join(&dependency.name));
+            link_dependencies.push(dependency);
+        }
+        dependency_paths.insert(
+            KERNEL_VSTD_SOURCE_PATH_KEY.to_string(),
+            verus_dir.join("vstd"),
+        );
+        dependency_paths.insert(
+            KERNEL_VSTD_VIR_PATH_KEY.to_string(),
+            verus_dir.join("vstd.vir"),
+        );
+        if target == VerifiedTarget::KernelUefi {
+            dependency_paths.insert(
+                KERNEL_BUILTIN_SOURCE_PATH_KEY.to_string(),
+                verus_dir.join("builtin/src/lib.rs"),
+            );
+        }
         kernel_vstd_model = Some(model);
         kernel_vstd_scratch = Some(scratch);
     } else {
@@ -2190,6 +2387,9 @@ fn collect_toolchain(target: VerifiedTarget) -> Result<CollectedToolchain, Forge
         "libverus_builtin_macros.so",
         "libverus_state_machines_macros.so",
     ] {
+        if target == VerifiedTarget::KernelUefi && name == "libverus_builtin.rlib" {
+            continue;
+        }
         let path = verus_dir.join(name);
         if !path.is_file() {
             return Err(ForgeError::VerusOutput {
@@ -2247,9 +2447,9 @@ fn collect_toolchain(target: VerifiedTarget) -> Result<CollectedToolchain, Forge
     })
 }
 
-fn kernel_vstd_link_build_args() -> Vec<String> {
-    vec![
-        KERNEL_VSTD_LINK_SOURCE_NAME.to_string(),
+fn kernel_vstd_link_build_args(target: VerifiedTarget) -> Vec<String> {
+    let mut args = vec![
+        "<VERUS>/vstd/vstd.rs".to_string(),
         "--is-vstd".to_string(),
         "--no-verify".to_string(),
         "--compile".to_string(),
@@ -2258,17 +2458,78 @@ fn kernel_vstd_link_build_args() -> Vec<String> {
         "vstd".to_string(),
         "--out-dir".to_string(),
         "<SCRATCH>".to_string(),
-        "--remap-path-prefix=<SCRATCH>=.".to_string(),
+        "--remap-path-prefix=<VSTD>=<VSTD>".to_string(),
+        "--remap-path-prefix=<SCRATCH>=<SCRATCH>".to_string(),
+    ];
+    if target == VerifiedTarget::KernelUefi {
+        args.extend([
+            "--target".to_string(),
+            "x86_64-unknown-uefi".to_string(),
+            "--extern".to_string(),
+            "verus_builtin=<KERNEL_UEFI_VERUS_BUILTIN_RLIB>".to_string(),
+        ]);
+    }
+    args
+}
+
+fn kernel_uefi_builtin_build_args() -> Vec<String> {
+    [
+        "--crate-name",
+        "verus_builtin",
+        "--crate-type",
+        "rlib",
+        "--edition",
+        "2018",
+        "--target",
+        "x86_64-unknown-uefi",
+        "--cfg",
+        "verus_keep_ghost",
+        "--remap-path-prefix=<SCRATCH>=.",
+        "--remap-path-prefix=<BUILTIN_SOURCE_ROOT>=<VERUS>/builtin/src",
+        "<VERUS>/builtin/src/lib.rs",
+        "--out-dir",
+        "<SCRATCH>",
     ]
+    .into_iter()
+    .map(str::to_string)
+    .collect()
+}
+
+struct KernelVstdLinkRequest<'a> {
+    verus: &'a Path,
+    verus_dir: &'a Path,
+    environment: &'a BTreeMap<String, String>,
+    target: VerifiedTarget,
+    codegen: &'a CodegenRustcEvidence,
+    source_root_override: Option<&'a Path>,
+    vir_override: Option<&'a Path>,
+    builtin_source_override: Option<&'a Path>,
 }
 
 fn build_kernel_vstd_link(
-    verus: &Path,
-    verus_dir: &Path,
-    environment: &BTreeMap<String, String>,
-) -> Result<(ScratchTree, ToolchainDependency, KernelVstdModelEvidence), ForgeError> {
-    let vir = verus_dir.join("vstd.vir");
-    let source_root = verus_dir.join("vstd");
+    request: KernelVstdLinkRequest<'_>,
+) -> Result<
+    (
+        ScratchTree,
+        Vec<ToolchainDependency>,
+        KernelVstdModelEvidence,
+    ),
+    ForgeError,
+> {
+    let KernelVstdLinkRequest {
+        verus,
+        verus_dir,
+        environment,
+        target,
+        codegen,
+        source_root_override,
+        vir_override,
+        builtin_source_override,
+    } = request;
+    let installed_vir = verus_dir.join("vstd.vir");
+    let installed_source_root = verus_dir.join("vstd");
+    let vir = vir_override.unwrap_or(&installed_vir);
+    let source_root = source_root_override.unwrap_or(&installed_source_root);
     if !vir.is_file() || !source_root.is_dir() {
         return Err(ForgeError::VerusOutput {
             detail: format!(
@@ -2279,14 +2540,115 @@ fn build_kernel_vstd_link(
         });
     }
     let (source_file_count, source_total_bytes, source_sha256) =
-        directory_sha256_named(&source_root, "thermite.kernel-vstd-source-tree.v1")?;
+        directory_sha256_named(source_root, "thermite.kernel-vstd-source-tree.v1")?;
+    let captured_link_source = source_root.join(KERNEL_VSTD_LINK_SOURCE_NAME);
+    if !captured_link_source.is_file() {
+        return Err(ForgeError::VerusOutput {
+            detail: format!(
+                "the pinned Verus vstd tree has no crate root `{}`",
+                captured_link_source.display()
+            ),
+        });
+    }
     let scratch = ScratchTree::new_in_temp("kernel_vstd_link")?;
-    let link_source = scratch.path.join(KERNEL_VSTD_LINK_SOURCE_NAME);
-    write_bytes(&link_source, KERNEL_VSTD_LINK_SOURCE.as_bytes())?;
+    let compiled_source_root = scratch.path.join("canonical-vstd-source");
+    copy_canonical_source_tree(source_root, &compiled_source_root)?;
+    write_bytes(
+        &compiled_source_root.join(KERNEL_VSTD_LINK_SOURCE_NAME),
+        KERNEL_VSTD_LINK_ROOT_SOURCE.as_bytes(),
+    )?;
+    write_bytes(
+        &compiled_source_root.join(KERNEL_VSTD_LINK_PRELUDE_NAME),
+        KERNEL_VSTD_LINK_PRELUDE_SOURCE.as_bytes(),
+    )?;
+
+    let mut dependencies = Vec::new();
+    let mut target_builtin_source_path = None;
+    let mut target_builtin_source_sha256 = None;
+    let uefi_builtin = if target == VerifiedTarget::KernelUefi {
+        let installed_source = verus_dir.join("builtin/src/lib.rs");
+        let captured_source = builtin_source_override.unwrap_or(&installed_source);
+        if !captured_source.is_file() {
+            return Err(ForgeError::VerusOutput {
+                detail: format!(
+                    "the pinned Verus installation is missing target builtin source `{}`",
+                    captured_source.display()
+                ),
+            });
+        }
+        target_builtin_source_path = Some("<VERUS>/builtin/src/lib.rs".to_string());
+        target_builtin_source_sha256 = Some(file_sha256(captured_source)?.2);
+        let source_root = scratch.path.join("canonical-builtin-source");
+        fs::create_dir_all(&source_root).map_err(|source| ForgeError::Io {
+            path: source_root.display().to_string(),
+            source,
+        })?;
+        let source = source_root.join("lib.rs");
+        write_bytes(
+            &source,
+            &fs::read(captured_source).map_err(|source_error| ForgeError::Io {
+                path: captured_source.display().to_string(),
+                source: source_error,
+            })?,
+        )?;
+        let mut command = Command::new(&codegen.rustc_path);
+        let source_parent = source.parent().ok_or_else(|| ForgeError::VerusOutput {
+            detail: "target verus_builtin source has no parent directory".to_string(),
+        })?;
+        command
+            .args([
+                "--crate-name",
+                "verus_builtin",
+                "--crate-type",
+                "rlib",
+                "--edition",
+                "2018",
+                "--target",
+                "x86_64-unknown-uefi",
+                "--cfg",
+                "verus_keep_ghost",
+            ])
+            .arg(format!("--remap-path-prefix={}=.", scratch.path.display()))
+            .arg(format!(
+                "--remap-path-prefix={}=<VERUS>/builtin/src",
+                source_parent.display()
+            ))
+            .arg(source)
+            .args(["--out-dir", "."])
+            .current_dir(&scratch.path)
+            .env_clear()
+            .envs(environment)
+            .env("RUSTC_BOOTSTRAP", "1");
+        let output = command
+            .output()
+            .map_err(|source| ForgeError::VerusSpawn { source })?;
+        if !output.status.success() {
+            return Err(ForgeError::VerusOutput {
+                detail: format!(
+                    "building target-specific verus_builtin failed: {}",
+                    String::from_utf8_lossy(&output.stderr).trim()
+                ),
+            });
+        }
+        let path = scratch.path.join("libverus_builtin.rlib");
+        if !path.is_file() {
+            return Err(ForgeError::VerusOutput {
+                detail: "target-specific verus_builtin produced no rlib".to_string(),
+            });
+        }
+        dependencies.push(ToolchainDependency {
+            name: "libverus_builtin.rlib".to_string(),
+            source_path: "<forge-generated:uefi-verus-builtin>".to_string(),
+            sha256: file_sha256(&path)?.2,
+        });
+        Some(path)
+    } else {
+        None
+    };
 
     let mut command = Command::new(verus);
     command
-        .arg(KERNEL_VSTD_LINK_SOURCE_NAME)
+        .arg(Path::new("canonical-vstd-source").join(KERNEL_VSTD_LINK_SOURCE_NAME))
         .args([
             "--is-vstd",
             "--no-verify",
@@ -2295,9 +2657,27 @@ fn build_kernel_vstd_link(
             "--crate-name",
             "vstd",
             "--out-dir",
-            ".",
         ])
-        .arg(format!("--remap-path-prefix={}=.", scratch.path.display()))
+        .arg(".")
+        .arg(format!(
+            "--remap-path-prefix={}=<VSTD>",
+            compiled_source_root.display()
+        ))
+        .arg(format!(
+            "--remap-path-prefix={}=<SCRATCH>",
+            scratch.path.display()
+        ));
+    if let Some(builtin) = &uefi_builtin {
+        if builtin.parent() != Some(scratch.path.as_path()) {
+            return Err(ForgeError::VerusOutput {
+                detail: "target verus_builtin escaped the canonical vstd scratch root".to_string(),
+            });
+        }
+        command
+            .args(["--target", "x86_64-unknown-uefi", "--extern"])
+            .arg("verus_builtin=libverus_builtin.rlib");
+    }
+    command
         .current_dir(&scratch.path)
         .env_clear()
         .envs(environment);
@@ -2319,24 +2699,33 @@ fn build_kernel_vstd_link(
         });
     }
     let link_rlib_sha256 = file_sha256(&rlib)?.2;
-    let dependency = ToolchainDependency {
+    dependencies.push(ToolchainDependency {
         name: "libvstd.rlib".to_string(),
-        source_path: "<forge-generated:kernel-vstd-link.rs>".to_string(),
+        source_path: "<VERUS>/vstd/vstd.rs".to_string(),
         sha256: link_rlib_sha256.clone(),
-    };
+    });
     let model = KernelVstdModelEvidence {
-        vir_path: vir.display().to_string(),
-        vir_sha256: file_sha256(&vir)?.2,
-        source_root: source_root.display().to_string(),
+        target_triple: codegen.target_triple.clone(),
+        vir_path: "<VERUS>/vstd.vir".to_string(),
+        vir_sha256: file_sha256(vir)?.2,
+        source_root: "<VERUS>/vstd".to_string(),
         source_file_count,
         source_total_bytes,
         source_sha256,
         link_source_name: KERNEL_VSTD_LINK_SOURCE_NAME.to_string(),
-        link_source_sha256: sha256(KERNEL_VSTD_LINK_SOURCE.as_bytes()),
-        link_build_args: kernel_vstd_link_build_args(),
+        link_source_sha256: sha256(KERNEL_VSTD_LINK_ROOT_SOURCE.as_bytes()),
+        link_prelude_sha256: sha256(KERNEL_VSTD_LINK_PRELUDE_SOURCE.as_bytes()),
+        link_build_args: kernel_vstd_link_build_args(target),
         link_rlib_sha256,
+        target_builtin_source_path,
+        target_builtin_source_sha256,
+        target_builtin_build_args: if target == VerifiedTarget::KernelUefi {
+            kernel_uefi_builtin_build_args()
+        } else {
+            Vec::new()
+        },
     };
-    Ok((scratch, dependency, model))
+    Ok((scratch, dependencies, model))
 }
 
 fn closed_verus_environment(
@@ -2395,6 +2784,7 @@ fn collect_host_rustc(rustup: &Path) -> Result<HostRustcEvidence, ForgeError> {
 fn collect_codegen_rustc(
     verus_version: &str,
     rustup: &Path,
+    target: VerifiedTarget,
 ) -> Result<CodegenRustcEvidence, ForgeError> {
     let rustup_toolchain = parse_verus_toolchain(verus_version)?;
     let selected = command_text(
@@ -2411,14 +2801,30 @@ fn collect_codegen_rustc(
         &["rustc", "-vV"],
         "Verus codegen rustc -vV",
     )?;
-    let target_triple = rustc_version_field(&rustc_version, "host: ")?;
+    let host_triple = rustc_version_field(&rustc_version, "host: ")?;
+    let target_triple = if target == VerifiedTarget::KernelUefi {
+        "x86_64-unknown-uefi".to_string()
+    } else {
+        host_triple.clone()
+    };
     let rustc_release = rustc_version_field(&rustc_version, "release: ")?;
     let rustc_commit_hash = rustc_version_field(&rustc_version, "commit-hash: ")?;
     let llvm_version = rustc_version_field(&rustc_version, "LLVM version: ")?;
+    let cfg_args = if target == VerifiedTarget::KernelUefi {
+        vec![
+            "rustc",
+            "--target",
+            target_triple.as_str(),
+            "--print",
+            "cfg",
+        ]
+    } else {
+        vec!["rustc", "--print", "cfg"]
+    };
     let cfg = rustup_command_text(
         rustup,
         &rustup_toolchain,
-        &["rustc", "--print", "cfg"],
+        &cfg_args,
         "Verus codegen rustc --print cfg",
     )?;
     let target_pointer_width = rustc_cfg_value(&cfg, "target_pointer_width")?;
@@ -2442,10 +2848,21 @@ fn collect_codegen_rustc(
             ),
         });
     }
+    let target_libdir_args = if target == VerifiedTarget::KernelUefi {
+        vec![
+            "rustc",
+            "--target",
+            target_triple.as_str(),
+            "--print",
+            "target-libdir",
+        ]
+    } else {
+        vec!["rustc", "--print", "target-libdir"]
+    };
     let target_libdir_text = rustup_command_text(
         rustup,
         &rustup_toolchain,
-        &["rustc", "--print", "target-libdir"],
+        &target_libdir_args,
         "Verus codegen rustc --print target-libdir",
     )?;
     let target_libdir =
@@ -2464,7 +2881,7 @@ fn collect_codegen_rustc(
     }
 
     let rustlib = sysroot.join("lib/rustlib");
-    let rustc_manifest = rustlib.join(format!("manifest-rustc-{target_triple}"));
+    let rustc_manifest = rustlib.join(format!("manifest-rustc-{host_triple}"));
     let rust_std_manifest = rustlib.join(format!("manifest-rust-std-{target_triple}"));
     let rustc_driver = component_manifest_largest(
         &rustc_manifest,
@@ -2638,6 +3055,76 @@ fn directory_sha256(root: &Path) -> Result<(u64, u64, String), ForgeError> {
     directory_sha256_named(root, "thermite.codegen-target-libdir.v1")
 }
 
+fn copy_canonical_source_tree(source: &Path, destination: &Path) -> Result<(), ForgeError> {
+    fn copy_directory(source: &Path, destination: &Path) -> Result<(), ForgeError> {
+        fs::create_dir_all(destination).map_err(|source_error| ForgeError::Io {
+            path: destination.display().to_string(),
+            source: source_error,
+        })?;
+        let mut entries = fs::read_dir(source)
+            .map_err(|source_error| ForgeError::Io {
+                path: source.display().to_string(),
+                source: source_error,
+            })?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|source_error| ForgeError::Io {
+                path: source.display().to_string(),
+                source: source_error,
+            })?;
+        entries.sort_by_key(std::fs::DirEntry::file_name);
+        for entry in entries {
+            let source_path = entry.path();
+            let name = entry.file_name();
+            let name_text = name.to_str().ok_or_else(|| ForgeError::VerusOutput {
+                detail: format!(
+                    "kernel vstd source name is not portable UTF-8: {}",
+                    source_path.display()
+                ),
+            })?;
+            if [".git", "__pycache__", "target", "dist"].contains(&name_text) {
+                return Err(ForgeError::VerusOutput {
+                    detail: format!(
+                        "kernel vstd canonical source closure contains forbidden incidental path `{}`",
+                        source_path.display()
+                    ),
+                });
+            }
+            let kind = entry.file_type().map_err(|source_error| ForgeError::Io {
+                path: source_path.display().to_string(),
+                source: source_error,
+            })?;
+            let destination_path = destination.join(&name);
+            if kind.is_symlink() {
+                return Err(ForgeError::VerusOutput {
+                    detail: format!(
+                        "kernel vstd canonical source closure contains symlink `{}`",
+                        source_path.display()
+                    ),
+                });
+            }
+            if kind.is_dir() {
+                copy_directory(&source_path, &destination_path)?;
+            } else if kind.is_file() {
+                let bytes = fs::read(&source_path).map_err(|source_error| ForgeError::Io {
+                    path: source_path.display().to_string(),
+                    source: source_error,
+                })?;
+                write_bytes(&destination_path, &bytes)?;
+            } else {
+                return Err(ForgeError::VerusOutput {
+                    detail: format!(
+                        "kernel vstd canonical source closure contains non-file `{}`",
+                        source_path.display()
+                    ),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    copy_directory(source, destination)
+}
+
 fn directory_sha256_named(root: &Path, schema: &str) -> Result<(u64, u64, String), ForgeError> {
     fn collect(root: &Path, dir: &Path, files: &mut Vec<PathBuf>) -> Result<(), ForgeError> {
         for entry in fs::read_dir(dir).map_err(|source| ForgeError::Io {
@@ -2723,9 +3210,11 @@ fn validate_codegen_evidence(toolchain: &ToolchainEvidence) -> Result<(), String
         rustc_version_field(&codegen.rustc_version, "host: ").map_err(|error| error.to_string())?;
     let llvm = rustc_version_field(&codegen.rustc_version, "LLVM version: ")
         .map_err(|error| error.to_string())?;
+    let target_matches_codegen =
+        codegen.target_triple == host || codegen.target_triple == "x86_64-unknown-uefi";
     if codegen.rustc_release != release
         || codegen.rustc_commit_hash != commit
-        || codegen.target_triple != host
+        || !target_matches_codegen
         || codegen.llvm_version != llvm
         || toolchain.target_triple != codegen.target_triple
         || toolchain.target_pointer_width != codegen.target_pointer_width
@@ -2841,6 +3330,13 @@ struct CompiledVerus {
     evidence: VerusEvidence,
 }
 
+#[derive(Clone, Copy)]
+struct KernelCompileDependencies<'a> {
+    vstd_vir: Option<&'a Path>,
+    vstd_rlib: Option<&'a Path>,
+    verus_builtin_rlib: Option<&'a Path>,
+}
+
 fn compile_verus_source(
     crate_name: &str,
     source: &str,
@@ -2848,7 +3344,7 @@ fn compile_verus_source(
     verus_path: &str,
     environment: &BTreeMap<String, String>,
     codegen_toolchain_sha256: &str,
-    kernel_vstd_rlib: Option<&Path>,
+    kernel_dependencies: KernelCompileDependencies<'_>,
 ) -> Result<CompiledVerus, ForgeError> {
     let scratch = ScratchTree::new_in_temp(&format!("verified_{crate_name}"))?;
     let source_name = format!("{crate_name}.rs");
@@ -2860,21 +3356,31 @@ fn compile_verus_source(
     for arg in &args[..args.len() - 2] {
         match arg.as_str() {
             "vstd=<KERNEL_VSTD_VIR>" => {
-                let verus_dir =
-                    Path::new(verus_path)
-                        .parent()
-                        .ok_or_else(|| ForgeError::VerusOutput {
-                            detail: "the resolved Verus binary has no installation directory"
-                                .to_string(),
-                        })?;
-                command.arg(format!("vstd={}", verus_dir.join("vstd.vir").display()));
+                let vir = kernel_dependencies
+                    .vstd_vir
+                    .ok_or_else(|| ForgeError::VerusOutput {
+                        detail: "kernel verification has no bound vstd VIR".to_string(),
+                    })?;
+                command.arg(format!("vstd={}", vir.display()));
             }
             "vstd=<KERNEL_VSTD_RLIB>" => {
-                let rlib = kernel_vstd_rlib.ok_or_else(|| ForgeError::VerusOutput {
-                    detail: "kernel verification has no generated no_std vstd link crate"
-                        .to_string(),
-                })?;
+                let rlib =
+                    kernel_dependencies
+                        .vstd_rlib
+                        .ok_or_else(|| ForgeError::VerusOutput {
+                            detail: "kernel verification has no generated no_std vstd link crate"
+                                .to_string(),
+                        })?;
                 command.arg(format!("vstd={}", rlib.display()));
+            }
+            "verus_builtin=<KERNEL_UEFI_VERUS_BUILTIN_RLIB>" => {
+                let rlib = kernel_dependencies.verus_builtin_rlib.ok_or_else(|| {
+                    ForgeError::VerusOutput {
+                        detail: "UEFI kernel verification has no target-specific verus_builtin"
+                            .to_string(),
+                    }
+                })?;
+                command.arg(format!("verus_builtin={}", rlib.display()));
             }
             _ => {
                 command.arg(arg);
@@ -2971,13 +3477,21 @@ fn compile_verus_source(
 
 fn expected_verus_args(crate_name: &str, target: VerifiedTarget) -> Vec<String> {
     let mut args = vec!["--output-json".to_string(), "--profile".to_string()];
-    if matches!(target, VerifiedTarget::Kernel) {
+    if matches!(target, VerifiedTarget::Kernel | VerifiedTarget::KernelUefi) {
         args.extend([
             "--no-vstd".to_string(),
             "--import".to_string(),
             "vstd=<KERNEL_VSTD_VIR>".to_string(),
             "--extern".to_string(),
             "vstd=<KERNEL_VSTD_RLIB>".to_string(),
+        ]);
+    }
+    if target == VerifiedTarget::KernelUefi {
+        args.extend([
+            "--extern".to_string(),
+            "verus_builtin=<KERNEL_UEFI_VERUS_BUILTIN_RLIB>".to_string(),
+            "--target".to_string(),
+            "x86_64-unknown-uefi".to_string(),
         ]);
     }
     args.extend([
@@ -3047,6 +3561,7 @@ struct StageInput<'a> {
     crate_name: &'a str,
     target: VerifiedTarget,
     raw_source: &'a [u8],
+    package: Option<&'a crate::thermite_package::LoadedPackage>,
     plan: &'a ArtifactPlanV1,
     plan_sha256: &'a str,
     verus_source: &'a str,
@@ -3069,6 +3584,7 @@ fn stage_and_publish(input: StageInput<'_>) -> Result<VerifiedBuildReceiptV1, Fo
         crate_name,
         target,
         raw_source,
+        package,
         plan,
         plan_sha256,
         verus_source,
@@ -3113,6 +3629,9 @@ fn stage_and_publish(input: StageInput<'_>) -> Result<VerifiedBuildReceiptV1, Fo
     let verus_json = pretty_json(&compiled.evidence, "whole-crate Verus evidence")?;
     let toolchain_json = pretty_json(toolchain, "toolchain evidence")?;
     write_bytes(&evidence.join("input.th"), raw_source)?;
+    if let Some(package) = package {
+        crate::thermite_package::write_evidence(&stage.path, package)?;
+    }
     write_bytes(&evidence.join("artifact-plan.v1"), plan_json.as_bytes())?;
     write_bytes(&evidence.join("source.verus.rs"), verus_source.as_bytes())?;
     if let Some(composition) = &composition {
@@ -3136,11 +3655,82 @@ fn stage_and_publish(input: StageInput<'_>) -> Result<VerifiedBuildReceiptV1, Fo
     )?;
     write_bytes(&evidence.join("verus-result.json"), verus_json.as_bytes())?;
     write_bytes(&evidence.join("toolchain.json"), toolchain_json.as_bytes())?;
-    if toolchain.kernel_vstd_model.is_some() {
+    if let Some(model) = &toolchain.kernel_vstd_model {
+        let source_root = dependency_paths
+            .get(KERNEL_VSTD_SOURCE_PATH_KEY)
+            .ok_or_else(|| ForgeError::VerusOutput {
+                detail: "kernel build did not retain its vstd source root".to_string(),
+            })?;
+        let staged_source_root = evidence.join(KERNEL_VSTD_SOURCE_EVIDENCE_DIR);
+        copy_canonical_source_tree(source_root, &staged_source_root)?;
+        if directory_sha256_named(&staged_source_root, "thermite.kernel-vstd-source-tree.v1")?
+            != (
+                model.source_file_count,
+                model.source_total_bytes,
+                model.source_sha256.clone(),
+            )
+        {
+            return Err(ForgeError::VerusOutput {
+                detail: "kernel vstd source closure changed after toolchain capture".to_string(),
+            });
+        }
+        let vir_path = dependency_paths
+            .get(KERNEL_VSTD_VIR_PATH_KEY)
+            .ok_or_else(|| ForgeError::VerusOutput {
+                detail: "kernel build did not retain its vstd VIR input".to_string(),
+            })?;
+        let vir = fs::read(vir_path).map_err(|source| ForgeError::Io {
+            path: vir_path.display().to_string(),
+            source,
+        })?;
+        if sha256(&vir) != model.vir_sha256 {
+            return Err(ForgeError::VerusOutput {
+                detail: "kernel vstd VIR changed after toolchain capture".to_string(),
+            });
+        }
+        write_bytes(&evidence.join(KERNEL_VSTD_VIR_EVIDENCE_NAME), &vir)?;
+        let link_evidence = evidence.join(KERNEL_VSTD_LINK_EVIDENCE_DIR);
+        fs::create_dir_all(&link_evidence).map_err(|source| ForgeError::Io {
+            path: link_evidence.display().to_string(),
+            source,
+        })?;
+        if sha256(KERNEL_VSTD_LINK_ROOT_SOURCE.as_bytes()) != model.link_source_sha256
+            || sha256(KERNEL_VSTD_LINK_PRELUDE_SOURCE.as_bytes()) != model.link_prelude_sha256
+        {
+            return Err(ForgeError::VerusOutput {
+                detail: "kernel vstd selected link sources changed after capture".to_string(),
+            });
+        }
         write_bytes(
-            &evidence.join(KERNEL_VSTD_LINK_SOURCE_NAME),
-            KERNEL_VSTD_LINK_SOURCE.as_bytes(),
+            &link_evidence.join(KERNEL_VSTD_LINK_SOURCE_NAME),
+            KERNEL_VSTD_LINK_ROOT_SOURCE.as_bytes(),
         )?;
+        write_bytes(
+            &link_evidence.join(KERNEL_VSTD_LINK_PRELUDE_NAME),
+            KERNEL_VSTD_LINK_PRELUDE_SOURCE.as_bytes(),
+        )?;
+        if let Some(expected) = model.target_builtin_source_sha256.as_deref() {
+            let path = dependency_paths
+                .get(KERNEL_BUILTIN_SOURCE_PATH_KEY)
+                .ok_or_else(|| ForgeError::VerusOutput {
+                    detail: "UEFI build did not retain its verus_builtin source".to_string(),
+                })?;
+            let bytes = fs::read(path).map_err(|source| ForgeError::Io {
+                path: path.display().to_string(),
+                source,
+            })?;
+            if sha256(&bytes) != expected {
+                return Err(ForgeError::VerusOutput {
+                    detail: "kernel verus_builtin source changed after capture".to_string(),
+                });
+            }
+            let parent = evidence.join("kernel-verus-builtin");
+            fs::create_dir_all(&parent).map_err(|source| ForgeError::Io {
+                path: parent.display().to_string(),
+                source,
+            })?;
+            write_bytes(&evidence.join(KERNEL_BUILTIN_EVIDENCE_NAME), &bytes)?;
+        }
     }
     let cargo_lock = fs::read(&toolchain.cargo_lock_path).map_err(|source| ForgeError::Io {
         path: toolchain.cargo_lock_path.clone(),
@@ -3194,6 +3784,17 @@ fn stage_and_publish(input: StageInput<'_>) -> Result<VerifiedBuildReceiptV1, Fo
         length: artifact_file.length,
         sha256: artifact_file.sha256,
     };
+    let direct_refined_boundary_names: BTreeSet<String> = plan
+        .composition
+        .as_ref()
+        .map(|composition| {
+            composition
+                .direct_refined_boundaries
+                .iter()
+                .map(|boundary| boundary.thermite_name.clone())
+                .collect()
+        })
+        .unwrap_or_default();
     let assurance_aggregate = assurance_aggregate(
         certificates,
         &VerifiedClosure {
@@ -3217,6 +3818,7 @@ fn stage_and_publish(input: StageInput<'_>) -> Result<VerifiedBuildReceiptV1, Fo
                 .collect(),
         },
         &plan.exports,
+        &direct_refined_boundary_names,
     )?;
     let injected_mutation = match std::env::var("THERMITE_L3_TEST_FAULT").as_deref() {
         Ok("after-artifact-hash") if cfg!(debug_assertions) => Some(artifact_relative.as_str()),
@@ -3542,6 +4144,12 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
             detail: "bound Thermite input disagrees with ArtifactPlanV1".to_string(),
         });
     }
+    let bound_package = crate::thermite_package::load_evidence(bundle, &raw_source)?;
+    if plan.thermite_package != bound_package.as_ref().map(thermite_package_plan) {
+        return Err(ForgeError::VerusOutput {
+            detail: "bound Thermite package inventory disagrees with ArtifactPlanV1".to_string(),
+        });
+    }
     let source_text =
         std::str::from_utf8(&raw_source).map_err(|error| ForgeError::VerusOutput {
             detail: format!("bound Thermite input is not UTF-8: {error}"),
@@ -3577,7 +4185,17 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
             detail: format!("bound closure is incomplete: {error}"),
         }
     })?;
-    if let Some(detail) = strict_source_checks(&parsed.program, &closure, plan.target) {
+    let direct_frozen_boundaries = plan.composition.is_some()
+        && matches!(
+            plan.target,
+            VerifiedTarget::Kernel | VerifiedTarget::KernelUefi
+        );
+    if let Some(detail) = strict_source_checks(
+        &parsed.program,
+        &closure,
+        plan.target,
+        direct_frozen_boundaries,
+    ) {
         return Err(ForgeError::VerusOutput {
             detail: format!("bound closure violates strict policy: {detail}"),
         });
@@ -3603,7 +4221,13 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
     let subprogram = closure_program(&parsed.program, &closure);
     let (independently_emitted, reconstructed_plan) = if composition_receipt {
         let (reconstructed, lowered, combined, reconstructed_closure, reconstructed_exports) =
-            composition::reconstruct_plan(&parsed.program, &raw_source, &plan, bundle)?;
+            composition::reconstruct_plan(
+                &parsed.program,
+                &raw_source,
+                bound_package.as_ref(),
+                &plan,
+                bundle,
+            )?;
         let lowered_bytes = file_sha256(&bundle.join("evidence/lowered-thermite.verus.rs"))?.1;
         if lowered.as_bytes() != lowered_bytes
             || plan.composition.as_ref().is_none_or(|composition| {
@@ -3630,12 +4254,13 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
             .collect();
         let lower_target = match plan.target {
             VerifiedTarget::Std => L3LibraryTarget::Std,
-            VerifiedTarget::Kernel => L3LibraryTarget::Kernel,
+            VerifiedTarget::Kernel | VerifiedTarget::KernelUefi => L3LibraryTarget::Kernel,
         };
         let emitted = thermite_lower::lower_l3_library(&subprogram, &lower_exports, lower_target)
             .map_err(ForgeError::Lower)?;
         let reconstructed = make_plan(PlanInput {
             raw_source: &raw_source,
+            package: bound_package.as_ref(),
             program: &parsed.program,
             selected_program: &subprogram,
             closure: &closure,
@@ -3682,12 +4307,33 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
         serde_json::from_slice(&certificate_bytes).map_err(|error| ForgeError::VerusOutput {
             detail: format!("invalid bound certificate set: {error}"),
         })?;
-    if let Some(detail) = reject_certificates(&certificates, &closure, &parsed.program) {
+    if let Some(detail) = reject_certificates(
+        &certificates,
+        &closure,
+        &parsed.program,
+        direct_frozen_boundaries,
+    ) {
         return Err(ForgeError::VerusOutput {
             detail: format!("bound certificate set fails strict L3 policy: {detail}"),
         });
     }
-    let reconstructed_assurance = assurance_aggregate(&certificates, &closure, &exports)?;
+    let direct_refined_boundary_names: BTreeSet<String> = plan
+        .composition
+        .as_ref()
+        .map(|composition| {
+            composition
+                .direct_refined_boundaries
+                .iter()
+                .map(|boundary| boundary.thermite_name.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+    let reconstructed_assurance = assurance_aggregate(
+        &certificates,
+        &closure,
+        &exports,
+        &direct_refined_boundary_names,
+    )?;
     if receipt.binding.assurance_aggregate != reconstructed_assurance
         || reconstructed_assurance.headline != "L3"
         || reconstructed_assurance.cap != "L3"
@@ -3768,6 +4414,11 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
     validate_codegen_evidence(&toolchain).map_err(|detail| ForgeError::VerusOutput {
         detail: format!("bound artifact-codegen toolchain is invalid: {detail}"),
     })?;
+    let codegen_host = rustc_version_field(&toolchain.artifact_codegen.rustc_version, "host: ")?;
+    let target_triple_matches_plan = match plan.target {
+        VerifiedTarget::KernelUefi => toolchain.target_triple == "x86_64-unknown-uefi",
+        VerifiedTarget::Std | VerifiedTarget::Kernel => toolchain.target_triple == codegen_host,
+    };
     if toolchain.source_date_epoch != SOURCE_DATE_EPOCH
         || toolchain.forge_version != env!("CARGO_PKG_VERSION")
         || toolchain.target_triple != plan.target_triple
@@ -3804,6 +4455,7 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
             .map(String::as_str)
             != Some(toolchain.artifact_codegen.rustup_toolchain.as_str())
         || verus.codegen_toolchain_sha256 != toolchain.artifact_codegen.canonical_identity_sha256()
+        || !target_triple_matches_plan
     {
         return Err(ForgeError::VerusOutput {
             detail: "bound toolchain policy or environment whitelist is invalid".to_string(),
@@ -3844,7 +4496,7 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
         }
     }
     match (plan.target, toolchain.kernel_vstd_model.as_ref()) {
-        (VerifiedTarget::Kernel, Some(model)) => {
+        (VerifiedTarget::Kernel | VerifiedTarget::KernelUefi, Some(model)) => {
             let vstd_dependency = toolchain
                 .link_dependencies
                 .iter()
@@ -3853,26 +4505,85 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
                     detail: "kernel model has no bound libvstd.rlib".to_string(),
                 })?;
             if model.link_source_name != KERNEL_VSTD_LINK_SOURCE_NAME
-                || model.link_source_sha256 != sha256(KERNEL_VSTD_LINK_SOURCE.as_bytes())
-                || model.link_build_args != kernel_vstd_link_build_args()
+                || model.target_triple != plan.target_triple
+                || model.link_build_args != kernel_vstd_link_build_args(plan.target)
                 || model.link_rlib_sha256 != vstd_dependency.sha256
-                || vstd_dependency.source_path != "<forge-generated:kernel-vstd-link.rs>"
+                || vstd_dependency.source_path != "<VERUS>/vstd/vstd.rs"
                 || model.source_file_count == 0
                 || model.source_total_bytes == 0
                 || model.source_sha256.len() != 64
                 || model.vir_sha256.len() != 64
+                || model.link_source_sha256.len() != 64
+                || model.link_prelude_sha256.len() != 64
             {
                 return Err(ForgeError::VerusOutput {
                     detail: "bound kernel vstd model identity is malformed or inconsistent"
                         .to_string(),
                 });
             }
-            if file_sha256(&bundle.join("evidence").join(&model.link_source_name))?.2
-                != model.link_source_sha256
+            match plan.target {
+                VerifiedTarget::KernelUefi
+                    if model.target_builtin_source_path.is_none()
+                        || model
+                            .target_builtin_source_sha256
+                            .as_ref()
+                            .is_none_or(|digest| digest.len() != 64)
+                        || model.target_builtin_build_args != kernel_uefi_builtin_build_args() =>
+                {
+                    return Err(ForgeError::VerusOutput {
+                        detail: "bound UEFI verus_builtin source/build identity is incomplete"
+                            .to_string(),
+                    });
+                }
+                VerifiedTarget::Kernel
+                    if model.target_builtin_source_path.is_some()
+                        || model.target_builtin_source_sha256.is_some()
+                        || !model.target_builtin_build_args.is_empty() =>
+                {
+                    return Err(ForgeError::VerusOutput {
+                        detail: "host kernel model unexpectedly binds a target builtin build"
+                            .to_string(),
+                    });
+                }
+                _ => {}
+            }
+            let vstd_evidence = bundle
+                .join("evidence")
+                .join(KERNEL_VSTD_SOURCE_EVIDENCE_DIR);
+            if directory_sha256_named(&vstd_evidence, "thermite.kernel-vstd-source-tree.v1")?
+                != (
+                    model.source_file_count,
+                    model.source_total_bytes,
+                    model.source_sha256.clone(),
+                )
+                || file_sha256(&bundle.join("evidence").join(KERNEL_VSTD_VIR_EVIDENCE_NAME))?.2
+                    != model.vir_sha256
             {
                 return Err(ForgeError::VerusOutput {
-                    detail: "bound kernel vstd link source has the wrong digest".to_string(),
+                    detail: "bound kernel vstd source/VIR closure has the wrong identity"
+                        .to_string(),
                 });
+            }
+            let link_evidence = bundle.join("evidence").join(KERNEL_VSTD_LINK_EVIDENCE_DIR);
+            if file_sha256(&link_evidence.join(KERNEL_VSTD_LINK_SOURCE_NAME))?.2
+                != model.link_source_sha256
+                || file_sha256(&link_evidence.join(KERNEL_VSTD_LINK_PRELUDE_NAME))?.2
+                    != model.link_prelude_sha256
+            {
+                return Err(ForgeError::VerusOutput {
+                    detail: "bound kernel vstd selected link sources have the wrong identity"
+                        .to_string(),
+                });
+            }
+            if let Some(expected) = &model.target_builtin_source_sha256 {
+                if file_sha256(&bundle.join("evidence").join(KERNEL_BUILTIN_EVIDENCE_NAME))?.2
+                    != *expected
+                {
+                    return Err(ForgeError::VerusOutput {
+                        detail: "bound kernel verus_builtin source has the wrong identity"
+                            .to_string(),
+                    });
+                }
             }
         }
         (VerifiedTarget::Std, None) => {}
@@ -3909,7 +4620,8 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
             Command::new(&current_verus).arg("--version"),
             "replay verus --version",
         )?;
-        let current_codegen = collect_codegen_rustc(&current_verus_version, &current_rustup)?;
+        let current_codegen =
+            collect_codegen_rustc(&current_verus_version, &current_rustup, plan.target)?;
         if file_sha256(&current_verus)?.2 != toolchain.verus_sha256
             || current_verus_version != toolchain.verus_version
             || !current_codegen.same_identity(&toolchain.artifact_codegen)
@@ -3954,20 +4666,54 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
             &current_rustup,
             &toolchain.artifact_codegen.rustup_toolchain,
         )?;
-        let replay_kernel_vstd = if matches!(plan.target, VerifiedTarget::Kernel) {
+        let replay_kernel_vstd = if matches!(
+            plan.target,
+            VerifiedTarget::Kernel | VerifiedTarget::KernelUefi
+        ) {
             let current_verus_dir =
                 current_verus
                     .parent()
                     .ok_or_else(|| ForgeError::VerusOutput {
                         detail: "replay Verus binary has no installation directory".to_string(),
                     })?;
-            let rebuilt =
-                build_kernel_vstd_link(&current_verus, current_verus_dir, &replay_environment)?;
+            let replay_vstd_source = bundle
+                .join("evidence")
+                .join(KERNEL_VSTD_SOURCE_EVIDENCE_DIR);
+            let replay_vstd_vir = bundle.join("evidence").join(KERNEL_VSTD_VIR_EVIDENCE_NAME);
+            let replay_builtin_source = bundle.join("evidence").join(KERNEL_BUILTIN_EVIDENCE_NAME);
+            let rebuilt = build_kernel_vstd_link(KernelVstdLinkRequest {
+                verus: &current_verus,
+                verus_dir: current_verus_dir,
+                environment: &replay_environment,
+                target: plan.target,
+                codegen: &current_codegen,
+                source_root_override: Some(&replay_vstd_source),
+                vir_override: Some(&replay_vstd_vir),
+                builtin_source_override: (plan.target == VerifiedTarget::KernelUefi)
+                    .then_some(replay_builtin_source.as_path()),
+            })?;
             if Some(&rebuilt.2) != toolchain.kernel_vstd_model.as_ref() {
+                let expected = serde_json::to_string(&toolchain.kernel_vstd_model)
+                    .unwrap_or_else(|_| "<unserializable>".to_string());
+                let actual = serde_json::to_string(&rebuilt.2)
+                    .unwrap_or_else(|_| "<unserializable>".to_string());
+                let expected_dependencies = serde_json::to_string(
+                    &toolchain
+                        .link_dependencies
+                        .iter()
+                        .filter(|dependency| {
+                            dependency.name == "libvstd.rlib"
+                                || dependency.name == "libverus_builtin.rlib"
+                        })
+                        .collect::<Vec<_>>(),
+                )
+                .unwrap_or_else(|_| "<unserializable>".to_string());
+                let actual_dependencies = serde_json::to_string(&rebuilt.1)
+                    .unwrap_or_else(|_| "<unserializable>".to_string());
                 return Err(ForgeError::VerusOutput {
-                    detail:
-                        "replay kernel vstd model/source/link identity does not match the receipt"
-                            .to_string(),
+                    detail: format!(
+                        "replay kernel vstd model/source/link identity does not match the receipt; expected={expected}; actual={actual}; expected_dependencies={expected_dependencies}; actual_dependencies={actual_dependencies}"
+                    ),
                 });
             }
             Some(rebuilt)
@@ -3984,7 +4730,22 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
             current_verus.to_string_lossy().as_ref(),
             &replay_environment,
             &current_codegen.canonical_identity_sha256(),
-            replay_kernel_vstd_path.as_deref(),
+            KernelCompileDependencies {
+                vstd_vir: matches!(
+                    plan.target,
+                    VerifiedTarget::Kernel | VerifiedTarget::KernelUefi
+                )
+                .then(|| bundle.join("evidence").join(KERNEL_VSTD_VIR_EVIDENCE_NAME))
+                .as_deref(),
+                vstd_rlib: replay_kernel_vstd_path.as_deref(),
+                verus_builtin_rlib: replay_kernel_vstd
+                    .as_ref()
+                    .and_then(|(scratch, _, _)| {
+                        (plan.target == VerifiedTarget::KernelUefi)
+                            .then(|| scratch.path.join("libverus_builtin.rlib"))
+                    })
+                    .as_deref(),
+            },
         )?;
         if !compiled.evidence.success || sha256(&compiled.artifact) != artifact.sha256 {
             return Err(ForgeError::VerusOutput {
@@ -4240,6 +5001,7 @@ mod tests {
             strict_gates: STRICT_GATES.iter().map(|s| (*s).to_string()).collect(),
             expected_tv_inventory: Vec::new(),
             expected_verus_source_sha256: "c".repeat(64),
+            thermite_package: None,
             composition: None,
         };
         let compact = serde_json::to_string(&plan).unwrap();

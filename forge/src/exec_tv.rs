@@ -52,6 +52,7 @@
 //! | REQ-TV-EXEC-FORGE-PLUGIN | shipped | `forge/src/exec_tv.rs` | Exec-TV forge plug-in point |  |
 //! <!-- /generated:reqs -->
 
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::Command;
 
@@ -59,6 +60,7 @@ use thermite_syntax::ast::{Clause, Expr, FnItem, IndexArg, Item, PrimType, Stmt,
 
 use thermite_tv::gen_exec_exprs;
 use thermite_tv::obligation::{exec_equivalence_obligation, ExecObligationFrame, ExecParamDecl};
+use thermite_tv::{exec_ref_ensures, ExecRefCtx};
 
 use crate::check::{unique_scratch_dir, ScratchDir, DEFAULT_RLIMIT, DEFAULT_SOLVER_SEED};
 use crate::cli::ForgeError;
@@ -266,7 +268,11 @@ fn clause_frame(clause: &thermite_tv::ExecClause) -> ExecObligationFrame {
             .collect(),
         ret_type: clause.ret_type.clone(),
         req: clause.req.clone(),
+        local_assumptions: Vec::new(),
         slice_params: clause.slice_params.clone(),
+        named_params: Vec::new(),
+        struct_fields: Vec::new(),
+        call_decls: Vec::new(),
     }
 }
 
@@ -341,6 +347,7 @@ pub fn exec_tv_export_guard(f: &FnItem, seed: u64, rlimit: f64) -> ExecResult {
         &env,
         &frame_fn,
         &[],
+        None,
         seed,
         rlimit,
         &mut report,
@@ -360,6 +367,15 @@ pub fn exec_tv_export_guard(f: &FnItem, seed: u64, rlimit: f64) -> ExecResult {
 struct ExecEnv {
     params: Vec<ExecParamDecl>,
     slice_params: Vec<String>,
+    named_params: Vec<(String, String)>,
+    /// Exact independent source-denotation relations for preceding typed lets.
+    /// These are threaded into later expression obligations as lexical-state
+    /// premises; the full body TV independently checks the same sequencing.
+    local_assumptions: Vec<String>,
+    /// A typed local whose initializer was outside the independent reference
+    /// subset. Later expressions that depend on it must be skipped explicitly;
+    /// they may not silently treat it as an unconstrained parameter.
+    unframed_locals: BTreeMap<String, String>,
 }
 
 impl ExecEnv {
@@ -373,12 +389,28 @@ impl ExecEnv {
             .push(ExecParamDecl::new(name.to_string(), ty_str));
         if is_slice {
             self.slice_params.push(name.to_string());
+        } else if !matches!(
+            self.params.last().map(|param| param.type_str.as_str()),
+            Some("u8" | "u16" | "u32" | "u64" | "usize" | "bool")
+        ) {
+            if let Some(param) = self.params.last() {
+                self.named_params
+                    .push((name.to_string(), param.type_str.clone()));
+            }
         }
     }
 
     /// The names this env declares (the obligation can reference these).
     fn declares(&self, name: &str) -> bool {
         self.params.iter().any(|p| p.name == name)
+    }
+
+    fn bind_local_assumption(&mut self, relation: String) {
+        self.local_assumptions.push(relation);
+    }
+
+    fn bind_unframed_local(&mut self, name: &str, reason: String) {
+        self.unframed_locals.insert(name.to_string(), reason);
     }
 }
 
@@ -454,6 +486,7 @@ fn exec_tv_fn(
                         &env,
                         f,
                         &support_defs,
+                        Some(program),
                         seed,
                         rlimit,
                         report,
@@ -472,7 +505,33 @@ fn exec_tv_fn(
                 }
                 // Bind the local so a later expr referencing it frames.
                 if let Some((ty_str, is_slice)) = exec_type_spelling(ty) {
+                    let reference_ctx = ExecRefCtx::with_bounds(
+                        env.slice_params.iter().cloned(),
+                        env.named_params.iter().cloned(),
+                    )
+                    .with_struct_fields(crate::body_tv::exec_struct_field_decls(program))
+                    .with_calls(crate::body_tv::exec_call_decls(program))
+                    .with_result_type(ty_str.clone());
+                    let mut init_names = Vec::new();
+                    collect_free_paths(init, &mut init_names);
+                    let inherited_gap = init_names.iter().find_map(|dependency| {
+                        env.unframed_locals
+                            .get(dependency)
+                            .map(|reason| (dependency.clone(), reason.clone()))
+                    });
+                    let local_relation = if let Some((dependency, reason)) = inherited_gap {
+                        Err(format!(
+                            "initializer depends on unframed local `{dependency}`: {reason}"
+                        ))
+                    } else {
+                        exec_ref_ensures(init, name, &reference_ctx)
+                            .map_err(|error| error.to_string())
+                    };
                     env.bind(name, ty_str, is_slice);
+                    match local_relation {
+                        Ok(relation) => env.bind_local_assumption(relation),
+                        Err(reason) => env.bind_unframed_local(name, reason),
+                    }
                 }
             }
             Stmt::Let { name, ty: None, .. } => {
@@ -498,6 +557,7 @@ fn exec_tv_fn(
                     &env,
                     f,
                     &support_defs,
+                    Some(program),
                     seed,
                     rlimit,
                     report,
@@ -541,6 +601,7 @@ fn exec_tv_fn(
             &env,
             f,
             &support_defs,
+            Some(program),
             seed,
             rlimit,
             report,
@@ -563,6 +624,7 @@ fn check_return_like(
     env: &ExecEnv,
     f: &FnItem,
     support_defs: &[String],
+    program: Option<&thermite_syntax::Program>,
     seed: u64,
     rlimit: f64,
     report: &mut ExecTvReport,
@@ -575,6 +637,7 @@ fn check_return_like(
             env,
             f,
             support_defs,
+            program,
             seed,
             rlimit,
             report,
@@ -606,6 +669,7 @@ fn check_corpus_expr(
     env: &ExecEnv,
     f: &FnItem,
     support_defs: &[String],
+    program: Option<&thermite_syntax::Program>,
     seed: u64,
     rlimit: f64,
     report: &mut ExecTvReport,
@@ -616,6 +680,18 @@ fn check_corpus_expr(
     let mut referenced = Vec::new();
     collect_free_paths(e, &mut referenced);
     for name in &referenced {
+        if let Some(reason) = env.unframed_locals.get(name) {
+            report.results.push(ExecResult {
+                label: label.to_string(),
+                verdict: ExecVerdict::Skipped {
+                    reason: format!(
+                        "the expr depends on local `{name}` whose exact source binding could not \
+                         be framed: {reason}"
+                    ),
+                },
+            });
+            return;
+        }
         if !env.declares(name) {
             report.results.push(ExecResult {
                 label: label.to_string(),
@@ -634,7 +710,11 @@ fn check_corpus_expr(
     // P_production — the exec lowering. A construct the exec lowering does not
     // cover (a method call, a spec-only form) → Skip (out of the pure-exec subset),
     // not a faithfulness verdict.
-    let p_production = match thermite_lower::lower_exec_expr(e) {
+    let lowered = match program {
+        Some(program) => thermite_lower::lower_exec_expr_in_program(program, e),
+        None => thermite_lower::lower_exec_expr(e),
+    };
+    let p_production = match lowered {
         Ok(p) => p,
         Err(err) => {
             report.results.push(ExecResult {
@@ -650,25 +730,32 @@ fn check_corpus_expr(
         }
     };
 
-    // The fn's source `req` is the best available overflow/index frame. It is
-    // included only when every var it references is env-declared (else its text
-    // would reference an undeclared param and the obligation would not compile, a
-    // framing failure rather than an infidelity). When included, its referenced vars
-    // join the obligation params so the `requires` typechecks. A `req` that cannot be
-    // included is dropped (the expr is then checked with no frame, adequate for a
-    // total expr like a literal/comparison; an arithmetic expr without an adequate
-    // bound discharges Unverifiable, not Faithful).
-    let req_text = corpus_req(f);
-    let req = match &req_text {
-        Some(text) => {
-            let req_vars: Vec<String> = collect_text_idents(text);
-            if req_vars.iter().all(|v| env.declares(v)) {
-                Some((text.clone(), req_vars))
-            } else {
-                None
+    // The fn's source `req` is the best available overflow/index frame. Determine
+    // its free variables from the parsed AST, then lower the predicate through the
+    // same contract-TV-certified spec path used by body TV. This is essential for
+    // frozen operations such as `FixedArray8.get`: raw source text would call an
+    // exec method from a Verus `requires`, which is neither the source semantics nor
+    // a valid spec expression.
+    let req = if f.contract.req.text.trim().is_empty() || f.contract.req.text.trim() == "true" {
+        None
+    } else {
+        let mut req_vars = Vec::new();
+        collect_free_paths(&f.contract.req.expr, &mut req_vars);
+        if req_vars.iter().all(|name| env.declares(name)) {
+            match crate::body_tv::lowered_body_req(f) {
+                Ok(Some(text)) => Some((text, req_vars)),
+                Ok(None) => None,
+                Err(reason) => {
+                    report.results.push(ExecResult {
+                        label: label.to_string(),
+                        verdict: ExecVerdict::Skipped { reason },
+                    });
+                    return;
+                }
             }
+        } else {
+            None
         }
-        None => None,
     };
 
     // The obligation params: every var the expr references, plus every var the
@@ -678,6 +765,13 @@ fn check_corpus_expr(
         for v in req_vars {
             if !needed.contains(v) {
                 needed.push(v.clone());
+            }
+        }
+    }
+    if !env.local_assumptions.is_empty() {
+        for param in &env.params {
+            if !needed.contains(&param.name) {
+                needed.push(param.name.clone());
             }
         }
     }
@@ -691,12 +785,25 @@ fn check_corpus_expr(
             .collect(),
         ret_type: ret_ty.to_string(),
         req: req.map(|(text, _)| text),
+        local_assumptions: env.local_assumptions.clone(),
         slice_params: env
             .slice_params
             .iter()
             .filter(|n| needed.iter().any(|r| r == *n))
             .cloned()
             .collect(),
+        named_params: env
+            .named_params
+            .iter()
+            .filter(|(name, _)| needed.iter().any(|referenced| referenced == name))
+            .cloned()
+            .collect(),
+        struct_fields: program
+            .map(crate::body_tv::exec_struct_field_decls)
+            .unwrap_or_default(),
+        call_decls: program
+            .map(crate::body_tv::exec_call_decls)
+            .unwrap_or_default(),
     };
 
     let program = match exec_equivalence_obligation(e, &p_production, &frame) {
@@ -720,55 +827,6 @@ fn check_corpus_expr(
         label: label.to_string(),
         verdict,
     });
-}
-
-/// Extract the candidate identifiers a `req` text references (a heuristic over the
-/// verbatim source: alphanumeric/`_` runs starting with a letter/`_`, excluding the
-/// dotted `.len()`-style method tail and numeric literals). A bare ident that is an
-/// env param is a referenced var; anything else (a keyword, a method name, a
-/// `u32::MAX`-style path segment) is not an env param, so the all-declared gate drops
-/// the `req` if it mentions any non-param ident. Only the leading segment of a dotted
-/// access (`xs.len()` → `xs`) is a var; `.len`/`.MAX` tails are dropped.
-fn collect_text_idents(text: &str) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    let bytes: Vec<char> = text.chars().collect();
-    let mut i = 0;
-    while i < bytes.len() {
-        let c = bytes[i];
-        if c.is_ascii_alphabetic() || c == '_' {
-            // A leading-segment ident; consume the run.
-            let start = i;
-            while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == '_') {
-                i += 1;
-            }
-            let ident: String = bytes[start..i].iter().collect();
-            // Skip a `.`-tail (a method / field / assoc access) — it is not a var.
-            let after_dot = start > 0 && bytes[start - 1] == '.';
-            // Skip a `::`-tail leading segment is kept; the tail after `::` is an
-            // assoc item (`u32::MAX`'s `MAX`) — but it follows `:`, caught here.
-            let after_colon = start > 0 && bytes[start - 1] == ':';
-            if !after_dot && !after_colon && !out.contains(&ident) {
-                out.push(ident);
-            }
-        } else {
-            i += 1;
-        }
-    }
-    out
-}
-
-/// The corpus fn's source `req` text as the obligation's enclosing `requires` (the
-/// best available frame). `req true` → no requires (an empty frame). This is the
-/// contract `req`, which may not adequately bound an exec arithmetic expr's overflow
-/// (the source bound for `acc + xs[i]` lives in a loop `inv`, not the `req`); such an
-/// expr then discharges Unverifiable, not Faithful.
-fn corpus_req(f: &FnItem) -> Option<String> {
-    let text = f.contract.req.text.trim();
-    if text.is_empty() || text == "true" {
-        None
-    } else {
-        Some(text.to_string())
-    }
 }
 
 /// Collect the single-segment free-var path names an exec expr references (the
@@ -796,6 +854,28 @@ fn collect_free_paths(e: &Expr, out: &mut Vec<String>) {
                 collect_free_paths(a, out);
             }
         }
+        Expr::MethodCall { receiver, args, .. } => {
+            collect_free_paths(receiver, out);
+            for argument in args {
+                collect_free_paths(argument, out);
+            }
+        }
+        Expr::If { cond, then, else_ } => {
+            collect_free_paths(cond, out);
+            if let Some(tail) = &then.tail {
+                collect_free_paths(tail, out);
+            }
+            if let Some(tail) = &else_.tail {
+                collect_free_paths(tail, out);
+            }
+        }
+        Expr::Is { scrutinee, .. } => collect_free_paths(scrutinee, out),
+        Expr::Field { receiver, .. } => collect_free_paths(receiver, out),
+        Expr::StructLit { fields, .. } => {
+            for (_, value) in fields {
+                collect_free_paths(value, out);
+            }
+        }
         _ => {}
     }
 }
@@ -812,12 +892,18 @@ fn exec_type_spelling(ty: &Type) -> Option<(String, bool)> {
         Type::Prim(PrimType::U64) => Some(("u64".to_string(), false)),
         Type::Prim(PrimType::Usize) => Some(("usize".to_string(), false)),
         Type::Prim(PrimType::Bool) => Some(("bool".to_string(), false)),
-        Type::Ref { inner, .. } => match inner.as_ref() {
+        Type::Named(name) => Some((name.clone(), false)),
+        Type::Ref { mutable, inner } => match inner.as_ref() {
             // `&[u32]` → the exec slice binding (indexed element-wise as `xs[i as
             // int]` in the reference, AC-5). Only a `u32` element slice is framed.
-            Type::Slice(elem) => {
-                exec_type_spelling(elem).map(|(spelling, _)| (format!("&[{spelling}]"), true))
-            }
+            Type::Slice(elem) => exec_type_spelling(elem).map(|(spelling, _)| {
+                let borrowed = if *mutable {
+                    format!("&mut [{spelling}]")
+                } else {
+                    format!("&[{spelling}]")
+                };
+                (borrowed, true)
+            }),
             // A `&u64`/`&usize` borrow frames as the inner scalar.
             other => exec_type_spelling(other),
         },
@@ -928,11 +1014,13 @@ fn discharge(program: &str, label: &str, seed: u64, rlimit: f64) -> ExecVerdict 
         // Unverifiable, not Faithful.
         _ => {
             if !output.status.success() {
+                let diagnostic = combined.lines().take(12).collect::<Vec<_>>().join(" | ");
                 ExecVerdict::Divergent {
                     detail: format!(
                         "verus ABORTED (compile/parse) on the exec obligation for `{label}` \
                          — the production exec text did not compile/parse (the #122 `E0308` / \
-                         #146 cast-`<` mis-parse catch shapes): a real exec-lowering infidelity"
+                         #146 cast-`<` mis-parse catch shapes): a real exec-lowering infidelity; \
+                         tool diagnostic: {diagnostic}"
                     ),
                 }
             } else {
@@ -1038,6 +1126,48 @@ pub const EXEC_TV_DEFAULT_RLIMIT: f64 = DEFAULT_RLIMIT;
 /// AC-7).
 pub const EXEC_TV_GENERATED_DEFAULT_N: usize = 200;
 
+#[cfg(test)]
+mod lexical_state_tests {
+    use super::*;
+
+    #[test]
+    fn smp_ap_policy_threads_exact_prior_let_state() {
+        if Command::new("verus").arg("--version").output().is_err() {
+            eprintln!("SKIP: verus not on PATH -- SMP lexical-state control not discharged.");
+            return;
+        }
+        let parsed = thermite_syntax::parse(include_str!("../../conformance/kernel/smp.th"));
+        assert!(parsed.is_clean(), "parse errors: {:?}", parsed.errors);
+        let function = parsed.program.items.iter().find_map(|item| match item {
+            Item::Fn(function) if function.name == "ap_policy_bootstrap" => Some(function),
+            _ => None,
+        });
+        assert!(
+            function.is_some(),
+            "ap_policy_bootstrap must remain in the SMP source"
+        );
+        let mut report = ExecTvReport::default();
+        if let Some(function) = function {
+            exec_tv_fn(
+                &parsed.program,
+                function,
+                EXEC_TV_DEFAULT_SEED,
+                EXEC_TV_DEFAULT_RLIMIT,
+                &mut report,
+            );
+        }
+        assert_eq!(report.results.len(), 5, "{:#?}", report.results);
+        assert!(
+            report
+                .results
+                .iter()
+                .all(|result| result.verdict == ExecVerdict::Faithful),
+            "the AP discover/prepare/start/complete chain must refine through exact prior-let state: {:#?}",
+            report.results
+        );
+    }
+}
+
 // ---- forge-level Divergent regression tests (REQ-5; blocker #157) ----------
 //
 // The obligation-layer tests (`thermite-tv/tests/exec_teeth.rs` E1-E4) prove a
@@ -1064,7 +1194,7 @@ pub const EXEC_TV_GENERATED_DEFAULT_N: usize = 200;
 #[cfg(test)]
 mod divergent_teeth {
     use super::*;
-    use thermite_syntax::ast::BinOp;
+    use thermite_syntax::ast::{BinOp, Block};
 
     /// `true` iff a bare `verus` is spawnable (the same resolution `discharge`
     /// uses -- `Command::new("verus")`, i.e. PATH). Skip otherwise so the
@@ -1095,6 +1225,197 @@ mod divergent_teeth {
     // Pinned deterministic discharge config (mirrors `forge exec-tv`'s defaults).
     const SEED: u64 = EXEC_TV_DEFAULT_SEED;
     const RLIMIT: f64 = EXEC_TV_DEFAULT_RLIMIT;
+
+    #[test]
+    fn pure_if_free_vars_include_condition_and_both_tails() {
+        let source = Expr::If {
+            cond: Box::new(path("ready")),
+            then: Block {
+                stmts: vec![],
+                tail: Some(Box::new(path("first"))),
+            },
+            else_: Block {
+                stmts: vec![],
+                tail: Some(Box::new(path("fallback"))),
+            },
+        };
+        let mut names = Vec::new();
+        collect_free_paths(&source, &mut names);
+        assert_eq!(names, ["ready", "first", "fallback"]);
+    }
+
+    #[test]
+    fn method_free_vars_include_receiver_and_arguments() {
+        let source = Expr::MethodCall {
+            receiver: Box::new(path("xs")),
+            name: "probe".to_string(),
+            args: vec![path("index")],
+        };
+        let mut names = Vec::new();
+        collect_free_paths(&source, &mut names);
+        assert_eq!(names, ["xs", "index"]);
+    }
+
+    #[test]
+    fn is_test_free_vars_include_scrutinee() {
+        let source = Expr::Is {
+            scrutinee: Box::new(path("order")),
+            variant: vec!["Release".to_string()],
+        };
+        let mut names = Vec::new();
+        collect_free_paths(&source, &mut names);
+        assert_eq!(names, ["order"]);
+    }
+
+    fn enum_is_source() -> Expr {
+        Expr::Is {
+            scrutinee: Box::new(path("order")),
+            variant: vec!["Release".to_string()],
+        }
+    }
+
+    fn enum_is_frame() -> ExecObligationFrame {
+        ExecObligationFrame {
+            spec_defs: vec!["enum Ordering { Acquire, Release }".to_string()],
+            params: vec![ExecParamDecl::new("order", "Ordering")],
+            ret_type: "bool".to_string(),
+            named_params: vec![("order".to_string(), "Ordering".to_string())],
+            ..Default::default()
+        }
+    }
+
+    fn staged_call_source() -> Expr {
+        Expr::Call {
+            callee: Box::new(path("advance")),
+            args: vec![path("state")],
+        }
+    }
+
+    fn staged_call_frame(with_local_state: bool) -> ExecObligationFrame {
+        ExecObligationFrame {
+            spec_defs: vec!["struct Step { phase: u64, value: u64 }\n\
+                 spec fn advance_spec(state: Step) -> Step {\n\
+                     Step { phase: 1, value: state.value }\n\
+                 }\n\
+                 #[verifier::when_used_as_spec(advance_spec)]\n\
+                 fn advance(state: Step) -> (result: Step)\n\
+                     requires state.phase == 0,\n\
+                     ensures result.phase == 1, result.value == state.value,\n\
+                 { Step { phase: 1, value: state.value } }"
+                .to_string()],
+            params: vec![ExecParamDecl::new("state", "Step")],
+            ret_type: "Step".to_string(),
+            local_assumptions: with_local_state
+                .then(|| "state.phase == 0".to_string())
+                .into_iter()
+                .collect(),
+            named_params: vec![("state".to_string(), "Step".to_string())],
+            struct_fields: vec![
+                thermite_tv::ExecStructFieldDecl::new("Step", "phase", "u64"),
+                thermite_tv::ExecStructFieldDecl::new("Step", "value", "u64"),
+            ],
+            call_decls: vec![thermite_tv::ExecCallDecl::new(
+                "advance",
+                vec!["Step".to_string()],
+                "Step",
+            )],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn exact_prior_local_state_discharge_is_faithful() {
+        if !verus_on_path() {
+            eprintln!("SKIP: verus not on PATH -- lexical-state control not discharged.");
+            return;
+        }
+        let program = exec_equivalence_obligation(
+            &staged_call_source(),
+            "advance(state)",
+            &staged_call_frame(true),
+        )
+        .expect("the lexical-state obligation builds");
+        assert_eq!(
+            discharge(&program, "teeth.local-state.faithful", SEED, RLIMIT),
+            ExecVerdict::Faithful
+        );
+    }
+
+    #[test]
+    fn missing_prior_local_state_cannot_be_marked_faithful() {
+        if !verus_on_path() {
+            eprintln!("SKIP: verus not on PATH -- missing lexical-state tooth not discharged.");
+            return;
+        }
+        let program = exec_equivalence_obligation(
+            &staged_call_source(),
+            "advance(state)",
+            &staged_call_frame(false),
+        )
+        .expect("the underframed lexical-state obligation builds");
+        let verdict = discharge(&program, "teeth.local-state.missing", SEED, RLIMIT);
+        assert_ne!(
+            verdict,
+            ExecVerdict::Faithful,
+            "an underframed staged call must never receive a faithful verdict"
+        );
+    }
+
+    #[test]
+    fn wrong_staged_aggregate_production_is_divergent() {
+        if !verus_on_path() {
+            eprintln!("SKIP: verus not on PATH -- staged aggregate tooth not discharged.");
+            return;
+        }
+        let program = exec_equivalence_obligation(
+            &staged_call_source(),
+            "Step { phase: 2, value: state.value }",
+            &staged_call_frame(true),
+        )
+        .expect("the wrong staged aggregate obligation builds");
+        let verdict = discharge(&program, "teeth.local-state.wrong", SEED, RLIMIT);
+        assert!(
+            matches!(verdict, ExecVerdict::Divergent { .. }),
+            "a changed staged aggregate state must be Divergent; got {verdict:?}"
+        );
+    }
+
+    #[test]
+    fn faithful_enum_discriminant_classifies_faithful() {
+        if !verus_on_path() {
+            eprintln!("SKIP: verus not on PATH -- enum discriminant control not discharged.");
+            return;
+        }
+        let prog = exec_equivalence_obligation(
+            &enum_is_source(),
+            "matches!(order, Ordering::Release { .. })",
+            &enum_is_frame(),
+        )
+        .expect("enum discriminant obligation builds");
+        assert_eq!(
+            discharge(&prog, "teeth.enum.faithful", SEED, RLIMIT),
+            ExecVerdict::Faithful
+        );
+    }
+
+    #[test]
+    fn wrong_enum_discriminant_classifies_divergent() {
+        if !verus_on_path() {
+            eprintln!("SKIP: verus not on PATH -- enum wrong-variant tooth not discharged.");
+            return;
+        }
+        let prog = exec_equivalence_obligation(
+            &enum_is_source(),
+            "matches!(order, Ordering::Acquire { .. })",
+            &enum_is_frame(),
+        )
+        .expect("wrong enum discriminant obligation builds");
+        let verdict = discharge(&prog, "teeth.enum.wrong-variant", SEED, RLIMIT);
+        assert!(
+            matches!(verdict, ExecVerdict::Divergent { .. }),
+            "a wrong enum variant must be Divergent; got {verdict:?}"
+        );
+    }
 
     /// The E3 source `a + b` with the no-overflow frame `a + b <= 0xFFFF` (the
     /// faithful checked add is total, so a counterexample on a wrong production is

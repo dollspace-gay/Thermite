@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: 9e6f82caf75643f6752dc4b87d4a9d71b6b777cdb69617b582614e6548cc0e91 (re-pinned 2026-07-31 after exposing exact reachable ADT dependencies to the additive L3 path; existing check behavior remains regression-covered)
+audited-content-sha256: 8a15ea516770f59b125ce60246ccc3c27713dcd4b1740464acc6e7317511d15b (re-pinned 2026-08-01 after auditing frozen-boundary declaration evidence; existing check behavior remains regression-covered)
 governs: forge/src/check.rs
 thesis-refs:
   - thermite-design.md §5.1
@@ -26,6 +26,13 @@ certificate fields must match the golden `conformance/sum.cert.json`.
 
 This component is SHIPPED (`forge/src/check.rs`; all REQs SHIPPED — see the
 REQ status table).
+
+> **Kernel direct-refinement amendment (2026-08-01).** Per-item checking still
+> emits L1 for a boundary declaration and L3-to-boundary for a proved caller;
+> it does not infer an implementation proof from a registry entry. The
+> kernel-image composition consumes those certificates only as declaration and
+> call-site evidence, then requires a separate exact combined Verus proof and
+> explicit frozen-boundary-to-TPL mapping before recording direct refinement.
 
 > **Amendment 2026-06-12 (doc-freshness re-audit, #262).** Re-verified against the
 > current tree (`dff9ae86`, 16 post-pin commits to `check.rs`). Corrections:

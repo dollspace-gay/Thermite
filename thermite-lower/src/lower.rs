@@ -365,6 +365,12 @@ enum Pos {
 struct Ctx<'a> {
     pos: Pos,
     slices: &'a [&'a str],
+    /// True when slice-typed values in this context are already Verus `Seq<T>`
+    /// values rather than executable Rust slices. This is the case in a
+    /// user-declared `spec fn` body because `spec_param_type` lowers `&[T]` to
+    /// `Seq<T>`. Indexing such a value must emit `xs[i]`, never the runtime-slice
+    /// view form `xs@[i]`.
+    slice_values_are_seq: bool,
     /// Names of `spec fn`s lowered with a `nat` return type (the head-fold-sum
     /// shape — OQ-1). An `Eq` between a `u64`-valued scalar and a call to one of
     /// these coerces the scalar with `as nat`, since `nat` and `u64` are not the
@@ -473,6 +479,7 @@ impl<'a> Ctx<'a> {
         Ctx {
             pos: Pos::Exec,
             slices: NO_SLICES,
+            slice_values_are_seq: false,
             nat_fns: NO_SLICES,
             variants: NO_VARIANTS,
             nat_ret: false,
@@ -488,6 +495,7 @@ impl<'a> Ctx<'a> {
         Ctx {
             pos: Pos::Spec,
             slices,
+            slice_values_are_seq: false,
             nat_fns,
             variants: NO_VARIANTS,
             nat_ret: false,
@@ -506,6 +514,7 @@ impl<'a> Ctx<'a> {
         Ctx {
             pos: Pos::Spec,
             slices: NO_SLICES,
+            slice_values_are_seq: true,
             nat_fns: NO_SLICES,
             variants: NO_VARIANTS,
             nat_ret: false,
@@ -731,6 +740,11 @@ fn lower_with_profile(
             .values()
             .any(|export| export.visibility == L3ExportVisibility::Crate)
     });
+    let direct_frozen_boundaries = deterministic_composition_enums
+        && matches!(
+            library.as_ref().map(|(_, target)| target),
+            Some(L3LibraryTarget::Kernel)
+        );
     let mut out = String::new();
     if let Some((_, target)) = &library {
         if matches!(target, L3LibraryTarget::Kernel) {
@@ -746,6 +760,9 @@ fn lower_with_profile(
         Some(L3LibraryTarget::Kernel)
     ) {
         out.push_str("use verus_builtin::*;\nuse verus_builtin_macros::*;\n");
+        if program_needs_kernel_vstd_prelude(program) {
+            out.push_str("use vstd::prelude::*;\n");
+        }
     } else {
         out.push_str("use vstd::prelude::*;\n");
     }
@@ -794,6 +811,13 @@ fn lower_with_profile(
     );
     let vec_wrappers = emit_vec_wrappers(program, kernel_minimal_collections)?;
     out.push_str(&vec_wrappers);
+
+    // Kernel migration support: `FixedArray8<T>` is an allocation-free,
+    // monomorphized storage primitive. It lowers to eight concrete fields and
+    // verified fill/get/set operations, so the kernel target never substitutes
+    // a heap-backed Vec for fixed-capacity state.
+    let fixed_array_wrappers = emit_fixed_array8_wrappers(program)?;
+    out.push_str(&fixed_array_wrappers);
 
     // (1c.5) Cluster C12 (`.design/basis/13-map.md` REQ-4): the bounded verified
     // `Map<K, V>` wrapper struct `TMap<K,V>` over a `vstd::vec::Vec<(K, V)>`-of-pairs
@@ -1051,6 +1075,7 @@ fn lower_with_profile(
                     &CallLoweringContext {
                         variants: &variants,
                         spec_fn_param_types: &spec_fn_param_types,
+                        direct_frozen_boundaries,
                     },
                     L3FnVisibility::Private,
                 )?
@@ -1075,6 +1100,7 @@ fn lower_with_profile(
                     &CallLoweringContext {
                         variants: &variants,
                         spec_fn_param_types: &spec_fn_param_types,
+                        direct_frozen_boundaries,
                     },
                     library
                         .as_ref()
@@ -1088,7 +1114,7 @@ fn lower_with_profile(
             // `struct` lowers to a Verus `pub struct` + the `well_formed`
             // type-invariant predicate (REQ-8); a (recursive) `enum` lowers to a
             // Verus `enum` with `Box<T>` at the recursive occurrence (REQ-10).
-            Item::Struct(s) => lower_struct(s, &spec_fn_param_types)?,
+            Item::Struct(s) => lower_struct(s, &spec_fn_param_types, direct_frozen_boundaries)?,
             Item::Enum(e) if deterministic_composition_enums => lower_composition_enum(e)?,
             Item::Enum(e) => lower_enum(e)?,
             // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 lowering/cert
@@ -1178,6 +1204,53 @@ fn program_needs_kernel_alloc(program: &Program) -> bool {
     })
 }
 
+fn program_needs_kernel_vstd_prelude(program: &Program) -> bool {
+    program.items.iter().any(|item| match item {
+        Item::Fn(function) => {
+            function
+                .params
+                .iter()
+                .any(|param| type_contains_slice(&param.ty))
+                || type_contains_slice(&function.ret)
+        }
+        Item::SpecFn(function) => {
+            function
+                .params
+                .iter()
+                .any(|param| type_contains_slice(&param.ty))
+                || type_contains_slice(&function.ret)
+        }
+        Item::Struct(item) => item
+            .fields
+            .iter()
+            .any(|field| type_contains_slice(&field.ty)),
+        Item::Enum(item) => item.variants.iter().any(|variant| match &variant.shape {
+            VariantShape::Unit => false,
+            VariantShape::Tuple(types) => types.iter().any(type_contains_slice),
+            VariantShape::Struct(fields) => {
+                fields.iter().any(|field| type_contains_slice(&field.ty))
+            }
+        }),
+        Item::Forge(_) => false,
+    })
+}
+
+fn type_contains_slice(ty: &Type) -> bool {
+    match ty {
+        Type::Slice(_) => true,
+        Type::Ref { inner, .. }
+        | Type::Box(inner)
+        | Type::Generic { arg: inner, .. }
+        | Type::Vec(inner)
+        | Type::Option(inner) => type_contains_slice(inner),
+        Type::Result(ok, err) | Type::Map(ok, err) => {
+            type_contains_slice(ok) || type_contains_slice(err)
+        }
+        Type::Tuple(types) => types.iter().any(type_contains_slice),
+        Type::Prim(_) | Type::Unit | Type::Named(_) | Type::String => false,
+    }
+}
+
 fn type_needs_kernel_alloc(ty: &Type) -> bool {
     match ty {
         Type::Box(_) | Type::String | Type::Map(_, _) => true,
@@ -1219,8 +1292,34 @@ fn type_needs_kernel_alloc(ty: &Type) -> bool {
 fn lower_struct(
     s: &thermite_syntax::ast::StructItem,
     spec_fn_param_types: &[(&str, &[PrimType])],
+    bind_frozen_platform_type: bool,
 ) -> Result<String, LowerError> {
     let mut out = String::new();
+    if let Some(target) = &s.frozen {
+        if !s.fields.is_empty() || s.inv.is_some() {
+            return Err(LowerError::Unsupported {
+                what: format!(
+                    "frozen platform type `{}` must be a fieldless struct without an invariant",
+                    s.name
+                ),
+                span: s.span,
+            });
+        }
+        let rust_path =
+            frozen_kernel_type_rust_path(target).ok_or_else(|| LowerError::Unsupported {
+                what: format!("unknown frozen platform type registry name `{target}`"),
+                span: s.span,
+            })?;
+        if bind_frozen_platform_type {
+            writeln!(out, "pub type {} = {rust_path};", s.name).ok();
+        } else {
+            writeln!(out, "#[repr(C)]\npub struct {} {{}}", s.name).ok();
+        }
+        return Ok(out);
+    }
+    if s.sealed {
+        out.push_str("#[repr(C)]\n");
+    }
     writeln!(out, "pub struct {} {{", s.name).ok();
     for field in &s.fields {
         let ty = lower_type(&field.ty)?;
@@ -1264,6 +1363,17 @@ fn lower_struct(
         out.push_str("    }\n}\n");
     }
     Ok(out)
+}
+
+/// Map a source-declared frozen platform type to the exact direct-Verus type
+/// supplied by the canonical kernel composition module. Unknown or drifting
+/// names fail closed in [`lower_struct`].
+#[must_use]
+pub fn frozen_kernel_type_rust_path(target: &str) -> Option<&'static str> {
+    match target {
+        "kernel::atomic::cell@v1" => Some("atomic::ExactAtomicU64"),
+        _ => None,
+    }
 }
 
 /// Lower an invariant with the same unsigned semantics as Forge's QF_BV query.
@@ -1726,6 +1836,7 @@ fn lower_inv_operand(
 /// the grounded verified meaning is unchanged.
 fn lower_enum(e: &EnumItem) -> Result<String, LowerError> {
     let mut out = String::new();
+    out.push_str("#[repr(C)]\n");
     writeln!(out, "pub enum {} {{", e.name).ok();
     for variant in &e.variants {
         match &variant.shape {
@@ -2964,6 +3075,7 @@ fn fn_is_diverge(f: &FnItem) -> bool {
 struct CallLoweringContext<'a> {
     variants: &'a [(&'a str, &'a str)],
     spec_fn_param_types: &'a [(&'a str, &'a [PrimType])],
+    direct_frozen_boundaries: bool,
 }
 
 fn lower_fn(
@@ -2977,6 +3089,21 @@ fn lower_fn(
 ) -> Result<String, LowerError> {
     let variants = call_context.variants;
     let spec_fn_param_types = call_context.spec_fn_param_types;
+    if call_context.direct_frozen_boundaries
+        && f.slag.is_none()
+        && f.boundary
+            .as_ref()
+            .is_some_and(|boundary| frozen_kernel_boundary_symbol(&boundary.target).is_some())
+    {
+        return lower_direct_frozen_boundary_fn(
+            f,
+            nat_fns,
+            inv_structs,
+            string_fields,
+            user_string_spec_fns,
+            spec_fn_param_types,
+        );
+    }
     // The honesty gate: external_body iff a declared trust boundary
     // (`#[boundary]`/`#[slag]`), never a regular fn. Emitted only into a caller's
     // sub-program as a woven dependency (forge's `item_subprogram`). The 2-bool
@@ -3052,6 +3179,64 @@ fn lower_fn(
     // `spec fn` body (`lower_spec_fn`) reach the byte-view dispatch (#127).
     let body = lower_fn_body(f, nat_fns, string_fields, variants, spec_fn_param_types)?;
     out.push_str(&body);
+    Ok(out)
+}
+
+/// In a receipt-bound kernel composition, a canonical frozen boundary calls the
+/// exact direct-Verus implementation in the domain shell. Because this wrapper
+/// is an ordinary checked Verus function, its Thermite `requires`/`ensures` are
+/// proved against that exact body rather than assumed through `external_body`.
+fn lower_direct_frozen_boundary_fn(
+    f: &FnItem,
+    nat_fns: &[&str],
+    inv_structs: &[&str],
+    string_fields: &[&str],
+    user_string_spec_fns: &[&str],
+    spec_fn_param_types: &[(&str, &[PrimType])],
+) -> Result<String, LowerError> {
+    let boundary = f.boundary.as_ref().ok_or_else(|| LowerError::Unsupported {
+        what: format!(
+            "direct frozen lowering requested for non-boundary `{}`",
+            f.name
+        ),
+        span: f.span,
+    })?;
+    let symbol =
+        frozen_kernel_boundary_symbol(&boundary.target).ok_or_else(|| LowerError::Unsupported {
+            what: format!("unknown frozen kernel boundary `{}`", boundary.target),
+            span: f.span,
+        })?;
+    let operation = boundary
+        .target
+        .strip_prefix("kernel::")
+        .and_then(|rest| rest.strip_suffix("@v1"))
+        .ok_or_else(|| LowerError::Unsupported {
+            what: format!("malformed frozen kernel boundary `{}`", boundary.target),
+            span: f.span,
+        })?;
+    let (domain, _) = operation
+        .split_once("::")
+        .ok_or_else(|| LowerError::Unsupported {
+            what: format!("malformed frozen kernel boundary `{}`", boundary.target),
+            span: f.span,
+        })?;
+
+    let mut out = lower_fn_signature(
+        f,
+        nat_fns,
+        inv_structs,
+        string_fields,
+        user_string_spec_fns,
+        spec_fn_param_types,
+        L3FnVisibility::Private,
+    )?;
+    let args = f
+        .params
+        .iter()
+        .map(|parameter| parameter.name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    writeln!(out, "{{\n    {domain}::{symbol}({args})\n}}").ok();
     Ok(out)
 }
 
@@ -3290,6 +3475,28 @@ pub fn lower_exec_expr(expr: &Expr) -> Result<String, LowerError> {
     lower_expr(expr, Ctx::exec(), 0, zero_span())
 }
 
+/// Lower one exec expression with the exact program-wide enum-variant context used
+/// by ordinary function-body emission. Unlike [`lower_exec_expr`]'s intentionally
+/// context-free generator entry, this is the production entry for corpus/body TV:
+/// a user-enum discriminant must lower to `Enum::Variant`, exactly as it does in the
+/// linked library, rather than to an unqualified standalone pattern.
+pub fn lower_exec_expr_in_program(program: &Program, expr: &Expr) -> Result<String, LowerError> {
+    let variants: Vec<(&str, &str)> = program
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Enum(item) => Some(item),
+            _ => None,
+        })
+        .flat_map(|item| {
+            item.variants
+                .iter()
+                .map(move |variant| (variant.name.as_str(), item.name.as_str()))
+        })
+        .collect();
+    lower_expr(expr, Ctx::exec().with_variants(&variants), 0, zero_span())
+}
+
 /// Lower a straight-line exec body (a [`Block`]) to its production Verus exec body
 /// text (`.design/verified/exec-stmt-tv.md` REQ-3, blocker #161; epic crosslink
 /// #158). This is the per-body analogue of [`lower_exec_expr`]: where the per-expr
@@ -3327,6 +3534,27 @@ pub fn lower_exec_expr(expr: &Expr) -> Result<String, LowerError> {
 /// lowering does not cover.
 pub fn lower_exec_body(block: &Block) -> Result<String, LowerError> {
     lower_block_inner(block, Ctx::exec(), 0, zero_span())
+}
+
+/// Lower one straight-line body with the exact program-wide enum-variant context
+/// used by full function emission. This is the body-TV production path for named
+/// enum discriminants and patterns; it otherwise reuses the same block lowerer as
+/// [`lower_exec_body`].
+pub fn lower_exec_body_in_program(program: &Program, block: &Block) -> Result<String, LowerError> {
+    let variants: Vec<(&str, &str)> = program
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Enum(item) => Some(item),
+            _ => None,
+        })
+        .flat_map(|item| {
+            item.variants
+                .iter()
+                .map(move |variant| (variant.name.as_str(), item.name.as_str()))
+        })
+        .collect();
+    lower_block_inner(block, Ctx::exec().with_variants(&variants), 0, zero_span())
 }
 
 /// Emit a total public wrapper for an export with a nontrivial executable
@@ -3450,6 +3678,22 @@ fn lower_external_body_fn(
     public: bool,
 ) -> Result<String, LowerError> {
     let mut out = String::new();
+    let linked_boundary = f.boundary.as_ref().and_then(|boundary| {
+        frozen_kernel_boundary_symbol(&boundary.target).map(|symbol| (symbol, boundary))
+    });
+    if let Some((symbol, _)) = &linked_boundary {
+        writeln!(out, "extern \"C\" {{").ok();
+        writeln!(out, "    #[link_name = \"{symbol}\"]").ok();
+        write!(out, "    fn __thermite_boundary_{}(", f.name).ok();
+        for (index, parameter) in f.params.iter().enumerate() {
+            if index != 0 {
+                out.push_str(", ");
+            }
+            write!(out, "{}: {}", parameter.name, lower_type(&parameter.ty)?).ok();
+        }
+        writeln!(out, ") -> {};", lower_type(&f.ret)?).ok();
+        out.push_str("}\n\n");
+    }
     out.push_str("#[verifier::external_body]\n");
     out.push_str(&lower_fn_signature(
         f,
@@ -3464,13 +3708,45 @@ fn lower_external_body_fn(
             L3FnVisibility::Private
         },
     )?);
-    // The body is suppressed: verus does not check an external_body body, so the
-    // synthetic `{ unimplemented!() }` stands in for the foreign/fiat body the
-    // caller trusts by declaration (§8/§9). The real `f.body` (None for a
-    // boundary fn, a fiat body for slag) is not lowered here; re-lowering a
-    // slag body would re-introduce the obligation §8 exempts (OQ-2).
-    out.push_str("{\n    unimplemented!()\n}\n");
+    // A canonical frozen-kernel boundary emits a real foreign call to the exact
+    // symbol spelling independently pinned by Forge's registry validation. The
+    // body remains `external_body` for proof purposes, but executable code no
+    // longer compiles a parallel `unimplemented!()` placeholder. Non-kernel
+    // boundary namespaces and slag retain the generic fiat placeholder.
+    if linked_boundary.is_some() {
+        write!(out, "{{\n    unsafe {{ __thermite_boundary_{}(", f.name).ok();
+        for (index, parameter) in f.params.iter().enumerate() {
+            if index != 0 {
+                out.push_str(", ");
+            }
+            out.push_str(&parameter.name);
+        }
+        out.push_str(") }\n}\n");
+    } else {
+        out.push_str("{\n    unimplemented!()\n}\n");
+    }
     Ok(out)
+}
+
+/// Map the canonical frozen kernel namespace to its external implementation
+/// symbol. Forge independently compares this result with the registry entry;
+/// unknown namespaces and malformed/version-drifting names remain generic
+/// proof-only boundaries and receive no executable foreign binding.
+#[must_use]
+pub fn frozen_kernel_boundary_symbol(target: &str) -> Option<String> {
+    let operation = target.strip_prefix("kernel::")?.strip_suffix("@v1")?;
+    let (domain, name) = operation.split_once("::")?;
+    if domain.is_empty()
+        || name.is_empty()
+        || name.contains("::")
+        || !domain
+            .bytes()
+            .chain(name.bytes())
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+    {
+        return None;
+    }
+    Some(format!("tpl_{domain}_{name}"))
 }
 
 // ---------------------------------------------------------------------------
@@ -4563,6 +4839,7 @@ fn lower_type(ty: &Type) -> Result<String, LowerError> {
             let i = lower_type(inner)?;
             Ok(format!("[{i}]"))
         }
+        Type::Generic { name, arg } if name == "FixedArray8" => fixed_array8_name(arg),
         Type::Generic { name, arg } => {
             let a = lower_type(arg)?;
             Ok(format!("{name}<{a}>"))
@@ -4757,6 +5034,31 @@ pub(crate) fn is_map_new(expr: &Expr) -> bool {
                 && matches!(callee.as_ref(), Expr::Path(segs)
                     if segs.len() == 2 && segs[0] == "Map" && segs[1] == "new")
     )
+}
+
+fn fixed_array8_fill_init<'a>(
+    ty: Option<&'a Type>,
+    expr: &'a Expr,
+) -> Option<(&'a Type, &'a Expr)> {
+    let Type::Generic { name, arg } = ty? else {
+        return None;
+    };
+    if name != FIXED_ARRAY8_NAME {
+        return None;
+    }
+    let Expr::Call { callee, args } = expr else {
+        return None;
+    };
+    let Expr::Path(segments) = callee.as_ref() else {
+        return None;
+    };
+    if segments.as_slice() != [FIXED_ARRAY8_NAME, "fill"] {
+        return None;
+    }
+    let [value] = args.as_slice() else {
+        return None;
+    };
+    Some((arg, value))
 }
 
 /// True iff a `Map` key type is `Copy` (`.design/basis/13-map.md` OQ-4): v1
@@ -5057,6 +5359,227 @@ fn emit_one_kernel_vec_wrapper(elem: &Type) -> Result<String, LowerError> {
     out.push_str("    pub open spec fn len(&self) -> nat { self.length as nat }\n");
     out.push_str("}\n");
     Ok(out)
+}
+
+const FIXED_ARRAY8_NAME: &str = "FixedArray8";
+const FIXED_ARRAY8_CAPACITY: usize = 8;
+
+fn fixed_array8_name(elem: &Type) -> Result<String, LowerError> {
+    if !elem_is_copy(elem) {
+        return Err(LowerError::Unsupported {
+            what: format!(
+                "FixedArray8 element type {:?} (the allocation-free v1 primitive supports Copy scalar elements)",
+                lower_type(elem).unwrap_or_else(|_| "<unlowerable>".to_string())
+            ),
+            span: zero_span(),
+        });
+    }
+    Ok(format!("TFixedArray8{}", tmap_type_suffix(elem)?))
+}
+
+fn note_fixed_array8_elems(ty: &Type, elems: &mut Vec<Type>) {
+    match ty {
+        Type::Generic { name, arg } if name == FIXED_ARRAY8_NAME => {
+            note_fixed_array8_elems(arg, elems);
+            let elem = (**arg).clone();
+            if !elems.contains(&elem) {
+                elems.push(elem);
+            }
+        }
+        Type::Ref { inner, .. }
+        | Type::Slice(inner)
+        | Type::Box(inner)
+        | Type::Vec(inner)
+        | Type::Generic { arg: inner, .. }
+        | Type::Option(inner) => note_fixed_array8_elems(inner, elems),
+        Type::Result(ok, err) | Type::Map(ok, err) => {
+            note_fixed_array8_elems(ok, elems);
+            note_fixed_array8_elems(err, elems);
+        }
+        Type::Tuple(types) => {
+            for ty in types {
+                note_fixed_array8_elems(ty, elems);
+            }
+        }
+        Type::Prim(_) | Type::Unit | Type::Named(_) | Type::String => {}
+    }
+}
+
+fn note_block_fixed_array8_elems(block: &Block, elems: &mut Vec<Type>) {
+    for statement in &block.stmts {
+        match statement {
+            Stmt::Let { ty: Some(ty), .. } => note_fixed_array8_elems(ty, elems),
+            Stmt::If { then, else_, .. } => {
+                note_block_fixed_array8_elems(then, elems);
+                if let Some(otherwise) = else_ {
+                    note_block_fixed_array8_elems(otherwise, elems);
+                }
+            }
+            Stmt::Loop(loop_node) => note_block_fixed_array8_elems(&loop_node.body, elems),
+            Stmt::Let { ty: None, .. }
+            | Stmt::Assign { .. }
+            | Stmt::Return(_)
+            | Stmt::Expr(_)
+            | Stmt::Break
+            | Stmt::Continue => {}
+        }
+    }
+}
+
+fn collect_fixed_array8_elem_types(program: &Program) -> Vec<Type> {
+    let mut elems = Vec::new();
+    for item in &program.items {
+        match item {
+            Item::Fn(function) => {
+                for parameter in &function.params {
+                    note_fixed_array8_elems(&parameter.ty, &mut elems);
+                }
+                note_fixed_array8_elems(&function.ret, &mut elems);
+                if let Some(body) = &function.body {
+                    note_block_fixed_array8_elems(body, &mut elems);
+                }
+            }
+            Item::SpecFn(function) => {
+                for parameter in &function.params {
+                    note_fixed_array8_elems(&parameter.ty, &mut elems);
+                }
+                note_fixed_array8_elems(&function.ret, &mut elems);
+                note_block_fixed_array8_elems(&function.body, &mut elems);
+            }
+            Item::Struct(item) => {
+                for field in &item.fields {
+                    note_fixed_array8_elems(&field.ty, &mut elems);
+                }
+            }
+            Item::Enum(item) => {
+                for variant in &item.variants {
+                    match &variant.shape {
+                        VariantShape::Unit => {}
+                        VariantShape::Tuple(types) => {
+                            for ty in types {
+                                note_fixed_array8_elems(ty, &mut elems);
+                            }
+                        }
+                        VariantShape::Struct(fields) => {
+                            for field in fields {
+                                note_fixed_array8_elems(&field.ty, &mut elems);
+                            }
+                        }
+                    }
+                }
+            }
+            Item::Forge(_) => {}
+        }
+    }
+    elems
+}
+
+fn emit_fixed_array8_wrappers(program: &Program) -> Result<String, LowerError> {
+    let mut output = String::new();
+    for elem in collect_fixed_array8_elem_types(program) {
+        output.push_str(&emit_one_fixed_array8_wrapper(&elem)?);
+    }
+    Ok(output)
+}
+
+fn emit_one_fixed_array8_wrapper(elem: &Type) -> Result<String, LowerError> {
+    let name = fixed_array8_name(elem)?;
+    let element = lower_type(elem)?;
+    let mut output = String::new();
+    output.push('\n');
+    writeln!(output, "pub struct {name} {{").ok();
+    for index in 0..FIXED_ARRAY8_CAPACITY {
+        writeln!(output, "    pub slot{index}: {element},").ok();
+    }
+    output.push_str("}\n");
+    writeln!(output, "impl {name} {{").ok();
+    output.push_str("    pub open spec fn len(&self) -> nat { 8 }\n");
+    writeln!(
+        output,
+        "    pub open spec fn spec_get(&self, i: int) -> {element}"
+    )
+    .ok();
+    output.push_str("        recommends 0 <= i < 8,\n");
+    output.push_str("    {\n");
+    for index in 0..(FIXED_ARRAY8_CAPACITY - 1) {
+        writeln!(
+            output,
+            "        if i == {index} {{ self.slot{index} }} else"
+        )
+        .ok();
+    }
+    writeln!(
+        output,
+        "        {{ self.slot{} }}",
+        FIXED_ARRAY8_CAPACITY - 1
+    )
+    .ok();
+    output.push_str("    }\n");
+
+    writeln!(
+        output,
+        "    pub fn fill(value: {element}) -> (result: {name})"
+    )
+    .ok();
+    output.push_str("        ensures forall|i: int| 0 <= i < 8 ==> result.spec_get(i) == value,\n");
+    output.push_str("    {\n");
+    writeln!(output, "        {name} {{").ok();
+    for index in 0..FIXED_ARRAY8_CAPACITY {
+        writeln!(output, "            slot{index}: value,").ok();
+    }
+    output.push_str("        }\n");
+    output.push_str("    }\n");
+
+    writeln!(
+        output,
+        "    pub fn get(&self, i: usize) -> (result: {element})"
+    )
+    .ok();
+    output.push_str("        requires i < 8,\n");
+    output.push_str("        ensures result == self.spec_get(i as int),\n");
+    output.push_str("    {\n");
+    for index in 0..(FIXED_ARRAY8_CAPACITY - 1) {
+        writeln!(
+            output,
+            "        if i == {index} {{ self.slot{index} }} else"
+        )
+        .ok();
+    }
+    writeln!(
+        output,
+        "        {{ self.slot{} }}",
+        FIXED_ARRAY8_CAPACITY - 1
+    )
+    .ok();
+    output.push_str("    }\n");
+
+    writeln!(
+        output,
+        "    pub fn set(&mut self, i: usize, value: {element})"
+    )
+    .ok();
+    output.push_str("        requires i < 8,\n");
+    output.push_str("        ensures\n");
+    output.push_str("            final(self).spec_get(i as int) == value,\n");
+    output.push_str("            forall|j: int| 0 <= j < 8 && j != i\n");
+    output.push_str("                ==> final(self).spec_get(j) == old(self).spec_get(j),\n");
+    output.push_str("    {\n");
+    for index in 0..(FIXED_ARRAY8_CAPACITY - 1) {
+        writeln!(
+            output,
+            "        if i == {index} {{ self.slot{index} = value; }} else"
+        )
+        .ok();
+    }
+    writeln!(
+        output,
+        "        {{ self.slot{} = value; }}",
+        FIXED_ARRAY8_CAPACITY - 1
+    )
+    .ok();
+    output.push_str("    }\n");
+    output.push_str("}\n");
+    Ok(output)
 }
 
 /// Emit one `TVec<elem>` wrapper struct + its verified op `impl` for a single
@@ -8567,9 +9090,10 @@ fn is_nat_fn_call(expr: &Expr, ctx: Ctx) -> bool {
 }
 
 /// Lower an `Index` expression across the four `IndexArg` forms (REQ-3/REQ-5).
-/// In spec context: `xs[i]`→`xs@[i as int]`, `&xs[..i]`→`xs@.subrange(0, i as
-/// int)`, `xs[i..]`→`xs@.subrange(i as int, xs@.len() as int)`,
-/// `xs[i..j]`→`xs@.subrange(i as int, j as int)`. In exec context, plain Rust.
+/// In a contract over an executable slice: `xs[i]`→`xs@[i as int]`,
+/// `&xs[..i]`→`xs@.subrange(0, i as int)`, and ranges likewise. A `spec fn`
+/// slice parameter is already a `Seq<T>`, so the same forms omit `@`. In exec
+/// context, indexing remains plain Rust.
 fn lower_index(
     base: &Expr,
     index: &IndexArg,
@@ -8578,23 +9102,30 @@ fn lower_index(
     span: Span,
 ) -> Result<String, LowerError> {
     let b = lower_expr(base, ctx, depth, span)?;
+    let spec_base = if ctx.slice_values_are_seq {
+        b.clone()
+    } else {
+        format!("{b}@")
+    };
     match (ctx.pos, index) {
         (Pos::Spec, IndexArg::Single(i)) => {
             let idx = lower_expr(i, ctx, depth, span)?;
-            Ok(format!("{b}@[{idx} as int]"))
+            Ok(format!("{spec_base}[{idx} as int]"))
         }
         (Pos::Spec, IndexArg::RangeTo(i)) => {
             let idx = lower_expr(i, ctx, depth, span)?;
-            Ok(format!("{b}@.subrange(0, {idx} as int)"))
+            Ok(format!("{spec_base}.subrange(0, {idx} as int)"))
         }
         (Pos::Spec, IndexArg::RangeFrom(i)) => {
             let idx = lower_expr(i, ctx, depth, span)?;
-            Ok(format!("{b}@.subrange({idx} as int, {b}@.len() as int)"))
+            Ok(format!(
+                "{spec_base}.subrange({idx} as int, {spec_base}.len() as int)"
+            ))
         }
         (Pos::Spec, IndexArg::Range(i, j)) => {
             let lo = lower_expr(i, ctx, depth, span)?;
             let hi = lower_expr(j, ctx, depth, span)?;
-            Ok(format!("{b}@.subrange({lo} as int, {hi} as int)"))
+            Ok(format!("{spec_base}.subrange({lo} as int, {hi} as int)"))
         }
         (Pos::Exec, IndexArg::Single(i)) => {
             let idx = lower_expr(i, ctx, depth, span)?;
@@ -9309,6 +9840,10 @@ fn lower_stmt(stmt: &Stmt, ctx: Ctx, indent: usize) -> Result<String, LowerError
                 // rewrite above; the `(K, V)` pair comes from the `let` annotation.
                 let wname = tmap_name(k.as_ref(), v.as_ref())?;
                 format!("{wname} {{ data: Vec::new() }}")
+            } else if let Some((element, value)) = fixed_array8_fill_init(ty.as_ref(), init) {
+                let wrapper = fixed_array8_name(element)?;
+                let value = lower_expr(value, ctx, 0, zero_span())?;
+                format!("{wrapper}::fill({value})")
             } else {
                 lower_expr(init, ctx, 0, zero_span())?
             };
@@ -10292,6 +10827,37 @@ mod exec_expr_tests {
             index: IndexArg::Single(Box::new(path("i"))),
         };
         assert_eq!(lower_exec_expr(&e).unwrap(), "xs[i]");
+    }
+
+    #[test]
+    fn program_context_qualifies_exec_enum_discriminant() {
+        let parsed = thermite_syntax::parse(
+            "enum Ordering { Acquire, Release }\n\
+             fn legal(order: Ordering) -> bool\n\
+               req true\n\
+               ens result == (order is Release)\n\
+               fx pure\n\
+             { order is Release }\n",
+        );
+        assert!(parsed.is_clean(), "parse errors: {:?}", parsed.errors);
+        let function = parsed
+            .program
+            .items
+            .iter()
+            .find_map(|item| match item {
+                Item::Fn(function) if function.name == "legal" => Some(function),
+                _ => None,
+            })
+            .expect("legal function is present");
+        let tail = function
+            .body
+            .as_ref()
+            .and_then(|body| body.tail.as_deref())
+            .expect("legal function has a tail");
+        assert_eq!(
+            lower_exec_expr_in_program(&parsed.program, tail).unwrap(),
+            "matches!(order, Ordering::Release { .. })"
+        );
     }
 
     #[test]

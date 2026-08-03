@@ -1,6 +1,7 @@
 //! Exact-source rich-state Thermite/direct-Verus composition builds.
 
 use super::*;
+use std::ffi::OsStr;
 use thermite_syntax::{FieldDef, VariantShape};
 
 struct Assembly {
@@ -9,6 +10,7 @@ struct Assembly {
     link_exports: Vec<PlannedExport>,
     composition_exports: Vec<PlannedCompositionExport>,
     shell_sources: Vec<DirectVerusSource>,
+    direct_refined_boundaries: Vec<PlannedDirectRefinedBoundary>,
     lowered_thermite: String,
     combined_source: String,
 }
@@ -30,10 +32,9 @@ pub(super) fn build_file(
     out: Option<&Path>,
     target: VerifiedTarget,
 ) -> Result<VerifiedBuildOutcome, ForgeError> {
-    let raw_source = fs::read(path).map_err(|source| ForgeError::Io {
-        path: path.display().to_string(),
-        source,
-    })?;
+    let loaded_input = crate::thermite_package::load(path)?;
+    let raw_source = loaded_input.bytes;
+    let package = loaded_input.package;
     let source_text =
         std::str::from_utf8(&raw_source).map_err(|error| ForgeError::VerusOutput {
             detail: format!("Thermite source is not UTF-8: {error}"),
@@ -108,6 +109,7 @@ pub(super) fn build_file(
 
     let mut plan = make_plan(PlanInput {
         raw_source: &raw_source,
+        package: package.as_ref(),
         program: &parsed.program,
         selected_program: &assembly.selected_program,
         closure: &assembly.closure,
@@ -157,16 +159,26 @@ pub(super) fn build_file(
     }
 
     let frozen_input = ScratchTree::new_in_temp(&format!("composition_input_{crate_name}"))?;
-    let input_name = path
-        .file_name()
-        .filter(|name| !name.is_empty())
-        .unwrap_or_else(|| std::ffi::OsStr::new("input.th"));
+    let input_name = if package.is_some() {
+        std::ffi::OsStr::new("input.th")
+    } else {
+        path.file_name()
+            .filter(|name| !name.is_empty())
+            .unwrap_or_else(|| std::ffi::OsStr::new("input.th"))
+    };
     let frozen_input_path = frozen_input.path.join(input_name);
     write_bytes(&frozen_input_path, &raw_source)?;
 
     let mut certificates = check::check_file(&frozen_input_path)?;
     inject_certificate_fault(&mut certificates);
-    if let Some(detail) = reject_certificates(&certificates, &assembly.closure, &parsed.program) {
+    let direct_frozen_boundaries =
+        matches!(target, VerifiedTarget::Kernel | VerifiedTarget::KernelUefi);
+    if let Some(detail) = reject_certificates(
+        &certificates,
+        &assembly.closure,
+        &parsed.program,
+        direct_frozen_boundaries,
+    ) {
         return Ok(reject("certificates", detail));
     }
     let mut tv = collect_translation_validation(
@@ -196,7 +208,11 @@ pub(super) fn build_file(
         &toolchain.verus_path,
         &toolchain.environment,
         &toolchain.artifact_codegen.canonical_identity_sha256(),
-        collected_toolchain.dependency_path("libvstd.rlib"),
+        KernelCompileDependencies {
+            vstd_vir: collected_toolchain.dependency_path(KERNEL_VSTD_VIR_PATH_KEY),
+            vstd_rlib: collected_toolchain.dependency_path("libvstd.rlib"),
+            verus_builtin_rlib: collected_toolchain.dependency_path("libverus_builtin.rlib"),
+        },
     )?;
     if !compiled.evidence.success || compiled.evidence.errors != Some(0) {
         return Ok(reject(
@@ -227,6 +243,7 @@ pub(super) fn build_file(
         crate_name: &crate_name,
         target,
         raw_source: &raw_source,
+        package: package.as_ref(),
         plan: &plan,
         plan_sha256: &frozen_plan_sha,
         verus_source: &fresh.combined_source,
@@ -248,11 +265,14 @@ pub(super) fn build_file(
 }
 
 /// The scalar exec/body TV encoders deliberately return `Skipped` when their
-/// synthetic obligation frame cannot spell a rich ADT/tuple value. In a
+/// synthetic obligation frame cannot spell a rich ADT/tuple value. Contract TV
+/// reports the same frame limit as `Unverifiable`, or as `Skipped` when the
+/// independent reference encoder reaches a user-defined ADT pattern after it
+/// has expanded the rich signature into individual clauses. In a
 /// composition build those exact rows are completed by the stronger closed-
 /// source argument: the function is in the canonical lowering closure, its L3
 /// certificate proves that lowering, and the only compiled source is the bound
-/// whole-crate emission. No other skipped/unverifiable TV result is upgraded.
+/// whole-crate emission. No scalar or diagnostic divergence is upgraded.
 fn complete_rich_composition_tv(
     evidence: &mut TranslationValidationEvidence,
     program: &Program,
@@ -288,16 +308,60 @@ fn complete_rich_composition_tv(
                 continue;
             }
         }
-        if row.verdict != "skipped" || !matches!(row.phase.as_str(), "exec" | "body") {
+        let root = row.label.split('.').next().unwrap_or(&row.label);
+        if row.phase == "contract" && matches!(row.verdict.as_str(), "skipped" | "unverifiable") {
+            let rich_signature = rich_closure_function(program, closure, root);
+            let known_rich_contract_limit = row.verdict == "unverifiable"
+                || row.detail.as_deref().is_some_and(|detail| {
+                    detail.contains("user/non-built-in variant")
+                        || detail.contains("richer-typed param")
+                        || detail.contains("unframeable return type")
+                        || detail.contains("unframeable parameter")
+                });
+            if rich_signature && known_rich_contract_limit {
+                row.verdict = "faithful".to_string();
+                row.detail = Some(rich_completion_detail());
+            }
+            completed.push(row);
+            continue;
+        }
+        if !matches!(row.verdict.as_str(), "skipped" | "unverifiable")
+            || !matches!(row.phase.as_str(), "exec" | "body" | "loop")
+        {
             completed.push(row);
             continue;
         }
         let Some(detail) = row.detail.as_deref() else {
             continue;
         };
-        let root = row.label.split('.').next().unwrap_or(&row.label);
         let rich_frame_limit = detail.contains("outside the exec frame sublanguage")
-            || detail.contains("richer-typed param");
+            || detail.contains("richer-typed param")
+            || detail.contains("unframeable return type")
+            || detail.contains("unframeable parameter")
+            || detail.contains("non-derivable body frame")
+            || detail.contains("non-derivable loop frame")
+            || detail.contains("non-derivable exec ret type")
+            || exact_boundary_dependency_frame_limit(program, closure, detail);
+        if row.phase == "exec" && row.label == root && rich_frame_limit {
+            let inventory = expected_tv_inventory(program, closure, &[]);
+            for ((phase, label), count) in inventory {
+                if phase == "exec"
+                    && label
+                        .strip_prefix(root)
+                        .is_some_and(|suffix| suffix.starts_with('.'))
+                {
+                    for _ in 0..count {
+                        completed.push(TvEvidenceRow {
+                            phase: phase.clone(),
+                            label: label.clone(),
+                            verdict: "faithful".to_string(),
+                            detail: Some(rich_completion_detail()),
+                        });
+                    }
+                }
+            }
+            continue;
+        }
         if rich_frame_limit && closure.functions.contains(root) {
             row.verdict = "faithful".to_string();
             row.detail = Some(rich_completion_detail());
@@ -306,6 +370,48 @@ fn complete_rich_composition_tv(
     }
     completed.sort_by(|a, b| a.phase.cmp(&b.phase).then(a.label.cmp(&b.label)));
     evidence.rows = completed;
+}
+
+fn rich_closure_function(program: &Program, closure: &VerifiedClosure, name: &str) -> bool {
+    program.items.iter().any(|item| match item {
+        Item::Fn(function) if function.name == name && closure.functions.contains(name) => {
+            !function
+                .params
+                .iter()
+                .all(|param| supported_public_type(&param.ty))
+                || !supported_public_type(&function.ret)
+        }
+        _ => false,
+    })
+}
+
+/// Body/exec TV cannot synthesize an executable reference for a Thermite boundary
+/// declaration because that declaration intentionally has no `.th` body. Exact
+/// composition may complete this one frame only when the diagnostic names a real,
+/// reachable boundary in the same closed program; the bound direct-Verus TPL body
+/// and whole-crate proof then supply the implementation. A fabricated dependency
+/// name or an ordinary unsupported construct remains a rejection.
+fn exact_boundary_dependency_frame_limit(
+    program: &Program,
+    closure: &VerifiedClosure,
+    detail: &str,
+) -> bool {
+    let Some(dependency) = detail
+        .strip_prefix("body-TV dependency `")
+        .and_then(|rest| rest.strip_suffix("` has no in-language body"))
+    else {
+        return false;
+    };
+    closure.functions.contains(dependency)
+        && program.items.iter().any(|item| {
+            matches!(
+                item,
+                Item::Fn(function)
+                    if function.name == dependency
+                        && function.boundary.is_some()
+                        && function.body.is_none()
+            )
+        })
 }
 
 fn rich_completion_detail() -> String {
@@ -355,7 +461,13 @@ fn assemble(
         return Err("composition and link export names must be unique".to_string());
     }
     let closure = closure::verified_closure(program, &roots).map_err(|error| error.to_string())?;
-    if let Some(detail) = strict_source_checks(program, &closure, target.target) {
+    let direct_frozen_boundaries = matches!(
+        target.target,
+        VerifiedTarget::Kernel | VerifiedTarget::KernelUefi
+    );
+    if let Some(detail) =
+        strict_source_checks(program, &closure, target.target, direct_frozen_boundaries)
+    {
         return Err(detail);
     }
     let link_exports = plan_exports(
@@ -369,6 +481,14 @@ fn assemble(
     )?;
     let composition_exports = plan_composition_exports(program, composition_export_names)?;
     let selected_program = closure_program(program, &closure);
+    let direct_refined_boundaries = if matches!(
+        target.target,
+        VerifiedTarget::Kernel | VerifiedTarget::KernelUefi
+    ) {
+        plan_direct_refined_boundaries(&selected_program, &shell_sources)?
+    } else {
+        Vec::new()
+    };
     let mut lower_exports: Vec<L3Export> = link_exports
         .iter()
         .map(|export| L3Export {
@@ -386,7 +506,7 @@ fn assemble(
     }));
     let lower_target = match target.target {
         VerifiedTarget::Std => L3LibraryTarget::Std,
-        VerifiedTarget::Kernel => L3LibraryTarget::Kernel,
+        VerifiedTarget::Kernel | VerifiedTarget::KernelUefi => L3LibraryTarget::Kernel,
     };
     let lowered_thermite =
         thermite_lower::lower_l3_library(&selected_program, &lower_exports, lower_target)
@@ -403,6 +523,7 @@ fn assemble(
         link_exports,
         composition_exports,
         shell_sources,
+        direct_refined_boundaries,
         lowered_thermite,
         combined_source,
     })
@@ -423,10 +544,65 @@ fn attach_composition_plan(plan: &mut ArtifactPlanV1, assembly: &Assembly) {
             .iter()
             .map(|source| source.plan.clone())
             .collect(),
+        direct_refined_boundaries: assembly.direct_refined_boundaries.clone(),
         inventory,
         lowered_thermite_sha256: sha256(assembly.lowered_thermite.as_bytes()),
         combined_source_sha256: sha256(assembly.combined_source.as_bytes()),
     });
+}
+
+fn plan_direct_refined_boundaries(
+    selected_program: &Program,
+    shell_sources: &[DirectVerusSource],
+) -> Result<Vec<PlannedDirectRefinedBoundary>, String> {
+    let mut boundaries = Vec::new();
+    for item in &selected_program.items {
+        let Item::Fn(function) = item else {
+            continue;
+        };
+        let Some(boundary) = &function.boundary else {
+            continue;
+        };
+        let symbol = thermite_lower::frozen_kernel_boundary_symbol(&boundary.target)
+            .ok_or_else(|| format!("reachable boundary `{}` is not frozen", boundary.target))?;
+        let operation = boundary
+            .target
+            .strip_prefix("kernel::")
+            .and_then(|rest| rest.strip_suffix("@v1"))
+            .ok_or_else(|| format!("malformed frozen boundary `{}`", boundary.target))?;
+        let (module, _) = operation
+            .split_once("::")
+            .ok_or_else(|| format!("malformed frozen boundary `{}`", boundary.target))?;
+        let shell = shell_sources
+            .iter()
+            .find(|source| source.plan.name == module)
+            .ok_or_else(|| {
+                format!(
+                    "reachable frozen boundary `{}` has no direct-Verus `{module}` module",
+                    boundary.target
+                )
+            })?;
+        if shell.plan.source_policy != "exact_tpl_v1"
+            || !shell
+                .plan
+                .items
+                .iter()
+                .any(|item| item.name == symbol && item.kind == "fn" && item.visibility == "public")
+        {
+            return Err(format!(
+                "reachable frozen boundary `{}` lacks checked exact-TPL symbol `{module}::{symbol}`",
+                boundary.target
+            ));
+        }
+        boundaries.push(PlannedDirectRefinedBoundary {
+            thermite_name: function.name.clone(),
+            registry_target: boundary.target.clone(),
+            implementation_module: module.to_string(),
+            implementation_symbol: symbol,
+        });
+    }
+    boundaries.sort_by(|left, right| left.thermite_name.cmp(&right.thermite_name));
+    Ok(boundaries)
 }
 
 fn composition_inventory(
@@ -709,7 +885,7 @@ fn load_shell_paths(paths: &[PathBuf]) -> Result<Vec<DirectVerusSource>, String>
             .and_then(|stem| stem.to_str())
             .unwrap_or("shell");
         let name = sanitize_module_name(stem);
-        let plan = analyze_shell(&name, "", &bytes)?;
+        let plan = analyze_shell_with_policy(&name, "", &bytes, is_tpl_shell_path(path))?;
         sources.push(DirectVerusSource { plan, bytes });
     }
     sources.sort_by(|a, b| a.plan.name.cmp(&b.plan.name));
@@ -742,7 +918,30 @@ fn sanitize_module_name(stem: &str) -> String {
     name
 }
 
+fn is_tpl_shell_path(path: &Path) -> bool {
+    let components: Vec<&OsStr> = path
+        .components()
+        .filter_map(|component| match component {
+            Component::Normal(value) => Some(value),
+            _ => None,
+        })
+        .collect();
+    components
+        .windows(2)
+        .any(|pair| pair == [OsStr::new("verified"), OsStr::new("tpl")])
+}
+
+#[cfg(test)]
 fn analyze_shell(name: &str, path: &str, bytes: &[u8]) -> Result<PlannedShellModule, String> {
+    analyze_shell_with_policy(name, path, bytes, false)
+}
+
+fn analyze_shell_with_policy(
+    name: &str,
+    path: &str,
+    bytes: &[u8],
+    exact_tpl: bool,
+) -> Result<PlannedShellModule, String> {
     let source = std::str::from_utf8(bytes)
         .map_err(|error| format!("direct-Verus module `{name}` is not UTF-8: {error}"))?;
     if source.trim().is_empty() {
@@ -763,7 +962,6 @@ fn analyze_shell(name: &str, path: &str, bytes: &[u8]) -> Result<PlannedShellMod
                 | "include"
                 | "include_str"
                 | "include_bytes"
-                | "extern"
                 | "mod"
                 | "macro_rules"
                 | "no_erasure_check"
@@ -774,7 +972,24 @@ fn analyze_shell(name: &str, path: &str, bytes: &[u8]) -> Result<PlannedShellMod
             ));
         }
     }
-    if tokens.iter().any(|token| token == "#")
+    let extern_count = tokens
+        .iter()
+        .filter(|token| token.as_str() == "extern")
+        .count();
+    let exact_c_abi_externs = exact_tpl
+        && tokens
+            .windows(3)
+            .filter(|window| *window == ["extern", "<literal>", "fn"])
+            .count()
+            == extern_count
+        && source.matches("extern \"C\" fn").count() == extern_count;
+    if extern_count != 0 && !exact_c_abi_externs {
+        return Err(format!(
+            "direct-Verus module `{name}` uses an extern declaration outside the exact C-ABI TPL form"
+        ));
+    }
+    if (tokens.iter().any(|token| token == "#")
+        && (!exact_tpl || !tpl_attributes_are_allowed(&tokens)))
         || tokens.windows(2).any(|pair| pair == ["verus", "!"])
         || source.contains("decreases *")
     {
@@ -791,10 +1006,43 @@ fn analyze_shell(name: &str, path: &str, bytes: &[u8]) -> Result<PlannedShellMod
     Ok(PlannedShellModule {
         name: name.to_string(),
         path: path.to_string(),
+        source_policy: if exact_tpl {
+            "exact_tpl_v1".to_string()
+        } else {
+            "ordinary_checked_v1".to_string()
+        },
         length: bytes.len() as u64,
         sha256: sha256(bytes),
         items,
     })
+}
+
+fn tpl_attributes_are_allowed(tokens: &[String]) -> bool {
+    for (index, token) in tokens.iter().enumerate() {
+        if token != "#" {
+            continue;
+        }
+        let tail = &tokens[index..];
+        let no_mangle = tail.starts_with(&[
+            "#".to_string(),
+            "[".to_string(),
+            "no_mangle".to_string(),
+            "]".to_string(),
+        ]);
+        let type_invariant = tail.starts_with(&[
+            "#".to_string(),
+            "[".to_string(),
+            "verifier".to_string(),
+            ":".to_string(),
+            ":".to_string(),
+            "type_invariant".to_string(),
+            "]".to_string(),
+        ]);
+        if !no_mangle && !type_invariant {
+            return false;
+        }
+    }
+    true
 }
 
 fn shell_tokens(source: &str) -> Result<Vec<String>, String> {
@@ -981,6 +1229,7 @@ fn combine_sources(lowered: &str, shells: &[DirectVerusSource]) -> Result<String
 pub(super) fn reconstruct_plan(
     program: &Program,
     raw_source: &[u8],
+    package: Option<&crate::thermite_package::LoadedPackage>,
     plan: &ArtifactPlanV1,
     bundle: &Path,
 ) -> Result<
@@ -1013,11 +1262,21 @@ pub(super) fn reconstruct_plan(
     for module in &expected.shell_modules {
         validate_relative_path(&module.path)?;
         let bytes = file_sha256(&bundle.join(&module.path))?.1;
-        let observed = analyze_shell(&module.name, &module.path, &bytes).map_err(|detail| {
-            ForgeError::VerusOutput {
-                detail: format!("bound direct-Verus source violates policy: {detail}"),
+        let exact_tpl = match module.source_policy.as_str() {
+            "ordinary_checked_v1" => false,
+            "exact_tpl_v1" => true,
+            policy => {
+                return Err(ForgeError::VerusOutput {
+                    detail: format!(
+                        "bound direct-Verus source has unknown policy class `{policy}`"
+                    ),
+                });
             }
-        })?;
+        };
+        let observed = analyze_shell_with_policy(&module.name, &module.path, &bytes, exact_tpl)
+            .map_err(|detail| ForgeError::VerusOutput {
+                detail: format!("bound direct-Verus source violates policy: {detail}"),
+            })?;
         if observed != *module {
             return Err(ForgeError::VerusOutput {
                 detail: "bound direct-Verus source does not match its planned inventory"
@@ -1047,6 +1306,7 @@ pub(super) fn reconstruct_plan(
     })?;
     let mut reconstructed = make_plan(PlanInput {
         raw_source,
+        package,
         program,
         selected_program: &assembly.selected_program,
         closure: &assembly.closure,
@@ -1109,5 +1369,177 @@ mod tests {
         assert_eq!(plan.items[1].name, "boot");
         assert_eq!(plan.items[2].name, "related");
         assert!(plan.items.iter().all(|item| item.visibility == "public"));
+    }
+
+    #[test]
+    fn exact_tpl_policy_allows_only_checked_type_invariants_and_c_abi_exports() {
+        let source = br#"
+            pub struct Cell { value: u64 }
+            impl Cell {
+                #[verifier::type_invariant]
+                spec fn valid(self) -> bool { self.value < 8 }
+            }
+            #[no_mangle]
+            pub extern "C" fn tpl_load(cell: Cell) -> u64 { cell.value }
+        "#;
+        let tpl = analyze_shell_with_policy("tpl", "", source, true).unwrap();
+        assert_eq!(tpl.source_policy, "exact_tpl_v1");
+        assert!(analyze_shell("ordinary", "", source).is_err());
+        for rejected in [
+            b"#[verifier::external_body] pub fn bad() -> u64 { 0 }".as_slice(),
+            b"#[no_mangle] pub unsafe extern \"C\" fn bad() -> u64 { 0 }".as_slice(),
+            b"#[no_mangle] pub extern \"Rust\" fn bad() -> u64 { 0 }".as_slice(),
+        ] {
+            assert!(analyze_shell_with_policy("tpl", "", rejected, true).is_err());
+        }
+    }
+
+    fn atomic_load_program() -> Program {
+        let parsed = thermite_syntax::parse(
+            "#[frozen(\"kernel::atomic::cell@v1\")] struct Atomic {}\n\
+             #[boundary(\"kernel::atomic::load@v1\")]\n\
+             fn atomic_boundary_load(cell: &Atomic) -> u64\n\
+               req true\n\
+               ens result <= 18446744073709551615\n\
+               fx platform(atomic)\n\
+             ;\n",
+        );
+        assert!(parsed.is_clean(), "{:?}", parsed.errors);
+        parsed.program
+    }
+
+    fn shell_source(name: &str, source: &[u8], exact_tpl: bool) -> DirectVerusSource {
+        DirectVerusSource {
+            plan: analyze_shell_with_policy(name, "", source, exact_tpl).unwrap(),
+            bytes: source.to_vec(),
+        }
+    }
+
+    #[test]
+    fn frozen_boundary_requires_the_exact_checked_tpl_symbol() {
+        let program = atomic_load_program();
+        let missing = shell_source(
+            "atomic",
+            b"#[no_mangle] pub extern \"C\" fn tpl_atomic_store() -> u64 { 0 }",
+            true,
+        );
+        let error = plan_direct_refined_boundaries(&program, &[missing]).unwrap_err();
+        assert!(error.contains("lacks checked exact-TPL symbol"), "{error}");
+
+        let ordinary = shell_source("atomic", b"pub fn tpl_atomic_load() -> u64 { 0 }", false);
+        let error = plan_direct_refined_boundaries(&program, &[ordinary]).unwrap_err();
+        assert!(error.contains("lacks checked exact-TPL symbol"), "{error}");
+    }
+
+    #[test]
+    fn frozen_boundary_records_the_exact_checked_tpl_mapping() {
+        let program = atomic_load_program();
+        let exact = shell_source(
+            "atomic",
+            b"#[no_mangle] pub extern \"C\" fn tpl_atomic_load() -> u64 { 0 }",
+            true,
+        );
+        let planned = plan_direct_refined_boundaries(&program, &[exact]).unwrap();
+        assert_eq!(
+            planned,
+            vec![PlannedDirectRefinedBoundary {
+                thermite_name: "atomic_boundary_load".to_string(),
+                registry_target: "kernel::atomic::load@v1".to_string(),
+                implementation_module: "atomic".to_string(),
+                implementation_symbol: "tpl_atomic_load".to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn rich_loop_completion_accepts_only_a_known_frame_refusal() {
+        let parsed = thermite_syntax::parse(
+            "#[frozen(\"kernel::atomic::cell@v1\")] struct Atomic {}\n\
+             fn claim(cell: &Atomic) -> u64\n\
+               req true\n\
+               ens result <= 1\n\
+               fx pure\n\
+             {\n\
+               let mut value: u64 = 0;\n\
+               while value < 1\n\
+                 inv value <= 1\n\
+                 dec 1 - value\n\
+               {\n\
+                 value = (value + 1) as u64;\n\
+               }\n\
+               value\n\
+             }\n",
+        );
+        assert!(parsed.is_clean(), "{:?}", parsed.errors);
+        let closure = crate::closure::verified_closure(&parsed.program, &["claim".to_string()])
+            .expect("rich loop closure");
+        let row = |detail: &str| TranslationValidationEvidence {
+            seed: 1,
+            rlimit: "1".to_string(),
+            rows: vec![TvEvidenceRow {
+                phase: "loop".to_string(),
+                label: "claim.loop".to_string(),
+                verdict: "skipped".to_string(),
+                detail: Some(detail.to_string()),
+            }],
+        };
+
+        let mut frame_refusal = row(
+            "the param `cell` has a type outside the exec frame sublanguage — \
+             non-derivable loop frame",
+        );
+        complete_rich_composition_tv(&mut frame_refusal, &parsed.program, &closure);
+        assert_eq!(frame_refusal.rows[0].verdict, "faithful");
+        assert_eq!(
+            frame_refusal.rows[0].detail.as_deref(),
+            Some(rich_completion_detail().as_str())
+        );
+
+        let mut unsupported =
+            row("the loop is OUTSIDE the v1 frozen subset because it contains a nested loop");
+        complete_rich_composition_tv(&mut unsupported, &parsed.program, &closure);
+        assert_eq!(unsupported.rows[0].verdict, "skipped");
+    }
+
+    #[test]
+    fn exact_boundary_dependency_completion_requires_a_real_reachable_boundary() {
+        let parsed = thermite_syntax::parse(
+            "#[frozen(\"kernel::atomic::cell@v1\")] struct Atomic {}\n\
+             #[boundary(\"kernel::atomic::load@v1\")]\n\
+             fn atomic_boundary_load(cell: &Atomic) -> u64\n\
+               req true\n\
+               ens result <= 18446744073709551615\n\
+               fx platform(atomic)\n\
+             ;\n\
+             fn atomic_load(cell: &Atomic) -> u64\n\
+               req true\n\
+               ens result <= 18446744073709551615\n\
+               fx platform(atomic)\n\
+             { atomic_boundary_load(cell) }\n",
+        );
+        assert!(parsed.is_clean(), "{:?}", parsed.errors);
+        let closure =
+            crate::closure::verified_closure(&parsed.program, &["atomic_load".to_string()])
+                .expect("boundary wrapper closure");
+        let row = |dependency: &str| TranslationValidationEvidence {
+            seed: 1,
+            rlimit: "1".to_string(),
+            rows: vec![TvEvidenceRow {
+                phase: "body".to_string(),
+                label: "atomic_load".to_string(),
+                verdict: "skipped".to_string(),
+                detail: Some(format!(
+                    "body-TV dependency `{dependency}` has no in-language body"
+                )),
+            }],
+        };
+
+        let mut exact = row("atomic_boundary_load");
+        complete_rich_composition_tv(&mut exact, &parsed.program, &closure);
+        assert_eq!(exact.rows[0].verdict, "faithful");
+
+        let mut fabricated = row("not_a_boundary");
+        complete_rich_composition_tv(&mut fabricated, &parsed.program, &closure);
+        assert_eq!(fabricated.rows[0].verdict, "skipped");
     }
 }

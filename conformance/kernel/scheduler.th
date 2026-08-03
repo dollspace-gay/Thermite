@@ -1,0 +1,151 @@
+struct SchedulerState {
+  cpu_count: u64,
+  runnable_task: u64,
+  current_task: u64,
+  current_cpu: u64,
+  dispatches: u64
+}
+
+fn scheduler_seed(cpu_count: u64, task: u64) -> SchedulerState
+  req cpu_count > 0 && cpu_count <= 8 && task > 0 && task <= 1000
+  ens result.cpu_count == cpu_count
+  ens result.runnable_task == task
+  ens result.current_task == 0
+  ens result.current_cpu == 0
+  ens result.dispatches == 0
+  fx pure
+{
+  SchedulerState {
+    cpu_count: cpu_count,
+    runnable_task: task,
+    current_task: 0,
+    current_cpu: 0,
+    dispatches: 0
+  }
+}
+
+fn scheduler_dispatch(state: SchedulerState, cpu: u64) -> SchedulerState
+  req state.cpu_count > 0 && state.cpu_count <= 8 && cpu < state.cpu_count && state.runnable_task > 0 && state.runnable_task <= 1000 && state.current_task == 0 && state.dispatches < 18446744073709551615
+  ens result.cpu_count == state.cpu_count
+  ens result.runnable_task == 0
+  ens result.current_task == state.runnable_task
+  ens result.current_cpu == cpu
+  ens result.dispatches == state.dispatches + 1
+  fx pure
+{
+  SchedulerState {
+    cpu_count: state.cpu_count,
+    runnable_task: 0,
+    current_task: state.runnable_task,
+    current_cpu: cpu,
+    dispatches: state.dispatches + 1
+  }
+}
+
+fn scheduler_bootstrap(cpu_count: u64) -> SchedulerState
+  req cpu_count > 0 && cpu_count <= 8
+  ens result.cpu_count == cpu_count
+  ens result.runnable_task == 41
+  ens result.current_task == 0
+  ens result.current_cpu == 0
+  ens result.dispatches == 0
+  fx pure
+{
+  let synchronization_epoch: u64 = synchronization_bootstrap();
+  scheduler_seed(cpu_count, 40 + synchronization_epoch)
+}
+
+fn scheduler_task_value(task_base: u64, task_index: u64) -> u64
+  req task_base > 0 && task_base <= 1000 && task_index < 4096
+  ens result == task_base + task_index
+  fx pure
+{
+  task_base + task_index
+}
+
+fn scheduler_task_available(task_index: u64) -> bool
+  req true
+  ens result == (task_index < 4096)
+  fx pure
+{
+  task_index < 4096
+}
+
+fn scheduler_seed_admitted(seed_index: u64, expected_workers: u64) -> bool
+  req expected_workers > 0 && expected_workers <= 8
+  ens result == (seed_index < expected_workers)
+  fx pure
+{
+  seed_index < expected_workers
+}
+
+fn scheduler_release_gate(seed_index: u64, expected_workers: u64) -> bool
+  req expected_workers > 0 && expected_workers <= 8 && seed_index < expected_workers
+  ens result == (seed_index + 1 == expected_workers)
+  fx pure
+{
+  seed_index + 1 == expected_workers
+}
+
+fn scheduler_required_ap_workers(ap_count: u64) -> u64
+  req ap_count < 8
+  ens (ap_count < 2 && result == ap_count) || (ap_count >= 2 && result == 2)
+  fx pure
+{
+  let mut workers: u64 = ap_count;
+  if ap_count >= 2 {
+    workers = 2 as u64;
+  }
+  workers
+}
+
+fn scheduler_required_parallel_cpus(ap_count: u64) -> u64
+  req ap_count < 8
+  ens (ap_count < 2 && result == 0) || (ap_count >= 2 && result == 2)
+  fx pure
+{
+  let mut parallel_cpus: u64 = 0;
+  if ap_count >= 2 {
+    parallel_cpus = 2 as u64;
+  }
+  parallel_cpus
+}
+
+fn scheduler_claim(counter: &Atomic) -> u64
+  req true
+  ens result < 4096 || result == 18446744073709551615
+  fx platform(atomic)
+{
+  let claimed: u64 = atomic_boundary_fetch(counter, FetchOp::Add, 1, Ordering::SeqCst);
+  if scheduler_task_available(claimed) {
+    claimed
+  } else {
+    18446744073709551614 + 1
+  }
+}
+
+fn scheduler_expected_sum(task_base: u64) -> u64
+  req task_base > 0 && task_base <= 1000
+  ens result == 4096 * 4095 / 2 + 4096 * task_base
+  fx pure
+{
+  4096 * 4095 / 2 + 4096 * task_base
+}
+
+fn scheduler_runtime_complete(
+  task_sum: u64,
+  expected_sum: u64,
+  worker_cpus: u64,
+  required_workers: u64,
+  lock_entries: u64,
+  expected_lock_entries: u64,
+  once_owner: u64,
+  parallel_cpus: u64,
+  required_parallel_cpus: u64
+) -> bool
+  req true
+  ens result == (task_sum == expected_sum && worker_cpus >= required_workers && lock_entries == expected_lock_entries && once_owner > 0 && parallel_cpus >= required_parallel_cpus)
+  fx pure
+{
+  task_sum == expected_sum && worker_cpus >= required_workers && lock_entries == expected_lock_entries && once_owner > 0 && parallel_cpus >= required_parallel_cpus
+}

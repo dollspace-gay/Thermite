@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: 49c3911fe674113b046c0056a739441f36e45cd4a445001ede0ebedf327bd89e (re-pinned 2026-08-01 after auditing the bootable multicore kernel integration; existing behavior remains regression-covered)
+audited-content-sha256: 53314e1ec7c5d5bca10e57adce119eb03cd4b72527fbe732482b254640ad984f (re-pinned 2026-08-01 after auditing additive frozen kernel composition; existing option/result behavior remains regression-covered)
 governs: thermite-syntax/src/ast.rs
 governs: thermite-syntax/src/parser.rs
 governs: thermite-spec/src/validator.rs

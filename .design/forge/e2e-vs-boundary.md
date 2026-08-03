@@ -3,7 +3,7 @@
 tier: 3-component
 status: draft
 audited-sha: 92396428567edc6940a9e2845217f5ff4c2ea3c6 (re-pinned 2026-06-16, user-authorized: the only change to this doc's governed files since the prior pin is the additive stage-1 forge-tier increment 2a — the new Item::Forge surface + inert Item::Forge match arms, verified net-additive with no substantive removal of existing v1 logic (git log <main>..HEAD = the 8 forge commits); the v1 behavior this doc governs is unchanged, and the new forge-tier surface is specified in .design/stage1-forge-tier.md / REQ-S1-3)
-audited-content-sha256: f8e74465320895cb69b5a966e18e2a4857dfd031567464020648ccc1539c54d1 (re-pinned 2026-07-31 after adding the stricter L3-only fail-closed closure alongside the legacy classifier)
+audited-content-sha256: 5c322bc01fa960d12de8f4811afbc1d3e99e1644328756ae7d30b1c06a79a80b (re-pinned 2026-08-01 after auditing the exact kernel-image refinement overlay)
 governs: forge/src/closure.rs
 thesis-refs:
   - thermite-design.md §9
@@ -30,6 +30,13 @@ the crossings).
 This is the §9 manifest distinction. It is SHIPPED: `forge/src/closure.rs`
 landed at #17 (`f78dd664`, post-pin) and every REQ below is SHIPPED — see the
 REQ status table and the Amendment.
+
+> **Kernel-image amendment (2026-08-01).** This structural classifier remains
+> conservative: any frozen platform call is `ToBoundary`. A receipt-bound image
+> may attach an orthogonal `L3_direct_refinement` assurance to that exact
+> crossing only after the combined Thermite/direct-Verus proof maps it to a
+> checked TPL symbol retained in the final executable. That artifact-specific
+> upgrade does not rewrite or weaken this source-level classification.
 
 > **Amendment 2026-06-12 (doc-freshness re-audit, #262).** This doc was authored
 > as the forward-looking #17 contract and its bootstrap pin (`7a8be669`) PREDATES

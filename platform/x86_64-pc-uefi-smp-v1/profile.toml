@@ -39,6 +39,7 @@ forbidden_sections = [".idata"]
 undefined_symbols = 0
 deterministic_rebuilds = 2
 publication_sentinel = "image"
+retained_direct_refinement_symbols = ["tpl_atomic_compare_exchange", "tpl_atomic_fetch", "tpl_atomic_load", "tpl_atomic_store"]
 
 [qemu]
 machine = "q35"

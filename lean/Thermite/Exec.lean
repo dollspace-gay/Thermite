@@ -63,6 +63,8 @@
     - `Expr::Unary` Not               → `!` (logical not on bool, the exec subset's `!`).
     - `Expr::Cast`                    → `cast_target` (`u64`/`u32`/`usize`/`u8`/`u16`),
       never `nat`/`int`, the narrowing wrap at the bounded target width.
+    - `Expr::MethodCall` slice `.len()` → a bounded `usize` length value.
+    - `Expr::Is` over a named enum param → its exact type-qualified variant discriminant.
     - `Expr::Index` single over slice → `xs[i as int]` (the bounded element value).
 
   `execRefValue` and `execDenote` are defined independently (the encoder's operator map +
@@ -72,8 +74,9 @@
 
   Deferred, not embedded here (no embed-then-`sorry`). These are the
   residuals (faithful to `exec_ref_value`'s `RefEncodeError::Unsupported`):
-    - method calls / Vec-String accessors (`Expr::MethodCall`): `exec_ref_value` `Err`s
-      (#154/#156 territory); the exec-body statement forms (`let`/`if`/loops/mutation) are
+    - method calls other than zero-argument `.len()` on a frame-declared parameter slice,
+      and Vec-String accessors (`Expr::MethodCall`): `exec_ref_value` `Err`s (#154/#156
+      territory); the exec-body statement forms (`let`/`if`/loops/mutation) are
       increment 2b (#172, `body_ref_state`) / 2c (#163, loops, kernel-gated). They are out
       of the pure-exec expression subset, so they are not in `S_E` here and are not modelled.
     - a non-path call callee, a non-slice index base, a slice-range index (a sub-slice is
@@ -161,9 +164,10 @@ inductive LOp where
   deriving DecidableEq, Repr
 
 /-- The pure exec-expression fragment `exec_ref_value` covers (faithful to
-    `exec_encode.rs::encode`'s match arms). Method calls / `if`/`match`/closures / the
-    exec-body statement forms are absent (the encoder `Err`s on them; they are
-    increment 2b/2c, listed in the module doc, not embedded-then-`sorry`). -/
+    `exec_encode.rs::encode`'s match arms). The one admitted method call is parameter-slice
+    `.len()`; other methods / `match`/closures / the exec-body statement forms are absent
+    (the encoder `Err`s on them; they are increment 2b/2c, listed in the module doc, not
+    embedded-then-`sorry`). -/
 inductive ExecExpr where
   /-- An integer literal at a bounded type (`Expr::IntLit`; `exec_encode.rs` emits the bare
       value; the bounded type the literal sits at is the surrounding context's type, carried
@@ -185,6 +189,14 @@ inductive ExecExpr where
   /-- A cast `inner as ty` (`Expr::Cast`; `cast_target`), the bounded-target wrap (never
       `nat`/`int`). The narrowing wrap at the target width is the value semantics. -/
   | cast (inner : ExecExpr) (ty : IntTy)
+  /-- `xs.len()` on a frame-declared slice param. The result is the slice length as a
+      bounded `usize`; an impossible model sequence longer than the target `usize`
+      range carries a failed bound obligation (`none`). -/
+  | sliceLen (slice : String)
+  /-- `value is Variant` for a bare parameter with the exact named-enum type carried
+      by the validation frame. The type is explicit because the Rust reference
+      qualifies a bare source variant as `Type::Variant`; no name-based guessing. -/
+  | isVariant (valueName typeName variantName : String)
   /-- `xs[i]` — a single-element index over a slice param (`Expr::Index` `Single` over a
       slice-bound base; `exec_encode.rs::encode_index` → `xs[i as int]`, the bounded element
       value). `slice` is the slice-param name, `index` the integer-valued index expr. -/
@@ -202,6 +214,10 @@ structure ExecEnv where
   vars : String → ExecVal
   /-- Slice params → their element sequence (each element a bounded `BVal`). -/
   slices : String → List BVal
+  /-- Named enum parameters → their exact `(type, active variant)` discriminant.
+      The default keeps older scalar-only states concise; well-typed enum frames bind
+      every `isVariant` scrutinee explicitly. -/
+  variants : String → String × String := fun _ => ("", "")
 
 /-! ## The bounded value operations — overflow as a proof obligation, never nat-coerced -/
 
@@ -317,6 +333,11 @@ def execDenote : ExecExpr → ExecEnv → Option ExecVal
   | .cast inner ty, env => do
       let v ← asInt (← execDenote inner env)
       some (.int (castVal ty v))
+  | .sliceLen slice, env =>
+      let n : Int := (env.slices slice).length
+      if 0 ≤ n ∧ n < IntTy.usize.bound then some (.int ⟨.usize, n⟩) else none
+  | .isVariant valueName typeName variantName, env =>
+      some (.bool (decide (env.variants valueName = (typeName, variantName))))
   | .index slice idx, env => do
       let iv ← asInt (← execDenote idx env)
       let xs := env.slices slice
@@ -392,6 +413,19 @@ def tokCast : CastTok → BVal → BVal
 def encCmp : COp → COp := id
 def encLog : LOp → LOp := id
 
+/-- The encoder's qualified enum-pattern token. Keeping the type and variant as a
+    pair makes the qualification step explicit and independently interpretable. -/
+structure VariantTok where
+  typeName : String
+  variantName : String
+  deriving DecidableEq, Repr
+
+def encVariant (typeName variantName : String) : VariantTok :=
+  ⟨typeName, variantName⟩
+
+def tokVariant (token : VariantTok) (actual : String × String) : Bool :=
+  decide (actual = (token.typeName, token.variantName))
+
 /-- The encoder-output denotation: the meaning of the Verus exec-value string
     `exec_ref_value` produces, routed through the encoder's operator/cast maps. Defined
     independently of `execDenote` (it threads through `encArith`/`tokArith`,
@@ -420,6 +454,11 @@ def execRefValue : ExecExpr → ExecEnv → Option ExecVal
   | .cast inner ty, env => do
       let v ← asInt (← execRefValue inner env)
       some (.int (tokCast (encCast ty) v))       -- the encoder's cast_target map, bounded
+  | .sliceLen slice, env =>
+      let n : Int := (env.slices slice).length
+      if 0 ≤ n ∧ n < IntTy.usize.bound then some (.int ⟨.usize, n⟩) else none
+  | .isVariant valueName typeName variantName, env =>
+      some (.bool (tokVariant (encVariant typeName variantName) (env.variants valueName)))
   | .index slice idx, env => do
       let iv ← asInt (← execRefValue idx env)
       let xs := env.slices slice
@@ -444,6 +483,11 @@ theorem tokArith_encArith (op : AOp) (a b : BVal) :
 theorem tokCast_encCast (ty : IntTy) (v : BVal) :
     tokCast (encCast ty) v = castVal ty v := by
   cases ty <;> rfl
+
+theorem tokVariant_encVariant (typeName variantName : String) (actual : String × String) :
+    tokVariant (encVariant typeName variantName) actual
+      = decide (actual = (typeName, variantName)) := by
+  rfl
 
 /-! ## (T1) — `exec_ref_value` is sound against `S_E` -/
 
@@ -480,6 +524,10 @@ theorem exec_ref_sound : ∀ (e : ExecExpr) (env : ExecEnv),
       simp [execRefValue, execDenote, exec_ref_sound e env]
   | .cast inner ty, env => by
       simp [execRefValue, execDenote, exec_ref_sound inner env, tokCast_encCast]
+  | .sliceLen slice, env => by
+      simp [execRefValue, execDenote]
+  | .isVariant valueName typeName variantName, env => by
+      simp [execRefValue, execDenote, tokVariant_encVariant]
   | .index slice idx, env => by
       simp [execRefValue, execDenote, exec_ref_sound idx env]
 
@@ -487,6 +535,98 @@ theorem exec_ref_sound : ∀ (e : ExecExpr) (env : ExecEnv),
     composition transits on). -/
 theorem exec_ref_sound_eq (e : ExecExpr) (env : ExecEnv) :
     execRefValue e env = execDenote e env := exec_ref_sound e env
+
+/-! ## Exact named-aggregate construction and field projection
+
+  Rust `exec_encode.rs` now admits framed `Expr::StructLit` and `Expr::Field` nodes.
+  Aggregate fields remain ordinary `S_E` values, so the aggregate layer is a finite
+  name/value product over `ExecExpr`/`ExecVal`; it does not invent a second scalar
+  semantics. `structRefValue` independently maps every initializer through
+  `execRefValue`, while `structDenote` maps it through the source `execDenote`.
+  `struct_ref_sound` lifts (T1) field-by-field, and `struct_field_ref_sound` pins the
+  exact named projection used by the Verus obligation's per-field `ensures`.
+
+  This is deliberately separate from `ExecVal`: aggregate values are projected at
+  the body-TV result relation before the scalar `S_E → S_C` result-binding bridge.
+  Consequently `bindResult` remains exhaustive over the scalar/bool contract domain
+  and cannot silently drop a struct-valued result.
+-/
+
+/-- A finite named aggregate source value: field names paired with scalar/bool exec
+    expressions. Field order is retained for auditing; observable equality is pinned
+    through exact named projection below. -/
+abbrev StructExpr := List (String × ExecExpr)
+
+/-- The corresponding finite named aggregate value. -/
+abbrev StructVal := List (String × ExecVal)
+
+/-- Source aggregate construction: evaluate every field initializer with `S_E`. -/
+def structDenote : StructExpr → ExecEnv → Option StructVal
+  | [], _ => some []
+  | (name, value) :: rest, env => do
+      let v ← execDenote value env
+      let vs ← structDenote rest env
+      some ((name, v) :: vs)
+
+/-- Independent aggregate reference: encode/evaluate each field through
+    `execRefValue`, mirroring the Rust reference encoder rather than production
+    lowering. -/
+def structRefValue : StructExpr → ExecEnv → Option StructVal
+  | [], _ => some []
+  | (name, value) :: rest, env => do
+      let v ← execRefValue value env
+      let vs ← structRefValue rest env
+      some ((name, v) :: vs)
+
+/-- Aggregate construction is exact field-by-field by the scalar/bool (T1). -/
+theorem struct_ref_sound : ∀ (fields : StructExpr) (env : ExecEnv),
+    structRefValue fields env = structDenote fields env
+  | [], _ => rfl
+  | (name, value) :: rest, env => by
+      simp [structRefValue, structDenote, exec_ref_sound value env,
+            struct_ref_sound rest env]
+
+/-- Exact named field lookup; a missing declaration has no value, matching the
+    Rust encoder's fail-closed unframed-field rejection. -/
+def structField : StructVal → String → Option ExecVal
+  | [], _ => none
+  | (name, value) :: rest, wanted =>
+      if name = wanted then some value else structField rest wanted
+
+/-- Source meaning of projecting one named field from a constructed aggregate. -/
+def structFieldDenote (fields : StructExpr) (field : String) (env : ExecEnv) :
+    Option ExecVal := do
+  let values ← structDenote fields env
+  structField values field
+
+/-- Reference meaning of that same named projection. -/
+def structFieldRefValue (fields : StructExpr) (field : String) (env : ExecEnv) :
+    Option ExecVal := do
+  let values ← structRefValue fields env
+  structField values field
+
+/-- Named projection preserves aggregate construction meaning exactly. -/
+theorem struct_field_ref_sound (fields : StructExpr) (field : String) (env : ExecEnv) :
+    structFieldRefValue fields field env = structFieldDenote fields field env := by
+  simp [structFieldRefValue, structFieldDenote, struct_ref_sound fields env]
+
+/-- Concrete aggregate frame for the wrong-field tooth: `a = 1`, `b = 2`. -/
+def aggregateEnv : ExecEnv :=
+  { vars := fun s =>
+      if s = "a" then .int ⟨.u64, 1⟩
+      else if s = "b" then .int ⟨.u64, 2⟩
+      else .int ⟨.u64, 0⟩
+    slices := fun _ => [] }
+
+/-- Swapping the two generated field initializers changes the named `first`
+    projection. This is the formal counterpart of the real-Verus divergent tooth;
+    aggregate comparison is not positional hand-waving or a blanket equality. -/
+theorem swapped_struct_fields_break_soundness :
+    structFieldRefValue
+        [("first", .var "b"), ("second", .var "a")] "first" aggregateEnv
+      ≠ structFieldDenote
+        [("first", .var "a"), ("second", .var "b")] "first" aggregateEnv := by
+  decide
 
 /-! ## The overflow-obligation treatment is (not silently unbounded)
 
@@ -600,5 +740,36 @@ theorem slice_index_value_is_twenty :
     execDenote (.index "xs" (.intLit .u64 1)) envOverflow
       = some (.int ⟨.u64, 20⟩) := by
   simp [execDenote, envOverflow, asInt, IntTy.bound, IntTy.width]
+
+/-! ## A faithful positive witness — parameter-slice `.len()` -/
+
+/-- The frozen slice method form has bounded `usize` semantics on both sides. The
+    three-element `xs` in `envOverflow` produces `3`, and the encoder/source models
+    agree by `exec_ref_sound`. -/
+theorem slice_len_value_is_three :
+    execDenote (.sliceLen "xs") envOverflow = some (.int ⟨.usize, 3⟩) := by
+  simp [execDenote, envOverflow, IntTy.bound, IntTy.width]
+
+theorem slice_len_faithful_is_sound :
+    execRefValue (.sliceLen "xs") envOverflow
+      = execDenote (.sliceLen "xs") envOverflow :=
+  exec_ref_sound _ _
+
+/-! ## Enum discriminant qualification has semantic teeth -/
+
+def envRelease : ExecEnv :=
+  { vars := fun _ => .int ⟨.u64, 0⟩
+    slices := fun _ => []
+    variants := fun name => if name = "order" then ("Ordering", "Release") else ("", "") }
+
+theorem enum_release_discriminant_is_true :
+    execDenote (.isVariant "order" "Ordering" "Release") envRelease
+      = some (.bool true) := by
+  simp [execDenote, envRelease]
+
+theorem wrong_enum_variant_breaks_soundness :
+    execRefValue (.isVariant "order" "Ordering" "Acquire") envRelease
+      ≠ execDenote (.isVariant "order" "Ordering" "Release") envRelease := by
+  simp [execRefValue, execDenote, envRelease, tokVariant, encVariant]
 
 end Thermite.Exec

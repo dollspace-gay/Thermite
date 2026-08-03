@@ -417,6 +417,17 @@ fn ref_encode_matches_faithful_meaning() {
         ref_contract_pred(&f4_source(), &f4_ctx).unwrap(),
         "((a == b) && (c == d))"
     );
+    // Frozen fixed/bounded storage: a contract accessor denotes the wrapper's
+    // mathematical slot projection, with an `int` index.
+    let get = Expr::MethodCall {
+        receiver: Box::new(path("slots")),
+        name: "get".to_string(),
+        args: vec![path("i")],
+    };
+    assert_eq!(
+        ref_contract_pred(&get, &RefCtx::default()).unwrap(),
+        "slots.spec_get(i as int)"
+    );
 }
 
 /// An unsupported construct is an `Err`, never a panic / silent wrong

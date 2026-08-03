@@ -98,7 +98,10 @@ pub mod ref_encode;
 pub mod strat_ref_encode;
 pub mod strat_two_phase;
 
-pub use exec_encode::{exec_ref_value, ExecRefCtx};
+pub use exec_encode::{
+    exec_ref_ensures, exec_ref_ensures_value, exec_ref_value, ExecCallDecl, ExecRefCtx,
+    ExecStructFieldDecl,
+};
 pub use exec_stmt_encode::{
     body_ref_state, body_ref_state_ensures, loop_ref_obligations, negate_condition, BodyRefCtx,
     LoopObligations,

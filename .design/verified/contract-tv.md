@@ -4,7 +4,7 @@
 tier: 3-component
 status: draft
 audited-sha: 4a748bc98172c98cc39fb245996ab4143bdab08d (content-sha256 re-pinned 2026-06-21 for stage-2 REQ-8 / AC-8 (#330), faithfulness + two-phase TV + the trust flip: the change to this doc's governed file (thermite-tv/src/lib.rs) is the additive `pub mod strat_ref_encode` / `pub mod strat_two_phase` declarations + their re-exports (the stratified reference encoder + the two-phase TV, NEW load-bearing TV modules beside the contract/exec ones) — the contract-TV REQs this doc governs are unchanged. The legacy commit pin stays at the 4a748bc9 stable-main ancestor; only the active content-sha256 digest moves. prior: 2026-06-20 stage-2 REQ-4 / AC-4 (#326) classifier differential `gen_strat_formulas`; 2026-06-16 stage-1 increment 2b SplitMix64 `Rng` made pub.)
-audited-content-sha256: 8e148d3c5a3b5431bc8ac52aa0c4a7304fe86947f2321324a5f46a6536ba3f64
+audited-content-sha256: af535875389b448d812a5295e33f409f7d99ef793d512ff0d0a5994bf0807ab3
 governs: thermite-tv/src/ref_encode.rs, thermite-tv/src/obligation.rs, forge/src/contract_tv.rs
 thesis-refs:
   - thermite-design.md §1 (trust relocated twice: code → spec → spec-intent)

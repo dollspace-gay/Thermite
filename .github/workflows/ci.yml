@@ -607,13 +607,19 @@ jobs:
 
       - name: Build, boot, and bind the kernel image
         run: >-
-          cargo run -q -p forge -- build conformance/bootable_kernel.th
+          cargo run -q -p forge -- build conformance/thermite-kernel.thpkg.json
           --level l3
           --target kernel-image
           --platform x86_64-pc-uefi-smp-v1
-          --compose-export kernel_step
-          --compose-shell platform/x86_64-pc-uefi-smp-v1/kernel_shell.rs
+          --compose-export kernel_acceptance_slice
+          --compose-export service_write_user_byte
+          --compose-export ap_expected_mask
+          --compose-export apic_profile_supported
+          --compose-export apic_physical_base
+          --compose-export allocator_claim_first
+          --compose-shell platform/x86_64-pc-uefi-smp-v1/verified/kernel_policy_ingress.rs
+          --compose-shell platform/x86_64-pc-uefi-smp-v1/verified/tpl/atomic.rs
           --out dist/ci-kernel.img
 
       - name: Verify the published closure
-        run: cargo run -q -p forge -- verify-build dist/ci-kernel.img --json
+        run: cargo run -q -p forge -- verify-build dist/ci-kernel.img --replay --json

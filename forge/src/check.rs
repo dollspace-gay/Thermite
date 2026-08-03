@@ -157,6 +157,13 @@ pub const DEFAULT_SOLVER_SEED: u64 = 0;
 /// emits the Z3 instantiation report on stderr (the timeout discriminator).
 pub const DEFAULT_RLIMIT: f64 = 30.0;
 
+fn load_thermite_source(path: &Path) -> Result<String, ForgeError> {
+    let loaded = crate::thermite_package::load(path)?;
+    String::from_utf8(loaded.bytes).map_err(|error| ForgeError::RustcOutput {
+        detail: format!("Thermite source is not UTF-8: {error}"),
+    })
+}
+
 /// Run the full v0.1 `forge check` pipeline for every `fn` / `spec fn` item in
 /// `path`, returning one [`Certificate`] per item in source order (REQ-1).
 ///
@@ -309,10 +316,7 @@ pub fn check_file_with_options(
 ) -> Result<Vec<Certificate>, ForgeError> {
     let rlimit = options.rlimit;
     let path = path.as_ref();
-    let src = std::fs::read_to_string(path).map_err(|e| ForgeError::Io {
-        path: path.display().to_string(),
-        source: e,
-    })?;
+    let src = load_thermite_source(path)?;
 
     // 1. parse (thermite-syntax).
     let parsed = thermite_syntax::parse(&src);
@@ -1039,10 +1043,7 @@ pub fn check_file_with_engine(
     )?;
 
     // Re-parse for the Lean engine (the exporter needs the spec-fn defs + the item).
-    let src = std::fs::read_to_string(path).map_err(|e| ForgeError::Io {
-        path: path.display().to_string(),
-        source: e,
-    })?;
+    let src = load_thermite_source(path)?;
     let parsed = thermite_syntax::parse(&src);
     if !parsed.is_clean() {
         return Err(ForgeError::Parse(parsed.errors));
@@ -4354,10 +4355,7 @@ pub(crate) fn lean_unverifiable_cert(
 /// counterexample, §5.1).
 pub fn check_l2_file(path: impl AsRef<Path>) -> Result<Vec<Certificate>, ForgeError> {
     let path = path.as_ref();
-    let src = std::fs::read_to_string(path).map_err(|e| ForgeError::Io {
-        path: path.display().to_string(),
-        source: e,
-    })?;
+    let src = load_thermite_source(path)?;
 
     // 1. parse; 2. validate; 3. effect-check — identical to the L3 path.
     let parsed = thermite_syntax::parse(&src);

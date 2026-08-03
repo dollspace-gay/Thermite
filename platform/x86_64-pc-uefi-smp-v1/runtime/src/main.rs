@@ -3,17 +3,59 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 extern crate alloc;
+extern crate thermite_kernel_policy;
 
 use core::ffi::c_void;
 use core::panic::PanicInfo;
 use core::ptr;
-use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 
 #[path = "../../kernel_shell.rs"]
 mod kernel_shell;
 mod post_firmware;
 
 use kernel_shell::{Clock as TplClock, Instant as TplInstant};
+
+static POLICY_SCHEDULER_COUNTER: thermite_kernel_policy::atomic::ExactAtomicU64 =
+    thermite_kernel_policy::atomic::ExactAtomicU64::new(0);
+
+#[used]
+static TPL_ATOMIC_COMPARE_EXCHANGE_BINDING: extern "C" fn(
+    &thermite_kernel_policy::atomic::ExactAtomicU64,
+    u64,
+    u64,
+    thermite_kernel_policy::Ordering,
+    thermite_kernel_policy::Ordering,
+) -> thermite_kernel_policy::Cas = thermite_kernel_policy::atomic::tpl_atomic_compare_exchange;
+
+#[used]
+static TPL_ATOMIC_FETCH_BINDING: extern "C" fn(
+    &thermite_kernel_policy::atomic::ExactAtomicU64,
+    thermite_kernel_policy::FetchOp,
+    u64,
+    thermite_kernel_policy::Ordering,
+) -> u64 = thermite_kernel_policy::atomic::tpl_atomic_fetch;
+
+#[used]
+static TPL_ATOMIC_LOAD_BINDING: extern "C" fn(
+    &thermite_kernel_policy::atomic::ExactAtomicU64,
+    thermite_kernel_policy::Ordering,
+) -> u64 = thermite_kernel_policy::atomic::tpl_atomic_load;
+
+#[used]
+static TPL_ATOMIC_STORE_BINDING: extern "C" fn(
+    &thermite_kernel_policy::atomic::ExactAtomicU64,
+    u64,
+    thermite_kernel_policy::Ordering,
+) = thermite_kernel_policy::atomic::tpl_atomic_store;
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn thermite_policy_execute(cpus: u64) -> u64 {
+    thermite_kernel_policy::kernel_policy_ingress::thermite_kernel_policy_entry(
+        cpus,
+        &POLICY_SCHEDULER_COUNTER,
+    )
+}
 
 #[no_mangle]
 #[inline(never)]
@@ -88,11 +130,8 @@ mod boundary {
 
 type Status = usize;
 type Handle = *mut c_void;
-type Event = *mut c_void;
 const SUCCESS: Status = 0;
-const WORK_PER_CPU: usize = 2_048;
 const MAX_CPUS: usize = 64;
-const PAYLOAD_VALUE: usize = 0x5448_524d;
 
 #[repr(C)]
 struct TableHeader {
@@ -422,23 +461,13 @@ type GetProcessorInfo = unsafe extern "efiapi" fn(
     processor_number: usize,
     information: *mut ProcessorInformation,
 ) -> Status;
-type ApProcedure = extern "efiapi" fn(argument: *mut c_void);
-type StartupAllAps = unsafe extern "efiapi" fn(
-    this: *mut MpServices,
-    procedure: ApProcedure,
-    single_thread: u8,
-    wait_event: Event,
-    timeout_microseconds: usize,
-    procedure_argument: *mut c_void,
-    failed_cpu_list: *mut *mut usize,
-) -> Status;
 type WhoAmI = unsafe extern "efiapi" fn(this: *mut MpServices, cpu: *mut usize) -> Status;
 
 #[repr(C)]
 struct MpServices {
     get_number_of_processors: GetNumberOfProcessors,
     get_processor_info: GetProcessorInfo,
-    startup_all_aps: StartupAllAps,
+    startup_all_aps: usize,
     startup_this_ap: usize,
     switch_bsp: usize,
     enable_disable_ap: usize,
@@ -465,151 +494,6 @@ impl ProcessorInformation {
         thread: 0,
         extended_location: [0; 6],
     };
-}
-
-#[repr(C)]
-struct ApContext {
-    mp: *mut MpServices,
-    expected_aps: usize,
-}
-
-static READY: AtomicBool = AtomicBool::new(false);
-static PAYLOAD: AtomicUsize = AtomicUsize::new(0);
-static WORK_TOTAL: AtomicUsize = AtomicUsize::new(0);
-static AP_COUNT: AtomicUsize = AtomicUsize::new(0);
-static ACTIVE: AtomicUsize = AtomicUsize::new(0);
-static MAX_ACTIVE: AtomicUsize = AtomicUsize::new(0);
-static CPU_MASK: AtomicU64 = AtomicU64::new(0);
-static DUPLICATE_CPUS: AtomicUsize = AtomicUsize::new(0);
-static STALE_READS: AtomicUsize = AtomicUsize::new(0);
-static BAD_CPU_IDS: AtomicUsize = AtomicUsize::new(0);
-static TIMER_FAILURES: AtomicUsize = AtomicUsize::new(0);
-static IPI_EPOCH: AtomicUsize = AtomicUsize::new(0);
-static IPI_ACK_MASK: AtomicU64 = AtomicU64::new(0);
-static SCHED_READY: AtomicUsize = AtomicUsize::new(0);
-static NEXT_TASK: AtomicUsize = AtomicUsize::new(0);
-static TASK_SUM: AtomicUsize = AtomicUsize::new(0);
-static TASK_CPU_MASK: AtomicU64 = AtomicU64::new(0);
-static LOCK_NEXT: AtomicUsize = AtomicUsize::new(0);
-static LOCK_OWNER: AtomicUsize = AtomicUsize::new(0);
-static LOCK_COUNTER: AtomicUsize = AtomicUsize::new(0);
-static ONCE_OWNER: AtomicUsize = AtomicUsize::new(0);
-const SCHED_TASKS: usize = 4_096;
-
-fn observe_max(candidate: usize) {
-    let mut observed = MAX_ACTIVE.load(Ordering::Relaxed);
-    while candidate > observed {
-        match MAX_ACTIVE.compare_exchange_weak(
-            observed,
-            candidate,
-            Ordering::SeqCst,
-            Ordering::Relaxed,
-        ) {
-            Ok(_) => return,
-            Err(next) => observed = next,
-        }
-    }
-}
-
-fn record_cpu(cpu: usize) {
-    if cpu >= MAX_CPUS {
-        BAD_CPU_IDS.fetch_add(1, Ordering::SeqCst);
-        return;
-    }
-    let bit = 1_u64 << cpu;
-    if CPU_MASK.fetch_or(bit, Ordering::SeqCst) & bit != 0 {
-        DUPLICATE_CPUS.fetch_add(1, Ordering::SeqCst);
-    }
-}
-
-fn perform_work() {
-    for _ in 0..WORK_PER_CPU {
-        WORK_TOTAL.fetch_add(1, Ordering::SeqCst);
-        core::hint::spin_loop();
-    }
-}
-
-extern "efiapi" fn ap_entry(argument: *mut c_void) {
-    let context = argument.cast::<ApContext>();
-    let mut cpu = usize::MAX;
-    // SAFETY: blocking StartupAllAPs keeps the stack-backed context alive, and
-    // firmware passes the exact pointer supplied by the BSP. WhoAmI is callable
-    // from an AP according to the MP Services protocol.
-    let status = unsafe {
-        let mp = (*context).mp;
-        ((*mp).who_am_i)(mp, &mut cpu)
-    };
-    if status != SUCCESS {
-        BAD_CPU_IDS.fetch_add(1, Ordering::SeqCst);
-        return;
-    }
-
-    record_cpu(cpu);
-    if !READY.load(Ordering::Acquire) || PAYLOAD.load(Ordering::Acquire) != PAYLOAD_VALUE {
-        STALE_READS.fetch_add(1, Ordering::SeqCst);
-    }
-
-    AP_COUNT.fetch_add(1, Ordering::SeqCst);
-    let ready = SCHED_READY.fetch_add(1, Ordering::AcqRel) + 1;
-    if ready > unsafe { (*context).expected_aps } {
-        BAD_CPU_IDS.fetch_add(1, Ordering::SeqCst);
-        return;
-    }
-    let seed_task = ready - 1;
-    TASK_SUM.fetch_add(seed_task, Ordering::AcqRel);
-    // Every AP reaches this acquire/release rendezvous before the shared queue
-    // opens. Each arrival also owns one unique seed task, so scheduler evidence
-    // cannot depend on host scheduling fairness at high virtual CPU counts.
-    while SCHED_READY.load(Ordering::Acquire) != unsafe { (*context).expected_aps } {
-        core::hint::spin_loop();
-    }
-    let mut local_tasks = 1;
-    loop {
-        let task = NEXT_TASK.fetch_add(1, Ordering::AcqRel);
-        if task >= SCHED_TASKS {
-            break;
-        }
-        TASK_SUM.fetch_add(task, Ordering::AcqRel);
-        local_tasks += 1;
-        core::hint::spin_loop();
-    }
-    if local_tasks != 0 {
-        TASK_CPU_MASK.fetch_or(1_u64 << cpu, Ordering::Release);
-    }
-
-    let ticket = LOCK_NEXT.fetch_add(1, Ordering::AcqRel);
-    while LOCK_OWNER.load(Ordering::Acquire) != ticket {
-        core::hint::spin_loop();
-    }
-    LOCK_COUNTER.fetch_add(1, Ordering::Relaxed);
-    LOCK_OWNER.store(ticket + 1, Ordering::Release);
-    let _ = ONCE_OWNER.compare_exchange(0, cpu + 1, Ordering::AcqRel, Ordering::Acquire);
-
-    let start = boundary::timestamp_counter();
-    let active = ACTIVE.fetch_add(1, Ordering::SeqCst) + 1;
-    observe_max(active);
-    perform_work();
-    ACTIVE.fetch_sub(1, Ordering::SeqCst);
-    let end = boundary::timestamp_counter();
-    if end <= start {
-        TIMER_FAILURES.fetch_add(1, Ordering::SeqCst);
-    }
-}
-
-extern "efiapi" fn ipi_entry(argument: *mut c_void) {
-    let context = argument.cast::<ApContext>();
-    let mut cpu = usize::MAX;
-    // SAFETY: identical blocking MP Services lifetime and ABI argument to
-    // `ap_entry`; WhoAmI is expressly AP-safe.
-    let status = unsafe {
-        let mp = (*context).mp;
-        ((*mp).who_am_i)(mp, &mut cpu)
-    };
-    if status != SUCCESS || cpu >= MAX_CPUS || IPI_EPOCH.load(Ordering::Acquire) != 1 {
-        BAD_CPU_IDS.fetch_add(1, Ordering::SeqCst);
-        return;
-    }
-    IPI_ACK_MASK.fetch_or(1_u64 << cpu, Ordering::Release);
 }
 
 struct Serial;
@@ -832,116 +716,11 @@ extern "efiapi" fn efi_main(image: Handle, system_table: *mut SystemTable) -> St
         return fail(&serial, b"bsp-identity", who_status);
     }
 
-    PAYLOAD.store(PAYLOAD_VALUE, Ordering::Relaxed);
-    READY.store(true, Ordering::Release);
-    SCHED_READY.store(0, Ordering::Release);
-    NEXT_TASK.store(enabled.saturating_sub(1), Ordering::Release);
-    TASK_SUM.store(0, Ordering::Release);
-    TASK_CPU_MASK.store(0, Ordering::Release);
-    ACTIVE.store(0, Ordering::Release);
-    MAX_ACTIVE.store(0, Ordering::Release);
-    LOCK_NEXT.store(0, Ordering::Release);
-    LOCK_OWNER.store(0, Ordering::Release);
-    LOCK_COUNTER.store(0, Ordering::Release);
-    ONCE_OWNER.store(0, Ordering::Release);
-    let mut context = ApContext {
-        mp,
-        expected_aps: enabled - 1,
-    };
-    if enabled > 1 {
-        // SAFETY: the callback has the frozen UEFI ABI. Blocking mode keeps the
-        // callback and argument live until every AP finishes or times out.
-        let startup_status = unsafe {
-            ((*mp).startup_all_aps)(
-                mp,
-                ap_entry,
-                0,
-                ptr::null_mut(),
-                5_000_000,
-                (&mut context as *mut ApContext).cast(),
-                ptr::null_mut(),
-            )
-        };
-        if startup_status != SUCCESS {
-            return fail(&serial, b"startup-all-aps", startup_status);
-        }
-    }
-
-    record_cpu(bsp);
-    perform_work();
-    if enabled == 1 {
-        for task in 0..SCHED_TASKS {
-            TASK_SUM.fetch_add(task, Ordering::Relaxed);
-        }
-        TASK_CPU_MASK.store(1_u64 << bsp, Ordering::Release);
-        ONCE_OWNER.store(bsp + 1, Ordering::Release);
-    }
-
-    let task_sum = TASK_SUM.load(Ordering::Acquire);
-    let expected_task_sum = SCHED_TASKS * (SCHED_TASKS - 1) / 2;
-    let worker_cpus = TASK_CPU_MASK.load(Ordering::Acquire).count_ones() as usize;
-    let expected_lock_count = enabled.saturating_sub(1);
-    if task_sum != expected_task_sum
-        || worker_cpus == 0
-        || (enabled >= 4 && worker_cpus < 2)
-        || LOCK_COUNTER.load(Ordering::Acquire) != expected_lock_count
-        || ONCE_OWNER.load(Ordering::Acquire) == 0
-    {
-        return fail(&serial, b"scheduler-invariants", usize::MAX);
-    }
-    serial.bytes(b"THERMITE_SCHED tasks=");
-    serial.usize(SCHED_TASKS);
-    serial.bytes(b" sum=");
-    serial.usize(task_sum);
-    serial.bytes(b" worker_cpus=");
-    serial.usize(worker_cpus);
-    serial.bytes(b" lock_entries=");
-    serial.usize(expected_lock_count);
-    serial.bytes(b" once=1 bsp_work=1\n");
-
-    IPI_ACK_MASK.store(1_u64 << bsp, Ordering::Relaxed);
-    IPI_EPOCH.store(1, Ordering::Release);
-    if enabled > 1 {
-        // SAFETY: the second blocking dispatch uses the same live context and
-        // cannot overlap the completed first dispatch.
-        let ipi_status = unsafe {
-            ((*mp).startup_all_aps)(
-                mp,
-                ipi_entry,
-                0,
-                ptr::null_mut(),
-                5_000_000,
-                (&mut context as *mut ApContext).cast(),
-                ptr::null_mut(),
-            )
-        };
-        if ipi_status != SUCCESS {
-            return fail(&serial, b"ipi-broadcast", ipi_status);
-        }
-    }
-    let expected_mask = if enabled == 64 {
-        u64::MAX
-    } else {
-        (1_u64 << enabled) - 1
-    };
-    let ack_mask = IPI_ACK_MASK.load(Ordering::Acquire);
-    serial.bytes(b"THERMITE_IPI epoch=1 acked=");
-    serial.usize(ack_mask.count_ones() as usize);
-    serial.bytes(b" expected=");
-    serial.usize(enabled);
-    serial.bytes(b"\n");
-    if ack_mask != expected_mask {
-        return fail(&serial, b"ipi-acknowledgement", usize::MAX);
-    }
-
     let clock_start = boundary::timestamp_counter();
     // SAFETY: Stall is a BSP-only boot service and the table remains live.
     let stall_status = unsafe { ((*boot_services).stall)(1_000) };
     let clock_end = boundary::timestamp_counter();
-    if stall_status != SUCCESS
-        || clock_end <= clock_start
-        || TIMER_FAILURES.load(Ordering::SeqCst) != 0
-    {
+    if stall_status != SUCCESS || clock_end <= clock_start {
         return fail(&serial, b"monotonic-clock", stall_status);
     }
     serial.bytes(b"THERMITE_CLOCK monotonic=1 per_cpu=");
@@ -950,47 +729,6 @@ extern "efiapi" fn efi_main(image: Handle, system_table: *mut SystemTable) -> St
 
     if let Err(status) = block_probe(&serial, image, boot_services) {
         return fail(&serial, b"block-read", status);
-    }
-
-    let aps = AP_COUNT.load(Ordering::SeqCst);
-    let work = WORK_TOTAL.load(Ordering::SeqCst);
-    let stale = STALE_READS.load(Ordering::SeqCst);
-    let duplicate = DUPLICATE_CPUS.load(Ordering::SeqCst);
-    let bad_ids = BAD_CPU_IDS.load(Ordering::SeqCst);
-    let unique = CPU_MASK.load(Ordering::SeqCst).count_ones() as usize;
-    let max_parallel = MAX_ACTIVE.load(Ordering::SeqCst);
-    let expected_work = enabled * WORK_PER_CPU;
-    let required_parallel = enabled.saturating_sub(1).min(1);
-
-    serial.bytes(b"THERMITE_SMP online=");
-    serial.usize(enabled);
-    serial.bytes(b" aps=");
-    serial.usize(aps);
-    serial.bytes(b" unique=");
-    serial.usize(unique);
-    serial.bytes(b" work=");
-    serial.usize(work);
-    serial.bytes(b" expected=");
-    serial.usize(expected_work);
-    serial.bytes(b" parallel_aps=");
-    serial.usize(max_parallel);
-    serial.bytes(b" stale=");
-    serial.usize(stale);
-    serial.bytes(b" duplicate=");
-    serial.usize(duplicate);
-    serial.bytes(b" bad_ids=");
-    serial.usize(bad_ids);
-    serial.bytes(b"\n");
-
-    if aps != enabled - 1
-        || unique != enabled
-        || work != expected_work
-        || max_parallel < required_parallel
-        || stale != 0
-        || duplicate != 0
-        || bad_ids != 0
-    {
-        return fail(&serial, b"smp-invariants", usize::MAX);
     }
 
     let mut apic_ids = [0_u32; MAX_CPUS];
@@ -1048,6 +786,13 @@ extern "efiapi" fn efi_main(image: Handle, system_table: *mut SystemTable) -> St
     serial.bytes(b" failed_apic=");
     serial.usize(post.failed_apic_id as usize);
     serial.bytes(b" firmware_calls=0\n");
+    serial.bytes(b"THERMITE_AUTHORED slice=capability+scheduler+ipc+runtime-policy signature=");
+    serial.usize(post.thermite_policy_signature as usize);
+    serial.bytes(b" policy_flags=");
+    serial.usize(post.thermite_policy_flags as usize);
+    serial.bytes(b" task_base=");
+    serial.usize(post.thermite_task_base);
+    serial.bytes(b" applied=generated-dispatch+allocator-mapping-ap-scheduler-shootdown-dma-service-verdicts functions=receipt assurance=L3+direct-atomic-boundaries migration=partial source=thermite\n");
     serial.bytes(b"THERMITE_ALLOC frames=64 heap_bytes=");
     serial.usize(post.heap_bytes);
     serial.bytes(b" allocations=");
@@ -1068,11 +813,6 @@ extern "efiapi" fn efi_main(image: Handle, system_table: *mut SystemTable) -> St
     serial.bytes(b" gs_verified=");
     serial.usize(post.cpu_local_cpus);
     serial.bytes(b" generation=1\n");
-    serial.bytes(
-        b"THERMITE_MODEL event_action=1 atomic=1 frame=1 dma_iommu=1 scheduler=1 registry_entries=",
-    );
-    serial.usize(post.model_registry_entries);
-    serial.bytes(b" linked=thermite-kernel\n");
     serial.bytes(b"THERMITE_POST_SCHED tasks=4096 sum=");
     serial.usize(post.task_sum as usize);
     serial.bytes(b" worker_cpus=");

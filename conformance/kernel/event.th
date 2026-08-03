@@ -1,0 +1,148 @@
+struct EventState {
+  next_id: u64,
+  event_id: u64,
+  event_kind: u64,
+  event_cpu: u64,
+  correlation: u64,
+  delivered: bool
+}
+
+fn event_ingress(kind: u64, cpu: u64, correlation: u64) -> EventState
+  req kind > 0 && kind <= 3 && cpu < 8 && correlation > 0
+  ens result.next_id == 2
+  ens result.event_id == 1
+  ens result.event_kind == kind
+  ens result.event_cpu == cpu
+  ens result.correlation == correlation
+  ens !result.delivered
+  fx pure
+{
+  EventState {
+    next_id: 2,
+    event_id: 1,
+    event_kind: kind,
+    event_cpu: cpu,
+    correlation: correlation,
+    delivered: false
+  }
+}
+
+fn event_bootstrap(cpu_count: u64) -> EventState
+  req cpu_count > 0 && cpu_count <= 8
+  ens result.next_id == 2
+  ens result.event_id == 1
+  ens result.event_kind == 1
+  ens result.event_cpu == cpu_count - 1
+  ens result.event_cpu < cpu_count
+  ens result.correlation == 1
+  ens !result.delivered
+  fx pure
+{
+  event_ingress(1, cpu_count - 1, 1)
+}
+
+fn ipc_event_dispatch(
+  capability: CapabilityRecord,
+  scheduler: SchedulerState,
+  event: EventState
+) -> u64
+  req capability.live && capability.owner == scheduler.cpu_count && capability.rights >= 1 && capability.generation == 1 && scheduler.cpu_count > 0 && scheduler.cpu_count <= 8 && scheduler.runnable_task > 0 && scheduler.runnable_task <= 1000 && scheduler.current_task == 0 && scheduler.dispatches == 0 && event.event_kind == 1 && event.event_cpu < scheduler.cpu_count && event.event_id > 0 && event.event_id <= 1000 && event.correlation > 0 && !event.delivered
+  ens result == 1010100 + event.event_cpu * 10 + scheduler.runnable_task
+  fx pure
+{
+  let allowed: bool = capability_allows(capability, scheduler.cpu_count, 1);
+  let dispatched: SchedulerState = scheduler_dispatch(scheduler, event.event_cpu);
+  if allowed {
+    1010100 + dispatched.current_cpu * 10 + dispatched.current_task
+  } else {
+    0
+  }
+}
+
+fn kernel_signature_policy_flags(signature: u64) -> u64
+  req true
+  ens result == signature / 10000000
+  fx pure
+{
+  signature / 10000000
+}
+
+fn kernel_signature_task_base(signature: u64, cpus: u64) -> u64
+  req cpus > 0 && cpus <= 8
+  ens (((signature % 10000000 <= 1010100 + (cpus - 1) * 10) || (signature % 10000000 > 1010100 + (cpus - 1) * 10 + 1000)) && result == 0) || (signature % 10000000 > 1010100 + (cpus - 1) * 10 && signature % 10000000 <= 1010100 + (cpus - 1) * 10 + 1000 && result == signature % 10000000 - (1010100 + (cpus - 1) * 10))
+  fx pure
+{
+  let payload: u64 = signature % 10000000;
+  let prefix: u64 = 1010100 + (cpus - 1) * 10;
+  let mut task_base: u64 = 0;
+  if payload > prefix && payload <= prefix + 1000 {
+    task_base = payload - prefix;
+  }
+  task_base
+}
+
+fn kernel_acceptance_slice(cpus: u64, scheduler_counter: &Atomic) -> u64
+  req cpus > 0 && cpus <= 8
+  ens result == 127 * 10000000 + 1010100 + (cpus - 1) * 10 + 41
+  fx platform(atomic)
+{
+  let cpu_count: u64 = cpus;
+  atomic_boundary_store(scheduler_counter, 5928228344835556676, Ordering::SeqCst);
+  let boundary_payload: u64 = atomic_boundary_load(scheduler_counter, Ordering::SeqCst);
+  let boundary_ipc: bool = ipc_runtime_accept(cpus - 1, boundary_payload);
+  atomic_boundary_store(scheduler_counter, 0, Ordering::SeqCst);
+  let boundary_once_probe: u64 = atomic_claim_once(scheduler_counter, 1);
+  atomic_boundary_store(scheduler_counter, 0, Ordering::SeqCst);
+  let transferred: CapabilityRecord = capability_bootstrap(cpu_count);
+  let scheduler: SchedulerState = scheduler_bootstrap(cpu_count);
+  let event: EventState = event_bootstrap(cpu_count);
+  let dispatch: u64 = ipc_event_dispatch(transferred, scheduler, event);
+  let synchronization_policy: u64 = synchronization_policy_bootstrap();
+  let memory_policy: u64 = memory_policy_bootstrap();
+  let ap_policy: u64 = ap_policy_bootstrap(cpu_count);
+  let shootdown_policy: u64 = shootdown_policy_bootstrap(cpu_count);
+  let dma_policy: u64 = dma_policy_bootstrap();
+  let service_policy: u64 = service_policy_bootstrap();
+  let policy_flags: u64 = synchronization_policy + memory_policy + ap_policy + shootdown_policy + dma_policy + service_policy;
+  let runtime_task: u64 = scheduler_task_value(41, 0);
+  let runtime_claim: u64 = scheduler_claim(scheduler_counter);
+  let runtime_tasks_bounded: bool = scheduler_task_available(4095) && !scheduler_task_available(4096) && scheduler_seed_admitted(0, cpu_count) && scheduler_release_gate(cpu_count - 1, cpu_count) && scheduler_required_ap_workers(cpu_count - 1) <= 2 && scheduler_required_parallel_cpus(cpu_count - 1) <= 2;
+  let runtime_sum: u64 = scheduler_expected_sum(41);
+  let runtime_ipc: bool = ipc_runtime_accept(cpu_count - 1, 5928228344835556676);
+  let runtime_ticket: bool = ticket_lock_can_enter(3, 3) && ticket_lock_release_value(3) == 4;
+  let runtime_allocator: bool = allocator_request_pages(4096, 4096) == 1 && allocator_runtime_accept(4096, 4096, 8192, 262144, 0);
+  let runtime_all_bits: u64 = 18446744073709551614 + 1;
+  let runtime_allocator_mask: u64 = allocator_run_mask(0, cpu_count, runtime_all_bits);
+  let runtime_allocator_candidate: bool = allocator_candidate_available(0, runtime_allocator_mask);
+  let runtime_allocator_claim: u64 = allocator_claim_value(0, runtime_allocator_mask);
+  let runtime_mapping: bool = mapping_identity_physical(0, 1) == 2097152 && mapping_kernel_table_entry(4096) == 4099 && mapping_user_table_entry(4096) == 4103 && mapping_identity_huge_entry(2097152) == 2097283 && mapping_user_code_entry(4096) == 4101 && mapping_user_stack_entry(4096) == 9223372036854779911 && mapping_kernel_data_entry(4096) == 9223372036854779907;
+  let runtime_ap_mask: u64 = ap_mask_insert(0, cpu_count - 1);
+  let expected_ap_mask: u64 = 0 | ((1 as u64) << (cpu_count - 1));
+  let runtime_ap: bool = runtime_ap_mask == expected_ap_mask && ap_should_start(cpu_count - 1, false, 0) && ap_failure_selection_valid(cpu_count, false, false, cpu_count) && ap_runtime_ready(cpu_count, cpu_count, cpu_count - 1, cpu_count - 1, cpu_count);
+  let runtime_shootdown: bool = shootdown_runtime_complete(cpu_count, cpu_count, 0, cpu_count - 1, cpu_count - 1, 2, 2);
+  let runtime_dma: bool = dma_configuration_policy_bootstrap() && dma_queue_size_valid(256) && dma_descriptor_bytes(256) == 4096 && dma_used_offset(256) == 8192 && dma_queue_layout_valid(256, 16384) && dma_runtime_complete(true, 0, 85, 170, 512, 1);
+  let runtime_service: bool = service_runtime_complete(1, 1, 1, 4660, 22136, 0);
+  let runtime_scheduler: bool = scheduler_runtime_complete(8554496, 8554496, cpu_count, cpu_count, cpu_count, cpu_count, 1, cpu_count, 1);
+  let runtime_signature: u64 = policy_flags * 10000000 + dispatch;
+  let runtime_signature_valid: bool = kernel_signature_policy_flags(runtime_signature) == 127 && kernel_signature_task_base(runtime_signature, cpu_count) == 41;
+  if boundary_once_probe > 0 && runtime_task == 41 && runtime_tasks_bounded && runtime_sum == 8554496 && runtime_ipc && runtime_ticket && runtime_allocator && runtime_mapping && runtime_ap && runtime_shootdown && runtime_dma && runtime_service && runtime_scheduler && runtime_signature_valid {
+    runtime_signature
+  } else {
+    0
+  }
+}
+
+fn ipc_runtime_accept(cpu: u64, payload: u64) -> bool
+  req cpu < 8
+  ens result == (payload == 5928228344835556676)
+  fx pure
+{
+  if payload == 5928228344835556676 {
+    let transferred: CapabilityRecord = capability_bootstrap(8);
+    let scheduler: SchedulerState = scheduler_bootstrap(8);
+    let event: EventState = event_ingress(1, cpu, 1);
+    ipc_event_dispatch(transferred, scheduler, event) > 0
+  } else {
+    false
+  }
+}

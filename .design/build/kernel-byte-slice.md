@@ -3,13 +3,14 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: f81b6903366ceec0ce435089c7f021c8c25f951c51aa3d2d08ca8a73ea08e5e3
+audited-content-sha256: dc2615a2550779fb9dc327dd5927109cd186316668ebaf2a05d7c7d9a6f75aa0
 decision: explicit pinned vstd proof-model import plus deterministic no_std erased link metadata
 issue: github:dollspace-gay/Thermite#108
 governs:
   - forge/src/verified_build.rs
   - forge/src/verified_build/composition.rs
-  - forge/src/kernel_vstd_link.rs
+  - forge/src/kernel_vstd_root.rs
+  - forge/src/kernel_vstd_prelude.rs
   - forge/tests/kernel_byte_slice.rs
 thesis-refs:
   - thermite-design.md §3
@@ -28,12 +29,13 @@ with Verus `--no-vstd --no-cheating`, and links through the existing
 freestanding gates without a hosted runtime.
 
 The model is explicit rather than ambient. Forge imports the `vstd.vir` shipped
-with the pinned Verus installation and supplies a deterministic erased
-`libvstd.rlib` containing only the Rust metadata skeleton for `Seq`, `View`, and
-slice indexing. The imported VIR is the semantic authority. The small rlib has
-no allocator or hosted implementation and contributes no executable slice
-adapter: the checked body still executes Rust's native `&[u8]::len` and
-indexing directly.
+with the pinned Verus installation and builds a deterministic no-std erased
+`libvstd.rlib` from the exact selected upstream vstd sources. The selected root
+omits only modules outside the kernel closure whose erased metadata order is
+nondeterministic on the UEFI target. The imported VIR remains the semantic
+authority. The rlib contributes the actual checked atomic implementation used
+by the kernel composition, while slice reads still execute Rust's native
+`&[u8]::len` and indexing directly.
 
 ## Why the builtins-only profile is insufficient
 
@@ -62,11 +64,14 @@ For a kernel build Forge performs two distinct operations:
 1. It resolves `vstd.vir` and the complete `vstd/` source tree next to the
    pinned Verus binary. The VIR digest and a canonical file-by-file source-tree
    digest are captured in `KernelVstdModelEvidence`.
-2. It writes the embedded `forge/src/kernel_vstd_link.rs` source into a private
-   scratch directory and invokes the same pinned Verus/rustc with `--is-vstd
-   --no-verify --compile --crate-type=rlib`. This step creates erased Rust
-   metadata; it does not create or replace proof semantics. Its source, exact
-   normalized arguments, and resulting rlib digest are bound.
+2. It copies the canonical allowlisted upstream source tree into a private
+   scratch directory, substitutes the receipt-bound
+   `forge/src/kernel_vstd_root.rs` and `forge/src/kernel_vstd_prelude.rs`, and
+   invokes the same pinned Verus/rustc with `--is-vstd --no-verify --compile
+   --crate-type=rlib`. This step creates the erased executable/metadata closure;
+   it does not create or replace proof semantics. Every copied source, both
+   selected roots, the normalized arguments, and the resulting rlib digest are
+   bound.
 
 The final whole-crate command remains strict and records the portable argument
 shape:
@@ -84,10 +89,10 @@ paths. A direct-Verus shell that uses slice specifications explicitly imports
 slice vocabulary survives only in proof position, while executable length and
 indexing remain native, allocation-free slice operations.
 
-The link skeleton deliberately mirrors the pinned vstd definition paths and
-impl order for the admitted subset. Verus metadata keys external impls by those
-paths. Expanding this subset is therefore a reviewed toolchain-model change,
-not an implicit glob of executable vstd functionality.
+The selected link root deliberately preserves the pinned vstd definition paths
+and module order. Verus metadata keys external impls by those paths. Expanding
+or reducing this set is therefore a reviewed toolchain-model change, not an
+implicit glob of executable vstd functionality.
 
 ## Binding, validation, and replay
 
@@ -96,12 +101,14 @@ not an implicit glob of executable vstd functionality.
 - the exact `vstd.vir` path and SHA-256;
 - the full pinned `vstd/` source root, file count, byte count, and canonical
   source-tree SHA-256;
-- the erased link source filename and SHA-256;
+- the selected link-root and prelude filenames and SHA-256 values;
 - its normalized build arguments; and
 - the generated no-std `libvstd.rlib` SHA-256.
 
-The bundle contains `evidence/kernel-vstd-link.rs` and the generated rlib at
-`artifact/deps/libvstd.rlib`; the ordinary receipt file inventory binds both.
+The bundle contains `evidence/kernel-vstd-link-source/vstd.rs`,
+`evidence/kernel-vstd-link-source/prelude.rs`, the complete pinned source tree,
+and the generated rlib at `artifact/deps/libvstd.rlib`; the ordinary receipt
+file inventory binds all of them.
 Validation requires the model only for a kernel target, checks that all model
 and dependency digests agree, and rejects a missing, duplicated, hosted, or
 malformed substitution.

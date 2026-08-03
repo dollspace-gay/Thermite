@@ -68,6 +68,7 @@ mod slag;
 mod strat_faithful;
 mod strat_tv;
 mod strengthen;
+mod thermite_package;
 mod tv_signal;
 mod vacuity;
 mod vacuity_solver;

@@ -469,16 +469,31 @@ fn is_verified_builtin(name: &str, variants: &BTreeSet<String>) -> bool {
                 | "count_sep"
                 | "sep_free"
                 | "is_space"
+                | "old"
+                | "final"
         )
 }
 
 fn is_verified_qualified_root(root: &str, program: &Program) -> bool {
-    matches!(root, "u32" | "u64" | "usize" | "bool" | "Option" | "Result")
-        || program.items.iter().any(|item| match item {
-            Item::Struct(s) => s.name == root,
-            Item::Enum(e) => e.name == root,
-            _ => false,
-        })
+    matches!(
+        root,
+        "u32"
+            | "u64"
+            | "usize"
+            | "bool"
+            | "Option"
+            | "Result"
+            // `FixedArray8<T>::fill` is a frozen, allocation-free language
+            // constructor emitted by thermite-lower.  It has no source item to
+            // add to the call graph, just like the primitive Option/Result
+            // constructors above, but its exact generated definition remains
+            // part of the lowered artifact and verified-build receipt.
+            | "FixedArray8"
+    ) || program.items.iter().any(|item| match item {
+        Item::Struct(s) => s.name == root,
+        Item::Enum(e) => e.name == root,
+        _ => false,
+    })
 }
 
 fn collect_verified_calls(item: &Item) -> Vec<VerifiedCall> {
@@ -1060,5 +1075,29 @@ fn h(x: u32) -> u32 req x < 100 ens result == x fx pure { g(x) }";
             verified_closure(&indirect, &["root".to_string()]),
             Err(VerifiedClosureError::IndirectCall { .. })
         ));
+    }
+
+    #[test]
+    fn verified_closure_accepts_frozen_fixed_array_constructor() {
+        let program = parse(
+            "fn root(value: u64) -> FixedArray8<u64> \
+             req true ens result.get(0) == value fx pure \
+             { FixedArray8::fill(value) }",
+        );
+        let closure = verified_closure(&program, &["root".to_string()]).unwrap();
+        assert_eq!(closure.functions, BTreeSet::from(["root".to_string()]));
+        assert!(closure.edges.is_empty());
+    }
+
+    #[test]
+    fn verified_closure_accepts_state_view_primitives() {
+        let program = parse(
+            "fn root(data: &mut [u8], at: usize, value: u8) -> u8 \
+             req at < data.len() ens result == value ens final(data)[at] == value \
+             fx platform(memory) { data[at] = value; value }",
+        );
+        let closure = verified_closure(&program, &["root".to_string()]).unwrap();
+        assert_eq!(closure.functions, BTreeSet::from(["root".to_string()]));
+        assert!(closure.edges.is_empty());
     }
 }

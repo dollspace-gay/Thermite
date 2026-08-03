@@ -75,3 +75,24 @@ fn sealed_on_a_fn_is_a_parse_error() {
         "`#[sealed] fn` must be a parse error (REQ-8: the seal is struct-only)"
     );
 }
+
+#[test]
+fn frozen_platform_type_is_fieldless_registry_bound_and_sealed() {
+    let r = parse("#[frozen(\"kernel::atomic::cell@v1\")] struct Atomic {}\n");
+    assert!(r.is_clean(), "must parse clean, got {:?}", r.errors);
+    let s = match &r.program.items[0] {
+        Item::Struct(s) => s,
+        other => panic!("item[0] must be Item::Struct, got {other:?}"),
+    };
+    assert!(s.sealed, "a frozen platform type is source-unconstructible");
+    assert_eq!(s.frozen.as_deref(), Some("kernel::atomic::cell@v1"));
+    assert!(s.fields.is_empty());
+}
+
+#[test]
+fn frozen_platform_type_attribute_is_struct_only() {
+    let r = parse(
+        "#[frozen(\"kernel::atomic::cell@v1\")] fn bad() -> u64 req true ens result == 0 fx pure { 0 }\n",
+    );
+    assert!(!r.is_clean(), "`#[frozen]` must not attach to a function");
+}

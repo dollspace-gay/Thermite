@@ -540,10 +540,11 @@ having already wrapped a Binary/Unary inner — pinned by the in-Rust `e1_cast_i
 `encode_binary_operand` wraps a `Cast` left operand — in-Rust `e2_cast_lt_outer_paren`
 `((x as u32) < 33)`) match Table 1B's discipline on the bounded side.
 
-### 2C. Index + overflow framing — `encode_index` ↔ `ExecExpr.index` / `evalArith`
+### 2C. Slice access + overflow framing — `encode_method_call`/`encode_index` ↔ `ExecExpr.sliceLen`/`ExecExpr.index`
 
 | Construct | Rust arm | Lean arm | Bridge | Pinned by |
 |---|---|---|---|---|
+| `xs.len()` (parameter slice) | `encode_method_call`: admits exactly zero-argument `len` whose receiver is a single name in `ExecRefCtx.slice_bound`; emits `xs.len()` | `execDenote .sliceLen slice`: obtains the list length and returns it as a bounded `usize` (out-of-`usize` model length → `none`) | the production method and reference denote the same bounded slice length; Vec/String/user methods remain OUT | `exec_ref_sound`; `slice_len_value_is_three`; Rust `parameter_slice_len_has_a_bounded_exec_reference` |
 | `xs[i]` (slice) | `encode_index` `IndexArg::Single(i)` over slice-bound base: `Ok(format!("{}[{idx}]", segments[0]))`; `idx = encode_index_value(i)` (`<p> as int`) | `execDenote .index slice idx => … if 0 ≤ iv.value ∧ iv.value < xs.length then some (.int (xs.get …)) else none` | `xs[i as int]` is the bounded i-th element; out-of-range → obligation `none` | `exec_ref_sound`; `slice_index_value_is_twenty` |
 | range index | `encode_index` non-`Single` → `Err(Unsupported("slice-range … not a scalar"))` | (absent — `ExecExpr.index` is single only) | a sub-slice is not a scalar exec value | n/a (faithful) |
 | non-slice base | `encode_index`: `Err(Unsupported("index over a non-slice base"))` | (absent) | OUT of frozen exec subset | n/a |
@@ -569,11 +570,12 @@ proves `bodyRefState = bodyDenote`. The per-RHS value at each position is delega
 | `let n = rhs` | `Stmt::Let`: re-shadow guard `if env.contains_key(name) { Err }`; else `substitute(init,env); env.insert(name, …)` | `.letS name init => if st.scope name then none else do let v ← execRefValue init st.env; some ((st.setVar name v).bind name)` | a `let` binds the RHS substituted under the current env; re-shadow → `none` (encoder `Err`) | `body_ref_sound` (via `refStmt_eq_stmtDenote`) |
 | re-shadow Err | `Err(Unsupported("re-shadowed binding …"))` | `if st.scope name then none` | flat env cannot hold two cells | `refStmt_eq_stmtDenote` (letS) |
 | `n = rhs` (assign) | `Stmt::Assign`: target must be bare `Path[1]`; cell must be in env (`if !env.contains_key(&name) Err`); `substitute(value,env); env.insert` | `.assign name value => if st.scope name then do let v ← execRefValue value st.env; some (st.setVar name v) else none` | order-sensitive rebind of an in-scope cell; unbound → `none` | `refStmt_eq_stmtDenote` (assign); B2 `b2_mutation_order_matters` |
-| non-scalar/non-bare target | `Stmt::Assign` non-`Path[1]` target → `Err(Unsupported("… indexed / field / projection … OUT"))` | (absent — `Stmt.assign` takes a `name : String`) | `xs[i]=e` is OUT (v2 sequence theory) | n/a (faithful absence) |
+| `xs[i] = e` (frame-declared mutable slice, top level) | `Stmt::Assign` admits an `IndexArg::Single` over a bare name in `BodyRefCtx.mutable_slice_bound`; validates `i`/`e` with the independent exec encoder; `slice_write_ensures` constructs the complete symbolic state `old(xs)@.update(i,e)` and compares it to `final(xs)@` | `.sliceAssign slice index value`: evaluates index/value in the pre-write state, checks bounds, then `State.setSlice` with `List.set`; `refStmt_eq_stmtDenote` covers the arm | complete sequence refinement, not scalar-marker equivalence: a dropped write, wrong index/value, reorder, or collateral write changes the final sequence | `refStmt_eq_stmtDenote`; `slice_write_reference_state_is_sound`; negatives `wrong_slice_index_breaks_state_refinement` / `wrong_slice_value_breaks_state_refinement`; real-Verus forge teeth for faithful/wrong-index/wrong-value |
+| other non-bare target | a field/range/projection/unframed indexed target → `Err(Unsupported)` | absent from the emitted Rust subset | remains OUT | n/a (faithful absence) |
 | unbound assign | `if !env.contains_key(&name) { Err }` | `else none` | malformed body | `refStmt_eq_stmtDenote` |
 | expr-stmt | `Stmt::Expr(e)`: `let _ = substitute(e, env)?; Ok(())` (encode-and-discard) | `.exprS e => do let _ ← execRefValue e st.env; some st` | no state effect; surfaces a value error | `refStmt_eq_stmtDenote` (exprS) |
 | `Stmt::If` | `Stmt::If { cond, then, else_ }`: `let mut then_env = env.clone(); thread_branch(then, &mut then_env)?; … else_env = env.clone(); …; let cell_names = env.keys().cloned().collect(); for name in cell_names { … compose Expr::If … }` | `.ifElse cond thenB elseB => do let c ← asBool (← execRefValue cond st.env); let branch ← (if c then refBlockThread thenB st else refBlockThread elseB st); some (st.restoreScope branch)` | branch on cond; recompose pre-`if` cells; discard branch-local `let` | `refStmt_eq_stmtDenote` (ifElse); see note below |
-| `xs[i]=e` gate | (the non-bare-target `Err` above) | (absent) | `Unsupported` | n/a |
+| nested mutable-slice write / pre-write slice read | `slice_write_ensures` rejects an indexed write nested under control flow and rejects a write index/value that reads any mutable slice (avoids conflating pre-write and `final` views) | the Lean operational constructor has exact pre-state semantics; the Rust recognizer deliberately emits only the narrower top-level/no-mutable-read subset | structured `Unsupported`, never a false `Faithful` | Rust honest-rejection tests + correspondence restriction |
 | early `return` (non-tail) | `Stmt::Return(_) => Err(Unsupported("early return in non-tail …"))` | (absent — no `Stmt.return`) | multi-exit CPS, OUT of v1 | n/a (faithful) |
 | `Loop`/`Break`/`Continue` | each `=> Err(Unsupported("… step 2.2.2"))` | (absent — no loop `Stmt`) | loops kernel-gated (#163) | n/a (faithful) |
 
@@ -585,12 +587,15 @@ of the pre-`if` env (`let mut then_env = env.clone()`), then recomposes only the
 ```
 def State.restoreScope (pre branch : State) : State :=
   { env := { vars := fun s => if pre.scope s then branch.env.vars s else pre.env.vars s
-             slices := pre.env.slices }
+             slices := branch.env.slices }
     scope := pre.scope }
 ```
 
-— an in-scope (pre-`if`) cell takes the branch's value, a non-pre-`if` name keeps the pre value, and
-the post-`if` scope is the pre scope. This is precisely the Rust `env.keys()` recomposition. **This
+— an in-scope (pre-`if`) scalar cell takes the branch's value, a non-pre-`if` scalar name keeps the
+pre value, the post-`if` scope is the pre scope, and aggregate slice state is carried by the chosen
+branch. The Rust mutable-slice reference currently rejects slice writes nested under control flow,
+so this semantically correct aggregate propagation does not widen the admitted Rust subset. This is
+precisely the scalar `env.keys()` recomposition for every emitted `if` body. **This
 arm was the #186 divergence**: an earlier Lean `ifElse` leaked branch-local scope; the ACToR loop
 found it (`0256fd1c`), fixed it to match the `env.clone()` discipline (`6050b4cb`), and re-verified.
 `StmtDivergence.lean` records the divergence as a kernel-checked artifact, not a `sorry`.

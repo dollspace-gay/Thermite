@@ -986,6 +986,7 @@ fn item_inventory() -> Vec<Item> {
             fields: Vec::new(),
             inv: None,
             sealed: false,
+            frozen: None,
             span,
         }),
         Item::Enum(EnumItem {

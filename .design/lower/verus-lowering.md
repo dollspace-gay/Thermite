@@ -3,7 +3,7 @@
 tier: 3-component
 status: draft
 audited-sha: 92396428567edc6940a9e2845217f5ff4c2ea3c6 (re-pinned 2026-06-16, user-authorized: the only change to this doc's governed files since the prior pin is the additive stage-1 forge-tier increment 2a — the new Item::Forge surface + inert Item::Forge match arms, verified net-additive with no substantive removal of existing v1 logic (git log <main>..HEAD = the 8 forge commits); the v1 behavior this doc governs is unchanged, and the new forge-tier surface is specified in .design/stage1-forge-tier.md / REQ-S1-3)
-audited-content-sha256: d6376411ddf85bf6e2ee31957407566800302f2c049aa03dacb0cdf76b09d24e (re-pinned 2026-08-01 after auditing the bootable multicore kernel integration; existing behavior remains regression-covered)
+audited-content-sha256: 394fe1fee8ca32737749cb1b482fd5aedd75456e554afaeef69251ccc04dd795 (re-pinned 2026-08-01 after auditing fixed storage and frozen exact-TPL lowering)
 governs: thermite-lower/src/lower.rs
 thesis-refs:
   - thermite-design.md §3
@@ -15,6 +15,14 @@ thesis-refs:
 -->
 
 ## Summary
+
+> **Kernel-composition amendment (2026-08-01).** Kernel library lowering now
+> has two receipt-bound representations absent from ordinary libraries:
+> `FixedArray8<T>` becomes a closed eight-slot value with checked `fill/get/set`,
+> and `#[frozen("kernel::atomic::cell@v1")] struct Atomic {}` becomes the exact
+> verified platform atomic type. Canonical frozen boundary calls lower to
+> ordinary checked calls into the exact TPL module. Standalone lowering retains
+> the existing foreign-boundary form; unknown frozen names fail closed.
 
 `thermite-lower::lower` is the **L3 emission stage**: it walks a validated
 `thermite-syntax` `Program` and emits a single Verus source file — a
@@ -92,9 +100,10 @@ unsupported element operations stay absent and fail closed.
   from `ast.rs` `enum Stmt` / `struct LoopNode` / `enum LoopKind` + §4.1.
 
 - **REQ-5 (spec-context lowering — slices become `Seq`, the verified contract):**
-  In **spec position** (`spec fn` bodies, `requires`/`ensures`/`invariant`), a
-  `&[T]` value `xs` is referenced through its Verus view `xs@` (a `Seq<T>`), and a
-  `spec fn` over a slice takes `Seq<T>` (NOT `&[T]`) — running `verus` on the
+  In a contract or invariant, an executable `&[T]` value `xs` is referenced
+  through its Verus view `xs@` (a `Seq<T>`). A `spec fn` over a slice takes
+  `Seq<T>` (NOT `&[T]`), so its body indexes that parameter directly as
+  `xs[i as int]`, never `xs@[i as int]` — running `verus` on the
   naive `&[u32]` spec-fn form fails with `the trait bound &[u32]: Integer is not
   satisfied` (recorded finding, see Architecture). A slice expression
   `&xs[..i]` in spec position lowers to `xs@.subrange(0, i as int)`; `xs[i]` in
@@ -314,16 +323,19 @@ Verus distinguishes **exec** code (function bodies) from **spec** code
 Thermite expression lowers differently by context — this is the central finding
 of authoring against the real binary:
 
-- A `&[T]` slice in **exec** position is plain Rust `&[u32]`; in **spec**
-  position it is referenced as `xs@`, a `vstd` `Seq<T>`.
+- A `&[T]` slice in **exec** position is plain Rust `&[u32]`; when that
+  executable value appears in a contract or invariant it is referenced as
+  `xs@`, a `vstd` `Seq<T>`.
 - A `spec fn` over a slice takes `Seq<T>`, NOT `&[T]`. Running `verus` on the
   naive `spec fn spec_sum(xs: &[u32])` with `spec_sum(&xs[1..])` fails:
   `the trait bound &[u32]: Integer is not satisfied` / `expected int, found
   RangeFrom`. The verified form takes `Seq<u32>` and recurses on
-  `xs.drop_first()`.
-- A spec slice `&xs[..i]` lowers to `xs@.subrange(0, i as int)`; a spec index
-  `xs[i]` to `xs@[i as int]`. The cast `i as int` is mandatory — Verus spec
-  indices are `int`.
+  `xs.drop_first()`. Because the body parameter is already a `Seq<T>`, an index
+  in that body lowers directly to `xs[i as int]` and a range directly to
+  `xs.subrange(...)`; adding another `@` is ill-typed.
+- A contract slice `&xs[..i]` lowers to `xs@.subrange(0, i as int)`; a contract
+  index `xs[i]` to `xs@[i as int]`. The cast `i as int` is mandatory — Verus
+  spec indices are `int`.
 
 ### `fn`/`spec fn` signature lowering (REQ-1)
 
@@ -716,7 +728,7 @@ row).
 | REQ-2 (type lowering) | SHIPPED | `lower_type` in `lower.rs`; consumer `lower_fn`/`emit_params`; asserted by `lower_conformance::corpus_node_substrings`. |
 | REQ-3 (expression lowering) | SHIPPED | `lower_expr` (exec) + `precedence`/`lower_binary_operand` (grouping); consumer `lower_block_with_fn_aids`; verified by both corpus programs. |
 | REQ-4 (statement + loop lowering) | SHIPPED | `lower_stmt`/`lower_loop` emit every `inv`→`invariant` + `dec`→`decreases`; `while`/`loop` preserved; consumer `lower_fn_body`. |
-| REQ-5 (spec-context `Seq` lowering) | SHIPPED | `lower_expr` w/ `Ctx::Spec` + `lower_spec_arg`/`lower_index` (`xs@`/`subrange`/`@[i as int]`); `spec_sum` Seq recursion via `seq_fold_body`; verified by `sum_emitted_verifies`. |
+| REQ-5 (spec-context `Seq` lowering) | SHIPPED | `lower_expr` with `Ctx::Spec` + `lower_spec_arg`/`lower_index`: executable slices use `xs@`, while slice parameters already lowered to `Seq<T>` inside a `spec fn` use direct indexing/ranges; `spec_sum` Seq recursion via `seq_fold_body`; verified by `sum_emitted_verifies` and `spec_slice_index`. |
 | REQ-6 (combinator Verus(L3) defs + triggers) | SHIPPED | `CombinatorSig.verus_l3` in `thermite-spec/src/combinators.rs` (all 8 frozen forms); consumer `emit_combinator_defs` in `lower.rs` (closes OQ-2, R-DEFER-1); verified by `combinator_forms_compile_under_verus` (`verus`: 2 verified, 0 errors incl. non-vacuity). |
 | REQ-7 (proof-aid emission) | SHIPPED | shape-keyed templates in `lower.rs`: `push_lemma_for` (a), `lift_immutable_preconds` (b), `accumulator_aid`/`match_acc_invariant` (c), `extensionality_at_exit` (d), `complementary_coverage_split` (e), `req_bounded_mul_asserts` (f, #196 — the var*var overflow discharge: a `Binary{Mul}` of non-literal operands whose every variable carries a `v <= CONST`/`v < CONST` req conjunct gets ONE `assert((EXPR) <= BOUND) by(nonlinear_arith) requires <those conjuncts>;` placed at its ENCLOSING block's start — fn-body via `render_mul_proof_block` in `lower_fn_body`, in-loop via the same call in `lower_loop`, since a body-start fact does not flow past a loop head; the emitted `requires` are EXACTLY req conjuncts (no invented bound) and the assert can only FAIL → sound, R-DEFER-9; a product over a non-param / mutated-local / unbounded operand is SKIPPED so the obligation stands honestly — `req_expr_upper_bound`/`block_rebinds`); NO per-program hardcoding; both corpus programs verify; #196 GROUNDED live: `sq` (`req n <= 30 ens result == n * n`) → L3, 3-var chain `a*b*c` → L3, in-loop `n*n` → L3, unbounded `n*m` → honest fail, `lo + (hi-lo)/2` non-mul → no aid (`thermite-lower/tests/req_bounded_mul_aid.rs` 6/6, `forge/tests/req_bounded_mul_conformance.rs` 2/2). |
 | REQ-8 (golden-file contract — VERIFY) | SHIPPED | `lower_conformance.rs` runs the real `verus` binary on emitted output (`sum`: 5 verified; `binary_search`: 2 verified; 0 errors each) and asserts the emitted contracts equal the corpus contracts (no weakening). Goldens used as the verified reference, not byte-matched (amended REQ-8). |

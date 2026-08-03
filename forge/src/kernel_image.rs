@@ -44,7 +44,6 @@ fn verus_obligation_function_count(bytes: &[u8]) -> Result<u64, ForgeError> {
                 "const fn ",
                 "exec fn ",
                 "proof fn ",
-                "spec fn ",
                 "extern \"C\" fn ",
             ]
             .iter()
@@ -1323,33 +1322,82 @@ fn authorship_metrics(
         .ok_or_else(|| ForgeError::RustcOutput {
             detail: "whole-crate Verus result omitted its verified-function count".to_string(),
         })?;
-    // Verus reports one aggregate whole-crate count. Attribute it without the
-    // old `verified - source .th functions` shortcut: lowering can synthesize
-    // verified language definitions (for example FixedArray8 fill/get/set), and
-    // those are neither direct-Verus TPL nor one-for-one source functions. Count
-    // the exact receipt-bound lowered definitions, then require the remainder to
-    // equal the complete direct-Verus source inventory. Composition proofs and
-    // exact TPL refinements are deliberately reported as separate subsets:
-    // merely composing generated Thermite is not a proof of a machine
-    // operation. Whole-crate success means every member of all three disjoint
-    // sets discharged.
+    // Verus reports a whole-crate obligation count, not a source-function
+    // count: a lowered function with loop proof splits can contribute more than
+    // one discharged obligation, while a pure `spec fn` definition contributes
+    // none. Bind separate `--verify-root` / `--verify-only-module` invocations
+    // over the exact same combined source and require their sum to equal the
+    // whole-crate result. This keeps generated Thermite, composition, and exact
+    // TPL proof accounting auditable without inferring obligations from LOC.
     let lowered_thermite_functions = verus_obligation_function_count(&read(
         &verified_policy_bundle.join("evidence/lowered-thermite.verus.rs"),
     )?)?;
-    let expected_verified_functions = lowered_thermite_functions
-        .checked_add(verus_composition_function_count)
-        .and_then(|count| count.checked_add(direct_verus_tpl_function_count))
-        .ok_or_else(|| ForgeError::RustcOutput {
-            detail: "whole-crate verified-function inventory overflowed".to_string(),
+    let mut lowered_thermite_obligations = None;
+    let mut verus_composition_discharged_obligations = 0_u64;
+    let mut direct_verus_discharged_obligations = 0_u64;
+    for scope in &verus_evidence.scopes {
+        let scope_stdout: serde_json::Value =
+            serde_json::from_str(&scope.stdout).map_err(|error| ForgeError::RustcOutput {
+                detail: format!(
+                    "invalid scoped Verus result `{}` for metrics: {error}",
+                    scope.scope
+                ),
+            })?;
+        let discharged = scope_stdout
+            .pointer("/verification-results/verified")
+            .and_then(serde_json::Value::as_u64)
+            .ok_or_else(|| ForgeError::RustcOutput {
+                detail: format!(
+                    "scoped Verus result `{}` omitted its discharged-obligation count",
+                    scope.scope
+                ),
+            })?;
+        match scope.source_policy.as_str() {
+            "generated_thermite_v1" if lowered_thermite_obligations.is_none() => {
+                lowered_thermite_obligations = Some(discharged);
+            }
+            "ordinary_checked_v1" => {
+                verus_composition_discharged_obligations = verus_composition_discharged_obligations
+                    .checked_add(discharged)
+                    .ok_or_else(|| ForgeError::RustcOutput {
+                        detail: "Verus composition obligation count overflowed".to_string(),
+                    })?;
+            }
+            "exact_tpl_v1" => {
+                direct_verus_discharged_obligations = direct_verus_discharged_obligations
+                    .checked_add(discharged)
+                    .ok_or_else(|| ForgeError::RustcOutput {
+                        detail: "direct-Verus TPL obligation count overflowed".to_string(),
+                    })?;
+            }
+            policy => {
+                return Err(ForgeError::RustcOutput {
+                    detail: format!(
+                        "scoped Verus metrics contain duplicate or unknown source policy `{policy}`"
+                    ),
+                });
+            }
+        }
+    }
+    let lowered_thermite_obligations =
+        lowered_thermite_obligations.ok_or_else(|| ForgeError::RustcOutput {
+            detail: "scoped Verus metrics omit the lowered-Thermite root proof".to_string(),
         })?;
-    if verified_functions != expected_verified_functions {
+    let attributed_obligations = lowered_thermite_obligations
+        .checked_add(verus_composition_discharged_obligations)
+        .and_then(|count| count.checked_add(direct_verus_discharged_obligations))
+        .ok_or_else(|| ForgeError::RustcOutput {
+            detail: "scoped Verus obligation inventory overflowed".to_string(),
+        })?;
+    if verified_functions != attributed_obligations {
         return Err(ForgeError::RustcOutput {
             detail: format!(
-                "direct-Verus function inventory disagrees with discharged whole-crate obligations: \
-                 Verus reported {verified_functions}, receipt-bound lowered Thermite contributes \
-                 {lowered_thermite_functions}, Verus composition declares \
-                 {verus_composition_function_count}, and direct-Verus TPL declares \
-                 {direct_verus_tpl_function_count}"
+                "scoped Verus obligation attribution disagrees with the whole-crate proof: \
+                 Verus reported {verified_functions}, lowered Thermite discharged \
+                 {lowered_thermite_obligations}, Verus composition discharged \
+                 {verus_composition_discharged_obligations}, and direct-Verus TPL discharged \
+                 {direct_verus_discharged_obligations}; lowered Thermite emitted \
+                 {lowered_thermite_functions} executable/proof definitions"
             ),
         });
     }
@@ -1364,13 +1412,12 @@ fn authorship_metrics(
     } else {
         format!("L3 direct-Verus exact refinement ({directly_refined_boundaries} frozen boundary)")
     };
-    let direct_verus_discharged_obligations = direct_verus_tpl_function_count;
     Ok(KernelAuthorshipMetrics {
         thermite_loc: source_loc(thermite_source)?,
         thermite_function_count,
         verus_composition_loc,
         verus_composition_function_count,
-        verus_composition_discharged_obligations: verus_composition_function_count,
+        verus_composition_discharged_obligations,
         direct_verus_tpl_loc,
         direct_verus_tpl_function_count,
         direct_verus_discharged_obligations,
@@ -2036,6 +2083,6 @@ pub closed spec fn public_closed_spec() -> bool { true }
 pub(crate) closed spec fn crate_closed_spec() -> bool { true }
 pub struct NotAFunction;
 "#;
-        assert_eq!(verus_obligation_function_count(source).unwrap(), 11);
+        assert_eq!(verus_obligation_function_count(source).unwrap(), 7);
     }
 }

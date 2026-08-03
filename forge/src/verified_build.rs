@@ -480,6 +480,24 @@ pub struct VerusEvidence {
     pub errors: Option<u64>,
     pub stdout: String,
     pub stderr: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scopes: Vec<VerusScopeEvidence>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VerusScopeEvidence {
+    pub scope: String,
+    pub source_policy: String,
+    pub args: Vec<String>,
+    pub source_relative_path: String,
+    pub source_sha256_before: String,
+    pub source_sha256_after: String,
+    pub codegen_toolchain_sha256: String,
+    pub success: bool,
+    #[serde(default)]
+    pub errors: Option<u64>,
+    pub stdout: String,
+    pub stderr: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -3426,6 +3444,7 @@ fn compile_verus_source(
         errors,
         stdout,
         stderr,
+        scopes: Vec::new(),
     };
     if !success {
         return Ok(CompiledVerus {
@@ -3509,6 +3528,188 @@ fn expected_verus_args(crate_name: &str, target: VerifiedTarget) -> Vec<String> 
     args
 }
 
+fn expected_verus_scope_args(
+    crate_name: &str,
+    target: VerifiedTarget,
+    module: Option<&str>,
+) -> Vec<String> {
+    let mut args = vec!["--output-json".to_string(), "--profile".to_string()];
+    if matches!(target, VerifiedTarget::Kernel | VerifiedTarget::KernelUefi) {
+        args.extend([
+            "--no-vstd".to_string(),
+            "--import".to_string(),
+            "vstd=<KERNEL_VSTD_VIR>".to_string(),
+            "--extern".to_string(),
+            "vstd=<KERNEL_VSTD_RLIB>".to_string(),
+        ]);
+    }
+    if target == VerifiedTarget::KernelUefi {
+        args.extend([
+            "--extern".to_string(),
+            "verus_builtin=<KERNEL_UEFI_VERUS_BUILTIN_RLIB>".to_string(),
+            "--target".to_string(),
+            "x86_64-unknown-uefi".to_string(),
+        ]);
+    }
+    args.push("--no-cheating".to_string());
+    match module {
+        Some(module) => args.extend(["--verify-only-module".to_string(), module.to_string()]),
+        None => args.push("--verify-root".to_string()),
+    }
+    args.extend([
+        "--rlimit".to_string(),
+        DEFAULT_RLIMIT.to_string(),
+        "--smt-option".to_string(),
+        format!("smt.random_seed={DEFAULT_SOLVER_SEED}"),
+        "--remap-path-prefix=<SCRATCH>=.".to_string(),
+        format!("{crate_name}.rs"),
+    ]);
+    args
+}
+
+fn verify_verus_scope(
+    crate_name: &str,
+    source: &str,
+    target: VerifiedTarget,
+    scope: &str,
+    source_policy: &str,
+    module: Option<&str>,
+    verus_path: &str,
+    environment: &BTreeMap<String, String>,
+    codegen_toolchain_sha256: &str,
+    kernel_dependencies: KernelCompileDependencies<'_>,
+) -> Result<VerusScopeEvidence, ForgeError> {
+    let scratch = ScratchTree::new_in_temp(&format!("verified_scope_{crate_name}_{scope}"))?;
+    let source_name = format!("{crate_name}.rs");
+    let source_path = scratch.path.join(&source_name);
+    write_bytes(&source_path, source.as_bytes())?;
+    let before = file_sha256(&source_path)?.2;
+    let args = expected_verus_scope_args(crate_name, target, module);
+    let mut command = Command::new(verus_path);
+    for arg in &args[..args.len() - 2] {
+        match arg.as_str() {
+            "vstd=<KERNEL_VSTD_VIR>" => {
+                let vir = kernel_dependencies
+                    .vstd_vir
+                    .ok_or_else(|| ForgeError::VerusOutput {
+                        detail: "kernel scoped verification has no bound vstd VIR".to_string(),
+                    })?;
+                command.arg(format!("vstd={}", vir.display()));
+            }
+            "vstd=<KERNEL_VSTD_RLIB>" => {
+                let rlib =
+                    kernel_dependencies
+                        .vstd_rlib
+                        .ok_or_else(|| ForgeError::VerusOutput {
+                            detail:
+                                "kernel scoped verification has no generated no_std vstd link crate"
+                                    .to_string(),
+                        })?;
+                command.arg(format!("vstd={}", rlib.display()));
+            }
+            "verus_builtin=<KERNEL_UEFI_VERUS_BUILTIN_RLIB>" => {
+                let rlib = kernel_dependencies.verus_builtin_rlib.ok_or_else(|| {
+                    ForgeError::VerusOutput {
+                        detail: "UEFI scoped verification has no target-specific verus_builtin"
+                            .to_string(),
+                    }
+                })?;
+                command.arg(format!("verus_builtin={}", rlib.display()));
+            }
+            _ => {
+                command.arg(arg);
+            }
+        }
+    }
+    command
+        .arg(format!("--remap-path-prefix={}=.", scratch.path.display()))
+        .arg(&source_name)
+        .current_dir(&scratch.path)
+        .env_clear()
+        .envs(environment);
+    let output = command.output().map_err(|source| {
+        if source.kind() == std::io::ErrorKind::NotFound {
+            ForgeError::VerusAbsent {
+                binary: verus_path.to_string(),
+            }
+        } else {
+            ForgeError::VerusSpawn { source }
+        }
+    })?;
+    let after = file_sha256(&source_path)?.2;
+    let stdout_raw = String::from_utf8_lossy(&output.stdout).to_string();
+    let stdout = normalize_json_output(&stdout_raw).unwrap_or(stdout_raw);
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let (reported_success, errors) = parse_verus_summary(&stdout);
+    let success = output.status.success() && reported_success && errors == Some(0);
+    if stdout.contains("cheating") || stderr.contains("cheating") {
+        return Err(ForgeError::VerusOutput {
+            detail: format!("scoped Verus invocation `{scope}` reported cheating: {stderr}"),
+        });
+    }
+    let evidence = VerusScopeEvidence {
+        scope: scope.to_string(),
+        source_policy: source_policy.to_string(),
+        args,
+        source_relative_path: source_name,
+        source_sha256_before: before,
+        source_sha256_after: after,
+        codegen_toolchain_sha256: codegen_toolchain_sha256.to_string(),
+        success,
+        errors,
+        stdout,
+        stderr,
+    };
+    if !evidence.success {
+        return Err(ForgeError::VerusOutput {
+            detail: format!(
+                "scoped Verus attribution `{scope}` failed (errors={:?}): {}",
+                evidence.errors, evidence.stderr
+            ),
+        });
+    }
+    Ok(evidence)
+}
+
+fn collect_composition_scope_evidence(
+    crate_name: &str,
+    source: &str,
+    target: VerifiedTarget,
+    shell_modules: &[PlannedShellModule],
+    verus_path: &str,
+    environment: &BTreeMap<String, String>,
+    codegen_toolchain_sha256: &str,
+    kernel_dependencies: KernelCompileDependencies<'_>,
+) -> Result<Vec<VerusScopeEvidence>, ForgeError> {
+    let mut scopes = vec![verify_verus_scope(
+        crate_name,
+        source,
+        target,
+        "lowered-thermite",
+        "generated_thermite_v1",
+        None,
+        verus_path,
+        environment,
+        codegen_toolchain_sha256,
+        kernel_dependencies,
+    )?];
+    for module in shell_modules {
+        scopes.push(verify_verus_scope(
+            crate_name,
+            source,
+            target,
+            &module.name,
+            &module.source_policy,
+            Some(&module.name),
+            verus_path,
+            environment,
+            codegen_toolchain_sha256,
+            kernel_dependencies,
+        )?);
+    }
+    Ok(scopes)
+}
+
 fn parse_verus_summary(stdout: &str) -> (bool, Option<u64>) {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(stdout.trim()) else {
         return (false, None);
@@ -3523,6 +3724,95 @@ fn parse_verus_summary(stdout: &str) -> (bool, Option<u64>) {
         );
     }
     (false, None)
+}
+
+fn parse_verus_verified_count(stdout: &str) -> Option<u64> {
+    serde_json::from_str::<serde_json::Value>(stdout.trim())
+        .ok()?
+        .pointer("/verification-results/verified")?
+        .as_u64()
+}
+
+fn validate_verus_scope_evidence(
+    plan: &ArtifactPlanV1,
+    evidence: &VerusEvidence,
+) -> Result<(), ForgeError> {
+    let Some(composition) = &plan.composition else {
+        if evidence.scopes.is_empty() {
+            return Ok(());
+        }
+        return Err(ForgeError::VerusOutput {
+            detail: "non-composition Verus evidence contains scoped attribution".to_string(),
+        });
+    };
+    let mut expected = vec![(
+        "lowered-thermite".to_string(),
+        "generated_thermite_v1".to_string(),
+        None,
+    )];
+    expected.extend(composition.shell_modules.iter().map(|module| {
+        (
+            module.name.clone(),
+            module.source_policy.clone(),
+            Some(module.name.clone()),
+        )
+    }));
+    if evidence.scopes.len() != expected.len() {
+        return Err(ForgeError::VerusOutput {
+            detail: format!(
+                "scoped Verus attribution has {} rows, expected {}",
+                evidence.scopes.len(),
+                expected.len()
+            ),
+        });
+    }
+    let mut attributed = 0_u64;
+    for (scope, (expected_scope, expected_policy, module)) in evidence.scopes.iter().zip(expected) {
+        let verified =
+            parse_verus_verified_count(&scope.stdout).ok_or_else(|| ForgeError::VerusOutput {
+                detail: format!(
+                    "scoped Verus attribution `{}` omitted its verified-obligation count",
+                    scope.scope
+                ),
+            })?;
+        if scope.scope != expected_scope
+            || scope.source_policy != expected_policy
+            || scope.args
+                != expected_verus_scope_args(&plan.crate_name, plan.target, module.as_deref())
+            || scope.source_relative_path != format!("{}.rs", plan.crate_name)
+            || scope.source_sha256_before != plan.expected_verus_source_sha256
+            || scope.source_sha256_after != plan.expected_verus_source_sha256
+            || scope.codegen_toolchain_sha256 != evidence.codegen_toolchain_sha256
+            || !scope.success
+            || scope.errors != Some(0)
+            || parse_verus_summary(&scope.stdout) != (true, Some(0))
+            || verified == 0
+        {
+            return Err(ForgeError::VerusOutput {
+                detail: format!(
+                    "scoped Verus attribution `{}` is not a successful proof of its exact bound module",
+                    scope.scope
+                ),
+            });
+        }
+        attributed = attributed
+            .checked_add(verified)
+            .ok_or_else(|| ForgeError::VerusOutput {
+                detail: "scoped Verus obligation total overflowed".to_string(),
+            })?;
+    }
+    let whole_crate =
+        parse_verus_verified_count(&evidence.stdout).ok_or_else(|| ForgeError::VerusOutput {
+            detail: "whole-crate Verus evidence omitted its verified-obligation count".to_string(),
+        })?;
+    if attributed != whole_crate {
+        return Err(ForgeError::VerusOutput {
+            detail: format!(
+                "scoped Verus obligations total {attributed}, but whole-crate Verus reports {whole_crate}"
+            ),
+        });
+    }
+    Ok(())
 }
 
 fn verus_failure_detail(label: &str, evidence: &VerusEvidence) -> String {
@@ -4394,6 +4684,7 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
                 .to_string(),
         });
     }
+    validate_verus_scope_evidence(&plan, &verus)?;
 
     let toolchain_bytes = file_sha256(&bundle.join("evidence/toolchain.json"))?.1;
     if sha256(&toolchain_bytes) != receipt.binding.toolchain_sha256 {
@@ -4723,34 +5014,52 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
         let replay_kernel_vstd_path = replay_kernel_vstd
             .as_ref()
             .map(|(scratch, _, _)| scratch.path.join("libvstd.rlib"));
-        let compiled = compile_verus_source(
+        let replay_vstd_vir_path = matches!(
+            plan.target,
+            VerifiedTarget::Kernel | VerifiedTarget::KernelUefi
+        )
+        .then(|| bundle.join("evidence").join(KERNEL_VSTD_VIR_EVIDENCE_NAME));
+        let replay_builtin_path = replay_kernel_vstd.as_ref().and_then(|(scratch, _, _)| {
+            (plan.target == VerifiedTarget::KernelUefi)
+                .then(|| scratch.path.join("libverus_builtin.rlib"))
+        });
+        let replay_dependencies = KernelCompileDependencies {
+            vstd_vir: replay_vstd_vir_path.as_deref(),
+            vstd_rlib: replay_kernel_vstd_path.as_deref(),
+            verus_builtin_rlib: replay_builtin_path.as_deref(),
+        };
+        let mut compiled = compile_verus_source(
             &plan.crate_name,
             &source,
             plan.target,
             current_verus.to_string_lossy().as_ref(),
             &replay_environment,
             &current_codegen.canonical_identity_sha256(),
-            KernelCompileDependencies {
-                vstd_vir: matches!(
-                    plan.target,
-                    VerifiedTarget::Kernel | VerifiedTarget::KernelUefi
-                )
-                .then(|| bundle.join("evidence").join(KERNEL_VSTD_VIR_EVIDENCE_NAME))
-                .as_deref(),
-                vstd_rlib: replay_kernel_vstd_path.as_deref(),
-                verus_builtin_rlib: replay_kernel_vstd
-                    .as_ref()
-                    .and_then(|(scratch, _, _)| {
-                        (plan.target == VerifiedTarget::KernelUefi)
-                            .then(|| scratch.path.join("libverus_builtin.rlib"))
-                    })
-                    .as_deref(),
-            },
+            replay_dependencies,
         )?;
         if !compiled.evidence.success || sha256(&compiled.artifact) != artifact.sha256 {
             return Err(ForgeError::VerusOutput {
                 detail: "replay did not reproduce the bound artifact digest".to_string(),
             });
+        }
+        if let Some(composition) = &plan.composition {
+            compiled.evidence.scopes = collect_composition_scope_evidence(
+                &plan.crate_name,
+                &source,
+                plan.target,
+                &composition.shell_modules,
+                current_verus.to_string_lossy().as_ref(),
+                &replay_environment,
+                &current_codegen.canonical_identity_sha256(),
+                replay_dependencies,
+            )?;
+            validate_verus_scope_evidence(&plan, &compiled.evidence)?;
+            if compiled.evidence.scopes != verus.scopes {
+                return Err(ForgeError::VerusOutput {
+                    detail: "replay did not reproduce scoped Verus obligation attribution"
+                        .to_string(),
+                });
+            }
         }
     }
 
@@ -4899,6 +5208,7 @@ mod tests {
             errors,
             stdout: String::new(),
             stderr: "frontend rejected the crate".to_string(),
+            scopes: Vec::new(),
         }
     }
 

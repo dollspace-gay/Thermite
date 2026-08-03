@@ -201,18 +201,19 @@ pub(super) fn build_file(
     if test_fault("before-verus") {
         return Ok(reject("fault-injection", "injected failure before Verus"));
     }
-    let compiled = compile_verus_source(
+    let kernel_dependencies = KernelCompileDependencies {
+        vstd_vir: collected_toolchain.dependency_path(KERNEL_VSTD_VIR_PATH_KEY),
+        vstd_rlib: collected_toolchain.dependency_path("libvstd.rlib"),
+        verus_builtin_rlib: collected_toolchain.dependency_path("libverus_builtin.rlib"),
+    };
+    let mut compiled = compile_verus_source(
         &crate_name,
         &fresh.combined_source,
         target,
         &toolchain.verus_path,
         &toolchain.environment,
         &toolchain.artifact_codegen.canonical_identity_sha256(),
-        KernelCompileDependencies {
-            vstd_vir: collected_toolchain.dependency_path(KERNEL_VSTD_VIR_PATH_KEY),
-            vstd_rlib: collected_toolchain.dependency_path("libvstd.rlib"),
-            verus_builtin_rlib: collected_toolchain.dependency_path("libverus_builtin.rlib"),
-        },
+        kernel_dependencies,
     )?;
     if !compiled.evidence.success || compiled.evidence.errors != Some(0) {
         return Ok(reject(
@@ -231,6 +232,25 @@ pub(super) fn build_file(
             "the final combined Verus input changed before or during proof/codegen",
         ));
     }
+    let shell_modules = plan
+        .composition
+        .as_ref()
+        .ok_or_else(|| ForgeError::VerusOutput {
+            detail: "composition plan lost its direct-Verus module inventory".to_string(),
+        })?
+        .shell_modules
+        .as_slice();
+    compiled.evidence.scopes = collect_composition_scope_evidence(
+        &crate_name,
+        &fresh.combined_source,
+        target,
+        shell_modules,
+        &toolchain.verus_path,
+        &toolchain.environment,
+        &toolchain.artifact_codegen.canonical_identity_sha256(),
+        kernel_dependencies,
+    )?;
+    validate_verus_scope_evidence(&plan, &compiled.evidence)?;
     if test_fault("after-verus") || test_fault("after-codegen") {
         return Ok(reject(
             "fault-injection",

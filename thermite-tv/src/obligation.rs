@@ -512,7 +512,7 @@ impl BodyObligationFrame {
         )
         .with_struct_fields(self.struct_fields.iter().cloned())
         .with_calls(self.call_decls.iter().cloned())
-        .with_result_struct(self.ret_type.clone())
+        .with_result_type(self.ret_type.clone())
     }
 
     /// The Verus parameter list `name: type, ...`.

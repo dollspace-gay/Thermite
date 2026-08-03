@@ -358,7 +358,7 @@ pub(crate) fn body_tv_support(
         let reference_ctx = BodyRefCtx::with_bounds(slices, std::iter::empty::<String>(), named)
             .with_struct_fields(struct_fields.iter().cloned())
             .with_calls(call_decls.iter().cloned())
-            .with_result_struct(ret.clone());
+            .with_result_type(ret.clone());
         let reference = thermite_tv::body_ref_state(body, &reference_ctx).map_err(|error| {
             format!(
                 "body-TV dependency `{}` is outside the independent body reference: {error}",

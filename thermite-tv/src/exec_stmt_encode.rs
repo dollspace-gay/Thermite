@@ -142,8 +142,8 @@ pub struct BodyRefCtx {
     /// Exact named-aggregate field declarations reachable in the obligation.
     struct_fields: Vec<ExecStructFieldDecl>,
     call_decls: Vec<ExecCallDecl>,
-    /// Named aggregate returned by the surrounding body obligation, when any.
-    result_struct: Option<String>,
+    /// Exact return type of the surrounding body obligation, when framed.
+    result_type: Option<String>,
 }
 
 impl BodyRefCtx {
@@ -159,7 +159,7 @@ impl BodyRefCtx {
             named_bound: BTreeMap::new(),
             struct_fields: Vec::new(),
             call_decls: Vec::new(),
-            result_struct: None,
+            result_type: None,
         }
     }
 
@@ -178,7 +178,7 @@ impl BodyRefCtx {
             named_bound: BTreeMap::new(),
             struct_fields: Vec::new(),
             call_decls: Vec::new(),
-            result_struct: None,
+            result_type: None,
         }
     }
 
@@ -203,7 +203,7 @@ impl BodyRefCtx {
                 .collect(),
             struct_fields: Vec::new(),
             call_decls: Vec::new(),
-            result_struct: None,
+            result_type: None,
         }
     }
 
@@ -224,9 +224,10 @@ impl BodyRefCtx {
         self
     }
 
-    /// Record the surrounding result aggregate for field-by-field equality.
-    pub fn with_result_struct(mut self, result: impl Into<String>) -> Self {
-        self.result_struct = Some(result.into());
+    /// Record the surrounding result type. Aggregate results are compared
+    /// field-by-field; bounded numeric results are narrowed to their exact type.
+    pub fn with_result_type(mut self, result: impl Into<String>) -> Self {
+        self.result_type = Some(result.into());
         self
     }
 
@@ -235,7 +236,7 @@ impl BodyRefCtx {
     }
 
     fn numeric_result_type(&self) -> Option<&str> {
-        match self.result_struct.as_deref() {
+        match self.result_type.as_deref() {
             Some(ty @ ("u8" | "u16" | "u32" | "u64" | "usize")) => Some(ty),
             _ => None,
         }
@@ -252,7 +253,7 @@ impl BodyRefCtx {
         )
         .with_struct_fields(self.struct_fields.iter().cloned())
         .with_calls(self.call_decls.iter().cloned());
-        match &self.result_struct {
+        match &self.result_type {
             Some(result) => ctx.with_result_type(result.clone()),
             None => ctx,
         }
@@ -348,7 +349,9 @@ fn aggregate_mutation_reference(
             continue;
         }
 
-        let state = aggregate.as_mut().expect("aggregate state is present");
+        let Some(state) = aggregate.as_mut() else {
+            return Err(unsupported_aggregate_mutation());
+        };
         match stmt {
             Stmt::Expr(Expr::MethodCall {
                 receiver,

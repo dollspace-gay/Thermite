@@ -1464,7 +1464,7 @@ mod structural_label_tests {
 #[cfg(test)]
 mod divergent_teeth {
     use super::*;
-    use thermite_syntax::ast::{BinOp, Expr, IndexArg};
+    use thermite_syntax::ast::{BinOp, Expr, IndexArg, Type};
 
     /// `true` iff a bare `verus` is spawnable (the same resolution `discharge` uses).
     /// Skips with a printed reason when the solver cannot be reached.
@@ -1662,6 +1662,100 @@ mod divergent_teeth {
         }
     }
 
+    fn fixed_array_ledger_body() -> Block {
+        Block {
+            stmts: vec![
+                Stmt::Let {
+                    mutable: true,
+                    name: "updated".to_string(),
+                    ty: Some(Type::Named("Ledger".to_string())),
+                    init: path("base"),
+                },
+                Stmt::Expr(Expr::MethodCall {
+                    receiver: Box::new(Expr::Field {
+                        receiver: Box::new(path("updated")),
+                        name: "slots".to_string(),
+                    }),
+                    name: "set".to_string(),
+                    args: vec![path("at"), path("value")],
+                }),
+                Stmt::Assign {
+                    target: Expr::Field {
+                        receiver: Box::new(path("updated")),
+                        name: "count".to_string(),
+                    },
+                    value: bin(
+                        BinOp::Add,
+                        Expr::Field {
+                            receiver: Box::new(path("updated")),
+                            name: "count".to_string(),
+                        },
+                        int(1),
+                    ),
+                },
+            ],
+            tail: Some(Box::new(path("updated"))),
+        }
+    }
+
+    fn fixed_array_ledger_frame() -> BodyObligationFrame {
+        let mut struct_fields = vec![
+            ExecStructFieldDecl::new("Ledger", "slots", "TFixedArray8U64"),
+            ExecStructFieldDecl::new("Ledger", "count", "u64"),
+        ];
+        for index in 0..8 {
+            struct_fields.push(ExecStructFieldDecl::new(
+                "TFixedArray8U64",
+                format!("slot{index}"),
+                "u64",
+            ));
+        }
+        BodyObligationFrame {
+            spec_defs: vec!["struct TFixedArray8U64 {\n\
+                     pub slot0: u64, pub slot1: u64, pub slot2: u64, pub slot3: u64,\n\
+                     pub slot4: u64, pub slot5: u64, pub slot6: u64, pub slot7: u64,\n\
+                 }\n\
+                 impl TFixedArray8U64 {\n\
+                     spec fn spec_get(&self, i: int) -> u64\n\
+                         recommends 0 <= i < 8,\n\
+                     {\n\
+                         if i == 0 { self.slot0 } else if i == 1 { self.slot1 }\n\
+                         else if i == 2 { self.slot2 } else if i == 3 { self.slot3 }\n\
+                         else if i == 4 { self.slot4 } else if i == 5 { self.slot5 }\n\
+                         else if i == 6 { self.slot6 } else { self.slot7 }\n\
+                     }\n\
+                     fn set(&mut self, i: usize, value: u64)\n\
+                         requires i < 8,\n\
+                         ensures\n\
+                             final(self).spec_get(i as int) == value,\n\
+                             forall|j: int| 0 <= j < 8 && j != i\n\
+                                 ==> final(self).spec_get(j) == old(self).spec_get(j),\n\
+                     {\n\
+                         if i == 0 { self.slot0 = value; }\n\
+                         else if i == 1 { self.slot1 = value; }\n\
+                         else if i == 2 { self.slot2 = value; }\n\
+                         else if i == 3 { self.slot3 = value; }\n\
+                         else if i == 4 { self.slot4 = value; }\n\
+                         else if i == 5 { self.slot5 = value; }\n\
+                         else if i == 6 { self.slot6 = value; }\n\
+                         else { self.slot7 = value; }\n\
+                     }\n\
+                 }\n\
+                 struct Ledger { pub slots: TFixedArray8U64, pub count: u64 }"
+                .to_string()],
+            params: vec![
+                BodyParamDecl::new("base", "Ledger"),
+                BodyParamDecl::new("at", "usize"),
+                BodyParamDecl::new("value", "u64"),
+            ],
+            ret_type: "Ledger".to_string(),
+            req: Some("at < 8 && base.count < 100".to_string()),
+            named_params: vec![("base".to_string(), "Ledger".to_string())],
+            struct_fields,
+            ..Default::default()
+        }
+    }
+
     #[test]
     fn faithful_bounded_call_argument_classifies_faithful() {
         if !verus_on_path() {
@@ -1735,6 +1829,95 @@ mod divergent_teeth {
         assert!(
             matches!(verdict, BodyVerdict::Divergent { .. }),
             "an aggregate callee contract that omits a referenced field must be Divergent; got {verdict:?}"
+        );
+    }
+
+    #[test]
+    fn faithful_fixed_array_aggregate_mutation_classifies_faithful() {
+        if !verus_on_path() {
+            eprintln!("SKIP: verus not on PATH -- fixed-array mutation control not discharged.");
+            return;
+        }
+        let built = build(
+            &fixed_array_ledger_body(),
+            "    let mut updated: Ledger = base;\n\
+             updated.slots.set(at, value);\n\
+             updated.count = updated.count + 1;\n\
+             updated\n",
+            &fixed_array_ledger_frame(),
+        );
+        assert!(
+            built.is_ok(),
+            "the fixed-array mutation obligation must build: {built:?}"
+        );
+        assert_eq!(
+            discharge(
+                &built.unwrap_or_default(),
+                "teeth.fixed-array.faithful",
+                SEED,
+                RLIMIT,
+            ),
+            BodyVerdict::Faithful
+        );
+    }
+
+    #[test]
+    fn wrong_fixed_array_index_classifies_divergent() {
+        if !verus_on_path() {
+            eprintln!("SKIP: verus not on PATH -- fixed-array wrong-index tooth not discharged.");
+            return;
+        }
+        let built = build(
+            &fixed_array_ledger_body(),
+            "    let mut updated: Ledger = base;\n\
+             updated.slots.set(0, value);\n\
+             updated.count = updated.count + 1;\n\
+             updated\n",
+            &fixed_array_ledger_frame(),
+        );
+        assert!(
+            built.is_ok(),
+            "the fixed-array wrong-index obligation must build: {built:?}"
+        );
+        let verdict = discharge(
+            &built.unwrap_or_default(),
+            "teeth.fixed-array.wrong-index",
+            SEED,
+            RLIMIT,
+        );
+        assert!(
+            matches!(verdict, BodyVerdict::Divergent { .. }),
+            "a changed fixed-array index must be Divergent; got {verdict:?}"
+        );
+    }
+
+    #[test]
+    fn wrong_fixed_array_value_classifies_divergent() {
+        if !verus_on_path() {
+            eprintln!("SKIP: verus not on PATH -- fixed-array wrong-value tooth not discharged.");
+            return;
+        }
+        let built = build(
+            &fixed_array_ledger_body(),
+            "    let mut updated: Ledger = base;\n\
+             updated.slots.set(at, 0);\n\
+             updated.count = updated.count + 1;\n\
+             updated\n",
+            &fixed_array_ledger_frame(),
+        );
+        assert!(
+            built.is_ok(),
+            "the fixed-array wrong-value obligation must build: {built:?}"
+        );
+        let verdict = discharge(
+            &built.unwrap_or_default(),
+            "teeth.fixed-array.wrong-value",
+            SEED,
+            RLIMIT,
+        );
+        assert!(
+            matches!(verdict, BodyVerdict::Divergent { .. }),
+            "a changed fixed-array value must be Divergent; got {verdict:?}"
         );
     }
 

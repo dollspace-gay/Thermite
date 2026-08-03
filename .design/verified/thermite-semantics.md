@@ -187,7 +187,8 @@ effects).
   TERMINATION is the per-run Verus `decreases` residual (the `h_run` loop-EXITS hypothesis, NOT a
   Lean premise — partial correctness is the honest v1, `loop-tv.md` REQ-4). The `loop`-kind /
   `break`/`continue` / a mid-body early `return` (multi-exit CPS) / nested loops / aggregate
-  mutation other than the top-level fixed mutable-slice write subset remain OUT (Skipped honestly; `Unsupported` in `body_ref_state` /
+  mutation other than the top-level mutable-slice write and exact owned named-aggregate
+  `FixedArray8.set` subsets remain OUT (Skipped honestly; `Unsupported` in `body_ref_state` /
   `loop_ref_obligations`).
 - **The whole-translation universal forward-simulation proof is EXPLICITLY NOT the target.** We do
   not verify the production lowerer, and we do not commit to a once-for-all simulation proof of the
@@ -445,8 +446,13 @@ through the body (`body_overflow_rhs_has_no_result` vs `body_in_range_rhs_has_re
 negative lemmas bite — `wrong_var_assign_breaks_soundness` (a wrong-cell assign),
 `sequencing_order_breaks_soundness` (the assign order reordered), `mutation_not_applied_breaks_
 soundness` (a dropped assign), plus `wrong_slice_index_breaks_state_refinement` and
-`wrong_slice_value_breaks_state_refinement`. LOOPS (`Stmt::Loop`/`Break`/`Continue`) + a mid-body
-early `return` (multi-exit CPS) + other aggregate mutation remain OUT (2c #163, kernel-gated).
+  `wrong_slice_value_breaks_state_refinement`. The companion
+  `lean/Thermite/Exec/KernelAggregate.lean` pins the newly admitted exact eight-slot
+  aggregate reconstruction (`fixed_array_set_ref_sound`/`aggregate_set_ref_sound`) and exact
+  executable-call declaration/precondition framing (`exact_call_ref_sound`) with wrong-index,
+  wrong-value, unframed-call, and missing-prior-local teeth. LOOPS
+  (`Stmt::Loop`/`Break`/`Continue`) + a mid-body early `return` (multi-exit CPS) + aggregate
+  mutation outside those exact recognized forms remain OUT (2c #163, kernel-gated).
 
 `S = S_C ⊔ S_E ⊔ S_B` is the unified program meaning. A whole fn's meaning is: its `req`/`ens`
 clauses denote under `S_C` (the predicate the body must satisfy), its body denotes under `S_B` (the

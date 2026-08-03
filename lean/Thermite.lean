@@ -13,6 +13,7 @@ import Thermite.Soundness
 -- Executable expressions, statements, and partial-correctness loop rules.
 import Thermite.Exec
 import Thermite.Exec.Stmt
+import Thermite.Exec.KernelAggregate
 import Thermite.Exec.Loop
 import Thermite.Exec.WhileBody
 

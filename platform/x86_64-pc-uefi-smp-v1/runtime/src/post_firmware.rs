@@ -49,6 +49,7 @@ use thermite_kernel_policy::kernel_policy_ingress::{
     thermite_scheduler_required_ap_workers as scheduler_required_ap_workers,
     thermite_scheduler_required_parallel_cpus as scheduler_required_parallel_cpus,
     thermite_scheduler_worker_enter as scheduler_worker_enter,
+    thermite_shootdown_worker_report as shootdown_worker_report,
     thermite_service_finish_value as service_finish_value,
     thermite_service_syscall_value as service_syscall_value,
     thermite_service_user_base as service_user_base,
@@ -961,11 +962,14 @@ fn shootdown_probe(cpu: usize, expected: u64, mask: &ExactAtomicU64) {
     // SAFETY: SHOOTDOWN_ADDRESS is a profile-owned test mapping present in the
     // active page table and points to one immutable test word in this phase.
     let observed = unsafe { ptr::read_volatile(SHOOTDOWN_ADDRESS as *const u64) };
-    exact_store(&POST_TLB_OBSERVED[cpu], observed);
-    if observed != expected {
-        exact_fetch_add(&POST_TLB_STALE, 1);
-    }
-    exact_fetch_or(mask, 1_u64 << cpu);
+    let _ = shootdown_worker_report(
+        cpu as u64,
+        observed,
+        expected,
+        &POST_TLB_OBSERVED[cpu],
+        &POST_TLB_STALE,
+        mask,
+    );
 }
 
 #[no_mangle]

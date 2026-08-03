@@ -90,3 +90,25 @@ fn shootdown_runtime_complete(
 {
   observed_cpus == expected_cpus && stale_cpus == 0 && acknowledged_cpus == expected_acknowledgements && epoch == expected_epoch
 }
+
+fn shootdown_worker_report(
+  cpu: u64,
+  observed: u64,
+  expected: u64,
+  observed_slot: &Atomic,
+  stale_count: &Atomic,
+  completed_mask: &Atomic
+) -> u64
+  req cpu < 8
+  ens result == cpu + 10
+  fx platform(atomic)
+{
+  let completion_delta: u64 = 1;
+  atomic_boundary_store(observed_slot, observed, Ordering::SeqCst);
+  if observed != expected {
+    atomic_boundary_fetch(stale_count, FetchOp::Add, completion_delta, Ordering::SeqCst);
+  }
+  let cpu_bit: u64 = ap_cpu_bit(cpu);
+  atomic_boundary_fetch(completed_mask, FetchOp::Or, cpu_bit, Ordering::SeqCst);
+  cpu + completion_delta + 9
+}

@@ -25,6 +25,7 @@ cargo run -p forge -- build conformance/thermite-kernel.thpkg.json \
   --compose-export ipc_worker_dispatch \
   --compose-export scheduler_observe_max \
   --compose-export scheduler_worker_enter \
+  --compose-export shootdown_worker_report \
   --compose-export service_write_user_byte \
   --compose-export ap_expected_mask \
   --compose-export apic_profile_supported \
@@ -83,7 +84,9 @@ publication also executes generated Thermite through an exact atomic maximum
 primitive. Generated Thermite owns the live worker-admission transaction,
 including seed-task accounting, worker publication, and final barrier release.
 Rust-managed scheduler wait/drain orchestration, AP, and shootdown state uses
-those sealed atomics; the allocator retains only
+those sealed atomics. After the irreducible volatile mapping read, generated
+Thermite now owns per-CPU shootdown observation publication, stale accounting,
+and completion acknowledgement. The allocator retains only
 pointer/provenance and zeroing operations in Rust. Interrupt assembly still has
 raw atomic operations awaiting exact refinement. QEMU checks
 execution with 1, 2, 4, and 8 CPUs. The runtime no longer links the parallel

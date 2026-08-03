@@ -647,6 +647,29 @@ pub fn thermite_shootdown_runtime_complete(
     )
 }
 
+pub fn thermite_shootdown_worker_report(
+    cpu: u64,
+    observed: u64,
+    expected: u64,
+    observed_slot: &super::atomic::ExactAtomicU64,
+    stale_count: &super::atomic::ExactAtomicU64,
+    completed_mask: &super::atomic::ExactAtomicU64,
+) -> (result: u64)
+    requires
+        cpu < 8,
+    ensures
+        result == cpu + 10,
+{
+    super::shootdown_worker_report(
+        cpu,
+        observed,
+        expected,
+        observed_slot,
+        stale_count,
+        completed_mask,
+    )
+}
+
 pub fn thermite_pci_config_address(
     bus: u64,
     device: u64,

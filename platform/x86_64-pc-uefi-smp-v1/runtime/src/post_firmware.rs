@@ -912,6 +912,7 @@ fn run_tasks(cpu: usize) {
     while exact_load(&POST_TASK_GATE) == 0 {
         core::hint::spin_loop();
     }
+    let task_base = exact_load(&POST_TASK_BASE);
     loop {
         let task = thermite_kernel_policy::kernel_policy_ingress::thermite_scheduler_claim(
             &POST_NEXT_TASK,

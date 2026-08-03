@@ -719,7 +719,7 @@ fn build_loop_frame(
 ) -> Result<LoopObligationFrame, String> {
     // The mutated cells (+ the v1-subset recognition) come from the shipped
     // `loop_ref_obligations` — its `Unsupported` Err is the out-of-v1 reason.
-    let call_decls = exec_call_decls(program)
+    let call_decls = loop_reference_call_decls(program)
         .into_iter()
         .filter(|declaration| support_names.contains(&declaration.name))
         .collect::<Vec<_>>();
@@ -1147,6 +1147,32 @@ pub(crate) fn exec_call_decls(program: &thermite_syntax::Program) -> Vec<ExecCal
                 .collect::<Option<Vec<_>>>()?;
             let (ret, _) = exec_type_spelling(&function.ret)?;
             Some(ExecCallDecl::new(function.name.clone(), params, ret))
+        })
+        .collect()
+}
+
+/// Exact signatures available to the independent loop reference. Unlike an
+/// executable body, loop invariants and decreases clauses may call `spec fn`
+/// helpers, so this frame is the union of framable executable and specification
+/// functions. The lowered dependency definitions still decide whether each named
+/// call actually exists and verifies; this declaration only supplies its exact
+/// bounded argument/result types to the independent encoder.
+fn loop_reference_call_decls(program: &thermite_syntax::Program) -> Vec<ExecCallDecl> {
+    program
+        .items
+        .iter()
+        .filter_map(|item| {
+            let (name, params, ret) = match item {
+                Item::Fn(function) => (&function.name, &function.params, &function.ret),
+                Item::SpecFn(function) => (&function.name, &function.params, &function.ret),
+                Item::Struct(_) | Item::Enum(_) | Item::Forge(_) => return None,
+            };
+            let params = params
+                .iter()
+                .map(|param| exec_type_spelling(&param.ty).map(|(ty, _)| ty))
+                .collect::<Option<Vec<_>>>()?;
+            let (ret, _) = exec_type_spelling(ret)?;
+            Some(ExecCallDecl::new(name.clone(), params, ret))
         })
         .collect()
 }
@@ -1636,6 +1662,12 @@ fn below(value: u64, limit: u64) -> bool
   value < limit
 }
 
+spec fn bounded(value: u64, limit: u64) -> bool
+  dec limit
+{
+  value <= limit
+}
+
 fn count_to(limit: u64) -> u64
   req limit <= 32
   ens result == limit
@@ -1643,7 +1675,7 @@ fn count_to(limit: u64) -> u64
 {
   let mut value: u64 = 0;
   while below(value, limit)
-    inv value <= limit
+    inv bounded(value, limit)
     dec limit - value
   {
     value = (value + 1) as u64;

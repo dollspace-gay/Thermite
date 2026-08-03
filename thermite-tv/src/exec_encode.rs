@@ -629,10 +629,11 @@ fn encode_unary(op: UnaryOp, inner: &Expr, ctx: &ExecRefCtx) -> Result<String, R
     }
 }
 
-/// A free-form call `f(args)` (REQ-1). In exec position the callee is emitted
-/// verbatim (the exec call lowers to the exec fn by name; the value semantics are
-/// the callee's own contract). A non-path callee is outside the pure-exec subset
-/// (an `Err`). Arguments are encoded by the same independent recursion.
+/// An exactly framed call `f(args)` (REQ-1). In exec position the callee is emitted
+/// verbatim, but its value semantics come from the exact executable signature and
+/// contract included in the obligation. An unframed or non-path callee is an
+/// `Err`; accepting it would let an undeclared user call acquire guessed argument
+/// and result semantics.
 fn encode_call(callee: &Expr, args: &[Expr], ctx: &ExecRefCtx) -> Result<String, RefEncodeError> {
     let Expr::Path(segments) = callee else {
         return Err(RefEncodeError::Unsupported(format!(
@@ -641,23 +642,23 @@ fn encode_call(callee: &Expr, args: &[Expr], ctx: &ExecRefCtx) -> Result<String,
         )));
     };
     let name = segments.join("::");
-    let signature = ctx.calls.get(&name);
-    if let Some(signature) = signature {
-        if signature.param_types.len() != args.len() {
-            return Err(RefEncodeError::Unsupported(format!(
-                "call `{name}` has {} arguments but its exact frame declares {}",
-                args.len(),
-                signature.param_types.len()
-            )));
-        }
+    let signature = ctx.calls.get(&name).ok_or_else(|| {
+        RefEncodeError::Unsupported(format!(
+            "call `{name}` has no exact executable declaration in the obligation frame"
+        ))
+    })?;
+    if signature.param_types.len() != args.len() {
+        return Err(RefEncodeError::Unsupported(format!(
+            "call `{name}` has {} arguments but its exact frame declares {}",
+            args.len(),
+            signature.param_types.len()
+        )));
     }
     let encoded_args = args
         .iter()
         .enumerate()
         .map(|(index, argument)| {
-            let Some(expected) = signature.and_then(|call| call.param_types.get(index)) else {
-                return encode(argument, ctx);
-            };
+            let expected = &signature.param_types[index];
             let argument_ctx = ctx.for_value_type(expected);
             let value = encode(argument, &argument_ctx)?;
             Ok(typed_call_argument(&value, expected))
@@ -983,5 +984,35 @@ mod tests {
             exec_ref_value(&e, &ExecRefCtx::default()),
             Err(RefEncodeError::Unsupported(_))
         ));
+    }
+
+    #[test]
+    fn user_call_without_an_exact_declaration_is_unsupported() {
+        let call = Expr::Call {
+            callee: Box::new(path("advance")),
+            args: vec![path("state")],
+        };
+        assert!(matches!(
+            exec_ref_value(&call, &ExecRefCtx::default()),
+            Err(RefEncodeError::Unsupported(reason))
+                if reason.contains("no exact executable declaration")
+        ));
+    }
+
+    #[test]
+    fn exactly_declared_user_call_is_encoded_at_declared_argument_types() {
+        let call = Expr::Call {
+            callee: Box::new(path("advance")),
+            args: vec![path("state"), int(1)],
+        };
+        let ctx = ExecRefCtx::default().with_calls([ExecCallDecl::new(
+            "advance",
+            vec!["Step".to_string(), "u64".to_string()],
+            "Step",
+        )]);
+        assert_eq!(
+            exec_ref_value(&call, &ctx).unwrap(),
+            "advance(state, (1) as u64)"
+        );
     }
 }

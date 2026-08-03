@@ -288,8 +288,23 @@ pub(crate) fn body_tv_support(
         .into_iter()
         .map(|item| item.name().to_string())
         .collect();
+    let function_program = thermite_syntax::Program {
+        items: vec![Item::Fn(f.clone())],
+    };
+    let direct_fixed_array_defs = thermite_lower::fixed_array8_support_defs(&function_program)
+        .map_err(|error| format!("could not lower body-TV fixed-array frame: {error}"))?;
     if support_names.is_empty() && adt_names.is_empty() {
-        return Ok((Vec::new(), support_names));
+        let wrappers = direct_fixed_array_defs
+            .into_iter()
+            .map(|(_, source)| source)
+            .collect::<String>();
+        return Ok((
+            (!wrappers.is_empty())
+                .then_some(wrappers)
+                .into_iter()
+                .collect(),
+            support_names,
+        ));
     }
     let support = thermite_syntax::Program {
         items: program
@@ -318,6 +333,11 @@ pub(crate) fn body_tv_support(
         .filter(|end| *end >= start)
         .ok_or_else(|| "body-TV dependency frame had no canonical closing".to_string())?;
     let mut inner = lowered[start..end].to_string();
+    for (name, source) in direct_fixed_array_defs {
+        if !inner.contains(&format!("pub struct {name} {{")) {
+            inner.insert_str(0, &source);
+        }
+    }
     let mut reference_defs = String::new();
     let struct_fields = exec_struct_field_decls(&support);
     let call_decls = exec_call_decls(&support);
@@ -344,8 +364,8 @@ pub(crate) fn body_tv_support(
             if is_slice {
                 slices.push(param.name.clone());
             }
-            if let Type::Named(name) = &param.ty {
-                named.push((param.name.clone(), name.clone()));
+            if let Some(name) = exec_named_binding_type(&param.ty) {
+                named.push((param.name.clone(), name));
             }
             params.push(format!("{}: {ty}", param.name));
         }
@@ -534,9 +554,8 @@ fn straight_line_body_tv(
         named_params: f
             .params
             .iter()
-            .filter_map(|param| match &param.ty {
-                Type::Named(name) => Some((param.name.clone(), name.clone())),
-                _ => None,
+            .filter_map(|param| {
+                exec_named_binding_type(&param.ty).map(|ty| (param.name.clone(), ty))
             })
             .collect(),
         struct_fields: exec_struct_field_decls(program),
@@ -951,6 +970,18 @@ fn exec_type_spelling(ty: &Type) -> Option<(String, bool)> {
     }
 }
 
+/// Exact generated/named type spelling for values whose fields or fixed-storage
+/// methods can be referenced by the independent exec encoder.
+fn exec_named_binding_type(ty: &Type) -> Option<String> {
+    match ty {
+        Type::Named(name) => Some(name.clone()),
+        Type::Generic { name, .. } if name == "FixedArray8" => {
+            exec_type_spelling(ty).map(|(spelling, _)| spelling)
+        }
+        _ => None,
+    }
+}
+
 /// Exact named-struct field declarations available to exec/body-TV. A field whose
 /// type cannot be represented in the frozen exec frame is omitted; construction of
 /// that struct then fails closed in the independent reference rather than guessing.
@@ -959,32 +990,54 @@ pub(crate) fn exec_struct_field_decls(
 ) -> Vec<ExecStructFieldDecl> {
     let mut fields: Vec<ExecStructFieldDecl> = Vec::new();
     for item in &program.items {
+        match item {
+            Item::Fn(function) => {
+                for parameter in &function.params {
+                    note_fixed_array_exec_fields(&parameter.ty, &mut fields);
+                }
+                note_fixed_array_exec_fields(&function.ret, &mut fields);
+                if let Some(body) = &function.body {
+                    note_block_fixed_array_exec_fields(body, &mut fields);
+                }
+            }
+            Item::SpecFn(function) => {
+                for parameter in &function.params {
+                    note_fixed_array_exec_fields(&parameter.ty, &mut fields);
+                }
+                note_fixed_array_exec_fields(&function.ret, &mut fields);
+                note_block_fixed_array_exec_fields(&function.body, &mut fields);
+            }
+            Item::Struct(item) => {
+                for field in &item.fields {
+                    note_fixed_array_exec_fields(&field.ty, &mut fields);
+                }
+            }
+            Item::Enum(item) => {
+                for variant in &item.variants {
+                    match &variant.shape {
+                        thermite_syntax::ast::VariantShape::Unit => {}
+                        thermite_syntax::ast::VariantShape::Tuple(types) => {
+                            for ty in types {
+                                note_fixed_array_exec_fields(ty, &mut fields);
+                            }
+                        }
+                        thermite_syntax::ast::VariantShape::Struct(variant_fields) => {
+                            for field in variant_fields {
+                                note_fixed_array_exec_fields(&field.ty, &mut fields);
+                            }
+                        }
+                    }
+                }
+            }
+            Item::Forge(_) => {}
+        }
+    }
+    for item in &program.items {
         let Item::Struct(item) = item else {
             continue;
         };
         for field in &item.fields {
             if let Some((type_str, _)) = exec_type_spelling(&field.ty) {
-                if type_str.starts_with("TFixedArray8") {
-                    let Type::Generic { arg, .. } = &field.ty else {
-                        continue;
-                    };
-                    let Some((element, _)) = exec_type_spelling(arg) else {
-                        continue;
-                    };
-                    for index in 0..8 {
-                        let slot = format!("slot{index}");
-                        if !fields
-                            .iter()
-                            .any(|decl| decl.struct_path == type_str && decl.field == slot)
-                        {
-                            fields.push(ExecStructFieldDecl::new(
-                                type_str.clone(),
-                                slot,
-                                element.clone(),
-                            ));
-                        }
-                    }
-                }
                 fields.push(ExecStructFieldDecl::new(
                     item.name.clone(),
                     field.name.clone(),
@@ -994,6 +1047,70 @@ pub(crate) fn exec_struct_field_decls(
         }
     }
     fields
+}
+
+fn note_fixed_array_exec_fields(ty: &Type, fields: &mut Vec<ExecStructFieldDecl>) {
+    match ty {
+        Type::Generic { name, arg } if name == "FixedArray8" => {
+            note_fixed_array_exec_fields(arg, fields);
+            let Some((wrapper, _)) = exec_type_spelling(ty) else {
+                return;
+            };
+            let Some((element, _)) = exec_type_spelling(arg) else {
+                return;
+            };
+            for index in 0..8 {
+                let slot = format!("slot{index}");
+                if !fields
+                    .iter()
+                    .any(|decl| decl.struct_path == wrapper && decl.field == slot)
+                {
+                    fields.push(ExecStructFieldDecl::new(
+                        wrapper.clone(),
+                        slot,
+                        element.clone(),
+                    ));
+                }
+            }
+        }
+        Type::Ref { inner, .. }
+        | Type::Slice(inner)
+        | Type::Box(inner)
+        | Type::Vec(inner)
+        | Type::Generic { arg: inner, .. }
+        | Type::Option(inner) => note_fixed_array_exec_fields(inner, fields),
+        Type::Result(ok, err) | Type::Map(ok, err) => {
+            note_fixed_array_exec_fields(ok, fields);
+            note_fixed_array_exec_fields(err, fields);
+        }
+        Type::Tuple(types) => {
+            for ty in types {
+                note_fixed_array_exec_fields(ty, fields);
+            }
+        }
+        Type::Prim(_) | Type::Unit | Type::Named(_) | Type::String => {}
+    }
+}
+
+fn note_block_fixed_array_exec_fields(block: &Block, fields: &mut Vec<ExecStructFieldDecl>) {
+    for statement in &block.stmts {
+        match statement {
+            Stmt::Let { ty: Some(ty), .. } => note_fixed_array_exec_fields(ty, fields),
+            Stmt::If { then, else_, .. } => {
+                note_block_fixed_array_exec_fields(then, fields);
+                if let Some(otherwise) = else_ {
+                    note_block_fixed_array_exec_fields(otherwise, fields);
+                }
+            }
+            Stmt::Loop(loop_node) => note_block_fixed_array_exec_fields(&loop_node.body, fields),
+            Stmt::Let { ty: None, .. }
+            | Stmt::Assign { .. }
+            | Stmt::Return(_)
+            | Stmt::Expr(_)
+            | Stmt::Break
+            | Stmt::Continue => {}
+        }
+    }
 }
 
 /// Exact executable signatures for every framable Thermite function in a program.
@@ -1399,6 +1516,93 @@ pub const BODY_TV_DEFAULT_RLIMIT: f64 = DEFAULT_RLIMIT;
 #[cfg(test)]
 mod structural_label_tests {
     use super::*;
+
+    const DIRECT_FIXED_ARRAY_SOURCE: &str = r#"
+fn fixed_identity(slots: FixedArray8<u64>) -> FixedArray8<u64>
+  req true
+  ens result.get(0) == slots.get(0)
+  fx pure
+{
+  slots
+}
+
+fn fixed_local(value: u64) -> u64
+  req true
+  ens result == value
+  fx pure
+{
+  let slots: FixedArray8<u64> = FixedArray8::fill(value);
+  slots.get(0)
+}
+"#;
+
+    #[test]
+    fn direct_fixed_array_use_has_complete_wrapper_and_slot_frame() {
+        let parsed = thermite_syntax::parse(DIRECT_FIXED_ARRAY_SOURCE);
+        assert!(parsed.is_clean(), "parse errors: {:?}", parsed.errors);
+        let fixed_identity = parsed.program.items.iter().find_map(|item| match item {
+            Item::Fn(function) if function.name == "fixed_identity" => Some(function),
+            _ => None,
+        });
+        assert!(fixed_identity.is_some(), "fixed_identity must parse");
+        if let Some(function) = fixed_identity {
+            let support = body_tv_support(&parsed.program, function);
+            assert!(support.is_ok(), "direct fixed-array support: {support:?}");
+            let (definitions, names) = support.unwrap_or_default();
+            assert!(names.is_empty(), "identity has no function dependencies");
+            let definitions = definitions.join("\n");
+            assert!(
+                definitions.contains("pub struct TFixedArray8U64"),
+                "direct fixed-array wrapper is absent:\n{definitions}"
+            );
+        }
+
+        let declarations = exec_struct_field_decls(&parsed.program);
+        let fixed_slots = declarations
+            .iter()
+            .filter(|decl| decl.struct_path == "TFixedArray8U64")
+            .collect::<Vec<_>>();
+        assert_eq!(fixed_slots.len(), 8, "{fixed_slots:#?}");
+        for index in 0..8 {
+            assert!(
+                fixed_slots
+                    .iter()
+                    .any(|decl| decl.field == format!("slot{index}") && decl.type_str == "u64"),
+                "missing exact slot{index} declaration: {fixed_slots:#?}"
+            );
+        }
+    }
+
+    #[test]
+    fn direct_fixed_array_body_reaches_a_faithful_verus_verdict() {
+        if Command::new("verus").arg("--version").output().is_err() {
+            eprintln!("SKIP: verus not on PATH -- direct fixed-array frame not discharged.");
+            return;
+        }
+        let parsed = thermite_syntax::parse(DIRECT_FIXED_ARRAY_SOURCE);
+        assert!(parsed.is_clean(), "parse errors: {:?}", parsed.errors);
+        let fixed_identity = parsed.program.items.iter().find_map(|item| match item {
+            Item::Fn(function) if function.name == "fixed_identity" => Some(function),
+            _ => None,
+        });
+        assert!(fixed_identity.is_some(), "fixed_identity must parse");
+        if let Some(function) = fixed_identity {
+            let mut report = BodyTvReport::default();
+            body_tv_fn(
+                &parsed.program,
+                function,
+                BODY_TV_DEFAULT_SEED,
+                BODY_TV_DEFAULT_RLIMIT,
+                &mut report,
+            );
+            assert_eq!(report.results.len(), 1, "{:#?}", report.results);
+            assert!(
+                matches!(report.results[0].verdict, BodyVerdict::Faithful),
+                "direct fixed-array use must have a complete proof frame: {:#?}",
+                report.results
+            );
+        }
+    }
 
     #[test]
     fn loop_keeps_loop_label_when_its_rich_dependency_frame_is_unavailable() {

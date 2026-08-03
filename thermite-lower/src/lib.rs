@@ -36,8 +36,8 @@ pub use effects::{check_effects, subsumes};
 pub use l1::lower_l1;
 pub use l2::{bound_string, lower_l2};
 pub use lower::{
-    frozen_kernel_boundary_symbol, frozen_kernel_type_rust_path, lower, lower_contract_expr,
-    lower_equivalence_obligation, lower_exec_body, lower_exec_body_in_program, lower_exec_expr,
-    lower_exec_expr_in_program, lower_l3_library, spec_fn_param_type_map, L3Export,
-    L3ExportVisibility, L3LibraryTarget, LowerError,
+    fixed_array8_support_defs, frozen_kernel_boundary_symbol, frozen_kernel_type_rust_path, lower,
+    lower_contract_expr, lower_equivalence_obligation, lower_exec_body, lower_exec_body_in_program,
+    lower_exec_expr, lower_exec_expr_in_program, lower_l3_library, spec_fn_param_type_map,
+    L3Export, L3ExportVisibility, L3LibraryTarget, LowerError,
 };

@@ -5474,10 +5474,26 @@ fn collect_fixed_array8_elem_types(program: &Program) -> Vec<Type> {
     elems
 }
 
+/// Return every fixed-array wrapper required by a program as an exact emitted
+/// name/source pair. Translation-validation frames use this to include wrappers
+/// referenced directly by the function under test without duplicating wrappers
+/// already emitted by its dependency closure.
+pub fn fixed_array8_support_defs(program: &Program) -> Result<Vec<(String, String)>, LowerError> {
+    collect_fixed_array8_elem_types(program)
+        .into_iter()
+        .map(|elem| {
+            Ok((
+                fixed_array8_name(&elem)?,
+                emit_one_fixed_array8_wrapper(&elem)?,
+            ))
+        })
+        .collect()
+}
+
 fn emit_fixed_array8_wrappers(program: &Program) -> Result<String, LowerError> {
     let mut output = String::new();
-    for elem in collect_fixed_array8_elem_types(program) {
-        output.push_str(&emit_one_fixed_array8_wrapper(&elem)?);
+    for (_, source) in fixed_array8_support_defs(program)? {
+        output.push_str(&source);
     }
     Ok(output)
 }

@@ -17,6 +17,42 @@ use crate::manifest::Level;
 pub const PROFILE: &str = "x86_64-pc-uefi-smp-v1";
 static SCRATCH_NONCE: AtomicU64 = AtomicU64::new(0);
 
+fn verus_obligation_function_count(bytes: &[u8]) -> Result<u64, ForgeError> {
+    let text = std::str::from_utf8(bytes).map_err(|error| ForgeError::RustcOutput {
+        detail: format!("Verus obligation metric input is not UTF-8: {error}"),
+    })?;
+    Ok(text
+        .lines()
+        .map(str::trim_start)
+        .filter(|line| {
+            let mut declaration = *line;
+            if let Some(rest) = declaration.strip_prefix("pub ") {
+                declaration = rest;
+            } else if declaration.starts_with("pub(") {
+                let Some((_, rest)) = declaration.split_once(") ") else {
+                    return false;
+                };
+                declaration = rest;
+            }
+            if let Some(rest) = declaration.strip_prefix("open ") {
+                declaration = rest;
+            } else if let Some(rest) = declaration.strip_prefix("closed ") {
+                declaration = rest;
+            }
+            [
+                "fn ",
+                "const fn ",
+                "exec fn ",
+                "proof fn ",
+                "spec fn ",
+                "extern \"C\" fn ",
+            ]
+            .iter()
+            .any(|prefix| declaration.starts_with(prefix))
+        })
+        .count() as u64)
+}
+
 pub struct ImageBuildRequest<'a> {
     pub source: &'a Path,
     pub composition_exports: &'a [String],
@@ -1209,39 +1245,6 @@ fn authorship_metrics(
         Ok(text.lines().filter(|line| !line.trim().is_empty()).count() as u64)
     }
 
-    fn verus_obligation_function_count(bytes: &[u8]) -> Result<u64, ForgeError> {
-        let text = std::str::from_utf8(bytes).map_err(|error| ForgeError::RustcOutput {
-            detail: format!("Verus obligation metric input is not UTF-8: {error}"),
-        })?;
-        Ok(text
-            .lines()
-            .map(str::trim_start)
-            .filter(|line| {
-                [
-                    "fn ",
-                    "pub fn ",
-                    "pub(crate) fn ",
-                    "extern \"C\" fn ",
-                    "pub extern \"C\" fn ",
-                    "pub(crate) extern \"C\" fn ",
-                    "const fn ",
-                    "pub const fn ",
-                    "pub(crate) const fn ",
-                    "exec fn ",
-                    "pub exec fn ",
-                    "pub(crate) exec fn ",
-                    "proof fn ",
-                    "pub proof fn ",
-                    "pub(crate) proof fn ",
-                    "pub open proof fn ",
-                    "pub closed proof fn ",
-                ]
-                .iter()
-                .any(|prefix| line.starts_with(prefix))
-            })
-            .count() as u64)
-    }
-
     let direct_tpl_root = Path::new("platform")
         .join(PROFILE)
         .join("verified")
@@ -2015,5 +2018,24 @@ mod tests {
         assert!(scratch
             .starts_with(fs::canonicalize(&parent).expect("canonicalize relative scratch parent")));
         fs::remove_dir_all(parent).expect("remove relative scratch parent");
+    }
+
+    #[test]
+    fn verus_obligation_inventory_counts_visibility_and_mode_variants() {
+        let source = br#"
+fn private_exec() {}
+pub fn public_exec() {}
+pub(crate) extern "C" fn crate_abi() {}
+const fn private_const() -> u64 { 0 }
+pub exec fn explicit_exec() {}
+proof fn private_proof() {}
+pub open proof fn public_open_proof() {}
+spec fn private_spec() -> bool { true }
+open spec fn private_open_spec() -> bool { true }
+pub closed spec fn public_closed_spec() -> bool { true }
+pub(crate) closed spec fn crate_closed_spec() -> bool { true }
+pub struct NotAFunction;
+"#;
+        assert_eq!(verus_obligation_function_count(source).unwrap(), 11);
     }
 }

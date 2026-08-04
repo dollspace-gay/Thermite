@@ -110,6 +110,9 @@ pub struct RefCtx {
     /// spec rewrite (`lower.rs`) independently (the wrapper spec fns are the shared
     /// frozen ground truth, in the preamble). The receiver is emitted bare.
     map_bound: BTreeSet<String>,
+    /// Names bound as native fixed arrays. Their frozen length operation is
+    /// independently encoded through the finite `@` view.
+    fixed_array_bound: BTreeSet<String>,
     /// Names that are a bounded integer (`u64`/`u32`/`usize`) and must be coerced
     /// `as nat` when they appear as a top-level operand of a comparison against a
     /// `nat`-valued term (a `nat`-returning spec-fn call). This re-implements,
@@ -137,8 +140,19 @@ impl RefCtx {
             seq_bound: names.into_iter().map(Into::into).collect(),
             string_bound: BTreeSet::new(),
             map_bound: BTreeSet::new(),
+            fixed_array_bound: BTreeSet::new(),
             nat_coerce: BTreeSet::new(),
         }
+    }
+
+    /// Declare native fixed-array bindings for finite-view length.
+    pub fn with_fixed_array_bound<I, S>(mut self, names: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.fixed_array_bound = names.into_iter().map(Into::into).collect();
+        self
     }
 
     /// Declare names bound as the `Map` wrapper (`TMap…`) — a `Map<K,V>` param/
@@ -188,6 +202,10 @@ impl RefCtx {
 
     fn is_map_bound(&self, name: &str) -> bool {
         self.map_bound.contains(name)
+    }
+
+    fn is_fixed_array_bound(&self, name: &str) -> bool {
+        self.fixed_array_bound.contains(name)
     }
 
     fn needs_nat_coerce(&self, name: &str) -> bool {
@@ -649,6 +667,24 @@ fn encode_method_call(
         if segs.len() == 1 && ctx.is_map_bound(&segs[0]) {
             return encode_map_accessor(&segs[0], name, args, ctx);
         }
+        if segs.len() == 1 && ctx.is_fixed_array_bound(&segs[0]) {
+            if name == "len" && args.is_empty() {
+                return Ok(format!("({}@.len() as usize)", segs[0]));
+            }
+            return Err(RefEncodeError::Unsupported(format!(
+                "spec method `.{name}()` on a fixed array (only `.len()` is frozen)"
+            )));
+        }
+    }
+
+    if matches!(receiver, Expr::Array(_) | Expr::ArrayRepeat { .. }) {
+        if name == "len" && args.is_empty() {
+            let array = encode(receiver, ctx)?;
+            return Ok(format!("(({array})@.len() as usize)"));
+        }
+        return Err(RefEncodeError::Unsupported(format!(
+            "spec method `.{name}()` on a fixed-array initializer (only `.len()` is frozen)"
+        )));
     }
 
     match name {

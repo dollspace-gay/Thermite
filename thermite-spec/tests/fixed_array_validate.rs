@@ -93,3 +93,39 @@ fn rejects_expanded_nested_size_and_annotated_initializer_mismatch() {
         }
     )));
 }
+
+#[test]
+fn repeat_initialization_requires_a_copy_safe_element_type() {
+    let owned_string = validate_src(
+        "fn bad(value: String) -> [String; 2] req true ens true fx pure { [value; 2] }",
+    )
+    .expect_err("repeat initialization must not clone an owned String implicitly");
+    assert!(owned_string
+        .iter()
+        .any(|error| matches!(error, SpecError::ArrayRepeatRequiresCopy { .. })));
+
+    let mutable_alias = validate_src(
+        "fn bad(value: &mut u64) -> [&mut u64; 2] req true ens true fx pure { [value; 2] }",
+    )
+    .expect_err("repeat initialization must not duplicate a mutable reference");
+    assert!(mutable_alias
+        .iter()
+        .any(|error| matches!(error, SpecError::ArrayRepeatRequiresCopy { .. })));
+
+    let nested_mismatch =
+        validate_src("fn bad() -> [[u64; 2]; 2] req true ens true fx pure { [[0; 3]; 2] }")
+            .expect_err("nested initializer lengths must be checked recursively");
+    assert!(nested_mismatch.iter().any(|error| matches!(
+        error,
+        SpecError::ArrayLengthMismatch {
+            expected: 2,
+            found: 3,
+            ..
+        }
+    )));
+
+    assert!(validate_src(
+        "fn good(pair: (u64, bool)) -> [(u64, bool); 2] req true ens true fx pure { [pair; 2] }"
+    )
+    .is_ok());
+}

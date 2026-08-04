@@ -155,9 +155,10 @@ impl ExecRefCtx {
 /// - indexing ([`Expr::Index`] single-element over a slice param → `xs[i as int]`,
 ///   the bounded element value).
 ///
-/// Anything else (a method call, a Vec/String accessor, a struct literal, an `if`/
-/// `match`, a closure, …) is an [`RefEncodeError::Unsupported`] (never a
-/// panic, never a silent wrong encoding — #154/#156 territory).
+/// Anything else (a method call other than native fixed-array `.len()`, a
+/// Vec/String accessor, a struct literal, an `if`/`match`, a closure, …) is an
+/// [`RefEncodeError::Unsupported`] (never a panic, never a silent wrong encoding —
+/// #154/#156 territory).
 pub fn exec_ref_value(expr: &Expr, ctx: &ExecRefCtx) -> Result<String, RefEncodeError> {
     encode(expr, ctx)
 }
@@ -181,10 +182,43 @@ fn encode(expr: &Expr, ctx: &ExecRefCtx) -> Result<String, RefEncodeError> {
         Expr::Binary { op, lhs, rhs } => encode_binary(*op, lhs, rhs, ctx),
         Expr::Unary { op, expr } => encode_unary(*op, expr, ctx),
         Expr::Call { callee, args } => encode_call(callee, args, ctx),
+        Expr::MethodCall {
+            receiver,
+            name,
+            args,
+        } => encode_method_call(receiver, name, args, ctx),
         Expr::Index { base, index } => encode_index(base, index, ctx),
         Expr::Cast { expr, ty } => encode_cast(expr, ty, ctx),
         other => Err(RefEncodeError::Unsupported(node_kind(other))),
     }
+}
+
+fn encode_method_call(
+    receiver: &Expr,
+    name: &str,
+    args: &[Expr],
+    ctx: &ExecRefCtx,
+) -> Result<String, RefEncodeError> {
+    if name != "len" || !args.is_empty() {
+        return Err(RefEncodeError::Unsupported(format!(
+            "exec method `.{name}()` outside the native fixed-array `.len()` subset"
+        )));
+    }
+
+    let is_bound_array = matches!(receiver, Expr::Path(segments)
+        if segments.len() == 1 && ctx.is_fixed_array_bound(&segments[0]));
+    let is_array_value = matches!(receiver, Expr::Array(_) | Expr::ArrayRepeat { .. })
+        || matches!(receiver, Expr::Call { callee, .. }
+            if matches!(callee.as_ref(), Expr::Path(path)
+                if path.join("::") == "vstd::array::spec_array_update"));
+    if !is_bound_array && !is_array_value {
+        return Err(RefEncodeError::Unsupported(
+            "exec `.len()` receiver is not a declared native fixed array".to_string(),
+        ));
+    }
+
+    let array = encode(receiver, ctx)?;
+    Ok(format!("({array}@.len() as usize)"))
 }
 
 /// A path reference: a var or a `::`-qualified name. A pure exec value path is a

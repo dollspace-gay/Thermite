@@ -3,8 +3,9 @@ use std::process::Command;
 
 use thermite_syntax::Item;
 use thermite_tv::obligation::{
-    body_equivalence_obligation, exec_equivalence_obligation, BodyObligationFrame, BodyParamDecl,
-    ExecObligationFrame, ExecParamDecl,
+    body_equivalence_obligation, equivalence_obligation, exec_equivalence_obligation,
+    BodyObligationFrame, BodyParamDecl, ExecObligationFrame, ExecParamDecl, ObligationFrame,
+    ParamDecl,
 };
 
 const SOURCE: &str = "const SLOTS: usize = 4;\n\
@@ -158,4 +159,55 @@ fn fixed_array_read_expression_matches_the_native_index() {
     let program = exec_equivalence_obligation(index, "updated[at]", &frame)
         .expect("array-read exec obligation must build");
     assert_verus("array_read", &program, true);
+}
+
+#[test]
+fn fixed_array_length_is_the_finite_view_length() {
+    let source = "const SLOTS: usize = 4;\n\
+fn array_len(slots: [u64; SLOTS]) -> usize\n\
+req true\n\
+ens result == slots.len()\n\
+fx pure\n\
+{ slots.len() }\n";
+    let parsed = thermite_syntax::parse(source);
+    assert!(parsed.is_clean(), "parse errors: {:?}", parsed.errors);
+    let Item::Fn(function) = &parsed.program.items[1] else {
+        panic!("expected array_len function");
+    };
+    let tail = function.body.as_ref().unwrap().tail.as_ref().unwrap();
+    let exec_frame = ExecObligationFrame {
+        spec_defs: vec!["pub const SLOTS: usize = 4;".to_string()],
+        params: vec![ExecParamDecl::new("slots", "[u64; SLOTS]")],
+        ret_type: "usize".to_string(),
+        fixed_array_params: vec!["slots".to_string()],
+        ..Default::default()
+    };
+    let exec_program = exec_equivalence_obligation(tail, "slots.len()", &exec_frame)
+        .expect("array length exec obligation must build");
+    assert!(
+        exec_program.contains("result == (slots@.len() as usize)"),
+        "{exec_program}"
+    );
+    assert_verus("array_len_exec", &exec_program, true);
+    let wrong_exec = exec_equivalence_obligation(tail, "0", &exec_frame)
+        .expect("wrong array length obligation must still build");
+    assert_verus("array_len_wrong", &wrong_exec, false);
+
+    let contract_frame = ObligationFrame {
+        spec_defs: vec!["pub const SLOTS: usize = 4;".to_string()],
+        params: vec![
+            ParamDecl::new("slots", "[u64; SLOTS]"),
+            ParamDecl::new("result", "usize"),
+        ],
+        fixed_array_params: vec!["slots".to_string()],
+        ..Default::default()
+    };
+    let contract_program = equivalence_obligation(
+        &function.contract.ens[0].expr,
+        "result == slots.len()",
+        &contract_frame,
+    )
+    .expect("array length contract obligation must build");
+    assert!(contract_program.contains("slots@.len() as usize"));
+    assert_verus("array_len_contract", &contract_program, true);
 }

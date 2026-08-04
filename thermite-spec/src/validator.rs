@@ -362,6 +362,12 @@ pub enum SpecError {
         found: u128,
         span: Span,
     },
+    /// A repeat initializer `[value; N]` has an element type that is not
+    /// copy-safe. Native array repetition evaluates one value and duplicates it;
+    /// admitting owned strings, vectors, boxes, maps, mutable references, or
+    /// opaque user ADTs here would either fail only in a backend or silently
+    /// change ownership semantics.
+    ArrayRepeatRequiresCopy { span: Span },
     /// A call in a contract position whose callee is neither a registered
     /// combinator nor a declared `spec fn` — an arbitrary free-function call,
     /// forbidden by the §4.2 cage (REQ-4 (i)). `name` is the unresolved callee.
@@ -530,6 +536,7 @@ impl SpecError {
             | SpecError::ArrayCapacityTooLarge { span, .. }
             | SpecError::ArrayExpandedSizeTooLarge { span, .. }
             | SpecError::ArrayLengthMismatch { span, .. }
+            | SpecError::ArrayRepeatRequiresCopy { span }
             | SpecError::UnknownCombinator { span, .. }
             | SpecError::WrongArity { span, .. }
             | SpecError::WrongArgKind { span, .. }
@@ -577,6 +584,10 @@ impl fmt::Display for SpecError {
             } => write!(
                 f,
                 "array initializer has length {found}, but its annotated type requires {expected}"
+            ),
+            SpecError::ArrayRepeatRequiresCopy { .. } => write!(
+                f,
+                "array repeat initialization `[value; N]` requires a copy-safe element type"
             ),
             SpecError::UnknownCombinator { name, .. } => write!(
                 f,
@@ -693,6 +704,29 @@ impl fmt::Display for SpecError {
 }
 
 impl std::error::Error for SpecError {}
+
+/// Whether native `[value; N]` repetition can duplicate one element without
+/// cloning, allocation, aliasing mutable authority, or depending on an opaque
+/// user type's backend traits. This deliberately mirrors the closed Thermite
+/// type surface rather than asking Rust/Verus after lowering.
+fn array_repeat_element_is_copy_safe(ty: &Type) -> bool {
+    match ty {
+        Type::Prim(_) | Type::Unit => true,
+        Type::Array { elem, .. } | Type::Option(elem) => array_repeat_element_is_copy_safe(elem),
+        Type::Result(ok, err) => {
+            array_repeat_element_is_copy_safe(ok) && array_repeat_element_is_copy_safe(err)
+        }
+        Type::Tuple(elements) => elements.iter().all(array_repeat_element_is_copy_safe),
+        Type::Ref { mutable, .. } => !mutable,
+        Type::Slice(_)
+        | Type::Generic { .. }
+        | Type::Named(_)
+        | Type::Box(_)
+        | Type::Vec(_)
+        | Type::String
+        | Type::Map(_, _) => false,
+    }
+}
 
 /// Validate every contract position of a parsed program against the SpecTherm
 /// cage (REQ-3). Returns `Ok(())` if every contract expression is accepted, else
@@ -992,6 +1026,9 @@ impl Validator {
                     // structurally as before.
                     if let Some(body) = &f.body {
                         self.scan_block_for_loops(body, f.span);
+                        if let Some(tail) = &body.tail {
+                            self.validate_array_initializer(&f.ret, tail, f.span);
+                        }
                         // C9-A (`.design/basis/10-recursion-tuples.md` REQ-2): a
                         // recursive exec `fn` — one whose body calls itself directly
                         // — must carry a `dec` termination measure so Verus can prove
@@ -1023,6 +1060,9 @@ impl Validator {
                     // tree (REQ-3) — fully caged; its `dec` measure is a clause.
                     self.walk_clause(&s.dec);
                     self.walk_block(&s.body, s.span);
+                    if let Some(tail) = &s.body.tail {
+                        self.validate_array_initializer(&s.ret, tail, s.span);
+                    }
                 }
                 // Basis Stage 1b (`.design/basis/01-adts.md` REQ-5/REQ-6): the
                 // `struct`/`enum` declarations were collected in the pre-pass
@@ -1157,7 +1197,7 @@ impl Validator {
     }
 
     fn validate_array_initializer(&mut self, ty: &Type, init: &Expr, span: Span) {
-        let Type::Array { len, .. } = ty else {
+        let Type::Array { elem, len } = ty else {
             return;
         };
         let Some(expected) = self.resolve_array_len(len, span) else {
@@ -1176,6 +1216,22 @@ impl Validator {
                     span,
                 });
             }
+        }
+
+        match init {
+            Expr::Array(elements) => {
+                for element in elements {
+                    self.validate_array_initializer(elem, element, span);
+                }
+            }
+            Expr::ArrayRepeat { value, .. } => {
+                if !array_repeat_element_is_copy_safe(elem) {
+                    self.errors
+                        .push(SpecError::ArrayRepeatRequiresCopy { span });
+                }
+                self.validate_array_initializer(elem, value, span);
+            }
+            _ => {}
         }
     }
 

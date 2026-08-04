@@ -846,6 +846,12 @@ fn collect_free_paths(e: &Expr, out: &mut Vec<String>) {
                 collect_free_paths(a, out);
             }
         }
+        Expr::MethodCall { receiver, args, .. } => {
+            collect_free_paths(receiver, out);
+            for arg in args {
+                collect_free_paths(arg, out);
+            }
+        }
         _ => {}
     }
 }

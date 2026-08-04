@@ -614,6 +614,7 @@ fn generated_frame(preamble: &[String]) -> ObligationFrame {
         nat_coerce_params: vec!["result".to_string(), "old_acc".to_string()],
         string_params: vec!["t".to_string()],
         map_params: vec![],
+        fixed_array_params: vec![],
     }
 }
 
@@ -764,6 +765,7 @@ fn signature_frame(f: &FnItem, preamble: &[String]) -> Option<ObligationFrame> {
     let mut nat_coerce_params = Vec::new();
     let mut string_params = Vec::new();
     let mut map_params = Vec::new();
+    let mut fixed_array_params = Vec::new();
     // The `requires` clauses the obligation frame must thread so production's
     // signature path weave typechecks: a `Map`/struct param weaves `well_formed()`
     // (`is_map_param_ty` in production), so a `m.spec_contains_key(k)` over the
@@ -787,7 +789,8 @@ fn signature_frame(f: &FnItem, preamble: &[String]) -> Option<ObligationFrame> {
             // wrapper spec fns (matching production's `recv_is_string` rewrite).
             SpecType::Strng => string_params.push(p.name.clone()),
             SpecType::BoundedInt(_) => nat_coerce_params.push(p.name.clone()),
-            SpecType::Bool | SpecType::Array(_, _) => {}
+            SpecType::Array(_, _) => fixed_array_params.push(p.name.clone()),
+            SpecType::Bool => {}
             // A `Map` param (#150 gap #3) is bound as the `TMap` wrapper; production
             // weaves `well_formed()` for it (`is_map_param_ty`), so the obligation
             // threads the same `requires` to keep the spec_contains_key membership
@@ -823,7 +826,8 @@ fn signature_frame(f: &FnItem, preamble: &[String]) -> Option<ObligationFrame> {
                 // emit `result@`.
                 SpecType::Seq(_) => {}
                 SpecType::Strng => string_params.push("result".to_string()),
-                SpecType::Bool | SpecType::Array(_, _) => {}
+                SpecType::Array(_, _) => fixed_array_params.push("result".to_string()),
+                SpecType::Bool => {}
                 // A `Map` result (#150 gap #3): production proves `result.well_formed()`
                 // (the constructed map is well-formed), so a `result.spec_contains_key(k)`
                 // ens has the invariant in scope. The obligation threads it as a
@@ -853,6 +857,7 @@ fn signature_frame(f: &FnItem, preamble: &[String]) -> Option<ObligationFrame> {
         nat_coerce_params,
         string_params,
         map_params,
+        fixed_array_params,
     })
 }
 

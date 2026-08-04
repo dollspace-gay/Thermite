@@ -119,9 +119,10 @@ The kernel profile needs:
 The current implementation has the integer widths, core ADTs/control flow,
 sealed structs, mutable byte-slice assignment, a `final(slice)` proof view, and
 the first-class fixed-array syntax, validation, native L3/L2/L1 lowering, and
-independent exact initialization/read/indexed-write translation validation
+independent exact initialization/read/indexed-write/length translation validation
 described below. The strict L3 fixture binds and replays those proof rows.
-Static ownership, aggregate-borrow framing, remaining array operations, and the
+Repeat initialization rejects non-copy element types before lowering. Static
+ownership, aggregate-borrow framing, extensional equality, and the
 allocation-free collection library remain.
 
 #### Fixed-array surface lock
@@ -367,7 +368,7 @@ Source: `.design/reqs/registry.toml`
 |---|---|---|---|---|
 | REQ-KPRIM-1 | shipped | `.design/build/kernel-primitives.md` | Kernel scalar and effect surface |  |
 | REQ-KPRIM-10 | not_started | `.design/build/kernel-primitives.md` | Primitive-only adversarial suite | Add package, fixed-storage, atomic, waiting, registry, refinement, receipt-tamper, freestanding-consumer, and no-concrete-kernel gates. |
-| REQ-KPRIM-2 | partial | `.design/build/kernel-primitives.md` | Exact mutable and fixed storage | Mutable byte-slice assignment with final(slice), native fixed arrays, and exact initialization/read/indexed-write TV are shipped. Add static storage, aggregate borrows and final views, remaining array operations, and verified fixed-capacity vector/map/bitmap/ring libraries. |
+| REQ-KPRIM-2 | partial | `.design/build/kernel-primitives.md` | Exact mutable and fixed storage | Mutable byte-slice assignment with final(slice), native fixed arrays, copy-safe repetition, and exact initialization/read/indexed-write/length TV are shipped. Add static storage, aggregate borrows and final views, extensional equality, and verified fixed-capacity vector/map/bitmap/ring libraries. |
 | REQ-KPRIM-3 | partial | `.design/build/kernel-primitives.md` | Receipt-bound packages and modules | Independent parsing, module-local identity, direct-import/root-export enforcement, rooted graph validation, source allowlisting, L3 build/composition, complete receipt binding, validation, and replay are shipped. Extend the remaining source-oriented Forge commands (check, audit, TV, goal/edit/fill) to operate on packages without losing module-local diagnostics. |
 | REQ-KPRIM-4 | partial | `.design/build/kernel-primitives.md` | Sealed authority and ownership | The sealed-construction barrier is shipped. Add affine-style consumption or a verified generation discipline that rejects stale copies, double release, and rights escalation. |
 | REQ-KPRIM-5 | not_started | `.design/build/kernel-primitives.md` | Sealed atomics and ordering model | Add the Thermite surface, legality validation, happens-before model, direct-refinement interface, and adversarial tests without adding a kernel implementation. |

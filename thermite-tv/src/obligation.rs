@@ -161,6 +161,9 @@ pub struct ObligationFrame {
     /// production (#150 gap #3). Read by the reference encoder via
     /// [`RefCtx::with_map_bound`].
     pub map_params: Vec<String>,
+    /// Native fixed-array parameters/results whose specification meaning exposes
+    /// the finite `@` view for the independently encoded length operation.
+    pub fixed_array_params: Vec<String>,
 }
 
 impl ObligationFrame {
@@ -175,6 +178,7 @@ impl ObligationFrame {
             .with_nat_coerce(self.nat_coerce_params.iter().cloned())
             .with_string_bound(self.string_params.iter().cloned())
             .with_map_bound(self.map_params.iter().cloned())
+            .with_fixed_array_bound(self.fixed_array_params.iter().cloned())
     }
 
     /// The Verus parameter list `name: type, …`.

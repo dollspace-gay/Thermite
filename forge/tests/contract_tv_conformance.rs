@@ -154,17 +154,33 @@ fn fixed_array_contract_clauses_are_faithful() {
         "  ens result == slots[at]\n",
         "  fx pure\n",
         "{ slots[at] }\n",
+        "fn array_len(slots: [u64; SLOTS]) -> usize\n",
+        "  req true\n",
+        "  ens result == slots.len()\n",
+        "  fx pure\n",
+        "{ slots.len() }\n",
     );
     let path = std::env::temp_dir().join("thermite_contract_tv_fixed_array.th");
     std::fs::write(&path, source).expect("write fixed-array contract-TV fixture");
     let report = run_tv_json(&path, None);
     let (checked, faithful, divergent) = corpus_counts(&report);
     assert_eq!(divergent, 0, "{report}");
-    assert_eq!(checked, 2, "the req and ens must both be checked: {report}");
+    assert_eq!(
+        checked, 4,
+        "both clauses of both array functions must be checked: {report}"
+    );
     assert_eq!(faithful, checked, "{report}");
     assert_eq!(corpus_clause_verdict(&report, "read.req"), Some("faithful"));
     assert_eq!(
         corpus_clause_verdict(&report, "read.ens#1"),
+        Some("faithful")
+    );
+    assert_eq!(
+        corpus_clause_verdict(&report, "array_len.req"),
+        Some("faithful")
+    );
+    assert_eq!(
+        corpus_clause_verdict(&report, "array_len.ens#1"),
         Some("faithful")
     );
 }

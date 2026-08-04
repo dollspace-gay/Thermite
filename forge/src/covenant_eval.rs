@@ -477,6 +477,8 @@ fn expr_shape(expr: &Expr) -> String {
     match expr {
         Expr::IntLit { .. } => "integer literal".to_string(),
         Expr::BoolLit(_) => "bool literal".to_string(),
+        Expr::Array(_) => "array literal".to_string(),
+        Expr::ArrayRepeat { .. } => "array repeat initializer".to_string(),
         Expr::Path(p) => format!("path {}", p.join("::")),
         Expr::Call { .. } => "call expression".to_string(),
         Expr::MethodCall { name, .. } => format!("method call .{name}(…)"),

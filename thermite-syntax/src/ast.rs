@@ -163,6 +163,9 @@ pub struct Program {
     reason = "Item is a by-value pipeline enum; boxing Fn would churn every match Item site (#108)"
 )]
 pub enum Item {
+    /// A package-visible compile-time capacity declaration:
+    /// `const NAME: usize = INTEGER;`.
+    Const(ConstItem),
     Fn(FnItem),
     SpecFn(SpecFnItem),
     /// A `struct NAME { field: type, … } [inv <expr>]` product type
@@ -191,6 +194,7 @@ impl Item {
     /// `"witness"`).
     pub fn name(&self) -> &str {
         match self {
+            Item::Const(c) => &c.name,
             Item::Fn(f) => &f.name,
             Item::SpecFn(s) => &s.name,
             Item::Struct(s) => &s.name,
@@ -204,6 +208,7 @@ impl Item {
     /// interpreted as belonging to an anonymous concatenated source.
     pub fn span(&self) -> Span {
         match self {
+            Item::Const(c) => c.span,
             Item::Fn(f) => f.span,
             Item::SpecFn(s) => s.span,
             Item::Struct(s) => s.span,
@@ -211,6 +216,16 @@ impl Item {
             Item::Forge(forge) => forge.span(),
         }
     }
+}
+
+/// A closed compile-time fixed-array capacity declaration.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConstItem {
+    pub name: Ident,
+    pub value: u128,
+    /// Verbatim literal spelling; semantic consumers use [`Self::value`].
+    pub raw: String,
+    pub span: Span,
 }
 
 /// A Stage-1 forge-tier item (`.design/stage1-forge-tier.md` REQ-3, increment 2a).
@@ -947,6 +962,14 @@ pub enum Expr {
         raw: String,
     },
     BoolLit(bool),
+    /// Exact fixed-array element initialization: `[a, b, ...]` (including
+    /// `[]`). An annotated array type supplies and checks the capacity.
+    Array(Vec<Expr>),
+    /// Allocation-free repeat initialization: `[value; N]`.
+    ArrayRepeat {
+        value: Box<Expr>,
+        len: ArrayLen,
+    },
     Path(Vec<Ident>),
     Call {
         callee: Box<Expr>,
@@ -1143,6 +1166,11 @@ pub enum PrimType {
 pub enum Type {
     Prim(PrimType),
     Unit,
+    /// An owned allocation-free array `[T; N]`.
+    Array {
+        elem: Box<Type>,
+        len: ArrayLen,
+    },
     Ref {
         mutable: bool,
         inner: Box<Type>,
@@ -1239,4 +1267,12 @@ pub enum Type {
     /// projection [`Expr::TupleProj`] (`.0`/`.1`/…), the v1 §2.3 "one way" tuple
     /// access (destructuring is deferred, REQ-9/OQ-2).
     Tuple(Vec<Type>),
+}
+
+/// The closed fixed-array capacity grammar. Runtime expressions and ambient
+/// target constants cannot become layout inputs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ArrayLen {
+    Literal { value: u128, raw: String },
+    Const(Ident),
 }

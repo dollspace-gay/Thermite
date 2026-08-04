@@ -328,7 +328,7 @@ pub fn build_file(
     // reject (the shared `goal_repl::open_hole_reason`, the #192 single-copy lesson).
     if let Some(detail) = program.items.iter().find_map(|i| match i {
         Item::Fn(f) => crate::goal_repl::open_hole_reason(f),
-        Item::SpecFn(_) | Item::Struct(_) | Item::Enum(_) => None,
+        Item::Const(_) | Item::SpecFn(_) | Item::Struct(_) | Item::Enum(_) => None,
         // A Stage-1 forge-tier item (`.design/stage1-forge-tier.md` REQ-3 / AC-7):
         // an open `?pN` proof hole blocks the build, the proof-tier mirror of the
         // `?N` body-hole refusal — a holed proof must not ship a trust-stamped
@@ -533,7 +533,7 @@ fn reachable_boundary_targets(program: &Program) -> BTreeSet<String> {
         .iter()
         .filter_map(|item| match item {
             Item::Fn(f) => f.boundary.as_ref().map(|b| b.target.clone()),
-            Item::SpecFn(_) | Item::Struct(_) | Item::Enum(_) => None,
+            Item::Const(_) | Item::SpecFn(_) | Item::Struct(_) | Item::Enum(_) => None,
             // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 boundary-target
             // consumer yet (increments 2b-3); declares no boundary crossing (neutral
             // `None`), mirroring the inert ADT-decl arm.
@@ -554,7 +554,7 @@ fn build_functions(program: &Program) -> Vec<BuildFunction> {
                 name: f.name.clone(),
                 fx: effects_of(&f.contract.fx),
             }),
-            Item::SpecFn(_) => None,
+            Item::Const(_) | Item::SpecFn(_) => None,
             // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 manifest consumer
             // yet (increments 2b-3); carries no `fx` row → contributes no manifest
             // function (neutral `None`), mirroring the inert ADT-decl arm.
@@ -582,6 +582,9 @@ fn find_entry_fn<'a>(program: &'a Program, name: &str) -> Result<&'a FnItem, For
         Some(Item::SpecFn(_)) => Err(ForgeError::Usage(format!(
             "`--entry {name}` names a `spec fn` (a pure spec dependency, not a runnable entry \
              point); name a `fn`"
+        ))),
+        Some(Item::Const(_)) => Err(ForgeError::Usage(format!(
+            "`--entry {name}` names a compile-time capacity, not a runnable `fn`; name a `fn`"
         ))),
         // Basis Stage 1a (`.design/basis/01-adts.md`): a `struct`/`enum` type
         // is not a runnable entry point — the neutral value is the same `Usage`

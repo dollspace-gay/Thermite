@@ -41,7 +41,7 @@
 use std::collections::BTreeSet;
 use std::fmt;
 
-use thermite_syntax::ast::{BinOp, Expr, IndexArg, MatchArm, Pattern, UnaryOp};
+use thermite_syntax::ast::{ArrayLen, BinOp, Expr, IndexArg, MatchArm, Pattern, UnaryOp};
 
 /// An failure to encode a construct outside the frozen contract
 /// sublanguage (REQ-1). The reference encoder never panics and never silently
@@ -226,6 +226,17 @@ fn encode(expr: &Expr, ctx: &RefCtx) -> Result<String, RefEncodeError> {
     match expr {
         Expr::IntLit { value, .. } => Ok(value.to_string()),
         Expr::BoolLit(b) => Ok(b.to_string()),
+        Expr::Array(elements) => {
+            let elements = elements
+                .iter()
+                .map(|element| encode(element, ctx))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(format!("[{}]", elements.join(", ")))
+        }
+        Expr::ArrayRepeat { value, len } => {
+            let value = encode(value, ctx)?;
+            Ok(format!("[{value}; {}]", encode_array_len(len)))
+        }
         Expr::Path(segments) => encode_path(segments),
         Expr::Binary { op, lhs, rhs } => encode_binary(*op, lhs, rhs, ctx),
         Expr::Unary { op, expr } => encode_unary(*op, expr, ctx),
@@ -261,6 +272,13 @@ fn encode(expr: &Expr, ctx: &RefCtx) -> Result<String, RefEncodeError> {
         }
         Expr::Match { scrutinee, arms } => encode_match(scrutinee, arms, ctx),
         other => Err(RefEncodeError::Unsupported(node_kind(other))),
+    }
+}
+
+fn encode_array_len(len: &ArrayLen) -> String {
+    match len {
+        ArrayLen::Literal { value, .. } => value.to_string(),
+        ArrayLen::Const(name) => name.clone(),
     }
 }
 
@@ -1037,6 +1055,8 @@ fn node_kind(e: &Expr) -> String {
     match e {
         Expr::IntLit { .. } => "int literal".to_string(),
         Expr::BoolLit(_) => "bool literal".to_string(),
+        Expr::Array(_) => "array literal".to_string(),
+        Expr::ArrayRepeat { .. } => "array repeat initializer".to_string(),
         Expr::Path(_) => "path".to_string(),
         Expr::Call { .. } => "call".to_string(),
         Expr::MethodCall { .. } => "method call".to_string(),

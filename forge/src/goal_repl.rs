@@ -308,6 +308,13 @@ fn type_spelling(ty: &Type) -> String {
         Type::Prim(PrimType::Usize) => "usize".to_string(),
         Type::Prim(PrimType::Bool) => "bool".to_string(),
         Type::Unit => "()".to_string(),
+        Type::Array { elem, len } => {
+            let len = match len {
+                thermite_syntax::ArrayLen::Literal { raw, .. } => raw,
+                thermite_syntax::ArrayLen::Const(name) => name,
+            };
+            format!("[{}; {len}]", type_spelling(elem))
+        }
         Type::Ref { mutable, inner } => {
             let m = if *mutable { "mut " } else { "" };
             format!("&{m}{}", type_spelling(inner))

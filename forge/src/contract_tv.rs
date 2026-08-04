@@ -168,7 +168,7 @@ pub fn tv_file(path: &Path, seed: u64, rlimit: f64) -> Result<TvReport, ForgeErr
             ),
             // A `spec fn` carries only a `dec` measure (no req/ens) — its body's
             // fidelity is body-TV (epic #139 step 2, out of scope here).
-            Item::SpecFn(_) | Item::Struct(_) | Item::Enum(_) => {}
+            Item::Const(_) | Item::SpecFn(_) | Item::Struct(_) | Item::Enum(_) => {}
             // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 contract-TV consumer
             // yet (increments 2b-3); inert here, mirroring the spec/ADT no-op arm.
             Item::Forge(_) => {}

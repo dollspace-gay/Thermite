@@ -117,9 +117,54 @@ The kernel profile needs:
   exposed only through sealed ownership.
 
 The current implementation has the integer widths, core ADTs/control flow,
-sealed structs, mutable byte-slice assignment, and a `final(slice)` proof view.
-It does not yet have a first-class fixed-array/static-storage surface or the
-allocation-free collection library.
+sealed structs, mutable byte-slice assignment, a `final(slice)` proof view, and
+the first-class fixed-array syntax/validation/native L3/L2/L1 lowering described
+below. Static ownership, aggregate-borrow framing, exact write translation
+validation, and the allocation-free collection library remain.
+
+#### Fixed-array surface lock
+
+The fixed-storage language form is native and capacity-generic; it is not a
+family of privileged names such as `FixedArray8<T>`:
+
+```thermite
+const SLOT_COUNT: usize = 64;
+
+fn replace(slots: [u64; SLOT_COUNT], at: usize, value: u64)
+    -> [u64; SLOT_COUNT]
+  req at < SLOT_COUNT
+  ens result[at] == value
+  fx pure
+{
+  let mut updated: [u64; SLOT_COUNT] = slots;
+  updated[at] = value;
+  updated
+}
+```
+
+`const NAME: usize = INTEGER;` introduces an immutable package declaration.
+Array lengths are either a non-negative integer literal or one such constant;
+there is no ambient constant evaluation or target-dependent lookup. Duplicate,
+unknown, cyclic, non-`usize`, and cross-module-without-import capacity names are
+errors before lowering. Forge bounds an individual capacity and the recursively
+expanded element count to 1,048,576 elements to prevent source-sized denial of
+service; the bound is a toolchain constant, not a target ABI fact.
+
+`[T; N]` is an owned, allocation-free value. `[value; N]` is repeat
+initialization for copy-safe scalar/plain values, while `[a, b, ...]` is exact
+element initialization and must contain precisely `N` values in an annotated
+context. Existing indexing and indexed assignment are the only access/mutation
+forms; bounded `for i in 0..N` supplies iteration without an allocator or hidden
+iterator state. `.len()` is the constant `N`. Arrays nest, may appear in plain
+structs/enums/tuples, and may be borrowed as immutable or mutable arrays.
+
+The executable representation is the target's native `[T; N]`, not `Vec<T>` and
+not a generated per-capacity Rust policy type. Specification lowering exposes a
+finite sequence view with length `N`; indexed assignment proves an exact update
+and preservation of every other index. `old(...)` and `final(...)` retain their
+existing state-transition meaning for mutable array borrows. Independent
+translation validation compares initialization, reads, writes, equality, and
+the finite view; changing a capacity, index, or assigned value must be detected.
 
 ### Modules, packages, and receipts
 

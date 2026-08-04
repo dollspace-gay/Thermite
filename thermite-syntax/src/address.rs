@@ -144,7 +144,7 @@ pub fn addresses_of(program: &Program) -> Vec<AddressEntry> {
             // declaration has no loops, no contract clauses, hence no address.
             // This additive no-op arm keeps the same-crate exhaustive `match`
             // compiling; types gain no `forge edit` address.
-            Item::Struct(_) | Item::Enum(_) => {}
+            Item::Const(_) | Item::Struct(_) | Item::Enum(_) => {}
             // Stage-1 forge-tier items (`.design/stage1-forge-tier.md` REQ-3): the
             // prop/lemma/proof/witness addressing, including the proof-block
             // addresses (`f.proof.ens#k`) and the `?pN` proof-hole form (AC-7).

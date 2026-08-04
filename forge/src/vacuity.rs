@@ -222,6 +222,8 @@ fn expr_mentions_result(expr: &Expr, depth: usize) -> bool {
         // sub-expression; it can never contain a `result` mention, so it answers
         // `false` alongside `IntLit`/`BoolLit` (no false-reject risk).
         Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::StrLit(_) => false,
+        Expr::Array(elements) => elements.iter().any(|e| expr_mentions_result(e, d)),
+        Expr::ArrayRepeat { value, .. } => expr_mentions_result(value, d),
         Expr::Call { callee, args } => {
             expr_mentions_result(callee, d) || args.iter().any(|a| expr_mentions_result(a, d))
         }

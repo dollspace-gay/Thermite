@@ -255,7 +255,7 @@ pub fn check_effects(program: &Program) -> Result<(), Vec<LowerError>> {
             // row — the neutral value for this name-collection pass is a no-op.
             // (The item is gated at the validator before effect-check runs;
             // dead-in-1a.)
-            Item::Struct(_) | Item::Enum(_) => {}
+            Item::Const(_) | Item::Struct(_) | Item::Enum(_) => {}
             // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 effect consumer yet
             // (increments 2b-3); inert here, mirroring the ADT-decl arm.
             Item::Forge(_) => {}
@@ -457,6 +457,28 @@ fn check_expr<'a>(
     }
     let d = depth + 1;
     match expr {
+        Expr::Array(elements) => {
+            for element in elements {
+                check_expr(
+                    element,
+                    caller_fx,
+                    caller_name,
+                    caller_span,
+                    resolve,
+                    d,
+                    errors,
+                );
+            }
+        }
+        Expr::ArrayRepeat { value, .. } => check_expr(
+            value,
+            caller_fx,
+            caller_name,
+            caller_span,
+            resolve,
+            d,
+            errors,
+        ),
         Expr::Call { callee, args } => {
             // Resolve the callee by its path's last segment (the frontend is
             // registry-free; combinator/fn calls are plain `Expr::Call` with a

@@ -176,6 +176,7 @@ pub fn parse_package(sources: &[PackageModuleSource]) -> PackageParseResult {
 /// and multiple witness blocks are numbered by the address layer.
 fn declaration_name(item: &Item) -> Option<&str> {
     match item {
+        Item::Const(constant) => Some(&constant.name),
         Item::Fn(function) => Some(&function.name),
         Item::SpecFn(function) => Some(&function.name),
         Item::Struct(structure) => Some(&structure.name),

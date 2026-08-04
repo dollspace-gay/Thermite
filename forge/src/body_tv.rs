@@ -177,7 +177,7 @@ pub fn body_tv_file(path: &Path, seed: u64, rlimit: f64) -> Result<BodyTvReport,
             Item::Fn(f) => body_tv_fn(&parsed.program, f, seed, rlimit, &mut report),
             // A `spec fn` body lowers in spec context (not exec); a struct/enum has no
             // exec body — out of scope for body-TV.
-            Item::SpecFn(_) | Item::Struct(_) | Item::Enum(_) => {}
+            Item::Const(_) | Item::SpecFn(_) | Item::Struct(_) | Item::Enum(_) => {}
             // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 body-TV consumer
             // yet (increments 2b-3); inert here, mirroring the spec/ADT no-op arm.
             Item::Forge(_) => {}
@@ -268,7 +268,7 @@ pub(crate) fn body_tv_support(
         .filter(|item| match item {
             Item::Fn(dep) => support_names.contains(&dep.name),
             Item::SpecFn(dep) => support_names.contains(&dep.name),
-            Item::Struct(_) | Item::Enum(_) | Item::Forge(_) => false,
+            Item::Const(_) | Item::Struct(_) | Item::Enum(_) | Item::Forge(_) => false,
         })
         .collect();
     let adt_names: BTreeSet<String> = crate::check::reachable_adt_deps(program, &referrers)
@@ -284,6 +284,7 @@ pub(crate) fn body_tv_support(
                 Item::SpecFn(dep) => support_names.contains(&dep.name),
                 Item::Struct(dep) => adt_names.contains(&dep.name),
                 Item::Enum(dep) => adt_names.contains(&dep.name),
+                Item::Const(_) => true,
                 Item::Forge(_) => false,
             })
             .cloned()

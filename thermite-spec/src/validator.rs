@@ -144,7 +144,8 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 use thermite_syntax::{
-    Block, Clause, Expr, IndexArg, Item, MatchArm, Pattern, Program, Span, Stmt, VariantShape,
+    ArrayLen, Block, Clause, Expr, ForgeItem, IndexArg, Item, MatchArm, Pattern, Program, Span,
+    Stmt, Type, VariantShape,
 };
 
 use crate::combinators::{self, ArgKind, CombinatorSig};
@@ -162,6 +163,12 @@ use crate::schemes::{self, SchemeSig};
 /// process (REQ-5; the #29/#31/#32 expr-only-guard lesson: do not leave any
 /// recursive path unbounded).
 const MAX_RECURSION_DEPTH: usize = 64;
+
+/// Maximum capacity of one native fixed array, and maximum recursively expanded
+/// element count of a nested fixed-array type. This is a language/tooling bound,
+/// not a host or target `usize` fact, so validation is deterministic across
+/// machines and rejects source-sized denial-of-service inputs before lowering.
+pub const MAX_FIXED_ARRAY_ELEMENTS: u128 = 1_048_576;
 
 /// The bounded set of built-in `MethodCall` names a caged position admits
 /// (REQ-3(c): "the bounded built-in `MethodCall`s the grammar admits (e.g.
@@ -330,6 +337,31 @@ const GENERATED_SPEC_FNS: &[&str] = &[
 /// (R-CODE-2 / R-APG-1): every rejection is a variant here.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SpecError {
+    /// A fixed-array length names no package-visible `const NAME: usize = ...`.
+    UnknownArrayCapacity { name: String, span: Span },
+    /// Two top-level capacity declarations have the same name. Package parsing
+    /// catches this across modules; this validator also closes the single-file
+    /// path before lowering.
+    DuplicateArrayCapacity { name: String, span: Span },
+    /// One fixed-array capacity exceeds the language/tooling bound.
+    ArrayCapacityTooLarge {
+        value: u128,
+        limit: u128,
+        span: Span,
+    },
+    /// A nested array's recursively expanded native element count exceeds the
+    /// same deterministic tooling bound.
+    ArrayExpandedSizeTooLarge {
+        elements: u128,
+        limit: u128,
+        span: Span,
+    },
+    /// An exact or repeat initializer disagrees with its annotated array type.
+    ArrayLengthMismatch {
+        expected: u128,
+        found: u128,
+        span: Span,
+    },
     /// A call in a contract position whose callee is neither a registered
     /// combinator nor a declared `spec fn` — an arbitrary free-function call,
     /// forbidden by the §4.2 cage (REQ-4 (i)). `name` is the unresolved callee.
@@ -493,7 +525,12 @@ impl SpecError {
     /// The source span this diagnostic points at.
     pub fn span(&self) -> Span {
         match self {
-            SpecError::UnknownCombinator { span, .. }
+            SpecError::UnknownArrayCapacity { span, .. }
+            | SpecError::DuplicateArrayCapacity { span, .. }
+            | SpecError::ArrayCapacityTooLarge { span, .. }
+            | SpecError::ArrayExpandedSizeTooLarge { span, .. }
+            | SpecError::ArrayLengthMismatch { span, .. }
+            | SpecError::UnknownCombinator { span, .. }
             | SpecError::WrongArity { span, .. }
             | SpecError::WrongArgKind { span, .. }
             | SpecError::ForbiddenCall { span, .. }
@@ -518,6 +555,29 @@ impl SpecError {
 impl fmt::Display for SpecError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            SpecError::UnknownArrayCapacity { name, .. } => write!(
+                f,
+                "array capacity `{name}` is not a declared `const {name}: usize = INTEGER;`"
+            ),
+            SpecError::DuplicateArrayCapacity { name, .. } => {
+                write!(f, "array capacity `{name}` is declared more than once")
+            }
+            SpecError::ArrayCapacityTooLarge { value, limit, .. } => write!(
+                f,
+                "array capacity {value} exceeds the fixed-array limit of {limit}"
+            ),
+            SpecError::ArrayExpandedSizeTooLarge {
+                elements, limit, ..
+            } => write!(
+                f,
+                "nested array expands to {elements} elements, exceeding the fixed-array limit of {limit}"
+            ),
+            SpecError::ArrayLengthMismatch {
+                expected, found, ..
+            } => write!(
+                f,
+                "array initializer has length {found}, but its annotated type requires {expected}"
+            ),
             SpecError::UnknownCombinator { name, .. } => write!(
                 f,
                 "`{name}` is not a registered SpecTherm combinator or a declared `spec fn`; \
@@ -657,6 +717,9 @@ pub fn validate(program: &Program) -> Result<(), Vec<SpecError>> {
 /// the accumulated diagnostics, and the "caged-flat" mode flag (REQ-6).
 struct Validator {
     spec_fns: HashSet<String>,
+    /// Closed, literal-valued package capacity declarations. The parser admits
+    /// no expressions here, so resolution cannot be cyclic or target-dependent.
+    array_capacities: HashMap<String, u128>,
     /// REQ-5: each declared `enum`'s variant names, in declaration order
     /// (collected from `Item::Enum` in the pre-pass). Keyed by enum name. The
     /// exhaustiveness check reads this to compute the missing-variant set; the
@@ -713,7 +776,7 @@ impl Validator {
             .iter()
             .filter_map(|item| match item {
                 Item::SpecFn(s) => Some(s.name.clone()),
-                Item::Fn(_) => None,
+                Item::Const(_) | Item::Fn(_) => None,
                 // A `struct`/`enum` item declares no `spec fn` name
                 // (`.design/basis/01-adts.md`). The ADT declarations are
                 // collected separately below.
@@ -759,9 +822,25 @@ impl Validator {
         // variants at the declaration makes that case-based split sound. These
         // casing diagnostics seed the validator's error list so a lowercase-
         // variant program never reaches the (now-sound) body/contract walk.
-        let mut casing_errors: Vec<SpecError> = Vec::new();
+        let mut prepass_errors: Vec<SpecError> = Vec::new();
+        let mut array_capacities: HashMap<String, u128> = HashMap::new();
         for item in &program.items {
             match item {
+                Item::Const(c) => {
+                    if array_capacities.insert(c.name.clone(), c.value).is_some() {
+                        prepass_errors.push(SpecError::DuplicateArrayCapacity {
+                            name: c.name.clone(),
+                            span: c.span,
+                        });
+                    }
+                    if c.value > MAX_FIXED_ARRAY_ELEMENTS {
+                        prepass_errors.push(SpecError::ArrayCapacityTooLarge {
+                            value: c.value,
+                            limit: MAX_FIXED_ARRAY_ELEMENTS,
+                            span: c.span,
+                        });
+                    }
+                }
                 Item::Enum(e) => {
                     let mut variant_names = Vec::with_capacity(e.variants.len());
                     for variant in &e.variants {
@@ -774,7 +853,7 @@ impl Validator {
                             .next()
                             .is_some_and(|c| c.is_ascii_uppercase())
                         {
-                            casing_errors.push(SpecError::InvalidVariantCasing {
+                            prepass_errors.push(SpecError::InvalidVariantCasing {
                                 name: variant.name.clone(),
                                 span: e.span,
                             });
@@ -847,6 +926,7 @@ impl Validator {
 
         Validator {
             spec_fns,
+            array_capacities,
             enums,
             variant_to_enum,
             struct_fields,
@@ -855,7 +935,7 @@ impl Validator {
             // REQ-2: lowercase-variant casing diagnostics from the pre-pass seed
             // the error list, so a lowercase-variant `enum` is rejected at the
             // declaration before the (now-sound) match/exhaustiveness walk runs.
-            errors: casing_errors,
+            errors: prepass_errors,
             in_combinator_closure: false,
             in_scheme_step: false,
         }
@@ -870,6 +950,7 @@ impl Validator {
             // so a user name can never collide with a generated def. Checked once per
             // item before its contract/body walk; a clash is `ReservedName`.
             let declared = match item {
+                Item::Const(_) => None,
                 Item::Fn(f) => Some((&f.name, f.span)),
                 Item::SpecFn(s) => Some((&s.name, s.span)),
                 Item::Struct(_) | Item::Enum(_) => None,
@@ -888,7 +969,12 @@ impl Validator {
                 }
             }
             match item {
+                Item::Const(_) => {}
                 Item::Fn(f) => {
+                    for param in &f.params {
+                        self.validate_type(&param.ty, f.span);
+                    }
+                    self.validate_type(&f.ret, f.span);
                     self.walk_clause(&f.contract.req);
                     for clause in &f.contract.ens {
                         self.walk_clause(clause);
@@ -929,6 +1015,10 @@ impl Validator {
                     }
                 }
                 Item::SpecFn(s) => {
+                    for param in &s.params {
+                        self.validate_type(&param.ty, s.span);
+                    }
+                    self.validate_type(&s.ret, s.span);
                     // A `spec fn` body is itself a contract-position expression
                     // tree (REQ-3) — fully caged; its `dec` measure is a clause.
                     self.walk_clause(&s.dec);
@@ -945,18 +1035,146 @@ impl Validator {
                 // `match`/`is` sites. The 1a `UnsupportedAdt` gate is gone: a
                 // well-formed ADT now validates.
                 Item::Struct(s) => {
+                    for field in &s.fields {
+                        self.validate_type(&field.ty, s.span);
+                    }
                     if let Some(inv) = &s.inv {
                         self.walk_clause(inv);
                     }
                 }
-                Item::Enum(_) => {}
+                Item::Enum(e) => {
+                    for variant in &e.variants {
+                        match &variant.shape {
+                            VariantShape::Unit => {}
+                            VariantShape::Tuple(types) => {
+                                for ty in types {
+                                    self.validate_type(ty, e.span);
+                                }
+                            }
+                            VariantShape::Struct(fields) => {
+                                for field in fields {
+                                    self.validate_type(&field.ty, e.span);
+                                }
+                            }
+                        }
+                    }
+                }
                 // A Stage-1 forge-tier item (`.design/stage1-forge-tier.md` REQ-3):
                 // its contract/proof positions (`prop fn` body, `lemma`/`proof`
                 // clauses + proof blocks, `witness` directives) are consumed by the
                 // forge increments (2b covenant, 2c battery, 2e proof view, 3
                 // library), not the v1 spec cage. No v1 contract walk applies here;
                 // the surface is parse/address/round-trip tested in thermite-syntax.
-                Item::Forge(_) => {}
+                Item::Forge(forge) => self.validate_forge_types(forge),
+            }
+        }
+    }
+
+    fn validate_forge_types(&mut self, forge: &ForgeItem) {
+        match forge {
+            ForgeItem::PropFn(item) => {
+                for param in &item.params {
+                    self.validate_type(&param.ty, item.span);
+                }
+                self.validate_type(&item.ret, item.span);
+            }
+            ForgeItem::Lemma(item) => {
+                for param in &item.params {
+                    self.validate_type(&param.ty, item.span);
+                }
+            }
+            ForgeItem::Proof(_) | ForgeItem::Witness(_) => {}
+        }
+    }
+
+    fn resolve_array_len(&mut self, len: &ArrayLen, span: Span) -> Option<u128> {
+        let value = match len {
+            ArrayLen::Literal { value, .. } => *value,
+            ArrayLen::Const(name) => match self.array_capacities.get(name) {
+                Some(value) => *value,
+                None => {
+                    self.errors.push(SpecError::UnknownArrayCapacity {
+                        name: name.clone(),
+                        span,
+                    });
+                    return None;
+                }
+            },
+        };
+        if value > MAX_FIXED_ARRAY_ELEMENTS {
+            if matches!(len, ArrayLen::Literal { .. }) {
+                self.errors.push(SpecError::ArrayCapacityTooLarge {
+                    value,
+                    limit: MAX_FIXED_ARRAY_ELEMENTS,
+                    span,
+                });
+            }
+            None
+        } else {
+            Some(value)
+        }
+    }
+
+    /// Validate every capacity in a type and return its recursively expanded
+    /// native element count. Non-array leaves count as one storage element.
+    fn validate_type(&mut self, ty: &Type, span: Span) -> Option<u128> {
+        match ty {
+            Type::Array { elem, len } => {
+                let len = self.resolve_array_len(len, span)?;
+                let inner = self.validate_type(elem, span)?;
+                let elements = len.checked_mul(inner).unwrap_or(u128::MAX);
+                if elements > MAX_FIXED_ARRAY_ELEMENTS {
+                    self.errors.push(SpecError::ArrayExpandedSizeTooLarge {
+                        elements,
+                        limit: MAX_FIXED_ARRAY_ELEMENTS,
+                        span,
+                    });
+                    None
+                } else {
+                    Some(elements)
+                }
+            }
+            Type::Ref { inner, .. }
+            | Type::Slice(inner)
+            | Type::Generic { arg: inner, .. }
+            | Type::Box(inner)
+            | Type::Vec(inner)
+            | Type::Option(inner) => self.validate_type(inner, span),
+            Type::Result(ok, err) | Type::Map(ok, err) => {
+                let left = self.validate_type(ok, span);
+                let right = self.validate_type(err, span);
+                left.zip(right).map(|_| 1)
+            }
+            Type::Tuple(types) => {
+                let mut valid = true;
+                for ty in types {
+                    valid &= self.validate_type(ty, span).is_some();
+                }
+                valid.then_some(1)
+            }
+            Type::Prim(_) | Type::Unit | Type::Named(_) | Type::String => Some(1),
+        }
+    }
+
+    fn validate_array_initializer(&mut self, ty: &Type, init: &Expr, span: Span) {
+        let Type::Array { len, .. } = ty else {
+            return;
+        };
+        let Some(expected) = self.resolve_array_len(len, span) else {
+            return;
+        };
+        let found = match init {
+            Expr::Array(elements) => Some(elements.len() as u128),
+            Expr::ArrayRepeat { len, .. } => self.resolve_array_len(len, span),
+            _ => None,
+        };
+        if let Some(found) = found {
+            if found != expected {
+                self.errors.push(SpecError::ArrayLengthMismatch {
+                    expected,
+                    found,
+                    span,
+                });
             }
         }
     }
@@ -1020,7 +1238,13 @@ impl Validator {
                 // structurally for further nested loops, do not cage it.
                 self.scan_block_for_loops(&loop_node.body, loop_node.span);
             }
-            Stmt::Let { init, .. } => self.scan_expr_for_loops(init, span),
+            Stmt::Let { ty, init, .. } => {
+                if let Some(ty) = ty {
+                    self.validate_type(ty, span);
+                    self.validate_array_initializer(ty, init, span);
+                }
+                self.scan_expr_for_loops(init, span);
+            }
             Stmt::Assign { target, value } => {
                 self.scan_expr_for_loops(target, span);
                 self.scan_expr_for_loops(value, span);
@@ -1055,6 +1279,15 @@ impl Validator {
     /// non-ADT corpus body walk (`binary_search.th`) is unchanged.
     fn scan_expr_for_loops(&mut self, expr: &Expr, span: Span) {
         match expr {
+            Expr::Array(elements) => {
+                for element in elements {
+                    self.scan_expr_for_loops(element, span);
+                }
+            }
+            Expr::ArrayRepeat { value, len } => {
+                self.resolve_array_len(len, span);
+                self.scan_expr_for_loops(value, span);
+            }
             Expr::If { cond, then, else_ } => {
                 self.scan_expr_for_loops(cond, span);
                 self.scan_block_for_loops(then, span);
@@ -1108,9 +1341,11 @@ impl Validator {
                     }
                 }
             }
-            Expr::Cast { expr: inner, .. } | Expr::Ref { expr: inner, .. } => {
-                self.scan_expr_for_loops(inner, span)
+            Expr::Cast { expr: inner, ty } => {
+                self.validate_type(ty, span);
+                self.scan_expr_for_loops(inner, span);
             }
+            Expr::Ref { expr: inner, .. } => self.scan_expr_for_loops(inner, span),
             Expr::Closure { body, .. } => self.scan_expr_for_loops(body, span),
             // REQ-6: a struct / struct-variant construction's field names must be
             // declared; the field values are descended for nested loops/ADTs.
@@ -1183,7 +1418,13 @@ impl Validator {
                 self.walk_clause(&loop_node.dec);
                 self.walk_block(&loop_node.body, loop_node.span);
             }
-            Stmt::Let { init, .. } => self.walk_expr(init, span),
+            Stmt::Let { ty, init, .. } => {
+                if let Some(ty) = ty {
+                    self.validate_type(ty, span);
+                    self.validate_array_initializer(ty, init, span);
+                }
+                self.walk_expr(init, span);
+            }
             Stmt::Assign { target, value } => {
                 self.walk_expr(target, span);
                 self.walk_expr(value, span);
@@ -1217,6 +1458,16 @@ impl Validator {
             // leaf admitted in a contract position as an int/bool literal
             // — e.g. the editor case `s == "needle"`; no sub-expression to walk.
             Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) | Expr::StrLit(_) => {}
+
+            Expr::Array(elements) => {
+                for element in elements {
+                    self.walk_expr(element, span);
+                }
+            }
+            Expr::ArrayRepeat { value, len } => {
+                self.resolve_array_len(len, span);
+                self.walk_expr(value, span);
+            }
 
             // (a)/(b)/(iv): a free call is a combinator, a spec-fn call, or
             // forbidden.
@@ -1279,7 +1530,10 @@ impl Validator {
                 self.walk_expr(base, span);
                 self.walk_index(index, span);
             }
-            Expr::Cast { expr: inner, .. } => self.walk_expr(inner, span),
+            Expr::Cast { expr: inner, ty } => {
+                self.validate_type(ty, span);
+                self.walk_expr(inner, span);
+            }
             Expr::Ref { expr: inner, .. } => self.walk_expr(inner, span),
 
             // (c) match / if — built-in control forms. A `match` over a declared
@@ -1942,6 +2196,8 @@ fn stmt_calls_name(stmt: &Stmt, name: &str) -> bool {
 
 fn expr_calls_name(expr: &Expr, name: &str) -> bool {
     match expr {
+        Expr::Array(elements) => elements.iter().any(|e| expr_calls_name(e, name)),
+        Expr::ArrayRepeat { value, .. } => expr_calls_name(value, name),
         Expr::Call { callee, args } => {
             let callee_is_self = matches!(
                 callee.as_ref(),

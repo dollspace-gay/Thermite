@@ -574,6 +574,9 @@ fn collect_type_closure(
         | Type::Box(inner)
         | Type::Vec(inner)
         | Type::Option(inner) => collect_type_closure(program, inner, rows, seen_named)?,
+        Type::Array { elem, .. } => {
+            collect_type_closure(program, elem, rows, seen_named)?;
+        }
         Type::Result(ok, err) | Type::Map(ok, err) => {
             collect_type_closure(program, ok, rows, seen_named)?;
             collect_type_closure(program, err, rows, seen_named)?;
@@ -666,6 +669,13 @@ fn type_spelling(ty: &Type) -> Result<String, String> {
             type_spelling(inner)?
         ),
         Type::Slice(inner) => format!("[{}]", type_spelling(inner)?),
+        Type::Array { elem, len } => {
+            let len = match len {
+                thermite_syntax::ArrayLen::Literal { raw, .. } => raw.clone(),
+                thermite_syntax::ArrayLen::Const(name) => name.clone(),
+            };
+            format!("[{};{}]", type_spelling(elem)?, len)
+        }
         Type::Generic { name, arg } => format!("{name}<{}>", type_spelling(arg)?),
         Type::Named(name) => name.clone(),
         Type::Box(inner) => format!("Box<{}>", type_spelling(inner)?),

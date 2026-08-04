@@ -1051,11 +1051,30 @@ fn validate_package_resolution(
             }
         }
     }
+
+    let capacity_modules: BTreeMap<&str, &str> = program
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Const(_) => Some((item.name(), item_modules[item.name()])),
+            _ => None,
+        })
+        .collect();
+    for item in &program.items {
+        let mut referenced = BTreeSet::new();
+        collect_item_capacity_refs(item, &mut referenced);
+        for name in referenced {
+            if capacity_modules.contains_key(name) {
+                require_import(item.name(), name)?;
+            }
+        }
+    }
     Ok(())
 }
 
 fn collect_item_named_types<'a>(item: &'a Item, names: &mut BTreeSet<&'a str>) {
     match item {
+        Item::Const(_) => {}
         Item::Fn(function) => collect_signature_named_types(&function.params, &function.ret, names),
         Item::SpecFn(function) => {
             collect_signature_named_types(&function.params, &function.ret, names)
@@ -1116,6 +1135,7 @@ fn collect_named_types<'a>(ty: &'a Type, names: &mut BTreeSet<&'a str>) {
         | Type::Box(inner)
         | Type::Vec(inner)
         | Type::Option(inner) => collect_named_types(inner, names),
+        Type::Array { elem, .. } => collect_named_types(elem, names),
         Type::Result(ok, err) | Type::Map(ok, err) => {
             collect_named_types(ok, names);
             collect_named_types(err, names);
@@ -1126,6 +1146,241 @@ fn collect_named_types<'a>(ty: &'a Type, names: &mut BTreeSet<&'a str>) {
             }
         }
         Type::Prim(_) | Type::Unit | Type::String => {}
+    }
+}
+
+fn collect_item_capacity_refs<'a>(item: &'a Item, names: &mut BTreeSet<&'a str>) {
+    match item {
+        Item::Const(_) => {}
+        Item::Fn(function) => {
+            collect_signature_capacity_refs(&function.params, &function.ret, names);
+            collect_expr_capacity_refs(&function.contract.req.expr, names);
+            for clause in &function.contract.ens {
+                collect_expr_capacity_refs(&clause.expr, names);
+            }
+            if let Some(clause) = &function.dec {
+                collect_expr_capacity_refs(&clause.expr, names);
+            }
+            if let Some(body) = &function.body {
+                collect_block_capacity_refs(body, names);
+            }
+        }
+        Item::SpecFn(function) => {
+            collect_signature_capacity_refs(&function.params, &function.ret, names);
+            collect_expr_capacity_refs(&function.dec.expr, names);
+            collect_block_capacity_refs(&function.body, names);
+        }
+        Item::Struct(structure) => {
+            for field in &structure.fields {
+                collect_type_capacity_refs(&field.ty, names);
+            }
+            if let Some(inv) = &structure.inv {
+                collect_expr_capacity_refs(&inv.expr, names);
+            }
+        }
+        Item::Enum(enumeration) => {
+            for variant in &enumeration.variants {
+                match &variant.shape {
+                    thermite_syntax::VariantShape::Unit => {}
+                    thermite_syntax::VariantShape::Tuple(types) => {
+                        for ty in types {
+                            collect_type_capacity_refs(ty, names);
+                        }
+                    }
+                    thermite_syntax::VariantShape::Struct(fields) => {
+                        for field in fields {
+                            collect_type_capacity_refs(&field.ty, names);
+                        }
+                    }
+                }
+            }
+        }
+        Item::Forge(ForgeItem::PropFn(function)) => {
+            collect_signature_capacity_refs(&function.params, &function.ret, names);
+            if let Some(dec) = &function.dec {
+                collect_expr_capacity_refs(&dec.expr, names);
+            }
+            collect_block_capacity_refs(&function.body, names);
+        }
+        Item::Forge(ForgeItem::Lemma(lemma)) => {
+            for param in &lemma.params {
+                collect_type_capacity_refs(&param.ty, names);
+            }
+            collect_expr_capacity_refs(&lemma.req.expr, names);
+            for clause in &lemma.ens {
+                collect_expr_capacity_refs(&clause.expr, names);
+            }
+        }
+        Item::Forge(ForgeItem::Proof(_) | ForgeItem::Witness(_)) => {}
+    }
+}
+
+fn collect_signature_capacity_refs<'a>(
+    params: &'a [thermite_syntax::Param],
+    ret: &'a Type,
+    names: &mut BTreeSet<&'a str>,
+) {
+    for param in params {
+        collect_type_capacity_refs(&param.ty, names);
+    }
+    collect_type_capacity_refs(ret, names);
+}
+
+fn collect_array_len_ref<'a>(len: &'a thermite_syntax::ArrayLen, names: &mut BTreeSet<&'a str>) {
+    if let thermite_syntax::ArrayLen::Const(name) = len {
+        names.insert(name);
+    }
+}
+
+fn collect_type_capacity_refs<'a>(ty: &'a Type, names: &mut BTreeSet<&'a str>) {
+    match ty {
+        Type::Array { elem, len } => {
+            collect_array_len_ref(len, names);
+            collect_type_capacity_refs(elem, names);
+        }
+        Type::Ref { inner, .. }
+        | Type::Slice(inner)
+        | Type::Generic { arg: inner, .. }
+        | Type::Box(inner)
+        | Type::Vec(inner)
+        | Type::Option(inner) => collect_type_capacity_refs(inner, names),
+        Type::Result(ok, err) | Type::Map(ok, err) => {
+            collect_type_capacity_refs(ok, names);
+            collect_type_capacity_refs(err, names);
+        }
+        Type::Tuple(types) => {
+            for ty in types {
+                collect_type_capacity_refs(ty, names);
+            }
+        }
+        Type::Prim(_) | Type::Unit | Type::String | Type::Named(_) => {}
+    }
+}
+
+fn collect_block_capacity_refs<'a>(block: &'a Block, names: &mut BTreeSet<&'a str>) {
+    for statement in &block.stmts {
+        collect_stmt_capacity_refs(statement, names);
+    }
+    if let Some(tail) = &block.tail {
+        collect_expr_capacity_refs(tail, names);
+    }
+}
+
+fn collect_stmt_capacity_refs<'a>(statement: &'a Stmt, names: &mut BTreeSet<&'a str>) {
+    match statement {
+        Stmt::Let { ty, init, .. } => {
+            if let Some(ty) = ty {
+                collect_type_capacity_refs(ty, names);
+            }
+            collect_expr_capacity_refs(init, names);
+        }
+        Stmt::Assign { target, value } => {
+            collect_expr_capacity_refs(target, names);
+            collect_expr_capacity_refs(value, names);
+        }
+        Stmt::Return(Some(value)) | Stmt::Expr(value) => {
+            collect_expr_capacity_refs(value, names);
+        }
+        Stmt::Return(None) | Stmt::Break | Stmt::Continue => {}
+        Stmt::If { cond, then, else_ } => {
+            collect_expr_capacity_refs(cond, names);
+            collect_block_capacity_refs(then, names);
+            if let Some(else_) = else_ {
+                collect_block_capacity_refs(else_, names);
+            }
+        }
+        Stmt::Loop(node) => {
+            for inv in &node.invs {
+                collect_expr_capacity_refs(&inv.expr, names);
+            }
+            collect_expr_capacity_refs(&node.dec.expr, names);
+            if let thermite_syntax::LoopKind::While(cond) = &node.kind {
+                collect_expr_capacity_refs(cond, names);
+            }
+            collect_block_capacity_refs(&node.body, names);
+        }
+    }
+}
+
+fn collect_expr_capacity_refs<'a>(expr: &'a Expr, names: &mut BTreeSet<&'a str>) {
+    match expr {
+        Expr::Array(elements) | Expr::Tuple(elements) => {
+            for element in elements {
+                collect_expr_capacity_refs(element, names);
+            }
+        }
+        Expr::ArrayRepeat { value, len } => {
+            collect_array_len_ref(len, names);
+            collect_expr_capacity_refs(value, names);
+        }
+        Expr::Call { callee, args } => {
+            collect_expr_capacity_refs(callee, names);
+            for arg in args {
+                collect_expr_capacity_refs(arg, names);
+            }
+        }
+        Expr::MethodCall { receiver, args, .. } => {
+            collect_expr_capacity_refs(receiver, names);
+            for arg in args {
+                collect_expr_capacity_refs(arg, names);
+            }
+        }
+        Expr::Field { receiver, .. }
+        | Expr::TupleProj { receiver, .. }
+        | Expr::Closure { body: receiver, .. }
+        | Expr::Ref { expr: receiver, .. }
+        | Expr::Deref(receiver)
+        | Expr::Unary { expr: receiver, .. }
+        | Expr::Is {
+            scrutinee: receiver,
+            ..
+        } => collect_expr_capacity_refs(receiver, names),
+        Expr::Match { scrutinee, arms } => {
+            collect_expr_capacity_refs(scrutinee, names);
+            for arm in arms {
+                if let Some(guard) = &arm.guard {
+                    collect_expr_capacity_refs(guard, names);
+                }
+                collect_expr_capacity_refs(&arm.body, names);
+            }
+        }
+        Expr::If { cond, then, else_ } => {
+            collect_expr_capacity_refs(cond, names);
+            collect_block_capacity_refs(then, names);
+            collect_block_capacity_refs(else_, names);
+        }
+        Expr::Binary { lhs, rhs, .. } => {
+            collect_expr_capacity_refs(lhs, names);
+            collect_expr_capacity_refs(rhs, names);
+        }
+        Expr::Index { base, index } => {
+            collect_expr_capacity_refs(base, names);
+            match index {
+                thermite_syntax::IndexArg::Single(index)
+                | thermite_syntax::IndexArg::RangeTo(index)
+                | thermite_syntax::IndexArg::RangeFrom(index) => {
+                    collect_expr_capacity_refs(index, names)
+                }
+                thermite_syntax::IndexArg::Range(start, end) => {
+                    collect_expr_capacity_refs(start, names);
+                    collect_expr_capacity_refs(end, names);
+                }
+            }
+        }
+        Expr::Cast { expr, ty } => {
+            collect_expr_capacity_refs(expr, names);
+            collect_type_capacity_refs(ty, names);
+        }
+        Expr::StructLit { fields, .. } => {
+            for (_, value) in fields {
+                collect_expr_capacity_refs(value, names);
+            }
+        }
+        Expr::Quantifier { domain, body, .. } => {
+            collect_expr_capacity_refs(domain, names);
+            collect_expr_capacity_refs(body, names);
+        }
+        Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) | Expr::StrLit(_) => {}
     }
 }
 
@@ -1422,6 +1677,7 @@ fn closure_program(program: &Program, closure: &VerifiedClosure) -> Program {
         .items
         .iter()
         .filter(|item| match item {
+            Item::Const(_) => false,
             Item::Fn(f) => closure.functions.contains(&f.name),
             Item::SpecFn(s) => closure.spec_functions.contains(&s.name),
             Item::Struct(_) | Item::Enum(_) | Item::Forge(_) => false,
@@ -1436,6 +1692,10 @@ fn closure_program(program: &Program, closure: &VerifiedClosure) -> Program {
             .items
             .iter()
             .filter(|item| match item {
+                // Capacity declarations are closed compile-time inputs. Keep all
+                // of them in the selected program so isolated lowering never
+                // drops a named length used by a reachable declaration or body.
+                Item::Const(_) => true,
                 Item::Fn(f) => closure.functions.contains(&f.name),
                 Item::SpecFn(s) => closure.spec_functions.contains(&s.name),
                 Item::Struct(s) => adt_names.contains(&s.name),
@@ -1737,6 +1997,12 @@ fn make_plan(input: PlanInput<'_>) -> ArtifactPlanV1 {
     let mut dispositions = Vec::new();
     for (item_index, item) in program.items.iter().enumerate() {
         let (included, kind) = match item {
+            Item::Const(c) => (
+                selected_program.items.iter().any(
+                    |candidate| matches!(candidate, Item::Const(other) if other.name == c.name),
+                ),
+                "const",
+            ),
             Item::Fn(f) => (closure.functions.contains(&f.name), "fn"),
             Item::SpecFn(s) => (closure.spec_functions.contains(&s.name), "spec_fn"),
             Item::Struct(s) => (
@@ -1911,6 +2177,13 @@ struct PlannedNodeParts {
 
 fn planned_node_parts(item: &Item) -> PlannedNodeParts {
     match item {
+        Item::Const(item) => PlannedNodeParts {
+            source_start: Some(item.span.start as u64),
+            source_end: Some(item.span.end() as u64),
+            body_sha256: Some(sha256(format!("{}:{}", item.name, item.value).as_bytes())),
+            contract_sha256: None,
+            effects_sha256: None,
+        },
         Item::Fn(function) => PlannedNodeParts {
             source_start: Some(function.span.start as u64),
             source_end: Some(function.span.end() as u64),
@@ -1974,6 +2247,7 @@ fn reject_certificates(
             .iter()
             .find(|item| item.name() == name)
             .and_then(|item| match item {
+                Item::Const(item) => Some((item.span.start, item.span.end())),
                 Item::Fn(item) => Some((item.span.start, item.span.end())),
                 Item::SpecFn(item) => Some((item.span.start, item.span.end())),
                 Item::Struct(item) => Some((item.span.start, item.span.end())),

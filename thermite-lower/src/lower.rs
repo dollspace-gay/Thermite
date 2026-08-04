@@ -188,8 +188,9 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
 use thermite_syntax::ast::{
-    BinOp, Block, Clause, EnumItem, Expr, FnItem, IndexArg, Item, MatchArm, Param, Pattern,
-    PrimType, Program, Quant, SlicePat, SpecFnItem, Stmt, Type, UnaryOp, VariantDef, VariantShape,
+    ArrayLen, BinOp, Block, Clause, EnumItem, Expr, FnItem, IndexArg, Item, MatchArm, Param,
+    Pattern, PrimType, Program, Quant, SlicePat, SpecFnItem, Stmt, Type, UnaryOp, VariantDef,
+    VariantShape,
 };
 use thermite_syntax::lexer::Span;
 
@@ -1030,6 +1031,7 @@ fn lower_with_profile(
     let mut emitted_lemmas: Vec<String> = Vec::new();
     for item in &program.items {
         let item_src = match item {
+            Item::Const(c) => format!("pub const {}: usize = {};", c.name, c.value),
             Item::SpecFn(s) => lower_spec_fn(
                 s,
                 &variants,
@@ -1174,12 +1176,13 @@ fn program_needs_kernel_alloc(program: &Program) -> bool {
                 .iter()
                 .any(|field| type_needs_kernel_alloc(&field.ty)),
         }),
-        Item::Forge(_) => false,
+        Item::Const(_) | Item::Forge(_) => false,
     })
 }
 
 fn type_needs_kernel_alloc(ty: &Type) -> bool {
     match ty {
+        Type::Array { elem, .. } => type_needs_kernel_alloc(elem),
         Type::Box(_) | Type::String | Type::Map(_, _) => true,
         // The no-vstd kernel composition representation for `Vec<T>` carries
         // only its bounded length. It is allocation-free; element operations
@@ -1798,7 +1801,7 @@ fn emit_combinator_defs(program: &Program) -> Result<String, LowerError> {
             // item carries no contract clauses, so it references no combinators
             // — the neutral value for this collector is a no-op. (The item is
             // gated at the validator anyway; this arm is dead-in-1a.)
-            Item::Struct(_) | Item::Enum(_) => {}
+            Item::Const(_) | Item::Struct(_) | Item::Enum(_) => {}
             // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 combinator-collection
             // consumer yet (increments 2b-3); inert here, mirroring the ADT-decl arm.
             Item::Forge(_) => {}
@@ -1843,6 +1846,12 @@ fn emit_combinator_defs(program: &Program) -> Result<String, LowerError> {
 /// `Path` callee (the frontend is registry-free — `ast.rs` module doc).
 fn collect_combinators_in_expr(expr: &Expr, span: Span, acc: &mut Vec<(String, Span)>) {
     match expr {
+        Expr::Array(elements) => {
+            for element in elements {
+                collect_combinators_in_expr(element, span, acc);
+            }
+        }
+        Expr::ArrayRepeat { value, .. } => collect_combinators_in_expr(value, span, acc),
         Expr::Call { callee, args } => {
             if let Expr::Path(segs) = callee.as_ref() {
                 if let Some(last) = segs.last() {
@@ -2147,6 +2156,12 @@ fn each_subexpr(
     f: &mut impl FnMut(&Expr) -> Result<(), LowerError>,
 ) -> Result<(), LowerError> {
     match expr {
+        Expr::Array(elements) => {
+            for element in elements {
+                f(element)?;
+            }
+        }
+        Expr::ArrayRepeat { value, .. } => f(value)?,
         Expr::Call { callee, args } => {
             f(callee)?;
             for a in args {
@@ -4095,6 +4110,8 @@ fn is_adt_fold_sum(body: &Block) -> bool {
 /// detected. Shape check, not a name check.
 fn expr_has_deref_call_arg(expr: &Expr) -> bool {
     match expr {
+        Expr::Array(elements) => elements.iter().any(expr_has_deref_call_arg),
+        Expr::ArrayRepeat { value, .. } => expr_has_deref_call_arg(value),
         Expr::Call { callee, args } => {
             args.iter().any(|a| matches!(a, Expr::Deref(_)))
                 || expr_has_deref_call_arg(callee)
@@ -4551,6 +4568,10 @@ fn lower_type(ty: &Type) -> Result<String, LowerError> {
         Type::Prim(PrimType::Usize) => Ok("usize".to_string()),
         Type::Prim(PrimType::Bool) => Ok("bool".to_string()),
         Type::Unit => Ok("()".to_string()),
+        Type::Array { elem, len } => {
+            let elem = lower_type(elem)?;
+            Ok(format!("[{elem}; {}]", lower_array_len(len)))
+        }
         Type::Ref { mutable, inner } => {
             let i = lower_type(inner)?;
             if *mutable {
@@ -4643,6 +4664,13 @@ fn lower_type(ty: &Type) -> Result<String, LowerError> {
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(format!("({})", parts.join(", ")))
         }
+    }
+}
+
+fn lower_array_len(len: &ArrayLen) -> String {
+    match len {
+        ArrayLen::Literal { value, .. } => value.to_string(),
+        ArrayLen::Const(name) => name.clone(),
     }
 }
 
@@ -4885,7 +4913,7 @@ pub(crate) fn collect_vec_elem_types(program: &Program) -> Vec<Type> {
             // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 type-reachability
             // consumer yet (increments 2b-3); contributes no Vec element types,
             // mirroring the inert ADT-decl arms.
-            Item::Forge(_) => {}
+            Item::Const(_) | Item::Forge(_) => {}
         }
     }
     // Cluster C5 (`.design/basis/07-strings.md` REQ-15, issue #102): the emitted
@@ -4921,7 +4949,8 @@ fn note_vec_elems(ty: &Type, elems: &mut Vec<Type>) {
                 elems.push(e);
             }
         }
-        Type::Ref { inner, .. }
+        Type::Array { elem: inner, .. }
+        | Type::Ref { inner, .. }
         | Type::Slice(inner)
         | Type::Box(inner)
         | Type::Generic { arg: inner, .. }
@@ -5281,7 +5310,7 @@ pub(crate) fn collect_map_kv_types(program: &Program) -> Vec<(Type, Type)> {
             // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 type-reachability
             // consumer yet (increments 2b-3); contributes no Map (K,V) pairs,
             // mirroring the inert ADT-decl arms.
-            Item::Forge(_) => {}
+            Item::Const(_) | Item::Forge(_) => {}
         }
     }
     pairs
@@ -5302,7 +5331,8 @@ fn note_map_kv(ty: &Type, pairs: &mut Vec<(Type, Type)>) {
                 pairs.push(pair);
             }
         }
-        Type::Ref { inner, .. }
+        Type::Array { elem: inner, .. }
+        | Type::Ref { inner, .. }
         | Type::Slice(inner)
         | Type::Box(inner)
         | Type::Vec(inner)
@@ -5601,7 +5631,8 @@ fn named_struct_param(ty: &Type) -> Option<&str> {
 fn ty_reaches_string(ty: &Type) -> bool {
     match ty {
         Type::String => true,
-        Type::Ref { inner, .. }
+        Type::Array { elem: inner, .. }
+        | Type::Ref { inner, .. }
         | Type::Slice(inner)
         | Type::Vec(inner)
         | Type::Box(inner)
@@ -5672,7 +5703,7 @@ fn program_uses_string(program: &Program) -> bool {
             // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 String-reachability
             // consumer yet (increments 2b-3); reaches no String, so fall through
             // without returning, mirroring the inert ADT-decl arms.
-            Item::Forge(_) => {}
+            Item::Const(_) | Item::Forge(_) => {}
         }
     }
     false
@@ -6324,7 +6355,7 @@ pub(crate) fn program_uses_string_search(program: &Program) -> bool {
                     .unwrap_or(false)
         }
         Item::SpecFn(s) => block_uses_string_search(&s.body, &shadow),
-        Item::Struct(_) | Item::Enum(_) => false,
+        Item::Const(_) | Item::Struct(_) | Item::Enum(_) => false,
         // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 emission-gate consumer
         // yet (increments 2b-3); never drives generation, mirroring the ADT-decl arm.
         Item::Forge(_) => false,
@@ -6512,7 +6543,7 @@ fn program_uses_numfmt(program: &Program) -> bool {
                     .unwrap_or(false)
         }
         Item::SpecFn(s) => block_uses_numfmt(&s.body, &shadow),
-        Item::Struct(_) | Item::Enum(_) => false,
+        Item::Const(_) | Item::Struct(_) | Item::Enum(_) => false,
         // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 emission-gate consumer
         // yet (increments 2b-3); never drives generation, mirroring the ADT-decl arm.
         Item::Forge(_) => false,
@@ -7085,7 +7116,7 @@ pub(crate) fn program_uses_parse(program: &Program) -> bool {
                     .unwrap_or(false)
         }
         Item::SpecFn(s) => block_uses_parse(&s.body, &shadow),
-        Item::Struct(_) | Item::Enum(_) => false,
+        Item::Const(_) | Item::Struct(_) | Item::Enum(_) => false,
         // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 emission-gate consumer
         // yet (increments 2b-3); never drives generation, mirroring the ADT-decl arm.
         Item::Forge(_) => false,
@@ -7347,7 +7378,7 @@ pub(crate) fn program_uses_bytes_eq(program: &Program) -> bool {
                     .unwrap_or(false)
         }
         Item::SpecFn(s) => block_uses_bytes_eq(&s.body, &shadow),
-        Item::Struct(_) | Item::Enum(_) => false,
+        Item::Const(_) | Item::Struct(_) | Item::Enum(_) => false,
         // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 emission-gate consumer
         // yet (increments 2b-3); never drives generation, mirroring the ADT-decl arm.
         Item::Forge(_) => false,
@@ -7575,6 +7606,17 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
         // byte-identical (`1_000_000` lowers to `1000000`); no golden churn.
         Expr::IntLit { value, .. } => Ok(value.to_string()),
         Expr::BoolLit(b) => Ok(b.to_string()),
+        Expr::Array(elements) => {
+            let elements = elements
+                .iter()
+                .map(|element| lower_expr(element, ctx, d, span))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(format!("[{}]", elements.join(", ")))
+        }
+        Expr::ArrayRepeat { value, len } => {
+            let value = lower_expr(value, ctx, d, span)?;
+            Ok(format!("[{value}; {}]", lower_array_len(len)))
+        }
         // Basis Stage 7 (`.design/basis/07-strings.md` REQ-1/REQ-4): a string
         // literal `"hello"` materializes into an owned `TString` whose bytes are
         // the literal's UTF-8, constructed by pushing each byte — the grounded
@@ -9092,6 +9134,12 @@ fn collect_block_local_muls(block: &Block, muls: &mut Vec<Expr>) {
     }
     fn walk_expr(e: &Expr, muls: &mut Vec<Expr>) {
         match e {
+            Expr::Array(elements) => {
+                for element in elements {
+                    walk_expr(element, muls);
+                }
+            }
+            Expr::ArrayRepeat { value, .. } => walk_expr(value, muls),
             Expr::Binary { lhs, rhs, .. } => {
                 walk_expr(lhs, muls);
                 walk_expr(rhs, muls);
@@ -9649,6 +9697,8 @@ fn expr_mentions(expr: &Expr, name: &str) -> bool {
     match expr {
         Expr::Path(segs) => segs.iter().any(|s| s == name),
         Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::StrLit(_) => false,
+        Expr::Array(elements) => elements.iter().any(|e| expr_mentions(e, name)),
+        Expr::ArrayRepeat { value, .. } => expr_mentions(value, name),
         Expr::Call { callee, args } => {
             expr_mentions(callee, name) || args.iter().any(|a| expr_mentions(a, name))
         }

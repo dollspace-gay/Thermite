@@ -376,6 +376,11 @@ fn render_type_arm(ty: &Type) -> SkillFragment {
             description: "the unit type, written explicitly in a return position",
             example: "fn log() -> () req true ens true fx pure { }",
         },
+        Type::Array { .. } => SkillFragment {
+            fragment: "[T; N]",
+            description: "an owned allocation-free fixed array with a literal or declared usize capacity",
+            example: "let mut slots: [u64; CAP] = [0; CAP];",
+        },
         Type::Ref { .. } => SkillFragment {
             fragment: "&T | &mut T",
             description: "a shared / exclusive reference (no explicit lifetimes)",
@@ -487,6 +492,11 @@ fn render_prim_arm(prim: PrimType) -> SkillFragment {
 /// compile-forces a skill entry (REQ-8, AC-10).
 fn render_item_arm(item: &Item) -> SkillFragment {
     match item {
+        Item::Const(_) => SkillFragment {
+            fragment: "const NAME: usize = INTEGER;",
+            description: "a package-visible compile-time fixed-array capacity",
+            example: "const CAP: usize = 64;",
+        },
         Item::Fn(_) => SkillFragment {
             fragment: "fn NAME(..) -> T req .. ens .. fx .. { .. }",
             description: "a contract-first function (mandatory req/ens/fx, in order)",
@@ -532,6 +542,16 @@ fn render_expr_arm(expr: &Expr) -> SkillFragment {
             fragment: "true | false",
             description: "a boolean literal",
             example: "req true",
+        },
+        Expr::Array(_) => SkillFragment {
+            fragment: "[a, b, ..] | []",
+            description: "an exact allocation-free fixed-array initializer",
+            example: "let bytes: [u8; 3] = [1, 2, 3];",
+        },
+        Expr::ArrayRepeat { .. } => SkillFragment {
+            fragment: "[value; N]",
+            description: "a repeated allocation-free fixed-array initializer",
+            example: "let slots: [u64; CAP] = [0; CAP];",
         },
         Expr::Path(_) => SkillFragment {
             fragment: "name | Mod::ITEM",

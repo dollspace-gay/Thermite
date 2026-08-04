@@ -360,6 +360,15 @@ pub fn check_file_with_options(
         .filter(|i| matches!(i, Item::SpecFn(_)))
         .cloned()
         .collect();
+    // Fixed-array capacities are declarations, not proof obligations, but every
+    // isolated lowering that mentions `[T; CAP]` must retain the declaration.
+    let const_items: Vec<Item> = parsed
+        .program
+        .items
+        .iter()
+        .filter(|i| matches!(i, Item::Const(_)))
+        .cloned()
+        .collect();
 
     // C11 (`.design/basis/12-mutual-recursion.md` REQ-2, crosslink #121/#113): the
     // in-file `fn`s in a mutual-recursion cycle (`a -> b -> a`, …) whose
@@ -410,6 +419,11 @@ pub fn check_file_with_options(
 
     let mut certs = Vec::with_capacity(parsed.program.items.len());
     for item in &parsed.program.items {
+        // Capacity declarations are checked by the parser/validator and emitted
+        // into dependent subprograms; they carry no independent proof contract.
+        if matches!(item, Item::Const(_)) {
+            continue;
+        }
         // C11 REQ-2 mutual-recursion missing-`dec` reject (no false L3, no crash):
         // a `fn` in a mutual cycle that lacks a complete `dec` group does not
         // certify — it is rejected as a clean L0 cert verdict (never lowered / sent
@@ -687,7 +701,7 @@ pub fn check_file_with_options(
         }
         referrers.extend(item_spec_items.iter());
         let adt_deps = reachable_adt_deps(&parsed.program, &referrers);
-        let sub = item_subprogram(item, &item_spec_items, &fn_deps, &adt_deps);
+        let sub = item_subprogram(item, &const_items, &item_spec_items, &fn_deps, &adt_deps);
         let lowered = thermite_lower::lower(&sub).map_err(ForgeError::Lower)?;
 
         // #8 proof cache (`.design/forge/proof-cache.md` REQ-1/REQ-3): the lowered
@@ -870,6 +884,7 @@ pub fn check_file_with_options(
             if cert.level == Level::L3 && cert.reject.is_none() {
                 let score = mutation_score(
                     f,
+                    &const_items,
                     &spec_items,
                     &fn_deps,
                     &adt_deps,
@@ -897,6 +912,7 @@ pub fn check_file_with_options(
                         .with_mutation_score(score.mutants_killed_string(), score.survivor.clone());
                     let suggestions = strengthen_certificate(
                         f,
+                        &const_items,
                         &spec_items,
                         &fn_deps,
                         &adt_deps,
@@ -4377,6 +4393,13 @@ pub fn check_l2_file(path: impl AsRef<Path>) -> Result<Vec<Certificate>, ForgeEr
         .filter(|i| matches!(i, Item::SpecFn(_)))
         .cloned()
         .collect();
+    let const_items: Vec<Item> = parsed
+        .program
+        .items
+        .iter()
+        .filter(|i| matches!(i, Item::Const(_)))
+        .cloned()
+        .collect();
 
     let mut certs = Vec::new();
     for item in &parsed.program.items {
@@ -4393,7 +4416,7 @@ pub fn check_l2_file(path: impl AsRef<Path>) -> Result<Vec<Certificate>, ForgeEr
         // The explicit `--level l2` path does not weave the §9 composition deps
         // (#52) nor the #68 ADT decls — the kani-backed L2 corpus is scalar-only
         // and the composition/ADT oracles are L3; keep this byte-stable.
-        let sub = item_subprogram(item, &spec_items, &[], &[]);
+        let sub = item_subprogram(item, &const_items, &spec_items, &[], &[]);
         let harness = thermite_lower::lower_l2(&sub).map_err(ForgeError::Lower)?;
         let bound = thermite_lower::bound_string(&sub);
         let l2 = crate::kani::run_kani(&harness, &f.name, &bound)?;
@@ -4645,6 +4668,7 @@ fn diverge_l1_cert(item: String, effects: Vec<String>) -> Certificate {
 ///   has no `fn_deps` (its body can call only spec fns / combinators, §4.2).
 fn item_subprogram(
     item: &Item,
+    const_items: &[Item],
     spec_items: &[Item],
     fn_deps: &[Item],
     adt_deps: &[Item],
@@ -4659,7 +4683,8 @@ fn item_subprogram(
         // references no ADT (the pure scalar corpus), so the existing sub-program
         // is byte-stable (no regression).
         Item::Fn(_) => {
-            let mut items = adt_deps.to_vec();
+            let mut items = const_items.to_vec();
+            items.extend(adt_deps.iter().cloned());
             items.extend(spec_items.iter().cloned());
             items.extend(fn_deps.iter().cloned());
             items.push(item.clone());
@@ -4684,7 +4709,8 @@ fn item_subprogram(
         // does reference the `enum` decl, so weave the referenced ADT decls first
         // (#68 — without `enum List` in scope the fold's lowering degrades to L0).
         Item::SpecFn(_) => {
-            let mut items = adt_deps.to_vec();
+            let mut items = const_items.to_vec();
+            items.extend(adt_deps.iter().cloned());
             items.extend(spec_items.iter().cloned());
             Program { items }
         }
@@ -4710,11 +4736,8 @@ fn item_subprogram(
             // item is pushed below, so drop it here to keep one declaration —
             // verus rejects a duplicate definition (`E0428`). The other decls a
             // spec fn reaches stay, which is the point of the fix.
-            let mut items: Vec<Item> = adt_deps
-                .iter()
-                .filter(|d| d.name() != item.name())
-                .cloned()
-                .collect();
+            let mut items = const_items.to_vec();
+            items.extend(adt_deps.iter().filter(|d| d.name() != item.name()).cloned());
             items.extend(spec_items.iter().cloned());
             items.push(item.clone());
             Program { items }
@@ -4724,11 +4747,15 @@ fn item_subprogram(
         // its sub-program is the item alone (inert — lowers to nothing), mirroring
         // the non-fn ADT-decl path's self-contained weave.
         Item::Forge(_) => {
-            let mut items = adt_deps.to_vec();
+            let mut items = const_items.to_vec();
+            items.extend(adt_deps.iter().cloned());
             items.extend(spec_items.iter().cloned());
             items.push(item.clone());
             Program { items }
         }
+        Item::Const(_) => Program {
+            items: vec![item.clone()],
+        },
     }
 }
 
@@ -4983,7 +5010,7 @@ fn mint_item_obligations(program: &Program, item: &Item) -> ItemObligations {
         // certification obligation in v1 (no v1 consumer until increments 2b-3); mint
         // the same empty contract obligation as the ADT-decl arm so the function stays
         // total without a panic (R-APG-1) — it is never discharged.
-        Item::Struct(_) | Item::Enum(_) | Item::Forge(_) => (
+        Item::Const(_) | Item::Struct(_) | Item::Enum(_) | Item::Forge(_) => (
             Obligation {
                 item: item.name().to_string(),
                 class: crate::obligation::ObligationClass::Contract,
@@ -5255,6 +5282,14 @@ pub(crate) fn collect_expr_spec_fn_calls(
         }
     };
     match expr {
+        Expr::Array(elements) => {
+            for element in elements {
+                collect_expr_spec_fn_calls(element, spec_decls, out);
+            }
+        }
+        Expr::ArrayRepeat { value, .. } => {
+            collect_expr_spec_fn_calls(value, spec_decls, out);
+        }
         Expr::Call { callee, args } => {
             if let Expr::Path(segments) = callee.as_ref() {
                 if let Some(first) = segments.first() {
@@ -5450,7 +5485,7 @@ fn collect_item_adt_refs(
         // fixed point (`collect_decl_field_adt_refs`), not here.
         // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 ADT-ref consumer yet
         // (increments 2b-3); references no in-file ADT here, mirroring the ADT-decl arm.
-        Item::Struct(_) | Item::Enum(_) | Item::Forge(_) => {}
+        Item::Const(_) | Item::Struct(_) | Item::Enum(_) | Item::Forge(_) => {}
     }
 }
 
@@ -5488,7 +5523,7 @@ fn collect_decl_field_adt_refs(
         }
         // Forge-tier item (stage1-forge-tier.md REQ-3): not an ADT decl → no field
         // type graph to follow (increments 2b-3); inert, mirroring the non-decl arm.
-        Item::Fn(_) | Item::SpecFn(_) | Item::Forge(_) => {}
+        Item::Const(_) | Item::Fn(_) | Item::SpecFn(_) | Item::Forge(_) => {}
     }
 }
 
@@ -5513,6 +5548,9 @@ fn collect_type_adt_refs(
         | thermite_syntax::Type::Slice(inner)
         | thermite_syntax::Type::Vec(inner) => {
             collect_type_adt_refs(inner, adt_decls, out);
+        }
+        thermite_syntax::Type::Array { elem, .. } => {
+            collect_type_adt_refs(elem, adt_decls, out);
         }
         thermite_syntax::Type::Ref { inner, .. } => {
             collect_type_adt_refs(inner, adt_decls, out);
@@ -5586,6 +5624,12 @@ fn collect_expr_adt_refs(
         }
     };
     match expr {
+        Expr::Array(elements) => {
+            for element in elements {
+                collect_expr_adt_refs(element, adt_decls, out);
+            }
+        }
+        Expr::ArrayRepeat { value, .. } => collect_expr_adt_refs(value, adt_decls, out),
         Expr::StructLit { path, fields } => {
             note_path(path, out);
             for (_, value) in fields {
@@ -6280,7 +6324,7 @@ fn assemble_certificate(item: &Item, verus: &VerusResult) -> Certificate {
     let effects = match item {
         Item::Fn(f) => effects_of(&f.contract.fx),
         // `spec fn`s have no `fx` row (§4.2) — they are pure by construction.
-        Item::SpecFn(_) => vec!["pure".to_string()],
+        Item::Const(_) | Item::SpecFn(_) => vec!["pure".to_string()],
         // Basis Stage 1a (`.design/basis/01-adts.md`): a `struct`/`enum` type
         // declares no `fx` row — its neutral effect projection is `pure` (the
         // same empty-effect value as a `spec fn`). Dead-in-1a: an ADT item dies
@@ -6505,6 +6549,7 @@ fn ladder_for_timeout(
 )]
 fn mutation_score(
     f: &thermite_syntax::FnItem,
+    const_items: &[Item],
     spec_items: &[Item],
     fn_deps: &[Item],
     adt_deps: &[Item],
@@ -6531,7 +6576,7 @@ fn mutation_score(
         // boundary/regular callees + ADT types, so they must resolve in the
         // mutant's sub-program too (else every mutant fails to lower and the score
         // is the 0/0 backstop — a spurious `WeakContract` reject of an ADT fn).
-        let sub = item_subprogram(&item, spec_items, fn_deps, adt_deps);
+        let sub = item_subprogram(&item, const_items, spec_items, fn_deps, adt_deps);
         // OQ-5: a mutant that fails to lower (structurally degenerate) is dropped
         // from the denominator, never an `Err` that fails the whole gate.
         let lowered = match thermite_lower::lower(&sub) {
@@ -6780,6 +6825,7 @@ enum EquivOutcome {
 )]
 fn strengthen_certificate(
     f: &thermite_syntax::FnItem,
+    const_items: &[Item],
     spec_items: &[Item],
     fn_deps: &[Item],
     adt_deps: &[Item],
@@ -6809,7 +6855,7 @@ fn strengthen_certificate(
         // The candidate weaves the same §9 composition deps as `f` (#52) and the
         // same #68 ADT decls so a boundary/regular callee in `f`'s body + every
         // referenced ADT type resolves in the candidate too.
-        let sub = item_subprogram(&item, spec_items, fn_deps, adt_deps);
+        let sub = item_subprogram(&item, const_items, spec_items, fn_deps, adt_deps);
         let lowered = match thermite_lower::lower(&sub) {
             Ok(s) => s,
             Err(_) => return Ok(false),
@@ -7197,7 +7243,7 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
             let mut referrers: Vec<&Item> = vec![item];
             referrers.extend(fn_deps.iter());
             let adt_deps = reachable_adt_deps(&parsed.program, &referrers);
-            let sub = item_subprogram(item, &spec_items, &fn_deps, &adt_deps);
+            let sub = item_subprogram(item, &[], &spec_items, &fn_deps, &adt_deps);
             let lowered = thermite_lower::lower(&sub).ok()?;
             Some(cache::cache_key(&lowered, 0, VERUS, THERMITE))
         };

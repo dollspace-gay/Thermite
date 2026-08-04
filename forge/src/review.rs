@@ -393,7 +393,7 @@ fn project_artifact(
         .iter()
         .filter_map(|i| match i {
             Item::SpecFn(s) => Some(s),
-            Item::Fn(_) => None,
+            Item::Const(_) | Item::Fn(_) => None,
             // Basis Stage 1a (`.design/basis/01-adts.md`): a `struct`/`enum`
             // item is not a `spec fn` — it contributes nothing to the
             // referenced-spec-fn projection (neutral value `None`). Dead-in-1a
@@ -554,6 +554,12 @@ fn referenced_spec_fns(
 /// shape — never a body (a contract clause holds no body).
 fn collect_callee_names(expr: &Expr, out: &mut std::collections::BTreeSet<String>) {
     match expr {
+        Expr::Array(elements) => {
+            for element in elements {
+                collect_callee_names(element, out);
+            }
+        }
+        Expr::ArrayRepeat { value, .. } => collect_callee_names(value, out),
         Expr::Path(segments) => {
             // A bare path: the last segment is the referenced name (`spec_sum`,
             // `u32::MAX` → `MAX`). The spec-fn match below keeps only real spec fns,
@@ -742,6 +748,13 @@ fn render_type(ty: &Type) -> String {
         Type::Prim(PrimType::Usize) => "usize".to_string(),
         Type::Prim(PrimType::Bool) => "bool".to_string(),
         Type::Unit => "()".to_string(),
+        Type::Array { elem, len } => {
+            let len = match len {
+                thermite_syntax::ArrayLen::Literal { raw, .. } => raw,
+                thermite_syntax::ArrayLen::Const(name) => name,
+            };
+            format!("[{}; {len}]", render_type(elem))
+        }
         Type::Ref { mutable, inner } => {
             format!(
                 "&{}{}",

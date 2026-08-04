@@ -121,7 +121,15 @@ impl CallGraph {
         // First pass: the set of in-file fn/spec-fn names (the resolvable
         // callees). A call resolving to a name not here is cross-file / a
         // combinator / unknown → pure, dropped (OQ-1, REQ-1).
-        let in_file: BTreeSet<&str> = program.items.iter().map(|i| i.name()).collect();
+        let in_file: BTreeSet<&str> = program
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Fn(f) => Some(f.name.as_str()),
+                Item::SpecFn(s) => Some(s.name.as_str()),
+                Item::Const(_) | Item::Struct(_) | Item::Enum(_) | Item::Forge(_) => None,
+            })
+            .collect();
 
         let mut nodes = BTreeMap::new();
         for item in &program.items {
@@ -162,7 +170,7 @@ impl CallGraph {
                 // item is not a callable call-graph node — it is neither a
                 // crossing nor a fn with out-edges. The neutral value is to
                 // insert no node. Dead-in-1a (gated at the validator).
-                Item::Struct(_) | Item::Enum(_) => {}
+                Item::Const(_) | Item::Struct(_) | Item::Enum(_) => {}
                 // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 call-graph
                 // consumer yet (increments 2b-3); not a callable node — insert
                 // nothing, mirroring the inert ADT-decl arm.
@@ -367,7 +375,7 @@ pub fn verified_closure(
                     variants.insert(variant.name.clone());
                 }
             }
-            Item::Struct(_) | Item::Forge(_) => {}
+            Item::Const(_) | Item::Struct(_) | Item::Forge(_) => {}
         }
     }
 
@@ -505,7 +513,7 @@ fn collect_verified_calls(item: &Item) -> Vec<VerifiedCall> {
                 collect_verified_expr_calls(&inv.expr, &mut calls);
             }
         }
-        Item::Enum(_) | Item::Forge(_) => {}
+        Item::Const(_) | Item::Enum(_) | Item::Forge(_) => {}
     }
     calls
 }
@@ -551,6 +559,12 @@ fn collect_verified_block_calls(block: &Block, calls: &mut Vec<VerifiedCall>) {
 
 fn collect_verified_expr_calls(expr: &Expr, calls: &mut Vec<VerifiedCall>) {
     match expr {
+        Expr::Array(elements) => {
+            for element in elements {
+                collect_verified_expr_calls(element, calls);
+            }
+        }
+        Expr::ArrayRepeat { value, .. } => collect_verified_expr_calls(value, calls),
         Expr::Call { callee, args } => {
             match callee.as_ref() {
                 Expr::Path(parts) if parts.len() == 1 => {
@@ -710,6 +724,12 @@ fn walk_stmt(stmt: &Stmt, in_file: &BTreeSet<&str>, out: &mut Vec<String>) {
 /// helper(x))`). Only a name in `in_file` is emitted (REQ-1 pure for the rest).
 fn walk_expr(expr: &Expr, in_file: &BTreeSet<&str>, out: &mut Vec<String>) {
     match expr {
+        Expr::Array(elements) => {
+            for element in elements {
+                walk_expr(element, in_file, out);
+            }
+        }
+        Expr::ArrayRepeat { value, .. } => walk_expr(value, in_file, out),
         Expr::Call { callee, args } => {
             // Resolve the callee name: the leading `Path` segment of `f(args)`
             // (the free-fn form). A non-`Path` callee (an indirect call) resolves

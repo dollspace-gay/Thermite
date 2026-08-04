@@ -99,6 +99,7 @@ fn render_param(p: &Param) -> String {
 /// Shared with the `dec wf` accessibility carrier rendering (`accessibility.rs`).
 pub(crate) fn render_type(ty: &Type) -> String {
     match ty {
+        Type::Array { elem, len } => format!("[{};{len:?}]", render_type(elem)),
         Type::Ref { mutable, inner } => {
             format!(
                 "&{}{}",

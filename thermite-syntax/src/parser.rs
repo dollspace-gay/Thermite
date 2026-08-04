@@ -635,7 +635,8 @@ impl<'a> Parser<'a> {
                     | TokKind::HashBracket
                     | TokKind::Struct
                     | TokKind::Enum
-            ) {
+            ) || matches!(self.peek(), TokKind::Ident(word) if word == "const")
+            {
                 break;
             }
             self.bump();
@@ -654,6 +655,15 @@ impl<'a> Parser<'a> {
         } else {
             None
         };
+
+        // Fixed-storage capacity declaration. `const` is contextual so it does
+        // not become a reserved identifier in expressions.
+        if matches!(self.peek(), TokKind::Ident(word) if word == "const") {
+            if attr.is_some() {
+                return Err(self.unexpected("`const` declarations take no attribute"));
+            }
+            return self.parse_const(start_span);
+        }
 
         // A `struct` item (`.design/basis/01-adts.md` REQ-1) accepts the
         // `#[sealed]` abstraction-barrier attribute (REQ-8) and no other; an
@@ -753,6 +763,32 @@ impl<'a> Parser<'a> {
                 "`fn`, `spec fn`, `#[slag(...)]`, `#[boundary(\"...\")]`, or `#[sealed] struct`",
             ))
         }
+    }
+
+    fn parse_const(&mut self, start_span: Span) -> PResult<Item> {
+        let keyword = self.take_ident("`const`")?;
+        debug_assert_eq!(keyword, "const");
+        let name = self.take_ident("a constant name")?;
+        self.consume(&TokKind::Colon, "`:` after the constant name")?;
+        let ty = self.take_ident("`usize` as the capacity constant type")?;
+        if ty != "usize" {
+            return Err(self.unexpected("`usize` as the capacity constant type"));
+        }
+        self.consume(&TokKind::Eq, "`=` in the constant declaration")?;
+        let (value, raw) = match self.peek().clone() {
+            TokKind::Int { value, raw } => {
+                self.bump();
+                (value, raw)
+            }
+            _ => return Err(self.unexpected("an integer capacity value")),
+        };
+        self.consume(&TokKind::Semi, "`;` after the constant declaration")?;
+        Ok(Item::Const(ConstItem {
+            name,
+            value,
+            raw,
+            span: start_span.to(self.prev_span()),
+        }))
     }
 
     /// Parse a leading `#[...]` attribute, dispatching on its name (ffi-boundary.md
@@ -2814,6 +2850,7 @@ impl<'a> Parser<'a> {
                 self.bump();
                 Ok(Expr::BoolLit(b))
             }
+            TokKind::LBracket => self.parse_array_expr(),
             // A string literal `"hello"` as a primary expression
             // (`.design/basis/07-strings.md` REQ-1). The literal lexes today
             // (`TokKind::Str(String)`); this arm accepts it as an `Expr::StrLit`,
@@ -2877,6 +2914,35 @@ impl<'a> Parser<'a> {
             }
             _ => Err(self.unexpected("an expression")),
         }
+    }
+
+    /// Parse `[]`, `[a, b, ...]`, or the allocation-free repeat form
+    /// `[value; N]`. Array patterns use their separate pattern parser.
+    fn parse_array_expr(&mut self) -> PResult<Expr> {
+        self.consume(&TokKind::LBracket, "`[` to open an array expression")?;
+        if self.eat(&TokKind::RBracket) {
+            return Ok(Expr::Array(Vec::new()));
+        }
+        self.with_struct_literal(|parser| {
+            let first = parser.parse_expr()?;
+            if parser.eat(&TokKind::Semi) {
+                let len = parser.parse_array_len()?;
+                parser.consume(&TokKind::RBracket, "`]` to close `[value; N]`")?;
+                return Ok(Expr::ArrayRepeat {
+                    value: Box::new(first),
+                    len,
+                });
+            }
+            let mut values = vec![first];
+            while parser.eat(&TokKind::Comma) {
+                if parser.check(&TokKind::RBracket) {
+                    break;
+                }
+                values.push(parser.parse_expr()?);
+            }
+            parser.consume(&TokKind::RBracket, "`]` to close the array literal")?;
+            Ok(Expr::Array(values))
+        })
     }
 
     /// Parse a path expression `Ident (:: Ident)*` (`lo`, `u32::MAX`, `Some`),
@@ -3169,6 +3235,20 @@ impl<'a> Parser<'a> {
 
     fn parse_type_inner(&mut self) -> PResult<Type> {
         match self.peek().clone() {
+            TokKind::LBracket => {
+                self.bump();
+                let elem = self.parse_type()?;
+                self.consume(
+                    &TokKind::Semi,
+                    "`;` between array element type and capacity",
+                )?;
+                let len = self.parse_array_len()?;
+                self.consume(&TokKind::RBracket, "`]` to close the array type")?;
+                Ok(Type::Array {
+                    elem: Box::new(elem),
+                    len,
+                })
+            }
             // `()` is the one sanctioned unit-type spelling (surface-grammar.md
             // decision 4 / REQ-8): written explicitly in a return position. The
             // same `(` opens an n-tuple type `(T, U, …)`
@@ -3339,6 +3419,20 @@ impl<'a> Parser<'a> {
                 }
             }
             _ => Err(self.unexpected("a type")),
+        }
+    }
+
+    fn parse_array_len(&mut self) -> PResult<ArrayLen> {
+        match self.peek().clone() {
+            TokKind::Int { value, raw } => {
+                self.bump();
+                Ok(ArrayLen::Literal { value, raw })
+            }
+            TokKind::Ident(name) => {
+                self.bump();
+                Ok(ArrayLen::Const(name))
+            }
+            _ => Err(self.unexpected("an integer literal or capacity constant name")),
         }
     }
 

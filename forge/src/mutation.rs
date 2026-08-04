@@ -787,6 +787,12 @@ impl MutantSink {
 
     fn scan_expr(&mut self, expr: &Expr, ctr: &mut Counters) {
         match expr {
+            Expr::Array(elements) => {
+                for element in elements {
+                    self.scan_expr(element, ctr);
+                }
+            }
+            Expr::ArrayRepeat { value, .. } => self.scan_expr(value, ctr),
             // Mutation reasons over the numeric `value` only (#37); the verbatim
             // `raw` is irrelevant to off-by-one — a mutated literal is rebuilt
             // with `raw = value.to_string()` (a plain decimal) in `apply_expr`.
@@ -1062,6 +1068,13 @@ impl Applier<'_> {
 
     fn apply_expr(&mut self, expr: &Expr) -> Expr {
         match expr {
+            Expr::Array(elements) => {
+                Expr::Array(elements.iter().map(|e| self.apply_expr(e)).collect())
+            }
+            Expr::ArrayRepeat { value, len } => Expr::ArrayRepeat {
+                value: Box::new(self.apply_expr(value)),
+                len: len.clone(),
+            },
             Expr::IntLit { value: n, raw } => {
                 let site = self.ctr.intlit;
                 self.ctr.intlit += 1;

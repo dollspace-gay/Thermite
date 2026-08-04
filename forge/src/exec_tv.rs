@@ -268,7 +268,9 @@ fn clause_frame(clause: &thermite_tv::ExecClause) -> ExecObligationFrame {
         req: clause.req.clone(),
         slice_params: clause.slice_params.clone(),
         fixed_array_params: Vec::new(),
+        fixed_array_fields: Vec::new(),
         result_is_fixed_array: false,
+        result_record: None,
     }
 }
 
@@ -329,6 +331,7 @@ pub fn exec_tv_export_guard(
             .collect(),
         ..Default::default()
     };
+    env.fixed_array_fields = crate::body_tv::fixed_array_field_bindings(program, f);
     for param in &f.params {
         let Some((ty, slice)) = exec_type_spelling(&param.ty) else {
             return ExecResult {
@@ -388,6 +391,7 @@ struct ExecEnv {
     params: Vec<ExecParamDecl>,
     slice_params: Vec<String>,
     fixed_array_params: Vec<String>,
+    fixed_array_fields: Vec<String>,
     constant_names: Vec<String>,
 }
 
@@ -473,6 +477,7 @@ fn exec_tv_fn(
             .collect(),
         ..Default::default()
     };
+    env.fixed_array_fields = crate::body_tv::fixed_array_field_bindings(program, f);
     for p in &f.params {
         if let Some((ty_str, is_slice)) = exec_type_spelling(&p.ty) {
             env.bind(&p.name, ty_str, is_slice);
@@ -768,7 +773,11 @@ fn check_corpus_expr(
             .filter(|n| needed.iter().any(|r| r == *n))
             .cloned()
             .collect(),
+        fixed_array_fields: env.fixed_array_fields.clone(),
         result_is_fixed_array: ret_ty.starts_with('[') && ret_ty.contains(';'),
+        result_record: crate::body_tv::named_record_frames(program)
+            .into_iter()
+            .find(|record| record.type_name == ret_ty),
     };
 
     let program = match exec_equivalence_obligation(e, &p_production, &frame) {
@@ -888,6 +897,15 @@ fn collect_free_paths(e: &Expr, out: &mut Vec<String>) {
         Expr::StructLit { fields, .. } => {
             for (_, value) in fields {
                 collect_free_paths(value, out);
+            }
+        }
+        Expr::If { cond, then, else_ } => {
+            collect_free_paths(cond, out);
+            if let Some(tail) = &then.tail {
+                collect_free_paths(tail, out);
+            }
+            if let Some(tail) = &else_.tail {
+                collect_free_paths(tail, out);
             }
         }
         _ => {}

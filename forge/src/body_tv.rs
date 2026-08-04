@@ -78,7 +78,9 @@ use thermite_tv::obligation::{
     loop_preservation_obligation, BodyObligationFrame, BodyParamDecl, LoopObligationFrame,
     LoopParamDecl,
 };
-use thermite_tv::{loop_ref_obligations, BodyRefCtx, MutableRecordFrame, RecordFieldFrame};
+use thermite_tv::{
+    loop_ref_obligations, BodyRefCtx, MutableRecordFrame, NamedRecordFrame, RecordFieldFrame,
+};
 
 use crate::check::{unique_scratch_dir, ScratchDir, DEFAULT_RLIMIT, DEFAULT_SOLVER_SEED};
 use crate::cli::ForgeError;
@@ -316,6 +318,7 @@ pub(crate) fn body_tv_support(
         .ok_or_else(|| "body-TV dependency frame had no canonical closing".to_string())?;
     let mut inner = lowered[start..end].to_string();
     let mut reference_defs = String::new();
+    let named_records = named_record_frames(program);
     for item in &support.items {
         let Item::Fn(dep) = item else {
             continue;
@@ -354,9 +357,13 @@ pub(crate) fn body_tv_support(
                 dep.name
             ));
         };
-        if !mutable_record_frames(program, dep)?.is_empty() {
+        if dep
+            .params
+            .iter()
+            .any(|param| matches!(param.ty, Type::Ref { mutable: true, .. }))
+        {
             return Err(format!(
-                "body-TV dependency `{}` mutates an exclusive named record; call-effect lifecycle composition is not part of the direct-body increment",
+                "body-TV dependency `{}` has a mutable-reference parameter; exact call-effect lifecycle composition is not part of the owned-value increment",
                 dep.name
             ));
         }
@@ -365,7 +372,11 @@ pub(crate) fn body_tv_support(
             &BodyRefCtx::with_slice_bound(slices)
                 .with_mutable_indexed_bound(mutable_indexed)
                 .with_fixed_array_bound(arrays)
-                .with_fixed_array_result(matches!(dep.ret, Type::Array { .. })),
+                .with_fixed_array_fields(fixed_array_field_bindings(program, dep))
+                .with_fixed_array_result(matches!(dep.ret, Type::Array { .. }))
+                .with_unit_result(matches!(dep.ret, Type::Unit))
+                .with_named_records(named_records.clone())
+                .with_result_record(named_record_result_frame(&named_records, &dep.ret)),
         )
         .map_err(|error| {
             format!(
@@ -552,6 +563,8 @@ fn straight_line_body_tv(
             return;
         }
     };
+    let named_records = named_record_frames(program);
+    let result_record = named_record_result_frame(&named_records, &f.ret);
     let frame = BodyObligationFrame {
         spec_defs,
         params,
@@ -560,9 +573,12 @@ fn straight_line_body_tv(
         slice_params,
         mutable_indexed_params,
         fixed_array_params,
+        fixed_array_fields: fixed_array_field_bindings(program, f),
         result_is_fixed_array: matches!(f.ret, Type::Array { .. }),
         result_is_unit: matches!(f.ret, Type::Unit),
         mutable_records,
+        named_records,
+        result_record,
     };
 
     // Build the body state-refinement obligation. The reference state-denotation
@@ -1016,6 +1032,82 @@ fn mutable_record_frames(
         ));
     }
     Ok(records)
+}
+
+/// Exact finite named-record declarations available to owned local-state TV.
+/// The validator's structural mutation closure is the admission oracle; sealed,
+/// recursive, reference-bearing, enum, opaque-nested, and heap-backed shapes are
+/// absent rather than guessed here.
+pub(crate) fn named_record_frames(program: &thermite_syntax::Program) -> Vec<NamedRecordFrame> {
+    let admitted = thermite_spec::structural_record_mutation_structs(program);
+    program
+        .items
+        .iter()
+        .filter_map(|item| {
+            let Item::Struct(structure) = item else {
+                return None;
+            };
+            admitted.contains(&structure.name).then(|| {
+                NamedRecordFrame::new(
+                    structure.name.clone(),
+                    structure
+                        .fields
+                        .iter()
+                        .map(|field| {
+                            RecordFieldFrame::new(
+                                field.name.clone(),
+                                matches!(field.ty, Type::Array { .. }),
+                            )
+                        })
+                        .collect(),
+                )
+            })
+        })
+        .collect()
+}
+
+fn named_record_result_frame(records: &[NamedRecordFrame], ty: &Type) -> Option<NamedRecordFrame> {
+    let Type::Named(name) = ty else {
+        return None;
+    };
+    records
+        .iter()
+        .find(|record| record.type_name == *name)
+        .cloned()
+}
+
+pub(crate) fn fixed_array_field_bindings(
+    program: &thermite_syntax::Program,
+    function: &FnItem,
+) -> Vec<String> {
+    let mut bindings = Vec::new();
+    for param in &function.params {
+        let named = match &param.ty {
+            Type::Named(name) => Some(name),
+            Type::Ref { inner, .. } => match inner.as_ref() {
+                Type::Named(name) => Some(name),
+                _ => None,
+            },
+            _ => None,
+        };
+        let Some(named) = named else {
+            continue;
+        };
+        let Some(structure) = program.items.iter().find_map(|item| match item {
+            Item::Struct(structure) if structure.name == *named => Some(structure),
+            _ => None,
+        }) else {
+            continue;
+        };
+        bindings.extend(
+            structure
+                .fields
+                .iter()
+                .filter(|field| matches!(field.ty, Type::Array { .. }))
+                .map(|field| format!("{}.{}", param.name, field.name)),
+        );
+    }
+    bindings
 }
 
 fn is_mutable_indexed_borrow(ty: &Type) -> bool {

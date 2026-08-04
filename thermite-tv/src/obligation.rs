@@ -86,6 +86,7 @@ use thermite_syntax::ast::{Block, Expr};
 use crate::exec_encode::{exec_ref_value, ExecRefCtx, RefEncodeError as ExecRefEncodeError};
 use crate::exec_stmt_encode::{
     body_ref_state_ensures, loop_ref_obligations, negate_condition, BodyRefCtx, MutableRecordFrame,
+    NamedRecordFrame,
 };
 pub use crate::ref_encode::StateViewKind;
 use crate::ref_encode::{ref_contract_pred, RefCtx, RefEncodeError};
@@ -382,9 +383,15 @@ pub struct ExecObligationFrame {
     pub slice_params: Vec<String>,
     /// Native fixed-array parameters, indexed through their finite `@` views.
     pub fixed_array_params: Vec<String>,
+    /// Direct `root.field` paths whose parsed field type is a fixed array.
+    pub fixed_array_fields: Vec<String>,
     /// Whether the result is a native fixed array and therefore compared
     /// extensionally through its `@` view.
     pub result_is_fixed_array: bool,
+    /// Exact field frame for a named-record result, if any. Aggregate exec
+    /// values are compared field-by-field rather than through ambient record
+    /// equality.
+    pub result_record: Option<NamedRecordFrame>,
 }
 
 impl ExecObligationFrame {
@@ -393,6 +400,7 @@ impl ExecObligationFrame {
     fn exec_ref_ctx(&self) -> ExecRefCtx {
         ExecRefCtx::with_slice_bound(self.slice_params.iter().cloned())
             .with_fixed_array_bound(self.fixed_array_params.iter().cloned())
+            .with_fixed_array_fields(self.fixed_array_fields.iter().cloned())
     }
 
     /// The Verus parameter list `name: type, …`.
@@ -475,7 +483,25 @@ pub fn exec_equivalence_obligation(
     // The obligation: the production exec value equals the independent exec
     // reference value for all inputs (Z3), at the bounded production type. Verified
     // iff faithful; a postcondition counterexample / type / parse error is infidelity.
-    if frame.result_is_fixed_array {
+    if let Some(record) = &frame.result_record {
+        let comparisons = record
+            .fields
+            .iter()
+            .map(|field| {
+                if field.array_view {
+                    format!(
+                        "result.{}@ == (({}).{})@",
+                        field.name, reference, field.name
+                    )
+                } else {
+                    format!("result.{} == ({}).{}", field.name, reference, field.name)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(",\n        ");
+        out.push_str("\n    ensures ");
+        out.push_str(&comparisons);
+    } else if frame.result_is_fixed_array {
         out.push_str("\n    ensures result@ == (");
         out.push_str(&reference);
         out.push_str(")@");
@@ -556,6 +582,8 @@ pub struct BodyObligationFrame {
     pub mutable_indexed_params: Vec<String>,
     /// Native fixed-array parameters, indexed through their finite `@` views.
     pub fixed_array_params: Vec<String>,
+    /// Direct `root.field` paths whose parsed field type is a fixed array.
+    pub fixed_array_fields: Vec<String>,
     /// Whether the result type is a native fixed array. Array results are
     /// compared extensionally through `result@`.
     pub result_is_fixed_array: bool,
@@ -563,6 +591,10 @@ pub struct BodyObligationFrame {
     pub result_is_unit: bool,
     /// Complete direct-field frames for exclusive named-record parameters.
     pub mutable_records: Vec<MutableRecordFrame>,
+    /// Exact finite named-record declarations available to typed owned locals.
+    pub named_records: Vec<NamedRecordFrame>,
+    /// Exact field frame for a named-record result, if any.
+    pub result_record: Option<NamedRecordFrame>,
 }
 
 impl BodyObligationFrame {
@@ -572,9 +604,12 @@ impl BodyObligationFrame {
         BodyRefCtx::with_slice_bound(self.slice_params.iter().cloned())
             .with_mutable_indexed_bound(self.mutable_indexed_params.iter().cloned())
             .with_fixed_array_bound(self.fixed_array_params.iter().cloned())
+            .with_fixed_array_fields(self.fixed_array_fields.iter().cloned())
             .with_fixed_array_result(self.result_is_fixed_array)
             .with_unit_result(self.result_is_unit)
             .with_mutable_records(self.mutable_records.clone())
+            .with_named_records(self.named_records.clone())
+            .with_result_record(self.result_record.clone())
     }
 
     /// The Verus parameter list `name: type, ...`.

@@ -1,0 +1,118 @@
+struct OwnedState {
+  generation: u64,
+  occupied: bool,
+  first: u64,
+  second: u64,
+}
+
+spec fn owned_state_generation_spec(state: OwnedState) -> u64
+  dec state.generation
+{
+  state.generation
+}
+
+spec fn owned_state_occupied_spec(state: OwnedState) -> bool
+  dec state.generation
+{
+  state.occupied
+}
+
+spec fn owned_state_first_spec(state: OwnedState) -> u64
+  dec state.generation
+{
+  state.first
+}
+
+spec fn owned_state_second_spec(state: OwnedState) -> u64
+  dec state.generation
+{
+  state.second
+}
+
+fn owned_state_generation(state: &OwnedState) -> u64
+  req true
+  ens result == owned_state_generation_spec(*state)
+  fx pure
+{
+  state.generation
+}
+
+fn owned_state_occupied(state: &OwnedState) -> bool
+  req true
+  ens result == owned_state_occupied_spec(*state)
+  fx pure
+{
+  state.occupied
+}
+
+fn owned_state_first(state: &OwnedState) -> u64
+  req true
+  ens result == owned_state_first_spec(*state)
+  fx pure
+{
+  state.first
+}
+
+fn owned_state_second(state: &OwnedState) -> u64
+  req true
+  ens result == owned_state_second_spec(*state)
+  fx pure
+{
+  state.second
+}
+
+fn owned_state_mix_generation(state: OwnedState, next: u64) -> OwnedState
+  req true
+  ens (state.generation == 0 && result.generation == next)
+    || (state.generation != 0 && result.generation == state.generation)
+  ens result.occupied == state.occupied
+  ens result.first == state.first
+  ens result.second == state.second
+  fx pure
+{
+  let mixed: u64 = if state.generation == 0 {
+    next
+  } else {
+    state.generation
+  };
+  let mut updated: OwnedState = state;
+  updated.generation = mixed;
+  updated
+}
+
+fn owned_state_mix_second(state: OwnedState, replacement: u64) -> OwnedState
+  req true
+  ens result.generation == state.generation
+  ens result.occupied == state.occupied
+  ens result.first == state.first
+  ens (state.second == 5 && result.second == replacement)
+    || (state.second != 5 && result.second == state.second)
+  fx pure
+{
+  let mixed: u64 = if state.second == 5 {
+    replacement
+  } else {
+    state.second
+  };
+  let mut updated: OwnedState = state;
+  updated.second = mixed;
+  updated
+}
+
+fn owned_state_pipeline(next: u64, replacement: u64) -> OwnedState
+  req next > 0
+  ens result.generation == next
+  ens result.occupied
+  ens result.first == 3
+  ens result.second == replacement
+  fx pure
+{
+  let initial: OwnedState = OwnedState {
+    generation: 0,
+    occupied: true,
+    first: 3,
+    second: 5,
+  };
+  let advanced: OwnedState = owned_state_mix_generation(initial, next);
+  owned_state_mix_second(advanced, replacement)
+}

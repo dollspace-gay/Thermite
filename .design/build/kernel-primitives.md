@@ -142,6 +142,21 @@ A primitive is complete only when all applicable layers exist:
 7. documentation usable by a different repository without importing kernel
    policy from Thermite.
 
+Every Thermite-authored language semantic, model, and reusable algorithm has an
+L3-or-L4 assurance floor. L3 means an all-input machine proof; L4 is accepted
+only for an admitted decidable route with checked reconstruction. L2, L1, L0,
+an unrun proof, or a skipped translation-validation row is not a completed
+primitive.
+
+The sole sub-L3 exception class is a bodyless frozen declaration for an
+irreducible machine operation whose implementation is deliberately supplied by
+a consuming platform, or a hardware/concurrency fact that the current formal
+semantics literally cannot express. These declarations must remain visibly
+incomplete platform obligations. They acquire end-to-end L3/L4 assurance only
+when a consumer binds the exact emitted Rust/assembly/object implementation and
+discharges its direct refinement; a source contract or L1 wrapper alone cannot
+upgrade them.
+
 A Rust reference model alone is not a completed Thermite primitive. A boundary
 declaration without an exact implementation/refinement binding is only a
 declaration. A boot test does not substitute for a proof.

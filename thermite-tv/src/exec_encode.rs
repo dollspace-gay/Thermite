@@ -101,6 +101,9 @@ pub struct ExecRefCtx {
     /// Names bound as native fixed arrays. Their executable index is compared
     /// through the array's finite `@` view in an `ensures` predicate.
     fixed_array_bound: BTreeSet<String>,
+    /// Direct `root.field` paths whose independently parsed field type is a
+    /// native fixed array.
+    fixed_array_fields: BTreeSet<String>,
     /// Closed-form scalar bindings threaded by aggregate lifecycle TV. A path
     /// in this map denotes the value captured at that source program point.
     value_bindings: BTreeMap<String, String>,
@@ -120,6 +123,7 @@ impl ExecRefCtx {
         ExecRefCtx {
             slice_bound: names.into_iter().map(Into::into).collect(),
             fixed_array_bound: BTreeSet::new(),
+            fixed_array_fields: BTreeSet::new(),
             value_bindings: BTreeMap::new(),
             field_bindings: BTreeMap::new(),
         }
@@ -132,6 +136,17 @@ impl ExecRefCtx {
         S: Into<String>,
     {
         self.fixed_array_bound = names.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Add exact direct record-field paths whose declared value is a native
+    /// fixed array.
+    pub fn with_fixed_array_fields<I, S>(mut self, paths: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.fixed_array_fields = paths.into_iter().map(Into::into).collect();
         self
     }
 
@@ -169,6 +184,10 @@ impl ExecRefCtx {
 
     fn is_fixed_array_bound(&self, name: &str) -> bool {
         self.fixed_array_bound.contains(name)
+    }
+
+    fn is_fixed_array_field(&self, root: &str, field: &str) -> bool {
+        self.fixed_array_fields.contains(&format!("{root}.{field}"))
     }
 
     fn value_binding(&self, name: &str) -> Option<&str> {
@@ -261,6 +280,52 @@ fn encode(expr: &Expr, ctx: &ExecRefCtx) -> Result<String, RefEncodeError> {
                 .map(|(name, value)| Ok(format!("{name}: {}", encode(value, ctx)?)))
                 .collect::<Result<Vec<_>, RefEncodeError>>()?;
             Ok(format!("({} {{ {} }})", path.join("::"), fields.join(", ")))
+        }
+        Expr::Tuple(elements) => {
+            let elements = elements
+                .iter()
+                .map(|element| encode(element, ctx))
+                .collect::<Result<Vec<_>, _>>()?;
+            let trailing = if elements.len() == 1 { "," } else { "" };
+            Ok(format!("({}{trailing})", elements.join(", ")))
+        }
+        Expr::TupleProj { receiver, index } => {
+            let receiver = encode(receiver, ctx)?;
+            Ok(format!("({receiver}).{index}"))
+        }
+        Expr::Ref {
+            mutable: false,
+            expr,
+        } => {
+            let value = encode(expr, ctx)?;
+            Ok(format!("&({value})"))
+        }
+        Expr::Ref { mutable: true, .. } => Err(RefEncodeError::Unsupported(
+            "mutable reference construction requires an exact call-effect state frame".to_string(),
+        )),
+        Expr::Deref(inner) => {
+            let inner = encode(inner, ctx)?;
+            Ok(format!("*({inner})"))
+        }
+        Expr::If { cond, then, else_ } => {
+            if !then.stmts.is_empty() || !else_.stmts.is_empty() {
+                return Err(RefEncodeError::Unsupported(
+                    "if expression with branch statements requires body-state threading"
+                        .to_string(),
+                ));
+            }
+            let then_value = then.tail.as_deref().ok_or_else(|| {
+                RefEncodeError::Unsupported("if expression then-branch has no value".to_string())
+            })?;
+            let else_value = else_.tail.as_deref().ok_or_else(|| {
+                RefEncodeError::Unsupported("if expression else-branch has no value".to_string())
+            })?;
+            Ok(format!(
+                "if {} {{ {} }} else {{ {} }}",
+                encode(cond, ctx)?,
+                encode(then_value, ctx)?,
+                encode(else_value, ctx)?
+            ))
         }
         Expr::Index { base, index } => encode_index(base, index, ctx),
         Expr::Cast { expr, ty } => encode_cast(expr, ty, ctx),
@@ -541,6 +606,17 @@ fn encode_index(base: &Expr, index: &IndexArg, ctx: &ExecRefCtx) -> Result<Strin
         if segments.len() == 1 && ctx.is_fixed_array_bound(&segments[0]) {
             let idx = encode_index_value(i, ctx)?;
             return Ok(format!("{}@[{idx}]", segments[0]));
+        }
+    }
+    if let Expr::Field { receiver, name } = base {
+        if let Expr::Path(segments) = receiver.as_ref() {
+            if let [root] = segments.as_slice() {
+                if ctx.is_fixed_array_field(root, name) {
+                    let array = encode(base, ctx)?;
+                    let idx = encode_index_value(i, ctx)?;
+                    return Ok(format!("({array})@[{idx}]"));
+                }
+            }
         }
     }
     // State threading substitutes a local fixed array with its initializer or

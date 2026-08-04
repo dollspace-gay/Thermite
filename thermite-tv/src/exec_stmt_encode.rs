@@ -138,6 +138,24 @@ pub struct MutableRecordFrame {
     pub fields: Vec<RecordFieldFrame>,
 }
 
+/// One finite named-record type available to owned-local body state
+/// reconstruction. The ordered field inventory is independently derived from
+/// the parsed declaration and is never inferred from production lowering text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NamedRecordFrame {
+    pub type_name: String,
+    pub fields: Vec<RecordFieldFrame>,
+}
+
+impl NamedRecordFrame {
+    pub fn new(type_name: impl Into<String>, fields: Vec<RecordFieldFrame>) -> Self {
+        Self {
+            type_name: type_name.into(),
+            fields,
+        }
+    }
+}
+
 impl MutableRecordFrame {
     pub fn new(name: impl Into<String>, fields: Vec<RecordFieldFrame>) -> Self {
         Self {
@@ -172,9 +190,12 @@ pub struct BodyRefCtx {
     /// `old(param)@` to `final(param)@`.
     mutable_indexed_bound: BTreeSet<String>,
     fixed_array_bound: BTreeSet<String>,
+    fixed_array_fields: BTreeSet<String>,
     result_is_fixed_array: bool,
     result_is_unit: bool,
     mutable_records: Vec<MutableRecordFrame>,
+    named_records: BTreeMap<String, NamedRecordFrame>,
+    result_record: Option<NamedRecordFrame>,
 }
 
 impl BodyRefCtx {
@@ -188,9 +209,12 @@ impl BodyRefCtx {
             slice_bound: names.into_iter().map(Into::into).collect(),
             mutable_indexed_bound: BTreeSet::new(),
             fixed_array_bound: BTreeSet::new(),
+            fixed_array_fields: BTreeSet::new(),
             result_is_fixed_array: false,
             result_is_unit: false,
             mutable_records: Vec::new(),
+            named_records: BTreeMap::new(),
+            result_record: None,
         }
     }
 
@@ -215,6 +239,17 @@ impl BodyRefCtx {
         self
     }
 
+    /// Add exact direct `root.field` paths whose parsed field type is a native
+    /// fixed array.
+    pub fn with_fixed_array_fields<I, S>(mut self, paths: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.fixed_array_fields = paths.into_iter().map(Into::into).collect();
+        self
+    }
+
     /// Record that the body's result is a native fixed array and must be
     /// compared extensionally through its finite sequence view.
     pub fn with_fixed_array_result(mut self, is_array: bool) -> Self {
@@ -234,15 +269,37 @@ impl BodyRefCtx {
         self
     }
 
+    /// Add the exact finite named-record declarations usable by typed owned
+    /// locals in this body.
+    pub fn with_named_records(mut self, records: Vec<NamedRecordFrame>) -> Self {
+        self.named_records = records
+            .into_iter()
+            .map(|record| (record.type_name.clone(), record))
+            .collect();
+        self
+    }
+
+    /// Record the exact field frame of a named-record result. Result equality is
+    /// then emitted per field, using complete sequence views for native arrays.
+    pub fn with_result_record(mut self, record: Option<NamedRecordFrame>) -> Self {
+        self.result_record = record;
+        self
+    }
+
     /// Build the [`ExecRefCtx`] the per-RHS value encoder uses (the slice-bound set
     /// passes straight through — every RHS / tail value is a step-2.1 exec value).
     fn exec_ref_ctx(&self) -> ExecRefCtx {
         ExecRefCtx::with_slice_bound(self.slice_bound.iter().cloned())
             .with_fixed_array_bound(self.fixed_array_bound.iter().cloned())
+            .with_fixed_array_fields(self.fixed_array_fields.iter().cloned())
     }
 
     fn is_mutable_indexed_bound(&self, name: &str) -> bool {
         self.mutable_indexed_bound.contains(name)
+    }
+
+    fn named_record(&self, type_name: &str) -> Option<&NamedRecordFrame> {
+        self.named_records.get(type_name)
     }
 }
 
@@ -257,6 +314,7 @@ impl BodyRefCtx {
 struct Env {
     values: BTreeMap<String, Expr>,
     fixed_arrays: BTreeSet<String>,
+    named_records: BTreeMap<String, String>,
 }
 
 impl Env {
@@ -286,6 +344,14 @@ impl Env {
 
     fn is_fixed_array(&self, name: &str) -> bool {
         self.fixed_arrays.contains(name)
+    }
+
+    fn mark_named_record(&mut self, name: String, type_name: String) {
+        self.named_records.insert(name, type_name);
+    }
+
+    fn named_record_type(&self, name: &str) -> Option<&str> {
+        self.named_records.get(name).map(String::as_str)
     }
 }
 
@@ -339,25 +405,43 @@ pub fn body_ref_state_ensures(
         return record_lifecycle_ensures(block, result_name, ctx);
     }
     let mut conjuncts = Vec::new();
+    if let Some(record) = &ctx.result_record {
+        let reference = body_ref_state(block, ctx)?;
+        for field in &record.fields {
+            if field.array_view {
+                conjuncts.push(format!(
+                    "{result_name}.{}@ == (({reference}).{})@",
+                    field.name, field.name
+                ));
+            } else {
+                conjuncts.push(format!(
+                    "{result_name}.{} == ({reference}).{}",
+                    field.name, field.name
+                ));
+            }
+        }
+    }
     // A multi-cell body is one whose tail is a tuple (the final state spans cells).
     // Each cell is encoded under the body's final env (the same threading), then
     // compared to the matching `result.<i>` projection at the bounded type.
-    if let Some(tail) = &block.tail {
-        if let Expr::Tuple(elems) = tail.as_ref() {
-            let mut env: Env = Env::new();
-            for stmt in &block.stmts {
-                thread_stmt(stmt, &mut env, ctx)?;
+    if ctx.result_record.is_none() {
+        if let Some(tail) = &block.tail {
+            if let Expr::Tuple(elems) = tail.as_ref() {
+                let mut env: Env = Env::new();
+                for stmt in &block.stmts {
+                    thread_stmt(stmt, &mut env, ctx)?;
+                }
+                conjuncts.extend(
+                    elems
+                        .iter()
+                        .enumerate()
+                        .map(|(i, e)| {
+                            let cell = encode_value(e, &env, ctx)?;
+                            Ok(format!("{result_name}.{i} == {cell}"))
+                        })
+                        .collect::<Result<Vec<_>, RefEncodeError>>()?,
+                );
             }
-            conjuncts.extend(
-                elems
-                    .iter()
-                    .enumerate()
-                    .map(|(i, e)| {
-                        let cell = encode_value(e, &env, ctx)?;
-                        Ok(format!("{result_name}.{i} == {cell}"))
-                    })
-                    .collect::<Result<Vec<_>, RefEncodeError>>()?,
-            );
         }
     }
     if conjuncts.is_empty() {
@@ -1349,9 +1433,89 @@ fn thread_stmt(stmt: &Stmt, env: &mut Env, ctx: &BodyRefCtx) -> Result<(), RefEn
             if matches!(ty, Some(thermite_syntax::Type::Array { .. })) {
                 env.mark_fixed_array(name.clone());
             }
+            if let Some(thermite_syntax::Type::Named(type_name)) = ty {
+                if ctx.named_record(type_name).is_some() {
+                    env.mark_named_record(name.clone(), type_name.clone());
+                }
+            }
             Ok(())
         }
         Stmt::Assign { target, value } => {
+            // A direct field write on a typed owned record local is an exact
+            // nominal reconstruction. Every untouched field projects from the
+            // pre-write value, and the changed field receives the RHS evaluated
+            // in that same pre-write environment.
+            if let Expr::Field {
+                receiver,
+                name: field,
+            } = target
+            {
+                let Expr::Path(segments) = receiver.as_ref() else {
+                    return Err(RefEncodeError::Unsupported(
+                        "owned-record field assignment requires one local-name receiver"
+                            .to_string(),
+                    ));
+                };
+                if segments.len() != 1 {
+                    return Err(RefEncodeError::Unsupported(
+                        "owned-record field assignment requires one local-name receiver"
+                            .to_string(),
+                    ));
+                }
+                let local = &segments[0];
+                let type_name = env
+                    .named_record_type(local)
+                    .ok_or_else(|| {
+                        RefEncodeError::Unsupported(format!(
+                        "field assignment root `{local}` is not a typed finite named-record local"
+                    ))
+                    })?
+                    .to_string();
+                let record = ctx.named_record(&type_name).ok_or_else(|| {
+                    RefEncodeError::Unsupported(format!(
+                        "owned-record field assignment lost declaration `{type_name}`"
+                    ))
+                })?;
+                if !record
+                    .fields
+                    .iter()
+                    .any(|candidate| candidate.name == *field)
+                {
+                    return Err(RefEncodeError::Unsupported(format!(
+                        "record `{type_name}` has no field `{field}`"
+                    )));
+                }
+                let current = env.get(local).cloned().ok_or_else(|| {
+                    RefEncodeError::Unsupported(format!(
+                        "assignment to the unbound named-record local `{local}`"
+                    ))
+                })?;
+                let changed = substitute(value, env)?;
+                let fields = record
+                    .fields
+                    .iter()
+                    .map(|candidate| {
+                        let value = if candidate.name == *field {
+                            changed.clone()
+                        } else {
+                            Expr::Field {
+                                receiver: Box::new(current.clone()),
+                                name: candidate.name.clone(),
+                            }
+                        };
+                        (candidate.name.clone(), value)
+                    })
+                    .collect();
+                env.insert(
+                    local.clone(),
+                    Expr::StructLit {
+                        path: vec![type_name],
+                        fields,
+                    },
+                );
+                return Ok(());
+            }
+
             // Scalar assignment rebinds the named cell. Fixed-array indexed
             // assignment becomes the exact vstd array-update model, whose view is
             // `old@.update(index, value)` and therefore preserves every other slot.
@@ -1772,11 +1936,33 @@ fn substitute(expr: &Expr, env: &Env) -> Result<Expr, RefEncodeError> {
                 .map(|e| substitute(e, env))
                 .collect::<Result<Vec<_>, _>>()?,
         )),
-        // An out-of-subset value node (a struct literal, a closure, a match-expr,
-        // a field/projection, a deref, or a ref) is passed through
-        // unchanged — [`exec_ref_value`] will reject it (the frozen RHS
-        // sublanguage is the step-2.1 pure-exec subset). Passing it through keeps the
-        // rejection in one place (the value encoder) with the precise node tag.
+        Expr::TupleProj { receiver, index } => Ok(Expr::TupleProj {
+            receiver: Box::new(substitute(receiver, env)?),
+            index: *index,
+        }),
+        Expr::Field { receiver, name } => Ok(Expr::Field {
+            receiver: Box::new(substitute(receiver, env)?),
+            name: name.clone(),
+        }),
+        Expr::StructLit { path, fields } => Ok(Expr::StructLit {
+            path: path.clone(),
+            fields: fields
+                .iter()
+                .map(|(name, value)| Ok((name.clone(), substitute(value, env)?)))
+                .collect::<Result<Vec<_>, RefEncodeError>>()?,
+        }),
+        Expr::Ref {
+            mutable,
+            expr: inner,
+        } => Ok(Expr::Ref {
+            mutable: *mutable,
+            expr: Box::new(substitute(inner, env)?),
+        }),
+        Expr::Deref(inner) => Ok(Expr::Deref(Box::new(substitute(inner, env)?))),
+        // An out-of-subset value node (a closure or match expression) is passed
+        // through unchanged so [`exec_ref_value`] rejects it with the precise
+        // node tag. `Expr::If` is interpreted by `encode_value`, which threads
+        // each branch under the current environment.
         other => Ok(other.clone()),
     }
 }

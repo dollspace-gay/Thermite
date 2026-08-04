@@ -453,6 +453,76 @@ fn choose_generation(state: &mut State, choose_next: bool, next: u64) -> u64
 }
 
 #[test]
+fn owned_aggregate_fixture_is_entirely_l3_body_faithful() {
+    if !verus_present() {
+        eprintln!("SKIP: verus not available — owned-aggregate body-TV not discharged.");
+        return;
+    }
+    let file = corpus_dir().join("verified-build/owned_aggregate_lifecycle.th");
+    let report = run_body_tv_json(&file);
+    assert_eq!(report["counts"]["checked"].as_u64(), Some(7), "{report}");
+    assert_eq!(report["counts"]["faithful"].as_u64(), Some(7), "{report}");
+    assert_eq!(report["counts"]["divergent"].as_u64(), Some(0), "{report}");
+    assert_eq!(
+        report["counts"]["unverifiable"].as_u64(),
+        Some(0),
+        "{report}"
+    );
+    assert_eq!(report["counts"]["skipped"].as_u64(), Some(0), "{report}");
+    for name in [
+        "owned_state_generation",
+        "owned_state_occupied",
+        "owned_state_first",
+        "owned_state_second",
+        "owned_state_mix_generation",
+        "owned_state_mix_second",
+        "owned_state_pipeline",
+    ] {
+        assert!(
+            report["bodies"].as_array().unwrap().iter().any(|body| {
+                body["body"].as_str() == Some(name) && body["verdict"].as_str() == Some("faithful")
+            }),
+            "{name}: {report}"
+        );
+    }
+}
+
+#[test]
+fn mutable_reference_callee_effects_remain_fail_closed() {
+    let source = r#"
+struct State { value: u64 }
+fn mutate(state: &mut State, value: u64) -> ()
+  req true
+  ens final(state).value == value
+  fx pure
+{
+  state.value = value;
+}
+fn call_mutate(state: &mut State, value: u64) -> ()
+  req true
+  ens final(state).value == value
+  fx pure
+{
+  mutate(state, value);
+}
+"#;
+    let file = write_th("mutable_reference_callee", source);
+    let report = run_body_tv_json(&file);
+    let caller = report["bodies"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|body| body["body"].as_str() == Some("call_mutate"))
+        .unwrap_or_else(|| panic!("missing caller body: {report}"));
+    assert_eq!(caller["verdict"].as_str(), Some("skipped"), "{report}");
+    let detail = caller["detail"].as_str().unwrap_or_default();
+    assert!(
+        detail.contains("mutable-reference") && detail.contains("call-effect"),
+        "{detail}"
+    );
+}
+
+#[test]
 fn aggregate_array_relations_are_faithful() {
     if !verus_present() {
         eprintln!("SKIP: verus not available — aggregate-array body-TV not discharged.");

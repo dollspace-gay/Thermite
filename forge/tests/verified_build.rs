@@ -373,6 +373,11 @@ fn fixed_array_logic_is_compiled_and_bound_by_all_strict_l3_gates() {
         "{source}"
     );
     assert!(source.contains("slots[at]"), "{source}");
+    assert!(
+        source.contains("pub trait __thermite_FixedArrayEq"),
+        "{source}"
+    );
+    assert!(source.contains("__thermite_fixed_array_eq"), "{source}");
 
     let tv: serde_json::Value = serde_json::from_slice(
         &fs::read(bundle.join("evidence/translation-validation.json")).unwrap(),

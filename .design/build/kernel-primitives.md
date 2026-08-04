@@ -121,9 +121,12 @@ sealed structs, mutable byte-slice assignment, a `final(slice)` proof view, and
 the first-class fixed-array syntax, validation, native L3/L2/L1 lowering, and
 independent exact initialization/read/indexed-write/length translation validation
 described below. The strict L3 fixture binds and replays those proof rows.
-Repeat initialization rejects non-copy element types before lowering. Static
-ownership, aggregate-borrow framing, extensional equality, and the
-allocation-free collection library remain.
+Repeat initialization rejects non-copy element types before lowering.
+`.array_eq(other)` now provides allocation-free extensional equality for every
+primitive-scalar array through a const-generic scan whose exact generated body is
+verified by Verus and independently translation-validated. Static ownership,
+aggregate-borrow framing, aggregate-element equality, and the allocation-free
+collection library remain.
 
 #### Fixed-array surface lock
 
@@ -158,8 +161,11 @@ initialization for copy-safe scalar/plain values, while `[a, b, ...]` is exact
 element initialization and must contain precisely `N` values in an annotated
 context. Existing indexing and indexed assignment are the only access/mutation
 forms; bounded `for i in 0..N` supplies iteration without an allocator or hidden
-iterator state. `.len()` is the constant `N`. Arrays nest, may appear in plain
-structs/enums/tuples, and may be borrowed as immutable or mutable arrays.
+iterator state. `.len()` is the constant `N`. For arrays whose element is one of
+`u8`, `u16`, `u32`, `u64`, `usize`, or `bool`, `.array_eq(other)` compares every
+element and returns exactly finite-view extensional equality. Arrays nest, may
+appear in plain structs/enums/tuples, and may be borrowed as immutable or mutable
+arrays.
 
 The executable representation is the target's native `[T; N]`, not `Vec<T>` and
 not a generated per-capacity Rust policy type. Specification lowering exposes a
@@ -368,7 +374,7 @@ Source: `.design/reqs/registry.toml`
 |---|---|---|---|---|
 | REQ-KPRIM-1 | shipped | `.design/build/kernel-primitives.md` | Kernel scalar and effect surface |  |
 | REQ-KPRIM-10 | not_started | `.design/build/kernel-primitives.md` | Primitive-only adversarial suite | Add package, fixed-storage, atomic, waiting, registry, refinement, receipt-tamper, freestanding-consumer, and no-concrete-kernel gates. |
-| REQ-KPRIM-2 | partial | `.design/build/kernel-primitives.md` | Exact mutable and fixed storage | Mutable byte-slice assignment with final(slice), native fixed arrays, copy-safe repetition, and exact initialization/read/indexed-write/length TV are shipped. Add static storage, aggregate borrows and final views, extensional equality, and verified fixed-capacity vector/map/bitmap/ring libraries. |
+| REQ-KPRIM-2 | partial | `.design/build/kernel-primitives.md` | Exact mutable and fixed storage | Mutable byte-slice assignment with final(slice), native fixed arrays, copy-safe repetition, primitive-scalar extensional equality, and exact initialization/read/indexed-write/length/equality TV are shipped. Add static storage, aggregate borrows and final views, aggregate-element equality, and verified fixed-capacity vector/map/bitmap/ring libraries. |
 | REQ-KPRIM-3 | partial | `.design/build/kernel-primitives.md` | Receipt-bound packages and modules | Independent parsing, module-local identity, direct-import/root-export enforcement, rooted graph validation, source allowlisting, L3 build/composition, complete receipt binding, validation, and replay are shipped. Extend the remaining source-oriented Forge commands (check, audit, TV, goal/edit/fill) to operate on packages without losing module-local diagnostics. |
 | REQ-KPRIM-4 | partial | `.design/build/kernel-primitives.md` | Sealed authority and ownership | The sealed-construction barrier is shipped. Add affine-style consumption or a verified generation discipline that rejects stale copies, double release, and rights escalation. |
 | REQ-KPRIM-5 | not_started | `.design/build/kernel-primitives.md` | Sealed atomics and ordering model | Add the Thermite surface, legality validation, happens-before model, direct-refinement interface, and adversarial tests without adding a kernel implementation. |

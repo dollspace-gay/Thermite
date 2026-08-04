@@ -36,6 +36,7 @@ pub use effects::{check_effects, subsumes};
 pub use l1::lower_l1;
 pub use l2::{bound_string, lower_l2};
 pub use lower::{
+    block_uses_fixed_array_equality, expr_uses_fixed_array_equality, fixed_array_equality_defs,
     lower, lower_contract_expr, lower_equivalence_obligation, lower_exec_body, lower_exec_expr,
     lower_l3_library, spec_fn_param_type_map, L3Export, L3ExportVisibility, L3LibraryTarget,
     LowerError,

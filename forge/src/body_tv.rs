@@ -503,8 +503,12 @@ fn straight_line_body_tv(
         return;
     }
 
+    let mut spec_defs = support_defs.to_vec();
+    if thermite_lower::block_uses_fixed_array_equality(body) {
+        spec_defs.push(thermite_lower::fixed_array_equality_defs());
+    }
     let frame = BodyObligationFrame {
-        spec_defs: support_defs.to_vec(),
+        spec_defs,
         params,
         ret_type: ret_ty,
         req: corpus_req(f),

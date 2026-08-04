@@ -654,6 +654,14 @@ fn encode_method_call(
     args: &[Expr],
     ctx: &RefCtx,
 ) -> Result<String, RefEncodeError> {
+    let is_fixed_array_value = |expr: &Expr| {
+        matches!(expr, Expr::Path(segs)
+            if segs.len() == 1 && ctx.is_fixed_array_bound(&segs[0]))
+            || matches!(expr, Expr::Array(_) | Expr::ArrayRepeat { .. })
+            || matches!(expr, Expr::Call { callee, .. }
+                if matches!(callee.as_ref(), Expr::Path(path)
+                    if path.join("::") == "vstd::array::spec_array_update"))
+    };
     // A `String`/`&String` receiver (#150 gap #2): the byte-view dispatch is the
     // wrapper spec fns (`.spec_len()` / `.spec_byte_at(i as int)`), keyed on the
     // receiver being a `string_bound` bare path, mirroring production's
@@ -667,23 +675,21 @@ fn encode_method_call(
         if segs.len() == 1 && ctx.is_map_bound(&segs[0]) {
             return encode_map_accessor(&segs[0], name, args, ctx);
         }
-        if segs.len() == 1 && ctx.is_fixed_array_bound(&segs[0]) {
-            if name == "len" && args.is_empty() {
-                return Ok(format!("({}@.len() as usize)", segs[0]));
-            }
-            return Err(RefEncodeError::Unsupported(format!(
-                "spec method `.{name}()` on a fixed array (only `.len()` is frozen)"
-            )));
-        }
     }
 
-    if matches!(receiver, Expr::Array(_) | Expr::ArrayRepeat { .. }) {
+    if is_fixed_array_value(receiver) {
         if name == "len" && args.is_empty() {
             let array = encode(receiver, ctx)?;
             return Ok(format!("(({array})@.len() as usize)"));
         }
+        if name == "array_eq" && args.len() == 1 && is_fixed_array_value(&args[0]) {
+            let left = encode(receiver, ctx)?;
+            let right = encode(&args[0], ctx)?;
+            return Ok(format!("(({left})@ =~= ({right})@)"));
+        }
         return Err(RefEncodeError::Unsupported(format!(
-            "spec method `.{name}()` on a fixed-array initializer (only `.len()` is frozen)"
+            "spec method `.{name}()` on a fixed array (only `.len()` and \
+             `.array_eq(other)` with another fixed array are frozen)"
         )));
     }
 

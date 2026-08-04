@@ -237,6 +237,10 @@ pub const MAX_FIXED_ARRAY_ELEMENTS: u128 = 1_048_576;
 /// the receiver type).
 const BUILTIN_METHODS: &[&str] = &[
     "len",
+    // Native fixed-array equality. Verus cannot model Rust array `PartialEq`, so
+    // the L3 lowerer maps this explicit surface operation to a directly verified
+    // const-generic scan and maps contract occurrences to finite-view equality.
+    "array_eq",
     "get",
     "last",
     "contains",
@@ -368,6 +372,10 @@ pub enum SpecError {
     /// opaque user ADTs here would either fail only in a backend or silently
     /// change ownership semantics.
     ArrayRepeatRequiresCopy { span: Span },
+    /// `.array_eq(other)` is defined only for two equally typed fixed arrays
+    /// whose element is a primitive scalar. Richer element equality must be
+    /// supplied explicitly by a verified library rather than inferred by Rust.
+    ArrayEqualityRequiresPrimitiveArrays { detail: String, span: Span },
     /// A call in a contract position whose callee is neither a registered
     /// combinator nor a declared `spec fn` — an arbitrary free-function call,
     /// forbidden by the §4.2 cage (REQ-4 (i)). `name` is the unresolved callee.
@@ -537,6 +545,7 @@ impl SpecError {
             | SpecError::ArrayExpandedSizeTooLarge { span, .. }
             | SpecError::ArrayLengthMismatch { span, .. }
             | SpecError::ArrayRepeatRequiresCopy { span }
+            | SpecError::ArrayEqualityRequiresPrimitiveArrays { span, .. }
             | SpecError::UnknownCombinator { span, .. }
             | SpecError::WrongArity { span, .. }
             | SpecError::WrongArgKind { span, .. }
@@ -588,6 +597,10 @@ impl fmt::Display for SpecError {
             SpecError::ArrayRepeatRequiresCopy { .. } => write!(
                 f,
                 "array repeat initialization `[value; N]` requires a copy-safe element type"
+            ),
+            SpecError::ArrayEqualityRequiresPrimitiveArrays { detail, .. } => write!(
+                f,
+                "fixed-array `.array_eq(other)` requires equally typed primitive-scalar arrays: {detail}"
             ),
             SpecError::UnknownCombinator { name, .. } => write!(
                 f,
@@ -778,6 +791,11 @@ struct Validator {
     /// mintable. Inert when no `#[sealed]` struct is declared (the non-IFC corpus
     /// is unchanged), like `struct_fields`.
     sealed_structs: HashSet<String>,
+    /// Types of the current item's named parameters, result, fields, and typed
+    /// locals. The dedicated fixed-array equality check uses this small lexical
+    /// environment because the general v0.1 validator is otherwise intentionally
+    /// not a full type checker.
+    array_equality_types: HashMap<String, Type>,
     depth: usize,
     errors: Vec<SpecError>,
     /// REQ-6 flat-closure-fragment mode. Set once on entry to a combinator's
@@ -965,6 +983,7 @@ impl Validator {
             variant_to_enum,
             struct_fields,
             sealed_structs,
+            array_equality_types: HashMap::new(),
             depth: 0,
             // REQ-2: lowercase-variant casing diagnostics from the pre-pass seed
             // the error list, so a lowercase-variant `enum` is rejected at the
@@ -1002,9 +1021,16 @@ impl Validator {
                     });
                 }
             }
+            self.array_equality_types.clear();
             match item {
                 Item::Const(_) => {}
                 Item::Fn(f) => {
+                    for param in &f.params {
+                        self.array_equality_types
+                            .insert(param.name.clone(), param.ty.clone());
+                    }
+                    self.array_equality_types
+                        .insert("result".to_string(), f.ret.clone());
                     for param in &f.params {
                         self.validate_type(&param.ty, f.span);
                     }
@@ -1053,6 +1079,12 @@ impl Validator {
                 }
                 Item::SpecFn(s) => {
                     for param in &s.params {
+                        self.array_equality_types
+                            .insert(param.name.clone(), param.ty.clone());
+                    }
+                    self.array_equality_types
+                        .insert("result".to_string(), s.ret.clone());
+                    for param in &s.params {
                         self.validate_type(&param.ty, s.span);
                     }
                     self.validate_type(&s.ret, s.span);
@@ -1075,6 +1107,10 @@ impl Validator {
                 // `match`/`is` sites. The 1a `UnsupportedAdt` gate is gone: a
                 // well-formed ADT now validates.
                 Item::Struct(s) => {
+                    for field in &s.fields {
+                        self.array_equality_types
+                            .insert(field.name.clone(), field.ty.clone());
+                    }
                     for field in &s.fields {
                         self.validate_type(&field.ty, s.span);
                     }
@@ -1235,6 +1271,51 @@ impl Validator {
         }
     }
 
+    fn array_equality_operand_type<'b>(&'b self, expr: &Expr) -> Option<&'b Type> {
+        let ty = match expr {
+            Expr::Path(segments) if segments.len() == 1 => {
+                self.array_equality_types.get(&segments[0])?
+            }
+            Expr::Ref { expr, .. } | Expr::Deref(expr) => {
+                return self.array_equality_operand_type(expr);
+            }
+            _ => return None,
+        };
+        let mut current = ty;
+        while let Type::Ref { inner, .. } = current {
+            current = inner;
+        }
+        Some(current)
+    }
+
+    fn check_array_equality_call(&mut self, receiver: &Expr, args: &[Expr], span: Span) {
+        let valid = if let [right] = args {
+            match (
+                self.array_equality_operand_type(receiver),
+                self.array_equality_operand_type(right),
+            ) {
+                (Some(left @ Type::Array { elem, .. }), Some(right @ Type::Array { .. })) => {
+                    matches!(elem.as_ref(), Type::Prim(_)) && left == right
+                }
+                _ => false,
+            }
+        } else {
+            false
+        };
+        if !valid {
+            self.errors
+                .push(SpecError::ArrayEqualityRequiresPrimitiveArrays {
+                    detail: if args.len() == 1 {
+                        "both operands must be named arrays with the same primitive element and capacity"
+                            .to_string()
+                    } else {
+                        format!("expected exactly one argument, found {}", args.len())
+                    },
+                    span,
+                });
+        }
+    }
+
     /// Run `inner` one recursion level deeper, returning `false` (and recording
     /// an `ExpressionTooDeep` at `span`) if the limit is hit. The single shared
     /// guard for every recursive descent (REQ-5). `span` is the enclosing
@@ -1294,10 +1375,11 @@ impl Validator {
                 // structurally for further nested loops, do not cage it.
                 self.scan_block_for_loops(&loop_node.body, loop_node.span);
             }
-            Stmt::Let { ty, init, .. } => {
+            Stmt::Let { name, ty, init, .. } => {
                 if let Some(ty) = ty {
                     self.validate_type(ty, span);
                     self.validate_array_initializer(ty, init, span);
+                    self.array_equality_types.insert(name.clone(), ty.clone());
                 }
                 self.scan_expr_for_loops(init, span);
             }
@@ -1370,7 +1452,14 @@ impl Validator {
                     self.scan_expr_for_loops(arg, span);
                 }
             }
-            Expr::MethodCall { receiver, args, .. } => {
+            Expr::MethodCall {
+                receiver,
+                name,
+                args,
+            } => {
+                if name == "array_eq" {
+                    self.check_array_equality_call(receiver, args, span);
+                }
                 self.scan_expr_for_loops(receiver, span);
                 for arg in args {
                     self.scan_expr_for_loops(arg, span);
@@ -1474,10 +1563,11 @@ impl Validator {
                 self.walk_clause(&loop_node.dec);
                 self.walk_block(&loop_node.body, loop_node.span);
             }
-            Stmt::Let { ty, init, .. } => {
+            Stmt::Let { name, ty, init, .. } => {
                 if let Some(ty) = ty {
                     self.validate_type(ty, span);
                     self.validate_array_initializer(ty, init, span);
+                    self.array_equality_types.insert(name.clone(), ty.clone());
                 }
                 self.walk_expr(init, span);
             }
@@ -1540,6 +1630,9 @@ impl Validator {
                 name,
                 args,
             } => {
+                if name == "array_eq" {
+                    self.check_array_equality_call(receiver, args, span);
+                }
                 if !BUILTIN_METHODS.contains(&name.as_str()) {
                     self.errors.push(SpecError::ForbiddenCall {
                         detail: format!(

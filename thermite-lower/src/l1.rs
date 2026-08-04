@@ -1573,6 +1573,12 @@ pub(crate) fn lower_expr_exec(
             args,
         } => {
             let r = lower_expr_exec(receiver, d, span, variants)?;
+            // L1/L2 execute the explicit fixed-array equality primitive through
+            // Rust's native array equality; L3 replaces it with the verified scan.
+            if name == "array_eq" && args.len() == 1 {
+                let right = lower_expr_exec(&args[0], d, span, variants)?;
+                return Ok(format!("({r}) == ({right})"));
+            }
             // Cluster C4 (`.design/basis/07-strings.md` REQ-8, issue #94): the
             // `u64`→decimal-`String` method `n.to_string()` lowers to a call of the
             // generated free fn `u64_to_string(n)` (emitted by

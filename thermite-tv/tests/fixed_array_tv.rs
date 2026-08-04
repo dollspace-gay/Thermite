@@ -208,6 +208,90 @@ fx pure\n\
         &contract_frame,
     )
     .expect("array length contract obligation must build");
-    assert!(contract_program.contains("slots@.len() as usize"));
+    assert!(contract_program.contains("(slots)@.len() as usize"));
     assert_verus("array_len_contract", &contract_program, true);
+}
+
+#[test]
+fn fixed_array_equality_is_a_verified_extensional_scan() {
+    let source = "const SLOTS: usize = 4;\n\
+fn arrays_equal(left: [u64; SLOTS], right: [u64; SLOTS]) -> bool\n\
+req true\n\
+ens result == left.array_eq(right)\n\
+fx pure\n\
+{ left.array_eq(right) }\n";
+    let parsed = thermite_syntax::parse(source);
+    assert!(parsed.is_clean(), "parse errors: {:?}", parsed.errors);
+    let Item::Fn(function) = &parsed.program.items[1] else {
+        panic!("expected arrays_equal function");
+    };
+    let tail = function.body.as_ref().unwrap().tail.as_ref().unwrap();
+    // Deliberately independent from thermite-lower: this crate may not depend on
+    // production lowering. Forge feeds the exact generated helper into the same
+    // obligation shape.
+    let production = "__thermite_array_eq_u64(&(left), &(right))";
+    let helper = r#"
+pub fn __thermite_array_eq_u64(
+    left: &[u64; SLOTS],
+    right: &[u64; SLOTS],
+) -> (result: bool)
+    ensures result <==> left@ =~= right@,
+{
+    let mut i: usize = 0;
+    while i < SLOTS
+        invariant
+            i <= SLOTS,
+            forall|j: int| 0 <= j < i ==> left@[j] == right@[j],
+        decreases SLOTS - i,
+    {
+        if left[i] != right[i] {
+            assert(left@[i as int] != right@[i as int]);
+            return false;
+        }
+        i = i + 1;
+    }
+    assert(left@ =~= right@);
+    true
+}
+"#
+    .to_string();
+    let exec_frame = ExecObligationFrame {
+        spec_defs: vec!["pub const SLOTS: usize = 4;".to_string(), helper.clone()],
+        params: vec![
+            ExecParamDecl::new("left", "[u64; SLOTS]"),
+            ExecParamDecl::new("right", "[u64; SLOTS]"),
+        ],
+        ret_type: "bool".to_string(),
+        fixed_array_params: vec!["left".to_string(), "right".to_string()],
+        ..Default::default()
+    };
+    let exec_program = exec_equivalence_obligation(tail, &production, &exec_frame)
+        .expect("array equality exec obligation must build");
+    assert!(
+        exec_program.contains("result == ((left)@ =~= (right)@)"),
+        "{exec_program}"
+    );
+    assert_verus("array_eq_exec", &exec_program, true);
+
+    let wrong_exec = exec_equivalence_obligation(tail, "true", &exec_frame)
+        .expect("wrong equality production must still build");
+    assert_verus("array_eq_wrong", &wrong_exec, false);
+
+    let contract_frame = ObligationFrame {
+        spec_defs: vec!["pub const SLOTS: usize = 4;".to_string()],
+        params: vec![
+            ParamDecl::new("left", "[u64; SLOTS]"),
+            ParamDecl::new("right", "[u64; SLOTS]"),
+            ParamDecl::new("result", "bool"),
+        ],
+        fixed_array_params: vec!["left".to_string(), "right".to_string()],
+        ..Default::default()
+    };
+    let contract_program = equivalence_obligation(
+        &function.contract.ens[0].expr,
+        "result == ((left)@ =~= (right)@)",
+        &contract_frame,
+    )
+    .expect("array equality contract obligation must build");
+    assert_verus("array_eq_contract", &contract_program, true);
 }

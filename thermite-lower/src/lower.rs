@@ -772,6 +772,15 @@ fn lower_with_profile(
     let combinator_defs = emit_combinator_defs(program)?;
     out.push_str(&combinator_defs);
 
+    // Native Rust array `PartialEq` is not modeled by Verus, so executable
+    // fixed-array equality uses a generated, directly verified linear scan.
+    // The helper is emitted only when an exec body names `.array_eq(..)`; a
+    // contract/spec occurrence lowers directly to finite-view extensional
+    // equality and therefore needs no executable helper.
+    if program_uses_fixed_array_equality(program) {
+        out.push_str(&fixed_array_equality_defs());
+    }
+
     // (1b) Basis Stage 2 (`.design/basis/02-recursion-schemes.md` REQ-6/REQ-7):
     // the generated per-(ADT, scheme) Verus recursive `spec fn`s
     // (`fold_<e>`/`for_all_<e>`/…) + the structural measure `<e>_len` + the
@@ -1498,6 +1507,17 @@ fn lower_inv_expr(
                 d,
                 span,
             )?;
+            if name == "array_eq" && args.len() == 1 {
+                let right = lower_inv_expr(
+                    &args[0],
+                    field_names,
+                    string_fields,
+                    spec_fn_param_types,
+                    d,
+                    span,
+                )?;
+                return Ok(format!("(({r})@ =~= ({right})@)"));
+            }
             let recv_is_string_field = matches!(
                 receiver.as_ref(),
                 Expr::Path(segs) if segs.len() == 1 && string_fields.contains(&segs[0].as_str())
@@ -4672,6 +4692,116 @@ fn lower_array_len(len: &ArrayLen) -> String {
         ArrayLen::Literal { value, .. } => value.to_string(),
         ArrayLen::Const(name) => name.clone(),
     }
+}
+
+/// Whether an expression reaches the executable fixed-array equality primitive.
+/// Public so Forge's independent exec/body TV frames can include the exact helper
+/// implementation only for obligations whose production column calls it.
+pub fn expr_uses_fixed_array_equality(expr: &Expr) -> bool {
+    if matches!(expr, Expr::MethodCall { name, args, .. }
+        if name == "array_eq" && args.len() == 1)
+    {
+        return true;
+    }
+    let mut found = false;
+    let _ = each_subexpr(expr, &mut |child| {
+        if expr_uses_fixed_array_equality(child) {
+            found = true;
+        }
+        Ok(())
+    });
+    found
+}
+
+fn stmt_uses_fixed_array_equality(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Let { init, .. } => expr_uses_fixed_array_equality(init),
+        Stmt::Assign { target, value } => {
+            expr_uses_fixed_array_equality(target) || expr_uses_fixed_array_equality(value)
+        }
+        Stmt::Return(value) => value.as_ref().is_some_and(expr_uses_fixed_array_equality),
+        Stmt::If {
+            cond, then, else_, ..
+        } => {
+            expr_uses_fixed_array_equality(cond)
+                || block_uses_fixed_array_equality(then)
+                || else_.as_ref().is_some_and(block_uses_fixed_array_equality)
+        }
+        Stmt::Loop(loop_) => block_uses_fixed_array_equality(&loop_.body),
+        Stmt::Expr(expr) => expr_uses_fixed_array_equality(expr),
+        Stmt::Break | Stmt::Continue => false,
+    }
+}
+
+/// Whether a block reaches the executable fixed-array equality primitive.
+pub fn block_uses_fixed_array_equality(block: &Block) -> bool {
+    block.stmts.iter().any(stmt_uses_fixed_array_equality)
+        || block
+            .tail
+            .as_deref()
+            .is_some_and(expr_uses_fixed_array_equality)
+}
+
+fn program_uses_fixed_array_equality(program: &Program) -> bool {
+    program.items.iter().any(|item| match item {
+        Item::Fn(function) => function
+            .body
+            .as_ref()
+            .is_some_and(block_uses_fixed_array_equality),
+        Item::Const(_) | Item::SpecFn(_) | Item::Struct(_) | Item::Enum(_) | Item::Forge(_) => {
+            false
+        }
+    })
+}
+
+/// Exact Verus implementation used by executable `.array_eq(..)` calls.
+///
+/// Verus cannot verify Rust's native `[T; N]` `PartialEq` implementation. This
+/// closed trait instead supplies one const-generic, allocation-free scan for each
+/// Thermite primitive scalar type. Every implementation proves that its returned
+/// boolean is equivalent to extensional equality of the two finite array views.
+/// No trusted body or assumed specification is used.
+pub fn fixed_array_equality_defs() -> String {
+    const PRIMITIVES: &[&str] = &["u8", "u16", "u32", "u64", "usize", "bool"];
+
+    let mut out = String::from(
+        "\npub trait __thermite_FixedArrayEq {\n\
+         \x20   fn __thermite_fixed_array_eq(&self, right: &Self) -> (result: bool);\n\
+         }\n",
+    );
+    for primitive in PRIMITIVES {
+        writeln!(
+            out,
+            "impl<const N: usize> __thermite_FixedArrayEq for [{primitive}; N] {{"
+        )
+        .ok();
+        writeln!(
+            out,
+            "    fn __thermite_fixed_array_eq(&self, right: &[{primitive}; N]) -> (result: bool)"
+        )
+        .ok();
+        out.push_str("        ensures\n");
+        out.push_str("            result <==> self@ =~= right@,\n");
+        out.push_str("    {\n");
+        out.push_str("        let mut i: usize = 0;\n");
+        out.push_str("        while i < N\n");
+        out.push_str("            invariant\n");
+        out.push_str("                i <= N,\n");
+        out.push_str("                forall|j: int| 0 <= j < i ==> self@[j] == right@[j],\n");
+        out.push_str("            decreases N - i,\n");
+        out.push_str("        {\n");
+        out.push_str("            if self[i] != right[i] {\n");
+        out.push_str("                assert(self@[i as int] != right@[i as int]);\n");
+        out.push_str("                return false;\n");
+        out.push_str("            }\n");
+        out.push_str("            i = i + 1;\n");
+        out.push_str("        }\n");
+        out.push_str("        assert(self@ =~= right@);\n");
+        out.push_str("        true\n");
+        out.push_str("    }\n");
+        out.push_str("}\n");
+    }
+    out
 }
 
 /// The generated wrapper struct name for `Vec<elem>` — `TVec` plus an
@@ -7949,6 +8079,19 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
             // references confirm; the `@` view is only needed where a `Seq`
             // operation (`subrange`/index) is required (handled in `lower_index`).
             let r = lower_expr(receiver, ctx, d, span)?;
+            // Native fixed-array equality is explicit because Verus does not model
+            // Rust array `PartialEq`. In spec position its meaning is finite-view
+            // extensional equality. In exec position it calls the generated,
+            // const-generic scan whose postcondition proves that same relation.
+            // Borrow the right operand so neither owned nor borrowed inputs require
+            // a runtime array copy.
+            if name == "array_eq" && args.len() == 1 {
+                let right = lower_expr(&args[0], ctx, d, span)?;
+                if ctx.is_spec() {
+                    return Ok(format!("(({r})@ =~= ({right})@)"));
+                }
+                return Ok(format!("({r}).__thermite_fixed_array_eq(&({right}))"));
+            }
             // Cluster C4 (`.design/basis/07-strings.md` REQ-8, issue #94): the
             // `u64`→decimal-`String` method `n.to_string()` lowers to a call of the
             // generated free fn `u64_to_string(n)` (emitted by `emit_numfmt_defs`,

@@ -297,16 +297,25 @@ fn faithful_fixed_array_update_is_faithful() {
         "  ens result == slots.len()\n",
         "  fx pure\n",
         "{ slots.len() }\n",
+        "fn arrays_equal(left: [u64; SLOTS], right: [u64; SLOTS]) -> bool\n",
+        "  req true\n",
+        "  ens result == left.array_eq(right)\n",
+        "  fx pure\n",
+        "{ left.array_eq(right) }\n",
     );
     let file = write_th("fixed_array_update", src);
     let report = run_body_tv_json(&file);
     assert_eq!(report["counts"]["divergent"].as_u64(), Some(0), "{report}");
-    assert_eq!(report["counts"]["faithful"].as_u64(), Some(2), "{report}");
+    assert_eq!(report["counts"]["faithful"].as_u64(), Some(3), "{report}");
     assert!(report["bodies"].as_array().unwrap().iter().any(|body| {
         body["body"].as_str() == Some("replace") && body["verdict"].as_str() == Some("faithful")
     }));
     assert!(report["bodies"].as_array().unwrap().iter().any(|body| {
         body["body"].as_str() == Some("array_len") && body["verdict"].as_str() == Some("faithful")
+    }));
+    assert!(report["bodies"].as_array().unwrap().iter().any(|body| {
+        body["body"].as_str() == Some("arrays_equal")
+            && body["verdict"].as_str() == Some("faithful")
     }));
 }
 

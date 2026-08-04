@@ -724,8 +724,12 @@ fn check_corpus_expr(
             }
         }
     }
+    let mut spec_defs = support_defs.to_vec();
+    if thermite_lower::expr_uses_fixed_array_equality(e) {
+        spec_defs.push(thermite_lower::fixed_array_equality_defs());
+    }
     let frame = ExecObligationFrame {
-        spec_defs: support_defs.to_vec(),
+        spec_defs,
         params: env
             .params
             .iter()

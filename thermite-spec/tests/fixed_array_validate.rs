@@ -129,3 +129,45 @@ fn repeat_initialization_requires_a_copy_safe_element_type() {
     )
     .is_ok());
 }
+
+#[test]
+fn array_equality_requires_matching_primitive_scalar_arrays() {
+    assert!(validate_src(
+        "fn equal(left: [u64; 4], right: [u64; 4]) -> bool\n\
+         req true\n\
+         ens result == left.array_eq(right)\n\
+         fx pure\n\
+         { left.array_eq(right) }"
+    )
+    .is_ok());
+
+    let nested = validate_src(
+        "fn bad(left: [[u64; 2]; 2], right: [[u64; 2]; 2]) -> bool\n\
+         req true ens result == left.array_eq(right) fx pure { left.array_eq(right) }",
+    )
+    .expect_err("aggregate-element equality needs an explicit verified library");
+    assert!(nested.iter().any(|error| matches!(
+        error,
+        SpecError::ArrayEqualityRequiresPrimitiveArrays { .. }
+    )));
+
+    let capacity_mismatch = validate_src(
+        "fn bad(left: [u64; 2], right: [u64; 3]) -> bool\n\
+         req true ens true fx pure { left.array_eq(right) }",
+    )
+    .expect_err("different array types cannot use the primitive equality helper");
+    assert!(capacity_mismatch.iter().any(|error| matches!(
+        error,
+        SpecError::ArrayEqualityRequiresPrimitiveArrays { .. }
+    )));
+
+    let scalar = validate_src(
+        "fn bad(left: u64, right: u64) -> bool\n\
+         req true ens true fx pure { left.array_eq(right) }",
+    )
+    .expect_err("the reserved method must not dispatch on a non-array receiver");
+    assert!(scalar.iter().any(|error| matches!(
+        error,
+        SpecError::ArrayEqualityRequiresPrimitiveArrays { .. }
+    )));
+}

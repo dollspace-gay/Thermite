@@ -159,6 +159,11 @@ fn fixed_array_contract_clauses_are_faithful() {
         "  ens result == slots.len()\n",
         "  fx pure\n",
         "{ slots.len() }\n",
+        "fn arrays_equal(left: [u64; SLOTS], right: [u64; SLOTS]) -> bool\n",
+        "  req true\n",
+        "  ens result == left.array_eq(right)\n",
+        "  fx pure\n",
+        "{ left.array_eq(right) }\n",
     );
     let path = std::env::temp_dir().join("thermite_contract_tv_fixed_array.th");
     std::fs::write(&path, source).expect("write fixed-array contract-TV fixture");
@@ -166,8 +171,8 @@ fn fixed_array_contract_clauses_are_faithful() {
     let (checked, faithful, divergent) = corpus_counts(&report);
     assert_eq!(divergent, 0, "{report}");
     assert_eq!(
-        checked, 4,
-        "both clauses of both array functions must be checked: {report}"
+        checked, 6,
+        "both clauses of all three array functions must be checked: {report}"
     );
     assert_eq!(faithful, checked, "{report}");
     assert_eq!(corpus_clause_verdict(&report, "read.req"), Some("faithful"));
@@ -181,6 +186,14 @@ fn fixed_array_contract_clauses_are_faithful() {
     );
     assert_eq!(
         corpus_clause_verdict(&report, "array_len.ens#1"),
+        Some("faithful")
+    );
+    assert_eq!(
+        corpus_clause_verdict(&report, "arrays_equal.req"),
+        Some("faithful")
+    );
+    assert_eq!(
+        corpus_clause_verdict(&report, "arrays_equal.ens#1"),
         Some("faithful")
     );
 }

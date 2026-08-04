@@ -111,6 +111,42 @@ use thermite_syntax::ast::{BinOp, Block, Clause, Expr, IndexArg, LoopKind, LoopN
 
 use crate::exec_encode::{exec_ref_value, ExecRefCtx, RefEncodeError};
 
+/// One direct field observed by named-record lifecycle TV. Array fields compare
+/// their complete finite views; every other admitted finite field uses value
+/// equality in the final-state obligation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecordFieldFrame {
+    pub name: String,
+    pub array_view: bool,
+}
+
+impl RecordFieldFrame {
+    pub fn new(name: impl Into<String>, array_view: bool) -> Self {
+        Self {
+            name: name.into(),
+            array_view,
+        }
+    }
+}
+
+/// One exclusive named-record parameter and its complete ordered direct-field
+/// frame. The field inventory comes from the independently parsed declaration,
+/// not from production lowering text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MutableRecordFrame {
+    pub name: String,
+    pub fields: Vec<RecordFieldFrame>,
+}
+
+impl MutableRecordFrame {
+    pub fn new(name: impl Into<String>, fields: Vec<RecordFieldFrame>) -> Self {
+        Self {
+            name: name.into(),
+            fields,
+        }
+    }
+}
+
 /// The body-reference-encoding context (REQ-2). Carries the slice-bound names (so a
 /// slice index in an RHS / tail encodes to the spec-view element value `xs[i as
 /// int]`, mirroring the obligation's `xs: &[u32]` binding) and the native
@@ -137,6 +173,8 @@ pub struct BodyRefCtx {
     mutable_indexed_bound: BTreeSet<String>,
     fixed_array_bound: BTreeSet<String>,
     result_is_fixed_array: bool,
+    result_is_unit: bool,
+    mutable_records: Vec<MutableRecordFrame>,
 }
 
 impl BodyRefCtx {
@@ -151,6 +189,8 @@ impl BodyRefCtx {
             mutable_indexed_bound: BTreeSet::new(),
             fixed_array_bound: BTreeSet::new(),
             result_is_fixed_array: false,
+            result_is_unit: false,
+            mutable_records: Vec::new(),
         }
     }
 
@@ -179,6 +219,18 @@ impl BodyRefCtx {
     /// compared extensionally through its finite sequence view.
     pub fn with_fixed_array_result(mut self, is_array: bool) -> Self {
         self.result_is_fixed_array = is_array;
+        self
+    }
+
+    /// Record whether a tail-less body has the explicit unit result type.
+    pub fn with_unit_result(mut self, is_unit: bool) -> Self {
+        self.result_is_unit = is_unit;
+        self
+    }
+
+    /// Add complete direct-field frames for exclusive named-record borrows.
+    pub fn with_mutable_records(mut self, records: Vec<MutableRecordFrame>) -> Self {
+        self.mutable_records = records;
         self
     }
 
@@ -277,6 +329,15 @@ pub fn body_ref_state_ensures(
     result_name: &str,
     ctx: &BodyRefCtx,
 ) -> Result<String, RefEncodeError> {
+    if !ctx.mutable_records.is_empty() {
+        if !ctx.mutable_indexed_bound.is_empty() {
+            return Err(RefEncodeError::Unsupported(
+                "mixing named-record and indexed exclusive mutations is outside the first exact lifecycle subset"
+                    .to_string(),
+            ));
+        }
+        return record_lifecycle_ensures(block, result_name, ctx);
+    }
     let mut conjuncts = Vec::new();
     // A multi-cell body is one whose tail is a tuple (the final state spans cells).
     // Each cell is encoded under the body's final env (the same threading), then
@@ -310,6 +371,272 @@ pub fn body_ref_state_ensures(
     }
     conjuncts.extend(indexed_write_ensures(block, ctx)?);
     Ok(conjuncts.join(" && "))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LifecycleCell {
+    text: String,
+    spec_int: bool,
+}
+
+impl LifecycleCell {
+    fn bounded(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            spec_int: false,
+        }
+    }
+}
+
+#[derive(Clone, Default)]
+struct LifecycleState {
+    locals: BTreeMap<String, LifecycleCell>,
+    fields: BTreeMap<String, LifecycleCell>,
+}
+
+fn record_lifecycle_ensures(
+    block: &Block,
+    result_name: &str,
+    ctx: &BodyRefCtx,
+) -> Result<String, RefEncodeError> {
+    let mut state = LifecycleState::default();
+    for record in &ctx.mutable_records {
+        for field in &record.fields {
+            let key = format!("{}.{}", record.name, field.name);
+            state.fields.insert(
+                key,
+                LifecycleCell::bounded(format!("old({}).{}", record.name, field.name)),
+            );
+        }
+    }
+    thread_lifecycle_block(block, &mut state, ctx, false)?;
+
+    let result = match &block.tail {
+        Some(tail) => encode_lifecycle_expr(tail, &state, ctx)?,
+        None if ctx.result_is_unit => LifecycleCell::bounded("()"),
+        None => {
+            return Err(RefEncodeError::Unsupported(
+                "tail-less named-record lifecycle body requires an explicit unit result type"
+                    .to_string(),
+            ));
+        }
+    };
+    let mut ensures = vec![if ctx.result_is_fixed_array {
+        format!("{result_name}@ == ({})@", result.text)
+    } else {
+        format!("{result_name} == {}", result.text)
+    }];
+    for record in &ctx.mutable_records {
+        for field in &record.fields {
+            let key = format!("{}.{}", record.name, field.name);
+            let value = state.fields.get(&key).ok_or_else(|| {
+                RefEncodeError::Unsupported(format!(
+                    "named-record lifecycle lost the modeled field `{key}`"
+                ))
+            })?;
+            if field.array_view {
+                ensures.push(format!(
+                    "final({}).{}@ == ({})@",
+                    record.name, field.name, value.text
+                ));
+            } else {
+                ensures.push(format!(
+                    "final({}).{} == {}",
+                    record.name, field.name, value.text
+                ));
+            }
+        }
+    }
+    Ok(ensures.join(" && "))
+}
+
+fn thread_lifecycle_block(
+    block: &Block,
+    state: &mut LifecycleState,
+    ctx: &BodyRefCtx,
+    branch: bool,
+) -> Result<(), RefEncodeError> {
+    for statement in &block.stmts {
+        thread_lifecycle_stmt(statement, state, ctx)?;
+    }
+    if branch && block.tail.is_some() {
+        return Err(RefEncodeError::Unsupported(
+            "a named-record lifecycle `if` statement branch may mutate state but may not carry a discarded tail value"
+                .to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn thread_lifecycle_stmt(
+    statement: &Stmt,
+    state: &mut LifecycleState,
+    ctx: &BodyRefCtx,
+) -> Result<(), RefEncodeError> {
+    match statement {
+        Stmt::Let { name, init, .. } => {
+            if state.locals.contains_key(name) {
+                return Err(RefEncodeError::Unsupported(format!(
+                    "re-shadowed lifecycle binding `{name}`"
+                )));
+            }
+            let value = encode_lifecycle_expr(init, state, ctx)?;
+            state.locals.insert(name.clone(), value);
+            Ok(())
+        }
+        Stmt::Assign { target, value } => {
+            let value = encode_lifecycle_expr(value, state, ctx)?;
+            match target {
+                Expr::Path(path) if path.len() == 1 && state.locals.contains_key(&path[0]) => {
+                    state.locals.insert(path[0].clone(), value);
+                    Ok(())
+                }
+                Expr::Field { receiver, name } => {
+                    let Expr::Path(path) = receiver.as_ref() else {
+                        return Err(RefEncodeError::Unsupported(
+                            "nested/computed named-record assignment is outside the direct lifecycle subset"
+                                .to_string(),
+                        ));
+                    };
+                    let [root] = path.as_slice() else {
+                        return Err(RefEncodeError::Unsupported(
+                            "named-record assignment root must be one parameter name".to_string(),
+                        ));
+                    };
+                    let key = format!("{root}.{name}");
+                    if !state.fields.contains_key(&key) {
+                        return Err(RefEncodeError::Unsupported(format!(
+                            "field assignment `{key}` is not in the independently declared mutable-record frame"
+                        )));
+                    }
+                    state.fields.insert(key, value);
+                    Ok(())
+                }
+                Expr::Index { .. } => Err(RefEncodeError::Unsupported(
+                    "indexed mutation cannot be mixed into a named-record lifecycle obligation"
+                        .to_string(),
+                )),
+                _ => Err(RefEncodeError::Unsupported(
+                    "named-record lifecycle assignment target is neither a framed direct field nor an in-scope scalar local"
+                        .to_string(),
+                )),
+            }
+        }
+        Stmt::If { cond, then, else_ } => {
+            let condition = encode_lifecycle_expr(cond, state, ctx)?.text;
+            let before = state.clone();
+            let mut then_state = before.clone();
+            thread_lifecycle_block(then, &mut then_state, ctx, true)?;
+            let mut else_state = before.clone();
+            if let Some(else_) = else_ {
+                thread_lifecycle_block(else_, &mut else_state, ctx, true)?;
+            }
+
+            for (key, prior) in &before.locals {
+                let left = then_state.locals.get(key).unwrap_or(prior);
+                let right = else_state.locals.get(key).unwrap_or(prior);
+                if left != prior || right != prior {
+                    state
+                        .locals
+                        .insert(key.clone(), merge_lifecycle_cells(&condition, left, right));
+                }
+            }
+            for (key, prior) in &before.fields {
+                let left = then_state.fields.get(key).unwrap_or(prior);
+                let right = else_state.fields.get(key).unwrap_or(prior);
+                if left != prior || right != prior {
+                    state
+                        .fields
+                        .insert(key.clone(), merge_lifecycle_cells(&condition, left, right));
+                }
+            }
+            Ok(())
+        }
+        Stmt::Expr(expr) => {
+            let _ = encode_lifecycle_expr(expr, state, ctx)?;
+            Ok(())
+        }
+        Stmt::Return(_) => Err(RefEncodeError::Unsupported(
+            "mid-body return is outside the single-exit named-record lifecycle subset".to_string(),
+        )),
+        Stmt::Loop(_) | Stmt::Break | Stmt::Continue => Err(RefEncodeError::Unsupported(
+            "loops and loop control over named-record state require a separate invariant lifecycle model"
+                .to_string(),
+        )),
+    }
+}
+
+fn merge_lifecycle_cells(
+    condition: &str,
+    left: &LifecycleCell,
+    right: &LifecycleCell,
+) -> LifecycleCell {
+    let (left_text, right_text, spec_int) = match (left.spec_int, right.spec_int) {
+        (true, false) => (left.text.clone(), format!("({} as int)", right.text), true),
+        (false, true) => (format!("({} as int)", left.text), right.text.clone(), true),
+        (left_int, _) => (left.text.clone(), right.text.clone(), left_int),
+    };
+    LifecycleCell {
+        text: format!("if {condition} {{ {left_text} }} else {{ {right_text} }}"),
+        spec_int,
+    }
+}
+
+fn encode_lifecycle_expr(
+    expr: &Expr,
+    state: &LifecycleState,
+    ctx: &BodyRefCtx,
+) -> Result<LifecycleCell, RefEncodeError> {
+    let exec = ctx
+        .exec_ref_ctx()
+        .with_value_bindings(
+            state
+                .locals
+                .iter()
+                .map(|(name, cell)| (name.clone(), cell.text.clone())),
+        )
+        .with_field_bindings(
+            state
+                .fields
+                .iter()
+                .map(|(name, cell)| (name.clone(), cell.text.clone())),
+        );
+    let text = exec_ref_value(expr, &exec)?;
+    let spec_int = match expr {
+        Expr::Path(path) if path.len() == 1 => {
+            state.locals.get(&path[0]).is_some_and(|cell| cell.spec_int)
+        }
+        Expr::Field { receiver, name } => {
+            if let Expr::Path(path) = receiver.as_ref() {
+                if let [root] = path.as_slice() {
+                    state
+                        .fields
+                        .get(&format!("{root}.{name}"))
+                        .is_some_and(|cell| cell.spec_int)
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        }
+        Expr::Binary {
+            op:
+                BinOp::Add
+                | BinOp::Sub
+                | BinOp::Mul
+                | BinOp::Div
+                | BinOp::Rem
+                | BinOp::Shl
+                | BinOp::Shr
+                | BinOp::BitAnd
+                | BinOp::BitOr
+                | BinOp::BitXor,
+            ..
+        } => true,
+        _ => false,
+    };
+    Ok(LifecycleCell { text, spec_int })
 }
 
 /// Independently denote direct indexed writes through exclusive slice or

@@ -242,6 +242,52 @@ fn fixed_array_read_expression_is_faithful() {
 }
 
 #[test]
+fn named_record_field_read_expression_is_faithful() {
+    if !verus_present() {
+        eprintln!("SKIP: verus not available — named-record exec-TV not discharged.");
+        return;
+    }
+    let source = r#"
+struct State { generation: u64, occupied: bool }
+fn state_new(generation: u64, occupied: bool) -> State
+  req true
+  ens result.generation == generation
+  ens result.occupied == occupied
+  fx pure
+{
+  State { generation: generation, occupied: occupied }
+}
+
+fn observe(state: &State) -> bool
+  req true ens result == state.occupied fx pure
+{
+  let observed: bool = state.occupied;
+  observed
+}
+"#;
+    let path = std::env::temp_dir().join("thermite_exec_tv_named_record.th");
+    std::fs::write(&path, source).expect("write named-record exec-TV fixture");
+    let report = run_exec_tv_json(&path, None);
+    let counts = &report["corpus"]["counts"];
+    assert_eq!(counts["checked"].as_u64(), Some(3), "{report}");
+    assert_eq!(counts["faithful"].as_u64(), Some(3), "{report}");
+    assert_eq!(counts["divergent"].as_u64(), Some(0), "{report}");
+    for label in ["state_new.tail", "observe.let#1", "observe.tail"] {
+        assert!(
+            report["corpus"]["exprs"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|expr| {
+                    expr["expr"].as_str() == Some(label)
+                        && expr["verdict"].as_str() == Some("faithful")
+                }),
+            "{label}: {report}"
+        );
+    }
+}
+
+#[test]
 fn aggregate_array_relation_expressions_are_faithful() {
     if !verus_present() {
         eprintln!("SKIP: verus not available — aggregate-array exec-TV not discharged.");

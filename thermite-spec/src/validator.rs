@@ -328,9 +328,10 @@ const BUILTIN_METHODS: &[&str] = &[
 const THERMITE_RESERVED_PREFIX: &str = "__thermite_";
 
 const GENERATED_SPEC_FNS: &[&str] = &[
-    // Verus state-view primitive for `&mut` postconditions. It is not emitted by
-    // the lowerer; admitting it here keeps mutable-slice contracts inside the
-    // closed spec-call cage while the backend resolves the built-in directly.
+    // Verus state-view primitives for `&mut` pre/postconditions. They are not
+    // emitted by the lowerer; admitting them here keeps mutable-state contracts
+    // inside the closed spec-call cage while the backend resolves the built-ins.
+    "old",
     "final",
     "parse_be",
     "parse_le",
@@ -388,6 +389,11 @@ pub enum SpecError {
     /// non-sealed/non-opaque acyclic structs are admitted. Authority-bearing,
     /// recursive, enum, reference, and heap-backed shapes fail closed.
     ArrayEqualityRequiresStructuralArrays { detail: String, span: Span },
+    /// A direct named-record field assignment does not belong to the frozen
+    /// finite lifecycle subset. The target must be `root.field`, the root must
+    /// be an exclusive named-record borrow or a mutable typed local, and the
+    /// exact record must be non-sealed with only finite plain fields.
+    InvalidNamedRecordMutation { detail: String, span: Span },
     /// An executable call to a frozen `thermite::atomic::*` boundary uses an
     /// ordering expression that is not an exact `AtomicOrdering::Variant`
     /// literal, supplies an ordering forbidden for that operation, or has an
@@ -570,6 +576,7 @@ impl SpecError {
             | SpecError::ArrayLengthMismatch { span, .. }
             | SpecError::ArrayRepeatRequiresCopy { span }
             | SpecError::ArrayEqualityRequiresStructuralArrays { span, .. }
+            | SpecError::InvalidNamedRecordMutation { span, .. }
             | SpecError::IllegalAtomicOrdering { span, .. }
             | SpecError::UnknownCombinator { span, .. }
             | SpecError::WrongArity { span, .. }
@@ -626,6 +633,10 @@ impl fmt::Display for SpecError {
             SpecError::ArrayEqualityRequiresStructuralArrays { detail, .. } => write!(
                 f,
                 "fixed-array relations require equally typed structurally comparable arrays: {detail}"
+            ),
+            SpecError::InvalidNamedRecordMutation { detail, .. } => write!(
+                f,
+                "named-record field mutation is outside the frozen exclusive lifecycle subset: {detail}"
             ),
             SpecError::IllegalAtomicOrdering {
                 operation, detail, ..
@@ -827,6 +838,32 @@ pub fn array_equality_type_is_structural(ty: &Type, admitted_structs: &BTreeSet<
     }
 }
 
+/// Compute the named-record roots whose direct fields may participate in the
+/// exact exclusive-borrow lifecycle primitive. Ordinary finite structs are the
+/// structural equality closure itself. An opaque root is additionally admitted
+/// when each of its fields belongs to that closure: its declaring module needs
+/// to implement verified state transitions, but opaque values never become
+/// ambiently comparable or valid as nested derived state. Sealed roots remain
+/// excluded because their representation is boundary-owned authority.
+pub fn structural_record_mutation_structs(program: &Program) -> BTreeSet<String> {
+    let plain = structural_array_equality_structs(program);
+    program
+        .items
+        .iter()
+        .filter_map(|item| {
+            let Item::Struct(structure) = item else {
+                return None;
+            };
+            (!structure.sealed
+                && structure
+                    .fields
+                    .iter()
+                    .all(|field| array_equality_type_is_structural(&field.ty, &plain)))
+            .then(|| structure.name.clone())
+        })
+        .collect()
+}
+
 /// Validate every contract position of a parsed program against the SpecTherm
 /// cage (REQ-3). Returns `Ok(())` if every contract expression is accepted, else
 /// `Err` with one `SpecError` per violation (accumulated, not first-stop, for
@@ -969,11 +1006,22 @@ struct Validator {
     /// all have finite structural equality. Used only by the explicit fixed-
     /// array relation built-ins; it grants no ambient equality operation.
     array_equality_structs: BTreeSet<String>,
+    /// Exact struct-name -> declared direct field names. Unlike the historical
+    /// global `struct_fields` set, named-record mutation must resolve a field on
+    /// the receiver's actual record type before code generation.
+    record_fields: HashMap<String, HashSet<String>>,
+    /// Finite non-sealed roots admitted by the direct named-record lifecycle
+    /// primitive. Opaque roots may join; opaque representation ownership across
+    /// package modules is enforced by Forge's package resolver.
+    record_mutation_structs: BTreeSet<String>,
     /// Types of the current item's named parameters, result, fields, and typed
     /// locals. The dedicated fixed-array equality check uses this small lexical
     /// environment because the general v0.1 validator is otherwise intentionally
     /// not a full type checker.
     array_equality_types: HashMap<String, Type>,
+    /// Source bindings that may be assigned through. Parameters join only when
+    /// they are exclusive references; typed locals join only for `let mut`.
+    mutable_bindings: HashSet<String>,
     depth: usize,
     errors: Vec<SpecError>,
     /// REQ-6 flat-closure-fragment mode. Set once on entry to a combinator's
@@ -1048,6 +1096,7 @@ impl Validator {
         let mut enums: HashMap<String, Vec<String>> = HashMap::new();
         let mut variant_to_enum: HashMap<String, String> = HashMap::new();
         let mut struct_fields: HashSet<String> = HashSet::new();
+        let mut record_fields: HashMap<String, HashSet<String>> = HashMap::new();
         // REQ-8 (`.design/basis/06-provenance-and-sinks.md`): the `#[sealed]`
         // clean/capability struct names — the abstraction barrier the
         // `Expr::StructLit` walk keys off to REJECT a direct mint. Collected in
@@ -1119,8 +1168,10 @@ impl Validator {
                     enums.insert(e.name.clone(), variant_names);
                 }
                 Item::Struct(s) => {
+                    let exact_fields = record_fields.entry(s.name.clone()).or_default();
                     for field in &s.fields {
                         struct_fields.insert(field.name.clone());
+                        exact_fields.insert(field.name.clone());
                     }
                     // REQ-8: a `#[sealed]` struct joins the abstraction-barrier
                     // set — its name will reject any `StructLit` mint.
@@ -1176,7 +1227,10 @@ impl Validator {
             struct_fields,
             sealed_structs,
             array_equality_structs: structural_array_equality_structs(program),
+            record_fields,
+            record_mutation_structs: structural_record_mutation_structs(program),
             array_equality_types: HashMap::new(),
+            mutable_bindings: HashSet::new(),
             depth: 0,
             // REQ-2: lowercase-variant casing diagnostics from the pre-pass seed
             // the error list, so a lowercase-variant `enum` is rejected at the
@@ -1215,12 +1269,16 @@ impl Validator {
                 }
             }
             self.array_equality_types.clear();
+            self.mutable_bindings.clear();
             match item {
                 Item::Const(_) => {}
                 Item::Fn(f) => {
                     for param in &f.params {
                         self.array_equality_types
                             .insert(param.name.clone(), param.ty.clone());
+                        if matches!(&param.ty, Type::Ref { mutable: true, .. }) {
+                            self.mutable_bindings.insert(param.name.clone());
+                        }
                     }
                     self.array_equality_types
                         .insert("result".to_string(), f.ret.clone());
@@ -1274,6 +1332,9 @@ impl Validator {
                     for param in &s.params {
                         self.array_equality_types
                             .insert(param.name.clone(), param.ty.clone());
+                        if matches!(&param.ty, Type::Ref { mutable: true, .. }) {
+                            self.mutable_bindings.insert(param.name.clone());
+                        }
                     }
                     self.array_equality_types
                         .insert("result".to_string(), s.ret.clone());
@@ -1521,6 +1582,92 @@ impl Validator {
         }
     }
 
+    /// Validate the frozen direct named-record assignment target. This is
+    /// deliberately narrower than Rust's lvalue grammar: independent lifecycle
+    /// TV models one exact direct field cell, so nested projections and unknown
+    /// receiver types fail before lowering instead of becoming backend behavior.
+    fn check_named_record_assignment(&mut self, target: &Expr, span: Span) {
+        let Expr::Field { receiver, name } = target else {
+            return;
+        };
+        let Expr::Path(path) = receiver.as_ref() else {
+            self.errors.push(SpecError::InvalidNamedRecordMutation {
+                detail: "the target must be exactly `root.field`; nested field, index, dereference, and computed receivers are not in the direct lifecycle subset"
+                    .to_string(),
+                span,
+            });
+            return;
+        };
+        let [root] = path.as_slice() else {
+            self.errors.push(SpecError::InvalidNamedRecordMutation {
+                detail: "the record root must be one local or parameter name".to_string(),
+                span,
+            });
+            return;
+        };
+        let Some(root_ty) = self.array_equality_types.get(root) else {
+            self.errors.push(SpecError::InvalidNamedRecordMutation {
+                detail: format!(
+                    "record root `{root}` has no declared source type; use a typed `let mut` or an `&mut Name` parameter"
+                ),
+                span,
+            });
+            return;
+        };
+        let record_name = match root_ty {
+            Type::Named(record) => record,
+            Type::Ref { inner, .. } => match inner.as_ref() {
+                Type::Named(record) => record,
+                _ => {
+                    self.errors.push(SpecError::InvalidNamedRecordMutation {
+                        detail: format!(
+                            "record root `{root}` is not a named record value or borrow"
+                        ),
+                        span,
+                    });
+                    return;
+                }
+            },
+            _ => {
+                self.errors.push(SpecError::InvalidNamedRecordMutation {
+                    detail: format!("record root `{root}` is not a named record value or borrow"),
+                    span,
+                });
+                return;
+            }
+        };
+        if !self.mutable_bindings.contains(root) {
+            self.errors.push(SpecError::InvalidNamedRecordMutation {
+                detail: format!(
+                    "record root `{root}` is not writable; use an exclusive `&mut {record_name}` parameter or a typed `let mut`"
+                ),
+                span,
+            });
+            return;
+        }
+        if !self.record_mutation_structs.contains(record_name) {
+            self.errors.push(SpecError::InvalidNamedRecordMutation {
+                detail: format!(
+                    "record `{record_name}` is sealed, recursive, or contains a reference, enum, opaque nested record, or heap-backed field"
+                ),
+                span,
+            });
+            return;
+        }
+        if !self
+            .record_fields
+            .get(record_name)
+            .is_some_and(|fields| fields.contains(name))
+        {
+            self.errors.push(SpecError::InvalidNamedRecordMutation {
+                detail: format!(
+                    "field `{name}` is not declared by the receiver's exact record type `{record_name}`"
+                ),
+                span,
+            });
+        }
+    }
+
     fn check_u64_bit_method_call(&mut self, name: &str, args: &[Expr], span: Span) {
         let expected = if matches!(name, "bit_test" | "bit_set" | "bit_clear") {
             Some(1)
@@ -1582,12 +1729,16 @@ impl Validator {
     /// shape walk, but it cage-checks only the loop contract clauses it
     /// discovers.
     fn scan_block_for_loops(&mut self, block: &Block, span: Span) {
+        let outer_types = self.array_equality_types.clone();
+        let outer_mutable = self.mutable_bindings.clone();
         for stmt in &block.stmts {
             self.scan_stmt_for_loops(stmt, span);
         }
         if let Some(tail) = &block.tail {
             self.scan_expr_for_loops(tail, span);
         }
+        self.array_equality_types = outer_types;
+        self.mutable_bindings = outer_mutable;
     }
 
     /// Structural traversal of a `fn`-body statement: cage the `invs`/`dec` of
@@ -1607,15 +1758,24 @@ impl Validator {
                 // structurally for further nested loops, do not cage it.
                 self.scan_block_for_loops(&loop_node.body, loop_node.span);
             }
-            Stmt::Let { name, ty, init, .. } => {
+            Stmt::Let {
+                mutable,
+                name,
+                ty,
+                init,
+            } => {
                 if let Some(ty) = ty {
                     self.validate_type(ty, span);
                     self.validate_array_initializer(ty, init, span);
                     self.array_equality_types.insert(name.clone(), ty.clone());
+                    if *mutable {
+                        self.mutable_bindings.insert(name.clone());
+                    }
                 }
                 self.scan_expr_for_loops(init, span);
             }
             Stmt::Assign { target, value } => {
+                self.check_named_record_assignment(target, span);
                 self.scan_expr_for_loops(target, span);
                 self.scan_expr_for_loops(value, span);
             }
@@ -1934,6 +2094,8 @@ impl Validator {
     /// tail expression is a contract-position expression and is cage-checked.
     /// Any `loop`/`while` it contains carries its own `invs`/`dec` clauses.
     fn walk_block(&mut self, block: &Block, span: Span) {
+        let outer_types = self.array_equality_types.clone();
+        let outer_mutable = self.mutable_bindings.clone();
         self.descend(span, |s| {
             for stmt in &block.stmts {
                 s.walk_stmt(stmt, span);
@@ -1942,6 +2104,8 @@ impl Validator {
                 s.walk_expr(tail, span);
             }
         });
+        self.array_equality_types = outer_types;
+        self.mutable_bindings = outer_mutable;
     }
 
     /// Walk a statement, descending into nested loops (which carry their own
@@ -1955,15 +2119,24 @@ impl Validator {
                 self.walk_clause(&loop_node.dec);
                 self.walk_block(&loop_node.body, loop_node.span);
             }
-            Stmt::Let { name, ty, init, .. } => {
+            Stmt::Let {
+                mutable,
+                name,
+                ty,
+                init,
+            } => {
                 if let Some(ty) = ty {
                     self.validate_type(ty, span);
                     self.validate_array_initializer(ty, init, span);
                     self.array_equality_types.insert(name.clone(), ty.clone());
+                    if *mutable {
+                        self.mutable_bindings.insert(name.clone());
+                    }
                 }
                 self.walk_expr(init, span);
             }
             Stmt::Assign { target, value } => {
+                self.check_named_record_assignment(target, span);
                 self.walk_expr(target, span);
                 self.walk_expr(value, span);
             }

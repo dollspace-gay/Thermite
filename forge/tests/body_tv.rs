@@ -366,6 +366,93 @@ fn faithful_fixed_array_update_is_faithful() {
 }
 
 #[test]
+fn named_record_lifecycle_bodies_are_faithful() {
+    if !verus_present() {
+        eprintln!("SKIP: verus not available — named-record lifecycle body-TV not discharged.");
+        return;
+    }
+    let src = r#"
+#[opaque] struct State { generation: u64, occupied: bool }
+
+fn state_new(generation: u64, occupied: bool) -> State
+  req true
+  ens result.generation == generation
+  ens result.occupied == occupied
+  fx pure
+{
+  State { generation: generation, occupied: occupied }
+}
+
+fn observe(state: &State) -> bool
+  req true
+  ens result == state.occupied
+  fx pure
+{
+  state.occupied
+}
+
+fn advance(state: &mut State, next: u64) -> bool
+  req next > old(state).generation
+  ens result == old(state).occupied
+  ens final(state).generation == next
+  ens final(state).occupied == old(state).occupied
+  fx pure
+{
+  let previous: bool = state.occupied;
+  state.generation = next;
+  previous
+}
+
+fn set_generation(state: &mut State, next: u64) -> ()
+  req true
+  ens final(state).generation == next
+  ens final(state).occupied == old(state).occupied
+  fx pure
+{
+  state.generation = next;
+}
+
+fn choose_generation(state: &mut State, choose_next: bool, next: u64) -> u64
+  req true
+  ens true
+  fx pure
+{
+  if choose_next {
+    state.generation = next;
+  } else {
+    state.generation = 0;
+  }
+  0
+}
+"#;
+    let file = write_th("named_record_lifecycle", src);
+    let report = run_body_tv_json(&file);
+    assert_eq!(report["counts"]["checked"].as_u64(), Some(5), "{report}");
+    assert_eq!(report["counts"]["faithful"].as_u64(), Some(5), "{report}");
+    assert_eq!(report["counts"]["divergent"].as_u64(), Some(0), "{report}");
+    assert_eq!(
+        report["counts"]["unverifiable"].as_u64(),
+        Some(0),
+        "{report}"
+    );
+    assert_eq!(report["counts"]["skipped"].as_u64(), Some(0), "{report}");
+    for name in [
+        "state_new",
+        "observe",
+        "advance",
+        "set_generation",
+        "choose_generation",
+    ] {
+        assert!(
+            report["bodies"].as_array().unwrap().iter().any(|body| {
+                body["body"].as_str() == Some(name) && body["verdict"].as_str() == Some("faithful")
+            }),
+            "{name}: {report}"
+        );
+    }
+}
+
+#[test]
 fn aggregate_array_relations_are_faithful() {
     if !verus_present() {
         eprintln!("SKIP: verus not available — aggregate-array body-TV not discharged.");

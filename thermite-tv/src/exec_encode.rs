@@ -47,7 +47,7 @@
 //! | REQ-TV-EXEC-REF-ENCODER | shipped | `thermite-tv/src/exec_encode.rs` | Exec-TV independent reference encoder |  |
 //! <!-- /generated:reqs -->
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Write as _};
 
 use thermite_syntax::ast::{ArrayLen, BinOp, Expr, IndexArg, PrimType, Type, UnaryOp};
@@ -101,6 +101,11 @@ pub struct ExecRefCtx {
     /// Names bound as native fixed arrays. Their executable index is compared
     /// through the array's finite `@` view in an `ensures` predicate.
     fixed_array_bound: BTreeSet<String>,
+    /// Closed-form scalar bindings threaded by aggregate lifecycle TV. A path
+    /// in this map denotes the value captured at that source program point.
+    value_bindings: BTreeMap<String, String>,
+    /// Closed-form direct record-field cells, keyed as `root.field`.
+    field_bindings: BTreeMap<String, String>,
 }
 
 impl ExecRefCtx {
@@ -115,6 +120,8 @@ impl ExecRefCtx {
         ExecRefCtx {
             slice_bound: names.into_iter().map(Into::into).collect(),
             fixed_array_bound: BTreeSet::new(),
+            value_bindings: BTreeMap::new(),
+            field_bindings: BTreeMap::new(),
         }
     }
 
@@ -128,12 +135,50 @@ impl ExecRefCtx {
         self
     }
 
+    /// Add exact closed-form local bindings for lifecycle state threading.
+    pub fn with_value_bindings<I, K, V>(mut self, bindings: I) -> Self
+    where
+        I: IntoIterator<Item = (K, V)>,
+        K: Into<String>,
+        V: Into<String>,
+    {
+        self.value_bindings = bindings
+            .into_iter()
+            .map(|(name, value)| (name.into(), value.into()))
+            .collect();
+        self
+    }
+
+    /// Add exact closed-form direct named-record field cells.
+    pub fn with_field_bindings<I, K, V>(mut self, bindings: I) -> Self
+    where
+        I: IntoIterator<Item = (K, V)>,
+        K: Into<String>,
+        V: Into<String>,
+    {
+        self.field_bindings = bindings
+            .into_iter()
+            .map(|(name, value)| (name.into(), value.into()))
+            .collect();
+        self
+    }
+
     fn is_slice_bound(&self, name: &str) -> bool {
         self.slice_bound.contains(name)
     }
 
     fn is_fixed_array_bound(&self, name: &str) -> bool {
         self.fixed_array_bound.contains(name)
+    }
+
+    fn value_binding(&self, name: &str) -> Option<&str> {
+        self.value_bindings.get(name).map(String::as_str)
+    }
+
+    fn field_binding(&self, root: &str, field: &str) -> Option<&str> {
+        self.field_bindings
+            .get(&format!("{root}.{field}"))
+            .map(String::as_str)
     }
 }
 
@@ -178,7 +223,14 @@ fn encode(expr: &Expr, ctx: &ExecRefCtx) -> Result<String, RefEncodeError> {
             let value = encode(value, ctx)?;
             Ok(format!("[{value}; {}]", encode_array_len(len)))
         }
-        Expr::Path(segments) => encode_path(segments),
+        Expr::Path(segments) => {
+            if let [name] = segments.as_slice() {
+                if let Some(value) = ctx.value_binding(name) {
+                    return Ok(value.to_string());
+                }
+            }
+            encode_path(segments)
+        }
         Expr::Binary { op, lhs, rhs } => encode_binary(*op, lhs, rhs, ctx),
         Expr::Unary { op, expr } => encode_unary(*op, expr, ctx),
         Expr::Call { callee, args } => encode_call(callee, args, ctx),
@@ -187,6 +239,29 @@ fn encode(expr: &Expr, ctx: &ExecRefCtx) -> Result<String, RefEncodeError> {
             name,
             args,
         } => encode_method_call(receiver, name, args, ctx),
+        Expr::Field { receiver, name } => {
+            if let Expr::Path(path) = receiver.as_ref() {
+                if let [root] = path.as_slice() {
+                    if let Some(value) = ctx.field_binding(root, name) {
+                        return Ok(value.to_string());
+                    }
+                }
+            }
+            let receiver = encode(receiver, ctx)?;
+            Ok(format!("{receiver}.{name}"))
+        }
+        Expr::StructLit { path, fields } => {
+            if path.is_empty() {
+                return Err(RefEncodeError::Unsupported(
+                    "struct literal with an empty type path".to_string(),
+                ));
+            }
+            let fields = fields
+                .iter()
+                .map(|(name, value)| Ok(format!("{name}: {}", encode(value, ctx)?)))
+                .collect::<Result<Vec<_>, RefEncodeError>>()?;
+            Ok(format!("({} {{ {} }})", path.join("::"), fields.join(", ")))
+        }
         Expr::Index { base, index } => encode_index(base, index, ctx),
         Expr::Cast { expr, ty } => encode_cast(expr, ty, ctx),
         other => Err(RefEncodeError::Unsupported(node_kind(other))),

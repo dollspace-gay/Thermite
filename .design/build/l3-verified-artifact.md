@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: dd35185bf20a6050b25f08fe79289bd7f1651b19f3b3f1bcf1eb0aa4816748ed (re-pinned 2026-08-04 after finite plain-value ABI layout binding and aggregate-array proof support)
+audited-content-sha256: 03c86c3063e6215be512d9c59285551dd67ee7f2b36b9c7e23e8ffd8ac833a2f (re-pinned 2026-08-04 after exact named-record ABI, proof, receipt, and replay support)
 decision: Option A — compile the canonical Verus executable body that was verified
 issue: github:dollspace-gay/Thermite#101, github:dollspace-gay/Thermite#103, github:dollspace-gay/Thermite#104, github:dollspace-gay/Thermite#108, github:dollspace-gay/Thermite#111
 governs:
@@ -411,14 +411,16 @@ rejected.
 
 The Rust export subset admits finite plain values: primitives, unit, tuples,
 fixed arrays, and ordinary acyclic structs recursively composed from those
-forms. Shared or exclusive borrows remain limited to primitives, slices, and
-fixed arrays with admitted finite elements; general named-aggregate borrows are
-not yet represented. Sealed, opaque, recursive, enum, reference-bearing, and
-heap-backed records fail closed. Returns remain owned finite plain values:
-borrowed returns are rejected because the public lifetime relation is not yet
-represented in the receipt. Each parameter records `by_value`,
+forms. It also admits a direct finite non-sealed named-record root by value or
+shared/exclusive borrow. An opaque direct root may be returned, observed, or
+mutated through generated public functions while its fields remain crate-
+private; opaque records still fail closed when nested inside ambient arrays or
+derived structural relations. Sealed, recursive, enum, reference-bearing, and
+heap-backed records fail closed. Borrowed returns remain rejected because the
+public lifetime relation is not yet represented in the receipt. Each parameter records `by_value`,
 `shared_borrow`, or `exclusive_borrow`; those ownership modes participate in
-the ABI fingerprint.
+the ABI fingerprint, which also binds record field order/types and the
+opaque/sealed markers.
 
 ### Preconditions at an unverified caller boundary
 

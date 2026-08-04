@@ -1,0 +1,53 @@
+#[opaque] struct State {
+  generation: u64,
+  occupied: bool,
+}
+
+spec fn named_record_generation_spec(state: State) -> u64
+  dec 0
+{
+  state.generation
+}
+
+spec fn named_record_occupied_spec(state: State) -> bool
+  dec 0
+{
+  state.occupied
+}
+
+fn named_record_new(generation: u64, occupied: bool) -> State
+  req true
+  ens named_record_generation_spec(result) == generation
+  ens named_record_occupied_spec(result) == occupied
+  fx pure
+{
+  State { generation: generation, occupied: occupied }
+}
+
+fn named_record_generation(state: &State) -> u64
+  req true
+  ens result == named_record_generation_spec(*state)
+  fx pure
+{
+  state.generation
+}
+
+fn named_record_occupied(state: &State) -> bool
+  req true
+  ens result == named_record_occupied_spec(*state)
+  fx pure
+{
+  state.occupied
+}
+
+fn named_record_advance(state: &mut State, next: u64) -> bool
+  req true
+  ens result == named_record_occupied_spec(*old(state))
+  ens named_record_generation_spec(*final(state)) == next
+  ens named_record_occupied_spec(*final(state)) == named_record_occupied_spec(*old(state))
+  fx pure
+{
+  let previous: bool = state.occupied;
+  state.generation = next;
+  previous
+}

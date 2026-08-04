@@ -208,8 +208,8 @@ fn tv_fn(
     let nat_fns = nat_fn_names(f);
 
     // Build the base frame from the params (+ `result` when it is framable). A
-    // param of an unframed type (Map/Option/Result/struct/enum) makes the whole
-    // signature unframable → every clause is `Skipped`; an unframable return type
+    // param of an unsupported generic/box/tuple shape makes the whole signature
+    // unframable → every clause is `Skipped`; an unframable return type
     // only drops the `result` param (a `req`/`inv`/`dec` clause that does not
     // mention `result` still frames + checks — e.g. binary_search's
     // `sorted(haystack)` req + its `forall_below`/`forall_from` loop invariants).
@@ -217,9 +217,10 @@ fn tv_fn(
         report.clauses.push(ClauseResult {
             label: format!("{}.signature", f.name),
             verdict: ClauseVerdict::Skipped {
-                reason: "a PARAMETER type is outside the framed sublanguage \
-                         (Map/Option/Result/struct/enum) — contract-TV frames \
-                         scalar/slice/String clauses; richer types are body-TV scope (#139 step 2)"
+                reason: "a PARAMETER type is outside the framed contract sublanguage \
+                         (the frame covers scalars, storage, String/Map/Option/Result, \
+                         fixed arrays, and named records/enums, but not every \
+                         generic/box/tuple shape)"
                     .to_string(),
             },
         });
@@ -280,7 +281,9 @@ fn tv_fn(
                 | SpecType::Array(_, _)
                 | SpecType::ArrayRef(_, _, _)
                 | SpecType::Opt(_)
-                | SpecType::Res(_, _) => {}
+                | SpecType::Res(_, _)
+                | SpecType::Named(_)
+                | SpecType::NamedRef(_, _) => {}
             }
             loop_frame
                 .params
@@ -817,8 +820,8 @@ fn capture_block(lines: &[&str], start: usize) -> (String, usize) {
 /// Build the base obligation frame from a fn signature (REQ-5): one [`ParamDecl`]
 /// per param (with its Verus-spec type), `result` when the return is non-unit, the
 /// `Seq`-bound + `nat`-coerced sets, and the spec-fn/combinator preamble. Returns
-/// `None` if any param/return is outside the framed sublanguage (Map/Option/Result/
-/// struct/enum) — the clause is then reported `Skipped`.
+/// `None` if any parameter is outside the framed sublanguage; an unframed return
+/// simply omits `result`, so clauses that do not reference it can still run.
 fn signature_frame(
     f: &FnItem,
     preamble: &[String],
@@ -872,7 +875,10 @@ fn signature_frame(
             }
             // An `Option`/`Result` param is bound as the native Verus type (#150
             // gap #3); no invariant weave (the enum carries its own discriminant).
-            SpecType::Opt(_) | SpecType::Res(_, _) => {}
+            SpecType::Opt(_)
+            | SpecType::Res(_, _)
+            | SpecType::Named(_)
+            | SpecType::NamedRef(_, _) => {}
         }
         params.push(ParamDecl::new(
             p.name.clone(),
@@ -885,7 +891,7 @@ fn signature_frame(
     // this iteration covers): an `ens match result { … }` (binary_search), an `ens
     // result is None` (map_kv `lookup_absent`), and an `ens result.contains_key(k)`
     // (map_kv `build_one`) now bind `result` and discharge, rather than dropping it
-    // (Skipped). A struct/enum return still drops `result` (body-TV scope).
+    // (Skipped). Named record/enum returns are now native framed values.
     if !matches!(f.ret, Type::Unit) {
         if let Some(ret_ty) = spec_type_of(&f.ret) {
             match &ret_ty {
@@ -908,7 +914,10 @@ fn signature_frame(
                     map_params.push("result".to_string());
                     reqs.push("result.well_formed()".to_string());
                 }
-                SpecType::Opt(_) | SpecType::Res(_, _) => {}
+                SpecType::Opt(_)
+                | SpecType::Res(_, _)
+                | SpecType::Named(_)
+                | SpecType::NamedRef(_, _) => {}
             }
             params.push(ParamDecl::new("result", ret_ty.verus_param_spelling()));
         }
@@ -963,8 +972,8 @@ fn fixed_array_ref_param_names(frame: &ObligationFrame) -> Vec<String> {
 
 /// The spec-context type of a framed param/return. A `&[T]`/`Vec<T>`/`String`
 /// becomes a `Seq` in spec position (the slice→`@` model); a bounded prim becomes
-/// `BoundedInt`. Richer types (Map/Option/Result/struct/enum) are not framed (this
-/// is contract-TV's scalar/slice/String scope).
+/// `BoundedInt`; maps/options/results and named records/enums retain their native
+/// modeled types.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum SpecType {
     /// A `Seq<elem>` (a `&[elem]` slice or a `Vec<elem>` → `Seq<elem>`).
@@ -995,6 +1004,12 @@ enum SpecType {
     /// A shared or exclusive reference to a native fixed array. Named spec calls
     /// preserve this reference instead of coercing it to a sequence view.
     ArrayRef(String, String, bool),
+    /// A user-declared record/enum at its native Verus nominal type.
+    Named(String),
+    /// A shared or exclusive borrow of a user-declared nominal type. Preserving
+    /// the borrow keeps direct production field clauses well-typed; state-view
+    /// snapshots are separately bound as owned named values.
+    NamedRef(String, bool),
     /// A `Map<K, V>` bound as the `TMap` wrapper (#150 gap #3). The string is the
     /// Verus wrapper spelling (`TMapU64U64`). Production weaves `well_formed()` for
     /// a `Map` param/result, so the obligation threads it as a `requires`; the
@@ -1027,6 +1042,14 @@ impl SpecType {
                     format!("&mut [{elem}; {len}]")
                 } else {
                     format!("&[{elem}; {len}]")
+                }
+            }
+            SpecType::Named(name) => name.clone(),
+            SpecType::NamedRef(name, mutable) => {
+                if *mutable {
+                    format!("&mut {name}")
+                } else {
+                    format!("&{name}")
                 }
             }
             // The `Map` wrapper spelling (`TMapU64U64`); the inner `(K, V)` pair is
@@ -1072,6 +1095,18 @@ impl SpecType {
             other => other.verus_spelling(),
         }
     }
+
+    /// `old(&mut T)` / `final(&mut T)` are shared snapshot references. Contract
+    /// TV reifies them as arbitrary `&T` bindings so both implicit field
+    /// projection (`final(x).field`) and an explicit snapshot dereference
+    /// (`*final(x)`) retain their exact Verus types while the two states vary
+    /// independently in the pure equivalence obligation.
+    fn state_snapshot_spelling(&self) -> String {
+        match self {
+            SpecType::NamedRef(name, _) => format!("&{name}"),
+            other => other.verus_spelling(),
+        }
+    }
 }
 
 /// Map a Thermite `Type` to its [`SpecType`] for framing, or `None` if it is
@@ -1093,6 +1128,7 @@ fn spec_type_of(ty: &Type) -> Option<SpecType> {
         )),
         Type::Ref { mutable, inner } => match spec_type_of(inner)? {
             SpecType::Array(elem, len) => Some(SpecType::ArrayRef(elem, len, *mutable)),
+            SpecType::Named(name) => Some(SpecType::NamedRef(name, *mutable)),
             other => Some(other),
         },
         Type::Slice(inner) => Some(SpecType::Seq(elem_spelling(inner)?)),
@@ -1117,6 +1153,7 @@ fn spec_type_of(ty: &Type) -> Option<SpecType> {
             verus_type_spelling(k)?,
             verus_type_spelling(v)?,
         )),
+        Type::Named(name) => Some(SpecType::Named(name.clone())),
         _ => None,
     }
 }
@@ -1243,7 +1280,7 @@ fn collect_state_views(expr: &Expr, f: &FnItem, out: &mut Vec<StateSnapshotParam
                                         binding_name,
                                         matches!(spec_ty, SpecType::Seq(_)),
                                     ),
-                                    type_str: spec_ty.verus_spelling(),
+                                    type_str: spec_ty.state_snapshot_spelling(),
                                     fixed_array: matches!(
                                         spec_ty,
                                         SpecType::Array(_, _) | SpecType::ArrayRef(_, _, _)

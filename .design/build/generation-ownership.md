@@ -115,12 +115,14 @@ The package also has a strict freestanding build/replay surface rooted at
 `generation_rights_narrow`. It binds the complete package source closure and
 requires every recorded translation-validation row to be faithful.
 
-The complete lifecycle is not yet claimed as a strict receipt export. Current
-strict body TV cannot independently frame named aggregate parameters, ADT
-matches, and struct results in a callee closure. A lifecycle composition is
-therefore rejected as `skipped`, rather than silently promoted from the
-per-item L3 proof. Closing that gap requires an independent named-aggregate
-body denotation and exact ADT state framing.
+The complete generation-ledger lifecycle is not yet claimed as a strict receipt
+export. Strict body TV now independently frames direct one-level reads/writes
+through an exclusive finite named-record borrow, including opaque constructor,
+observer, and transition exports. This package additionally consumes and returns
+large aggregate values through nested ADT matches and callee chains. Those
+aggregate-result/match/call-effect forms are still rejected as `skipped`, rather
+than silently promoted from the per-item L3 proof. Closing that narrower gap
+requires exact ADT result state and mutable callee-effect composition.
 
 Likewise, the frozen authority mint is only a declaration in this package. A
 consumer must bind it to an exact implementation and direct refinement. The
@@ -132,8 +134,9 @@ fits that assurance class; this package does not claim a machine operation.
 This increment strengthens REQ-KPRIM-4 but does not complete it. The remaining
 work is explicit:
 
-1. extend independent body TV to named structs/enums, field projections, ADT
-   matches, and aggregate results, then strictly build/replay the full lifecycle;
+1. extend the shipped direct named-record lifecycle TV to aggregate struct/enum
+   results, ADT matches, mutable local records, and callee effects, then strictly
+   build/replay the full generation lifecycle;
 2. directly refine the authority-mint implementation supplied by a synthetic
    consumer platform;
 3. add a complete affine/linear rule if consumers require uniqueness beyond

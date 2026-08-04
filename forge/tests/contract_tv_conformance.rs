@@ -212,6 +212,50 @@ fn fixed_array_contract_clauses_are_faithful() {
 }
 
 #[test]
+fn named_record_state_snapshots_are_faithful() {
+    if !verus_present() {
+        eprintln!("SKIP: verus not available — named-record contract-TV not run.");
+        return;
+    }
+    let source = r#"
+struct State { generation: u64, occupied: bool }
+fn advance(state: &mut State, next: u64) -> bool
+  req next > old(state).generation
+  ens result == old(state).occupied
+  ens final(state).generation == next
+  ens final(state).occupied == old(state).occupied
+  fx pure
+{
+  let previous: bool = state.occupied;
+  state.generation = next;
+  previous
+}
+"#;
+    let path = std::env::temp_dir().join("thermite_contract_tv_named_record.th");
+    std::fs::write(&path, source).expect("write named-record contract-TV fixture");
+    let report = run_tv_json(&path, None);
+    let (checked, faithful, divergent) = corpus_counts(&report);
+    assert_eq!(divergent, 0, "{report}");
+    assert_eq!(
+        checked, 4,
+        "req and all three ensures must be checked: {report}"
+    );
+    assert_eq!(faithful, checked, "{report}");
+    for clause in [
+        "advance.req",
+        "advance.ens#1",
+        "advance.ens#2",
+        "advance.ens#3",
+    ] {
+        assert_eq!(
+            corpus_clause_verdict(&report, clause),
+            Some("faithful"),
+            "{clause}: {report}"
+        );
+    }
+}
+
+#[test]
 fn aggregate_array_relation_contracts_are_faithful() {
     if !verus_present() {
         eprintln!("SKIP: verus not available — aggregate-array contract-TV not run.");

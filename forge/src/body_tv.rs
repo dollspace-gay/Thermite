@@ -78,7 +78,7 @@ use thermite_tv::obligation::{
     loop_preservation_obligation, BodyObligationFrame, BodyParamDecl, LoopObligationFrame,
     LoopParamDecl,
 };
-use thermite_tv::{loop_ref_obligations, BodyRefCtx};
+use thermite_tv::{loop_ref_obligations, BodyRefCtx, MutableRecordFrame, RecordFieldFrame};
 
 use crate::check::{unique_scratch_dir, ScratchDir, DEFAULT_RLIMIT, DEFAULT_SOLVER_SEED};
 use crate::cli::ForgeError;
@@ -354,6 +354,12 @@ pub(crate) fn body_tv_support(
                 dep.name
             ));
         };
+        if !mutable_record_frames(program, dep)?.is_empty() {
+            return Err(format!(
+                "body-TV dependency `{}` mutates an exclusive named record; call-effect lifecycle composition is not part of the direct-body increment",
+                dep.name
+            ));
+        }
         let reference = thermite_tv::body_ref_state(
             body,
             &BodyRefCtx::with_slice_bound(slices)
@@ -416,7 +422,7 @@ fn straight_line_body_tv(
     let label = f.name.clone();
 
     // The result type — the body's final-state projection type. A return type outside
-    // the exec frame sublanguage (Option/Map/struct/…) is a non-derivable frame →
+    // the exec frame sublanguage (for example an Option/Map/heap wrapper) is a non-derivable frame →
     // Skip (never a guessed projection).
     let Some((ret_ty, _)) = exec_type_spelling(&f.ret) else {
         report.results.push(BodyResult {
@@ -424,7 +430,7 @@ fn straight_line_body_tv(
             verdict: BodyVerdict::Skipped {
                 reason: format!(
                     "the fn return type is outside the exec frame sublanguage (not a \
-                     bounded u8/u16/u32/u64/usize/bool) — non-derivable result-state \
+                     bounded scalar, fixed aggregate, or named value) — non-derivable result-state \
                      projection type: {:?}",
                     f.ret
                 ),
@@ -434,7 +440,7 @@ fn straight_line_body_tv(
     };
 
     // The signature param frame: each param at its exec value type. A param of a type
-    // the exec frame cannot spell (Map/Option/struct/String/…) makes the frame
+    // the exec frame cannot spell (Map/Option/String/heap wrappers) makes the frame
     // non-derivable → Skip (never a guessed binding).
     let mut params: Vec<BodyParamDecl> = Vec::new();
     let mut slice_params: Vec<String> = Vec::new();
@@ -460,7 +466,7 @@ fn straight_line_body_tv(
                     verdict: BodyVerdict::Skipped {
                         reason: format!(
                             "the param `{}` has a type outside the exec frame sublanguage \
-                             (Map/Option/struct/String/…) — non-derivable body frame: {:?}",
+                             (Map/Option/String/heap wrappers) — non-derivable body frame: {:?}",
                             p.name, p.ty
                         ),
                     },
@@ -536,6 +542,16 @@ fn straight_line_body_tv(
     if thermite_lower::block_uses_u64_bit_methods(body) {
         spec_defs.push(thermite_lower::u64_bit_defs());
     }
+    let mutable_records = match mutable_record_frames(program, f) {
+        Ok(records) => records,
+        Err(reason) => {
+            report.results.push(BodyResult {
+                label,
+                verdict: BodyVerdict::Skipped { reason },
+            });
+            return;
+        }
+    };
     let frame = BodyObligationFrame {
         spec_defs,
         params,
@@ -545,6 +561,8 @@ fn straight_line_body_tv(
         mutable_indexed_params,
         fixed_array_params,
         result_is_fixed_array: matches!(f.ret, Type::Array { .. }),
+        result_is_unit: matches!(f.ret, Type::Unit),
+        mutable_records,
     };
 
     // Build the body state-refinement obligation. The reference state-denotation
@@ -690,7 +708,7 @@ fn build_loop_frame(
         let (ty_str, is_slice) = exec_type_spelling(&p.ty).ok_or_else(|| {
             format!(
                 "the param `{}` has a type outside the exec frame sublanguage \
-                 (Map/Option/struct/String/…) — non-derivable loop frame: {:?}",
+                 (Map/Option/String/heap wrappers) — non-derivable loop frame: {:?}",
                 p.name, p.ty
             )
         })?;
@@ -862,7 +880,8 @@ fn collect_text_idents(text: &str) -> Vec<String> {
             // neither is a frame var.
             let after_dot = start > 0 && chars[start - 1] == '.';
             let after_colon = start > 0 && chars[start - 1] == ':';
-            if !after_dot && !after_colon && !out.contains(&ident) {
+            let state_view_builtin = matches!(ident.as_str(), "old" | "final");
+            if !after_dot && !after_colon && !state_view_builtin && !out.contains(&ident) {
                 out.push(ident);
             }
         } else {
@@ -874,7 +893,7 @@ fn collect_text_idents(text: &str) -> Vec<String> {
 
 /// The exec value-type spelling for a param / return / cell type, plus whether it is
 /// a slice (`&[u32]` → indexed element-wise). `None` for a type outside the exec
-/// frame sublanguage (Map/Option/struct/String/…) — a body over such a type is
+/// frame sublanguage (Map/Option/String/heap wrappers) — a body over such a type is
 /// Skipped (non-derivable frame). Mirrors `exec_tv::exec_type_spelling`.
 fn exec_type_spelling(ty: &Type) -> Option<(String, bool)> {
     match ty {
@@ -948,6 +967,55 @@ pub(crate) fn extend_fixed_array_equality_defs(
         defs.push(generated);
     }
     Ok(())
+}
+
+fn mutable_record_frames(
+    program: &thermite_syntax::Program,
+    function: &FnItem,
+) -> Result<Vec<MutableRecordFrame>, String> {
+    let admitted = thermite_spec::structural_record_mutation_structs(program);
+    let mut records = Vec::new();
+    for param in &function.params {
+        let Type::Ref {
+            mutable: true,
+            inner,
+        } = &param.ty
+        else {
+            continue;
+        };
+        let Type::Named(name) = inner.as_ref() else {
+            continue;
+        };
+        if !admitted.contains(name) {
+            return Err(format!(
+                "exclusive named-record parameter `{}` has a sealed, recursive, reference-bearing, enum, opaque-nested, or heap-backed state shape",
+                param.name
+            ));
+        }
+        let Some(structure) = program.items.iter().find_map(|item| match item {
+            Item::Struct(structure) if structure.name == *name => Some(structure),
+            _ => None,
+        }) else {
+            return Err(format!(
+                "exclusive named-record parameter `{}` names undeclared record `{name}`",
+                param.name
+            ));
+        };
+        records.push(MutableRecordFrame::new(
+            param.name.clone(),
+            structure
+                .fields
+                .iter()
+                .map(|field| {
+                    RecordFieldFrame::new(
+                        field.name.clone(),
+                        matches!(field.ty, Type::Array { .. }),
+                    )
+                })
+                .collect(),
+        ));
+    }
+    Ok(records)
 }
 
 fn is_mutable_indexed_borrow(ty: &Type) -> bool {

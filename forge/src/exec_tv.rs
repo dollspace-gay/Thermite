@@ -460,7 +460,7 @@ fn exec_tv_fn(
     };
 
     // The signature env: each param at its exec value type. A param of a type the
-    // exec frame cannot spell (Map/Option/struct/…) is recorded as un-spellable;
+    // exec frame cannot spell (Map/Option/String/heap wrappers) is recorded as un-spellable;
     // an expr that references it is then Skipped (non-derivable frame).
     let mut env = ExecEnv {
         constant_names: program
@@ -874,13 +874,29 @@ fn collect_free_paths(e: &Expr, out: &mut Vec<String>) {
                 collect_free_paths(arg, out);
             }
         }
+        Expr::Field { receiver, .. } | Expr::TupleProj { receiver, .. } => {
+            collect_free_paths(receiver, out)
+        }
+        Expr::Array(values) | Expr::Tuple(values) => {
+            for value in values {
+                collect_free_paths(value, out);
+            }
+        }
+        Expr::ArrayRepeat { value, .. } | Expr::Ref { expr: value, .. } | Expr::Deref(value) => {
+            collect_free_paths(value, out)
+        }
+        Expr::StructLit { fields, .. } => {
+            for (_, value) in fields {
+                collect_free_paths(value, out);
+            }
+        }
         _ => {}
     }
 }
 
 /// The exec value-type spelling for a body var/return type, plus whether it is a
 /// slice (`&[u32]` → indexed element-wise). `None` for a type outside the exec frame
-/// sublanguage (Map/Option/struct/String/…) — an expr over such a var is Skipped
+/// sublanguage (Map/Option/String/heap wrappers) — an expr over such a var is Skipped
 /// (non-derivable frame).
 fn exec_type_spelling(ty: &Type) -> Option<(String, bool)> {
     match ty {

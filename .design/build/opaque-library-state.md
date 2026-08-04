@@ -13,7 +13,7 @@ governs:
   - forge/src/verified_build.rs
   - forge/tests/ownership_primitives.rs
   - stdlib/kernel-primitives/ownership/generation.th
-audited-content-sha256: 5c9945da5201ea2ad1bec09e151529000c37a20b5c14c70a3da1c99a159064f7 (re-pinned 2026-08-04 after aggregate ABI binding explicitly preserved the opaque export barrier)
+audited-content-sha256: bbb008c7839bec1e163062722c96d2892014fac0eaed7a88141982bd5447087c (re-pinned 2026-08-04 after defining-module lifecycle support strengthened the opaque export barrier)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/generation-ownership.md
@@ -32,6 +32,11 @@ barrier. Thermite code in the package module that declares `State` may use a
 value by calling a verified function provided by the declaring module. A
 single-file program is one defining module and may construct its own opaque
 types.
+
+Representation ownership covers projection and assignment as well as literals.
+Foreign Thermite modules may carry an opaque value, call its public closed
+specifications, observers, and exclusive transitions, but may not directly read
+or write a field.
 
 This is language and proof infrastructure for a later kernel project. It adds
 no kernel, firmware image, allocator, scheduler, IPC policy, device policy,
@@ -54,11 +59,15 @@ whereas sealed values enter only through a platform door.
 
 The package resolver records the declaring module for every opaque struct and
 walks the complete expression tree of every package item. It rejects a foreign
-module's opaque literal in contracts, decreases clauses, executable and
-specification bodies, nested control flow, struct field expressions, and
-witness inhabitants. The walk covers the complete receipt-bound package, not
-only the requested export closure, so an unreachable sibling item cannot hide
-a forgery.
+module's opaque literal, field read, or field assignment in contracts,
+decreases clauses, executable and specification bodies, and nested control
+flow. Receiver types are derived from signatures, typed and inferred locals,
+constructor returns, state snapshots, structural projections, and branch
+results. If a receiver cannot be resolved and its selected field belongs to a
+foreign opaque type, the package fails closed rather than leaving privacy to the
+backend. Resolved plain records may reuse the same field spelling. The walk
+covers the complete receipt-bound package, not only the requested export
+closure, so an unreachable sibling item cannot hide a representation access.
 
 Calling a verified constructor imported from the defining module remains
 legal. Direct import and root-export rules continue to apply independently.
@@ -126,6 +135,8 @@ Acceptance evidence covers:
 - rejection of attributes on non-struct items;
 - package rejection of a foreign opaque literal and acceptance through the
   defining module's constructor;
+- package rejection of typed, inferred, chained, and unresolved foreign opaque
+  field reads and assignments, without rejecting type-resolved plain fields;
 - generated `pub(crate)` fields, transitive closed specifications, and unchanged
   plain-struct/open-spec behavior;
 - a real Verus proof of exported opaque construction and observation through a
@@ -133,6 +144,12 @@ Acceptance evidence covers:
 - rejection of a foreign module that forges `GenerationHandle`; and
 - strict ownership-package replay followed by a negative attribute-tamper
   replay.
+
+The direct named-record lifecycle fixture additionally exports an opaque
+constructor, two observers, and an exclusive transition from one strict receipt.
+A codegen-pinned consumer executes the generated transition, while a separate
+consumer that selects a field fails Rust compilation because the representation
+remains crate-private.
 
 ## Auditable metrics
 

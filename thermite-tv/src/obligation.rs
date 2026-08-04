@@ -85,7 +85,7 @@ use thermite_syntax::ast::{Block, Expr};
 
 use crate::exec_encode::{exec_ref_value, ExecRefCtx, RefEncodeError as ExecRefEncodeError};
 use crate::exec_stmt_encode::{
-    body_ref_state_ensures, loop_ref_obligations, negate_condition, BodyRefCtx,
+    body_ref_state_ensures, loop_ref_obligations, negate_condition, BodyRefCtx, MutableRecordFrame,
 };
 pub use crate::ref_encode::StateViewKind;
 use crate::ref_encode::{ref_contract_pred, RefCtx, RefEncodeError};
@@ -559,6 +559,10 @@ pub struct BodyObligationFrame {
     /// Whether the result type is a native fixed array. Array results are
     /// compared extensionally through `result@`.
     pub result_is_fixed_array: bool,
+    /// Whether a tail-less body has explicit unit return type.
+    pub result_is_unit: bool,
+    /// Complete direct-field frames for exclusive named-record parameters.
+    pub mutable_records: Vec<MutableRecordFrame>,
 }
 
 impl BodyObligationFrame {
@@ -569,6 +573,8 @@ impl BodyObligationFrame {
             .with_mutable_indexed_bound(self.mutable_indexed_params.iter().cloned())
             .with_fixed_array_bound(self.fixed_array_params.iter().cloned())
             .with_fixed_array_result(self.result_is_fixed_array)
+            .with_unit_result(self.result_is_unit)
+            .with_mutable_records(self.mutable_records.clone())
     }
 
     /// The Verus parameter list `name: type, ...`.

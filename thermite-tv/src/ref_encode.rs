@@ -337,6 +337,10 @@ fn encode(expr: &Expr, ctx: &RefCtx) -> Result<String, RefEncodeError> {
         // base's view. This matches production's `Expr::Ref` spec arm (which
         // delegates `&xs[..i]` to its `lower_index`) without calling it.
         Expr::Ref { expr: inner, .. } => encode_ref(inner, ctx),
+        Expr::Deref(inner) => {
+            let inner = encode(inner, ctx)?;
+            Ok(format!("(*{inner})"))
+        }
         Expr::Cast { expr, ty } => encode_cast(expr, ty, ctx),
         Expr::Field { receiver, name } => {
             let r = encode(receiver, ctx)?;

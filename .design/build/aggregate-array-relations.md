@@ -24,7 +24,7 @@ governs:
   - forge/tests/exec_tv_conformance.rs
   - forge/tests/verified_build.rs
   - conformance/verified-build/aggregate_array_relations.th
-audited-content-sha256: c5b9fa54c34547025374763e5c67f0d0331fa0a98172f3c3e4160ed6650aa34b
+audited-content-sha256: 5e09c0cd8ed3109584921132fa4a1d0e0eb6f66b412e103d558c918309d9bae7
 extends:
   - .design/build/kernel-primitives.md
   - .design/verified/exec-tv.md
@@ -157,7 +157,9 @@ their elements inside borrowed slices/fixed arrays. Each export ABI fingerprint
 contains the resolved capacity values and complete transitive record field
 layout/order in addition to the pinned compiler and target; changing a record
 definition or a named capacity therefore changes the ABI identity directly.
-General named-record borrows and borrowed returns remain excluded.
+Direct finite non-sealed named-record roots are now separately admitted by
+`.design/build/named-record-lifecycle.md`; nested opaque records and borrowed
+returns remain excluded from this array-relation subset.
 
 Contract and executable translation validation continue to derive the finite
 view meaning independently of the production helper generator. Their frames

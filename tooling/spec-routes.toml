@@ -1586,6 +1586,123 @@ design = ".design/build/aggregate-array-relations.md"
 reference = []
 conformance_ops = ["aggregate-array-relations"]
 
+# Exact direct-field lifecycle semantics for finite named records. This is
+# reusable language/proof/build infrastructure only: it contains no concrete
+# kernel state, policy, platform implementation, firmware, or boot artifact.
+[[route]]
+crate_pattern = "thermite-spec/src/validator.rs"
+design = ".design/build/named-record-lifecycle.md"
+reference = ["conformance/verified-build/named_record_lifecycle.th"]
+conformance_ops = ["named-record-mutation-validation"]
+
+[[route]]
+crate_pattern = "thermite-spec/tests/named_record_mutation_validate.rs"
+design = ".design/build/named-record-lifecycle.md"
+reference = ["conformance/verified-build/named_record_lifecycle.th"]
+conformance_ops = ["named-record-mutation-rejections"]
+
+[[route]]
+crate_pattern = "thermite-lower/src/lower.rs"
+design = ".design/build/named-record-lifecycle.md"
+reference = ["conformance/verified-build/named_record_lifecycle.th"]
+conformance_ops = ["named-record-l3-lowering"]
+
+[[route]]
+crate_pattern = "thermite-lower/src/l1.rs"
+design = ".design/build/named-record-lifecycle.md"
+reference = ["conformance/verified-build/named_record_lifecycle.th"]
+conformance_ops = ["named-record-l1-lowering"]
+
+[[route]]
+crate_pattern = "thermite-lower/tests/named_record_lifecycle.rs"
+design = ".design/build/named-record-lifecycle.md"
+reference = ["conformance/verified-build/named_record_lifecycle.th"]
+conformance_ops = ["named-record-direct-verus"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/exec_encode.rs"
+design = ".design/build/named-record-lifecycle.md"
+reference = ["conformance/verified-build/named_record_lifecycle.th"]
+conformance_ops = ["named-record-exec-reference"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/exec_stmt_encode.rs"
+design = ".design/build/named-record-lifecycle.md"
+reference = ["conformance/verified-build/named_record_lifecycle.th"]
+conformance_ops = ["named-record-body-reference"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/obligation.rs"
+design = ".design/build/named-record-lifecycle.md"
+reference = ["conformance/verified-build/named_record_lifecycle.th"]
+conformance_ops = ["named-record-lifecycle-obligation"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/ref_encode.rs"
+design = ".design/build/named-record-lifecycle.md"
+reference = ["conformance/verified-build/named_record_lifecycle.th"]
+conformance_ops = ["named-record-contract-reference"]
+
+[[route]]
+crate_pattern = "thermite-tv/tests/named_record_lifecycle_tv.rs"
+design = ".design/build/named-record-lifecycle.md"
+reference = ["conformance/verified-build/named_record_lifecycle.th"]
+conformance_ops = ["named-record-lifecycle-mutants"]
+
+[[route]]
+crate_pattern = "forge/src/contract_tv.rs"
+design = ".design/build/named-record-lifecycle.md"
+reference = ["conformance/verified-build/named_record_lifecycle.th"]
+conformance_ops = ["named-record-contract-tv"]
+
+[[route]]
+crate_pattern = "forge/src/exec_tv.rs"
+design = ".design/build/named-record-lifecycle.md"
+reference = ["conformance/verified-build/named_record_lifecycle.th"]
+conformance_ops = ["named-record-exec-tv"]
+
+[[route]]
+crate_pattern = "forge/src/body_tv.rs"
+design = ".design/build/named-record-lifecycle.md"
+reference = ["conformance/verified-build/named_record_lifecycle.th"]
+conformance_ops = ["named-record-body-tv"]
+
+[[route]]
+crate_pattern = "forge/src/verified_build.rs"
+design = ".design/build/named-record-lifecycle.md"
+reference = ["conformance/verified-build/named_record_lifecycle.th"]
+conformance_ops = ["named-record-package-ownership", "named-record-abi", "named-record-replay"]
+
+[[route]]
+crate_pattern = "forge/tests/contract_tv_conformance.rs"
+design = ".design/build/named-record-lifecycle.md"
+reference = ["conformance/verified-build/named_record_lifecycle.th"]
+conformance_ops = ["named-record-contract-tv"]
+
+[[route]]
+crate_pattern = "forge/tests/exec_tv_conformance.rs"
+design = ".design/build/named-record-lifecycle.md"
+reference = ["conformance/verified-build/named_record_lifecycle.th"]
+conformance_ops = ["named-record-exec-tv"]
+
+[[route]]
+crate_pattern = "forge/tests/body_tv.rs"
+design = ".design/build/named-record-lifecycle.md"
+reference = ["conformance/verified-build/named_record_lifecycle.th"]
+conformance_ops = ["named-record-body-tv"]
+
+[[route]]
+crate_pattern = "forge/tests/verified_build.rs"
+design = ".design/build/named-record-lifecycle.md"
+reference = ["conformance/verified-build/named_record_lifecycle.th"]
+conformance_ops = ["named-record-strict-build", "named-record-replay", "named-record-runtime", "named-record-tamper"]
+
+[[route]]
+crate_pattern = "conformance/verified-build/named_record_lifecycle.th"
+design = ".design/build/named-record-lifecycle.md"
+reference = []
+conformance_ops = ["named-record-lifecycle"]
+
 # Primitive-only sealed atomic declarations and proof vocabulary. These routes
 # intentionally cover no machine implementation: registry v1 must refuse that
 # assurance class until the separate object/machine refinement increment.

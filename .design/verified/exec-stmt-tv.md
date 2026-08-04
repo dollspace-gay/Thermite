@@ -4,7 +4,7 @@
 tier: 3-component
 status: draft
 audited-sha: 92396428567edc6940a9e2845217f5ff4c2ea3c6 (re-pinned 2026-06-16, user-authorized: the only change to this doc's governed files since the prior pin is the additive stage-1 forge-tier increment 2a — the new Item::Forge surface + inert Item::Forge match arms, verified net-additive with no substantive removal of existing v1 logic (git log <main>..HEAD = the 8 forge commits); the v1 behavior this doc governs is unchanged, and the new forge-tier surface is specified in .design/stage1-forge-tier.md / REQ-S1-3)
-audited-content-sha256: 66f974c1b321fa5e10376110839734c7e7763066663d93db931f2841831a8141 (re-pinned 2026-08-04 after carrying finite plain aggregate relation frames through body TV; no kernel implementation is present)
+audited-content-sha256: 034166e134eff5b41d64fc540d31f5429927679937ee2fa438a38d77831542a2 (re-pinned 2026-08-04 after exact named-record state threading; no kernel implementation is present)
 governs: thermite-tv/src/exec_stmt_encode.rs, thermite-tv/src/obligation.rs, thermite-lower/src/lower.rs, forge/src/body_tv.rs, forge/src/tv_signal.rs
 thesis-refs:
   - thermite-design.md §1 (trust relocated: code → spec → spec-intent)
@@ -88,7 +88,7 @@ exec language v1.
 |---|---|---|---|
 | immutable let-binding | `Stmt::Let { mutable: false, .. }` | `let <name>[: T] = <init>;` (`lower_stmt`) | introduces a fresh value binding |
 | mutable let-binding | `Stmt::Let { mutable: true, .. }` | `let mut <name>[: T] = <init>;` | introduces a mutable state cell |
-| assignment / mutation | `Stmt::Assign { target, value }` | `<target> = <value>;` | updates an in-scope mutable cell or one direct index of a borrowed slice/fixed array |
+| assignment / mutation | `Stmt::Assign { target, value }` | `<target> = <value>;` | updates an in-scope mutable cell, one direct index of a borrowed slice/fixed array, or one direct field of a framed finite named record |
 | sequencing | `Block.stmts` ordered + `Block.tail` | `lower_block_inner` (statements in order, then tail) | threads state left-to-right |
 | `if` / `if-else` statement | `Stmt::If { cond, then, else_ }` | `if <cond> { .. } [else { .. }]` (`lower_stmt`) | branch on a `bool` exec expr |
 | block tail value | `Block.tail: Option<Box<Expr>>` | trailing expr = the block's value (`lower_block_inner`) | the body's RESULT (final-state projection) |
@@ -106,7 +106,11 @@ fixed array. A function may directly assign one index of a mutable borrowed slic
 array whose recursively nested elements are primitive arrays; its exact final sequence is part of the
 body obligation. Pure `.array_eq`/`.array_same_except` expressions additionally carry finite plain
 record, tuple, and nested-array declarations through the body-TV frame, without admitting named-field
-mutation or a general aggregate lifecycle.
+mutation or a general aggregate lifecycle. The additive named-record lifecycle
+subset admits a direct `root.field` read/write when `root: &mut Name`, `Name` is
+finite and non-sealed, and every declared direct field joins the independent
+final-state frame. Opaque roots use this subset only inside their defining
+Thermite module and expose public state through closed specifications/observers.
 
 **OUT (explicitly NOT in kernel exec subset v1 — honest boundary):**
 
@@ -119,10 +123,12 @@ mutation or a general aggregate lifecycle.
   framed not designed). The state-denotation (REQ-2) is the SINGLE-EXIT final-state function.
 - **`match` as a statement / `match`-bound state.** Exec `match` (C7 Option/Result payload) is exec-
   expression territory (`exec-tv.md`); a `match` that MUTATES per-arm is OUT of v1.
-- **Heap-backed or named-aggregate mutation (Vec/Map/String/struct).** Direct indexed mutation of
-  native arrays and borrowed slices is IN. `Vec::push`, `Map::insert`, String mutation, field writes,
-  nested control-flow writes, and mutation values/indices that read the same changing borrow remain
-  OUT until their independent state theories are frozen. Such a body is HONESTLY SKIPPED.
+- **Heap-backed, nested, enum, local-record, or call-effect aggregate mutation.**
+  Direct indexed mutation of native arrays/borrowed slices and direct one-level
+  writes through a framed `&mut Name` are IN. `Vec::push`, `Map::insert`, String
+  mutation, nested projections, mutable enum payloads, record-state loops,
+  returned mutable locals, and calls that mutate named state remain OUT until
+  their independent theories are frozen. Such a body is HONESTLY SKIPPED.
 - **Recursion-as-statement / nested-fn definitions.** No fn definitions inside a body; a recursive call
   is an exec-EXPRESSION (step 2.1 checks its value), not a statement form.
 - **Shadowing edge cases.** v1 assumes each `let` introduces a distinct name (no `let x = ..; let x =
@@ -137,8 +143,9 @@ existing `Stmt`/`LoopNode` surface.
 
 The reference DENOTATION for the frozen straight-line subset: a statement sequence is a STATE
 TRANSFORMER. The **program state** is the environment of in-scope mutable + immutable bindings
-(name → bounded-scalar/native-array value) plus mathematical sequence snapshots for mutable indexed
-borrows. For a straight-line body the denotation is a **big-step** evaluation
+(name → bounded-scalar/native-array value), mathematical sequence snapshots for mutable indexed
+borrows, and one exact cell per declared direct field of each framed exclusive
+named-record parameter. For a straight-line body the denotation is a **big-step** evaluation
 threading an initial environment (the fn params) through the statement sequence to a FINAL environment,
 and the body's value is the tail expression evaluated in that final environment.
 
@@ -159,6 +166,13 @@ A direct `data[i] = value` write denotes
 `final(data)@ == old(data)@.update(...)`, which detects a dropped/reordered write, wrong index/value,
 or collateral change at every unmentioned index. This sequence observation is additional to the
 ordinary returned-value projection.
+
+A direct `state.field = value` replaces exactly the independently framed field
+cell. Reads observe the cell at that source program point; branch composition
+merges each field separately. The obligation equates every declared final field
+to its modeled cell, so an unmentioned field is explicitly framed to
+`old(state).field`. This detects dropped, wrong-field/value, reordered dependent,
+and collateral writes as well as a wrong returned value.
 
 **Independence (HARD, R-CHAR-3 / trust model):** `body_ref_state` MUST NOT call any
 `thermite_lower::lower::*` symbol. It composes step 2.1's `exec_ref_value` (`exec_encode.rs`) on each
@@ -216,7 +230,7 @@ is an EXEC `fn` (not `proof`/`spec`), so the always-active runtime overflow chec
 
 - **REQ-1 (the FROZEN kernel exec-statement subset v1)** — the enumerated IN/OUT construct set above
   (`Stmt::Let`/`Assign`/`If`/`Expr`/`Return`-tail + `Block` sequencing/tail for 2.2.1; `Stmt::Loop`/
-  `Break`/`Continue` IN the frozen set but step 2.2.2; heap-backed or named-aggregate mutation / mid-body early return /
+  `Break`/`Continue` IN the frozen set but step 2.2.2; heap-backed/nested/enum/local-record/call-effect aggregate mutation / mid-body early return /
   `match`-state / recursion-as-stmt / re-shadow OUT). Declared STABLE — no new construct without a
   design amendment. This is the operational semantics' fixed target AND the kernel exec language v1.
   Derived from `thermite-design.md` §4.1 + the `Stmt`/`LoopNode in ast.rs` surface. **Blocker #158
@@ -452,8 +466,8 @@ contract:
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-1 (frozen kernel exec-statement subset v1) | SHIPPED | the IN/OUT construct set is PINNED IN CODE: `thermite_tv::exec_stmt_encode::body_ref_state` admits `Stmt::Let`/`Assign`/`If`/`Expr`/tail-`Return` + sequencing/tail, including direct indexed mutation of native fixed arrays and mutable borrowed slices/arrays with recursively primitive-array elements. State substitution descends through supported method receivers/arguments, including total `u64` bit operations, so local bit-operation chains produce closed obligations. It honestly rejects out-of-v1 loop/control-flow shapes, heap-backed or named-aggregate mutation, mutation indices/values that read changing storage, and re-shadowing. Verified by the body teeth, fixed-array TV, packed-bit body TV, and aggregate-storage tests. |
-| REQ-2 (operational-semantics reference state-denotation) | SHIPPED | `pub fn body_ref_state` (+ `body_ref_state_ensures`, `BodyRefCtx`) in `thermite-tv/src/exec_stmt_encode.rs` is the independent big-step state transformer: ordered scalar/array substitution, branch composition, multi-cell projection, and exact chained `Seq::update` state for mutable indexed borrows. Non-test consumer: `body_equivalence_obligation`; the `thermite-tv` dependency graph contains no production lowerer. Real-Verus mutants catch reordered/dropped/wrong-index/wrong-value/collateral writes. |
-| REQ-3 (step-2.2.1 straight-line body state-refinement obligation + discharge) | SHIPPED | `body_equivalence_obligation` + `BodyObligationFrame` emits an exec wrapper whose ensures compare the returned value and, for every framed mutable indexed borrow, the complete `final(param)@` sequence against the independent update chain from `old(param)@`. The production side remains `thermite_lower::lower_exec_body`. The scalar B1–B4 teeth and aggregate-storage teeth all verify faithfully and reject their mutations under real Verus. |
+| REQ-1 (frozen kernel exec-statement subset v1) | SHIPPED | the IN/OUT construct set is PINNED IN CODE: `thermite_tv::exec_stmt_encode::body_ref_state` admits `Stmt::Let`/`Assign`/`If`/`Expr`/tail-`Return` + sequencing/tail, including direct indexed mutation of native fixed arrays/mutable borrowed storage and direct one-level field mutation through a finite `&mut Name`. State substitution descends through supported method receivers/arguments, including total `u64` bit operations. It honestly rejects out-of-v1 loop/control-flow shapes, heap-backed/nested/enum/local-record/call-effect aggregate mutation, mixed state theories, and re-shadowing. Verified by body teeth, fixed-array/packed-bit/aggregate-storage tests, and the named-record lifecycle suite. |
+| REQ-2 (operational-semantics reference state-denotation) | SHIPPED | `pub fn body_ref_state` (+ `body_ref_state_ensures`, `BodyRefCtx`) in `thermite-tv/src/exec_stmt_encode.rs` is the independent big-step state transformer: ordered scalar/array substitution, branch composition, multi-cell projection, exact chained `Seq::update` state for mutable indexed borrows, and one complete ordered field frame for each mutable record. Non-test consumer: `body_equivalence_obligation`; the `thermite-tv` dependency graph contains no production lowerer. Real-Verus mutants catch reordered/dropped/wrong-index/wrong-field/wrong-value/collateral writes and old/final swaps. |
+| REQ-3 (step-2.2.1 straight-line body state-refinement obligation + discharge) | SHIPPED | `body_equivalence_obligation` + `BodyObligationFrame` emits an exec wrapper whose ensures compare the returned value, every framed mutable indexed borrow's complete final sequence, and every framed record's complete final direct-field state against independent update chains from `old(param)`. The production side remains `thermite_lower::lower_exec_body`. Scalar B1–B4, aggregate-storage, and opaque named-record constructor/observer/mutator cases verify faithfully and reject their mutations under real Verus. |
 | REQ-4 (step-2.2.2 loops — harder horizon) | SHIPPED | #163, OWNED + evidenced in `.design/verified/loop-tv.md` (its REQ-1..REQ-5 are all SHIPPED) — corrected from NOT-STARTED at the #262 re-audit. The chosen variant of (a) is BUILT: the three per-run loop obligations `pub fn loop_entry_obligation`/`loop_preservation_obligation`/`loop_exit_obligation` + `LoopObligationFrame` in `thermite-tv/src/obligation.rs` (reusing the SHIPPED `body_ref_state` single-iteration step), the Lean partial-correctness WHILE-RULE `theorem while_rule`/`tv_meta_loop` in `lean/Thermite/Exec/Loop.lean` (no `sorry`; termination stays the per-run Verus `decreases` residual), and the forge wiring `loop_body_tv`/`discharge_loop` in `forge/src/body_tv.rs` (v1 = a single frozen-subset `while` as the body's last statement; out-of-v1 loops `Skipped`-with-reason). Verified: `thermite-tv/tests/loop_teeth.rs` L1–L4 + `forge/tests/body_tv.rs` (faithful v1 `while` → Faithful all three; `binary_search.th`'s `loop`-kind body → Skipped) under real verus. Bounded unrolling (b) DROPPED for v1 (the future v0.2 L2 fallback). |
-| REQ-5 (forge `body_tv` plug-in point) | SHIPPED | `forge::body_tv` walks each function body, derives scalar/fixed-array/slice frames from its signature, runs production body lowering against the independent state obligation, and reports the four verdicts distinctly. Mutable slice and borrowed-array parameters are framed automatically; unsupported nested control-flow/alias-sensitive writes remain `Skipped` with a reason. `forge/tests/body_tv.rs` proves faithful scalar, loop, fixed-array, mutable aggregate-slice, and mutable borrowed-array cases under real Verus. |
+| REQ-5 (forge `body_tv` plug-in point) | SHIPPED | `forge::body_tv` walks each function body, derives scalar/fixed-array/slice and finite named-record frames from its signature, runs production body lowering against the independent state obligation, and reports the four verdicts distinctly. Mutable slice/array and direct named-record parameters are framed automatically; unsupported nested/alias-sensitive/local-record/call-effect writes remain `Skipped` with a reason. `forge/tests/body_tv.rs` proves faithful scalar, loop, fixed-array, mutable aggregate-storage, and opaque named-record cases under real Verus. |

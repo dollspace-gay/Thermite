@@ -1234,7 +1234,670 @@ fn validate_package_resolution(
             }
         }
     }
+
+    // Opaque state owns its representation, not only its constructors. Reject
+    // direct field projection/mutation from every foreign package module. A
+    // foreign module may carry the abstract type and call a verified observer or
+    // transition, but it may not depend on the generated crate-visible fields.
+    let record_fields: BTreeMap<String, BTreeMap<String, Type>> = program
+        .items
+        .iter()
+        .filter_map(|item| {
+            let Item::Struct(structure) = item else {
+                return None;
+            };
+            Some((
+                structure.name.clone(),
+                structure
+                    .fields
+                    .iter()
+                    .map(|field| (field.name.clone(), field.ty.clone()))
+                    .collect(),
+            ))
+        })
+        .collect();
+    let call_returns: BTreeMap<String, Type> = program
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Fn(function) => Some((function.name.clone(), function.ret.clone())),
+            Item::SpecFn(function) => Some((function.name.clone(), function.ret.clone())),
+            _ => None,
+        })
+        .collect();
+    let opaque_field_owners: BTreeMap<String, BTreeSet<String>> = program
+        .items
+        .iter()
+        .filter_map(|item| {
+            let Item::Struct(structure) = item else {
+                return None;
+            };
+            structure.opaque.then_some(structure)
+        })
+        .flat_map(|structure| {
+            structure
+                .fields
+                .iter()
+                .map(move |field| (field.name.clone(), structure.name.clone()))
+        })
+        .fold(BTreeMap::new(), |mut fields, (field, owner)| {
+            fields.entry(field).or_default().insert(owner);
+            fields
+        });
+    for (index, item) in program.items.iter().enumerate() {
+        let from_module = package
+            .parsed
+            .origin(index)
+            .expect("package origins are aligned with package items")
+            .module
+            .as_str();
+        let mut accessed = BTreeSet::new();
+        let mut unresolved = BTreeSet::new();
+        collect_item_record_field_owners(
+            item,
+            &record_fields,
+            &call_returns,
+            &mut accessed,
+            &mut unresolved,
+        );
+        for name in accessed {
+            let Some(defining_module) = opaque_modules.get(name.as_str()).copied() else {
+                continue;
+            };
+            if from_module != defining_module {
+                return Err(ForgeError::Package {
+                    detail: format!(
+                        "module `{from_module}` accesses a field of `#[opaque]` type `{name}` declared in module `{defining_module}`; opaque representation reads and writes are permitted only in the defining module"
+                    ),
+                });
+            }
+        }
+        for field in unresolved {
+            let Some(possible_owners) = opaque_field_owners.get(&field) else {
+                continue;
+            };
+            let foreign: Vec<_> = possible_owners
+                .iter()
+                .filter(|owner| {
+                    opaque_modules
+                        .get(owner.as_str())
+                        .is_some_and(|module| *module != from_module)
+                })
+                .cloned()
+                .collect();
+            if !foreign.is_empty() {
+                return Err(ForgeError::Package {
+                    detail: format!(
+                        "module `{from_module}` accesses field `{field}` through a receiver whose record type cannot be resolved before code generation; the field belongs to foreign `#[opaque]` type(s) {}, so the package fails closed rather than permitting an unverified representation access",
+                        foreign.join(", ")
+                    ),
+                });
+            }
+        }
+    }
     Ok(())
+}
+
+fn collect_item_record_field_owners(
+    item: &Item,
+    records: &BTreeMap<String, BTreeMap<String, Type>>,
+    call_returns: &BTreeMap<String, Type>,
+    owners: &mut BTreeSet<String>,
+    unresolved: &mut BTreeSet<String>,
+) {
+    match item {
+        Item::Fn(function) => {
+            let mut env: BTreeMap<String, Type> = function
+                .params
+                .iter()
+                .map(|param| (param.name.clone(), param.ty.clone()))
+                .collect();
+            env.insert("result".to_string(), function.ret.clone());
+            collect_expr_record_field_owners(
+                &function.contract.req.expr,
+                &env,
+                records,
+                call_returns,
+                owners,
+                unresolved,
+            );
+            for clause in &function.contract.ens {
+                collect_expr_record_field_owners(
+                    &clause.expr,
+                    &env,
+                    records,
+                    call_returns,
+                    owners,
+                    unresolved,
+                );
+            }
+            if let Some(dec) = &function.dec {
+                collect_expr_record_field_owners(
+                    &dec.expr,
+                    &env,
+                    records,
+                    call_returns,
+                    owners,
+                    unresolved,
+                );
+            }
+            if let Some(body) = &function.body {
+                collect_block_record_field_owners(
+                    body,
+                    &mut env,
+                    records,
+                    call_returns,
+                    owners,
+                    unresolved,
+                );
+            }
+        }
+        Item::SpecFn(function) => {
+            let mut env: BTreeMap<String, Type> = function
+                .params
+                .iter()
+                .map(|param| (param.name.clone(), param.ty.clone()))
+                .collect();
+            collect_expr_record_field_owners(
+                &function.dec.expr,
+                &env,
+                records,
+                call_returns,
+                owners,
+                unresolved,
+            );
+            collect_block_record_field_owners(
+                &function.body,
+                &mut env,
+                records,
+                call_returns,
+                owners,
+                unresolved,
+            );
+        }
+        Item::Struct(structure) => {
+            let env: BTreeMap<String, Type> = structure
+                .fields
+                .iter()
+                .map(|field| (field.name.clone(), field.ty.clone()))
+                .collect();
+            if let Some(inv) = &structure.inv {
+                collect_expr_record_field_owners(
+                    &inv.expr,
+                    &env,
+                    records,
+                    call_returns,
+                    owners,
+                    unresolved,
+                );
+            }
+        }
+        Item::Enum(_) | Item::Const(_) | Item::Forge(_) => {}
+    }
+}
+
+fn collect_block_record_field_owners(
+    block: &Block,
+    env: &mut BTreeMap<String, Type>,
+    records: &BTreeMap<String, BTreeMap<String, Type>>,
+    call_returns: &BTreeMap<String, Type>,
+    owners: &mut BTreeSet<String>,
+    unresolved: &mut BTreeSet<String>,
+) {
+    for statement in &block.stmts {
+        match statement {
+            Stmt::Let { name, ty, init, .. } => {
+                collect_expr_record_field_owners(
+                    init,
+                    env,
+                    records,
+                    call_returns,
+                    owners,
+                    unresolved,
+                );
+                if let Some(ty) = ty
+                    .clone()
+                    .or_else(|| record_value_type(init, env, records, call_returns))
+                {
+                    env.insert(name.clone(), ty);
+                }
+            }
+            Stmt::Assign { target, value } => {
+                collect_expr_record_field_owners(
+                    target,
+                    env,
+                    records,
+                    call_returns,
+                    owners,
+                    unresolved,
+                );
+                collect_expr_record_field_owners(
+                    value,
+                    env,
+                    records,
+                    call_returns,
+                    owners,
+                    unresolved,
+                );
+            }
+            Stmt::Return(Some(value)) | Stmt::Expr(value) => collect_expr_record_field_owners(
+                value,
+                env,
+                records,
+                call_returns,
+                owners,
+                unresolved,
+            ),
+            Stmt::Return(None) | Stmt::Break | Stmt::Continue => {}
+            Stmt::If { cond, then, else_ } => {
+                collect_expr_record_field_owners(
+                    cond,
+                    env,
+                    records,
+                    call_returns,
+                    owners,
+                    unresolved,
+                );
+                collect_block_record_field_owners(
+                    then,
+                    &mut env.clone(),
+                    records,
+                    call_returns,
+                    owners,
+                    unresolved,
+                );
+                if let Some(else_) = else_ {
+                    collect_block_record_field_owners(
+                        else_,
+                        &mut env.clone(),
+                        records,
+                        call_returns,
+                        owners,
+                        unresolved,
+                    );
+                }
+            }
+            Stmt::Loop(node) => {
+                if let thermite_syntax::LoopKind::While(cond) = &node.kind {
+                    collect_expr_record_field_owners(
+                        cond,
+                        env,
+                        records,
+                        call_returns,
+                        owners,
+                        unresolved,
+                    );
+                }
+                for invariant in &node.invs {
+                    collect_expr_record_field_owners(
+                        &invariant.expr,
+                        env,
+                        records,
+                        call_returns,
+                        owners,
+                        unresolved,
+                    );
+                }
+                collect_expr_record_field_owners(
+                    &node.dec.expr,
+                    env,
+                    records,
+                    call_returns,
+                    owners,
+                    unresolved,
+                );
+                collect_block_record_field_owners(
+                    &node.body,
+                    &mut env.clone(),
+                    records,
+                    call_returns,
+                    owners,
+                    unresolved,
+                );
+            }
+        }
+    }
+    if let Some(tail) = &block.tail {
+        collect_expr_record_field_owners(tail, env, records, call_returns, owners, unresolved);
+    }
+}
+
+fn collect_expr_record_field_owners(
+    expr: &Expr,
+    env: &BTreeMap<String, Type>,
+    records: &BTreeMap<String, BTreeMap<String, Type>>,
+    call_returns: &BTreeMap<String, Type>,
+    owners: &mut BTreeSet<String>,
+    unresolved: &mut BTreeSet<String>,
+) {
+    if let Expr::Field { receiver, name } = expr {
+        match record_value_type(receiver, env, records, call_returns).and_then(record_type_name) {
+            Some(owner) => {
+                owners.insert(owner);
+            }
+            None => {
+                unresolved.insert(name.clone());
+            }
+        }
+    }
+    match expr {
+        Expr::Array(values) | Expr::Tuple(values) => {
+            for value in values {
+                collect_expr_record_field_owners(
+                    value,
+                    env,
+                    records,
+                    call_returns,
+                    owners,
+                    unresolved,
+                );
+            }
+        }
+        Expr::ArrayRepeat { value, .. }
+        | Expr::Unary { expr: value, .. }
+        | Expr::Cast { expr: value, .. }
+        | Expr::Ref { expr: value, .. }
+        | Expr::Deref(value)
+        | Expr::TupleProj {
+            receiver: value, ..
+        } => {
+            collect_expr_record_field_owners(value, env, records, call_returns, owners, unresolved)
+        }
+        Expr::Call { callee, args } => {
+            collect_expr_record_field_owners(
+                callee,
+                env,
+                records,
+                call_returns,
+                owners,
+                unresolved,
+            );
+            for arg in args {
+                collect_expr_record_field_owners(
+                    arg,
+                    env,
+                    records,
+                    call_returns,
+                    owners,
+                    unresolved,
+                );
+            }
+        }
+        Expr::MethodCall { receiver, args, .. } => {
+            collect_expr_record_field_owners(
+                receiver,
+                env,
+                records,
+                call_returns,
+                owners,
+                unresolved,
+            );
+            for arg in args {
+                collect_expr_record_field_owners(
+                    arg,
+                    env,
+                    records,
+                    call_returns,
+                    owners,
+                    unresolved,
+                );
+            }
+        }
+        Expr::Field { receiver, .. } => collect_expr_record_field_owners(
+            receiver,
+            env,
+            records,
+            call_returns,
+            owners,
+            unresolved,
+        ),
+        Expr::Binary { lhs, rhs, .. } => {
+            collect_expr_record_field_owners(lhs, env, records, call_returns, owners, unresolved);
+            collect_expr_record_field_owners(rhs, env, records, call_returns, owners, unresolved);
+        }
+        Expr::Index { base, index } => {
+            collect_expr_record_field_owners(base, env, records, call_returns, owners, unresolved);
+            match index {
+                thermite_syntax::IndexArg::Single(index)
+                | thermite_syntax::IndexArg::RangeTo(index)
+                | thermite_syntax::IndexArg::RangeFrom(index) => collect_expr_record_field_owners(
+                    index,
+                    env,
+                    records,
+                    call_returns,
+                    owners,
+                    unresolved,
+                ),
+                thermite_syntax::IndexArg::Range(start, end) => {
+                    collect_expr_record_field_owners(
+                        start,
+                        env,
+                        records,
+                        call_returns,
+                        owners,
+                        unresolved,
+                    );
+                    collect_expr_record_field_owners(
+                        end,
+                        env,
+                        records,
+                        call_returns,
+                        owners,
+                        unresolved,
+                    );
+                }
+            }
+        }
+        Expr::Closure { body, .. } => {
+            collect_expr_record_field_owners(body, env, records, call_returns, owners, unresolved)
+        }
+        Expr::Match { scrutinee, arms } => {
+            collect_expr_record_field_owners(
+                scrutinee,
+                env,
+                records,
+                call_returns,
+                owners,
+                unresolved,
+            );
+            for arm in arms {
+                if let Some(guard) = &arm.guard {
+                    collect_expr_record_field_owners(
+                        guard,
+                        env,
+                        records,
+                        call_returns,
+                        owners,
+                        unresolved,
+                    );
+                }
+                collect_expr_record_field_owners(
+                    &arm.body,
+                    env,
+                    records,
+                    call_returns,
+                    owners,
+                    unresolved,
+                );
+            }
+        }
+        Expr::If { cond, then, else_ } => {
+            collect_expr_record_field_owners(cond, env, records, call_returns, owners, unresolved);
+            collect_block_record_field_owners(
+                then,
+                &mut env.clone(),
+                records,
+                call_returns,
+                owners,
+                unresolved,
+            );
+            collect_block_record_field_owners(
+                else_,
+                &mut env.clone(),
+                records,
+                call_returns,
+                owners,
+                unresolved,
+            );
+        }
+        Expr::StructLit { fields, .. } => {
+            for (_, value) in fields {
+                collect_expr_record_field_owners(
+                    value,
+                    env,
+                    records,
+                    call_returns,
+                    owners,
+                    unresolved,
+                );
+            }
+        }
+        Expr::Is { scrutinee, .. } => collect_expr_record_field_owners(
+            scrutinee,
+            env,
+            records,
+            call_returns,
+            owners,
+            unresolved,
+        ),
+        Expr::Quantifier { domain, body, .. } => {
+            collect_expr_record_field_owners(
+                domain,
+                env,
+                records,
+                call_returns,
+                owners,
+                unresolved,
+            );
+            collect_expr_record_field_owners(body, env, records, call_returns, owners, unresolved);
+        }
+        Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) | Expr::StrLit(_) => {}
+    }
+}
+
+fn record_type_name(ty: Type) -> Option<String> {
+    match ty {
+        Type::Named(name) => Some(name),
+        Type::Ref { inner, .. } => record_type_name(*inner),
+        _ => None,
+    }
+}
+
+fn record_value_type(
+    expr: &Expr,
+    env: &BTreeMap<String, Type>,
+    records: &BTreeMap<String, BTreeMap<String, Type>>,
+    call_returns: &BTreeMap<String, Type>,
+) -> Option<Type> {
+    match expr {
+        Expr::Path(path) if path.len() == 1 => env.get(&path[0]).cloned(),
+        Expr::Ref { mutable, expr } => Some(Type::Ref {
+            mutable: *mutable,
+            inner: Box::new(record_value_type(expr, env, records, call_returns)?),
+        }),
+        Expr::Deref(expr) => match record_value_type(expr, env, records, call_returns)? {
+            Type::Ref { inner, .. } | Type::Box(inner) => Some(*inner),
+            _ => None,
+        },
+        Expr::Call { callee, args }
+            if matches!(callee.as_ref(), Expr::Path(path)
+                if path.len() == 1 && matches!(path[0].as_str(), "old" | "final")) =>
+        {
+            let [arg] = args.as_slice() else {
+                return None;
+            };
+            match record_value_type(arg, env, records, call_returns)? {
+                Type::Ref { inner, .. } => Some(*inner),
+                other => Some(other),
+            }
+        }
+        Expr::Call { callee, .. } => {
+            let Expr::Path(path) = callee.as_ref() else {
+                return None;
+            };
+            let name = path.last()?;
+            call_returns.get(name).cloned()
+        }
+        Expr::Field { receiver, name } => {
+            let receiver = record_value_type(receiver, env, records, call_returns)?;
+            let owner = match receiver {
+                Type::Named(owner) => owner,
+                Type::Ref { inner, .. } => match *inner {
+                    Type::Named(owner) => owner,
+                    _ => return None,
+                },
+                _ => return None,
+            };
+            records.get(&owner)?.get(name).cloned()
+        }
+        Expr::StructLit { path, .. } => {
+            let name = path.last()?;
+            records
+                .contains_key(name)
+                .then(|| Type::Named(name.clone()))
+        }
+        Expr::Tuple(values) => values
+            .iter()
+            .map(|value| record_value_type(value, env, records, call_returns))
+            .collect::<Option<Vec<_>>>()
+            .map(Type::Tuple),
+        Expr::TupleProj { receiver, index } => {
+            let Type::Tuple(elements) = record_value_type(receiver, env, records, call_returns)?
+            else {
+                return None;
+            };
+            elements.get(*index).cloned()
+        }
+        Expr::Index {
+            base,
+            index: thermite_syntax::IndexArg::Single(_),
+        } => {
+            let base = match record_value_type(base, env, records, call_returns)? {
+                Type::Ref { inner, .. } => *inner,
+                other => other,
+            };
+            match base {
+                Type::Array { elem, .. } | Type::Slice(elem) | Type::Vec(elem) => Some(*elem),
+                _ => None,
+            }
+        }
+        Expr::Cast { ty, .. } => Some(ty.clone()),
+        Expr::If { then, else_, .. } => {
+            let then_ty = block_value_type(then, env, records, call_returns)?;
+            let else_ty = block_value_type(else_, env, records, call_returns)?;
+            (then_ty == else_ty).then_some(then_ty)
+        }
+        Expr::Match { arms, .. } => {
+            let mut types = arms
+                .iter()
+                .map(|arm| record_value_type(&arm.body, env, records, call_returns));
+            let first = types.next()??;
+            types
+                .all(|candidate| candidate.as_ref() == Some(&first))
+                .then_some(first)
+        }
+        _ => None,
+    }
+}
+
+fn block_value_type(
+    block: &Block,
+    env: &BTreeMap<String, Type>,
+    records: &BTreeMap<String, BTreeMap<String, Type>>,
+    call_returns: &BTreeMap<String, Type>,
+) -> Option<Type> {
+    let mut env = env.clone();
+    for statement in &block.stmts {
+        if let Stmt::Let { name, ty, init, .. } = statement {
+            let ty = ty
+                .clone()
+                .or_else(|| record_value_type(init, &env, records, call_returns));
+            if let Some(ty) = ty {
+                env.insert(name.clone(), ty);
+            }
+        }
+    }
+    record_value_type(block.tail.as_deref()?, &env, records, call_returns)
 }
 
 fn collect_item_named_types<'a>(item: &'a Item, names: &mut BTreeSet<&'a str>) {
@@ -2196,6 +2859,7 @@ fn plan_exports(
 ) -> Result<Vec<PlannedExport>, String> {
     let mut rows = Vec::new();
     let structural_structs = thermite_spec::structural_array_equality_structs(program);
+    let mutable_record_structs = thermite_spec::structural_record_mutation_structs(program);
     for name in roots {
         let function = program.items.iter().find_map(|item| match item {
             Item::Fn(f) if &f.name == name => Some(f),
@@ -2204,18 +2868,20 @@ fn plan_exports(
         let Some(function) = function else {
             return Err(format!("unknown executable export `{name}`"));
         };
-        if !function
-            .params
-            .iter()
-            .all(|p| supported_public_param_type(&p.ty, &structural_structs))
-            || !supported_public_return_type(&function.ret, &structural_structs)
-        {
+        if !function.params.iter().all(|p| {
+            supported_public_param_type(&p.ty, &structural_structs, &mutable_record_structs)
+        }) || !supported_public_return_type(
+            &function.ret,
+            &structural_structs,
+            &mutable_record_structs,
+        ) {
             return Err(format!(
                 "export `{name}` has a type outside the verified public Rust ABI \
                  (finite plain values and shared/exclusive borrows of primitives, \
-                 slices, or fixed arrays with finite plain elements are supported; \
-                 sealed, opaque, recursive, enum, reference-bearing, and heap-backed \
-                 records are rejected)"
+                 slices, fixed arrays with finite plain elements, and direct \
+                 finite non-sealed record roots are supported; sealed, recursive, \
+                 enum, reference-bearing, heap-backed, and nested opaque records \
+                 are rejected)"
             ));
         }
         let wrapped = !matches!(function.contract.req.expr, Expr::BoolLit(true));
@@ -2290,24 +2956,37 @@ fn plan_exports(
     Ok(rows)
 }
 
-fn supported_public_param_type(ty: &Type, structural_structs: &BTreeSet<String>) -> bool {
+fn supported_public_param_type(
+    ty: &Type,
+    structural_structs: &BTreeSet<String>,
+    mutable_record_structs: &BTreeSet<String>,
+) -> bool {
     match ty {
-        Type::Prim(_) | Type::Unit | Type::Named(_) | Type::Tuple(_) | Type::Array { .. } => {
+        Type::Prim(_) | Type::Unit | Type::Tuple(_) | Type::Array { .. } => {
             supported_public_value_type(ty, structural_structs)
         }
+        Type::Named(name) => mutable_record_structs.contains(name),
         Type::Ref { inner, .. } => match inner.as_ref() {
             Type::Slice(elem) | Type::Array { elem, .. } => {
                 supported_public_storage_element(elem, structural_structs)
             }
             Type::Prim(_) => true,
+            Type::Named(name) => mutable_record_structs.contains(name),
             _ => false,
         },
         _ => false,
     }
 }
 
-fn supported_public_return_type(ty: &Type, structural_structs: &BTreeSet<String>) -> bool {
-    supported_public_value_type(ty, structural_structs)
+fn supported_public_return_type(
+    ty: &Type,
+    structural_structs: &BTreeSet<String>,
+    mutable_record_structs: &BTreeSet<String>,
+) -> bool {
+    match ty {
+        Type::Named(name) => mutable_record_structs.contains(name),
+        _ => supported_public_value_type(ty, structural_structs),
+    }
 }
 
 fn supported_public_value_type(ty: &Type, structural_structs: &BTreeSet<String>) -> bool {
@@ -2443,7 +3122,12 @@ fn abi_layout_type(
                 })
                 .collect::<Result<Vec<_>, _>>();
             visiting.remove(name);
-            Ok(format!("struct:{name}{{{}}}", fields?.join(",")))
+            Ok(format!(
+                "struct:{name}:sealed={}:opaque={}{{{}}}",
+                structure.sealed,
+                structure.opaque,
+                fields?.join(",")
+            ))
         }
         Type::Ref { mutable, inner } => Ok(format!(
             "ref:{}({})",
@@ -5559,12 +6243,98 @@ fn state_new(value: u64) -> State
 
         let through_constructor = r#"fn api(value: u64) -> State
   req true
-  ens result.value == value
+  ens true
   fx pure
 { state_new(value) }
 "#;
         let (_tree, path) = package_fixture(&["api"], &["base"], base, through_constructor);
         assert!(prepare_thermite_input(&path).is_ok());
+    }
+
+    #[test]
+    fn package_opaque_field_reads_and_writes_are_limited_to_the_defining_module() {
+        let base = r#"#[opaque] struct State { value: u64 }
+fn state_new(value: u64) -> State
+  req true ens result.value == value fx pure
+{ State { value: value } }
+"#;
+        for (label, api) in [
+            (
+                "contract read",
+                r#"fn inspect(state: State) -> u64
+  req true ens result == state.value fx pure
+{ 0 }
+"#,
+            ),
+            (
+                "body read",
+                r#"fn inspect(state: State) -> u64
+  req true ens true fx pure
+{ state.value }
+"#,
+            ),
+            (
+                "body write",
+                r#"fn change(state: &mut State, value: u64) -> ()
+  req true ens true fx pure
+{ state.value = value; }
+"#,
+            ),
+            (
+                "constructor-chain read",
+                r#"fn inspect(value: u64) -> u64
+  req true ens true fx pure
+{ state_new(value).value }
+"#,
+            ),
+            (
+                "inferred-local read",
+                r#"fn inspect(value: u64) -> u64
+  req true ens true fx pure
+{ let state = state_new(value); state.value }
+"#,
+            ),
+        ] {
+            let (_tree, path) = package_fixture(&["api"], &["base"], base, api);
+            let error = match prepare_thermite_input(&path) {
+                Ok(_) => panic!("foreign opaque {label} was accepted"),
+                Err(error) => error.to_string(),
+            };
+            assert!(
+                error.contains("module `api` accesses a field of `#[opaque]` type `State`"),
+                "{label}: {error}"
+            );
+            assert!(error.contains("declared in module `base`"), "{error}");
+        }
+
+        let unresolved_pattern = r#"fn inspect(state: Option<State>) -> u64
+  req true ens true fx pure
+{ match state { Some(value) => value.value, None => 0 } }
+"#;
+        let (_tree, path) = package_fixture(&["api"], &["base"], base, unresolved_pattern);
+        let error = match prepare_thermite_input(&path) {
+            Ok(_) => panic!("an unresolved foreign opaque pattern projection was accepted"),
+            Err(error) => error.to_string(),
+        };
+        assert!(
+            error.contains("module `api` accesses field `value`"),
+            "{error}"
+        );
+        assert!(
+            error.contains("foreign `#[opaque]` type(s) State"),
+            "{error}"
+        );
+
+        let unrelated_plain = r#"struct Public { value: u64 }
+fn inspect(public: Public) -> u64
+  req true ens result == public.value fx pure
+{ public.value }
+"#;
+        let (_tree, path) = package_fixture(&["api"], &["base"], base, unrelated_plain);
+        assert!(
+            prepare_thermite_input(&path).is_ok(),
+            "a type-resolved plain field sharing an opaque field name remains legal"
+        );
     }
 
     #[test]
@@ -5803,6 +6573,37 @@ fn state_new(value: u64) -> State
                 "{error}"
             );
         }
+    }
+
+    #[test]
+    fn public_abi_admits_direct_opaque_record_lifecycle_roots() {
+        let program = parse(
+            "#[opaque] struct State { generation: u64, occupied: bool } \
+             fn advance(state: &mut State, next: u64) -> bool \
+             req true \
+             ens result == old(state).occupied \
+             ens final(state).generation == next \
+             ens final(state).occupied == old(state).occupied \
+             fx pure { \
+               let previous: bool = state.occupied; \
+               state.generation = next; previous \
+             }",
+        );
+        let exports = plan_exports(
+            &program,
+            &["advance".to_string()],
+            "opaque_lifecycle",
+            VerifiedTarget::Std,
+            "x86_64-unknown-linux-gnu",
+            "64",
+            "little",
+        )
+        .expect("a direct finite opaque record borrow belongs to the verified ABI");
+        assert_eq!(exports[0].parameter_types, ["&mut State", "u64"]);
+        assert_eq!(exports[0].ownership, ["exclusive_borrow", "by_value"]);
+        assert!(exports[0]
+            .signature
+            .contains("fn advance(state:&mut State,next:u64)->bool"));
     }
 
     #[test]

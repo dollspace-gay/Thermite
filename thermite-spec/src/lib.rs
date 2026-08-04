@@ -70,5 +70,6 @@ pub use s2_recon::{
 };
 pub use schemes::{SchemeResult, SchemeSig, StepShape};
 pub use validator::{
-    array_equality_type_is_structural, structural_array_equality_structs, validate, SpecError,
+    array_equality_type_is_structural, structural_array_equality_structs,
+    structural_record_mutation_structs, validate, SpecError,
 };

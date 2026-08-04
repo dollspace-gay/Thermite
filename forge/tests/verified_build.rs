@@ -508,6 +508,170 @@ fn main() {
 }
 
 #[test]
+fn named_record_lifecycle_is_exported_replayed_and_executes_generated_logic() {
+    let temp = TempDir::new("named-record-lifecycle");
+    let bundle = temp.0.join("named-record-lifecycle.verified");
+    let bundle_s = bundle.to_string_lossy().to_string();
+    assert_success(&forge(&[
+        "build",
+        "conformance/verified-build/named_record_lifecycle.th",
+        "--level",
+        "l3",
+        "--export",
+        "named_record_advance",
+        "--export",
+        "named_record_new",
+        "--export",
+        "named_record_generation",
+        "--export",
+        "named_record_occupied",
+        "--crate-name",
+        "named_record_lifecycle",
+        "--out",
+        &bundle_s,
+        "--json",
+    ]));
+    assert_success(&forge(&["verify-build", &bundle_s, "--replay", "--json"]));
+
+    let source = fs::read_to_string(bundle.join("evidence/source.verus.rs")).unwrap();
+    assert!(source.contains("pub fn named_record_advance"), "{source}");
+    assert!(source.contains("pub fn named_record_new"), "{source}");
+    assert!(source.contains("state.generation = next;"), "{source}");
+    assert!(source.contains("pub(crate) generation: u64"), "{source}");
+    assert!(source.contains("pub(crate) occupied: bool"), "{source}");
+    assert!(
+        source.contains(
+            "named_record_occupied_spec(*final(state)) == named_record_occupied_spec(*old(state))"
+        ),
+        "{source}"
+    );
+    assert!(!source.contains("external_body"), "{source}");
+
+    let consumer_source = temp.0.join("named-record-lifecycle-consumer.rs");
+    fs::write(
+        &consumer_source,
+        r#"
+use named_record_lifecycle::{
+    named_record_advance, named_record_generation, named_record_new, named_record_occupied,
+};
+
+fn main() {
+    let mut state = named_record_new(7, true);
+    let previous = named_record_advance(&mut state, 11);
+    assert!(previous);
+    assert_eq!(named_record_generation(&state), 11);
+    assert!(named_record_occupied(&state));
+}
+"#,
+    )
+    .unwrap();
+    let consumer = temp.0.join("named-record-lifecycle-consumer");
+    let link = codegen_rustc(&bundle)
+        .current_dir(root())
+        .arg("--edition=2021")
+        .arg(&consumer_source)
+        .arg("--extern")
+        .arg(format!(
+            "named_record_lifecycle={}",
+            bundle
+                .join("artifact/libnamed_record_lifecycle.rlib")
+                .display()
+        ))
+        .arg("-L")
+        .arg(format!(
+            "dependency={}",
+            bundle.join("artifact/deps").display()
+        ))
+        .args(["-C", "panic=abort"])
+        .arg("-o")
+        .arg(&consumer)
+        .output()
+        .unwrap();
+    assert_success(&link);
+    assert_success(&Command::new(&consumer).output().unwrap());
+
+    let privacy_source = temp.0.join("named-record-lifecycle-private.rs");
+    fs::write(
+        &privacy_source,
+        r#"
+use named_record_lifecycle::named_record_new;
+
+fn main() {
+    let state = named_record_new(7, true);
+    let _ = state.generation;
+}
+"#,
+    )
+    .unwrap();
+    let privacy = codegen_rustc(&bundle)
+        .current_dir(root())
+        .arg("--edition=2021")
+        .arg(&privacy_source)
+        .arg("--extern")
+        .arg(format!(
+            "named_record_lifecycle={}",
+            bundle
+                .join("artifact/libnamed_record_lifecycle.rlib")
+                .display()
+        ))
+        .arg("-L")
+        .arg(format!(
+            "dependency={}",
+            bundle.join("artifact/deps").display()
+        ))
+        .args(["-C", "panic=abort"])
+        .arg("-o")
+        .arg(temp.0.join("must-not-compile-private-record-access"))
+        .output()
+        .unwrap();
+    assert!(
+        !privacy.status.success()
+            && String::from_utf8_lossy(&privacy.stderr).contains("private field"),
+        "opaque record fields became externally visible: {}",
+        String::from_utf8_lossy(&privacy.stderr)
+    );
+
+    let receipt: serde_json::Value =
+        serde_json::from_slice(&fs::read(bundle.join("receipt.json")).unwrap()).unwrap();
+    assert_eq!(
+        receipt["binding"]["exports"][0]["parameter_types"],
+        serde_json::json!(["&mut State", "u64"])
+    );
+    assert_eq!(
+        receipt["binding"]["exports"][0]["ownership"],
+        serde_json::json!(["exclusive_borrow", "by_value"])
+    );
+    let tv: serde_json::Value = serde_json::from_slice(
+        &fs::read(bundle.join("evidence/translation-validation.json")).unwrap(),
+    )
+    .unwrap();
+    let rows = tv["rows"].as_array().unwrap();
+    assert_eq!(
+        rows.len(),
+        20,
+        "constructor, observers, and mutator require twenty contract/exec/body rows: {tv}"
+    );
+    assert!(
+        rows.iter().all(|row| row["verdict"] == "faithful"),
+        "every lifecycle proof row must be faithful: {tv}"
+    );
+
+    let tampered = temp.0.join("named-record-lifecycle-tampered.verified");
+    copy_tree(&bundle, &tampered);
+    let input = tampered.join("evidence/input.th");
+    let original = fs::read_to_string(&input).unwrap();
+    let changed = original.replacen("generation: u64", "generation: usize", 1);
+    assert_ne!(changed, original);
+    fs::write(&input, changed).unwrap();
+    assert!(
+        !forge(&["verify-build", tampered.to_string_lossy().as_ref()])
+            .status
+            .success(),
+        "changing the bound record layout must invalidate the lifecycle receipt"
+    );
+}
+
+#[test]
 fn aggregate_mutable_storage_is_exported_replayed_and_exactly_validated() {
     let temp = TempDir::new("aggregate-storage");
     let bundle = temp.0.join("aggregate-storage.verified");

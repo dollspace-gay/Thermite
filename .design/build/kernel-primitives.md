@@ -15,6 +15,7 @@ governs:
   - thermite-syntax/tests/conformance.rs
   - thermite-spec/src/validator.rs
   - thermite-spec/tests/fixed_array_validate.rs
+  - thermite-spec/tests/named_record_mutation_validate.rs
   - thermite-spec/tests/atomic_ordering_validate.rs
   - thermite-spec/tests/u64_bit_methods_validate.rs
   - thermite-lower/src/effects.rs
@@ -23,6 +24,7 @@ governs:
   - thermite-lower/src/lower.rs
   - thermite-lower/tests/fixed_array.rs
   - thermite-lower/tests/aggregate_array_relations.rs
+  - thermite-lower/tests/named_record_lifecycle.rs
   - thermite-lower/tests/kernel_mutable_slice.rs
   - thermite-lower/tests/effects_verified.rs
   - thermite-lower/tests/u64_bit_methods.rs
@@ -32,6 +34,7 @@ governs:
   - thermite-tv/src/obligation.rs
   - thermite-tv/src/ref_encode.rs
   - thermite-tv/tests/fixed_array_tv.rs
+  - thermite-tv/tests/named_record_lifecycle_tv.rs
   - lean/Thermite/Ast.lean
   - lean/Thermite/Denote.lean
   - lean/Thermite/RefEncode.lean
@@ -73,10 +76,11 @@ governs:
   - conformance/kernel_primitives.th
   - conformance/verified-build/aggregate_storage.th
   - conformance/verified-build/aggregate_array_relations.th
+  - conformance/verified-build/named_record_lifecycle.th
   - conformance/verified-composition/frozen_primitive.th
   - conformance/verified-composition/frozen_primitive_shell.rs
   - conformance/verified-composition/frozen_primitive_registry.json
-audited-content-sha256: c31b1cee0d066d9dbf4b0a43e55cd9fca7bf52b978d09cd85291792825ef67ee (re-pinned 2026-08-04 after executing the published aggregate relation from a downstream consumer; no kernel policy or implementation was added)
+audited-content-sha256: e85cccaaf5bcd2e94222bfc86afc424f1af7b9c13491c6f7766477527d328706 (re-pinned 2026-08-04 after exact named-record lifecycle support; no kernel policy or implementation was added)
 extends:
   - .design/build/kernel-target.md
   - .design/build/l3-rich-composition.md
@@ -172,6 +176,17 @@ L3/L2/L1 lowering, and independent exact initialization/read/indexed-write/lengt
 translation validation described below. The strict L3 fixtures bind and replay
 those contract, executable-guard, body-state, and wrapper proof rows, and record
 shared/exclusive borrow ownership in the public ABI receipt.
+Direct one-level field reads and writes through `&mut Name` are now admitted for
+finite non-sealed records. The exact record type and field are resolved before
+lowering; sealed, recursive, heap/reference-bearing, nested-projection, unknown,
+and immutable targets fail closed. Defining modules may use the same primitive
+for opaque records, while foreign package modules may neither construct nor
+read/write their representation. Contract TV gives `old(...)` and `final(...)`
+independent typed snapshots, exec TV covers structural construction/projection,
+and body TV threads every declared direct field, including untouched-field
+frames, branches, unit mutators, and dependent write order. A strict opaque
+constructor/observer/mutator fixture is receipt-replayed, executed from a
+codegen-pinned consumer, and compile-checked for external field privacy.
 Repeat initialization rejects non-copy element types before lowering.
 `.array_eq(other)` now provides allocation-free extensional equality for arrays
 of scalars and recursively finite plain records, tuples, and fixed arrays, while
@@ -186,12 +201,15 @@ L3 contracts. `.bit_set_preserves_other(changed, observed)` and
 `.bit_clear_preserves_other(changed, observed)` additionally prove exact
 same-word framing for any two distinct in-range indices. All five methods are
 independently checked by contract, expression, and body translation validation.
-Static ownership, borrows of general named aggregates, finite-enum equality,
-and complete aggregate mutation/lifecycle TV remain. The
+Static ownership, nested mutable projections, mutable local-record/loop/call-
+effect lifecycle TV, finite-enum equality/mutation, and complete aggregate/ADT
+transition composition remain. The
 allocation-free collection package now supplies a packed 256-bit `[u64; 4]` bitmap,
 64-entry `u64` vector, FIFO ring, and collision-explicit `usize`-to-`u64` direct
 map in Thermite. Richer collision-resolving maps, slabs/freelists,
-intrusive-list metadata and generic library capacities remain.
+intrusive-list metadata, and generic library capacities remain. See
+`.design/build/named-record-lifecycle.md` for the exact admitted record subset
+and adversarial proof boundary.
 
 #### Fixed-array surface lock
 
@@ -268,7 +286,9 @@ generated mutants.
 The package builds and replays as a strict freestanding receipt rooted at the
 scalar ring-index transition, binding all four original modules and rejecting
 receipt-source tampering. Full aggregate lifecycle export remains gated by
-named-aggregate/ADT body TV. The packed bitmap's finite dynamic-bit bridge is
+ADT matches/results, mutable-local state, and call-effect lifecycle TV; direct
+one-level borrowed-record transitions are no longer the blocker. The packed
+bitmap's finite dynamic-bit bridge is
 directly proved and independently translation-validated. Exact claims and
 residual work are in `.design/build/fixed-collections.md`.
 
@@ -340,7 +360,10 @@ This does not yet complete affine ownership. Code outside the defining module
 is now blocked from constructing the opaque ledger/handle, including through
 external safe Rust, but opacity alone does not prove linearity or reject all
 aliases. Strict body TV also cannot yet frame the full named-aggregate lifecycle,
-and the authority-mint boundary has no package-owned implementation/refinement.
+although direct opaque constructor/observer/`&mut` record transitions now have
+an exact strict path. The generation package still needs ADT result/match and
+callee-effect composition, and the authority-mint boundary has no package-owned
+implementation/refinement.
 The exact construction semantics are in
 `.design/build/opaque-library-state.md`; the ownership claim and residual trust
 are in `.design/build/generation-ownership.md`.
@@ -561,9 +584,9 @@ Source: `.design/reqs/registry.toml`
 |---|---|---|---|---|
 | REQ-KPRIM-1 | shipped | `.design/build/kernel-primitives.md` | Kernel scalar and effect surface |  |
 | REQ-KPRIM-10 | not_started | `.design/build/kernel-primitives.md` | Primitive-only adversarial suite | Add package, fixed-storage, atomic, waiting, registry, refinement, receipt-tamper, freestanding-consumer, and no-concrete-kernel gates. |
-| REQ-KPRIM-2 | partial | `.design/build/kernel-primitives.md` | Exact mutable and fixed storage | Mutable borrowed slices/arrays, arbitrary old/final snapshot framing, native fixed arrays, scalar and recursively finite plain-aggregate extensional equality and same-except framing, strict public-borrow/value receipts, exact array relation TV, total directly proved u64 bit methods including distinct-bit set/clear framing, and a receipt-bound packed bitmap/u64 vector/u64 FIFO-ring/collision-explicit direct-map package are shipped. Add static storage, general named-aggregate borrows and mutation, finite-enum equality if required, richer collision-resolving maps, slabs/freelists, generic library capacities, and complete aggregate lifecycle TV. |
-| REQ-KPRIM-3 | partial | `.design/build/kernel-primitives.md` | Receipt-bound packages and modules | Independent parsing, module-local identity, direct-import/root-export enforcement, rooted graph validation, source allowlisting, L3 build/composition, complete receipt binding, validation, and replay are shipped. Extend the remaining source-oriented Forge commands (check, audit, TV, goal/edit/fill) to operate on packages without losing module-local diagnostics. |
-| REQ-KPRIM-4 | partial | `.design/build/kernel-primitives.md` | Sealed authority and ownership | The sealed-construction barrier plus an opaque receipt-bound 64-slot generation ledger now prove acquisition/renewal/release, stale-handle-after-reuse rejection, double-release rejection, monotonic rights, L3 move/clone refusal, foreign-module construction rejection, and a strict replayed scalar surface. Add a complete affine rule if stronger uniqueness is required, named-aggregate/ADT body TV for strict lifecycle replay, exact authority-mint refinement, and atomic-slot integration. |
+| REQ-KPRIM-2 | partial | `.design/build/kernel-primitives.md` | Exact mutable and fixed storage | Mutable borrowed slices/arrays, arbitrary old/final snapshot framing, native fixed arrays, scalar and recursively finite plain-aggregate relations, direct one-level mutation of finite non-sealed named records, defining-module opaque state transitions, exact contract/exec/body lifecycle TV, strict opaque constructor/observer/mutator receipts, total directly proved u64 bit methods, and a receipt-bound packed bitmap/u64 vector/u64 FIFO-ring/collision-explicit direct-map package are shipped. Add static storage, nested mutable projections, strict body TV for mutable local records and record-state loops/call effects, finite-enum equality/mutation if required, richer collision-resolving maps, slabs/freelists, and generic library capacities. |
+| REQ-KPRIM-3 | partial | `.design/build/kernel-primitives.md` | Receipt-bound packages and modules | Independent parsing, module-local identity, direct-import/root-export enforcement, rooted graph validation, opaque construction/read/write ownership, source allowlisting, L3 build/composition, complete receipt binding, validation, and replay are shipped. Extend the remaining source-oriented Forge commands (check, audit, TV, goal/edit/fill) to operate on packages without losing module-local diagnostics. |
+| REQ-KPRIM-4 | partial | `.design/build/kernel-primitives.md` | Sealed authority and ownership | The sealed-construction barrier, direct opaque constructor/observer/exclusive-record lifecycle receipts, and opaque receipt-bound 64-slot generation ledger prove acquisition/renewal/release, stale-handle-after-reuse rejection, double-release rejection, monotonic rights, L3 move/clone refusal, and foreign-module construction/read/write rejection. Add a complete affine rule if stronger uniqueness is required, aggregate-result/ADT/call-effect body TV for the full generation-ledger lifecycle, exact authority-mint refinement, and atomic-slot integration. |
 | REQ-KPRIM-5 | partial | `.design/build/kernel-primitives.md` | Sealed atomics and ordering model | The receipt-bound package, 50 sealed boundary declarations, exact ordering matrix, pre-codegen legality gate, bounded history relations, strict kernel ordering proof, strict hosted history proof, replay, and adversarial tests are present. Add enforceable single-use slot ownership, a kernel-target finite-history proof surface, exact atomic object/machine refinement, and verified synchronization consumers. |
 | REQ-KPRIM-6 | partial | `.design/build/kernel-primitives.md` | Verified waiting and synchronization | A receipt-bound bounded-wait trace scan, frozen pause/block/terminal-halt declarations, and fail-closed ticket-lock/barrier/epoch-ack/once/reference-count/seqlock/bounded-MPSC/bounded-work-deque mechanics are shipped with L3 proofs, adversarial claims, strict replay, and tamper rejection. Add registry-level fairness/progress semantics, directly refined wait bodies, atomic integration and machine concurrency composition, then richer reader/writer coordination in .th. |
 | REQ-KPRIM-7 | partial | `.design/build/kernel-primitives.md` | Generic frozen boundary registry | Same-crate safe direct-Verus Rust-ABI entries now close reachable boundaries exactly. Add non-empty codegen-feature binding and exact separate Rust/assembly source, object, machine-model, and refinement closure for irreducible operations without adding an architecture operation table. |

@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: a3ba3c2cfb6e718a2a554c3f037660947edc9a671b7c6107a53a37fa1389b789
+audited-content-sha256: cd2322bedc6d411db06bf63de1c988bb03f4111f48e9a94a77e59d62eb89ae72
 decision: one canonical Verus crate with crate-visible rich Thermite roots and public shell exports
 issue: github:dollspace-gay/Thermite#104
 governs:
@@ -46,6 +46,7 @@ The additive command is:
 forge build model.th --level l3 \
   --compose-export transition \
   --compose-shell platform_shell.rs \
+  [--primitive-registry platform.registry.json] \
   [--export primitive_link_export] \
   [--crate-name model_platform] \
   [--target std|kernel] \
@@ -57,6 +58,11 @@ At least one composition export is required for this mode. `--export` retains
 the issue-#101 primitive/unit public ABI and may be combined with composition
 exports, but the same Thermite function cannot occupy both tiers. L1 behavior
 and ordinary L3 build behavior are unchanged.
+
+`--primitive-registry` is optional and may occur once. When present, it invokes
+the stricter consumer-owned frozen-boundary closure specified by
+`.design/build/frozen-primitive-registry.md`. It is invalid outside an L3
+composition build.
 
 `forge verify-build <bundle> [--replay]` recognizes the receipt schema and
 independently reconstructs the combined plan. Replay requires the recorded
@@ -76,6 +82,11 @@ reachable executable function, specification function, ADT, generated bounded
 type/helper, wrapper, caller edge, body, contract, and effect row. Slag,
 boundaries, holes, unresolved calls, divergence, panic, hosted effects in a
 kernel target, or any sub-L3 certificate reject the whole build.
+
+The sole boundary exception is an exact frozen-registry composition. Every
+reachable boundary must then resolve one-to-one to a checked direct-Verus shell
+function, and canonical lowering emits a real wrapper call rather than an
+`external_body`. Unregistered boundaries and every slag function still reject.
 
 For each composition export the plan records its semantic address, exact
 signature, parameter ownership (`by_value`, `shared_borrow`, or
@@ -215,6 +226,12 @@ artifact and complete file inventory remain bound by the issue-#101 receipt
 root. Validation rejects schema mixing, path traversal, missing/extra files,
 semantic-plan drift, source-policy drift, visibility drift, toolchain drift,
 and artifact drift.
+
+When a frozen registry is present, the plan and receipt also bind its exact
+bytes, resolved entries, reachable count, discharged refinement-obligation
+count, and generated checked-wrapper calls. Validation reconstructs those facts
+from the Thermite program and exact shell inventory; replay proves and compiles
+the same combined source.
 
 Publication reuses the staging/fsync/self-validation/atomic-rename protocol.
 No destination appears on any planning, policy, certificate, TV, proof,

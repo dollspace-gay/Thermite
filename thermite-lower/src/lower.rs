@@ -251,6 +251,19 @@ pub struct L3Export {
     pub visibility: L3ExportVisibility,
 }
 
+/// One exact same-crate implementation selected for a Thermite `#[boundary]`
+/// declaration by a frozen primitive registry.  The ordinary lowering path
+/// continues to emit an assumable `external_body` signature for an unbound
+/// boundary.  A strict registry composition instead supplies this row and gets
+/// a checked wrapper whose body calls `call_target`; Verus therefore proves the
+/// declared Thermite contract against the exact implementation in the combined
+/// crate rather than assuming it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct L3BoundaryBinding {
+    pub source_name: String,
+    pub call_target: String,
+}
+
 /// Visibility of an explicitly selected L3 entry point.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum L3ExportVisibility {
@@ -677,7 +690,7 @@ fn zero_span() -> Span {
 /// in source order with their shape-derived proof aids, and (3) a trailing
 /// `fn main() {}`.
 pub fn lower(program: &Program) -> Result<String, LowerError> {
-    lower_with_profile(program, None)
+    lower_with_profile(program, None, BTreeMap::new())
 }
 
 /// Emit the canonical executable Verus library compiled by the L3 verified-build
@@ -689,6 +702,17 @@ pub fn lower_l3_library(
     program: &Program,
     exports: &[L3Export],
     target: L3LibraryTarget,
+) -> Result<String, LowerError> {
+    lower_l3_library_with_boundaries(program, exports, target, &[])
+}
+
+/// Emit an L3 library while refining selected Thermite boundary declarations
+/// through exact same-crate direct-Verus implementations.
+pub fn lower_l3_library_with_boundaries(
+    program: &Program,
+    exports: &[L3Export],
+    target: L3LibraryTarget,
+    boundary_bindings: &[L3BoundaryBinding],
 ) -> Result<String, LowerError> {
     let mut by_source: BTreeMap<&str, &L3Export> = BTreeMap::new();
     for export in exports {
@@ -709,12 +733,68 @@ pub fn lower_l3_library(
             });
         }
     }
-    lower_with_profile(program, Some((by_source, target)))
+    let mut bound_boundaries = BTreeMap::new();
+    for binding in boundary_bindings {
+        if bound_boundaries
+            .insert(binding.source_name.as_str(), binding.call_target.as_str())
+            .is_some()
+        {
+            return Err(LowerError::Unsupported {
+                what: format!("duplicate L3 boundary binding `{}`", binding.source_name),
+                span: zero_span(),
+            });
+        }
+        let function = program.items.iter().find_map(|item| match item {
+            Item::Fn(function) if function.name == binding.source_name => Some(function),
+            _ => None,
+        });
+        let Some(function) = function else {
+            return Err(LowerError::Unsupported {
+                what: format!("unknown L3 boundary binding `{}`", binding.source_name),
+                span: zero_span(),
+            });
+        };
+        if function.boundary.is_none() || function.slag.is_some() {
+            return Err(LowerError::Unsupported {
+                what: format!(
+                    "L3 boundary binding `{}` does not name a #[boundary] function",
+                    binding.source_name
+                ),
+                span: function.span,
+            });
+        }
+        if !valid_rust_path(&binding.call_target) {
+            return Err(LowerError::Unsupported {
+                what: format!(
+                    "L3 boundary binding `{}` has invalid call target `{}`",
+                    binding.source_name, binding.call_target
+                ),
+                span: function.span,
+            });
+        }
+    }
+    lower_with_profile(program, Some((by_source, target)), bound_boundaries)
+}
+
+fn valid_rust_path(path: &str) -> bool {
+    let mut segments = path.split("::");
+    let Some(first) = segments.next() else {
+        return false;
+    };
+    let valid_segment = |segment: &str| {
+        let mut bytes = segment.bytes();
+        bytes
+            .next()
+            .is_some_and(|byte| byte.is_ascii_alphabetic() || byte == b'_')
+            && bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+    };
+    valid_segment(first) && segments.all(valid_segment) && path.contains("::")
 }
 
 fn lower_with_profile(
     program: &Program,
     library: Option<(BTreeMap<&str, &L3Export>, L3LibraryTarget)>,
+    boundary_bindings: BTreeMap<&str, &str>,
 ) -> Result<String, LowerError> {
     // Verus 0.2026.05.24 synthesizes named-enum projection helpers by iterating
     // a randomly seeded HashMap. That order reaches `lib.rmeta`, so an otherwise
@@ -1062,6 +1142,7 @@ fn lower_with_profile(
                     &CallLoweringContext {
                         variants: &variants,
                         spec_fn_param_types: &spec_fn_param_types,
+                        bound_boundary_target: boundary_bindings.get(f.name.as_str()).copied(),
                     },
                     L3FnVisibility::Private,
                 )?
@@ -1086,6 +1167,7 @@ fn lower_with_profile(
                     &CallLoweringContext {
                         variants: &variants,
                         spec_fn_param_types: &spec_fn_param_types,
+                        bound_boundary_target: None,
                     },
                     library
                         .as_ref()
@@ -2999,6 +3081,7 @@ fn fn_is_diverge(f: &FnItem) -> bool {
 struct CallLoweringContext<'a> {
     variants: &'a [(&'a str, &'a str)],
     spec_fn_param_types: &'a [(&'a str, &'a [PrimType])],
+    bound_boundary_target: Option<&'a str>,
 }
 
 fn lower_fn(
@@ -3021,6 +3104,19 @@ fn lower_fn(
     // so a regular fn is never emitted as an assumed-L3 external_body signature
     // (`goal.md` R-DEFER-9). `boundary_gate_verified.rs` anchors this observable
     // dispatch (the emitted `#[verifier::external_body]` substring) to the proof.
+    if f.boundary.is_some() && f.slag.is_none() {
+        if let Some(call_target) = call_context.bound_boundary_target {
+            return lower_refined_boundary_fn(
+                f,
+                nat_fns,
+                inv_structs,
+                string_fields,
+                user_string_spec_fns,
+                spec_fn_param_types,
+                call_target,
+            );
+        }
+    }
     if thermite_verified::should_emit_external_body(f.boundary.is_some(), f.slag.is_some()) {
         return lower_external_body_fn(
             f,
@@ -3087,6 +3183,42 @@ fn lower_fn(
     // `spec fn` body (`lower_spec_fn`) reach the byte-view dispatch (#127).
     let body = lower_fn_body(f, nat_fns, string_fields, variants, spec_fn_param_types)?;
     out.push_str(&body);
+    Ok(out)
+}
+
+/// Lower a registry-bound `#[boundary]` as a fully checked wrapper over the
+/// selected same-crate implementation.  Unlike `lower_external_body_fn`, this
+/// emits no proof exemption: the wrapper establishes the Thermite contract by
+/// calling the exact direct-Verus item named by the frozen registry.  The
+/// combined crate is accepted only when Verus proves that call and its result.
+fn lower_refined_boundary_fn(
+    f: &FnItem,
+    nat_fns: &[&str],
+    inv_structs: &[&str],
+    string_fields: &[&str],
+    user_string_spec_fns: &[&str],
+    spec_fn_param_types: &[(&str, &[PrimType])],
+    call_target: &str,
+) -> Result<String, LowerError> {
+    let mut out = lower_fn_signature(
+        f,
+        nat_fns,
+        inv_structs,
+        string_fields,
+        user_string_spec_fns,
+        spec_fn_param_types,
+        L3FnVisibility::Private,
+    )?;
+    out.push_str("{\n    ");
+    out.push_str(call_target);
+    out.push('(');
+    for (index, param) in f.params.iter().enumerate() {
+        if index > 0 {
+            out.push_str(", ");
+        }
+        out.push_str(&param.name);
+    }
+    out.push_str(")\n}\n");
     Ok(out)
 }
 

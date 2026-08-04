@@ -555,6 +555,62 @@ design = ".design/build/l3-rich-composition.md"
 reference = ["conformance/verified-composition"]
 conformance_ops = ["probe_step", "boot_observation", "private-rich-root"]
 
+# Consumer-owned frozen primitive registries close each reachable Thermite
+# boundary through an exact non-exempt same-crate direct-Verus wrapper call.
+[[route]]
+crate_pattern = "forge/src/verified_build/primitive_registry.rs"
+design = ".design/build/frozen-primitive-registry.md"
+reference = ["conformance/verified-composition/frozen_primitive_registry.json"]
+conformance_ops = ["registry-closure", "registry-drift"]
+
+[[route]]
+crate_pattern = "forge/src/verified_build.rs"
+design = ".design/build/frozen-primitive-registry.md"
+reference = ["conformance/verified-composition/frozen_primitive_registry.json"]
+conformance_ops = ["registry-receipt", "registry-replay"]
+
+[[route]]
+crate_pattern = "forge/src/verified_build/composition.rs"
+design = ".design/build/frozen-primitive-registry.md"
+reference = ["conformance/verified-composition/frozen_primitive_registry.json"]
+conformance_ops = ["registered-boundary-closure", "checked-wrapper"]
+
+[[route]]
+crate_pattern = "forge/src/cli.rs"
+design = ".design/build/frozen-primitive-registry.md"
+reference = ["conformance/verified-composition/frozen_primitive_registry.json"]
+conformance_ops = ["primitive-registry-flag"]
+
+[[route]]
+crate_pattern = "thermite-lower/src/lower.rs"
+design = ".design/build/frozen-primitive-registry.md"
+reference = ["conformance/verified-composition/frozen_primitive.th"]
+conformance_ops = ["checked-boundary-wrapper"]
+
+[[route]]
+crate_pattern = "thermite-lower/src/lib.rs"
+design = ".design/build/frozen-primitive-registry.md"
+reference = ["conformance/verified-composition/frozen_primitive.th"]
+conformance_ops = ["L3BoundaryBinding"]
+
+[[route]]
+crate_pattern = "thermite-lower/tests/l3_library.rs"
+design = ".design/build/frozen-primitive-registry.md"
+reference = ["conformance/verified-composition/frozen_primitive.th"]
+conformance_ops = ["checked-boundary-wrapper"]
+
+[[route]]
+crate_pattern = "forge/tests/verified_composition.rs"
+design = ".design/build/frozen-primitive-registry.md"
+reference = ["conformance/verified-composition/frozen_primitive_registry.json"]
+conformance_ops = ["direct-refinement", "receipt-tamper", "lying-implementation"]
+
+[[route]]
+crate_pattern = "conformance/verified-composition/frozen_primitive*"
+design = ".design/build/frozen-primitive-registry.md"
+reference = []
+conformance_ops = ["synthetic-identity-primitive"]
+
 # Receipt-bound kernel byte-slice proof model (issue #108): Forge explicitly
 # imports the pinned vstd VIR while pairing it with deterministic no_std erased
 # metadata, then proves exact native &[u8] reads in the combined crate.

@@ -349,6 +349,7 @@ enum Command {
         exports: Vec<String>,
         composition_exports: Vec<String>,
         composition_shells: Vec<PathBuf>,
+        primitive_registry: Option<PathBuf>,
         crate_name: Option<String>,
         entry: Option<String>,
         json: bool,
@@ -911,6 +912,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
             let mut exports = Vec::new();
             let mut composition_exports = Vec::new();
             let mut composition_shells = Vec::new();
+            let mut primitive_registry = None;
             let mut crate_name = None;
             let mut sandbox_flag_seen = false;
             let mut iter = iter.peekable();
@@ -954,6 +956,19 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                             )
                         })?;
                         composition_shells.push(PathBuf::from(value));
+                    }
+                    "--primitive-registry" => {
+                        let value = iter.next().ok_or_else(|| {
+                            ForgeError::Usage(
+                                "`--primitive-registry` requires a <registry.json> value"
+                                    .to_string(),
+                            )
+                        })?;
+                        if primitive_registry.replace(PathBuf::from(value)).is_some() {
+                            return Err(ForgeError::Usage(
+                                "`--primitive-registry` may be supplied only once".to_string(),
+                            ));
+                        }
                     }
                     "--crate-name" => {
                         let value = iter.next().ok_or_else(|| {
@@ -1058,11 +1073,18 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                                 .to_string(),
                         ));
                     }
+                    if primitive_registry.is_some() && composition_exports.is_empty() {
+                        return Err(ForgeError::Usage(
+                            "`--primitive-registry` requires an L3 composition build with `--compose-export` and `--compose-shell`"
+                                .to_string(),
+                        ));
+                    }
                 }
                 BuildLevel::L1
                     if !exports.is_empty()
                         || !composition_exports.is_empty()
                         || !composition_shells.is_empty()
+                        || primitive_registry.is_some()
                         || crate_name.is_some() =>
                 {
                     return Err(ForgeError::Usage(
@@ -1078,6 +1100,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                 exports,
                 composition_exports,
                 composition_shells,
+                primitive_registry,
                 crate_name,
                 entry,
                 json,
@@ -1715,6 +1738,7 @@ fn dispatch(args: &[String]) -> Result<ExitCode, ForgeError> {
             exports,
             composition_exports,
             composition_shells,
+            primitive_registry,
             crate_name,
             entry,
             json,
@@ -1727,6 +1751,7 @@ fn dispatch(args: &[String]) -> Result<ExitCode, ForgeError> {
             exports: &exports,
             composition_exports: &composition_exports,
             composition_shells: &composition_shells,
+            primitive_registry: primitive_registry.as_deref(),
             crate_name: crate_name.as_deref(),
             entry: entry.as_deref(),
             json,
@@ -2423,6 +2448,7 @@ struct BuildRun<'a> {
     exports: &'a [String],
     composition_exports: &'a [String],
     composition_shells: &'a [PathBuf],
+    primitive_registry: Option<&'a Path>,
     crate_name: Option<&'a str>,
     entry: Option<&'a str>,
     json: bool,
@@ -2438,6 +2464,7 @@ fn run_build(request: BuildRun<'_>) -> Result<ExitCode, ForgeError> {
         exports,
         composition_exports,
         composition_shells,
+        primitive_registry,
         crate_name,
         entry,
         json,
@@ -2470,7 +2497,10 @@ fn run_build(request: BuildRun<'_>) -> Result<ExitCode, ForgeError> {
             file,
             exports,
             composition_exports,
-            composition_shells,
+            crate::verified_build::CompositionSourcePaths {
+                shells: composition_shells,
+                primitive_registry,
+            },
             crate_name,
             out,
             verified_target,
@@ -3911,6 +3941,7 @@ mod tests {
                 exports: Vec::new(),
                 composition_exports: Vec::new(),
                 composition_shells: Vec::new(),
+                primitive_registry: None,
                 crate_name: None,
                 entry: Some("f".to_string()),
                 json: false,
@@ -4052,6 +4083,7 @@ mod tests {
                 exports: vec!["f".to_string(), "g".to_string()],
                 composition_exports: Vec::new(),
                 composition_shells: Vec::new(),
+                primitive_registry: None,
                 crate_name: Some("verified_a".to_string()),
                 entry: None,
                 json: true,
@@ -4092,6 +4124,7 @@ mod tests {
                 exports: Vec::new(),
                 composition_exports: vec!["probe_step".to_string()],
                 composition_shells: vec![PathBuf::from("probe_shell.rs")],
+                primitive_registry: None,
                 crate_name: None,
                 entry: None,
                 json: false,
@@ -4099,6 +4132,28 @@ mod tests {
                 out: None,
                 target: BuildTarget::Kernel,
             })
+        );
+        assert_eq!(
+            parse_args(&argv(&[
+                "build",
+                "probe.th",
+                "--level",
+                "l3",
+                "--compose-export",
+                "probe_step",
+                "--compose-shell",
+                "probe_shell.rs",
+                "--primitive-registry",
+                "platform.registry.json",
+            ]))
+            .ok()
+            .and_then(|command| match command {
+                Command::Build {
+                    primitive_registry, ..
+                } => Some(primitive_registry),
+                _ => None,
+            }),
+            Some(Some(PathBuf::from("platform.registry.json")))
         );
         for args in [
             vec![
@@ -4124,6 +4179,16 @@ mod tests {
                 "probe_step",
                 "--compose-shell",
                 "probe_shell.rs",
+            ],
+            vec![
+                "build",
+                "probe.th",
+                "--level",
+                "l3",
+                "--export",
+                "probe_step",
+                "--primitive-registry",
+                "platform.registry.json",
             ],
         ] {
             assert!(matches!(

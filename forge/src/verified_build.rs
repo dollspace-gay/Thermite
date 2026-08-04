@@ -30,6 +30,7 @@ use crate::manifest::{AssuranceScope, Certificate, Level, ObligationStatus};
 use crate::thermite_package::{self, LoadedPackage};
 
 mod composition;
+mod primitive_registry;
 
 const PLAN_SCHEMA: &str = "thermite.artifact-plan.v1";
 const RECEIPT_SCHEMA: &str = "thermite.verified-build-receipt.v1";
@@ -67,6 +68,8 @@ const COMPOSITION_STRICT_GATES: &[&str] = &[
     "rich-composition-visibility",
     "direct-verus-source-policy",
     "combined-source-inventory",
+    "frozen-primitive-registry-closure",
+    "exact-boundary-refinement",
     "whole-crate-no-cheating",
     "verus-codegen",
     "cryptographic-binding",
@@ -186,11 +189,58 @@ pub struct CompositionInventoryRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlannedPrimitiveTargetV1 {
+    pub target_triple: String,
+    pub target_features: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlannedPrimitiveEntryV1 {
+    pub semantic_name: String,
+    pub version: u64,
+    pub required: bool,
+    pub reachable: bool,
+    pub thermite_name: String,
+    pub semantic_address: String,
+    pub boundary_target: String,
+    pub signature: String,
+    pub contract_sha256: String,
+    pub effects_sha256: String,
+    pub effects: Vec<String>,
+    pub parameter_ownership: Vec<String>,
+    pub result_ownership: String,
+    pub implementation_shell: String,
+    pub implementation_item: String,
+    pub implementation_source_sha256: String,
+    pub implementation_abi: String,
+    pub implementation_symbol: String,
+    pub alignment: u64,
+    pub model: String,
+    pub refinement: String,
+    pub proof_obligations: Vec<String>,
+    pub concurrency: String,
+    pub memory_orderings: Vec<String>,
+    pub failure: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlannedPrimitiveRegistryV1 {
+    pub schema: String,
+    pub path: String,
+    pub length: u64,
+    pub sha256: String,
+    pub target: PlannedPrimitiveTargetV1,
+    pub entries: Vec<PlannedPrimitiveEntryV1>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CompositionPlanV1 {
     pub schema: String,
     pub composition_exports: Vec<PlannedCompositionExport>,
     pub shell_modules: Vec<PlannedShellModule>,
     pub inventory: Vec<CompositionInventoryRow>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub primitive_registry: Option<PlannedPrimitiveRegistryV1>,
     pub lowered_thermite_sha256: String,
     pub combined_source_sha256: String,
 }
@@ -437,6 +487,61 @@ impl ArtifactPlanV1 {
                         c.field("kind", &item.kind);
                         c.field("visibility", &item.visibility);
                         c.field("sha256", &item.sha256);
+                    });
+                }
+                if let Some(registry) = &composition.primitive_registry {
+                    c.record("primitive_registry", |c| {
+                        c.field("schema", &registry.schema);
+                        c.field("path", &registry.path);
+                        c.field("length", &registry.length.to_string());
+                        c.field("sha256", &registry.sha256);
+                        c.field("target_triple", &registry.target.target_triple);
+                        for feature in &registry.target.target_features {
+                            c.field("target_feature", feature);
+                        }
+                        for entry in &registry.entries {
+                            c.record("entry", |c| {
+                                c.field("semantic_name", &entry.semantic_name);
+                                c.field("version", &entry.version.to_string());
+                                c.field("required", if entry.required { "true" } else { "false" });
+                                c.field(
+                                    "reachable",
+                                    if entry.reachable { "true" } else { "false" },
+                                );
+                                c.field("thermite_name", &entry.thermite_name);
+                                c.field("semantic_address", &entry.semantic_address);
+                                c.field("boundary_target", &entry.boundary_target);
+                                c.field("signature", &entry.signature);
+                                c.field("contract_sha256", &entry.contract_sha256);
+                                c.field("effects_sha256", &entry.effects_sha256);
+                                for effect in &entry.effects {
+                                    c.field("effect", effect);
+                                }
+                                for ownership in &entry.parameter_ownership {
+                                    c.field("parameter_ownership", ownership);
+                                }
+                                c.field("result_ownership", &entry.result_ownership);
+                                c.field("implementation_shell", &entry.implementation_shell);
+                                c.field("implementation_item", &entry.implementation_item);
+                                c.field(
+                                    "implementation_source_sha256",
+                                    &entry.implementation_source_sha256,
+                                );
+                                c.field("implementation_abi", &entry.implementation_abi);
+                                c.field("implementation_symbol", &entry.implementation_symbol);
+                                c.field("alignment", &entry.alignment.to_string());
+                                c.field("model", &entry.model);
+                                c.field("refinement", &entry.refinement);
+                                for obligation in &entry.proof_obligations {
+                                    c.field("proof_obligation", obligation);
+                                }
+                                c.field("concurrency", &entry.concurrency);
+                                for ordering in &entry.memory_orderings {
+                                    c.field("memory_ordering", ordering);
+                                }
+                                c.field("failure", &entry.failure);
+                            });
+                        }
                     });
                 }
             });
@@ -687,6 +792,12 @@ pub struct CompositionReceiptBindingV1 {
     pub direct_verus_set_sha256: String,
     pub inventory_sha256: String,
     pub combined_source_sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub primitive_registry_sha256: Option<String>,
+    #[serde(default)]
+    pub reachable_primitive_count: u64,
+    #[serde(default)]
+    pub discharged_refinement_obligations: u64,
 }
 
 impl ReceiptBindingV1 {
@@ -777,6 +888,21 @@ impl ReceiptBindingV1 {
                 c.field(
                     "combined_source_sha256",
                     &composition.combined_source_sha256,
+                );
+                c.field(
+                    "primitive_registry_sha256",
+                    composition
+                        .primitive_registry_sha256
+                        .as_deref()
+                        .unwrap_or(""),
+                );
+                c.field(
+                    "reachable_primitive_count",
+                    &composition.reachable_primitive_count.to_string(),
+                );
+                c.field(
+                    "discharged_refinement_obligations",
+                    &composition.discharged_refinement_obligations.to_string(),
                 );
             });
         }
@@ -1625,11 +1751,17 @@ pub fn build_file(
 
 /// Build one exact-source L3 crate containing canonical Thermite lowering and
 /// one or more closed direct-Verus shell modules.
+#[derive(Clone, Copy)]
+pub struct CompositionSourcePaths<'a> {
+    pub shells: &'a [PathBuf],
+    pub primitive_registry: Option<&'a Path>,
+}
+
 pub fn build_composition_file(
     path: &Path,
     link_exports: &[String],
     composition_exports: &[String],
-    shell_paths: &[PathBuf],
+    sources: CompositionSourcePaths<'_>,
     crate_name: Option<&str>,
     out: Option<&Path>,
     target: VerifiedTarget,
@@ -1638,7 +1770,7 @@ pub fn build_composition_file(
         path,
         link_exports,
         composition_exports,
-        shell_paths,
+        sources,
         crate_name,
         out,
         target,
@@ -1712,6 +1844,15 @@ fn strict_source_checks(
     closure: &VerifiedClosure,
     target: VerifiedTarget,
 ) -> Option<String> {
+    strict_source_checks_with_registered_boundaries(program, closure, target, &BTreeSet::new())
+}
+
+fn strict_source_checks_with_registered_boundaries(
+    program: &Program,
+    closure: &VerifiedClosure,
+    target: VerifiedTarget,
+    registered_boundaries: &BTreeSet<String>,
+) -> Option<String> {
     for item in &program.items {
         match item {
             Item::Fn(f) if closure.functions.contains(&f.name) => {
@@ -1722,7 +1863,9 @@ fn strict_source_checks(
                         f.name
                     ));
                 }
-                if f.boundary.is_some() || f.body.is_none() {
+                if (f.boundary.is_some() || f.body.is_none())
+                    && !registered_boundaries.contains(&f.name)
+                {
                     return Some(format!(
                         "reachable path `{}` crosses #[boundary] function `{}`",
                         closure_path(closure, &f.name).join(" -> "),
@@ -2285,6 +2428,15 @@ fn reject_certificates(
     closure: &VerifiedClosure,
     program: &Program,
 ) -> Option<String> {
+    reject_certificates_with_registered_boundaries(certs, closure, program, &BTreeSet::new())
+}
+
+fn reject_certificates_with_registered_boundaries(
+    certs: &[Certificate],
+    closure: &VerifiedClosure,
+    program: &Program,
+    registered_boundaries: &BTreeSet<String>,
+) -> Option<String> {
     let required: BTreeSet<&str> = closure
         .functions
         .iter()
@@ -2311,6 +2463,23 @@ fn reject_certificates(
                 "missing certificate for reachable node `{name}`{source_range}"
             ));
         };
+        if registered_boundaries.contains(name) {
+            if cert.level != Level::L1
+                || !cert.boundary
+                || cert.slag
+                || cert.lowered_assurance
+                || cert.reject.is_some()
+                || cert
+                    .obligations
+                    .iter()
+                    .any(|obligation| obligation.status == ObligationStatus::Failed)
+            {
+                return Some(format!(
+                    "registered boundary `{name}` does not carry the exact declared L1 boundary certificate completed by composition"
+                ));
+            }
+            continue;
+        }
         if cert.level < Level::L3 {
             let proof_diagnostic = cert
                 .obligations
@@ -2340,8 +2509,14 @@ fn reject_certificates(
                 "reachable node `{name}` has degraded, rejected, slag, or boundary evidence"
             ));
         }
-        if !matches!(cert.assurance_scope, None | Some(AssuranceScope::EndToEnd)) {
-            return Some(format!("reachable node `{name}` is not end-to-end"));
+        match &cert.assurance_scope {
+            None | Some(AssuranceScope::EndToEnd) => {}
+            Some(AssuranceScope::ToBoundary { via }) if registered_boundaries.contains(via) => {}
+            Some(AssuranceScope::ToBoundary { .. }) => {
+                return Some(format!(
+                    "reachable node `{name}` crosses an unregistered boundary"
+                ));
+            }
         }
         if cert
             .obligations
@@ -2405,10 +2580,11 @@ fn inject_certificate_fault(certificates: &mut Vec<Certificate>) {
     }
 }
 
-fn assurance_aggregate(
+fn assurance_aggregate_with_registered_boundaries(
     certificates: &[Certificate],
     closure: &VerifiedClosure,
     exports: &[PlannedExport],
+    registered_boundaries: &BTreeSet<String>,
 ) -> Result<AssuranceAggregate, ForgeError> {
     let required: BTreeSet<&str> = closure
         .functions
@@ -2425,15 +2601,23 @@ fn assurance_aggregate(
             .ok_or_else(|| ForgeError::VerusOutput {
                 detail: format!("missing certificate while aggregating `{name}`"),
             })?;
-        minimum = minimum.min(certificate.level);
+        let achieved = if registered_boundaries.contains(name) {
+            minimum = minimum.min(Level::L3);
+            "L3-direct-refinement".to_string()
+        } else {
+            minimum = minimum.min(certificate.level);
+            level_name(certificate.level).to_string()
+        };
         members.push(AssuranceMember {
             name: name.to_string(),
-            kind: if closure.functions.contains(name) {
+            kind: if registered_boundaries.contains(name) {
+                "frozen_primitive_boundary".to_string()
+            } else if closure.functions.contains(name) {
                 "executable".to_string()
             } else {
                 "specification".to_string()
             },
-            achieved: level_name(certificate.level).to_string(),
+            achieved,
         });
     }
     for export in exports.iter().filter(|export| export.wrapped) {
@@ -3712,6 +3896,7 @@ struct StageInput<'a> {
 struct CompositionStageInput<'a> {
     lowered_thermite: &'a str,
     shell_sources: &'a [DirectVerusSource],
+    primitive_registry: Option<&'a primitive_registry::PrimitiveRegistrySource>,
 }
 
 fn stage_and_publish(input: StageInput<'_>) -> Result<VerifiedBuildReceiptV1, ForgeError> {
@@ -3783,6 +3968,9 @@ fn stage_and_publish(input: StageInput<'_>) -> Result<VerifiedBuildReceiptV1, Fo
         for shell in composition.shell_sources {
             write_bytes(&stage.path.join(&shell.plan.path), &shell.bytes)?;
         }
+        if let Some(registry) = composition.primitive_registry {
+            write_bytes(&stage.path.join(&registry.plan.path), &registry.bytes)?;
+        }
     }
     write_bytes(&evidence.join("certificates.json"), cert_json.as_bytes())?;
     write_bytes(
@@ -3849,29 +4037,44 @@ fn stage_and_publish(input: StageInput<'_>) -> Result<VerifiedBuildReceiptV1, Fo
         length: artifact_file.length,
         sha256: artifact_file.sha256,
     };
-    let assurance_aggregate = assurance_aggregate(
+    let staged_closure = VerifiedClosure {
+        roots: plan_roots(plan),
+        functions: plan
+            .closure_nodes
+            .iter()
+            .filter(|node| node.kind == "fn")
+            .map(|node| node.name.clone())
+            .collect(),
+        spec_functions: plan
+            .closure_nodes
+            .iter()
+            .filter(|node| node.kind == "spec_fn")
+            .map(|node| node.name.clone())
+            .collect(),
+        edges: plan
+            .closure_edges
+            .iter()
+            .map(|edge| (edge[0].clone(), edge[1].clone()))
+            .collect(),
+    };
+    let registered_boundaries: BTreeSet<String> = plan
+        .composition
+        .as_ref()
+        .and_then(|composition| composition.primitive_registry.as_ref())
+        .map(|registry| {
+            registry
+                .entries
+                .iter()
+                .filter(|entry| entry.reachable)
+                .map(|entry| entry.thermite_name.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+    let assurance_aggregate = assurance_aggregate_with_registered_boundaries(
         certificates,
-        &VerifiedClosure {
-            roots: plan_roots(plan),
-            functions: plan
-                .closure_nodes
-                .iter()
-                .filter(|node| node.kind == "fn")
-                .map(|node| node.name.clone())
-                .collect(),
-            spec_functions: plan
-                .closure_nodes
-                .iter()
-                .filter(|node| node.kind == "spec_fn")
-                .map(|node| node.name.clone())
-                .collect(),
-            edges: plan
-                .closure_edges
-                .iter()
-                .map(|edge| (edge[0].clone(), edge[1].clone()))
-                .collect(),
-        },
+        &staged_closure,
         &plan.exports,
+        &registered_boundaries,
     )?;
     let injected_mutation = match std::env::var("THERMITE_L3_TEST_FAULT").as_deref() {
         Ok("after-artifact-hash") if cfg!(debug_assertions) => Some(artifact_relative.as_str()),
@@ -3902,6 +4105,33 @@ fn stage_and_publish(input: StageInput<'_>) -> Result<VerifiedBuildReceiptV1, Fo
                 direct_verus_set_sha256: canonical_shell_set_sha256(&composition.shell_modules),
                 inventory_sha256: canonical_composition_inventory_sha256(&composition.inventory),
                 combined_source_sha256: composition.combined_source_sha256.clone(),
+                primitive_registry_sha256: composition
+                    .primitive_registry
+                    .as_ref()
+                    .map(|registry| registry.sha256.clone()),
+                reachable_primitive_count: composition
+                    .primitive_registry
+                    .as_ref()
+                    .map(|registry| {
+                        registry
+                            .entries
+                            .iter()
+                            .filter(|entry| entry.reachable)
+                            .count() as u64
+                    })
+                    .unwrap_or(0),
+                discharged_refinement_obligations: composition
+                    .primitive_registry
+                    .as_ref()
+                    .map(|registry| {
+                        registry
+                            .entries
+                            .iter()
+                            .filter(|entry| entry.reachable)
+                            .map(|entry| entry.proof_obligations.len() as u64)
+                            .sum()
+                    })
+                    .unwrap_or(0),
             });
     let binding = ReceiptBindingV1 {
         schema: receipt_schema.to_string(),
@@ -4168,6 +4398,36 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
                     != canonical_composition_inventory_sha256(&composition.inventory)
                 || binding.combined_source_sha256 != composition.combined_source_sha256
                 || composition.combined_source_sha256 != plan.expected_verus_source_sha256
+                || binding.primitive_registry_sha256
+                    != composition
+                        .primitive_registry
+                        .as_ref()
+                        .map(|registry| registry.sha256.clone())
+                || binding.reachable_primitive_count
+                    != composition
+                        .primitive_registry
+                        .as_ref()
+                        .map(|registry| {
+                            registry
+                                .entries
+                                .iter()
+                                .filter(|entry| entry.reachable)
+                                .count() as u64
+                        })
+                        .unwrap_or(0)
+                || binding.discharged_refinement_obligations
+                    != composition
+                        .primitive_registry
+                        .as_ref()
+                        .map(|registry| {
+                            registry
+                                .entries
+                                .iter()
+                                .filter(|entry| entry.reachable)
+                                .map(|entry| entry.proof_obligations.len() as u64)
+                                .sum()
+                        })
+                        .unwrap_or(0)
             {
                 return Err(ForgeError::VerusOutput {
                     detail: "composition receipt binding disagrees with its combined artifact plan"
@@ -4270,7 +4530,25 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
         closure::verified_closure(&program, &roots).map_err(|error| ForgeError::VerusOutput {
             detail: format!("bound closure is incomplete: {error}"),
         })?;
-    if let Some(detail) = strict_source_checks(&program, &closure, plan.target) {
+    let planned_registered_boundaries: BTreeSet<String> = plan
+        .composition
+        .as_ref()
+        .and_then(|composition| composition.primitive_registry.as_ref())
+        .map(|registry| {
+            registry
+                .entries
+                .iter()
+                .filter(|entry| entry.reachable)
+                .map(|entry| entry.thermite_name.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+    if let Some(detail) = strict_source_checks_with_registered_boundaries(
+        &program,
+        &closure,
+        plan.target,
+        &planned_registered_boundaries,
+    ) {
         return Err(ForgeError::VerusOutput {
             detail: format!("bound closure violates strict policy: {detail}"),
         });
@@ -4376,12 +4654,35 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
         serde_json::from_slice(&certificate_bytes).map_err(|error| ForgeError::VerusOutput {
             detail: format!("invalid bound certificate set: {error}"),
         })?;
-    if let Some(detail) = reject_certificates(&certificates, &closure, &program) {
+    let registered_boundaries: BTreeSet<String> = plan
+        .composition
+        .as_ref()
+        .and_then(|composition| composition.primitive_registry.as_ref())
+        .map(|registry| {
+            registry
+                .entries
+                .iter()
+                .filter(|entry| entry.reachable)
+                .map(|entry| entry.thermite_name.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+    if let Some(detail) = reject_certificates_with_registered_boundaries(
+        &certificates,
+        &closure,
+        &program,
+        &registered_boundaries,
+    ) {
         return Err(ForgeError::VerusOutput {
             detail: format!("bound certificate set fails strict L3 policy: {detail}"),
         });
     }
-    let reconstructed_assurance = assurance_aggregate(&certificates, &closure, &exports)?;
+    let reconstructed_assurance = assurance_aggregate_with_registered_boundaries(
+        &certificates,
+        &closure,
+        &exports,
+        &registered_boundaries,
+    )?;
     if receipt.binding.assurance_aggregate != reconstructed_assurance
         || reconstructed_assurance.headline != "L3"
         || reconstructed_assurance.cap != "L3"

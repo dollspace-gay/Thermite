@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: b334d2cf9d2271d3a402177acdecae68063bb0eaa8be4431f9ad065e2b92ff90 (re-pinned 2026-08-01 after auditing the bootable multicore kernel integration; existing behavior remains regression-covered)
+audited-content-sha256: 1c72230af7d9f017ee1a8482bd0d99b0c742feb979318dcb665d3157fb76cd85 (re-pinned 2026-08-04 after adding exact frozen-boundary refinement; existing behavior remains regression-covered)
 governs: forge/src/check.rs
 governs: thermite-lower/src/lower.rs
 thesis-refs:

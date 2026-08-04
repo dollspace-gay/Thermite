@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: b334d2cf9d2271d3a402177acdecae68063bb0eaa8be4431f9ad065e2b92ff90 (re-pinned 2026-08-01 after auditing the bootable multicore kernel integration; existing behavior remains regression-covered)
+audited-content-sha256: 1c72230af7d9f017ee1a8482bd0d99b0c742feb979318dcb665d3157fb76cd85 (re-pinned 2026-08-04 after adding exact frozen-boundary refinement; existing behavior remains regression-covered)
 governs: thermite-lower/src/lower.rs, forge/src/check.rs
 thesis-refs:
   - thermite-design.md §9
@@ -35,6 +35,15 @@ own body proves against the contract); `g`'s `assurance_scope` stays
 `to_boundary` (#17 — the guarantee depends on `f` honoring its contract,
 L1-enforced at the crossing). `f` itself is UNCHANGED — `Level::L1` +
 boundary/slag flag, its own body never proved (the §16/§8 path).
+
+An additive strict-build exception is specified by
+`.design/build/frozen-primitive-registry.md`. When a consumer registry has
+independently matched a reachable `#[boundary]` declaration one-to-one with an
+exact direct-Verus shell function, library lowering emits a normal checked
+wrapper body calling that function. It emits no `external_body` for that
+registered boundary, and the single same-crate `--no-cheating` proof must
+establish the original Thermite contract. Ordinary `forge check`, slag, and
+unregistered boundaries retain the behavior in this document unchanged.
 
 This component is **SHIPPED** (crosslink **#52**): `lower_external_body_fn in
 lower.rs` is the external_body emission arm, and `item_subprogram in check.rs`
@@ -118,6 +127,11 @@ a foreign function — not a proof cheat — because:
 3. The crossing is L1-enforced at runtime: if `f` violates its contract, the L1
    wrapper detects it at the boundary (§6/§9). The L3 proof is honestly scoped
    `to_boundary` (#17): "verified, GIVEN `f` honors its contract."
+
+Frozen registry composition removes a particular boundary from this assumed
+residue only after exact implementation-source binding and checked-wrapper
+refinement succeed. The source boundary's standalone certificate remains L1;
+the composition receipt records the separate `L3-direct-refinement` evidence.
 
 **emitted-verus vs our-Rust-src distinction (load-bearing).** The anti-pattern
 gate (`tooling/anti-pattern-gate.py`, R-DEFER-9) forbids `#[verifier::external]`

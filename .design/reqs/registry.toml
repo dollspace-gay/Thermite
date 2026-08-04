@@ -17497,12 +17497,27 @@ generated_to = ["status", "forge-kernel-primitives-status"]
 id = "REQ-KPRIM-7"
 title = "Generic frozen boundary registry"
 owner = ".design/build/kernel-primitives.md"
-status = "not_started"
+status = "partial"
 scope = "forge"
 summary = "Consumer projects supply versioned platform registries whose exact declarations, implementations, effects, ownership, ABI, models, and evidence are closed from source reachability."
-remaining_scope = "Implement a target-independent registry schema and fail-closed closure validator; do not hard-code an architecture profile or operation table."
-contributors = [".design/boundary/ffi-boundary.md", ".design/build/l3-rich-composition.md"]
+remaining_scope = "Same-crate safe direct-Verus Rust-ABI entries now close reachable boundaries exactly. Add non-empty codegen-feature binding and exact separate Rust/assembly source, object, machine-model, and refinement closure for irreducible operations without adding an architecture operation table."
+contributors = [".design/boundary/ffi-boundary.md", ".design/build/l3-rich-composition.md", ".design/build/frozen-primitive-registry.md"]
 generated_to = ["status", "forge-kernel-primitives-status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/verified_build/primitive_registry.rs"
+note = "Strict schema parsing, one-to-one reachable closure, declaration drift checks, ownership derivation, and exact shell binding."
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/verified_composition.rs::frozen_registry_directly_refines_the_exact_reachable_boundary"
+note = "Builds and replays a synthetic primitive, rejects receipt and post-plan registry mutation, and rejects a digest-updated lying implementation at whole-crate Verus."
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/src/verified_build/primitive_registry.rs::tests::registry_rejects_schema_source_contract_effect_abi_and_ownership_drift"
+note = "Adversarial schema, target, signature, contract, effect, source, ABI, ownership, and proof-evidence matrix."
 
 [[requirement]]
 id = "REQ-KPRIM-8"
@@ -17531,8 +17546,8 @@ owner = ".design/build/kernel-primitives.md"
 status = "partial"
 scope = "verified"
 summary = "Generated Thermite callers compose with consumer-supplied direct-Verus shells, and receipts distinguish exact refinement from boundary assumptions."
-remaining_scope = "Rich-state composition is shipped, but generic registry-to-implementation one-to-one binding and exact refinement evidence for every reachable operation remain."
-contributors = [".design/build/l3-rich-composition.md"]
+remaining_scope = "Safe same-crate direct-Verus operations now receive exact one-to-one checked-wrapper refinement. Add direct machine-operation refinement tied to separate Rust/assembly objects and the atomic/concurrency model before every irreducible platform family is covered."
+contributors = [".design/build/l3-rich-composition.md", ".design/build/frozen-primitive-registry.md"]
 generated_to = ["status", "forge-kernel-primitives-status"]
 
 [[requirement.evidence]]

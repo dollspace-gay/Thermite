@@ -172,7 +172,7 @@ forge_methods! {
     }
     Build {
         name: "build",
-        usage: "forge build <file> [--level l1|l3] [--export <fn>] [--compose-export <fn> --compose-shell <file.rs>] [--crate-name <name>] [--entry <fn>] [--out <path>] [--target std|kernel] [--json] [--no-sandbox] [--sandbox-self-test]",
+        usage: "forge build <file> [--level l1|l3] [--export <fn>] [--compose-export <fn> --compose-shell <file.rs> [--primitive-registry <registry.json>]] [--crate-name <name>] [--entry <fn>] [--out <path>] [--target std|kernel] [--json] [--no-sandbox] [--sandbox-self-test]",
         purpose: "Build L1 checked Rust or an exact-source L3 link/composition bundle.",
     }
     VerifyBuild {

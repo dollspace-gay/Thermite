@@ -1,0 +1,46 @@
+{
+  "schema": "thermite.frozen-primitive-registry.v1",
+  "target": {
+    "target_triple": "x86_64-unknown-linux-gnu",
+    "target_features": []
+  },
+  "entries": [
+    {
+      "semantic_name": "synthetic::identity@v1",
+      "version": 1,
+      "required": true,
+      "thermite_name": "platform_identity",
+      "boundary_target": "platform::identity",
+      "signature": "fn platform_identity(value:u64)->u64",
+      "contract_sha256": "18e1d2affa4f114bfbd89b6a32d9ca628510bf59e378911346badb80645e26c3",
+      "effects_sha256": "868a2b6cb862b15a23445a0310195bf4bf3d20d15087272f4843116b5672d9ef",
+      "effects": [
+        "platform(clock)"
+      ],
+      "ownership": {
+        "parameters": [
+          "by_value"
+        ],
+        "result": "by_value"
+      },
+      "implementation": {
+        "shell_module": "frozen_primitive_shell",
+        "item": "identity_impl",
+        "source_sha256": "f7c2247dc8399793350bc8858af56e25b7838dba099bff4669b6512fed17e27c",
+        "abi": "Rust",
+        "symbol": "frozen_primitive_shell::identity_impl",
+        "alignment": 8
+      },
+      "model": "thermite_contract",
+      "refinement": "same_crate_verus_checked_wrapper",
+      "proof_obligations": [
+        "contract_refinement",
+        "exact_implementation_call",
+        "whole_crate_no_cheating"
+      ],
+      "concurrency": "sequential",
+      "memory_orderings": [],
+      "failure": "total"
+    }
+  ]
+}

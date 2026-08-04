@@ -31,11 +31,15 @@ governs:
   - forge/src/exec_tv.rs
   - forge/src/verified_build.rs
   - forge/src/verified_build/composition.rs
+  - forge/src/verified_build/primitive_registry.rs
   - forge/src/thermite_package.rs
   - forge/tests/verified_build.rs
   - conformance/kernel_primitives.th
   - conformance/verified-build/aggregate_storage.th
-audited-content-sha256: 3aa33a5b7cfecc83717ede2cc75fdefd1096ea2891ae00c72a9b6d6b67fd6217
+  - conformance/verified-composition/frozen_primitive.th
+  - conformance/verified-composition/frozen_primitive_shell.rs
+  - conformance/verified-composition/frozen_primitive_registry.json
+audited-content-sha256: 8c4426ed2d4513c41ad5ac8ab0144a82fcc1888719d0443953ccab988838982e
 extends:
   - .design/build/kernel-target.md
   - .design/build/l3-rich-composition.md
@@ -264,6 +268,24 @@ contract-drifted, effect-drifted, ABI-drifted, or implementation-drifted
 entries. Registries are data owned by consumer platforms, not a hard-coded
 104-operation x86 table in Thermite.
 
+The first registry increment is shipped for exact same-crate direct-Verus
+functions. `--primitive-registry` binds a strict versioned JSON document to an
+L3 composition build; Forge independently reconstructs signature, contract,
+effects, ownership, shell inventory, source digest, symbol, ABI, alignment,
+concurrency/failure declarations, and one-to-one reachability. Registered
+boundaries lower to real checked wrapper calls, never `external_body`, and the
+single `--no-cheating` proof must establish their Thermite contracts. Receipts
+and replay bind the registry bytes, resolved plan, reachable count, and proof
+obligation count. Signature/effect/contract/source/ownership drift, missing or
+extra reachable bindings, post-plan mutation, receipt tampering, and a lying
+implementation all reject without publication.
+
+This v1 path intentionally accepts only the Rust ABI, an empty target-feature
+set, and safe direct-Verus shell bodies. Exact separate Rust/assembly object
+closure for irreducible machine instructions remains; it cannot be claimed as
+directly refined through this schema. The precise contract and limitations are
+in `.design/build/frozen-primitive-registry.md`.
+
 ### Atomics and memory ordering
 
 The sealed atomic surface is monomorphic over `bool`, `u32`, `u64`, and
@@ -394,7 +416,7 @@ Source: `.design/reqs/registry.toml`
 | REQ-KPRIM-4 | partial | `.design/build/kernel-primitives.md` | Sealed authority and ownership | The sealed-construction barrier is shipped. Add affine-style consumption or a verified generation discipline that rejects stale copies, double release, and rights escalation. |
 | REQ-KPRIM-5 | not_started | `.design/build/kernel-primitives.md` | Sealed atomics and ordering model | Add the Thermite surface, legality validation, happens-before model, direct-refinement interface, and adversarial tests without adding a kernel implementation. |
 | REQ-KPRIM-6 | not_started | `.design/build/kernel-primitives.md` | Verified waiting and synchronization | Add the wait/liveness surface and implement ticket locks, once cells, barriers, bounded queues, reference counts, seqlocks, and deque mechanics in .th. |
-| REQ-KPRIM-7 | not_started | `.design/build/kernel-primitives.md` | Generic frozen boundary registry | Implement a target-independent registry schema and fail-closed closure validator; do not hard-code an architecture profile or operation table. |
+| REQ-KPRIM-7 | partial | `.design/build/kernel-primitives.md` | Generic frozen boundary registry | Same-crate safe direct-Verus Rust-ABI entries now close reachable boundaries exactly. Add non-empty codegen-feature binding and exact separate Rust/assembly source, object, machine-model, and refinement closure for irreducible operations without adding an architecture operation table. |
 | REQ-KPRIM-8 | shipped | `.design/build/kernel-primitives.md` | Generic freestanding verified library build |  |
-| REQ-KPRIM-9 | partial | `.design/build/kernel-primitives.md` | Exact platform refinement composition | Rich-state composition is shipped, but generic registry-to-implementation one-to-one binding and exact refinement evidence for every reachable operation remain. |
+| REQ-KPRIM-9 | partial | `.design/build/kernel-primitives.md` | Exact platform refinement composition | Safe same-crate direct-Verus operations now receive exact one-to-one checked-wrapper refinement. Add direct machine-operation refinement tied to separate Rust/assembly objects and the atomic/concurrency model before every irreducible platform family is covered. |
 <!-- /generated:reqs -->

@@ -1,7 +1,10 @@
 //! Structural pins for the export-aware library emitter used by the
 //! correspondence-backed L3 artifact path.
 
-use thermite_lower::{lower_l3_library, L3Export, L3ExportVisibility, L3LibraryTarget};
+use thermite_lower::{
+    lower_l3_library, lower_l3_library_with_boundaries, L3BoundaryBinding, L3Export,
+    L3ExportVisibility, L3LibraryTarget,
+};
 
 fn parse(source: &str) -> thermite_syntax::Program {
     let parsed = thermite_syntax::parse(source);
@@ -123,4 +126,34 @@ fn composition_library_delays_enum_items_past_randomized_verus_helper_synthesis(
     let ordinary = lower_l3_library(&program, &public_exports, L3LibraryTarget::Kernel).unwrap();
     assert!(!ordinary.contains("__thermite_deterministic_enum"));
     assert!(ordinary.contains("pub enum Action"));
+}
+
+#[test]
+fn registry_bound_boundary_is_a_checked_exact_target_call() {
+    let program = parse(
+        "#[boundary(\"platform::read\")] \
+         fn read(x: u64) -> u64 req true ens result == x fx platform(clock); \
+         fn observe(x: u64) -> u64 req true ens result == x fx platform(clock) { read(x) }",
+    );
+    let exports = [L3Export {
+        source_name: "observe".to_string(),
+        public_name: "observe".to_string(),
+        wrapped: false,
+        visibility: L3ExportVisibility::Crate,
+    }];
+    let bindings = [L3BoundaryBinding {
+        source_name: "read".to_string(),
+        call_target: "platform_shell::read_impl".to_string(),
+    }];
+
+    let source =
+        lower_l3_library_with_boundaries(&program, &exports, L3LibraryTarget::Kernel, &bindings)
+            .unwrap();
+    assert!(source.contains("fn read(x: u64) -> (result: u64)"));
+    assert!(source.contains("platform_shell::read_impl(x)"));
+    assert!(!source.contains("external_body"));
+    assert!(!source.contains("unimplemented!"));
+
+    let ordinary = lower_l3_library(&program, &exports, L3LibraryTarget::Kernel).unwrap();
+    assert!(ordinary.contains("#[verifier::external_body]"));
 }

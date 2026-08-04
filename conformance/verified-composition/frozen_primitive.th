@@ -1,0 +1,13 @@
+#[boundary("platform::identity")]
+fn platform_identity(value: u64) -> u64
+  req true
+  ens result == value
+  fx platform(clock);
+
+fn primitive_observation(value: u64) -> u64
+  req true
+  ens result == value
+  fx platform(clock)
+{
+  platform_identity(value)
+}

@@ -9,6 +9,7 @@ struct Assembly {
     link_exports: Vec<PlannedExport>,
     composition_exports: Vec<PlannedCompositionExport>,
     shell_sources: Vec<DirectVerusSource>,
+    primitive_registry: Option<primitive_registry::PrimitiveRegistrySource>,
     lowered_thermite: String,
     combined_source: String,
 }
@@ -25,7 +26,7 @@ pub(super) fn build_file(
     path: &Path,
     link_export_names: &[String],
     composition_export_names: &[String],
-    shell_paths: &[PathBuf],
+    sources: CompositionSourcePaths<'_>,
     crate_name: Option<&str>,
     out: Option<&Path>,
     target: VerifiedTarget,
@@ -44,7 +45,7 @@ pub(super) fn build_file(
         }
         None => default_crate_name(path, prepared.package.as_ref()),
     };
-    if composition_export_names.is_empty() || shell_paths.is_empty() {
+    if composition_export_names.is_empty() || sources.shells.is_empty() {
         return Ok(reject(
             "plan",
             "a composition build requires at least one --compose-export and --compose-shell",
@@ -96,7 +97,7 @@ pub(super) fn build_file(
         program,
         link_export_names,
         composition_export_names,
-        shell_paths,
+        sources,
         &crate_name,
         target,
         toolchain,
@@ -128,7 +129,7 @@ pub(super) fn build_file(
         program,
         link_export_names,
         composition_export_names,
-        shell_paths,
+        sources,
         &crate_name,
         target,
         toolchain,
@@ -142,11 +143,16 @@ pub(super) fn build_file(
         if let Some(shell) = fresh.shell_sources.first_mut() {
             shell.bytes.push(b' ');
         }
+    } else if test_fault("composition-after-plan-registry-mutation") {
+        if let Some(registry) = fresh.primitive_registry.as_mut() {
+            registry.bytes.push(b' ');
+        }
     } else if test_fault("composition-after-plan-source-mutation") {
         fresh.combined_source.push_str("\n// injected mutation\n");
     }
     if fresh.lowered_thermite != assembly.lowered_thermite
         || fresh.shell_sources != assembly.shell_sources
+        || fresh.primitive_registry != assembly.primitive_registry
         || fresh.combined_source != assembly.combined_source
         || sha256(fresh.combined_source.as_bytes()) != plan.expected_verus_source_sha256
     {
@@ -162,7 +168,13 @@ pub(super) fn build_file(
 
     let mut certificates = check::check_file(&frozen_input_path)?;
     inject_certificate_fault(&mut certificates);
-    if let Some(detail) = reject_certificates(&certificates, &assembly.closure, program) {
+    let registered_boundaries = registered_boundaries(&assembly);
+    if let Some(detail) = reject_certificates_with_registered_boundaries(
+        &certificates,
+        &assembly.closure,
+        program,
+        &registered_boundaries,
+    ) {
         return Ok(reject("certificates", detail));
     }
     let mut tv = collect_translation_validation(
@@ -172,6 +184,7 @@ pub(super) fn build_file(
         &assembly.link_exports,
     )?;
     complete_rich_composition_tv(&mut tv, program, &assembly.closure);
+    complete_registered_boundary_tv(&mut tv, program, &assembly.closure, &registered_boundaries);
     inject_tv_fault(&mut tv);
     if let Some(detail) =
         reject_translation_validation(&tv, program, &assembly.closure, &assembly.link_exports)
@@ -232,6 +245,7 @@ pub(super) fn build_file(
         composition: Some(CompositionStageInput {
             lowered_thermite: &fresh.lowered_thermite,
             shell_sources: &fresh.shell_sources,
+            primitive_registry: fresh.primitive_registry.as_ref(),
         }),
     })?;
 
@@ -309,21 +323,88 @@ fn rich_completion_detail() -> String {
         .to_string()
 }
 
+fn complete_registered_boundary_tv(
+    evidence: &mut TranslationValidationEvidence,
+    program: &Program,
+    closure: &VerifiedClosure,
+    registered_boundaries: &BTreeSet<String>,
+) {
+    if registered_boundaries.is_empty() {
+        return;
+    }
+    let expected = expected_tv_inventory(program, closure, &[]);
+    let mut completed = Vec::new();
+    for mut row in std::mem::take(&mut evidence.rows) {
+        if row.verdict != "skipped" || !matches!(row.phase.as_str(), "exec" | "body") {
+            completed.push(row);
+            continue;
+        }
+        let Some(detail) = row.detail.as_deref() else {
+            completed.push(row);
+            continue;
+        };
+        let registered_dependency = registered_boundaries.iter().find(|boundary| {
+            detail.contains(&format!("dependency `{boundary}` has no in-language body"))
+        });
+        if let Some(boundary) = registered_dependency {
+            let completion = format!(
+                "frozen primitive completion through `{boundary}`: the registry binds the exact Thermite contract and boundary target to a same-crate direct-Verus function; the generated non-exempt wrapper calls that function and the single no-cheating whole-crate proof checks the call and post-state"
+            );
+            if row.phase == "exec" && closure.functions.contains(&row.label) {
+                for ((phase, label), count) in &expected {
+                    if phase == "exec"
+                        && label
+                            .strip_prefix(&row.label)
+                            .is_some_and(|suffix| suffix.starts_with('.'))
+                    {
+                        for _ in 0..*count {
+                            completed.push(TvEvidenceRow {
+                                phase: phase.clone(),
+                                label: label.clone(),
+                                verdict: "faithful".to_string(),
+                                detail: Some(completion.clone()),
+                            });
+                        }
+                    }
+                }
+            } else {
+                row.verdict = "faithful".to_string();
+                row.detail = Some(completion);
+                completed.push(row);
+            }
+        } else {
+            completed.push(row);
+        }
+    }
+    completed.sort_by(|left, right| {
+        left.phase
+            .cmp(&right.phase)
+            .then(left.label.cmp(&right.label))
+    });
+    evidence.rows = completed;
+}
+
 fn assemble_from_paths(
     program: &Program,
     link_export_names: &[String],
     composition_export_names: &[String],
-    shell_paths: &[PathBuf],
+    sources: CompositionSourcePaths<'_>,
     crate_name: &str,
     target: VerifiedTarget,
     toolchain: &ToolchainEvidence,
 ) -> Result<Assembly, String> {
-    let shell_sources = load_shell_paths(shell_paths)?;
+    let shell_sources = load_shell_paths(sources.shells)?;
+    let primitive_registry_bytes = sources
+        .primitive_registry
+        .map(fs::read)
+        .transpose()
+        .map_err(|error| format!("could not read frozen primitive registry: {error}"))?;
     assemble(
         program,
         link_export_names,
         composition_export_names,
         shell_sources,
+        primitive_registry_bytes,
         AssemblyTarget {
             crate_name,
             target,
@@ -339,6 +420,7 @@ fn assemble(
     link_export_names: &[String],
     composition_export_names: &[String],
     shell_sources: Vec<DirectVerusSource>,
+    primitive_registry_bytes: Option<Vec<u8>>,
     target: AssemblyTarget<'_>,
 ) -> Result<Assembly, String> {
     let mut roots = link_export_names.to_vec();
@@ -349,7 +431,35 @@ fn assemble(
         return Err("composition and link export names must be unique".to_string());
     }
     let closure = closure::verified_closure(program, &roots).map_err(|error| error.to_string())?;
-    if let Some(detail) = strict_source_checks(program, &closure, target.target) {
+    let primitive_registry = primitive_registry_bytes
+        .map(|bytes| {
+            primitive_registry::load_from_evidence(
+                bytes,
+                program,
+                &closure,
+                &shell_sources,
+                target.triple,
+            )
+        })
+        .transpose()?;
+    let registered: BTreeSet<String> = primitive_registry
+        .as_ref()
+        .map(|registry| {
+            registry
+                .plan
+                .entries
+                .iter()
+                .filter(|entry| entry.reachable)
+                .map(|entry| entry.thermite_name.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+    if let Some(detail) = strict_source_checks_with_registered_boundaries(
+        program,
+        &closure,
+        target.target,
+        &registered,
+    ) {
         return Err(detail);
     }
     let link_exports = plan_exports(
@@ -382,9 +492,16 @@ fn assemble(
         VerifiedTarget::Std => L3LibraryTarget::Std,
         VerifiedTarget::Kernel => L3LibraryTarget::Kernel,
     };
-    let lowered_thermite =
-        thermite_lower::lower_l3_library(&selected_program, &lower_exports, lower_target)
-            .map_err(|error| error.to_string())?;
+    let lowered_thermite = thermite_lower::lower_l3_library_with_boundaries(
+        &selected_program,
+        &lower_exports,
+        lower_target,
+        primitive_registry
+            .as_ref()
+            .map(|registry| registry.bindings.as_slice())
+            .unwrap_or(&[]),
+    )
+    .map_err(|error| error.to_string())?;
     if let Some(token) = forbidden_emission(&lowered_thermite) {
         return Err(format!(
             "canonical Thermite lowering contains forbidden escape hatch `{token}`"
@@ -397,6 +514,7 @@ fn assemble(
         link_exports,
         composition_exports,
         shell_sources,
+        primitive_registry,
         lowered_thermite,
         combined_source,
     })
@@ -418,9 +536,29 @@ fn attach_composition_plan(plan: &mut ArtifactPlanV1, assembly: &Assembly) {
             .map(|source| source.plan.clone())
             .collect(),
         inventory,
+        primitive_registry: assembly
+            .primitive_registry
+            .as_ref()
+            .map(|registry| registry.plan.clone()),
         lowered_thermite_sha256: sha256(assembly.lowered_thermite.as_bytes()),
         combined_source_sha256: sha256(assembly.combined_source.as_bytes()),
     });
+}
+
+fn registered_boundaries(assembly: &Assembly) -> BTreeSet<String> {
+    assembly
+        .primitive_registry
+        .as_ref()
+        .map(|registry| {
+            registry
+                .plan
+                .entries
+                .iter()
+                .filter(|entry| entry.reachable)
+                .map(|entry| entry.thermite_name.clone())
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn composition_inventory(
@@ -654,7 +792,7 @@ fn render_fields(fields: &[FieldDef]) -> Result<String, String> {
         .map(|fields| fields.join(","))
 }
 
-fn type_spelling(ty: &Type) -> Result<String, String> {
+pub(super) fn type_spelling(ty: &Type) -> Result<String, String> {
     Ok(match ty {
         Type::Prim(PrimType::U8) => "u8".to_string(),
         Type::Prim(PrimType::U16) => "u16".to_string(),
@@ -746,7 +884,11 @@ fn sanitize_module_name(stem: &str) -> String {
     name
 }
 
-fn analyze_shell(name: &str, path: &str, bytes: &[u8]) -> Result<PlannedShellModule, String> {
+pub(super) fn analyze_shell(
+    name: &str,
+    path: &str,
+    bytes: &[u8],
+) -> Result<PlannedShellModule, String> {
     let source = std::str::from_utf8(bytes)
         .map_err(|error| format!("direct-Verus module `{name}` is not UTF-8: {error}"))?;
     if source.trim().is_empty() {
@@ -1034,11 +1176,20 @@ pub(super) fn reconstruct_plan(
             bytes,
         });
     }
+    let primitive_registry_bytes = expected
+        .primitive_registry
+        .as_ref()
+        .map(|registry| {
+            validate_relative_path(&registry.path)?;
+            Ok(file_sha256(&bundle.join(&registry.path))?.1)
+        })
+        .transpose()?;
     let assembly = assemble(
         program,
         &link_names,
         &composition_names,
         sources,
+        primitive_registry_bytes,
         AssemblyTarget {
             crate_name: &plan.crate_name,
             target: plan.target,

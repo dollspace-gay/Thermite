@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: f8acb3d02d4d1105b5d2e63c97fa3c6d5202cbf5383babd9a02585555b9ca150
+audited-content-sha256: cd9f7d75dafd6c68fa0662313440c6e7baf191983e0b714696892215161a1536
 decision: qualify invariant field paths in the canonical invariant lowerer
 issue: github:dollspace-gay/Thermite#110
 governs:

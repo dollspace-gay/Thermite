@@ -4,7 +4,7 @@
 tier: 3-component
 status: draft
 audited-sha: 92396428567edc6940a9e2845217f5ff4c2ea3c6 (re-pinned 2026-06-16, user-authorized: the only change to this doc's governed files since the prior pin is the additive stage-1 forge-tier increment 2a — the new Item::Forge surface + inert Item::Forge match arms, verified net-additive with no substantive removal of existing v1 logic (git log <main>..HEAD = the 8 forge commits); the v1 behavior this doc governs is unchanged, and the new forge-tier surface is specified in .design/stage1-forge-tier.md / REQ-S1-3)
-audited-content-sha256: 9612f37eacce5e184e5ff96c41892f4320700748b728de7984e9b0ac323ef2e8 (re-pinned 2026-08-01 after auditing the bootable multicore kernel integration; existing behavior remains regression-covered)
+audited-content-sha256: 583a5adfa813fa4d823c10a104f71ae329ff3d152da356b4ffd97f396e297d49 (re-pinned 2026-08-04 after documenting the frozen primitive registry; existing behavior remains regression-covered)
 governs: thermite-skill/src/generate.rs
 thesis-refs:
   - thermite-design.md §2.2
@@ -56,8 +56,10 @@ write the skill. The dependency already points from Forge to `thermite-skill`,
 so this removes the old cycle concern without exposing Forge's private parsed
 `Command` values. The build record now advertises the paired
 `--compose-export`/`--compose-shell` rich-state L3 surface and describes its
-output as an exact-source link/composition bundle (#104); regenerating the skill
-keeps that synopsis identical in the CLI and agent reference.
+output as an exact-source link/composition bundle (#104). It also advertises the
+optional `--primitive-registry <registry.json>` refinement input inside that
+composition surface; regenerating the skill keeps the synopsis identical in the
+CLI and agent reference.
 
 The crate exposes `generate() -> String` (the library API) and a `thermite-skill`
 binary (`--emit`, `--check-budget`) that the CI gauntlet runs. The committed

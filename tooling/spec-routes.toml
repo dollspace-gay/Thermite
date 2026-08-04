@@ -1466,6 +1466,31 @@ design = ".design/build/kernel-primitives.md"
 reference = ["stdlib/kernel-primitives/src/model.th"]
 conformance_ops = ["borrowed-fixed-array-spec-call"]
 
+# Allocation-free, policy-free fixed collections authored in Thermite.
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/collections.thpkg.json"
+design = ".design/build/fixed-collections.md"
+reference = []
+conformance_ops = ["fixed-collection-package-closure"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/collections/bitmap.th"
+design = ".design/build/fixed-collections.md"
+reference = []
+conformance_ops = ["fixed-bitmap-membership", "fixed-bitmap-update"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/collections/ring.th"
+design = ".design/build/fixed-collections.md"
+reference = []
+conformance_ops = ["fixed-ring-fifo", "fixed-ring-wrap", "fixed-ring-rejection"]
+
+[[route]]
+crate_pattern = "forge/tests/fixed_collections.rs"
+design = ".design/build/fixed-collections.md"
+reference = ["stdlib/kernel-primitives/collections.thpkg.json"]
+conformance_ops = ["fixed-collections-l3", "fixed-collections-adversarial", "fixed-collections-replay"]
+
 # Policy-free ownership discipline. The route intentionally names only the
 # Thermite package and its proof harness; there is no runtime Rust implementation.
 [[route]]

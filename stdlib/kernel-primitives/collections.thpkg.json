@@ -1,0 +1,20 @@
+{
+  "schema": "thermite.package.v1",
+  "name": "thermite_fixed_collections",
+  "roots": [
+    "bitmap",
+    "ring"
+  ],
+  "modules": [
+    {
+      "name": "bitmap",
+      "path": "collections/bitmap.th",
+      "imports": []
+    },
+    {
+      "name": "ring",
+      "path": "collections/ring.th",
+      "imports": []
+    }
+  ]
+}

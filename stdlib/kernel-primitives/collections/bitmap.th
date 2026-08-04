@@ -1,0 +1,132 @@
+const FIXED_BITMAP_BITS: usize = 256;
+
+struct FixedBitmap256 {
+  bits: [bool; FIXED_BITMAP_BITS],
+  capacity: usize,
+}
+
+spec fn fixed_bitmap_wf_spec(bitmap: &FixedBitmap256) -> bool
+  dec bitmap.capacity
+{
+  bitmap.capacity == FIXED_BITMAP_BITS
+}
+
+fn fixed_bitmap_wf(bitmap: &FixedBitmap256) -> bool
+  req true
+  ens result == fixed_bitmap_wf_spec(bitmap)
+  fx pure
+{
+  bitmap.capacity == FIXED_BITMAP_BITS
+}
+
+fn fixed_bitmap_capacity() -> usize
+  req true
+  ens result == FIXED_BITMAP_BITS
+  fx pure
+{
+  FIXED_BITMAP_BITS
+}
+
+fn fixed_bitmap_empty() -> FixedBitmap256
+  req true
+  ens !result.bits[0]
+    && !result.bits[FIXED_BITMAP_BITS - 1]
+    && result.capacity == FIXED_BITMAP_BITS
+    && fixed_bitmap_wf_spec(&result)
+  fx pure
+{
+  FixedBitmap256 {
+    bits: [false; FIXED_BITMAP_BITS],
+    capacity: 256,
+  }
+}
+
+fn fixed_bitmap_contains(bitmap: &FixedBitmap256, bit: usize) -> bool
+  req fixed_bitmap_wf_spec(bitmap) && bit < FIXED_BITMAP_BITS
+  ens result == bitmap.bits[bit]
+  fx pure
+{
+  bitmap.bits[bit]
+}
+
+fn fixed_bitmap_insert(
+  bitmap: FixedBitmap256,
+  bit: usize,
+) -> FixedBitmap256
+  req fixed_bitmap_wf_spec(&bitmap) && bit < FIXED_BITMAP_BITS
+  ens result.bits[bit]
+  ens result.capacity == bitmap.capacity
+  ens fixed_bitmap_wf_spec(&result)
+  fx pure
+{
+  let mut bits: [bool; FIXED_BITMAP_BITS] = bitmap.bits;
+  bits[bit] = true;
+  FixedBitmap256 {
+    bits: bits,
+    capacity: bitmap.capacity,
+  }
+}
+
+fn fixed_bitmap_remove(
+  bitmap: FixedBitmap256,
+  bit: usize,
+) -> FixedBitmap256
+  req fixed_bitmap_wf_spec(&bitmap) && bit < FIXED_BITMAP_BITS
+  ens !result.bits[bit]
+  ens result.capacity == bitmap.capacity
+  ens fixed_bitmap_wf_spec(&result)
+  fx pure
+{
+  let mut bits: [bool; FIXED_BITMAP_BITS] = bitmap.bits;
+  bits[bit] = false;
+  FixedBitmap256 {
+    bits: bits,
+    capacity: bitmap.capacity,
+  }
+}
+
+fn fixed_bitmap_set_to(
+  bitmap: FixedBitmap256,
+  bit: usize,
+  present: bool,
+) -> FixedBitmap256
+  req fixed_bitmap_wf_spec(&bitmap) && bit < FIXED_BITMAP_BITS
+  ens result.bits[bit] == present
+  ens result.capacity == bitmap.capacity
+  ens fixed_bitmap_wf_spec(&result)
+  fx pure
+{
+  let mut bits: [bool; FIXED_BITMAP_BITS] = bitmap.bits;
+  bits[bit] = present;
+  FixedBitmap256 {
+    bits: bits,
+    capacity: bitmap.capacity,
+  }
+}
+
+fn fixed_bitmap_insert_remove_probe(bit: usize) -> bool
+  req bit < FIXED_BITMAP_BITS
+  ens result
+  fx pure
+{
+  let empty: FixedBitmap256 = fixed_bitmap_empty();
+  let inserted: FixedBitmap256 = fixed_bitmap_insert(empty, bit);
+  if fixed_bitmap_contains(&inserted, bit) {
+    let removed: FixedBitmap256 = fixed_bitmap_remove(inserted, bit);
+    !fixed_bitmap_contains(&removed, bit)
+      && fixed_bitmap_wf(&removed)
+  } else {
+    false
+  }
+}
+
+fn fixed_bitmap_set_to_probe(bit: usize, present: bool) -> bool
+  req bit < FIXED_BITMAP_BITS
+  ens result
+  fx pure
+{
+  let empty: FixedBitmap256 = fixed_bitmap_empty();
+  let updated: FixedBitmap256 = fixed_bitmap_set_to(empty, bit, present);
+  fixed_bitmap_contains(&updated, bit) == present
+    && fixed_bitmap_wf(&updated)
+}

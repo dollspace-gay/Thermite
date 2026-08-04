@@ -4,7 +4,7 @@
 tier: 3-component
 status: draft
 audited-sha: 92396428567edc6940a9e2845217f5ff4c2ea3c6 (re-pinned 2026-06-16, user-authorized: the only change to this doc's governed files since the prior pin is the additive stage-1 forge-tier increment 2a — the new Item::Forge surface + inert Item::Forge match arms, verified net-additive with no substantive removal of existing v1 logic (git log <main>..HEAD = the 8 forge commits); the v1 behavior this doc governs is unchanged, and the new forge-tier surface is specified in .design/stage1-forge-tier.md / REQ-S1-3)
-audited-content-sha256: 631b9698480ccc41d43182b884b53b744b4b4c03b7a7a38aa7e5ae16b1eacff8 (re-pinned 2026-08-01 after auditing the bootable multicore kernel integration; existing behavior remains regression-covered)
+audited-content-sha256: e5e0ecc1ad2c69f694cf5fe338faae24f4c876793d0fc818c652ef3f296d55e6 (re-pinned 2026-08-04 after closing packed-bit local-state substitution; no kernel implementation is present)
 governs: thermite-tv/src/exec_stmt_encode.rs, thermite-tv/src/obligation.rs, thermite-lower/src/lower.rs, forge/src/body_tv.rs, forge/src/tv_signal.rs
 thesis-refs:
   - thermite-design.md §1 (trust relocated: code → spec → spec-intent)
@@ -439,12 +439,18 @@ contract:
   (`FnItem.holes` non-empty → `BodyVerdict::Skipped` with the OpenHole reason)
   BEFORE any lowering, so an unfinished body can never come out `Faithful`
   (`.design/forge/goal-repl.md` REQ-4/REQ-5).
+- **Packed-bit local-state closure (2026-08-04)** — the independent state
+  substitution now descends into method receivers and arguments. A local bound
+  to `word.bit_set(bit)` is substituted before a later bit-method tail is
+  encoded, so the obligation is closed rather than referring to an undeclared
+  local. Contract, exec-expression, and body conformance tests discharge the
+  total `u64` bit surface through real Verus.
 
 ## REQ status
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-1 (frozen kernel exec-statement subset v1) | SHIPPED | the IN/OUT construct set is PINNED IN CODE: `thermite_tv::exec_stmt_encode::body_ref_state` admits `Stmt::Let`/`Assign`/`If`/`Expr`/tail-`Return` + sequencing/tail, including direct indexed mutation of native fixed arrays and mutable borrowed slices/arrays with recursively primitive-array elements. It honestly rejects out-of-v1 loop/control-flow shapes, heap-backed or named-aggregate mutation, mutation indices/values that read changing storage, and re-shadowing. Verified by the body teeth, fixed-array TV, and aggregate-storage tests. |
+| REQ-1 (frozen kernel exec-statement subset v1) | SHIPPED | the IN/OUT construct set is PINNED IN CODE: `thermite_tv::exec_stmt_encode::body_ref_state` admits `Stmt::Let`/`Assign`/`If`/`Expr`/tail-`Return` + sequencing/tail, including direct indexed mutation of native fixed arrays and mutable borrowed slices/arrays with recursively primitive-array elements. State substitution descends through supported method receivers/arguments, including total `u64` bit operations, so local bit-operation chains produce closed obligations. It honestly rejects out-of-v1 loop/control-flow shapes, heap-backed or named-aggregate mutation, mutation indices/values that read changing storage, and re-shadowing. Verified by the body teeth, fixed-array TV, packed-bit body TV, and aggregate-storage tests. |
 | REQ-2 (operational-semantics reference state-denotation) | SHIPPED | `pub fn body_ref_state` (+ `body_ref_state_ensures`, `BodyRefCtx`) in `thermite-tv/src/exec_stmt_encode.rs` is the independent big-step state transformer: ordered scalar/array substitution, branch composition, multi-cell projection, and exact chained `Seq::update` state for mutable indexed borrows. Non-test consumer: `body_equivalence_obligation`; the `thermite-tv` dependency graph contains no production lowerer. Real-Verus mutants catch reordered/dropped/wrong-index/wrong-value/collateral writes. |
 | REQ-3 (step-2.2.1 straight-line body state-refinement obligation + discharge) | SHIPPED | `body_equivalence_obligation` + `BodyObligationFrame` emits an exec wrapper whose ensures compare the returned value and, for every framed mutable indexed borrow, the complete `final(param)@` sequence against the independent update chain from `old(param)@`. The production side remains `thermite_lower::lower_exec_body`. The scalar B1–B4 teeth and aggregate-storage teeth all verify faithfully and reject their mutations under real Verus. |
 | REQ-4 (step-2.2.2 loops — harder horizon) | SHIPPED | #163, OWNED + evidenced in `.design/verified/loop-tv.md` (its REQ-1..REQ-5 are all SHIPPED) — corrected from NOT-STARTED at the #262 re-audit. The chosen variant of (a) is BUILT: the three per-run loop obligations `pub fn loop_entry_obligation`/`loop_preservation_obligation`/`loop_exit_obligation` + `LoopObligationFrame` in `thermite-tv/src/obligation.rs` (reusing the SHIPPED `body_ref_state` single-iteration step), the Lean partial-correctness WHILE-RULE `theorem while_rule`/`tv_meta_loop` in `lean/Thermite/Exec/Loop.lean` (no `sorry`; termination stays the per-run Verus `decreases` residual), and the forge wiring `loop_body_tv`/`discharge_loop` in `forge/src/body_tv.rs` (v1 = a single frozen-subset `while` as the body's last statement; out-of-v1 loops `Skipped`-with-reason). Verified: `thermite-tv/tests/loop_teeth.rs` L1–L4 + `forge/tests/body_tv.rs` (faithful v1 `while` → Faithful all three; `binary_search.th`'s `loop`-kind body → Skipped) under real verus. Bounded unrolling (b) DROPPED for v1 (the future v0.2 L2 fallback). |

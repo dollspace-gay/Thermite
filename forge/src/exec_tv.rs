@@ -728,6 +728,9 @@ fn check_corpus_expr(
     if thermite_lower::expr_uses_fixed_array_equality(e) {
         spec_defs.push(thermite_lower::fixed_array_equality_defs());
     }
+    if thermite_lower::expr_uses_u64_bit_methods(e) {
+        spec_defs.push(thermite_lower::u64_bit_defs());
+    }
     let frame = ExecObligationFrame {
         spec_defs,
         params: env

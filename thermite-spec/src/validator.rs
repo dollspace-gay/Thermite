@@ -242,6 +242,12 @@ const BUILTIN_METHODS: &[&str] = &[
     // const-generic scan and maps contract occurrences to finite-view equality.
     "array_eq",
     "array_same_except",
+    // Total `u64` packed-bit operations. An index at least 64 leaves a word
+    // unchanged for updates and observes `false`; the directly verified L3
+    // helper supplies the ordinary contract bridge needed by packed storage.
+    "bit_test",
+    "bit_set",
+    "bit_clear",
     "get",
     "last",
     "contains",
@@ -1450,6 +1456,18 @@ impl Validator {
         }
     }
 
+    fn check_u64_bit_method_call(&mut self, name: &str, args: &[Expr], span: Span) {
+        if matches!(name, "bit_test" | "bit_set" | "bit_clear") && args.len() != 1 {
+            self.errors.push(SpecError::ForbiddenCall {
+                detail: format!(
+                    "`.{name}()` expects exactly one bit-index argument, found {}",
+                    args.len()
+                ),
+                span,
+            });
+        }
+    }
+
     /// Run `inner` one recursion level deeper, returning `false` (and recording
     /// an `ExpressionTooDeep` at `span`) if the limit is hit. The single shared
     /// guard for every recursive descent (REQ-5). `span` is the enclosing
@@ -1742,6 +1760,7 @@ impl Validator {
                 if name == "array_eq" || name == "array_same_except" {
                     self.check_array_relation_call(name, receiver, args, span);
                 }
+                self.check_u64_bit_method_call(name, args, span);
                 self.scan_expr_for_loops(receiver, span);
                 for arg in args {
                     self.scan_expr_for_loops(arg, span);
@@ -1926,6 +1945,7 @@ impl Validator {
                 if name == "array_eq" || name == "array_same_except" {
                     self.check_array_relation_call(name, receiver, args, span);
                 }
+                self.check_u64_bit_method_call(name, args, span);
                 if !BUILTIN_METHODS.contains(&name.as_str()) {
                     self.errors.push(SpecError::ForbiddenCall {
                         detail: format!(

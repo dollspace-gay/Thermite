@@ -1413,6 +1413,18 @@ fn substitute(expr: &Expr, env: &Env) -> Result<Expr, RefEncodeError> {
                 .map(|a| substitute(a, env))
                 .collect::<Result<Vec<_>, _>>()?,
         }),
+        Expr::MethodCall {
+            receiver,
+            name,
+            args,
+        } => Ok(Expr::MethodCall {
+            receiver: Box::new(substitute(receiver, env)?),
+            name: name.clone(),
+            args: args
+                .iter()
+                .map(|argument| substitute(argument, env))
+                .collect::<Result<Vec<_>, _>>()?,
+        }),
         Expr::Index { base, index } => {
             let new_index = match index {
                 IndexArg::Single(i) => IndexArg::Single(Box::new(substitute(i, env)?)),
@@ -1433,8 +1445,8 @@ fn substitute(expr: &Expr, env: &Env) -> Result<Expr, RefEncodeError> {
                 .map(|e| substitute(e, env))
                 .collect::<Result<Vec<_>, _>>()?,
         )),
-        // An out-of-subset value node (a method call, a struct literal, a closure, a
-        // match-expr, a field/projection, a deref, a ref) is passed through
+        // An out-of-subset value node (a struct literal, a closure, a match-expr,
+        // a field/projection, a deref, or a ref) is passed through
         // unchanged — [`exec_ref_value`] will reject it (the frozen RHS
         // sublanguage is the step-2.1 pure-exec subset). Passing it through keeps the
         // rejection in one place (the value encoder) with the precise node tag.
@@ -1489,6 +1501,13 @@ mod tests {
             value,
         }
     }
+    fn method(receiver: Expr, name: &str, args: Vec<Expr>) -> Expr {
+        Expr::MethodCall {
+            receiver: Box::new(receiver),
+            name: name.to_string(),
+            args,
+        }
+    }
 
     /// B1 reference: `{ let a = x + 1; let b = a * 2; b }` -> the threaded closed
     /// form `((x + 1) * 2)` (the let-chain substitution).
@@ -1505,6 +1524,26 @@ mod tests {
             body_ref_state(&block, &BodyRefCtx::default()).unwrap(),
             "((x + 1) * 2)"
         );
+    }
+
+    #[test]
+    fn method_receivers_and_arguments_are_state_substituted() {
+        let block = Block {
+            stmts: vec![let_(
+                false,
+                "set_word",
+                method(path("word"), "bit_set", vec![path("bit")]),
+            )],
+            tail: Some(Box::new(method(
+                path("set_word"),
+                "bit_test",
+                vec![path("bit")],
+            ))),
+        };
+        let encoded = body_ref_state(&block, &BodyRefCtx::default()).unwrap();
+        assert!(!encoded.contains("set_word"), "{encoded}");
+        assert!(encoded.contains("match (bit)"), "{encoded}");
+        assert!(encoded.contains("(word) | 1u64"), "{encoded}");
     }
 
     /// B2 mutation-order reference: `s = s + 1; s = s * 2` threads to

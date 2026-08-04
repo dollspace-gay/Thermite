@@ -128,6 +128,8 @@ fn fixed_collections_are_l3_freestanding_receipt_bound_primitives() {
     assert_l3_functions(
         &bitmap_rows,
         &[
+            "fixed_bitmap_word",
+            "fixed_bitmap_offset",
             "fixed_bitmap_empty",
             "fixed_bitmap_contains",
             "fixed_bitmap_insert",
@@ -135,9 +137,11 @@ fn fixed_collections_are_l3_freestanding_receipt_bound_primitives() {
             "fixed_bitmap_set_to",
             "fixed_bitmap_insert_remove_probe",
             "fixed_bitmap_set_to_probe",
+            "fixed_bitmap_word_boundary_probe",
         ],
     );
-    assert_eq!(mutation_total(&bitmap_rows), (14, 16));
+    assert_eq!(bitmap_rows.len(), 19);
+    assert_eq!(mutation_total(&bitmap_rows), (33, 40));
 
     let ring_rows = checked_rows(ring_source);
     assert_l3_functions(

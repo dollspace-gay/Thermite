@@ -874,6 +874,15 @@ fn lower_with_profile(
         out.push_str(&fixed_array_equality_defs());
     }
 
+    // Packed `u64` bit access needs more than emitting Rust's operators: Verus's
+    // ordinary SMT mode treats dynamic shifts/bit algebra opaquely. Emit a
+    // finite, directly verified 64-way helper only for programs that use the
+    // frozen bit methods. Its postconditions bridge the exact machine operation
+    // into ordinary compositional L3 contracts without a trusted axiom.
+    if program_uses_u64_bit_methods(program) {
+        out.push_str(&u64_bit_defs());
+    }
+
     // (1b) Basis Stage 2 (`.design/basis/02-recursion-schemes.md` REQ-6/REQ-7):
     // the generated per-(ADT, scheme) Verus recursive `spec fn`s
     // (`fold_<e>`/`for_all_<e>`/…) + the structural measure `<e>_len` + the
@@ -1633,6 +1642,23 @@ fn lower_inv_expr(
                 return Ok(format!(
                     "(forall|__thermite_i: int| 0 <= __thermite_i < ({r})@.len() && __thermite_i != ({except}) as int ==> ({r})@[__thermite_i] == ({right})@[__thermite_i])"
                 ));
+            }
+            if args.len() == 1 && matches!(name.as_str(), "bit_test" | "bit_set" | "bit_clear") {
+                let index = lower_inv_expr(
+                    &args[0],
+                    field_names,
+                    string_fields,
+                    spec_fn_param_types,
+                    d,
+                    span,
+                )?;
+                let helper = match name.as_str() {
+                    "bit_test" => "__thermite_u64_bit_test_spec",
+                    "bit_set" => "__thermite_u64_bit_set_spec",
+                    "bit_clear" => "__thermite_u64_bit_clear_spec",
+                    _ => unreachable!("the method guard fixed the bit helper"),
+                };
+                return Ok(format!("{helper}({r}, {index})"));
             }
             let recv_is_string_field = matches!(
                 receiver.as_ref(),
@@ -4945,6 +4971,76 @@ fn program_uses_fixed_array_equality(program: &Program) -> bool {
     })
 }
 
+/// Whether an expression reaches one of the total packed-`u64` bit methods.
+/// Public so Forge's independent exec/body TV frames can include the exact
+/// directly verified helper definitions only when the production column calls
+/// them.
+pub fn expr_uses_u64_bit_methods(expr: &Expr) -> bool {
+    if matches!(expr, Expr::MethodCall { name, args, .. }
+        if matches!(name.as_str(), "bit_test" | "bit_set" | "bit_clear")
+            && args.len() == 1)
+    {
+        return true;
+    }
+    let mut found = false;
+    let _ = each_subexpr(expr, &mut |child| {
+        if expr_uses_u64_bit_methods(child) {
+            found = true;
+        }
+        Ok(())
+    });
+    found
+}
+
+fn stmt_uses_u64_bit_methods(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Let { init, .. } => expr_uses_u64_bit_methods(init),
+        Stmt::Assign { target, value } => {
+            expr_uses_u64_bit_methods(target) || expr_uses_u64_bit_methods(value)
+        }
+        Stmt::Return(value) => value.as_ref().is_some_and(expr_uses_u64_bit_methods),
+        Stmt::If {
+            cond, then, else_, ..
+        } => {
+            expr_uses_u64_bit_methods(cond)
+                || block_uses_u64_bit_methods(then)
+                || else_.as_ref().is_some_and(block_uses_u64_bit_methods)
+        }
+        Stmt::Loop(loop_) => block_uses_u64_bit_methods(&loop_.body),
+        Stmt::Expr(expr) => expr_uses_u64_bit_methods(expr),
+        Stmt::Break | Stmt::Continue => false,
+    }
+}
+
+/// Whether a block reaches one of the total packed-`u64` bit methods.
+pub fn block_uses_u64_bit_methods(block: &Block) -> bool {
+    block.stmts.iter().any(stmt_uses_u64_bit_methods)
+        || block.tail.as_deref().is_some_and(expr_uses_u64_bit_methods)
+}
+
+fn program_uses_u64_bit_methods(program: &Program) -> bool {
+    program.items.iter().any(|item| match item {
+        Item::Fn(function) => {
+            expr_uses_u64_bit_methods(&function.contract.req.expr)
+                || function
+                    .contract
+                    .ens
+                    .iter()
+                    .any(|clause| expr_uses_u64_bit_methods(&clause.expr))
+                || function
+                    .body
+                    .as_ref()
+                    .is_some_and(block_uses_u64_bit_methods)
+        }
+        Item::SpecFn(function) => block_uses_u64_bit_methods(&function.body),
+        Item::Struct(structure) => structure
+            .inv
+            .as_ref()
+            .is_some_and(|clause| expr_uses_u64_bit_methods(&clause.expr)),
+        Item::Const(_) | Item::Enum(_) | Item::Forge(_) => false,
+    })
+}
+
 /// Exact Verus implementation used by executable `.array_eq(..)` calls.
 ///
 /// Verus cannot verify Rust's native `[T; N]` `PartialEq` implementation. This
@@ -5017,6 +5113,85 @@ pub fn fixed_array_equality_defs() -> String {
         out.push_str("    }\n");
         out.push_str("}\n");
     }
+    out
+}
+
+/// Exact directly verified implementation for the total packed-`u64` bit
+/// methods. The finite mask table is deliberately generated rather than
+/// expressed with a dynamic shift in the specification: ordinary Verus/Z3 does
+/// not expose enough dynamic-shift algebra to callers. Each update arm proves
+/// its one-bit fact with Verus's QF_BV tactic, then exports that fact as an
+/// ordinary L3 postcondition. Out-of-range indices are total and fail closed:
+/// tests return `false`, updates return the original word.
+pub fn u64_bit_defs() -> String {
+    let mut out = String::from(
+        "\npub open spec fn __thermite_u64_bit_mask(offset: usize) -> u64 {\n\
+         \x20   match offset {\n",
+    );
+    for offset in 0..64usize {
+        let mask = 1u64 << offset;
+        writeln!(out, "        {offset} => {mask}u64,").ok();
+    }
+    out.push_str("        _ => 0u64,\n    }\n}\n");
+    out.push_str(
+        "\npub open spec fn __thermite_u64_bit_test_spec(word: u64, offset: usize) -> bool {\n\
+         \x20   offset < 64 && word & __thermite_u64_bit_mask(offset) != 0u64\n\
+         }\n\
+         \n\
+         pub open spec fn __thermite_u64_bit_set_spec(word: u64, offset: usize) -> u64 {\n\
+         \x20   if offset < 64 { word | __thermite_u64_bit_mask(offset) } else { word }\n\
+         }\n\
+         \n\
+         pub open spec fn __thermite_u64_bit_clear_spec(word: u64, offset: usize) -> u64 {\n\
+         \x20   if offset < 64 { word & !__thermite_u64_bit_mask(offset) } else { word }\n\
+         }\n\
+         \n\
+         pub fn __thermite_u64_bit_test(word: u64, offset: usize) -> (result: bool)\n\
+         \x20   ensures result == __thermite_u64_bit_test_spec(word, offset),\n\
+         {\n\
+         \x20   match offset {\n",
+    );
+    for offset in 0..64usize {
+        let mask = 1u64 << offset;
+        writeln!(out, "        {offset} => word & {mask}u64 != 0u64,").ok();
+    }
+    out.push_str("        _ => false,\n    }\n}\n");
+
+    out.push_str(
+        "\npub fn __thermite_u64_bit_set(word: u64, offset: usize) -> (result: u64)\n\
+         \x20   ensures\n\
+         \x20       result == __thermite_u64_bit_set_spec(word, offset),\n\
+         \x20       offset < 64 ==> __thermite_u64_bit_test_spec(result, offset),\n\
+         {\n\
+         \x20   match offset {\n",
+    );
+    for offset in 0..64usize {
+        let mask = 1u64 << offset;
+        writeln!(
+            out,
+            "        {offset} => {{ let result = word | {mask}u64; assert((word | {mask}u64) & {mask}u64 != 0u64) by(bit_vector); result }},"
+        )
+        .ok();
+    }
+    out.push_str("        _ => word,\n    }\n}\n");
+
+    out.push_str(
+        "\npub fn __thermite_u64_bit_clear(word: u64, offset: usize) -> (result: u64)\n\
+         \x20   ensures\n\
+         \x20       result == __thermite_u64_bit_clear_spec(word, offset),\n\
+         \x20       offset < 64 ==> !__thermite_u64_bit_test_spec(result, offset),\n\
+         {\n\
+         \x20   match offset {\n",
+    );
+    for offset in 0..64usize {
+        let mask = 1u64 << offset;
+        writeln!(
+            out,
+            "        {offset} => {{ let result = word & !{mask}u64; assert((word & !{mask}u64) & {mask}u64 == 0u64) by(bit_vector); result }},"
+        )
+        .ok();
+    }
+    out.push_str("        _ => word,\n    }\n}\n");
     out
 }
 
@@ -8319,6 +8494,17 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
                 return Ok(format!(
                     "({r}).__thermite_fixed_array_same_except(&({right}), {except})"
                 ));
+            }
+            if args.len() == 1 && matches!(name.as_str(), "bit_test" | "bit_set" | "bit_clear") {
+                let index = lower_expr(&args[0], ctx, d, span)?;
+                let suffix = match name.as_str() {
+                    "bit_test" => "bit_test",
+                    "bit_set" => "bit_set",
+                    "bit_clear" => "bit_clear",
+                    _ => unreachable!("the method guard fixed the bit helper"),
+                };
+                let mode = if ctx.is_spec() { "_spec" } else { "" };
+                return Ok(format!("__thermite_u64_{suffix}{mode}({r}, {index})"));
             }
             // Cluster C4 (`.design/basis/07-strings.md` REQ-8, issue #94): the
             // `u64`→decimal-`String` method `n.to_string()` lowers to a call of the

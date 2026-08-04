@@ -1,7 +1,9 @@
 const FIXED_BITMAP_BITS: usize = 256;
+const FIXED_BITMAP_WORD_BITS: usize = 64;
+const FIXED_BITMAP_WORDS: usize = 4;
 
 struct FixedBitmap256 {
-  bits: [bool; FIXED_BITMAP_BITS],
+  words: [u64; FIXED_BITMAP_WORDS],
   capacity: usize,
 }
 
@@ -9,6 +11,47 @@ spec fn fixed_bitmap_wf_spec(bitmap: &FixedBitmap256) -> bool
   dec bitmap.capacity
 {
   bitmap.capacity == FIXED_BITMAP_BITS
+}
+
+spec fn fixed_bitmap_word_spec(bit: usize) -> usize
+  dec bit
+{
+  bit / FIXED_BITMAP_WORD_BITS
+}
+
+spec fn fixed_bitmap_offset_spec(bit: usize) -> usize
+  dec bit
+{
+  bit % FIXED_BITMAP_WORD_BITS
+}
+
+spec fn fixed_bitmap_contains_spec(
+  bitmap: &FixedBitmap256,
+  bit: usize,
+) -> bool
+  dec bit
+{
+  bitmap.words[fixed_bitmap_word_spec(bit)]
+    .bit_test(fixed_bitmap_offset_spec(bit))
+}
+
+spec fn fixed_bitmap_words_clear_spec(
+  words: &[u64; FIXED_BITMAP_WORDS],
+) -> bool
+  dec FIXED_BITMAP_WORDS
+{
+  let expected: [u64; FIXED_BITMAP_WORDS] = [0; FIXED_BITMAP_WORDS];
+  words.array_eq(expected)
+}
+
+spec fn fixed_bitmap_words_same_except_spec(
+  left: &[u64; FIXED_BITMAP_WORDS],
+  right: &[u64; FIXED_BITMAP_WORDS],
+  except: usize,
+) -> bool
+  dec except
+{
+  left.array_same_except(right, except)
 }
 
 fn fixed_bitmap_wf(bitmap: &FixedBitmap256) -> bool
@@ -27,26 +70,45 @@ fn fixed_bitmap_capacity() -> usize
   FIXED_BITMAP_BITS
 }
 
+fn fixed_bitmap_word(bit: usize) -> usize
+  req bit < FIXED_BITMAP_BITS
+  ens result == fixed_bitmap_word_spec(bit)
+  ens result < FIXED_BITMAP_WORDS
+  fx pure
+{
+  bit / FIXED_BITMAP_WORD_BITS
+}
+
+fn fixed_bitmap_offset(bit: usize) -> usize
+  req bit < FIXED_BITMAP_BITS
+  ens result == fixed_bitmap_offset_spec(bit)
+  ens result < FIXED_BITMAP_WORD_BITS
+  fx pure
+{
+  bit % FIXED_BITMAP_WORD_BITS
+}
+
 fn fixed_bitmap_empty() -> FixedBitmap256
   req true
-  ens !result.bits[0]
-    && !result.bits[FIXED_BITMAP_BITS - 1]
-    && result.capacity == FIXED_BITMAP_BITS
-    && fixed_bitmap_wf_spec(&result)
+  ens result.capacity == FIXED_BITMAP_BITS
+  ens fixed_bitmap_wf_spec(&result)
+  ens fixed_bitmap_words_clear_spec(&result.words)
   fx pure
 {
   FixedBitmap256 {
-    bits: [false; FIXED_BITMAP_BITS],
-    capacity: 256,
+    words: [0; FIXED_BITMAP_WORDS],
+    capacity: FIXED_BITMAP_BITS,
   }
 }
 
 fn fixed_bitmap_contains(bitmap: &FixedBitmap256, bit: usize) -> bool
   req fixed_bitmap_wf_spec(bitmap) && bit < FIXED_BITMAP_BITS
-  ens result == bitmap.bits[bit]
+  ens result == fixed_bitmap_contains_spec(bitmap, bit)
   fx pure
 {
-  bitmap.bits[bit]
+  let word: usize = fixed_bitmap_word(bit);
+  let offset: usize = fixed_bitmap_offset(bit);
+  bitmap.words[word].bit_test(offset)
 }
 
 fn fixed_bitmap_insert(
@@ -54,15 +116,25 @@ fn fixed_bitmap_insert(
   bit: usize,
 ) -> FixedBitmap256
   req fixed_bitmap_wf_spec(&bitmap) && bit < FIXED_BITMAP_BITS
-  ens result.bits[bit]
-  ens result.capacity == bitmap.capacity
   ens fixed_bitmap_wf_spec(&result)
+  ens result.capacity == bitmap.capacity
+  ens result.words[fixed_bitmap_word_spec(bit)]
+    == bitmap.words[fixed_bitmap_word_spec(bit)]
+      .bit_set(fixed_bitmap_offset_spec(bit))
+  ens fixed_bitmap_contains_spec(&result, bit)
+  ens fixed_bitmap_words_same_except_spec(
+    &result.words,
+    &bitmap.words,
+    fixed_bitmap_word_spec(bit),
+  )
   fx pure
 {
-  let mut bits: [bool; FIXED_BITMAP_BITS] = bitmap.bits;
-  bits[bit] = true;
+  let word: usize = fixed_bitmap_word(bit);
+  let offset: usize = fixed_bitmap_offset(bit);
+  let mut words: [u64; FIXED_BITMAP_WORDS] = bitmap.words;
+  words[word] = words[word].bit_set(offset);
   FixedBitmap256 {
-    bits: bits,
+    words: words,
     capacity: bitmap.capacity,
   }
 }
@@ -72,15 +144,25 @@ fn fixed_bitmap_remove(
   bit: usize,
 ) -> FixedBitmap256
   req fixed_bitmap_wf_spec(&bitmap) && bit < FIXED_BITMAP_BITS
-  ens !result.bits[bit]
-  ens result.capacity == bitmap.capacity
   ens fixed_bitmap_wf_spec(&result)
+  ens result.capacity == bitmap.capacity
+  ens result.words[fixed_bitmap_word_spec(bit)]
+    == bitmap.words[fixed_bitmap_word_spec(bit)]
+      .bit_clear(fixed_bitmap_offset_spec(bit))
+  ens !fixed_bitmap_contains_spec(&result, bit)
+  ens fixed_bitmap_words_same_except_spec(
+    &result.words,
+    &bitmap.words,
+    fixed_bitmap_word_spec(bit),
+  )
   fx pure
 {
-  let mut bits: [bool; FIXED_BITMAP_BITS] = bitmap.bits;
-  bits[bit] = false;
+  let word: usize = fixed_bitmap_word(bit);
+  let offset: usize = fixed_bitmap_offset(bit);
+  let mut words: [u64; FIXED_BITMAP_WORDS] = bitmap.words;
+  words[word] = words[word].bit_clear(offset);
   FixedBitmap256 {
-    bits: bits,
+    words: words,
     capacity: bitmap.capacity,
   }
 }
@@ -91,16 +173,28 @@ fn fixed_bitmap_set_to(
   present: bool,
 ) -> FixedBitmap256
   req fixed_bitmap_wf_spec(&bitmap) && bit < FIXED_BITMAP_BITS
-  ens result.bits[bit] == present
-  ens result.capacity == bitmap.capacity
   ens fixed_bitmap_wf_spec(&result)
+  ens result.capacity == bitmap.capacity
+  ens fixed_bitmap_contains_spec(&result, bit) == present
+  ens result.words[fixed_bitmap_word_spec(bit)]
+    == (if present {
+      bitmap.words[fixed_bitmap_word_spec(bit)]
+        .bit_set(fixed_bitmap_offset_spec(bit))
+    } else {
+      bitmap.words[fixed_bitmap_word_spec(bit)]
+        .bit_clear(fixed_bitmap_offset_spec(bit))
+    })
+  ens fixed_bitmap_words_same_except_spec(
+    &result.words,
+    &bitmap.words,
+    fixed_bitmap_word_spec(bit),
+  )
   fx pure
 {
-  let mut bits: [bool; FIXED_BITMAP_BITS] = bitmap.bits;
-  bits[bit] = present;
-  FixedBitmap256 {
-    bits: bits,
-    capacity: bitmap.capacity,
+  if present {
+    fixed_bitmap_insert(bitmap, bit)
+  } else {
+    fixed_bitmap_remove(bitmap, bit)
   }
 }
 
@@ -129,4 +223,18 @@ fn fixed_bitmap_set_to_probe(bit: usize, present: bool) -> bool
   let updated: FixedBitmap256 = fixed_bitmap_set_to(empty, bit, present);
   fixed_bitmap_contains(&updated, bit) == present
     && fixed_bitmap_wf(&updated)
+}
+
+fn fixed_bitmap_word_boundary_probe() -> bool
+  req true
+  ens result
+  fx pure
+{
+  let empty: FixedBitmap256 = fixed_bitmap_empty();
+  let at_63: FixedBitmap256 = fixed_bitmap_insert(empty, 63);
+  let at_both: FixedBitmap256 = fixed_bitmap_insert(at_63, 64);
+  fixed_bitmap_contains(&at_both, 63)
+    && fixed_bitmap_contains(&at_both, 64)
+    && at_both.words[0].bit_test(63)
+    && at_both.words[1].bit_test(0)
 }

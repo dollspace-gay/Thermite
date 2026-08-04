@@ -211,6 +211,45 @@ fn fixed_array_contract_clauses_are_faithful() {
     );
 }
 
+#[test]
+fn u64_bit_method_contract_clauses_are_faithful() {
+    if !verus_present() {
+        eprintln!("SKIP: verus not available — u64-bit contract-TV not run.");
+        return;
+    }
+    let source = concat!(
+        "fn set_bit(word: u64, bit: usize) -> u64\n",
+        "  req true\n",
+        "  ens result == word.bit_set(bit)\n",
+        "  fx pure\n",
+        "{ word.bit_set(bit) }\n",
+        "fn clear_bit(word: u64, bit: usize) -> u64\n",
+        "  req true\n",
+        "  ens result == word.bit_clear(bit)\n",
+        "  fx pure\n",
+        "{ word.bit_clear(bit) }\n",
+        "fn test_bit(word: u64, bit: usize) -> bool\n",
+        "  req true\n",
+        "  ens result == word.bit_test(bit)\n",
+        "  fx pure\n",
+        "{ word.bit_test(bit) }\n",
+    );
+    let path = std::env::temp_dir().join("thermite_contract_tv_u64_bits.th");
+    std::fs::write(&path, source).expect("write u64-bit contract-TV fixture");
+    let report = run_tv_json(&path, None);
+    let (checked, faithful, divergent) = corpus_counts(&report);
+    assert_eq!(checked, 6, "each req/ens pair must be checked: {report}");
+    assert_eq!(faithful, checked, "{report}");
+    assert_eq!(divergent, 0, "{report}");
+    for clause in ["set_bit.ens#1", "clear_bit.ens#1", "test_bit.ens#1"] {
+        assert_eq!(
+            corpus_clause_verdict(&report, clause),
+            Some("faithful"),
+            "{clause}: {report}"
+        );
+    }
+}
+
 /// REQ-5 + #150 gap #1/#3: binary_search's clauses are all faithful, 0 divergent,
 /// and 0 skipped — the `Option<usize>` `ens match` clause (the C7 payload-in-
 /// contract match-in-ens) is now checked + faithful (was Skipped: `Expr::Match`

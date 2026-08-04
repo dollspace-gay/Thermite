@@ -365,6 +365,33 @@ fn faithful_fixed_array_update_is_faithful() {
     }));
 }
 
+#[test]
+fn faithful_u64_bit_method_body_is_faithful() {
+    if !verus_present() {
+        eprintln!("SKIP: verus not available — u64-bit body-TV not discharged.");
+        return;
+    }
+    let src = concat!(
+        "fn set_through_local(word: u64, bit: usize) -> u64\n",
+        "  req true\n",
+        "  ens result == word.bit_set(bit)\n",
+        "  fx pure\n",
+        "{\n",
+        "  let updated: u64 = word.bit_set(bit);\n",
+        "  updated\n",
+        "}\n",
+    );
+    let file = write_th("u64_bit_methods", src);
+    let report = run_body_tv_json(&file);
+    assert_eq!(report["counts"]["checked"].as_u64(), Some(1), "{report}");
+    assert_eq!(report["counts"]["faithful"].as_u64(), Some(1), "{report}");
+    assert_eq!(report["counts"]["divergent"].as_u64(), Some(0), "{report}");
+    assert!(report["bodies"].as_array().unwrap().iter().any(|body| {
+        body["body"].as_str() == Some("set_through_local")
+            && body["verdict"].as_str() == Some("faithful")
+    }));
+}
+
 // ---- 3. a mutated production → Divergent ------------------------------------
 
 /// REQ-5 (the Divergent arm): a wrong production body — the

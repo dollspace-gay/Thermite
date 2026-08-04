@@ -516,6 +516,9 @@ fn straight_line_body_tv(
     if thermite_lower::block_uses_fixed_array_equality(body) {
         spec_defs.push(thermite_lower::fixed_array_equality_defs());
     }
+    if thermite_lower::block_uses_u64_bit_methods(body) {
+        spec_defs.push(thermite_lower::u64_bit_defs());
+    }
     let frame = BodyObligationFrame {
         spec_defs,
         params,

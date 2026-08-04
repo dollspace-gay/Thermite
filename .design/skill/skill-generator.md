@@ -4,7 +4,7 @@
 tier: 3-component
 status: draft
 audited-sha: 92396428567edc6940a9e2845217f5ff4c2ea3c6 (re-pinned 2026-06-16, user-authorized: the only change to this doc's governed files since the prior pin is the additive stage-1 forge-tier increment 2a — the new Item::Forge surface + inert Item::Forge match arms, verified net-additive with no substantive removal of existing v1 logic (git log <main>..HEAD = the 8 forge commits); the v1 behavior this doc governs is unchanged, and the new forge-tier surface is specified in .design/stage1-forge-tier.md / REQ-S1-3)
-audited-content-sha256: 85b398f654a4519427516a858b02e4caac5dad7f7a0bedb6d211e06f443f83d2 (re-pinned 2026-08-04 after documenting the bounded work-deque primitive surface)
+audited-content-sha256: b85ef95f5826706e9c7f9ebdc2fe4836e7ea5171d41208382ba56bfc1a465fb2 (re-pinned 2026-08-04 after documenting packed-bit and packed-bitmap authoring)
 governs: thermite-skill/src/generate.rs
 thesis-refs:
   - thermite-design.md §2.2
@@ -473,8 +473,9 @@ refactor.
 
 At the pre-#84 baseline the committed skill measured **2,560 tokens** (issue #7
 result comment; ~3.4k headroom under 6,000); after the #84 refactor + the
-#199/#257 currency passes it measures **5,988** (`--check-budget`, verified at
-the #262 re-audit) — under the ceiling, the estimate below having been roughly
+#199/#257 currency passes it measured **5,988** at the #262 re-audit. After the
+packed-`u64` bit-method and packed-bitmap authoring guidance, it measures
+**5,990** (`--check-budget`, 2026-08-04) — under the ceiling, the estimate below having been roughly
 2x optimistic but directionally right. The dynamic refactor ADDS: the recursion-scheme
 section (5 schemes × ~1 line + 1 example ≈ ~15 lines), and a per-variant line for
 the previously-omitted constructs (the ADT items, `Vec`/`String`/`Box`/`Named`

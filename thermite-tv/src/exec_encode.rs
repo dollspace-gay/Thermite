@@ -48,7 +48,7 @@
 //! <!-- /generated:reqs -->
 
 use std::collections::BTreeSet;
-use std::fmt;
+use std::fmt::{self, Write as _};
 
 use thermite_syntax::ast::{ArrayLen, BinOp, Expr, IndexArg, PrimType, Type, UnaryOp};
 
@@ -213,6 +213,12 @@ fn encode_method_call(
             if segments.len() == 1 && ctx.is_slice_bound(&segments[0]))
     };
 
+    if args.len() == 1 && matches!(name, "bit_test" | "bit_set" | "bit_clear") {
+        let word = encode(receiver, ctx)?;
+        let offset = encode(&args[0], ctx)?;
+        return Ok(encode_u64_bit_reference(&word, &offset, name));
+    }
+
     match name {
         "len" if args.is_empty() && is_slice_value(receiver) => {
             let slice = encode(receiver, ctx)?;
@@ -249,6 +255,30 @@ fn encode_method_call(
              unsupported operand"
         ))),
     }
+}
+
+/// Independent finite semantics for the total packed-`u64` bit methods. This
+/// intentionally spells the 64 masks from the surface meaning rather than
+/// importing the production helper generator.
+fn encode_u64_bit_reference(word: &str, offset: &str, method: &str) -> String {
+    let mut out = format!("(match ({offset}) {{ ");
+    for bit in 0..64usize {
+        let mask = 1u64 << bit;
+        let value = match method {
+            "bit_test" => format!("({word}) & {mask}u64 != 0u64"),
+            "bit_set" => format!("({word}) | {mask}u64"),
+            "bit_clear" => format!("({word}) & !{mask}u64"),
+            _ => unreachable!("caller restricts the frozen bit method"),
+        };
+        write!(out, "{bit} => {value}, ").ok();
+    }
+    let fallback = if method == "bit_test" {
+        "false".to_string()
+    } else {
+        format!("({word})")
+    };
+    write!(out, "_ => {fallback} }})").ok();
+    out
 }
 
 /// A path reference: a var or a `::`-qualified name. A pure exec value path is a

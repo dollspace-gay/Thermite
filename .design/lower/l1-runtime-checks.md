@@ -3,7 +3,7 @@
 tier: 3-component
 status: draft
 audited-sha: 6b86f74476122cfddbdcf168d37a3561d2598054 (re-pinned 2026-06-16 for PR #46 after merging main: lower_l1's TString runtime gate now treats String-typed ADT declarations as TString users so ADT fields cannot name an unemitted runtime; main's inert Item::Forge skip is preserved; core req/ens/inv check emission is unchanged.)
-audited-content-sha256: d074160950aea70072c0667a6cdef0b047924e23e76a50bf60300d87010174c6
+audited-content-sha256: 6086157f9a4699c305c32aee436be6fa58539e601be1f5d07522da3f8b89bbee
 governs: thermite-lower/src/l1.rs
 thesis-refs:
   - thermite-design.md §4.2
@@ -163,6 +163,9 @@ Primitive fixed-array `.array_eq(other)` checks use native equality at L1;
 `.array_same_except(other, index)` lowers to a bounded allocation-free scan that
 checks every slot other than the selected index. An out-of-bounds exception
 therefore performs full equality, matching the L3 finite-view relation.
+Total `u64.bit_test(index)`, `.bit_set(index)`, and `.bit_clear(index)` lower to
+guarded native shifts. At `index >= 64`, test returns false and updates return
+the original word, avoiding a target-dependent overshift.
 
 ### The always-active check primitive (REQ-2)
 

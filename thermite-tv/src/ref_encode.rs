@@ -39,7 +39,7 @@
 //! <!-- /generated:reqs -->
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt;
+use std::fmt::{self, Write as _};
 
 use thermite_syntax::ast::{ArrayLen, BinOp, Expr, IndexArg, MatchArm, Pattern, UnaryOp};
 
@@ -767,6 +767,12 @@ fn encode_method_call(
         }
     }
 
+    if args.len() == 1 && matches!(name, "bit_test" | "bit_set" | "bit_clear") {
+        let word = encode(receiver, ctx)?;
+        let offset = encode(&args[0], ctx)?;
+        return Ok(encode_u64_bit_reference(&word, &offset, name));
+    }
+
     if is_fixed_array_value(receiver) {
         if name == "len" && args.is_empty() {
             let array = encode(receiver, ctx)?;
@@ -841,6 +847,30 @@ fn encode_method_call(
             "spec method `.{other}()` (not in the frozen byte-view set)"
         ))),
     }
+}
+
+/// Independent contract semantics for the total packed-`u64` bit methods.
+/// The finite mask table is re-derived here so contract TV can catch a wrong
+/// production arm or operation without importing the production lowerer.
+fn encode_u64_bit_reference(word: &str, offset: &str, method: &str) -> String {
+    let mut out = format!("(match ({offset}) {{ ");
+    for bit in 0..64usize {
+        let mask = 1u64 << bit;
+        let value = match method {
+            "bit_test" => format!("({word}) & {mask}u64 != 0u64"),
+            "bit_set" => format!("({word}) | {mask}u64"),
+            "bit_clear" => format!("({word}) & !{mask}u64"),
+            _ => unreachable!("caller restricts the frozen bit method"),
+        };
+        write!(out, "{bit} => {value}, ").ok();
+    }
+    let fallback = if method == "bit_test" {
+        "false".to_string()
+    } else {
+        format!("({word})")
+    };
+    write!(out, "_ => {fallback} }})").ok();
+    out
 }
 
 /// Encode a `String`/`&String`-receiver byte-view method (#150 gap #2). The

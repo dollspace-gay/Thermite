@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: partial
-decision: Thermite ships policy-free fixed bitset, vector, FIFO-ring, and collision-explicit direct-map mechanics in .th; packed representations, generic capacities, richer maps, slabs, and complete aggregate receipt TV remain
+decision: Thermite ships policy-free packed bitmap, vector, FIFO-ring, and collision-explicit direct-map mechanics in .th; generic capacities, richer maps, slabs, and complete aggregate receipt TV remain
 governs:
   - stdlib/kernel-primitives/collections.thpkg.json
   - stdlib/kernel-primitives/collections/bitmap.th
@@ -11,7 +11,7 @@ governs:
   - stdlib/kernel-primitives/collections/ring.th
   - stdlib/kernel-primitives/collections/vector.th
   - forge/tests/fixed_collections.rs
-audited-content-sha256: 064d3455a3825e8b4d23ad688ca9c351932cce6e74b54f7c237ebf2caaab5cdb
+audited-content-sha256: 9f3a5e88e97f0bb58fb4c53ed894d07e16fcced7ddc44015aa5ed6f45d47e44c
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/l3-verified-artifact.md
@@ -37,27 +37,36 @@ control flow.
 
 ## Fixed bitset
 
-`FixedBitmap256` is a 256-entry boolean bitset with:
+`FixedBitmap256` is a packed 256-bit bitmap backed by `[u64; 4]`, with:
 
 - an allocation-free empty constructor;
 - capacity and representation-validity queries;
 - bounded membership lookup; and
 - owned insert, remove, and set-to transitions.
 
-Every transition preserves the fixed capacity and pins the requested bit's
-final value. The generated code is a native `[bool; 256]` indexed update. The
-existing fixed-array verifier and translation-validation machinery establish
-the language operation's exact final-array update; this library adds the
-collection-level contracts and composition probes.
+Every transition preserves the fixed capacity, pins the requested bit's final
+value, specifies the target word's exact update, and proves that every other
+word is unchanged. Bits 0–63 occupy word 0, 64–127 word 1, and so on; a boundary
+probe composes inserts at bits 63 and 64 and observes both words.
 
-This increment deliberately does not call the representation a packed bitmap.
-The first attempted `[u64; 4]` formulation exposed that a compositional ordinary
-L3 contract cannot yet reuse a dynamic fixed-width shift proof. `@bv64` clauses
-can prove a standalone shift at L4, but they do not currently supply the
-ordinary array/struct contract needed by callers. Shipping the boolean bitset
-keeps the executable and proof claim identical. A packed representation needs
-an explicit bitvector-to-ordinary-contract refinement bridge, not a trusted
-mask helper.
+The language surface now provides total `u64.bit_test(index)`,
+`u64.bit_set(index)`, and `u64.bit_clear(index)` methods. For an index at least
+64, observation is false and updates return the original word. L3 lowering
+emits a finite 64-mask helper only when these methods are reachable. Each
+constant-mask update is discharged directly with Verus bit-vector reasoning,
+then exported through an ordinary L3 postcondition that collection callers can
+compose. There is no trusted mask axiom and no runtime helper boundary.
+
+Contract, expression, and body translation validation derive an independent
+64-mask reference table rather than importing the production generator. The
+body reference state machine also substitutes bit-method receivers and
+arguments through local bindings, closing the multi-statement validation gap
+found by this increment.
+
+The exact word-update equation is available to callers, but a convenience
+theorem spelling arbitrary same-word, other-bit preservation is not yet part of
+the surface. It remains useful follow-up rather than being silently inferred
+from a weaker collection contract.
 
 Popcount, first-set search, range scans, bulk union/intersection, and a fully
 quantified all-indices collection contract remain future operations.
@@ -118,15 +127,15 @@ opaque representations are available.
 
 ## Assurance and adversarial evidence
 
-`forge check --level l3` proves all 68 source items across the four modules at
-L3. There are no boundaries. Executable contract mutation kills 177 of 194
+`forge check --level l3` proves all 76 source items across the four modules at
+L3. There are no boundaries. Executable contract mutation kills 196 of 218
 generated mutants; the surviving mutants remain counted and the per-function
 scores stay above the configured floor.
 
 `forge/tests/fixed_collections.rs` additionally:
 
 - requires every source row to be L3 and boundary-free;
-- pins the bitmap score at 14/16, ring score at 64/71, vector score at 45/49,
+- pins the bitmap score at 33/40, ring score at 64/71, vector score at 45/49,
   and direct-map score at 54/58;
 - rejects a hostile function claiming an inserted bit is absent;
 - rejects a hostile function claiming the FIFO is LIFO;
@@ -148,15 +157,17 @@ their individual L3 certificates and the generic fixed-array TV evidence.
 
 This is a substantial REQ-KPRIM-2 increment, not completion. Remaining work is:
 
-1. a packed bitmap with a proved bitvector-to-L3 refinement bridge;
-2. open-addressed or chained maps, slabs/freelists, intrusive-list metadata,
-   and deque mechanics;
+1. popcount, set-bit search, bulk operations, and a reusable same-word
+   other-bit frame theorem for the packed bitmap;
+2. open-addressed or chained maps, slabs/freelists, and intrusive-list metadata;
 3. capacity/type parameterization that does not rely on privileged generated
    policy types;
 4. quantified framing and equality for aggregate collection states;
 5. named-aggregate/ADT body TV so complete transitions can be strict exports;
 6. static-storage ownership and initialization; and
-7. atomic/waiting consumers such as MPSC rings and work-stealing deques.
+7. atomic integration for concurrent containers; pure bounded MPSC and
+   work-stealing deque state mechanics are supplied by the synchronization
+   package.
 
 ## Auditable metrics
 
@@ -164,12 +175,12 @@ At this increment:
 
 | Metric | Value |
 |---|---:|
-| Physical Thermite LOC | 1,179 |
-| Nonblank Thermite LOC | 1,111 |
-| Thermite functions | 57 (50 executable, 7 specification) |
-| In-language L3 items | 68 |
+| Physical Thermite LOC | 1,287 |
+| Nonblank Thermite LOC | 1,211 |
+| Thermite functions | 65 (53 executable, 12 specification) |
+| In-language L3 items | 76 |
 | Frozen boundary declarations | 0 |
-| Executable mutants killed | 177/194 |
+| Executable mutants killed | 196/218 |
 | Bodyful Rust/assembly collection implementations | 0 |
 | Ordinary Rust kernel-policy/algorithm LOC | 0 |
 | Direct-Verus TPL LOC shipped by this package | 0 |

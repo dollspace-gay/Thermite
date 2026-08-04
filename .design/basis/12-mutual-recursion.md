@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: 197216559a73ca8ba62896732bd7d8a0a234e467fce72972f8036696bd2dda79 (re-pinned 2026-08-04 after the fixed-array frame lowering addition; mutual-recursion behavior remains regression-covered)
+audited-content-sha256: 43aaaaec988696f5b9bd4c8a4cf8932c04c374b6c552e6887c4edd326968409e (re-pinned 2026-08-04 after the packed-bit lowering addition; mutual-recursion behavior remains regression-covered)
 governs: forge/src/check.rs
 governs: thermite-lower/src/lower.rs
 thesis-refs:

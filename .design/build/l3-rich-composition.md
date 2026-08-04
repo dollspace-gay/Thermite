@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: 37fdf74487a9177042678610c9d5b3068e3df75f1266d9d6fef591a59b04293c
+audited-content-sha256: 10e8d9f0cc554a2686cede1f02393f7b4a8a7941539059e93d41bd9b4a742ee3
 decision: one canonical Verus crate with crate-visible rich Thermite roots and public shell exports
 issue: github:dollspace-gay/Thermite#104
 governs:

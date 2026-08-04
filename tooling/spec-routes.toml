@@ -1320,6 +1320,12 @@ reference = ["conformance/kernel_primitives.th"]
 conformance_ops = ["kernel-mutable-slice"]
 
 [[route]]
+crate_pattern = "thermite-lower/tests/u64_bit_methods.rs"
+design = ".design/build/kernel-primitives.md"
+reference = ["stdlib/kernel-primitives/collections/bitmap.th"]
+conformance_ops = ["packed-u64-bit-l1", "packed-u64-bit-l3"]
+
+[[route]]
 crate_pattern = "thermite-lower/tests/effects_verified.rs"
 design = ".design/build/kernel-primitives.md"
 reference = ["conformance/kernel_primitives.th"]
@@ -1378,6 +1384,12 @@ crate_pattern = "thermite-spec/tests/fixed_array_validate.rs"
 design = ".design/build/kernel-primitives.md"
 reference = ["conformance/verified-build/aggregate_storage.th"]
 conformance_ops = ["fixed-array-frame-validation"]
+
+[[route]]
+crate_pattern = "thermite-spec/tests/u64_bit_methods_validate.rs"
+design = ".design/build/kernel-primitives.md"
+reference = ["stdlib/kernel-primitives/collections/bitmap.th"]
+conformance_ops = ["packed-u64-bit-validation"]
 
 [[route]]
 crate_pattern = "thermite-tv/src/exec_encode.rs"

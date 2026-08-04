@@ -241,6 +241,49 @@ fn fixed_array_read_expression_is_faithful() {
         }));
 }
 
+#[test]
+fn u64_bit_method_expressions_are_faithful() {
+    if !verus_present() {
+        eprintln!("SKIP: verus not available — u64-bit exec-TV not discharged.");
+        return;
+    }
+    let source = concat!(
+        "fn set_bit(word: u64, bit: usize) -> u64\n",
+        "  req true\n",
+        "  ens result == word.bit_set(bit)\n",
+        "  fx pure\n",
+        "{ word.bit_set(bit) }\n",
+        "fn clear_bit(word: u64, bit: usize) -> u64\n",
+        "  req true\n",
+        "  ens result == word.bit_clear(bit)\n",
+        "  fx pure\n",
+        "{ word.bit_clear(bit) }\n",
+        "fn test_bit(word: u64, bit: usize) -> bool\n",
+        "  req true\n",
+        "  ens result == word.bit_test(bit)\n",
+        "  fx pure\n",
+        "{ word.bit_test(bit) }\n",
+    );
+    let path = std::env::temp_dir().join("thermite_exec_tv_u64_bits.th");
+    std::fs::write(&path, source).expect("write u64-bit exec-TV fixture");
+    let report = run_exec_tv_json(&path, None);
+    let counts = &report["corpus"]["counts"];
+    assert_eq!(counts["checked"].as_u64(), Some(3), "{report}");
+    assert_eq!(counts["faithful"].as_u64(), Some(3), "{report}");
+    assert_eq!(counts["divergent"].as_u64(), Some(0), "{report}");
+    for expression in ["set_bit.tail", "clear_bit.tail", "test_bit.tail"] {
+        assert!(
+            report["corpus"]["exprs"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|expr| expr["expr"].as_str() == Some(expression)
+                    && expr["verdict"].as_str() == Some("faithful")),
+            "{expression}: {report}"
+        );
+    }
+}
+
 /// REQ-3 / AC-7 (determinism): the generated exec run is reproducible — two
 /// `forge exec-tv --generated N` runs at the same (pinned) seed yield identical
 /// counts (the seeded SplitMix64 generator + the pinned verus seed, R-CODE-5). Run

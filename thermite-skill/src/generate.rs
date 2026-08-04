@@ -1366,12 +1366,13 @@ behind the language.
 `Eq`/`Ord`/`Hash`/`Iter`/`Display`), macros, `unsafe` (→ `#[slag]`), UFCS, implicit
 widening (casts explicit; overflow is a proof obligation).
 
-Kernel libraries: `forge build` accepts receipt-bound `*.thpkg.json` manifests.
-Primitive fixed arrays expose `.array_eq(other)` for extensional equality and
-`.array_same_except(other, index)` for exact one-slot update framing.
+Kernel packages use receipt-bound `*.thpkg.json` manifests. Fixed arrays expose
+`.array_eq(other)` and `.array_same_except(other,index)`. Packed `u64` operations
+are `.bit_test(i)`, `.bit_set(i)`, and `.bit_clear(i)`; `i >= 64` observes false
+or leaves the word unchanged. They bridge directly to ordinary L3 contracts.
 `atomics.thpkg.json` supplies sealed bool/u32/u64/usize atomics, order/history
 models, and literal-order legality; `ownership.thpkg.json` supplies generation
-mechanics; `collections.thpkg.json` supplies fixed bitset/vector/FIFO/direct-map;
+mechanics; `collections.thpkg.json` supplies packed-bitmap/vector/FIFO/direct-map;
 `synchronization.thpkg.json` supplies wait/ticket/barrier/once/refcount/seqlock/MPSC/
 work-deque mechanics plus frozen pause/block/halt declarations. No package supplies a kernel or
 machine body. Consumers directly refine boundaries; registry v1 accepts only

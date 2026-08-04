@@ -271,7 +271,8 @@ fn tv_fn(
                         None => r,
                     });
                 }
-                SpecType::Bool | SpecType::Opt(_) | SpecType::Res(_, _) => {}
+                SpecType::Bool | SpecType::Array(_, _) | SpecType::Opt(_) | SpecType::Res(_, _) => {
+                }
             }
             loop_frame
                 .params
@@ -701,6 +702,11 @@ fn extract_spec_defs(lowered: &str) -> Vec<String> {
     let mut i = 0;
     while i < lines.len() {
         let trimmed = lines[i].trim_start();
+        if trimmed.starts_with("pub const ") || trimmed.starts_with("const ") {
+            defs.push(lines[i].to_string());
+            i += 1;
+            continue;
+        }
         let is_exec_fn = trimmed.starts_with("fn ") || trimmed.starts_with("pub fn ");
         let is_def_header = !is_exec_fn
             && (trimmed.starts_with("spec fn ")
@@ -781,7 +787,7 @@ fn signature_frame(f: &FnItem, preamble: &[String]) -> Option<ObligationFrame> {
             // wrapper spec fns (matching production's `recv_is_string` rewrite).
             SpecType::Strng => string_params.push(p.name.clone()),
             SpecType::BoundedInt(_) => nat_coerce_params.push(p.name.clone()),
-            SpecType::Bool => {}
+            SpecType::Bool | SpecType::Array(_, _) => {}
             // A `Map` param (#150 gap #3) is bound as the `TMap` wrapper; production
             // weaves `well_formed()` for it (`is_map_param_ty`), so the obligation
             // threads the same `requires` to keep the spec_contains_key membership
@@ -817,7 +823,7 @@ fn signature_frame(f: &FnItem, preamble: &[String]) -> Option<ObligationFrame> {
                 // emit `result@`.
                 SpecType::Seq(_) => {}
                 SpecType::Strng => string_params.push("result".to_string()),
-                SpecType::Bool => {}
+                SpecType::Bool | SpecType::Array(_, _) => {}
                 // A `Map` result (#150 gap #3): production proves `result.well_formed()`
                 // (the constructed map is well-formed), so a `result.spec_contains_key(k)`
                 // ens has the invariant in scope. The obligation threads it as a
@@ -893,6 +899,9 @@ enum SpecType {
     BoundedInt(String),
     /// A `bool`.
     Bool,
+    /// A native fixed array. Contract expressions observe it through the same
+    /// finite `@` view used by production lowering.
+    Array(String, String),
     /// A `Map<K, V>` bound as the `TMap` wrapper (#150 gap #3). The string is the
     /// Verus wrapper spelling (`TMapU64U64`). Production weaves `well_formed()` for
     /// a `Map` param/result, so the obligation threads it as a `requires`; the
@@ -919,6 +928,7 @@ impl SpecType {
             // param is typed at its true domain, not a blanket `u64`.
             SpecType::BoundedInt(width) => width.clone(),
             SpecType::Bool => "bool".to_string(),
+            SpecType::Array(elem, len) => format!("[{elem}; {len}]"),
             // The `Map` wrapper spelling (`TMapU64U64`); the inner `(K, V)` pair is
             // carried for completeness. The wrapper struct is in the preamble.
             SpecType::Map(_, _) => self.map_wrapper_name(),
@@ -977,6 +987,10 @@ fn spec_type_of(ty: &Type) -> Option<SpecType> {
         Type::Prim(PrimType::U64) => Some(SpecType::BoundedInt("u64".to_string())),
         Type::Prim(PrimType::Usize) => Some(SpecType::BoundedInt("usize".to_string())),
         Type::Prim(PrimType::Bool) => Some(SpecType::Bool),
+        Type::Array { elem, len } => Some(SpecType::Array(
+            verus_type_spelling(elem)?,
+            array_len_spelling(len),
+        )),
         Type::Ref { inner, .. } => spec_type_of(inner),
         Type::Slice(inner) => Some(SpecType::Seq(elem_spelling(inner)?)),
         Type::Vec(inner) => Some(SpecType::Seq(elem_spelling(inner)?)),
@@ -1033,7 +1047,19 @@ fn verus_type_spelling(ty: &Type) -> Option<String> {
         Type::Prim(PrimType::Bool) => Some("bool".to_string()),
         Type::String => Some("TString".to_string()),
         Type::Named(n) => Some(n.clone()),
+        Type::Array { elem, len } => Some(format!(
+            "[{}; {}]",
+            verus_type_spelling(elem)?,
+            array_len_spelling(len)
+        )),
         _ => None,
+    }
+}
+
+fn array_len_spelling(len: &thermite_syntax::ArrayLen) -> String {
+    match len {
+        thermite_syntax::ArrayLen::Literal { value, .. } => value.to_string(),
+        thermite_syntax::ArrayLen::Const(name) => name.clone(),
     }
 }
 

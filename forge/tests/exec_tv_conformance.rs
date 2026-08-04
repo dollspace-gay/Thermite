@@ -171,6 +171,37 @@ fn generated_exec_run_all_faithful() {
     );
 }
 
+#[test]
+fn fixed_array_read_expression_is_faithful() {
+    if !verus_present() {
+        eprintln!("SKIP: verus not available — fixed-array exec-TV not discharged.");
+        return;
+    }
+    let source = concat!(
+        "const SLOTS: usize = 4;\n",
+        "fn read(slots: [u64; SLOTS], at: usize) -> u64\n",
+        "  req at < SLOTS\n",
+        "  ens result == slots[at]\n",
+        "  fx pure\n",
+        "{ slots[at] }\n",
+    );
+    let path = std::env::temp_dir().join("thermite_exec_tv_fixed_array.th");
+    std::fs::write(&path, source).expect("write fixed-array exec-TV fixture");
+    let report = run_exec_tv_json(&path, None);
+    let counts = &report["corpus"]["counts"];
+    assert_eq!(counts["checked"].as_u64(), Some(1), "{report}");
+    assert_eq!(counts["faithful"].as_u64(), Some(1), "{report}");
+    assert_eq!(counts["divergent"].as_u64(), Some(0), "{report}");
+    assert!(report["corpus"]["exprs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|expr| {
+            expr["expr"].as_str() == Some("read.tail")
+                && expr["verdict"].as_str() == Some("faithful")
+        }));
+}
+
 /// REQ-3 / AC-7 (determinism): the generated exec run is reproducible — two
 /// `forge exec-tv --generated N` runs at the same (pinned) seed yield identical
 /// counts (the seeded SplitMix64 generator + the pinned verus seed, R-CODE-5). Run

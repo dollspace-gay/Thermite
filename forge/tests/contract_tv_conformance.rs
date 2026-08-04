@@ -141,6 +141,34 @@ fn sum_corpus_zero_divergent() {
     );
 }
 
+#[test]
+fn fixed_array_contract_clauses_are_faithful() {
+    if !verus_present() {
+        eprintln!("SKIP: verus not available — fixed-array contract-TV not run.");
+        return;
+    }
+    let source = concat!(
+        "const SLOTS: usize = 4;\n",
+        "fn read(slots: [u64; SLOTS], at: usize) -> u64\n",
+        "  req at < SLOTS\n",
+        "  ens result == slots[at]\n",
+        "  fx pure\n",
+        "{ slots[at] }\n",
+    );
+    let path = std::env::temp_dir().join("thermite_contract_tv_fixed_array.th");
+    std::fs::write(&path, source).expect("write fixed-array contract-TV fixture");
+    let report = run_tv_json(&path, None);
+    let (checked, faithful, divergent) = corpus_counts(&report);
+    assert_eq!(divergent, 0, "{report}");
+    assert_eq!(checked, 2, "the req and ens must both be checked: {report}");
+    assert_eq!(faithful, checked, "{report}");
+    assert_eq!(corpus_clause_verdict(&report, "read.req"), Some("faithful"));
+    assert_eq!(
+        corpus_clause_verdict(&report, "read.ens#1"),
+        Some("faithful")
+    );
+}
+
 /// REQ-5 + #150 gap #1/#3: binary_search's clauses are all faithful, 0 divergent,
 /// and 0 skipped — the `Option<usize>` `ens match` clause (the C7 payload-in-
 /// contract match-in-ens) is now checked + faithful (was Skipped: `Expr::Match`

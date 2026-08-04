@@ -60,10 +60,11 @@
 //! [`crate::exec_encode::RefEncodeError::Unsupported`] (R-CODE-2 / R-APG-1 — never a
 //! panic, never a silent wrong denotation): a `Stmt::Loop`/`Break`/`Continue` (step
 //! 2.2.2, kernel-gated), a mid-body early `return` nested in an `if` branch (the
-//! multi-exit CPS form, out of v1), a `match`-as-statement, a non-scalar mutation
-//! (`Vec::push`, a v2 sequence theory), and a re-shadow `let x = ..; let x = ..` in
-//! the same block (the flat name->value env can't represent it). A silent wrong
-//! denotation would compare a wrong reference.
+//! multi-exit CPS form, out of v1), a `match`-as-statement, aggregate mutation
+//! other than an exact indexed write to a declared native fixed array (`Vec::push`,
+//! field mutation, and projection mutation need richer theories), and a re-shadow
+//! `let x = ..; let x = ..` in the same block (the flat name->value env can't
+//! represent it). A silent wrong denotation would compare a wrong reference.
 //!
 //! ## REQ status
 //!
@@ -112,15 +113,17 @@ use crate::exec_encode::{exec_ref_value, ExecRefCtx, RefEncodeError};
 
 /// The body-reference-encoding context (REQ-2). Carries the slice-bound names (so a
 /// slice index in an RHS / tail encodes to the spec-view element value `xs[i as
-/// int]`, mirroring the obligation's `xs: &[u32]` binding) — the same information
-/// [`ExecRefCtx`] carries for the per-expr encoder, reused here for the per-RHS
-/// value encoding. It carries no `nat`-coerce set (the exec state is bounded-typed,
-/// never `nat`-coerced — the same as step 2.1).
+/// int]`, mirroring the obligation's `xs: &[u32]` binding) and the native
+/// fixed-array bindings whose reads and indexed writes use finite views — the same
+/// information [`ExecRefCtx`] carries for the per-expr encoder, reused here for
+/// the per-RHS value encoding. It carries no `nat`-coerce set (the exec state is
+/// bounded-typed, never `nat`-coerced — the same as step 2.1).
 ///
 /// This is the body dual of [`ExecRefCtx`]: where `ExecRefCtx` frames a single exec
 /// expression, `BodyRefCtx` frames a whole straight-line body. The state-threading
 /// environment is internal to [`body_ref_state`] (it is the closed-form-in-the-
-/// inputs map, not an external knob); the ctx carries only the slice-param frame.
+/// inputs map, not an external knob); the ctx carries the slice and fixed-array
+/// frames plus the result representation.
 #[derive(Debug, Clone, Default)]
 pub struct BodyRefCtx {
     /// Names bound as a slice (`&[T]`) param in the obligation — an `Index` over
@@ -128,6 +131,8 @@ pub struct BodyRefCtx {
     /// value `xs[i as int]` (delegated to [`exec_ref_value`] via the [`ExecRefCtx`]
     /// this ctx builds). Empty for the scalar-only B1-B4 bodies.
     slice_bound: BTreeSet<String>,
+    fixed_array_bound: BTreeSet<String>,
+    result_is_fixed_array: bool,
 }
 
 impl BodyRefCtx {
@@ -139,13 +144,33 @@ impl BodyRefCtx {
     {
         BodyRefCtx {
             slice_bound: names.into_iter().map(Into::into).collect(),
+            fixed_array_bound: BTreeSet::new(),
+            result_is_fixed_array: false,
         }
+    }
+
+    /// Add native fixed-array inputs to the body frame.
+    pub fn with_fixed_array_bound<I, S>(mut self, names: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.fixed_array_bound = names.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Record that the body's result is a native fixed array and must be
+    /// compared extensionally through its finite sequence view.
+    pub fn with_fixed_array_result(mut self, is_array: bool) -> Self {
+        self.result_is_fixed_array = is_array;
+        self
     }
 
     /// Build the [`ExecRefCtx`] the per-RHS value encoder uses (the slice-bound set
     /// passes straight through — every RHS / tail value is a step-2.1 exec value).
     fn exec_ref_ctx(&self) -> ExecRefCtx {
         ExecRefCtx::with_slice_bound(self.slice_bound.iter().cloned())
+            .with_fixed_array_bound(self.fixed_array_bound.iter().cloned())
     }
 }
 
@@ -156,7 +181,41 @@ impl BodyRefCtx {
 /// be encoded by reusing [`exec_ref_value`] on the substituted [`Expr`] — the
 /// independence boundary (the per-RHS bounded-value reference is unchanged), so the
 /// only new logic is the substitution + threading.
-type Env = BTreeMap<String, Expr>;
+#[derive(Clone, Default)]
+struct Env {
+    values: BTreeMap<String, Expr>,
+    fixed_arrays: BTreeSet<String>,
+}
+
+impl Env {
+    fn new() -> Self {
+        Self::default()
+    }
+
+    fn contains_key(&self, name: &str) -> bool {
+        self.values.contains_key(name)
+    }
+
+    fn get(&self, name: &str) -> Option<&Expr> {
+        self.values.get(name)
+    }
+
+    fn insert(&mut self, name: String, value: Expr) {
+        self.values.insert(name, value);
+    }
+
+    fn keys(&self) -> impl Iterator<Item = &String> {
+        self.values.keys()
+    }
+
+    fn mark_fixed_array(&mut self, name: String) {
+        self.fixed_arrays.insert(name);
+    }
+
+    fn is_fixed_array(&self, name: &str) -> bool {
+        self.fixed_arrays.contains(name)
+    }
+}
 
 /// Encode a straight-line [`Block`] (the frozen 2.2.1 subset) to a Verus exec
 /// expression string giving the body's final state (the tail value) as a closed-form
@@ -220,6 +279,9 @@ pub fn body_ref_state_ensures(
     }
     // The single-cell (scalar / bool / if-tail) body: the plain scalar equality.
     let reference = body_ref_state(block, ctx)?;
+    if ctx.result_is_fixed_array {
+        return Ok(format!("{result_name}@ == ({reference})@"));
+    }
     Ok(format!("{result_name} == {reference}"))
 }
 
@@ -618,6 +680,47 @@ fn encode_block_tail(
     }
 }
 
+/// Preserve the element-type context that an annotated native array initializer
+/// supplies. State substitution can move `[7; N]` into an `ensures` expression,
+/// where its unsuffixed literal otherwise has no inferred element type.
+fn contextualize_array_initializer(expr: Expr, ty: &thermite_syntax::Type) -> Expr {
+    let thermite_syntax::Type::Array { elem, .. } = ty else {
+        return expr;
+    };
+    match expr {
+        Expr::Array(elements) => Expr::Array(
+            elements
+                .into_iter()
+                .map(|element| contextualize_array_element(element, elem))
+                .collect(),
+        ),
+        Expr::ArrayRepeat { value, len } => Expr::ArrayRepeat {
+            value: Box::new(contextualize_array_element(*value, elem)),
+            len,
+        },
+        other => other,
+    }
+}
+
+fn contextualize_array_element(expr: Expr, elem: &thermite_syntax::Type) -> Expr {
+    match elem {
+        thermite_syntax::Type::Array { .. } => contextualize_array_initializer(expr, elem),
+        thermite_syntax::Type::Prim(thermite_syntax::PrimType::U8)
+        | thermite_syntax::Type::Prim(thermite_syntax::PrimType::U16)
+        | thermite_syntax::Type::Prim(thermite_syntax::PrimType::U32)
+        | thermite_syntax::Type::Prim(thermite_syntax::PrimType::U64)
+        | thermite_syntax::Type::Prim(thermite_syntax::PrimType::Usize)
+            if matches!(expr, Expr::IntLit { .. }) =>
+        {
+            Expr::Cast {
+                expr: Box::new(expr),
+                ty: elem.clone(),
+            }
+        }
+        _ => expr,
+    }
+}
+
 /// Thread one statement through `env` (REQ-2): bind/rebind a cell to its
 /// env-substituted RHS. The frozen straight-line subset admits `Let`/`Assign`/
 /// `Expr` here; `If`/`Return` are only admitted in tail position (handled by
@@ -626,9 +729,7 @@ fn encode_block_tail(
 /// form) and an `Err`. A `Loop`/`Break`/`Continue` is step 2.2.2.
 fn thread_stmt(stmt: &Stmt, env: &mut Env) -> Result<(), RefEncodeError> {
     match stmt {
-        Stmt::Let {
-            name, init, ty: _, ..
-        } => {
+        Stmt::Let { name, init, ty, .. } => {
             // A re-shadow `let x = ..; let x = ..` in the same block is out of v1
             // (the flat name->value env can't represent two distinct `x` cells) —
             // `Err`, never a silent wrong substitution.
@@ -639,14 +740,60 @@ fn thread_stmt(stmt: &Stmt, env: &mut Env) -> Result<(), RefEncodeError> {
                      frozen subset)"
                 )));
             }
-            let substituted = substitute(init, env)?;
+            let mut substituted = substitute(init, env)?;
+            if let Some(ty @ thermite_syntax::Type::Array { .. }) = ty {
+                substituted = contextualize_array_initializer(substituted, ty);
+            }
             env.insert(name.clone(), substituted);
+            if matches!(ty, Some(thermite_syntax::Type::Array { .. })) {
+                env.mark_fixed_array(name.clone());
+            }
             Ok(())
         }
         Stmt::Assign { target, value } => {
-            // v1 mutation is a scalar-cell rebind: the target must be a bare
-            // in-scope name (a non-scalar mutation — `xs[i] = ..`, `m.field = ..` —
-            // is out of v1, a v2 sequence/struct theory).
+            // Scalar assignment rebinds the named cell. Fixed-array indexed
+            // assignment becomes the exact vstd array-update model, whose view is
+            // `old@.update(index, value)` and therefore preserves every other slot.
+            if let Expr::Index {
+                base,
+                index: IndexArg::Single(index),
+            } = target
+            {
+                let Expr::Path(segments) = base.as_ref() else {
+                    return Err(RefEncodeError::Unsupported(
+                        "fixed-array assignment target with a non-name base".to_string(),
+                    ));
+                };
+                if segments.len() != 1 || !env.is_fixed_array(&segments[0]) {
+                    return Err(RefEncodeError::Unsupported(
+                        "indexed assignment to a value not declared as a fixed array".to_string(),
+                    ));
+                }
+                let name = segments[0].clone();
+                let current = env.get(&name).cloned().ok_or_else(|| {
+                    RefEncodeError::Unsupported(format!(
+                        "assignment to the unbound fixed array `{name}`"
+                    ))
+                })?;
+                let index = substitute(index, env)?;
+                let value = substitute(value, env)?;
+                env.insert(
+                    name,
+                    Expr::Call {
+                        callee: Box::new(Expr::Path(vec![
+                            "vstd".to_string(),
+                            "array".to_string(),
+                            "spec_array_update".to_string(),
+                        ])),
+                        args: vec![current, index, value],
+                    },
+                );
+                return Ok(());
+            }
+
+            // Ordinary v1 mutation is a scalar-cell rebind: the target must be a
+            // bare in-scope name. Field/projection mutation remains outside this
+            // increment.
             let name = match target {
                 Expr::Path(segments) if segments.len() == 1 => segments[0].clone(),
                 _ => {
@@ -954,6 +1101,16 @@ fn substitute(expr: &Expr, env: &Env) -> Result<Expr, RefEncodeError> {
             Ok(expr.clone())
         }
         Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::StrLit(_) => Ok(expr.clone()),
+        Expr::Array(elements) => Ok(Expr::Array(
+            elements
+                .iter()
+                .map(|element| substitute(element, env))
+                .collect::<Result<Vec<_>, _>>()?,
+        )),
+        Expr::ArrayRepeat { value, len } => Ok(Expr::ArrayRepeat {
+            value: Box::new(substitute(value, env)?),
+            len: len.clone(),
+        }),
         Expr::Binary { op, lhs, rhs } => Ok(Expr::Binary {
             op: *op,
             lhs: Box::new(substitute(lhs, env)?),

@@ -271,6 +271,37 @@ fn faithful_while_loop_body_is_faithful() {
     );
 }
 
+/// Fixed-array indexed mutation is inside the exact state-refinement subset: the
+/// independent reference is the finite-view update at `at`, and production is the
+/// native array assignment. This exercises the real Forge file walk, capacity
+/// declaration preamble, production lowering, Verus discharge, and verdict mapping.
+#[test]
+fn faithful_fixed_array_update_is_faithful() {
+    if !verus_present() {
+        eprintln!("SKIP: verus not available — fixed-array body-TV not discharged.");
+        return;
+    }
+    let src = concat!(
+        "const SLOTS: usize = 4;\n",
+        "fn replace(slots: [u64; SLOTS], at: usize, value: u64) -> [u64; SLOTS]\n",
+        "  req at < SLOTS\n",
+        "  ens result[at] == value\n",
+        "  fx pure\n",
+        "{\n",
+        "  let mut updated: [u64; SLOTS] = slots;\n",
+        "  updated[at] = value;\n",
+        "  updated\n",
+        "}\n",
+    );
+    let file = write_th("fixed_array_update", src);
+    let report = run_body_tv_json(&file);
+    assert_eq!(report["counts"]["divergent"].as_u64(), Some(0), "{report}");
+    assert_eq!(report["counts"]["faithful"].as_u64(), Some(1), "{report}");
+    assert!(report["bodies"].as_array().unwrap().iter().any(|body| {
+        body["body"].as_str() == Some("replace") && body["verdict"].as_str() == Some("faithful")
+    }));
+}
+
 // ---- 3. a mutated production → Divergent ------------------------------------
 
 /// REQ-5 (the Divergent arm): a wrong production body — the

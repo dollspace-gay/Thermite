@@ -298,6 +298,11 @@ pub struct ExecObligationFrame {
     /// spec-view element value (`xs[i as int]`) in the exec reference encoder
     /// (`exec-tv.md` AC-5). Read by [`ExecRefCtx::with_slice_bound`].
     pub slice_params: Vec<String>,
+    /// Native fixed-array parameters, indexed through their finite `@` views.
+    pub fixed_array_params: Vec<String>,
+    /// Whether the result is a native fixed array and therefore compared
+    /// extensionally through its `@` view.
+    pub result_is_fixed_array: bool,
 }
 
 impl ExecObligationFrame {
@@ -305,6 +310,7 @@ impl ExecObligationFrame {
     /// `slice_params` are the names indexed as the spec-view element value.
     fn exec_ref_ctx(&self) -> ExecRefCtx {
         ExecRefCtx::with_slice_bound(self.slice_params.iter().cloned())
+            .with_fixed_array_bound(self.fixed_array_params.iter().cloned())
     }
 
     /// The Verus parameter list `name: type, …`.
@@ -387,8 +393,14 @@ pub fn exec_equivalence_obligation(
     // The obligation: the production exec value equals the independent exec
     // reference value for all inputs (Z3), at the bounded production type. Verified
     // iff faithful; a postcondition counterexample / type / parse error is infidelity.
-    out.push_str("\n    ensures result == ");
-    out.push_str(&reference);
+    if frame.result_is_fixed_array {
+        out.push_str("\n    ensures result@ == (");
+        out.push_str(&reference);
+        out.push_str(")@");
+    } else {
+        out.push_str("\n    ensures result == ");
+        out.push_str(&reference);
+    }
     out.push_str(",\n{\n    ");
     out.push_str(p_production);
     out.push_str("\n}\n");
@@ -457,6 +469,11 @@ pub struct BodyObligationFrame {
     /// encodes to the spec-view element value (`xs[i as int]`) in the reference
     /// state-denotation. Read by [`BodyRefCtx::with_slice_bound`].
     pub slice_params: Vec<String>,
+    /// Native fixed-array parameters, indexed through their finite `@` views.
+    pub fixed_array_params: Vec<String>,
+    /// Whether the result type is a native fixed array. Array results are
+    /// compared extensionally through `result@`.
+    pub result_is_fixed_array: bool,
 }
 
 impl BodyObligationFrame {
@@ -464,6 +481,8 @@ impl BodyObligationFrame {
     /// the `slice_params` are the names indexed as the spec-view element value.
     fn body_ref_ctx(&self) -> BodyRefCtx {
         BodyRefCtx::with_slice_bound(self.slice_params.iter().cloned())
+            .with_fixed_array_bound(self.fixed_array_params.iter().cloned())
+            .with_fixed_array_result(self.result_is_fixed_array)
     }
 
     /// The Verus parameter list `name: type, ...`.

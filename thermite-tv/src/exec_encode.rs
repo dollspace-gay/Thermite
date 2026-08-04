@@ -95,9 +95,12 @@ impl std::error::Error for RefEncodeError {}
 pub struct ExecRefCtx {
     /// Names bound as a slice (`&[T]`) param in the obligation. An `Index` over
     /// such a name encodes to the spec-view element `xs[i as int]` (the bounded
-    /// element value the production `xs[i]` computes); a non-slice base is indexed
-    /// verbatim.
+    /// element value the production `xs[i]` computes). Native fixed arrays are
+    /// tracked separately and indexed through their finite `@` view.
     slice_bound: BTreeSet<String>,
+    /// Names bound as native fixed arrays. Their executable index is compared
+    /// through the array's finite `@` view in an `ensures` predicate.
+    fixed_array_bound: BTreeSet<String>,
 }
 
 impl ExecRefCtx {
@@ -111,11 +114,26 @@ impl ExecRefCtx {
     {
         ExecRefCtx {
             slice_bound: names.into_iter().map(Into::into).collect(),
+            fixed_array_bound: BTreeSet::new(),
         }
+    }
+
+    /// Add native fixed-array bindings to this reference frame.
+    pub fn with_fixed_array_bound<I, S>(mut self, names: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.fixed_array_bound = names.into_iter().map(Into::into).collect();
+        self
     }
 
     fn is_slice_bound(&self, name: &str) -> bool {
         self.slice_bound.contains(name)
+    }
+
+    fn is_fixed_array_bound(&self, name: &str) -> bool {
+        self.fixed_array_bound.contains(name)
     }
 }
 
@@ -283,7 +301,14 @@ fn encode_call(callee: &Expr, args: &[Expr], ctx: &ExecRefCtx) -> Result<String,
     let name = segments.join("::");
     let encoded_args = args
         .iter()
-        .map(|a| encode(a, ctx))
+        .enumerate()
+        .map(|(index, arg)| {
+            if name == "vstd::array::spec_array_update" && index == 1 {
+                encode_index_value(arg, ctx)
+            } else {
+                encode(arg, ctx)
+            }
+        })
         .collect::<Result<Vec<_>, _>>()?;
     Ok(format!("{name}({})", encoded_args.join(", ")))
 }
@@ -294,8 +319,8 @@ fn encode_call(callee: &Expr, args: &[Expr], ctx: &ExecRefCtx) -> Result<String,
 /// `xs[i as int]`; the obligation `ensures result == xs[i as int]` is the
 /// element-value equality, grounded `exec-tv.md` AC-5/E4). A `RangeTo`/`RangeFrom`/
 /// `Range` slice index produces a sub-slice (not a scalar value), outside the
-/// pure-exec scalar-value subset of step 2.1 → an `Err`. A non-slice base
-/// index is also unsupported (no scalar-value denotation in the frozen subset).
+/// pure-exec scalar-value subset of step 2.1 → an `Err`. Native fixed arrays
+/// use their finite `@` view; every other non-slice base is unsupported.
 fn encode_index(base: &Expr, index: &IndexArg, ctx: &ExecRefCtx) -> Result<String, RefEncodeError> {
     let IndexArg::Single(i) = index else {
         return Err(RefEncodeError::Unsupported(
@@ -304,17 +329,34 @@ fn encode_index(base: &Expr, index: &IndexArg, ctx: &ExecRefCtx) -> Result<Strin
                 .to_string(),
         ));
     };
-    // Only a slice-bound base has the spec-view element-value denotation; a
-    // non-slice base index is outside the frozen pure-exec value subset.
+    // Slice and fixed-array bindings both expose a finite sequence view in the
+    // obligation. Keep the historical slice spelling stable; native arrays use
+    // their explicit `@` view.
     if let Expr::Path(segments) = base {
         if segments.len() == 1 && ctx.is_slice_bound(&segments[0]) {
             let idx = encode_index_value(i, ctx)?;
             return Ok(format!("{}[{idx}]", segments[0]));
         }
+        if segments.len() == 1 && ctx.is_fixed_array_bound(&segments[0]) {
+            let idx = encode_index_value(i, ctx)?;
+            return Ok(format!("{}@[{idx}]", segments[0]));
+        }
+    }
+    // State threading substitutes a local fixed array with its initializer or
+    // an exact `spec_array_update` expression. Index those values through their
+    // native array view as well.
+    if matches!(base, Expr::Array(_) | Expr::ArrayRepeat { .. })
+        || matches!(base, Expr::Call { callee, .. }
+            if matches!(callee.as_ref(), Expr::Path(path)
+                if path.join("::") == "vstd::array::spec_array_update"))
+    {
+        let array = encode(base, ctx)?;
+        let idx = encode_index_value(i, ctx)?;
+        return Ok(format!("({array})@[{idx}]"));
     }
     Err(RefEncodeError::Unsupported(format!(
-        "index over a non-slice base ({}) — the frozen exec index subset is \
-         `xs[i]` over a slice param",
+        "index over a non-slice / non-fixed-array base ({}) — the frozen exec \
+         index subset is `xs[i]` over a slice or native fixed-array binding",
         node_kind(base)
     )))
 }
@@ -505,8 +547,8 @@ mod tests {
         ));
     }
 
-    /// A bare index over a non-slice base has no scalar-value denotation in the
-    /// frozen subset → an `Err`.
+    /// A bare index over a non-slice, non-fixed-array base has no scalar-value
+    /// denotation in the frozen subset → an `Err`.
     #[test]
     fn non_slice_index_is_unsupported() {
         let e = Expr::Index {

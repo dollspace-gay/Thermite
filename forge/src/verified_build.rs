@@ -2440,8 +2440,12 @@ fn collect_translation_validation(
         }) else {
             continue;
         };
-        let result =
-            crate::exec_tv::exec_tv_export_guard(function, DEFAULT_SOLVER_SEED, DEFAULT_RLIMIT);
+        let result = crate::exec_tv::exec_tv_export_guard(
+            program,
+            function,
+            DEFAULT_SOLVER_SEED,
+            DEFAULT_RLIMIT,
+        );
         let (verdict, detail) = match result.verdict {
             ExecVerdict::Faithful => ("faithful", None),
             ExecVerdict::Divergent { detail } => ("divergent", Some(detail)),
@@ -4830,6 +4834,30 @@ mod tests {
         };
         assert!(error.contains("uses `Token`"), "{error}");
         assert!(error.contains("without declaring that import"), "{error}");
+    }
+
+    #[test]
+    fn package_resolution_requires_declared_cross_module_capacity_constants() {
+        let base = "const CAP: usize = 4;\n";
+        let api = r#"fn api(at: usize) -> u64
+  req at < CAP
+  ens result == 0
+  fx pure
+{
+  let slots: [u64; CAP] = [0; CAP];
+  slots[at]
+}
+"#;
+        let (_tree, path) = package_fixture(&["api", "base"], &[], base, api);
+        let error = match prepare_thermite_input(&path) {
+            Ok(_) => panic!("undeclared cross-module capacity constant was accepted"),
+            Err(error) => error.to_string(),
+        };
+        assert!(error.contains("uses `CAP`"), "{error}");
+        assert!(error.contains("without declaring that import"), "{error}");
+
+        let (_tree, path) = package_fixture(&["api"], &["base"], base, api);
+        assert!(prepare_thermite_input(&path).is_ok());
     }
 
     #[test]

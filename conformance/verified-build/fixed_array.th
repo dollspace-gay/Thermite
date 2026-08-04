@@ -1,0 +1,10 @@
+const SLOTS: usize = 4;
+
+fn fixed_array_read(at: usize) -> u64
+  req at < SLOTS
+  ens result == 7
+  fx pure
+{
+  let slots: [u64; SLOTS] = [7; SLOTS];
+  slots[at]
+}

@@ -369,6 +369,8 @@ pub fn check_file_with_options(
         .filter(|i| matches!(i, Item::Const(_)))
         .cloned()
         .collect();
+    let mut solver_contract_items = const_items.clone();
+    solver_contract_items.extend(spec_items.iter().cloned());
 
     // C11 (`.design/basis/12-mutual-recursion.md` REQ-2, crosslink #121/#113): the
     // in-file `fn`s in a mutual-recursion cycle (`a -> b -> a`, …) whose
@@ -767,7 +769,7 @@ pub fn check_file_with_options(
             if let crate::vacuity_solver::SolverVacuityVerdict::Detected { cause } =
                 crate::vacuity_solver::solver_vacuity_check(
                     f,
-                    &spec_items,
+                    &solver_contract_items,
                     &adt_deps,
                     seed,
                     rlimit,

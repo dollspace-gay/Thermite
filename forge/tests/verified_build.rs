@@ -347,6 +347,45 @@ fn hosted_bundle_is_exact_private_linkable_tamper_evident_and_reproducible() {
 }
 
 #[test]
+fn fixed_array_logic_is_compiled_and_bound_by_all_strict_l3_gates() {
+    let temp = TempDir::new("fixed-array");
+    let bundle = temp.0.join("fixed-array.verified");
+    let bundle_s = bundle.to_string_lossy().to_string();
+    assert_success(&forge(&[
+        "build",
+        "conformance/verified-build/fixed_array.th",
+        "--level",
+        "l3",
+        "--export",
+        "fixed_array_read",
+        "--crate-name",
+        "fixed_array_read",
+        "--out",
+        &bundle_s,
+        "--json",
+    ]));
+    assert_success(&forge(&["verify-build", &bundle_s, "--replay", "--json"]));
+
+    let source = fs::read_to_string(bundle.join("evidence/source.verus.rs")).unwrap();
+    assert!(source.contains("pub const SLOTS: usize = 4;"), "{source}");
+    assert!(
+        source.contains("let slots: [u64; SLOTS] = [7; SLOTS];"),
+        "{source}"
+    );
+    assert!(source.contains("slots[at]"), "{source}");
+
+    let tv: serde_json::Value = serde_json::from_slice(
+        &fs::read(bundle.join("evidence/translation-validation.json")).unwrap(),
+    )
+    .unwrap();
+    let rows = tv["rows"].as_array().unwrap();
+    assert!(
+        rows.iter().all(|row| row["verdict"] == "faithful"),
+        "every reachable array contract/expression/body/wrapper row must be faithful: {tv}"
+    );
+}
+
+#[test]
 fn total_wrapper_returns_ok_or_precondition_without_calling_invalid_body() {
     let temp = TempDir::new("wrapper");
     let bundle = temp.0.join("wrapper.verified");

@@ -267,6 +267,8 @@ fn clause_frame(clause: &thermite_tv::ExecClause) -> ExecObligationFrame {
         ret_type: clause.ret_type.clone(),
         req: clause.req.clone(),
         slice_params: clause.slice_params.clone(),
+        fixed_array_params: Vec::new(),
+        result_is_fixed_array: false,
     }
 }
 
@@ -309,9 +311,24 @@ pub fn exec_tv_file(path: &Path, seed: u64, rlimit: f64) -> Result<ExecTvReport,
 /// frame's `req true` intentionally does not assume the guard being validated.
 /// This is the wrapper-specific bridge between contract-position syntax and
 /// its executable boundary use.
-pub fn exec_tv_export_guard(f: &FnItem, seed: u64, rlimit: f64) -> ExecResult {
+pub fn exec_tv_export_guard(
+    program: &thermite_syntax::Program,
+    f: &FnItem,
+    seed: u64,
+    rlimit: f64,
+) -> ExecResult {
     let label = format!("{}.export_guard", f.name);
-    let mut env = ExecEnv::default();
+    let mut env = ExecEnv {
+        constant_names: program
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Const(capacity) => Some(capacity.name.clone()),
+                _ => None,
+            })
+            .collect(),
+        ..Default::default()
+    };
     for param in &f.params {
         let Some((ty, slice)) = exec_type_spelling(&param.ty) else {
             return ExecResult {
@@ -333,6 +350,15 @@ pub fn exec_tv_export_guard(f: &FnItem, seed: u64, rlimit: f64) -> ExecResult {
         span: f.contract.req.span,
         bv: None,
     };
+    let support_defs = match crate::body_tv::body_tv_support(program, f) {
+        Ok((defs, _)) => defs,
+        Err(reason) => {
+            return ExecResult {
+                label,
+                verdict: ExecVerdict::Skipped { reason },
+            }
+        }
+    };
     let mut report = ExecTvReport::default();
     check_corpus_expr(
         &f.contract.req.expr,
@@ -340,7 +366,7 @@ pub fn exec_tv_export_guard(f: &FnItem, seed: u64, rlimit: f64) -> ExecResult {
         "bool",
         &env,
         &frame_fn,
-        &[],
+        &support_defs,
         seed,
         rlimit,
         &mut report,
@@ -360,6 +386,8 @@ pub fn exec_tv_export_guard(f: &FnItem, seed: u64, rlimit: f64) -> ExecResult {
 struct ExecEnv {
     params: Vec<ExecParamDecl>,
     slice_params: Vec<String>,
+    fixed_array_params: Vec<String>,
+    constant_names: Vec<String>,
 }
 
 impl ExecEnv {
@@ -369,16 +397,21 @@ impl ExecEnv {
         if self.params.iter().any(|p| p.name == name) {
             return;
         }
+        let is_fixed_array = ty_str.starts_with('[') && ty_str.contains(';');
         self.params
             .push(ExecParamDecl::new(name.to_string(), ty_str));
         if is_slice {
             self.slice_params.push(name.to_string());
+        }
+        if is_fixed_array {
+            self.fixed_array_params.push(name.to_string());
         }
     }
 
     /// The names this env declares (the obligation can reference these).
     fn declares(&self, name: &str) -> bool {
         self.params.iter().any(|p| p.name == name)
+            || self.constant_names.iter().any(|constant| constant == name)
     }
 }
 
@@ -428,7 +461,17 @@ fn exec_tv_fn(
     // The signature env: each param at its exec value type. A param of a type the
     // exec frame cannot spell (Map/Option/struct/…) is recorded as un-spellable;
     // an expr that references it is then Skipped (non-derivable frame).
-    let mut env = ExecEnv::default();
+    let mut env = ExecEnv {
+        constant_names: program
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Const(capacity) => Some(capacity.name.clone()),
+                _ => None,
+            })
+            .collect(),
+        ..Default::default()
+    };
     for p in &f.params {
         if let Some((ty_str, is_slice)) = exec_type_spelling(&p.ty) {
             env.bind(&p.name, ty_str, is_slice);
@@ -697,6 +740,13 @@ fn check_corpus_expr(
             .filter(|n| needed.iter().any(|r| r == *n))
             .cloned()
             .collect(),
+        fixed_array_params: env
+            .fixed_array_params
+            .iter()
+            .filter(|n| needed.iter().any(|r| r == *n))
+            .cloned()
+            .collect(),
+        result_is_fixed_array: ret_ty.starts_with('[') && ret_ty.contains(';'),
     };
 
     let program = match exec_equivalence_obligation(e, &p_production, &frame) {
@@ -812,6 +862,14 @@ fn exec_type_spelling(ty: &Type) -> Option<(String, bool)> {
         Type::Prim(PrimType::U64) => Some(("u64".to_string(), false)),
         Type::Prim(PrimType::Usize) => Some(("usize".to_string(), false)),
         Type::Prim(PrimType::Bool) => Some(("bool".to_string(), false)),
+        Type::Array { elem, len } => {
+            let (elem, _) = exec_type_spelling(elem)?;
+            let len = match len {
+                thermite_syntax::ArrayLen::Literal { value, .. } => value.to_string(),
+                thermite_syntax::ArrayLen::Const(name) => name.clone(),
+            };
+            Some((format!("[{elem}; {len}]"), false))
+        }
         Type::Ref { inner, .. } => match inner.as_ref() {
             // `&[u32]` → the exec slice binding (indexed element-wise as `xs[i as
             // int]` in the reference, AC-5). Only a `u32` element slice is framed.

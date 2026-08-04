@@ -43,9 +43,10 @@
 //!   - **Unverifiable** — the prover errored / timed out / could not be spawned (not
 //!     a pass, not a divergence, R-CODE-4). Reported distinctly, never a
 //!     Faithful.
-//!   - **Skipped** — the body is outside the frozen subset (an out-of-v1 loop, a
-//!     non-scalar mutation, a mid-body `return`, a re-shadow, a non-derivable frame —
-//!     the `Unsupported` class), with the reason printed. A skip does not mask an
+//!   - **Skipped** — the body is outside the frozen subset (an out-of-v1 loop, an
+//!     unsupported aggregate mutation, a mid-body `return`, a re-shadow, a
+//!     non-derivable frame — the `Unsupported` class), with the reason printed. A
+//!     skip does not mask an
 //!     infidelity (the 2.2.1-vs-2.2.2 boundary in the certificate).
 //!
 //! Exposed as `forge body-tv <file>` (the non-test consumer `cli::run_body_tv`), a
@@ -90,8 +91,9 @@ use crate::cli::ForgeError;
 /// swapped branch / broken loop invariant / wrong after-loop characterization — a
 /// hard finding); `Unverifiable` ⟺ the prover errored / timed out /
 /// could not be spawned (not a pass, not a divergence); `Skipped` ⟺ the body
-/// is outside the frozen subset (an out-of-v1 loop, a non-scalar mutation, a mid-body
-/// return, a re-shadow, a non-derivable frame — the `Unsupported` class), with the
+/// is outside the frozen subset (an out-of-v1 loop, an unsupported aggregate
+/// mutation, a mid-body return, a re-shadow, a non-derivable frame — the
+/// `Unsupported` class), with the
 /// reason, never a false Faithful.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BodyVerdict {
@@ -158,8 +160,8 @@ impl BodyCounts {
 /// take its exec body and run the straight-line body state-refinement TV (or, when
 /// the body's last statement is a v1 frozen-subset `while` loop, the three per-run
 /// loop obligations). Each body is classified Faithful / Divergent / Unverifiable /
-/// Skipped (a body outside the frozen subset — an out-of-v1 loop, a non-scalar
-/// mutation, a mid-body return, a non-derivable frame — is Skipped rather than
+/// Skipped (a body outside the frozen subset — an out-of-v1 loop, an unsupported
+/// aggregate mutation, a mid-body return, a non-derivable frame — is Skipped rather than
 /// masking an infidelity).
 pub fn body_tv_file(path: &Path, seed: u64, rlimit: f64) -> Result<BodyTvReport, ForgeError> {
     let src = std::fs::read_to_string(path).map_err(|e| ForgeError::Io {
@@ -252,13 +254,17 @@ pub(crate) fn body_tv_support(
         // the resulting obligation will classify the missing frame honestly.
         Err(_) => return Ok((Vec::new(), BTreeSet::new())),
     };
-    let support_names: BTreeSet<String> = closure
+    let mut support_names: BTreeSet<String> = closure
         .functions
         .iter()
         .filter(|name| *name != &f.name)
         .chain(closure.spec_functions.iter())
         .cloned()
         .collect();
+    support_names.extend(program.items.iter().filter_map(|item| match item {
+        Item::Const(capacity) => Some(capacity.name.clone()),
+        _ => None,
+    }));
     if support_names.is_empty() {
         return Ok((Vec::new(), support_names));
     }
@@ -316,6 +322,7 @@ pub(crate) fn body_tv_support(
         };
         let mut params = Vec::new();
         let mut slices = Vec::new();
+        let mut arrays = Vec::new();
         for param in &dep.params {
             let Some((ty, is_slice)) = exec_type_spelling(&param.ty) else {
                 return Err(format!(
@@ -326,6 +333,9 @@ pub(crate) fn body_tv_support(
             if is_slice {
                 slices.push(param.name.clone());
             }
+            if matches!(param.ty, Type::Array { .. }) {
+                arrays.push(param.name.clone());
+            }
             params.push(format!("{}: {ty}", param.name));
         }
         let Some((ret, _)) = exec_type_spelling(&dep.ret) else {
@@ -334,13 +344,18 @@ pub(crate) fn body_tv_support(
                 dep.name
             ));
         };
-        let reference = thermite_tv::body_ref_state(body, &BodyRefCtx::with_slice_bound(slices))
-            .map_err(|error| {
-                format!(
-                    "body-TV dependency `{}` is outside the independent body reference: {error}",
-                    dep.name
-                )
-            })?;
+        let reference = thermite_tv::body_ref_state(
+            body,
+            &BodyRefCtx::with_slice_bound(slices)
+                .with_fixed_array_bound(arrays)
+                .with_fixed_array_result(matches!(dep.ret, Type::Array { .. })),
+        )
+        .map_err(|error| {
+            format!(
+                "body-TV dependency `{}` is outside the independent body reference: {error}",
+                dep.name
+            )
+        })?;
         let spec_name = format!("thermite_tv_ref_{}", dep.name);
         reference_defs.push_str(&format!(
             "\nspec fn {spec_name}({}) -> {ret} {{ {reference} }}\n",
@@ -370,9 +385,9 @@ pub(crate) fn body_tv_support(
 /// source `req` as the well-formedness frame), lowers the body via
 /// `thermite_lower::lower_exec_body` (`P_production`), builds the body
 /// state-refinement obligation, and discharges it. A body the frame cannot be derived
-/// for (a richer-typed param, a non-scalar return) or that the reference encoder /
-/// lowerer does not cover (a non-scalar mutation, a re-shadow, a mid-body return) is
-/// Skipped.
+/// for (a richer-typed param or return) or that the reference encoder / lowerer does
+/// not cover (an unsupported aggregate mutation, a re-shadow, a mid-body return) is
+/// Skipped. Native fixed-array frames and exact indexed updates are covered.
 fn straight_line_body_tv(
     f: &FnItem,
     body: &Block,
@@ -407,11 +422,15 @@ fn straight_line_body_tv(
     // non-derivable → Skip (never a guessed binding).
     let mut params: Vec<BodyParamDecl> = Vec::new();
     let mut slice_params: Vec<String> = Vec::new();
+    let mut fixed_array_params: Vec<String> = Vec::new();
     for p in &f.params {
         match exec_type_spelling(&p.ty) {
             Some((ty_str, is_slice)) => {
                 if is_slice {
                     slice_params.push(p.name.clone());
+                }
+                if matches!(p.ty, Type::Array { .. }) {
+                    fixed_array_params.push(p.name.clone());
                 }
                 params.push(BodyParamDecl::new(p.name.clone(), ty_str));
             }
@@ -433,8 +452,8 @@ fn straight_line_body_tv(
 
     // P_production — the exec lowering of the straight-line body (the artifact
     // under test, the non-test consumer of `lower_exec_body`). A body the exec body
-    // lowering does not cover (a `Stmt::Loop` it cannot lower standalone, a non-scalar
-    // construct) → Skip (out of the frozen straight-line subset), not a verdict.
+    // lowering does not cover (a `Stmt::Loop` it cannot lower standalone or another
+    // unsupported construct) → Skip (out of the frozen straight-line subset), not a verdict.
     let p_production = match thermite_lower::lower_exec_body(body) {
         Ok(p) => p,
         Err(e) => {
@@ -490,12 +509,14 @@ fn straight_line_body_tv(
         ret_type: ret_ty,
         req: corpus_req(f),
         slice_params,
+        fixed_array_params,
+        result_is_fixed_array: matches!(f.ret, Type::Array { .. }),
     };
 
     // Build the body state-refinement obligation. The reference state-denotation
     // (`body_ref_state`) rejects (an `Unsupported` Err) a body outside the
-    // frozen subset (a re-shadow, a mid-body return, a non-scalar mutation) → Skipped,
-    // never a false faithful.
+    // frozen subset (a re-shadow, a mid-body return, or unsupported aggregate
+    // mutation) → Skipped, never a false faithful.
     let program = match body_equivalence_obligation(body, &p_production, &frame) {
         Ok(prog) => prog,
         Err(e) => {
@@ -505,7 +526,7 @@ fn straight_line_body_tv(
                     reason: format!(
                         "body reference state-denotation does not cover this body (outside \
                          the frozen straight-line subset — a re-shadow / mid-body return / \
-                         non-scalar mutation / no-tail body): {e}"
+                         unsupported aggregate mutation / no-tail body): {e}"
                     ),
                 },
             });
@@ -829,6 +850,14 @@ fn exec_type_spelling(ty: &Type) -> Option<(String, bool)> {
         Type::Prim(PrimType::U64) => Some(("u64".to_string(), false)),
         Type::Prim(PrimType::Usize) => Some(("usize".to_string(), false)),
         Type::Prim(PrimType::Bool) => Some(("bool".to_string(), false)),
+        Type::Array { elem, len } => {
+            let (elem, _) = exec_type_spelling(elem)?;
+            let len = match len {
+                thermite_syntax::ArrayLen::Literal { value, .. } => value.to_string(),
+                thermite_syntax::ArrayLen::Const(name) => name.clone(),
+            };
+            Some((format!("[{elem}; {len}]"), false))
+        }
         Type::Ref { inner, .. } => match inner.as_ref() {
             // `&[u32]` → the exec slice binding (indexed element-wise as `xs[i as
             // int]` in the reference). Only a `u32` element slice is framed.

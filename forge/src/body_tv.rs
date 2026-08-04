@@ -233,7 +233,16 @@ fn body_tv_fn(
     if matches!(body.stmts.last(), Some(Stmt::Loop(_))) {
         loop_body_tv(f, body, &support_defs, &support_names, seed, rlimit, report);
     } else {
-        straight_line_body_tv(f, body, &support_defs, &support_names, seed, rlimit, report);
+        straight_line_body_tv(
+            program,
+            f,
+            body,
+            &support_defs,
+            &support_names,
+            seed,
+            rlimit,
+            report,
+        );
     }
 }
 
@@ -265,14 +274,11 @@ pub(crate) fn body_tv_support(
         Item::Const(capacity) => Some(capacity.name.clone()),
         _ => None,
     }));
-    if support_names.is_empty() {
-        return Ok((Vec::new(), support_names));
-    }
     let referrers: Vec<&Item> = program
         .items
         .iter()
         .filter(|item| match item {
-            Item::Fn(dep) => support_names.contains(&dep.name),
+            Item::Fn(dep) => support_names.contains(&dep.name) || dep.name == f.name,
             Item::SpecFn(dep) => support_names.contains(&dep.name),
             Item::Const(_) | Item::Struct(_) | Item::Enum(_) | Item::Forge(_) => false,
         })
@@ -393,7 +399,12 @@ pub(crate) fn body_tv_support(
 /// for (a richer-typed param or return) or that the reference encoder / lowerer does
 /// not cover (an unsupported aggregate mutation, a re-shadow, a mid-body return) is
 /// Skipped. Native fixed-array frames and exact indexed updates are covered.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the body-TV run needs the source program for aggregate helper derivation in addition to its existing proof frame and verifier configuration"
+)]
 fn straight_line_body_tv(
+    program: &thermite_syntax::Program,
     f: &FnItem,
     body: &Block,
     support_defs: &[String],
@@ -514,7 +525,13 @@ fn straight_line_body_tv(
 
     let mut spec_defs = support_defs.to_vec();
     if thermite_lower::block_uses_fixed_array_equality(body) {
-        spec_defs.push(thermite_lower::fixed_array_equality_defs());
+        if let Err(reason) = extend_fixed_array_equality_defs(program, &mut spec_defs) {
+            report.results.push(BodyResult {
+                label,
+                verdict: BodyVerdict::Skipped { reason },
+            });
+            return;
+        }
     }
     if thermite_lower::block_uses_u64_bit_methods(body) {
         spec_defs.push(thermite_lower::u64_bit_defs());
@@ -867,6 +884,7 @@ fn exec_type_spelling(ty: &Type) -> Option<(String, bool)> {
         Type::Prim(PrimType::U64) => Some(("u64".to_string(), false)),
         Type::Prim(PrimType::Usize) => Some(("usize".to_string(), false)),
         Type::Prim(PrimType::Bool) => Some(("bool".to_string(), false)),
+        Type::Unit => Some(("()".to_string(), false)),
         Type::Array { elem, len } => {
             let (elem, _) = exec_type_spelling(elem)?;
             let len = match len {
@@ -891,8 +909,45 @@ fn exec_type_spelling(ty: &Type) -> Option<(String, bool)> {
         Type::Slice(elem) => {
             exec_type_spelling(elem).map(|(spelling, _)| (format!("&[{spelling}]"), true))
         }
+        Type::Tuple(types) => Some((
+            format!(
+                "({})",
+                types
+                    .iter()
+                    .map(|ty| exec_type_spelling(ty).map(|(spelling, _)| spelling))
+                    .collect::<Option<Vec<_>>>()?
+                    .join(", ")
+            ),
+            false,
+        )),
+        Type::Named(name) => Some((name.clone(), false)),
         _ => None,
     }
+}
+
+/// Add the program-shaped equality helpers without duplicating the primitive
+/// trait block that a lowered dependency closure may already contain.
+pub(crate) fn extend_fixed_array_equality_defs(
+    program: &thermite_syntax::Program,
+    defs: &mut Vec<String>,
+) -> Result<(), String> {
+    let generated = thermite_lower::fixed_array_equality_defs_for_program(program)
+        .map_err(|error| format!("could not derive aggregate fixed-array equality: {error}"))?;
+    if defs
+        .iter()
+        .any(|definition| definition.contains("trait __thermite_FixedArrayEq"))
+    {
+        let primitive = thermite_lower::fixed_array_equality_defs();
+        let aggregate = generated.strip_prefix(&primitive).ok_or_else(|| {
+            "aggregate fixed-array helper did not extend the canonical primitive prefix".to_string()
+        })?;
+        if !aggregate.trim().is_empty() {
+            defs.push(aggregate.to_string());
+        }
+    } else {
+        defs.push(generated);
+    }
+    Ok(())
 }
 
 fn is_mutable_indexed_borrow(ty: &Type) -> bool {

@@ -22,6 +22,7 @@ governs:
   - thermite-lower/src/lib.rs
   - thermite-lower/src/lower.rs
   - thermite-lower/tests/fixed_array.rs
+  - thermite-lower/tests/aggregate_array_relations.rs
   - thermite-lower/tests/kernel_mutable_slice.rs
   - thermite-lower/tests/effects_verified.rs
   - thermite-lower/tests/u64_bit_methods.rs
@@ -71,10 +72,11 @@ governs:
   - stdlib/kernel-primitives/src/model.th
   - conformance/kernel_primitives.th
   - conformance/verified-build/aggregate_storage.th
+  - conformance/verified-build/aggregate_array_relations.th
   - conformance/verified-composition/frozen_primitive.th
   - conformance/verified-composition/frozen_primitive_shell.rs
   - conformance/verified-composition/frozen_primitive_registry.json
-audited-content-sha256: a5934d84aa255b6c9add2a234d131098ff921d90cf355af12023f7f0e7076b84 (re-pinned 2026-08-04 after adding reusable opaque library-state construction; no kernel policy or implementation was added)
+audited-content-sha256: c31b1cee0d066d9dbf4b0a43e55cd9fca7bf52b978d09cd85291792825ef67ee (re-pinned 2026-08-04 after executing the published aggregate relation from a downstream consumer; no kernel policy or implementation was added)
 extends:
   - .design/build/kernel-target.md
   - .design/build/l3-rich-composition.md
@@ -171,18 +173,21 @@ translation validation described below. The strict L3 fixtures bind and replay
 those contract, executable-guard, body-state, and wrapper proof rows, and record
 shared/exclusive borrow ownership in the public ABI receipt.
 Repeat initialization rejects non-copy element types before lowering.
-`.array_eq(other)` now provides allocation-free extensional equality for every
-primitive-scalar array, while `.array_same_except(other, index)` proves exact
-frame preservation around one updated index. Both use const-generic scans whose
-exact generated bodies are verified by Verus and independently
-translation-validated. Total `u64.bit_test`, `.bit_set`, and `.bit_clear`
+`.array_eq(other)` now provides allocation-free extensional equality for arrays
+of scalars and recursively finite plain records, tuples, and fixed arrays, while
+`.array_same_except(other, index)` proves exact frame preservation around one
+updated index. Sealed, opaque, recursive, reference-bearing, enum, and
+heap-backed elements fail closed. Both relations use program-shaped
+const-generic scans whose exact generated bodies are verified by Verus and
+independently translation-validated through contract, expression, and body TV.
+Total `u64.bit_test`, `.bit_set`, and `.bit_clear`
 operations bridge finite direct bit-vector proofs into ordinary compositional
 L3 contracts. `.bit_set_preserves_other(changed, observed)` and
 `.bit_clear_preserves_other(changed, observed)` additionally prove exact
 same-word framing for any two distinct in-range indices. All five methods are
 independently checked by contract, expression, and body translation validation.
-Static ownership,
-borrows of general named aggregates, and aggregate-element equality remain. The
+Static ownership, borrows of general named aggregates, finite-enum equality,
+and complete aggregate mutation/lifecycle TV remain. The
 allocation-free collection package now supplies a packed 256-bit `[u64; 4]` bitmap,
 64-entry `u64` vector, FIFO ring, and collision-explicit `usize`-to-`u64` direct
 map in Thermite. Richer collision-resolving maps, slabs/freelists,
@@ -221,9 +226,11 @@ initialization for copy-safe scalar/plain values, while `[a, b, ...]` is exact
 element initialization and must contain precisely `N` values in an annotated
 context. Existing indexing and indexed assignment are the only access/mutation
 forms; bounded `for i in 0..N` supplies iteration without an allocator or hidden
-iterator state. `.len()` is the constant `N`. For arrays whose element is one of
-`u8`, `u16`, `u32`, `u64`, `usize`, or `bool`, `.array_eq(other)` compares every
-element and returns exactly finite-view extensional equality.
+iterator state. `.len()` is the constant `N`. For arrays whose element belongs
+to the finite structural closure—scalars, unit, nested fixed arrays, tuples, and
+ordinary acyclic structs composed from those forms—`.array_eq(other)` compares
+every element and returns exactly finite-view extensional equality. Sealed and
+opaque authority never receive an ambient derived comparator.
 `.array_same_except(other, index)` returns true exactly when every in-bounds
 element other than `index` agrees; an out-of-bounds exception therefore means
 full equality. This combines with an exact indexed postcondition to frame an
@@ -519,6 +526,9 @@ The primitive suite is target-independent wherever possible.
   generation ledger, bounded-wait scan, ticket lock, participant-aware barrier,
   once, reference-count, seqlock, bounded MPSC queue, and bounded work-stealing
   deque, epoch-acknowledgement, and packed-bitmap mechanics are present.
+- Prove and independently translation-validate equality and same-except framing
+  over nested plain-record arrays, while rejecting sealed, opaque, recursive,
+  enum, reference-bearing, and heap-backed element shapes.
 - Compile those libraries for the generic freestanding target with no hosted
   effects and no concrete platform dependency.
 - Compose a synthetic test platform whose bodies are tiny direct-Verus
@@ -551,7 +561,7 @@ Source: `.design/reqs/registry.toml`
 |---|---|---|---|---|
 | REQ-KPRIM-1 | shipped | `.design/build/kernel-primitives.md` | Kernel scalar and effect surface |  |
 | REQ-KPRIM-10 | not_started | `.design/build/kernel-primitives.md` | Primitive-only adversarial suite | Add package, fixed-storage, atomic, waiting, registry, refinement, receipt-tamper, freestanding-consumer, and no-concrete-kernel gates. |
-| REQ-KPRIM-2 | partial | `.design/build/kernel-primitives.md` | Exact mutable and fixed storage | Mutable borrowed slices/arrays, arbitrary old/final snapshot framing, native fixed arrays, scalar extensional equality and same-except update framing, strict public-borrow receipts, exact array TV, total directly proved u64 bit methods including distinct-bit set/clear framing, and a receipt-bound packed bitmap/u64 vector/u64 FIFO-ring/collision-explicit direct-map package are shipped. Add static storage, general named-aggregate borrows, aggregate-element equality, richer collision-resolving maps, slabs/freelists, generic library capacities, and complete aggregate lifecycle TV. |
+| REQ-KPRIM-2 | partial | `.design/build/kernel-primitives.md` | Exact mutable and fixed storage | Mutable borrowed slices/arrays, arbitrary old/final snapshot framing, native fixed arrays, scalar and recursively finite plain-aggregate extensional equality and same-except framing, strict public-borrow/value receipts, exact array relation TV, total directly proved u64 bit methods including distinct-bit set/clear framing, and a receipt-bound packed bitmap/u64 vector/u64 FIFO-ring/collision-explicit direct-map package are shipped. Add static storage, general named-aggregate borrows and mutation, finite-enum equality if required, richer collision-resolving maps, slabs/freelists, generic library capacities, and complete aggregate lifecycle TV. |
 | REQ-KPRIM-3 | partial | `.design/build/kernel-primitives.md` | Receipt-bound packages and modules | Independent parsing, module-local identity, direct-import/root-export enforcement, rooted graph validation, source allowlisting, L3 build/composition, complete receipt binding, validation, and replay are shipped. Extend the remaining source-oriented Forge commands (check, audit, TV, goal/edit/fill) to operate on packages without losing module-local diagnostics. |
 | REQ-KPRIM-4 | partial | `.design/build/kernel-primitives.md` | Sealed authority and ownership | The sealed-construction barrier plus an opaque receipt-bound 64-slot generation ledger now prove acquisition/renewal/release, stale-handle-after-reuse rejection, double-release rejection, monotonic rights, L3 move/clone refusal, foreign-module construction rejection, and a strict replayed scalar surface. Add a complete affine rule if stronger uniqueness is required, named-aggregate/ADT body TV for strict lifecycle replay, exact authority-mint refinement, and atomic-slot integration. |
 | REQ-KPRIM-5 | partial | `.design/build/kernel-primitives.md` | Sealed atomics and ordering model | The receipt-bound package, 50 sealed boundary declarations, exact ordering matrix, pre-codegen legality gate, bounded history relations, strict kernel ordering proof, strict hosted history proof, replay, and adversarial tests are present. Add enforceable single-use slot ownership, a kernel-target finite-history proof surface, exact atomic object/machine refinement, and verified synchronization consumers. |

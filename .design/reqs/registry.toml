@@ -17405,8 +17405,8 @@ owner = ".design/build/kernel-primitives.md"
 status = "partial"
 scope = "verified"
 summary = "Thermite provides executable/specification mutation over slices and allocation-free fixed storage and collections."
-remaining_scope = "Mutable borrowed slices/arrays, arbitrary old/final snapshot framing, native fixed arrays, scalar extensional equality and same-except update framing, strict public-borrow receipts, exact array TV, total directly proved u64 bit methods including distinct-bit set/clear framing, and a receipt-bound packed bitmap/u64 vector/u64 FIFO-ring/collision-explicit direct-map package are shipped. Add static storage, general named-aggregate borrows, aggregate-element equality, richer collision-resolving maps, slabs/freelists, generic library capacities, and complete aggregate lifecycle TV."
-contributors = [".design/build/kernel-byte-slice.md", ".design/build/fixed-collections.md", "thermite-syntax/src/parser.rs", "thermite-lower/src/lower.rs", "thermite-tv/src/exec_stmt_encode.rs", "thermite-tv/src/obligation.rs", "forge/src/body_tv.rs", "forge/src/contract_tv.rs", "forge/src/verified_build.rs"]
+remaining_scope = "Mutable borrowed slices/arrays, arbitrary old/final snapshot framing, native fixed arrays, scalar and recursively finite plain-aggregate extensional equality and same-except framing, strict public-borrow/value receipts, exact array relation TV, total directly proved u64 bit methods including distinct-bit set/clear framing, and a receipt-bound packed bitmap/u64 vector/u64 FIFO-ring/collision-explicit direct-map package are shipped. Add static storage, general named-aggregate borrows and mutation, finite-enum equality if required, richer collision-resolving maps, slabs/freelists, generic library capacities, and complete aggregate lifecycle TV."
+contributors = [".design/build/kernel-byte-slice.md", ".design/build/fixed-collections.md", ".design/build/aggregate-array-relations.md", "thermite-syntax/src/parser.rs", "thermite-lower/src/lower.rs", "thermite-tv/src/exec_stmt_encode.rs", "thermite-tv/src/obligation.rs", "forge/src/body_tv.rs", "forge/src/contract_tv.rs", "forge/src/verified_build.rs"]
 generated_to = ["status", "forge-kernel-primitives-status"]
 
 [[requirement.evidence]]
@@ -17421,8 +17421,28 @@ note = "Proves faithful aggregate-slice updates, extensional equality, same-exce
 
 [[requirement.evidence]]
 kind = "test"
+target = "thermite-spec/tests/fixed_array_validate.rs"
+note = "Admits nested arrays, tuples, and finite plain records for explicit array relations while rejecting sealed, opaque, recursive, enum, mismatched, and heap-backed shapes before lowering."
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/aggregate_array_relations.rs"
+note = "Pins deterministic program-shaped helpers, discharges a representative nested-record array with real Verus, rejects a dropped-field comparator mutant, and compiles the L1 mirror."
+
+[[requirement.evidence]]
+kind = "file"
+target = "conformance/verified-build/aggregate_array_relations.th"
+note = "Policy-free nested-record array source used by strict L3 build and receipt replay."
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/body_tv.rs"
+note = "Discharges independent body translation validation for aggregate-array equality and same-except relations."
+
+[[requirement.evidence]]
+kind = "test"
 target = "forge/tests/verified_build.rs"
-note = "Builds and replays the strict L3 aggregate-storage fixture with exact contract/body/wrapper TV and exclusive-borrow ABI evidence."
+note = "Builds and replays the strict aggregate-storage and finite plain-record fixtures with exact contract/body/wrapper TV, transitive layout/capacity ABI fingerprints, a codegen-pinned downstream consumer executing the generated relation, and source-tamper rejection."
 
 [[requirement.evidence]]
 kind = "file"

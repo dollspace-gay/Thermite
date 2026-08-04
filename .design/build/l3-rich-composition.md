@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: 081bf5165b6c850c5427fb8eca88a64058224614080396a066ea65fc4ffe8c66
+audited-content-sha256: 04e2ac90db959f0d68fb2d9bec563210b434ed180e7912593eff1e8d1ae4c4ef (re-pinned 2026-08-04 after admitting and transitively fingerprinting finite plain public values)
 decision: one canonical Verus crate with crate-visible rich Thermite roots and public shell exports
 issue: github:dollspace-gay/Thermite#104
 governs:
@@ -54,10 +54,14 @@ forge build model.th --level l3 \
 ```
 
 `--compose-export` and `--compose-shell` are repeatable and must occur together.
-At least one composition export is required for this mode. `--export` retains
-the issue-#101 primitive/unit public ABI and may be combined with composition
-exports, but the same Thermite function cannot occupy both tiers. L1 behavior
-and ordinary L3 build behavior are unchanged.
+At least one composition export is required for this mode. `--export` uses the
+strict finite-plain-value public ABI (primitives, unit, tuples, fixed arrays,
+and ordinary acyclic records) and may be combined with composition exports;
+sealed, opaque, recursive, enum, reference-bearing, and heap-backed values are
+rejected, and the same Thermite function cannot occupy both tiers. L1 behavior
+and ordinary L3 build behavior are unchanged. The public export fingerprint
+binds the transitive ordered record layout and resolved fixed-array capacities,
+not merely the authored record and constant names.
 
 `--primitive-registry` is optional and may occur once. When present, it invokes
 the stricter consumer-owned frozen-boundary closure specified by

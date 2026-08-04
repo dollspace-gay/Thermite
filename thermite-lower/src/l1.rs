@@ -174,6 +174,7 @@ pub fn lower_l1(program: &Program) -> Result<String, LowerError> {
     // into a producing fn (handled-or-loud at run time, §6 L1 rung). Built once.
     let variants = variant_map(program);
     let inv_structs = invariant_struct_names(program);
+    let equality_structs = crate::lower::fixed_array_equality_named_structs(program);
 
     // (3) + (4) the lowered items, in source order (determinism, §5.3).
     for item in &program.items {
@@ -189,7 +190,7 @@ pub fn lower_l1(program: &Program) -> Result<String, LowerError> {
             // Basis Stage 1c (`.design/basis/01-adts.md` REQ-8/REQ-9): a `struct`
             // lowers to a plain Rust `struct` + a `well_formed` method (the
             // always-active invariant predicate); an `enum` to a plain Rust `enum`.
-            Item::Struct(s) => lower_struct_l1(s)?,
+            Item::Struct(s) => lower_struct_l1(s, equality_structs.contains(&s.name))?,
             Item::Enum(e) => lower_enum_l1(e)?,
             // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 lowering consumer
             // yet (increments 2b-3); emit nothing, mirroring the inert ADT-decl arms.
@@ -266,7 +267,10 @@ fn qualify_variant_path_l1(path: &[String], variants: &[(&str, &str)]) -> String
 /// clause, a `well_formed(&self) -> bool` method (REQ-8): the always-active
 /// invariant predicate a producing fn checks at run time (handled-or-loud, §6 L1
 /// rung). The `inv` body rewrites bare field-name paths to `self.<field>`.
-fn lower_struct_l1(s: &StructItem) -> Result<String, LowerError> {
+fn lower_struct_l1(
+    s: &StructItem,
+    derives_structural_equality: bool,
+) -> Result<String, LowerError> {
     let mut out = String::new();
     // `#[derive(Clone)]`: the L1 ens-check snapshots a non-Copy struct parameter
     // before the body consumes it (`lower_fn_l1`'s `<p>__pre` snapshot) so a field
@@ -275,7 +279,11 @@ fn lower_struct_l1(s: &StructItem) -> Result<String, LowerError> {
     // b.text, .. }`) no longer triggers rustc `error[E0382]` (#88 blocker 2). The
     // derive covers the whole class: every invariant/plain struct can be a
     // moved-then-named ens param.
-    out.push_str("#[derive(Clone)]\n");
+    if derives_structural_equality {
+        out.push_str("#[derive(Clone, PartialEq, Eq)]\n");
+    } else {
+        out.push_str("#[derive(Clone)]\n");
+    }
     out.push_str("#[allow(dead_code)]\n");
     writeln!(out, "struct {} {{", s.name).ok();
     for field in &s.fields {
@@ -1577,7 +1585,10 @@ pub(crate) fn lower_expr_exec(
             // Rust's native array equality; L3 replaces it with the verified scan.
             if name == "array_eq" && args.len() == 1 {
                 let right = lower_expr_exec(&args[0], d, span, variants)?;
-                return Ok(format!("({r}) == ({right})"));
+                // Keep the relation as one parenthesized boolean value. Without
+                // the outer pair, an enclosing contract equality lowers to the
+                // invalid Rust chain `result == left == right`.
+                return Ok(format!("(({r}) == ({right}))"));
             }
             if name == "array_same_except" && args.len() == 2 {
                 let right = lower_expr_exec(&args[0], d, span, variants)?;

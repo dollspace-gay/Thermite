@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: partial
-audited-content-sha256: dcb125f4ca9e7fcadaaf2195d6d1882f4d13c12b3048865df01b24e6aa141120
+audited-content-sha256: 5c0d76a84f43eeb521f8497069e902872f407b61bfb3c836d818758e6c9b2419 (re-pinned 2026-08-04 after binding plain aggregate ABI layouts; boundary closure semantics are unchanged)
 decision: consumer-owned registry entries close reachable Thermite boundaries through non-exempt same-crate direct-Verus calls
 governs:
   - thermite-lower/src/lower.rs

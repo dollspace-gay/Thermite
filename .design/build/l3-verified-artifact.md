@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: 3f38a6364df498a3bbb88234c29740736aedfd3ccc7a0abcc88d9c9492704193
+audited-content-sha256: dd35185bf20a6050b25f08fe79289bd7f1651b19f3b3f1bcf1eb0aa4816748ed (re-pinned 2026-08-04 after finite plain-value ABI layout binding and aggregate-array proof support)
 decision: Option A — compile the canonical Verus executable body that was verified
 issue: github:dollspace-gay/Thermite#101, github:dollspace-gay/Thermite#103, github:dollspace-gay/Thermite#104, github:dollspace-gay/Thermite#108, github:dollspace-gay/Thermite#111
 governs:
@@ -409,12 +409,16 @@ Duplicate exports, overloaded names without a unique semantic address, generic
 exports without a closed monomorphization, or unsupported public types are
 rejected.
 
-The v1 Rust export subset admits by-value primitives and recursively primitive
-fixed arrays, plus shared or exclusive borrows of primitives, slices, and such
-arrays. Returns remain owned primitive/unit/fixed-array values: borrowed returns
-are rejected because the public lifetime relation is not yet represented in the
-receipt. Each parameter records `by_value`, `shared_borrow`, or
-`exclusive_borrow`; those ownership modes participate in the ABI fingerprint.
+The Rust export subset admits finite plain values: primitives, unit, tuples,
+fixed arrays, and ordinary acyclic structs recursively composed from those
+forms. Shared or exclusive borrows remain limited to primitives, slices, and
+fixed arrays with admitted finite elements; general named-aggregate borrows are
+not yet represented. Sealed, opaque, recursive, enum, reference-bearing, and
+heap-backed records fail closed. Returns remain owned finite plain values:
+borrowed returns are rejected because the public lifetime relation is not yet
+represented in the receipt. Each parameter records `by_value`,
+`shared_borrow`, or `exclusive_borrow`; those ownership modes participate in
+the ABI fingerprint.
 
 ### Preconditions at an unverified caller boundary
 
@@ -451,6 +455,13 @@ with the exact receipt-pinned compiler, target and dependency lock. Rust does
 not promise a compiler-independent binary ABI, so Forge does not claim one.
 The `abi_fingerprint` makes compatibility explicit: consumers must match the
 recorded toolchain, target, crate name, type layouts and export signatures.
+For finite plain records and arrays, the fingerprint preimage recursively
+expands record names into ordered field names/types and resolves named array
+capacities to their integer values. A field type/order or capacity change thus
+changes the export fingerprint even before the enclosing receipt/source digest
+is considered. Conformance also links a downstream consumer with the exact
+receipt-pinned compiler, constructs exported finite records, and executes the
+generated aggregate-array relation from the published rlib.
 
 A future stable C ABI requires separately designed, verified `extern "C"`
 wrappers and an ABI-safe type subset. Such wrappers must be emitted, verified

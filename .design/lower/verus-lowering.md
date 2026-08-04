@@ -3,7 +3,7 @@
 tier: 3-component
 status: draft
 audited-sha: 92396428567edc6940a9e2845217f5ff4c2ea3c6 (re-pinned 2026-06-16, user-authorized: the only change to this doc's governed files since the prior pin is the additive stage-1 forge-tier increment 2a — the new Item::Forge surface + inert Item::Forge match arms, verified net-additive with no substantive removal of existing v1 logic (git log <main>..HEAD = the 8 forge commits); the v1 behavior this doc governs is unchanged, and the new forge-tier surface is specified in .design/stage1-forge-tier.md / REQ-S1-3)
-audited-content-sha256: 3d97636964e557866a436068cd44bde4d70ca37ed1045c1d54e5d0f648897f57 (re-pinned 2026-08-04 after opaque-state L3 visibility and abstract-spec lowering; existing lowering behavior remains regression-covered)
+audited-content-sha256: 14e7959d3f7480365adb8e99e7c31a10d11ed318513a8192783c0fbd7b59de5c (re-pinned 2026-08-04 after directly proved finite aggregate-array helper generation)
 governs: thermite-lower/src/lower.rs
 thesis-refs:
   - thermite-design.md §3
@@ -43,10 +43,13 @@ coverage #238) — an extension of REQ-5's spec-context machinery, exercised by
 REQ-table symbols below were re-verified against the current tree.
 
 The additive L3 library API now has two visibility profiles. Ordinary link
-exports are public and retain the primitive/unit ABI restriction; rich
-composition roots are `pub(crate)` so an authored direct-Verus shell can use
-ADTs, tuples, borrows, and bounded state inside one exact verified crate without
-creating a cross-crate Rust ABI. Hosted collection lowering remains vstd-backed.
+exports are public and admit finite plain values—primitives, unit, tuples,
+fixed arrays, and ordinary acyclic structs recursively composed from them—while
+rejecting sealed, opaque, recursive, enum, reference-bearing, and heap-backed
+records. Rich composition roots are `pub(crate)` so an authored direct-Verus
+shell can use broader ADTs, tuples, borrows, and bounded state inside one exact
+verified crate without creating a cross-crate Rust ABI. Hosted collection
+lowering remains vstd-backed.
 The `--no-vstd` kernel profile emits only the allocation-free bounded-length
 `Vec<T>` representation described in `.design/build/l3-rich-composition.md`;
 unsupported element operations stay absent and fail closed.
@@ -59,6 +62,14 @@ while external safe Rust cannot construct or unfold the state. Unrelated specs
 remain `pub open`; L1's already-private aggregate representation is unchanged.
 The complete semantics and Verus grounding are in
 `.design/build/opaque-library-state.md`.
+
+Fixed-array `.array_eq` and `.array_same_except` calls over finite plain
+aggregate elements use program-shaped, allocation-free comparators with exact
+direct-Verus contracts. Nested arrays, tuples, and ordinary records compose
+field-by-field; sealed and opaque representations never receive derived
+equality. `.design/build/aggregate-array-relations.md` pins the shared validator
+closure, deterministic helper generation, L1 mirror, translation-validation
+frames, and strict receipt evidence.
 
 ## Requirements
 

@@ -2195,6 +2195,7 @@ fn plan_exports(
     target_endian: &str,
 ) -> Result<Vec<PlannedExport>, String> {
     let mut rows = Vec::new();
+    let structural_structs = thermite_spec::structural_array_equality_structs(program);
     for name in roots {
         let function = program.items.iter().find_map(|item| match item {
             Item::Fn(f) if &f.name == name => Some(f),
@@ -2206,13 +2207,15 @@ fn plan_exports(
         if !function
             .params
             .iter()
-            .all(|p| supported_public_param_type(&p.ty))
-            || !supported_public_return_type(&function.ret)
+            .all(|p| supported_public_param_type(&p.ty, &structural_structs))
+            || !supported_public_return_type(&function.ret, &structural_structs)
         {
             return Err(format!(
                 "export `{name}` has a type outside the verified public Rust ABI \
-                 (owned primitive/fixed-array returns and primitive/fixed-array \
-                 values or shared/exclusive borrows are supported)"
+                 (finite plain values and shared/exclusive borrows of primitives, \
+                 slices, or fixed arrays with finite plain elements are supported; \
+                 sealed, opaque, recursive, enum, reference-bearing, and heap-backed \
+                 records are rejected)"
             ));
         }
         let wrapped = !matches!(function.contract.req.expr, Expr::BoolLit(true));
@@ -2244,6 +2247,7 @@ fn plan_exports(
             abi_type(&function.ret)
         };
         let signature = format!("fn {public_name}({params})->{return_type}");
+        let layout = public_abi_layout(program, function)?;
         let ownership = function
             .params
             .iter()
@@ -2257,7 +2261,7 @@ fn plan_exports(
             .map(|(index, _)| format!("{}.ens#{}", function.name, index + 1))
             .collect::<Vec<_>>();
         let abi_preimage = format!(
-            "thermite-rust-abi-v1\0crate={crate_name}\0profile={}\0triple={target_triple}\0pointer_width={target_pointer_width}\0endian={target_endian}\0ownership={}\0{signature}",
+            "thermite-rust-abi-v1\0crate={crate_name}\0profile={}\0triple={target_triple}\0pointer_width={target_pointer_width}\0endian={target_endian}\0ownership={}\0layout={layout}\0{signature}",
             target_name(target),
             ownership.join(",")
         );
@@ -2286,12 +2290,15 @@ fn plan_exports(
     Ok(rows)
 }
 
-fn supported_public_param_type(ty: &Type) -> bool {
+fn supported_public_param_type(ty: &Type, structural_structs: &BTreeSet<String>) -> bool {
     match ty {
-        Type::Prim(_) | Type::Unit => true,
-        Type::Array { elem, .. } => supported_public_storage_element(elem),
+        Type::Prim(_) | Type::Unit | Type::Named(_) | Type::Tuple(_) | Type::Array { .. } => {
+            supported_public_value_type(ty, structural_structs)
+        }
         Type::Ref { inner, .. } => match inner.as_ref() {
-            Type::Slice(elem) | Type::Array { elem, .. } => supported_public_storage_element(elem),
+            Type::Slice(elem) | Type::Array { elem, .. } => {
+                supported_public_storage_element(elem, structural_structs)
+            }
             Type::Prim(_) => true,
             _ => false,
         },
@@ -2299,14 +2306,24 @@ fn supported_public_param_type(ty: &Type) -> bool {
     }
 }
 
-fn supported_public_return_type(ty: &Type) -> bool {
-    matches!(ty, Type::Prim(_) | Type::Unit)
-        || matches!(ty, Type::Array { elem, .. } if supported_public_storage_element(elem))
+fn supported_public_return_type(ty: &Type, structural_structs: &BTreeSet<String>) -> bool {
+    supported_public_value_type(ty, structural_structs)
 }
 
-fn supported_public_storage_element(ty: &Type) -> bool {
-    matches!(ty, Type::Prim(_))
-        || matches!(ty, Type::Array { elem, .. } if supported_public_storage_element(elem))
+fn supported_public_value_type(ty: &Type, structural_structs: &BTreeSet<String>) -> bool {
+    match ty {
+        Type::Prim(_) | Type::Unit => true,
+        Type::Array { elem, .. } => supported_public_storage_element(elem, structural_structs),
+        Type::Tuple(elements) => elements
+            .iter()
+            .all(|element| supported_public_value_type(element, structural_structs)),
+        Type::Named(name) => structural_structs.contains(name),
+        _ => false,
+    }
+}
+
+fn supported_public_storage_element(ty: &Type, structural_structs: &BTreeSet<String>) -> bool {
+    supported_public_value_type(ty, structural_structs)
 }
 
 fn abi_ownership(ty: &Type) -> &'static str {
@@ -2339,7 +2356,107 @@ fn abi_type(ty: &Type) -> String {
             format!("{borrow}{}", abi_type(inner))
         }
         Type::Slice(elem) => format!("[{}]", abi_type(elem)),
+        Type::Tuple(elements) => format!(
+            "({})",
+            elements.iter().map(abi_type).collect::<Vec<_>>().join(",")
+        ),
+        Type::Named(name) => name.clone(),
         other => format!("unsupported:{other:?}"),
+    }
+}
+
+/// Canonical transitive layout preimage for one public Rust export. Display
+/// types intentionally preserve authored capacity names for diagnostics, but an
+/// ABI fingerprint must change when the bound value of such a name or any field
+/// in a reachable plain record changes. The exact compiler and target are added
+/// by `plan_exports`; this function binds the source-level layout graph.
+fn public_abi_layout(
+    program: &Program,
+    function: &thermite_syntax::FnItem,
+) -> Result<String, String> {
+    let mut visiting = BTreeSet::new();
+    let params = function
+        .params
+        .iter()
+        .map(|param| {
+            abi_layout_type(program, &param.ty, &mut visiting)
+                .map(|layout| format!("{}:{layout}", param.name))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let result = abi_layout_type(program, &function.ret, &mut visiting)?;
+    Ok(format!("params({})->{result}", params.join(",")))
+}
+
+fn abi_layout_type(
+    program: &Program,
+    ty: &Type,
+    visiting: &mut BTreeSet<String>,
+) -> Result<String, String> {
+    match ty {
+        Type::Prim(_) | Type::Unit => Ok(abi_type(ty)),
+        Type::Array { elem, len } => {
+            let length = match len {
+                thermite_syntax::ArrayLen::Literal { value, .. } => *value,
+                thermite_syntax::ArrayLen::Const(name) => program
+                    .items
+                    .iter()
+                    .find_map(|item| match item {
+                        Item::Const(value) if value.name == *name => Some(value.value),
+                        _ => None,
+                    })
+                    .ok_or_else(|| format!("public ABI references unresolved capacity `{name}`"))?,
+            };
+            Ok(format!(
+                "array[{length};{}]",
+                abi_layout_type(program, elem, visiting)?
+            ))
+        }
+        Type::Tuple(elements) => Ok(format!(
+            "tuple{}({})",
+            elements.len(),
+            elements
+                .iter()
+                .map(|element| abi_layout_type(program, element, visiting))
+                .collect::<Result<Vec<_>, _>>()?
+                .join(",")
+        )),
+        Type::Named(name) => {
+            if !visiting.insert(name.clone()) {
+                return Err(format!(
+                    "public ABI record layout is recursive through `{name}`"
+                ));
+            }
+            let structure = program.items.iter().find_map(|item| match item {
+                Item::Struct(structure) if structure.name == *name => Some(structure),
+                _ => None,
+            });
+            let Some(structure) = structure else {
+                visiting.remove(name);
+                return Err(format!("public ABI names undeclared record `{name}`"));
+            };
+            let fields = structure
+                .fields
+                .iter()
+                .map(|field| {
+                    abi_layout_type(program, &field.ty, visiting)
+                        .map(|layout| format!("{}:{layout}", field.name))
+                })
+                .collect::<Result<Vec<_>, _>>();
+            visiting.remove(name);
+            Ok(format!("struct:{name}{{{}}}", fields?.join(",")))
+        }
+        Type::Ref { mutable, inner } => Ok(format!(
+            "ref:{}({})",
+            if *mutable { "mut" } else { "shared" },
+            abi_layout_type(program, inner, visiting)?
+        )),
+        Type::Slice(elem) => Ok(format!(
+            "slice({})",
+            abi_layout_type(program, elem, visiting)?
+        )),
+        other => Err(format!(
+            "public ABI layout cannot encode unsupported type {other:?}"
+        )),
     }
 }
 
@@ -5640,6 +5757,99 @@ fn state_new(value: u64) -> State
         assert!(!exports
             .iter()
             .any(|export| export.thermite_name == "hidden"));
+    }
+
+    #[test]
+    fn public_abi_admits_only_finite_plain_record_values() {
+        let plain = parse(
+            "struct Stamp { words: [u64; 2], flags: (bool, u8) } \
+             struct Slot { stamp: Stamp, owner: usize } \
+             fn equal(left: [Slot; 4], right: [Slot; 4]) -> bool \
+             req true ens true fx pure { true }",
+        );
+        let exports = plan_exports(
+            &plain,
+            &["equal".to_string()],
+            "plain_records",
+            VerifiedTarget::Std,
+            "x86_64-unknown-linux-gnu",
+            "64",
+            "little",
+        )
+        .expect("finite plain record arrays belong to the verified Rust ABI");
+        assert_eq!(exports[0].parameter_types, ["[Slot;4]", "[Slot;4]"]);
+
+        for source in [
+            "#[sealed] struct Token { raw: u64 } \
+             fn expose(value: [Token; 2]) -> bool req true ens true fx pure { true }",
+            "#[opaque] struct State { raw: u64 } \
+             fn expose(value: [State; 2]) -> bool req true ens true fx pure { true }",
+            "struct Label { text: String } \
+             fn expose(value: [Label; 2]) -> bool req true ens true fx pure { true }",
+        ] {
+            let hidden = parse(source);
+            let error = plan_exports(
+                &hidden,
+                &["expose".to_string()],
+                "hidden_records",
+                VerifiedTarget::Std,
+                "x86_64-unknown-linux-gnu",
+                "64",
+                "little",
+            )
+            .expect_err("authority-bearing or heap-backed record ABI must fail closed");
+            assert!(
+                error.contains("outside the verified public Rust ABI"),
+                "{error}"
+            );
+        }
+    }
+
+    #[test]
+    fn public_abi_fingerprint_binds_record_layout_and_resolved_capacities() {
+        let fingerprint = |source: &str| {
+            let program = parse(source);
+            plan_exports(
+                &program,
+                &["expose".to_string()],
+                "layout_bound",
+                VerifiedTarget::Std,
+                "x86_64-unknown-linux-gnu",
+                "64",
+                "little",
+            )
+            .expect("finite plain layout should plan")
+            .remove(0)
+            .abi_sha256
+        };
+        let base = fingerprint(
+            "const CAP: usize = 4; \
+             struct Slot { owner: usize, flags: (bool, u8) } \
+             fn expose(values: [Slot; CAP]) -> bool \
+             req true ens true fx pure { true }",
+        );
+        let changed_capacity = fingerprint(
+            "const CAP: usize = 8; \
+             struct Slot { owner: usize, flags: (bool, u8) } \
+             fn expose(values: [Slot; CAP]) -> bool \
+             req true ens true fx pure { true }",
+        );
+        let changed_field = fingerprint(
+            "const CAP: usize = 4; \
+             struct Slot { owner: u64, flags: (bool, u8) } \
+             fn expose(values: [Slot; CAP]) -> bool \
+             req true ens true fx pure { true }",
+        );
+        let reordered_fields = fingerprint(
+            "const CAP: usize = 4; \
+             struct Slot { flags: (bool, u8), owner: usize } \
+             fn expose(values: [Slot; CAP]) -> bool \
+             req true ens true fx pure { true }",
+        );
+
+        assert_ne!(base, changed_capacity, "resolved capacity is ABI data");
+        assert_ne!(base, changed_field, "transitive field type is ABI data");
+        assert_ne!(base, reordered_fields, "record field order is ABI data");
     }
 
     #[test]

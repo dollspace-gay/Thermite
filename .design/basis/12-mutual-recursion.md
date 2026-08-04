@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: 914d3ee41626563ffe5d4a6a2d464e513d776f5e810be10e9e2588bd9e1d9a51 (re-pinned 2026-08-04 after reusable opaque-state lowering; mutual-recursion behavior remains regression-covered)
+audited-content-sha256: b5e8c5197355391bbd660427e4fb3339338f2df5913e2666279b8094ec7ee59e (re-pinned 2026-08-04 after additive finite aggregate-array lowering; recursive record equality remains rejected)
 governs: forge/src/check.rs
 governs: thermite-lower/src/lower.rs
 thesis-refs:

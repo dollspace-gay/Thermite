@@ -212,6 +212,52 @@ fn fixed_array_contract_clauses_are_faithful() {
 }
 
 #[test]
+fn aggregate_array_relation_contracts_are_faithful() {
+    if !verus_present() {
+        eprintln!("SKIP: verus not available — aggregate-array contract-TV not run.");
+        return;
+    }
+    let source = concat!(
+        "const WORDS: usize = 2;\n",
+        "const SLOTS: usize = 4;\n",
+        "struct Stamp { words: [u64; WORDS], flags: (bool, u8) }\n",
+        "struct Slot { stamp: Stamp, owner: usize }\n",
+        "fn records_equal(left: [Slot; SLOTS], right: [Slot; SLOTS]) -> bool\n",
+        "  req true\n",
+        "  ens result == left.array_eq(right)\n",
+        "  fx pure\n",
+        "{ left.array_eq(right) }\n",
+        "fn records_same_except(left: [Slot; SLOTS], right: [Slot; SLOTS], at: usize) -> bool\n",
+        "  req true\n",
+        "  ens result == left.array_same_except(right, at)\n",
+        "  fx pure\n",
+        "{ left.array_same_except(right, at) }\n",
+    );
+    let path = std::env::temp_dir().join("thermite_contract_tv_aggregate_array.th");
+    std::fs::write(&path, source).expect("write aggregate-array contract-TV fixture");
+    let report = run_tv_json(&path, None);
+    let (checked, faithful, divergent) = corpus_counts(&report);
+    assert_eq!(
+        checked, 4,
+        "both clauses of both relation functions: {report}"
+    );
+    assert_eq!(faithful, checked, "{report}");
+    assert_eq!(divergent, 0, "{report}");
+    for label in [
+        "records_equal.req",
+        "records_equal.ens#1",
+        "records_same_except.req",
+        "records_same_except.ens#1",
+    ] {
+        assert_eq!(
+            corpus_clause_verdict(&report, label),
+            Some("faithful"),
+            "{label}: {report}"
+        );
+    }
+}
+
+#[test]
 fn u64_bit_method_contract_clauses_are_faithful() {
     if !verus_present() {
         eprintln!("SKIP: verus not available — u64-bit contract-TV not run.");

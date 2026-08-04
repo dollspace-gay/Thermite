@@ -361,6 +361,7 @@ pub fn exec_tv_export_guard(
     };
     let mut report = ExecTvReport::default();
     check_corpus_expr(
+        program,
         &f.contract.req.expr,
         &label,
         "bool",
@@ -491,6 +492,7 @@ fn exec_tv_fn(
                 let label = format!("{}.let#{}", f.name, let_no);
                 if let Some((ret_ty, _is_slice)) = exec_type_spelling(ty) {
                     check_corpus_expr(
+                        program,
                         init,
                         &label,
                         &ret_ty,
@@ -535,6 +537,7 @@ fn exec_tv_fn(
             Stmt::Return(Some(e)) => {
                 let label = format!("{}.return", f.name);
                 check_return_like(
+                    program,
                     e,
                     &label,
                     &f.ret,
@@ -578,6 +581,7 @@ fn exec_tv_fn(
     if let Some(tail) = &body.tail {
         let label = format!("{}.tail", f.name);
         check_return_like(
+            program,
             tail,
             &label,
             &f.ret,
@@ -600,6 +604,7 @@ fn exec_tv_fn(
         them would obscure the per-expr data flow"
 )]
 fn check_return_like(
+    program: &thermite_syntax::Program,
     e: &Expr,
     label: &str,
     ret: &Type,
@@ -612,6 +617,7 @@ fn check_return_like(
 ) {
     match exec_type_spelling(ret) {
         Some((ret_ty, _)) => check_corpus_expr(
+            program,
             e,
             label,
             &ret_ty,
@@ -643,6 +649,7 @@ fn check_return_like(
     reason = "see `check_return_like` — the genuine per-expr fan-in"
 )]
 fn check_corpus_expr(
+    program: &thermite_syntax::Program,
     e: &Expr,
     label: &str,
     ret_ty: &str,
@@ -726,7 +733,15 @@ fn check_corpus_expr(
     }
     let mut spec_defs = support_defs.to_vec();
     if thermite_lower::expr_uses_fixed_array_equality(e) {
-        spec_defs.push(thermite_lower::fixed_array_equality_defs());
+        if let Err(reason) =
+            crate::body_tv::extend_fixed_array_equality_defs(program, &mut spec_defs)
+        {
+            report.results.push(ExecResult {
+                label: label.to_string(),
+                verdict: ExecVerdict::Skipped { reason },
+            });
+            return;
+        }
     }
     if thermite_lower::expr_uses_u64_bit_methods(e) {
         spec_defs.push(thermite_lower::u64_bit_defs());
@@ -875,6 +890,7 @@ fn exec_type_spelling(ty: &Type) -> Option<(String, bool)> {
         Type::Prim(PrimType::U64) => Some(("u64".to_string(), false)),
         Type::Prim(PrimType::Usize) => Some(("usize".to_string(), false)),
         Type::Prim(PrimType::Bool) => Some(("bool".to_string(), false)),
+        Type::Unit => Some(("()".to_string(), false)),
         Type::Array { elem, len } => {
             let (elem, _) = exec_type_spelling(elem)?;
             let len = match len {
@@ -895,6 +911,18 @@ fn exec_type_spelling(ty: &Type) -> Option<(String, bool)> {
         Type::Slice(elem) => {
             exec_type_spelling(elem).map(|(spelling, _)| (format!("&[{spelling}]"), true))
         }
+        Type::Tuple(types) => Some((
+            format!(
+                "({})",
+                types
+                    .iter()
+                    .map(|ty| exec_type_spelling(ty).map(|(spelling, _)| spelling))
+                    .collect::<Option<Vec<_>>>()?
+                    .join(", ")
+            ),
+            false,
+        )),
+        Type::Named(name) => Some((name.clone(), false)),
         _ => None,
     }
 }

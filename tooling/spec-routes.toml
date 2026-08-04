@@ -1475,6 +1475,117 @@ design = ".design/build/kernel-primitives.md"
 reference = ["conformance/kernel_primitives.th"]
 conformance_ops = ["kernel-skill-reference"]
 
+# Explicit finite structural relations for fixed arrays of ordinary acyclic
+# records, tuples, and nested arrays. This is compiler/proof infrastructure;
+# sealed and opaque authority remains outside ambient derived equality.
+[[route]]
+crate_pattern = "thermite-spec/src/lib.rs"
+design = ".design/build/aggregate-array-relations.md"
+reference = ["conformance/verified-build/aggregate_array_relations.th"]
+conformance_ops = ["aggregate-array-validation-api"]
+
+[[route]]
+crate_pattern = "thermite-spec/src/validator.rs"
+design = ".design/build/aggregate-array-relations.md"
+reference = ["conformance/verified-build/aggregate_array_relations.th"]
+conformance_ops = ["aggregate-array-relation-validation"]
+
+[[route]]
+crate_pattern = "thermite-spec/tests/fixed_array_validate.rs"
+design = ".design/build/aggregate-array-relations.md"
+reference = ["conformance/verified-build/aggregate_array_relations.th"]
+conformance_ops = ["aggregate-array-relation-rejections"]
+
+[[route]]
+crate_pattern = "thermite-lower/src/lower.rs"
+design = ".design/build/aggregate-array-relations.md"
+reference = ["conformance/verified-build/aggregate_array_relations.th"]
+conformance_ops = ["aggregate-array-l3-helper"]
+
+[[route]]
+crate_pattern = "thermite-lower/src/l1.rs"
+design = ".design/build/aggregate-array-relations.md"
+reference = ["conformance/verified-build/aggregate_array_relations.th"]
+conformance_ops = ["aggregate-array-l1-mirror"]
+
+[[route]]
+crate_pattern = "thermite-lower/src/lib.rs"
+design = ".design/build/aggregate-array-relations.md"
+reference = ["conformance/verified-build/aggregate_array_relations.th"]
+conformance_ops = ["aggregate-array-lowering-api"]
+
+[[route]]
+crate_pattern = "thermite-lower/tests/aggregate_array_relations.rs"
+design = ".design/build/aggregate-array-relations.md"
+reference = ["conformance/verified-build/aggregate_array_relations.th"]
+conformance_ops = ["aggregate-array-direct-verus", "aggregate-array-dropped-field-mutant"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/exec_encode.rs"
+design = ".design/build/aggregate-array-relations.md"
+reference = ["conformance/verified-build/aggregate_array_relations.th"]
+conformance_ops = ["aggregate-array-exec-reference"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/ref_encode.rs"
+design = ".design/build/aggregate-array-relations.md"
+reference = ["conformance/verified-build/aggregate_array_relations.th"]
+conformance_ops = ["aggregate-array-contract-reference"]
+
+[[route]]
+crate_pattern = "thermite-tv/tests/fixed_array_tv.rs"
+design = ".design/build/aggregate-array-relations.md"
+reference = ["conformance/verified-build/aggregate_array_relations.th"]
+conformance_ops = ["aggregate-array-reference-teeth"]
+
+[[route]]
+crate_pattern = "forge/src/exec_tv.rs"
+design = ".design/build/aggregate-array-relations.md"
+reference = ["conformance/verified-build/aggregate_array_relations.th"]
+conformance_ops = ["aggregate-array-exec-tv"]
+
+[[route]]
+crate_pattern = "forge/src/body_tv.rs"
+design = ".design/build/aggregate-array-relations.md"
+reference = ["conformance/verified-build/aggregate_array_relations.th"]
+conformance_ops = ["aggregate-array-body-tv"]
+
+[[route]]
+crate_pattern = "forge/src/verified_build.rs"
+design = ".design/build/aggregate-array-relations.md"
+reference = ["conformance/verified-build/aggregate_array_relations.th"]
+conformance_ops = ["aggregate-array-public-abi", "aggregate-array-replay"]
+
+[[route]]
+crate_pattern = "forge/tests/body_tv.rs"
+design = ".design/build/aggregate-array-relations.md"
+reference = ["conformance/verified-build/aggregate_array_relations.th"]
+conformance_ops = ["aggregate-array-body-tv"]
+
+[[route]]
+crate_pattern = "forge/tests/contract_tv_conformance.rs"
+design = ".design/build/aggregate-array-relations.md"
+reference = ["conformance/verified-build/aggregate_array_relations.th"]
+conformance_ops = ["aggregate-array-contract-tv"]
+
+[[route]]
+crate_pattern = "forge/tests/exec_tv_conformance.rs"
+design = ".design/build/aggregate-array-relations.md"
+reference = ["conformance/verified-build/aggregate_array_relations.th"]
+conformance_ops = ["aggregate-array-exec-tv"]
+
+[[route]]
+crate_pattern = "forge/tests/verified_build.rs"
+design = ".design/build/aggregate-array-relations.md"
+reference = ["conformance/verified-build/aggregate_array_relations.th"]
+conformance_ops = ["aggregate-array-strict-build", "aggregate-array-replay", "aggregate-array-tamper"]
+
+[[route]]
+crate_pattern = "conformance/verified-build/aggregate_array_relations.th"
+design = ".design/build/aggregate-array-relations.md"
+reference = []
+conformance_ops = ["aggregate-array-relations"]
+
 # Primitive-only sealed atomic declarations and proof vocabulary. These routes
 # intentionally cover no machine implementation: registry v1 must refuse that
 # assurance class until the separate object/machine refinement increment.

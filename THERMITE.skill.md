@@ -216,14 +216,14 @@ Removed from Rust: explicit lifetimes, the trait system (only built-in
 `Eq`/`Ord`/`Hash`/`Iter`/`Display`), macros, `unsafe` (→ `#[slag]`), UFCS, implicit
 widening (casts explicit; overflow is a proof obligation).
 
-Kernel manifests are receipt-bound `*.thpkg.json`. Arrays provide `.array_eq` /
-`.array_same_except`; packed `u64` provides `.bit_{test,set,clear}` (out-of-range
-is false/no-op) and distinct-bit preservation methods, all bridged to L3.
-Primitive manifests provide atomics/order/history, generation ownership,
-bitmap/vector/FIFO/direct-map collections, synchronization state machines, and
-frozen wait declarations. None provide a kernel or machine body. Consumers
-refine boundaries; registry v1 covers sequential safe Rust only. Affinity,
-aggregate TV, and machine refinement remain.
+Kernel manifests are receipt-bound `*.thpkg.json`. `.array_eq` /
+`.array_same_except` cover scalar and finite plain aggregate arrays; sealed,
+opaque, recursive, enum, reference, and heap shapes fail closed. Packed `u64`
+provides total bit operations and distinct-bit frames, all bridged to L3.
+Primitive manifests provide atomics, generation ownership, fixed collections,
+synchronization state machines, and frozen waits—never a kernel or machine
+body. Consumers refine boundaries; affinity, general aggregate lifecycle TV,
+and machine refinement remain.
 
 ## 2. SpecTherm combinator library
 

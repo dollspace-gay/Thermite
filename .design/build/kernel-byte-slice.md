@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: 7ab8f31cbabf2d46c0fc9cfa9ae079307ed97d8819f6d9b5020d5a853f73c912
+audited-content-sha256: 975e034aa19d3dd9149ed08e3905bdf3e8611bfaa20c31f443e4b70a801bd47f (re-pinned 2026-08-04 after binding finite plain-value ABI layouts; byte-slice behavior remains regression-covered)
 decision: explicit pinned vstd proof-model import plus deterministic no_std erased link metadata
 issue: github:dollspace-gay/Thermite#108
 governs:

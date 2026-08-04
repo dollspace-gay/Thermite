@@ -131,7 +131,7 @@ fn repeat_initialization_requires_a_copy_safe_element_type() {
 }
 
 #[test]
-fn array_equality_requires_matching_primitive_scalar_arrays() {
+fn array_equality_accepts_matching_structural_arrays() {
     assert!(validate_src(
         "fn equal(left: [u64; 4], right: [u64; 4]) -> bool\n\
          req true\n\
@@ -141,15 +141,19 @@ fn array_equality_requires_matching_primitive_scalar_arrays() {
     )
     .is_ok());
 
-    let nested = validate_src(
-        "fn bad(left: [[u64; 2]; 2], right: [[u64; 2]; 2]) -> bool\n\
+    assert!(validate_src(
+        "fn nested(left: [[u64; 2]; 2], right: [[u64; 2]; 2]) -> bool\n\
          req true ens result == left.array_eq(right) fx pure { left.array_eq(right) }",
     )
-    .expect_err("aggregate-element equality needs an explicit verified library");
-    assert!(nested.iter().any(|error| matches!(
-        error,
-        SpecError::ArrayEqualityRequiresPrimitiveArrays { .. }
-    )));
+    .is_ok());
+
+    assert!(validate_src(
+        "struct Stamp { words: [u64; 2], flags: (bool, u8) }\n\
+         struct Slot { stamp: Stamp, owner: usize }\n\
+         fn equal(left: [Slot; 4], right: [Slot; 4]) -> bool\n\
+         req true ens result == left.array_eq(right) fx pure { left.array_eq(right) }",
+    )
+    .is_ok());
 
     let capacity_mismatch = validate_src(
         "fn bad(left: [u64; 2], right: [u64; 3]) -> bool\n\
@@ -158,7 +162,7 @@ fn array_equality_requires_matching_primitive_scalar_arrays() {
     .expect_err("different array types cannot use the primitive equality helper");
     assert!(capacity_mismatch.iter().any(|error| matches!(
         error,
-        SpecError::ArrayEqualityRequiresPrimitiveArrays { .. }
+        SpecError::ArrayEqualityRequiresStructuralArrays { .. }
     )));
 
     let scalar = validate_src(
@@ -168,12 +172,57 @@ fn array_equality_requires_matching_primitive_scalar_arrays() {
     .expect_err("the reserved method must not dispatch on a non-array receiver");
     assert!(scalar.iter().any(|error| matches!(
         error,
-        SpecError::ArrayEqualityRequiresPrimitiveArrays { .. }
+        SpecError::ArrayEqualityRequiresStructuralArrays { .. }
     )));
 }
 
 #[test]
-fn array_same_except_requires_matching_primitive_scalar_arrays() {
+fn array_equality_rejects_hidden_recursive_and_heap_backed_records() {
+    for (label, source) in [
+        (
+            "sealed authority",
+            "#[sealed] struct Token { raw: u64 }\n\
+             fn bad(left: [Token; 2], right: [Token; 2]) -> bool\n\
+             req true ens true fx pure { left.array_eq(right) }",
+        ),
+        (
+            "opaque representation",
+            "#[opaque] struct State { raw: u64 }\n\
+             fn bad(left: [State; 2], right: [State; 2]) -> bool\n\
+             req true ens true fx pure { left.array_eq(right) }",
+        ),
+        (
+            "recursive record",
+            "struct Node { next: Box<Node> }\n\
+             fn bad(left: [Node; 2], right: [Node; 2]) -> bool\n\
+             req true ens true fx pure { left.array_eq(right) }",
+        ),
+        (
+            "heap-backed field",
+            "struct Label { text: String }\n\
+             fn bad(left: [Label; 2], right: [Label; 2]) -> bool\n\
+             req true ens true fx pure { left.array_eq(right) }",
+        ),
+        (
+            "enum element",
+            "enum State { Idle, Busy(u64) }\n\
+             fn bad(left: [State; 2], right: [State; 2]) -> bool\n\
+             req true ens true fx pure { left.array_eq(right) }",
+        ),
+    ] {
+        let errors = validate_src(source).expect_err(label);
+        assert!(
+            errors.iter().any(|error| matches!(
+                error,
+                SpecError::ArrayEqualityRequiresStructuralArrays { .. }
+            )),
+            "{label}: {errors:?}"
+        );
+    }
+}
+
+#[test]
+fn array_same_except_requires_matching_structural_arrays() {
     assert!(validate_src(
         "fn same_except(left: [u64; 4], right: [u64; 4], at: usize) -> bool\n\
          req true\n\
@@ -190,7 +239,7 @@ fn array_same_except_requires_matching_primitive_scalar_arrays() {
     .expect_err("the frame relation requires equal array types");
     assert!(capacity_mismatch.iter().any(|error| matches!(
         error,
-        SpecError::ArrayEqualityRequiresPrimitiveArrays { .. }
+        SpecError::ArrayEqualityRequiresStructuralArrays { .. }
     )));
 
     let scalar = validate_src(
@@ -200,6 +249,6 @@ fn array_same_except_requires_matching_primitive_scalar_arrays() {
     .expect_err("the frame relation must reject scalar receivers");
     assert!(scalar.iter().any(|error| matches!(
         error,
-        SpecError::ArrayEqualityRequiresPrimitiveArrays { .. }
+        SpecError::ArrayEqualityRequiresStructuralArrays { .. }
     )));
 }

@@ -242,6 +242,50 @@ fn fixed_array_read_expression_is_faithful() {
 }
 
 #[test]
+fn aggregate_array_relation_expressions_are_faithful() {
+    if !verus_present() {
+        eprintln!("SKIP: verus not available — aggregate-array exec-TV not discharged.");
+        return;
+    }
+    let source = concat!(
+        "const WORDS: usize = 2;\n",
+        "const SLOTS: usize = 4;\n",
+        "struct Stamp { words: [u64; WORDS], flags: (bool, u8) }\n",
+        "struct Slot { stamp: Stamp, owner: usize }\n",
+        "fn records_equal(left: [Slot; SLOTS], right: [Slot; SLOTS]) -> bool\n",
+        "  req true\n",
+        "  ens result == left.array_eq(right)\n",
+        "  fx pure\n",
+        "{ left.array_eq(right) }\n",
+        "fn records_same_except(left: [Slot; SLOTS], right: [Slot; SLOTS], at: usize) -> bool\n",
+        "  req true\n",
+        "  ens result == left.array_same_except(right, at)\n",
+        "  fx pure\n",
+        "{ left.array_same_except(right, at) }\n",
+    );
+    let path = std::env::temp_dir().join("thermite_exec_tv_aggregate_array.th");
+    std::fs::write(&path, source).expect("write aggregate-array exec-TV fixture");
+    let report = run_exec_tv_json(&path, None);
+    let counts = &report["corpus"]["counts"];
+    assert_eq!(counts["checked"].as_u64(), Some(2), "{report}");
+    assert_eq!(counts["faithful"].as_u64(), Some(2), "{report}");
+    assert_eq!(counts["divergent"].as_u64(), Some(0), "{report}");
+    for label in ["records_equal.tail", "records_same_except.tail"] {
+        assert!(
+            report["corpus"]["exprs"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|expr| {
+                    expr["expr"].as_str() == Some(label)
+                        && expr["verdict"].as_str() == Some("faithful")
+                }),
+            "{label}: {report}"
+        );
+    }
+}
+
+#[test]
 fn u64_bit_method_expressions_are_faithful() {
     if !verus_present() {
         eprintln!("SKIP: verus not available — u64-bit exec-TV not discharged.");

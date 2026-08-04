@@ -871,7 +871,7 @@ fn lower_with_profile(
     // contract/spec occurrence lowers directly to finite-view extensional
     // equality and therefore needs no executable helper.
     if program_uses_fixed_array_equality(program) {
-        out.push_str(&fixed_array_equality_defs());
+        out.push_str(&fixed_array_equality_defs_for_program(program)?);
     }
 
     // Packed `u64` bit access needs more than emitting Rust's operators: Verus's
@@ -5406,6 +5406,480 @@ pub fn fixed_array_equality_defs() -> String {
         out.push_str("}\n");
     }
     out
+}
+
+/// Exact fixed-array relation definitions extended with every finite plain
+/// aggregate element shape reachable from this program. The validator and this
+/// emitter share [`thermite_spec::structural_array_equality_structs`], so lowering
+/// cannot derive equality for a sealed, opaque, recursive, enum, reference, or
+/// heap-backed representation that the source gate rejects.
+pub fn fixed_array_equality_defs_for_program(program: &Program) -> Result<String, LowerError> {
+    let admitted = thermite_spec::structural_array_equality_structs(program);
+    let mut types = Vec::new();
+    collect_structural_array_element_types(program, &admitted, &mut types);
+
+    let mut out = fixed_array_equality_defs();
+    for ty in types {
+        if matches!(ty, Type::Prim(_)) {
+            continue;
+        }
+        emit_structural_element_equality(&ty, program, &mut out)?;
+        emit_structural_array_impl(&ty, &mut out)?;
+    }
+    Ok(out)
+}
+
+/// Structs whose generated L1 declarations may derive `PartialEq`/`Eq`. This
+/// is deliberately empty unless the program actually uses a fixed-array
+/// relation, and contains only the transitive plain-record dependencies of
+/// source-reachable array element shapes.
+pub(crate) fn fixed_array_equality_named_structs(program: &Program) -> BTreeSet<String> {
+    if !program_uses_fixed_array_equality(program) {
+        return BTreeSet::new();
+    }
+    let admitted = thermite_spec::structural_array_equality_structs(program);
+    let mut types = Vec::new();
+    collect_structural_array_element_types(program, &admitted, &mut types);
+    types
+        .into_iter()
+        .filter_map(|ty| match ty {
+            Type::Named(name) => Some(name),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Collect aggregate equality shapes inner-first. Every fixed-array type in a
+/// program contributes its structural element closure once the explicit
+/// relation primitive is present anywhere. Array capacities are canonicalized
+/// to their literal values so two capacity names with the same value cannot
+/// produce overlapping Rust trait impls.
+fn collect_structural_array_element_types(
+    program: &Program,
+    admitted: &BTreeSet<String>,
+    out: &mut Vec<Type>,
+) {
+    for item in &program.items {
+        match item {
+            Item::Fn(function) => {
+                for parameter in &function.params {
+                    note_structural_arrays_in_type(&parameter.ty, program, admitted, out);
+                }
+                note_structural_arrays_in_type(&function.ret, program, admitted, out);
+                if let Some(body) = &function.body {
+                    note_structural_arrays_in_block(body, program, admitted, out);
+                }
+            }
+            Item::SpecFn(function) => {
+                for parameter in &function.params {
+                    note_structural_arrays_in_type(&parameter.ty, program, admitted, out);
+                }
+                note_structural_arrays_in_type(&function.ret, program, admitted, out);
+                note_structural_arrays_in_block(&function.body, program, admitted, out);
+            }
+            Item::Struct(structure) => {
+                for field in &structure.fields {
+                    note_structural_arrays_in_type(&field.ty, program, admitted, out);
+                }
+            }
+            Item::Enum(enumeration) => {
+                for variant in &enumeration.variants {
+                    match &variant.shape {
+                        VariantShape::Unit => {}
+                        VariantShape::Tuple(types) => {
+                            for ty in types {
+                                note_structural_arrays_in_type(ty, program, admitted, out);
+                            }
+                        }
+                        VariantShape::Struct(fields) => {
+                            for field in fields {
+                                note_structural_arrays_in_type(&field.ty, program, admitted, out);
+                            }
+                        }
+                    }
+                }
+            }
+            Item::Const(_) | Item::Forge(_) => {}
+        }
+    }
+}
+
+fn note_structural_arrays_in_block(
+    block: &Block,
+    program: &Program,
+    admitted: &BTreeSet<String>,
+    out: &mut Vec<Type>,
+) {
+    for statement in &block.stmts {
+        match statement {
+            Stmt::Let { ty: Some(ty), .. } => {
+                note_structural_arrays_in_type(ty, program, admitted, out)
+            }
+            Stmt::If { then, else_, .. } => {
+                note_structural_arrays_in_block(then, program, admitted, out);
+                if let Some(branch) = else_ {
+                    note_structural_arrays_in_block(branch, program, admitted, out);
+                }
+            }
+            Stmt::Loop(node) => note_structural_arrays_in_block(&node.body, program, admitted, out),
+            Stmt::Let { ty: None, .. }
+            | Stmt::Assign { .. }
+            | Stmt::Return(_)
+            | Stmt::Expr(_)
+            | Stmt::Break
+            | Stmt::Continue => {}
+        }
+    }
+}
+
+fn note_structural_arrays_in_type(
+    ty: &Type,
+    program: &Program,
+    admitted: &BTreeSet<String>,
+    out: &mut Vec<Type>,
+) {
+    match ty {
+        Type::Array { elem, .. } => {
+            note_structural_equality_type(elem, program, admitted, out);
+            note_structural_arrays_in_type(elem, program, admitted, out);
+        }
+        Type::Ref { inner, .. }
+        | Type::Slice(inner)
+        | Type::Generic { arg: inner, .. }
+        | Type::Box(inner)
+        | Type::Vec(inner)
+        | Type::Option(inner) => note_structural_arrays_in_type(inner, program, admitted, out),
+        Type::Result(ok, err) | Type::Map(ok, err) => {
+            note_structural_arrays_in_type(ok, program, admitted, out);
+            note_structural_arrays_in_type(err, program, admitted, out);
+        }
+        Type::Tuple(types) => {
+            for inner in types {
+                note_structural_arrays_in_type(inner, program, admitted, out);
+            }
+        }
+        Type::Prim(_) | Type::Unit | Type::Named(_) | Type::String => {}
+    }
+}
+
+fn note_structural_equality_type(
+    ty: &Type,
+    program: &Program,
+    admitted: &BTreeSet<String>,
+    out: &mut Vec<Type>,
+) {
+    if !thermite_spec::array_equality_type_is_structural(ty, admitted) {
+        return;
+    }
+    let canonical = canonical_equality_type(ty, program);
+    if out.contains(&canonical) || matches!(canonical, Type::Prim(_)) {
+        return;
+    }
+    match &canonical {
+        Type::Array { elem, .. } => note_structural_equality_type(elem, program, admitted, out),
+        Type::Tuple(types) => {
+            for inner in types {
+                note_structural_equality_type(inner, program, admitted, out);
+            }
+        }
+        Type::Named(name) => {
+            if let Some(structure) = program.items.iter().find_map(|item| match item {
+                Item::Struct(structure) if structure.name == *name => Some(structure),
+                _ => None,
+            }) {
+                for field in &structure.fields {
+                    note_structural_equality_type(&field.ty, program, admitted, out);
+                }
+            }
+        }
+        Type::Unit => {}
+        Type::Prim(_)
+        | Type::Ref { .. }
+        | Type::Slice(_)
+        | Type::Generic { .. }
+        | Type::Box(_)
+        | Type::Vec(_)
+        | Type::String
+        | Type::Option(_)
+        | Type::Result(_, _)
+        | Type::Map(_, _) => return,
+    }
+    if !out.contains(&canonical) {
+        out.push(canonical);
+    }
+}
+
+fn canonical_equality_type(ty: &Type, program: &Program) -> Type {
+    let capacity = |name: &str| {
+        program.items.iter().find_map(|item| match item {
+            Item::Const(value) if value.name == name => Some(value.value),
+            _ => None,
+        })
+    };
+    match ty {
+        Type::Array { elem, len } => {
+            let len = match len {
+                ArrayLen::Literal { value, raw } => ArrayLen::Literal {
+                    value: *value,
+                    raw: raw.clone(),
+                },
+                ArrayLen::Const(name) => capacity(name).map_or_else(
+                    || ArrayLen::Const(name.clone()),
+                    |value| ArrayLen::Literal {
+                        value,
+                        raw: value.to_string(),
+                    },
+                ),
+            };
+            Type::Array {
+                elem: Box::new(canonical_equality_type(elem, program)),
+                len,
+            }
+        }
+        Type::Tuple(types) => Type::Tuple(
+            types
+                .iter()
+                .map(|inner| canonical_equality_type(inner, program))
+                .collect(),
+        ),
+        other => other.clone(),
+    }
+}
+
+fn structural_equality_suffix(ty: &Type) -> Result<String, LowerError> {
+    Ok(match ty {
+        Type::Prim(PrimType::U8) => "PrimU8".to_string(),
+        Type::Prim(PrimType::U16) => "PrimU16".to_string(),
+        Type::Prim(PrimType::U32) => "PrimU32".to_string(),
+        Type::Prim(PrimType::U64) => "PrimU64".to_string(),
+        Type::Prim(PrimType::Usize) => "PrimUsize".to_string(),
+        Type::Prim(PrimType::Bool) => "PrimBool".to_string(),
+        Type::Unit => "Unit".to_string(),
+        Type::Array { elem, len } => format!(
+            "Array{}Of{}",
+            lower_array_len(len),
+            structural_equality_suffix(elem)?
+        )
+        .replace(|ch: char| !ch.is_ascii_alphanumeric(), "_"),
+        Type::Tuple(types) => {
+            let mut suffix = format!("Tuple{}", types.len());
+            for ty in types {
+                suffix.push_str("Of");
+                suffix.push_str(&structural_equality_suffix(ty)?);
+            }
+            suffix
+        }
+        Type::Named(name) => format!("Struct_{name}"),
+        other => {
+            return Err(LowerError::Unsupported {
+                what: format!(
+                    "fixed-array structural equality helper for unsupported element {other:?}"
+                ),
+                span: zero_span(),
+            })
+        }
+    })
+}
+
+fn structural_element_helper_name(ty: &Type) -> Result<String, LowerError> {
+    Ok(format!(
+        "__thermite_element_eq_{}",
+        structural_equality_suffix(ty)?
+    ))
+}
+
+fn structural_element_compare(ty: &Type, left: &str, right: &str) -> Result<String, LowerError> {
+    match ty {
+        Type::Prim(_) => Ok(format!("({left}) == ({right})")),
+        Type::Unit => Ok("true".to_string()),
+        Type::Array { .. } | Type::Tuple(_) | Type::Named(_) => Ok(format!(
+            "{}(&({left}), &({right}))",
+            structural_element_helper_name(ty)?
+        )),
+        other => Err(LowerError::Unsupported {
+            what: format!(
+                "fixed-array structural equality comparison for unsupported element {other:?}"
+            ),
+            span: zero_span(),
+        }),
+    }
+}
+
+fn emit_structural_element_equality(
+    ty: &Type,
+    program: &Program,
+    out: &mut String,
+) -> Result<(), LowerError> {
+    let name = structural_element_helper_name(ty)?;
+    let spelling = lower_type(ty)?;
+    writeln!(
+        out,
+        "\nfn {name}(left: &{spelling}, right: &{spelling}) -> (result: bool)"
+    )
+    .ok();
+    out.push_str("    ensures result <==> *left == *right,\n");
+    out.push_str("{\n");
+    match ty {
+        Type::Unit => out.push_str("    true\n"),
+        Type::Array { .. } => {
+            out.push_str(
+                "    let equal = left.__thermite_fixed_array_eq(right);\n\
+                 \x20   if equal {\n\
+                 \x20       assert(left@ =~= right@);\n\
+                 \x20       assert(*left == *right);\n\
+                 \x20   } else {\n\
+                 \x20       assert(!(left@ =~= right@));\n\
+                 \x20       assert(*left != *right);\n\
+                 \x20   }\n\
+                 \x20   equal\n",
+            );
+        }
+        Type::Tuple(types) => {
+            let comparisons = types
+                .iter()
+                .enumerate()
+                .map(|(index, field)| {
+                    structural_element_compare(
+                        field,
+                        &format!("left.{index}"),
+                        &format!("right.{index}"),
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            writeln!(
+                out,
+                "    {}",
+                if comparisons.is_empty() {
+                    "true".to_string()
+                } else {
+                    comparisons.join(" && ")
+                }
+            )
+            .ok();
+        }
+        Type::Named(type_name) => {
+            let structure = program.items.iter().find_map(|item| match item {
+                Item::Struct(structure) if structure.name == *type_name => Some(structure),
+                _ => None,
+            });
+            let Some(structure) = structure else {
+                return Err(LowerError::Unsupported {
+                    what: format!(
+                        "fixed-array structural equality names undeclared struct `{type_name}`"
+                    ),
+                    span: zero_span(),
+                });
+            };
+            let comparisons = structure
+                .fields
+                .iter()
+                .map(|field| {
+                    structural_element_compare(
+                        &canonical_equality_type(&field.ty, program),
+                        &format!("left.{}", field.name),
+                        &format!("right.{}", field.name),
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            writeln!(
+                out,
+                "    {}",
+                if comparisons.is_empty() {
+                    "true".to_string()
+                } else {
+                    comparisons.join(" && ")
+                }
+            )
+            .ok();
+        }
+        Type::Prim(_)
+        | Type::Ref { .. }
+        | Type::Slice(_)
+        | Type::Generic { .. }
+        | Type::Box(_)
+        | Type::Vec(_)
+        | Type::String
+        | Type::Option(_)
+        | Type::Result(_, _)
+        | Type::Map(_, _) => {
+            return Err(LowerError::Unsupported {
+                what: format!(
+                    "fixed-array structural equality helper for unsupported element {ty:?}"
+                ),
+                span: zero_span(),
+            })
+        }
+    }
+    out.push_str("}\n");
+    Ok(())
+}
+
+fn emit_structural_array_impl(ty: &Type, out: &mut String) -> Result<(), LowerError> {
+    let spelling = lower_type(ty)?;
+    let compare = structural_element_compare(ty, "self[i]", "right[i]")?;
+    writeln!(
+        out,
+        "impl<const N: usize> __thermite_FixedArrayEq for [{spelling}; N] {{"
+    )
+    .ok();
+    writeln!(
+        out,
+        "    fn __thermite_fixed_array_eq(&self, right: &[{spelling}; N]) -> (result: bool)"
+    )
+    .ok();
+    out.push_str(
+        "        ensures\n\
+         \x20           result <==> self@ =~= right@,\n\
+         \x20   {\n\
+         \x20       let mut i: usize = 0;\n\
+         \x20       while i < N\n\
+         \x20           invariant\n\
+         \x20               i <= N,\n\
+         \x20               forall|j: int| 0 <= j < i ==> self@[j] == right@[j],\n\
+         \x20           decreases N - i,\n\
+         \x20       {\n",
+    );
+    writeln!(out, "            if !({compare}) {{").ok();
+    out.push_str(
+        "                assert(self@[i as int] != right@[i as int]);\n\
+         \x20               return false;\n\
+         \x20           }\n\
+         \x20           i = i + 1;\n\
+         \x20       }\n\
+         \x20       assert(self@ =~= right@);\n\
+         \x20       true\n\
+         \x20   }\n",
+    );
+    writeln!(
+        out,
+        "    fn __thermite_fixed_array_same_except(&self, right: &[{spelling}; N], except: usize) -> (result: bool)"
+    )
+    .ok();
+    out.push_str(
+        "        ensures\n\
+         \x20           result <==> forall|j: int| 0 <= j < N && j != except as int ==> self@[j] == right@[j],\n\
+         \x20   {\n\
+         \x20       let mut i: usize = 0;\n\
+         \x20       while i < N\n\
+         \x20           invariant\n\
+         \x20               i <= N,\n\
+         \x20               forall|j: int| 0 <= j < i && j != except as int ==> self@[j] == right@[j],\n\
+         \x20           decreases N - i,\n\
+         \x20       {\n",
+    );
+    writeln!(out, "            if i != except && !({compare}) {{").ok();
+    out.push_str(
+        "                assert(i as int != except as int);\n\
+         \x20               assert(self@[i as int] != right@[i as int]);\n\
+         \x20               return false;\n\
+         \x20           }\n\
+         \x20           i = i + 1;\n\
+         \x20       }\n\
+         \x20       true\n\
+         \x20   }\n\
+         }\n",
+    );
+    Ok(())
 }
 
 /// Exact directly verified implementation for the total packed-`u64` bit

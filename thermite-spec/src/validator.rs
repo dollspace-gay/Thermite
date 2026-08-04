@@ -140,7 +140,7 @@
 //! | REQ-SPEC-VALIDATOR-ERGONOMICS-OR-PATTERN | shipped | `thermite-spec/src/validator.rs` | Or-pattern exhaustiveness validation |  |
 //! <!-- /generated:reqs -->
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt;
 
 use thermite_syntax::{
@@ -382,11 +382,12 @@ pub enum SpecError {
     /// opaque user ADTs here would either fail only in a backend or silently
     /// change ownership semantics.
     ArrayRepeatRequiresCopy { span: Span },
-    /// `.array_eq(other)` and `.array_same_except(other, index)` are defined only
-    /// for two equally typed fixed arrays whose element is a primitive scalar.
-    /// Richer element equality must be supplied explicitly by a verified library
-    /// rather than inferred by Rust.
-    ArrayEqualityRequiresPrimitiveArrays { detail: String, span: Span },
+    /// `.array_eq(other)` and `.array_same_except(other, index)` require two
+    /// equally typed fixed arrays whose element has a finite structural equality
+    /// derivation. Primitive scalars, unit, nested fixed arrays/tuples, and
+    /// non-sealed/non-opaque acyclic structs are admitted. Authority-bearing,
+    /// recursive, enum, reference, and heap-backed shapes fail closed.
+    ArrayEqualityRequiresStructuralArrays { detail: String, span: Span },
     /// An executable call to a frozen `thermite::atomic::*` boundary uses an
     /// ordering expression that is not an exact `AtomicOrdering::Variant`
     /// literal, supplies an ordering forbidden for that operation, or has an
@@ -568,7 +569,7 @@ impl SpecError {
             | SpecError::ArrayExpandedSizeTooLarge { span, .. }
             | SpecError::ArrayLengthMismatch { span, .. }
             | SpecError::ArrayRepeatRequiresCopy { span }
-            | SpecError::ArrayEqualityRequiresPrimitiveArrays { span, .. }
+            | SpecError::ArrayEqualityRequiresStructuralArrays { span, .. }
             | SpecError::IllegalAtomicOrdering { span, .. }
             | SpecError::UnknownCombinator { span, .. }
             | SpecError::WrongArity { span, .. }
@@ -622,9 +623,9 @@ impl fmt::Display for SpecError {
                 f,
                 "array repeat initialization `[value; N]` requires a copy-safe element type"
             ),
-            SpecError::ArrayEqualityRequiresPrimitiveArrays { detail, .. } => write!(
+            SpecError::ArrayEqualityRequiresStructuralArrays { detail, .. } => write!(
                 f,
-                "fixed-array relations require equally typed primitive-scalar arrays: {detail}"
+                "fixed-array relations require equally typed structurally comparable arrays: {detail}"
             ),
             SpecError::IllegalAtomicOrdering {
                 operation, detail, ..
@@ -771,6 +772,61 @@ fn array_repeat_element_is_copy_safe(ty: &Type) -> bool {
     }
 }
 
+/// Compute the declaration-order-independent closure of plain structs whose
+/// values have a finite compiler-derived structural equality. This is the
+/// shared source of truth for the validator and lowering: a struct joins only
+/// after every named field dependency has already joined. Recursive cycles
+/// therefore never enter the least fixed point. Sealed and opaque structs are
+/// excluded even when their representation is scalar, because ambient derived
+/// equality would weaken their authority/representation barrier.
+pub fn structural_array_equality_structs(program: &Program) -> BTreeSet<String> {
+    let mut admitted = BTreeSet::new();
+    loop {
+        let before = admitted.len();
+        for item in &program.items {
+            let Item::Struct(structure) = item else {
+                continue;
+            };
+            if structure.sealed || structure.opaque || admitted.contains(&structure.name) {
+                continue;
+            }
+            if structure
+                .fields
+                .iter()
+                .all(|field| array_equality_type_is_structural(&field.ty, &admitted))
+            {
+                admitted.insert(structure.name.clone());
+            }
+        }
+        if admitted.len() == before {
+            return admitted;
+        }
+    }
+}
+
+/// Whether one array element type belongs to the finite structural equality
+/// language. Kept public for lowering so code generation cannot silently admit
+/// a wider type class than validation.
+pub fn array_equality_type_is_structural(ty: &Type, admitted_structs: &BTreeSet<String>) -> bool {
+    match ty {
+        Type::Prim(_) | Type::Unit => true,
+        Type::Array { elem, .. } => array_equality_type_is_structural(elem, admitted_structs),
+        Type::Tuple(elements) => elements
+            .iter()
+            .all(|element| array_equality_type_is_structural(element, admitted_structs)),
+        Type::Named(name) => admitted_structs.contains(name),
+        Type::Ref { .. }
+        | Type::Slice(_)
+        | Type::Generic { .. }
+        | Type::Box(_)
+        | Type::Vec(_)
+        | Type::String
+        | Type::Option(_)
+        | Type::Result(_, _)
+        | Type::Map(_, _) => false,
+    }
+}
+
 /// Validate every contract position of a parsed program against the SpecTherm
 /// cage (REQ-3). Returns `Ok(())` if every contract expression is accepted, else
 /// `Err` with one `SpecError` per violation (accumulated, not first-stop, for
@@ -909,6 +965,10 @@ struct Validator {
     /// mintable. Inert when no `#[sealed]` struct is declared (the non-IFC corpus
     /// is unchanged), like `struct_fields`.
     sealed_structs: HashSet<String>,
+    /// Least fixed point of ordinary acyclic struct declarations whose fields
+    /// all have finite structural equality. Used only by the explicit fixed-
+    /// array relation built-ins; it grants no ambient equality operation.
+    array_equality_structs: BTreeSet<String>,
     /// Types of the current item's named parameters, result, fields, and typed
     /// locals. The dedicated fixed-array equality check uses this small lexical
     /// environment because the general v0.1 validator is otherwise intentionally
@@ -1115,6 +1175,7 @@ impl Validator {
             variant_to_enum,
             struct_fields,
             sealed_structs,
+            array_equality_structs: structural_array_equality_structs(program),
             array_equality_types: HashMap::new(),
             depth: 0,
             // REQ-2: lowercase-variant casing diagnostics from the pre-pass seed
@@ -1435,7 +1496,8 @@ impl Validator {
                 self.array_equality_operand_type(right),
             ) {
                 (Some(left @ Type::Array { elem, .. }), Some(right @ Type::Array { .. })) => {
-                    matches!(elem.as_ref(), Type::Prim(_)) && left == right
+                    array_equality_type_is_structural(elem, &self.array_equality_structs)
+                        && left == right
                 }
                 _ => false,
             }
@@ -1444,9 +1506,9 @@ impl Validator {
         };
         if !valid {
             self.errors
-                .push(SpecError::ArrayEqualityRequiresPrimitiveArrays {
+                .push(SpecError::ArrayEqualityRequiresStructuralArrays {
                     detail: if args.len() == expected_arity {
-                        "both operands must be named arrays with the same primitive element and capacity"
+                        "both operands must be named arrays with the same structural element type and capacity; sealed, opaque, recursive, enum, reference, and heap-backed elements are not derived"
                             .to_string()
                     } else {
                         format!(

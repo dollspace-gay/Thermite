@@ -69,4 +69,6 @@ pub use s2_recon::{
     from_obligation as s2_recon_from_obligation, QFreeAtom, QFreeFragment, S2Recon, SourceAddress,
 };
 pub use schemes::{SchemeResult, SchemeSig, StepShape};
-pub use validator::{validate, SpecError};
+pub use validator::{
+    array_equality_type_is_structural, structural_array_equality_structs, validate, SpecError,
+};

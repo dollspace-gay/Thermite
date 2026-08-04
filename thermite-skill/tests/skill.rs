@@ -141,6 +141,13 @@ fn surface_construct_coverage() {
         skill.contains("Opacity is NOT affine/linear"),
         "skill must not overclaim opaque state as affine ownership"
     );
+    assert!(
+        skill.contains("plain aggregate arrays")
+            && skill.contains("`.array_eq`")
+            && skill.contains("`.array_same_except`")
+            && skill.contains("opaque, recursive, enum"),
+        "skill must describe the admitted aggregate-array relation closure and its authority barrier"
+    );
 }
 
 /// The Stage-1 forge-tier section (skill v2; umbrella `.design/thermite2-program.md`

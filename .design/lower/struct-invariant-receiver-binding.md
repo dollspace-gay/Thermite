@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: 0b5b8b68c729a949ffa7411899c332fe991d3036c89f73455b8994a3341b1420
+audited-content-sha256: de9828183053d3fb6320f58ceafee2aa01954b8512ed1c3c399294158ef3ed6c (re-pinned 2026-08-04 after additive aggregate-array lowering; invariant receiver binding remains regression-covered)
 decision: qualify invariant field paths in the canonical invariant lowerer
 issue: github:dollspace-gay/Thermite#110
 governs:

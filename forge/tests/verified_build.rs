@@ -391,6 +391,123 @@ fn fixed_array_logic_is_compiled_and_bound_by_all_strict_l3_gates() {
 }
 
 #[test]
+fn aggregate_array_relations_are_exported_replayed_and_tamper_evident() {
+    let temp = TempDir::new("aggregate-array-relations");
+    let bundle = temp.0.join("aggregate-array-relations.verified");
+    let bundle_s = bundle.to_string_lossy().to_string();
+    assert_success(&forge(&[
+        "build",
+        "conformance/verified-build/aggregate_array_relations.th",
+        "--level",
+        "l3",
+        "--export",
+        "aggregate_array_equal",
+        "--crate-name",
+        "aggregate_array_relations",
+        "--out",
+        &bundle_s,
+        "--json",
+    ]));
+    assert_success(&forge(&["verify-build", &bundle_s, "--replay", "--json"]));
+
+    let source = fs::read_to_string(bundle.join("evidence/source.verus.rs")).unwrap();
+    assert!(
+        source.contains("fn __thermite_element_eq_Struct_Stamp"),
+        "{source}"
+    );
+    assert!(
+        source.contains("fn __thermite_element_eq_Struct_Slot"),
+        "{source}"
+    );
+    assert!(
+        source.contains("__thermite_FixedArrayEq for [Slot; N]"),
+        "{source}"
+    );
+    assert!(source.contains("(left.owner) == (right.owner)"), "{source}");
+
+    let consumer_source = temp.0.join("aggregate-array-consumer.rs");
+    fs::write(
+        &consumer_source,
+        r#"
+use aggregate_array_relations::{aggregate_array_equal, Slot, Stamp};
+
+fn slot(owner: usize) -> Slot {
+    Slot { stamp: Stamp { words: [3, 5], flags: (true, 7) }, owner }
+}
+
+fn main() {
+    let left: [Slot; 4] = std::array::from_fn(slot);
+    let right: [Slot; 4] = std::array::from_fn(slot);
+    assert!(aggregate_array_equal(left, right));
+}
+"#,
+    )
+    .unwrap();
+    let consumer = temp.0.join("aggregate-array-consumer");
+    let link = codegen_rustc(&bundle)
+        .current_dir(root())
+        .arg("--edition=2021")
+        .arg(&consumer_source)
+        .arg("--extern")
+        .arg(format!(
+            "aggregate_array_relations={}",
+            bundle
+                .join("artifact/libaggregate_array_relations.rlib")
+                .display()
+        ))
+        .arg("-L")
+        .arg(format!(
+            "dependency={}",
+            bundle.join("artifact/deps").display()
+        ))
+        .args(["-C", "panic=abort"])
+        .arg("-o")
+        .arg(&consumer)
+        .output()
+        .unwrap();
+    assert_success(&link);
+    assert_success(&Command::new(&consumer).output().unwrap());
+
+    let receipt: serde_json::Value =
+        serde_json::from_slice(&fs::read(bundle.join("receipt.json")).unwrap()).unwrap();
+    assert_eq!(
+        receipt["binding"]["exports"][0]["parameter_types"],
+        serde_json::json!(["[Slot;SLOTS]", "[Slot;SLOTS]"])
+    );
+    let tv: serde_json::Value = serde_json::from_slice(
+        &fs::read(bundle.join("evidence/translation-validation.json")).unwrap(),
+    )
+    .unwrap();
+    let rows = tv["rows"].as_array().unwrap();
+    assert_eq!(
+        rows.len(),
+        4,
+        "contract, exec, and body rows are mandatory: {tv}"
+    );
+    assert!(
+        rows.iter().all(|row| row["verdict"] == "faithful"),
+        "every aggregate relation row must be faithful: {tv}"
+    );
+
+    let tampered = temp.0.join("aggregate-array-relations-tampered.verified");
+    copy_tree(&bundle, &tampered);
+    let input = tampered.join("evidence/input.th");
+    let original = fs::read_to_string(&input).unwrap();
+    let changed = original.replacen("owner: usize", "owner: u64", 1);
+    assert_ne!(
+        changed, original,
+        "tamper fixture must alter the bound record field"
+    );
+    fs::write(&input, changed).unwrap();
+    assert!(
+        !forge(&["verify-build", tampered.to_string_lossy().as_ref()])
+            .status
+            .success(),
+        "changing the bound aggregate representation must invalidate the receipt"
+    );
+}
+
+#[test]
 fn aggregate_mutable_storage_is_exported_replayed_and_exactly_validated() {
     let temp = TempDir::new("aggregate-storage");
     let bundle = temp.0.join("aggregate-storage.verified");

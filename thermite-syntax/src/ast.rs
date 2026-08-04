@@ -404,12 +404,20 @@ pub struct Falsify {
 /// only way to obtain one is through its `#[boundary]` door's return value (the
 /// door body is foreign/`external_body`, with no in-language `StructLit`). It is
 /// `false` for an ordinary struct (the parser sets it `true` only on `#[sealed]`).
+///
+/// `opaque` carries the `#[opaque]` package-construction barrier used by
+/// reusable state libraries. Unlike `sealed`, the defining Thermite module may
+/// construct the value; other package modules may only obtain it through that
+/// module's verified functions. Lowering also prevents external Rust field
+/// construction. A plain struct has both flags false, and the parser cannot
+/// produce both flags true.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StructItem {
     pub name: Ident,
     pub fields: Vec<FieldDef>,
     pub inv: Option<Clause>,
     pub sealed: bool,
+    pub opaque: bool,
     pub span: Span,
 }
 

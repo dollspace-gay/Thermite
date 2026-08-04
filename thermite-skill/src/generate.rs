@@ -1006,6 +1006,7 @@ fn item_inventory() -> Vec<Item> {
             fields: Vec::new(),
             inv: None,
             sealed: false,
+            opaque: false,
             span,
         }),
         Item::Enum(EnumItem {
@@ -1235,8 +1236,12 @@ fn render_grammar() -> String {
 ## 1. Surface grammar
 
 Every `fn` is contract-first, body-second. v0.1 has four top-level item forms —
-`fn`, `spec fn`, `struct`, `enum` (plus the `#[slag(...)]` / `#[boundary]`
-attributes) — and no others (no `impl`/`trait`/`use`/`mod`/macros).
+`fn`, `spec fn`, `struct`, `enum`, plus function attributes and the `#[sealed]` /
+`#[opaque]` struct attributes (no `impl`/`trait`/`use`/`mod`/macros).
+
+`#[sealed] struct` is boundary-only. `#[opaque] struct` is library state: only its
+declaring package module constructs it; foreign modules call verified functions
+and external safe Rust cannot access its fields. Opacity is NOT affine/linear.
 
 A `fn` signature is followed by mandatory clauses in this exact order (absence of any
 is a parse error, never an implicit default):
@@ -1366,19 +1371,14 @@ behind the language.
 `Eq`/`Ord`/`Hash`/`Iter`/`Display`), macros, `unsafe` (→ `#[slag]`), UFCS, implicit
 widening (casts explicit; overflow is a proof obligation).
 
-Kernel packages use receipt-bound `*.thpkg.json` manifests. Fixed arrays expose
-`.array_eq(other)` and `.array_same_except(other,index)`. Packed `u64` operations
-are `.bit_test(i)`, `.bit_set(i)`, and `.bit_clear(i)`; `i >= 64` observes false
-or leaves the word unchanged. Distinct in-range indices use
-`.bit_set_preserves_other(changed,observed)` or
-`.bit_clear_preserves_other(changed,observed)`. All bridge to L3 contracts.
-`atomics.thpkg.json` supplies sealed bool/u32/u64/usize atomics, order/history
-models, and literal-order legality; `ownership.thpkg.json` supplies generation
-mechanics; `collections.thpkg.json` supplies packed-bitmap/vector/FIFO/direct-map;
-`synchronization.thpkg.json` supplies wait/ticket/barrier/epoch-ack/once/refcount/
-seqlock/MPSC/work-deque mechanics plus frozen pause/block/halt declarations. No
-package supplies a kernel or machine body. Consumers directly refine boundaries; registry v1 accepts only
-sequential safe-Rust. Opacity, aggregate TV, and machine refinement remain.
+Kernel manifests are receipt-bound `*.thpkg.json`. Arrays provide `.array_eq` /
+`.array_same_except`; packed `u64` provides `.bit_{test,set,clear}` (out-of-range
+is false/no-op) and distinct-bit preservation methods, all bridged to L3.
+Primitive manifests provide atomics/order/history, generation ownership,
+bitmap/vector/FIFO/direct-map collections, synchronization state machines, and
+frozen wait declarations. None provide a kernel or machine body. Consumers
+refine boundaries; registry v1 covers sequential safe Rust only. Affinity,
+aggregate TV, and machine refinement remain.
 
 ",
     );

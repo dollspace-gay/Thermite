@@ -4,7 +4,7 @@
 tier: 3-component
 status: draft
 audited-sha: 92396428567edc6940a9e2845217f5ff4c2ea3c6 (re-pinned 2026-06-16, user-authorized: the only change to this doc's governed files since the prior pin is the additive stage-1 forge-tier increment 2a — the new Item::Forge surface + inert Item::Forge match arms, verified net-additive with no substantive removal of existing v1 logic (git log <main>..HEAD = the 8 forge commits); the v1 behavior this doc governs is unchanged, and the new forge-tier surface is specified in .design/stage1-forge-tier.md / REQ-S1-3)
-audited-content-sha256: 96997867d6be97100d897f1b7c9fc52c328f6fbb88d3881a63552294bf439d35 (re-pinned 2026-08-04 after documenting distinct-bit and epoch-acknowledgement authoring)
+audited-content-sha256: ed1da9aef676c54d562bc7aa73b16341d5bc27c3f6c8c3dcc193bcf63f71d4a0 (re-pinned 2026-08-04 after documenting opaque library-state authoring)
 governs: thermite-skill/src/generate.rs
 thesis-refs:
   - thermite-design.md §2.2
@@ -166,8 +166,16 @@ SkillEntry` impl or a `static SKILL: &[…]` table. Rationale:
   — a shared/exclusive reference"), so the rendered text is a deterministic
   function of the variant set, not of any particular value's payload (R-CODE-5,
   AC-6). `BinOp` and `PrimType` (the leaf operator/primitive enums) are likewise
-  rendered by exhaustive `match` so a new operator/primitive also compile-forces
-  a skill entry.
+rendered by exhaustive `match` so a new operator/primitive also compile-forces
+a skill entry.
+
+**Struct-barrier prose.** `sealed` and `opaque` are boolean attributes on the
+existing `StructItem` variant rather than new `Item` variants, so enum
+exhaustiveness cannot describe their semantic difference. The curated grammar
+framing must therefore state it directly and remains freshness-tested as REQ-11:
+sealed values are boundary-only, opaque values are constructible only by their
+declaring package module, and opacity is not an affine/linear claim. The
+normative behavior is `.design/build/opaque-library-state.md`.
 
 **The Forge command list.** `thermite-skill` owns a small public
 `ForgeMethod` enum plus one metadata record per variant (verb, synopsis, and

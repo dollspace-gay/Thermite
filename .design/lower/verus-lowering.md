@@ -3,7 +3,7 @@
 tier: 3-component
 status: draft
 audited-sha: 92396428567edc6940a9e2845217f5ff4c2ea3c6 (re-pinned 2026-06-16, user-authorized: the only change to this doc's governed files since the prior pin is the additive stage-1 forge-tier increment 2a — the new Item::Forge surface + inert Item::Forge match arms, verified net-additive with no substantive removal of existing v1 logic (git log <main>..HEAD = the 8 forge commits); the v1 behavior this doc governs is unchanged, and the new forge-tier surface is specified in .design/stage1-forge-tier.md / REQ-S1-3)
-audited-content-sha256: 8073dd9e57cc8f13a05a1c2a9319bfbb8bad965767fdf608e1e34008e90bc29b (re-pinned 2026-08-04 after the distinct-bit L3 bridge; existing lowering behavior remains regression-covered)
+audited-content-sha256: 3d97636964e557866a436068cd44bde4d70ca37ed1045c1d54e5d0f648897f57 (re-pinned 2026-08-04 after opaque-state L3 visibility and abstract-spec lowering; existing lowering behavior remains regression-covered)
 governs: thermite-lower/src/lower.rs
 thesis-refs:
   - thermite-design.md §3
@@ -50,6 +50,15 @@ creating a cross-crate Rust ABI. Hosted collection lowering remains vstd-backed.
 The `--no-vstd` kernel profile emits only the allocation-free bounded-length
 `Vec<T>` representation described in `.design/build/l3-rich-composition.md`;
 unsupported element operations stay absent and fail closed.
+
+`#[opaque]` library state adds a third, representation-aware visibility rule.
+The type remains public, its fields lower as `pub(crate)`, and specification
+functions whose signature/body transitively reaches that representation lower
+as `pub closed spec fn`. This lets public contracts name an abstract observer
+while external safe Rust cannot construct or unfold the state. Unrelated specs
+remain `pub open`; L1's already-private aggregate representation is unchanged.
+The complete semantics and Verus grounding are in
+`.design/build/opaque-library-state.md`.
 
 ## Requirements
 

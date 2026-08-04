@@ -331,6 +331,12 @@ design = ".design/skill/skill-generator.md"
 reference = []
 conformance_ops = []
 
+[[route]]
+crate_pattern = "thermite-skill/tests/skill.rs"
+design = ".design/skill/skill-generator.md"
+reference = []
+conformance_ops = ["skill-freshness", "opaque-authoring-guidance"]
+
 # ---------------------------------------------------------------------
 # v0.2 — L2 Kani bounded checking (issue #9)
 #   l2.rs lowers a Thermite fn to a Kani proof harness; forge/kani.rs runs the
@@ -1644,6 +1650,57 @@ crate_pattern = "forge/tests/ownership_primitives.rs"
 design = ".design/build/generation-ownership.md"
 reference = ["stdlib/kernel-primitives/ownership.thpkg.json"]
 conformance_ops = ["generation-l3", "generation-adversarial", "generation-strict-replay"]
+
+# Reusable module-local construction opacity. These routes are additive to the
+# syntax/lowering/package/ownership designs because this cross-cutting primitive
+# composes all four layers and carries its own aggregate drift pin.
+[[route]]
+crate_pattern = "thermite-syntax/src/ast.rs"
+design = ".design/build/opaque-library-state.md"
+reference = []
+conformance_ops = ["opaque-ast"]
+
+[[route]]
+crate_pattern = "thermite-syntax/src/parser.rs"
+design = ".design/build/opaque-library-state.md"
+reference = []
+conformance_ops = ["opaque-parse"]
+
+[[route]]
+crate_pattern = "thermite-syntax/tests/opaque_parse.rs"
+design = ".design/build/opaque-library-state.md"
+reference = []
+conformance_ops = ["opaque-parse-negative"]
+
+[[route]]
+crate_pattern = "thermite-lower/src/lower.rs"
+design = ".design/build/opaque-library-state.md"
+reference = []
+conformance_ops = ["opaque-l3-visibility"]
+
+[[route]]
+crate_pattern = "thermite-lower/tests/opaque_state.rs"
+design = ".design/build/opaque-library-state.md"
+reference = []
+conformance_ops = ["opaque-verus", "opaque-rust-visibility"]
+
+[[route]]
+crate_pattern = "forge/src/verified_build.rs"
+design = ".design/build/opaque-library-state.md"
+reference = []
+conformance_ops = ["opaque-package-gate"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/ownership/generation.th"
+design = ".design/build/opaque-library-state.md"
+reference = ["stdlib/kernel-primitives/ownership.thpkg.json"]
+conformance_ops = ["opaque-generation-state"]
+
+[[route]]
+crate_pattern = "forge/tests/ownership_primitives.rs"
+design = ".design/build/opaque-library-state.md"
+reference = ["stdlib/kernel-primitives/ownership.thpkg.json"]
+conformance_ops = ["opaque-generation-adversarial", "opaque-receipt-tamper"]
 
 [[route]]
 crate_pattern = ".github/workflows/ci.yml"

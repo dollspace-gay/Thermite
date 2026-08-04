@@ -366,9 +366,9 @@ type PResult<T> = Result<T, SyntaxError>;
 /// `#[sealed]` abstraction-barrier marker on a `struct`
 /// (`.design/basis/06-provenance-and-sinks.md` REQ-8). `parse_attribute`
 /// produces this; `parse_item` routes `Slag`/`Boundary` onto a `FnItem` and
-/// `Sealed` onto a `StructItem`. A module-private dispatch type: the AST carries
-/// the fn attributes as separate `Option`s and the struct seal as a `bool`, not
-/// this union.
+/// `Sealed`/`Opaque` onto a `StructItem`. A module-private dispatch type: the AST
+/// carries the fn attributes as separate `Option`s and the struct barriers as
+/// booleans, not this union.
 enum ParsedAttr {
     Slag(SlagAttr),
     Boundary(BoundaryAttr),
@@ -376,6 +376,9 @@ enum ParsedAttr {
     /// `StructItem.sealed`; the struct's own `span` covers the attribute, so the
     /// marker needs no payload.
     Sealed,
+    /// `#[opaque]` on a `struct`: package construction is restricted to the
+    /// module that declares the type.
+    Opaque,
 }
 
 struct Parser<'a> {
@@ -665,21 +668,22 @@ impl<'a> Parser<'a> {
             return self.parse_const(start_span);
         }
 
-        // A `struct` item (`.design/basis/01-adts.md` REQ-1) accepts the
-        // `#[sealed]` abstraction-barrier attribute (REQ-8) and no other; an
-        // `enum` (REQ-2) carries no attribute (only `fn`/sealed-`struct` do).
+        // A `struct` item (`.design/basis/01-adts.md` REQ-1) accepts either the
+        // `#[sealed]` door-only barrier or the `#[opaque]` module-construction
+        // barrier. An `enum` carries neither.
         if self.check(&TokKind::Struct) {
-            let sealed = match &attr {
-                Some(ParsedAttr::Sealed) => true,
+            let (sealed, opaque) = match &attr {
+                Some(ParsedAttr::Sealed) => (true, false),
+                Some(ParsedAttr::Opaque) => (false, true),
                 Some(ParsedAttr::Slag(_)) => {
                     return Err(self.unexpected("`fn` after `#[slag(...)]`"));
                 }
                 Some(ParsedAttr::Boundary(_)) => {
                     return Err(self.unexpected("`fn` after `#[boundary(\"...\")]`"));
                 }
-                None => false,
+                None => (false, false),
             };
-            return self.parse_struct(start_span, sealed);
+            return self.parse_struct(start_span, sealed, opaque);
         }
         if self.check(&TokKind::Enum) {
             match &attr {
@@ -693,6 +697,9 @@ impl<'a> Parser<'a> {
                 // (REQ-8); it does not attach to an `enum`.
                 Some(ParsedAttr::Sealed) => {
                     return Err(self.unexpected("`struct` after `#[sealed]`"));
+                }
+                Some(ParsedAttr::Opaque) => {
+                    return Err(self.unexpected("`struct` after `#[opaque]`"));
                 }
                 None => {}
             }
@@ -743,6 +750,9 @@ impl<'a> Parser<'a> {
                 Some(ParsedAttr::Sealed) => {
                     return Err(self.unexpected("`struct` after `#[sealed]`"));
                 }
+                Some(ParsedAttr::Opaque) => {
+                    return Err(self.unexpected("`struct` after `#[opaque]`"));
+                }
                 None => {}
             }
             self.parse_spec_fn(start_span)
@@ -755,12 +765,15 @@ impl<'a> Parser<'a> {
                 Some(ParsedAttr::Sealed) => {
                     return Err(self.unexpected("`struct` after `#[sealed]`"));
                 }
+                Some(ParsedAttr::Opaque) => {
+                    return Err(self.unexpected("`struct` after `#[opaque]`"));
+                }
                 None => (None, None),
             };
             self.parse_fn(slag, boundary, start_span)
         } else {
             Err(self.unexpected(
-                "`fn`, `spec fn`, `#[slag(...)]`, `#[boundary(\"...\")]`, or `#[sealed] struct`",
+                "`fn`, `spec fn`, `#[slag(...)]`, `#[boundary(\"...\")]`, `#[sealed] struct`, or `#[opaque] struct`",
             ))
         }
     }
@@ -798,7 +811,7 @@ impl<'a> Parser<'a> {
     fn parse_attribute(&mut self) -> PResult<ParsedAttr> {
         let start = self.peek_span();
         self.consume(&TokKind::HashBracket, "`#[`")?;
-        let name = self.take_ident("`slag` or `boundary`")?;
+        let name = self.take_ident("`slag`, `boundary`, `sealed`, or `opaque`")?;
         match name.as_str() {
             "slag" => Ok(ParsedAttr::Slag(self.parse_slag_body(start)?)),
             "boundary" => Ok(ParsedAttr::Boundary(self.parse_boundary_body(start)?)),
@@ -809,8 +822,12 @@ impl<'a> Parser<'a> {
                 self.consume(&TokKind::RBracket, "`]`")?;
                 Ok(ParsedAttr::Sealed)
             }
+            "opaque" => {
+                self.consume(&TokKind::RBracket, "`]`")?;
+                Ok(ParsedAttr::Opaque)
+            }
             _ => Err(SyntaxError::Unexpected {
-                expected: "`slag`, `boundary`, or `sealed`".to_string(),
+                expected: "`slag`, `boundary`, `sealed`, or `opaque`".to_string(),
                 found: format!("identifier `{name}`"),
                 span: start,
             }),
@@ -1007,16 +1024,10 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    /// Parse a `[#[sealed]] struct NAME { field: type, … } [inv <expr>]` item
-    /// (`.design/basis/01-adts.md` REQ-1; the seal is
-    /// `.design/basis/06-provenance-and-sinks.md` REQ-8). The optional `inv`
-    /// type-invariant clause follows the closing brace and reuses the existing
-    /// `Clause` (verbatim text + parsed expr). `sealed` is the `#[sealed]`
-    /// abstraction-barrier flag the caller already parsed from the leading
-    /// attribute (REQ-8). The validator rules (field well-formedness; the
-    /// sealed-construction reject) are stage 1b / Stage 6; here we only parse the
-    /// surface into the right AST.
-    fn parse_struct(&mut self, start_span: Span, sealed: bool) -> PResult<Item> {
+    /// Parse a `[#[sealed]|#[opaque]] struct NAME { field: type, … } [inv <expr>]`
+    /// item. The caller has already reduced the optional attribute to the two
+    /// mutually exclusive barrier flags.
+    fn parse_struct(&mut self, start_span: Span, sealed: bool, opaque: bool) -> PResult<Item> {
         self.consume(&TokKind::Struct, "`struct`")?;
         let name = self.take_ident("a struct name")?;
         let fields = self.parse_field_defs()?;
@@ -1033,6 +1044,7 @@ impl<'a> Parser<'a> {
             fields,
             inv,
             sealed,
+            opaque,
             span,
         }))
     }

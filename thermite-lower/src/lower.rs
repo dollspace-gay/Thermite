@@ -184,7 +184,7 @@
 //! | REQ-LOWER-ERGONOMICS-OR-PATTERN | shipped | `thermite-lower/src/lower.rs` | Or-pattern lowering |  |
 //! <!-- /generated:reqs -->
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
 use thermite_syntax::ast::{
@@ -1049,6 +1049,18 @@ fn lower_with_profile(
         })
         .collect();
 
+    // `#[opaque]` is an opt-in library-state construction barrier. The package
+    // gate prevents foreign Thermite modules from spelling its literal; the L3
+    // emitter independently prevents an external Rust crate from doing so by
+    // narrowing the generated fields to crate visibility. Verus consequently
+    // cannot expose a predicate that unfolds through those fields as `pub open`.
+    // Compute the transitive type closure and the spec functions whose bodies
+    // reach it, so those predicates become public-but-closed: usable in an
+    // exported abstract contract, unfoldable by this defining module, and not an
+    // external field-forging seam.
+    let opaque_types = opaque_type_closure(program);
+    let opaque_spec_fns = opaque_spec_fn_closure(program, &opaque_types);
+
     // Basis Stage 7 (`.design/basis/07-strings.md` REQ-4): the program-wide set of
     // field names whose declared type reaches `String` — the editor core's `Buf {
     // text: String, .. }`. A contract reading `b.text.len()` / `result.text.len()`
@@ -1148,6 +1160,7 @@ fn lower_with_profile(
                 &variants,
                 &user_string_spec_fns,
                 &spec_fn_param_types,
+                opaque_spec_fns.contains(s.name.as_str()),
                 program,
             )?,
             Item::Fn(f) if f.boundary.is_some() || f.slag.is_some() => {
@@ -1203,7 +1216,11 @@ fn lower_with_profile(
             // `struct` lowers to a Verus `pub struct` + the `well_formed`
             // type-invariant predicate (REQ-8); a (recursive) `enum` lowers to a
             // Verus `enum` with `Box<T>` at the recursive occurrence (REQ-10).
-            Item::Struct(s) => lower_struct(s, &spec_fn_param_types)?,
+            Item::Struct(s) => lower_struct(
+                s,
+                &spec_fn_param_types,
+                opaque_types.contains(s.name.as_str()),
+            )?,
             Item::Enum(e) if deterministic_composition_enums => lower_composition_enum(e)?,
             Item::Enum(e) => lower_enum(e)?,
             // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 lowering/cert
@@ -1311,6 +1328,229 @@ fn type_needs_kernel_alloc(ty: &Type) -> bool {
     }
 }
 
+/// Names whose representation reaches an explicitly `#[opaque]` struct. The
+/// closure includes wrapper structs/enums so a public-open predicate cannot
+/// accidentally unfold through a nested crate-visible field.
+fn opaque_type_closure(program: &Program) -> BTreeSet<&str> {
+    let mut names: BTreeSet<&str> = program
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Struct(structure) if structure.opaque => Some(structure.name.as_str()),
+            _ => None,
+        })
+        .collect();
+
+    loop {
+        let mut added = Vec::new();
+        for item in &program.items {
+            let (name, reaches) = match item {
+                Item::Struct(structure) => (
+                    structure.name.as_str(),
+                    structure
+                        .fields
+                        .iter()
+                        .any(|field| type_reaches_named_set(&field.ty, &names)),
+                ),
+                Item::Enum(enumeration) => (
+                    enumeration.name.as_str(),
+                    enumeration
+                        .variants
+                        .iter()
+                        .any(|variant| match &variant.shape {
+                            VariantShape::Unit => false,
+                            VariantShape::Tuple(types) => {
+                                types.iter().any(|ty| type_reaches_named_set(ty, &names))
+                            }
+                            VariantShape::Struct(fields) => fields
+                                .iter()
+                                .any(|field| type_reaches_named_set(&field.ty, &names)),
+                        }),
+                ),
+                _ => continue,
+            };
+            if reaches && !names.contains(name) {
+                added.push(name);
+            }
+        }
+        if added.is_empty() {
+            return names;
+        }
+        names.extend(added);
+    }
+}
+
+fn type_reaches_named_set(ty: &Type, names: &BTreeSet<&str>) -> bool {
+    match ty {
+        Type::Named(name) => names.contains(name.as_str()),
+        Type::Array { elem: inner, .. }
+        | Type::Ref { inner, .. }
+        | Type::Slice(inner)
+        | Type::Generic { arg: inner, .. }
+        | Type::Box(inner)
+        | Type::Vec(inner)
+        | Type::Option(inner) => type_reaches_named_set(inner, names),
+        Type::Result(ok, err) | Type::Map(ok, err) => {
+            type_reaches_named_set(ok, names) || type_reaches_named_set(err, names)
+        }
+        Type::Tuple(types) => types
+            .iter()
+            .any(|inner| type_reaches_named_set(inner, names)),
+        Type::Prim(_) | Type::Unit | Type::String => false,
+    }
+}
+
+/// Spec functions that must not publish an unfoldable body containing an
+/// opaque representation. A function joins the closure when its signature
+/// reaches opaque state, it constructs such a value, or it calls another
+/// function already in the closure. The last rule covers scalar observers that
+/// project from an opaque-producing helper.
+fn opaque_spec_fn_closure<'a>(
+    program: &'a Program,
+    opaque_types: &BTreeSet<&str>,
+) -> BTreeSet<&'a str> {
+    let mut names = BTreeSet::new();
+    loop {
+        let mut added = Vec::new();
+        for item in &program.items {
+            let Item::SpecFn(function) = item else {
+                continue;
+            };
+            let name = function.name.as_str();
+            if names.contains(name) {
+                continue;
+            }
+            let signature_reaches = function
+                .params
+                .iter()
+                .any(|parameter| type_reaches_named_set(&parameter.ty, opaque_types))
+                || type_reaches_named_set(&function.ret, opaque_types);
+            if signature_reaches
+                || block_reaches_opaque(&function.body, opaque_types, &names)
+                || expr_reaches_opaque(&function.dec.expr, opaque_types, &names)
+            {
+                added.push(name);
+            }
+        }
+        if added.is_empty() {
+            return names;
+        }
+        names.extend(added);
+    }
+}
+
+fn block_reaches_opaque(
+    block: &Block,
+    opaque_types: &BTreeSet<&str>,
+    opaque_spec_fns: &BTreeSet<&str>,
+) -> bool {
+    block.stmts.iter().any(|statement| match statement {
+        Stmt::Let { init, .. } | Stmt::Expr(init) | Stmt::Return(Some(init)) => {
+            expr_reaches_opaque(init, opaque_types, opaque_spec_fns)
+        }
+        Stmt::Assign { target, value } => {
+            expr_reaches_opaque(target, opaque_types, opaque_spec_fns)
+                || expr_reaches_opaque(value, opaque_types, opaque_spec_fns)
+        }
+        Stmt::Return(None) | Stmt::Break | Stmt::Continue => false,
+        Stmt::If { cond, then, else_ } => {
+            expr_reaches_opaque(cond, opaque_types, opaque_spec_fns)
+                || block_reaches_opaque(then, opaque_types, opaque_spec_fns)
+                || else_.as_ref().is_some_and(|branch| {
+                    block_reaches_opaque(branch, opaque_types, opaque_spec_fns)
+                })
+        }
+        Stmt::Loop(node) => {
+            node.invs
+                .iter()
+                .any(|inv| expr_reaches_opaque(&inv.expr, opaque_types, opaque_spec_fns))
+                || expr_reaches_opaque(&node.dec.expr, opaque_types, opaque_spec_fns)
+                || match &node.kind {
+                    thermite_syntax::LoopKind::While(cond) => {
+                        expr_reaches_opaque(cond, opaque_types, opaque_spec_fns)
+                    }
+                    thermite_syntax::LoopKind::Loop => false,
+                }
+                || block_reaches_opaque(&node.body, opaque_types, opaque_spec_fns)
+        }
+    }) || block
+        .tail
+        .as_ref()
+        .is_some_and(|tail| expr_reaches_opaque(tail, opaque_types, opaque_spec_fns))
+}
+
+fn expr_reaches_opaque(
+    expr: &Expr,
+    opaque_types: &BTreeSet<&str>,
+    opaque_spec_fns: &BTreeSet<&str>,
+) -> bool {
+    let direct = match expr {
+        Expr::StructLit { path, .. } => path
+            .last()
+            .is_some_and(|name| opaque_types.contains(name.as_str())),
+        Expr::Call { callee, .. } => match callee.as_ref() {
+            Expr::Path(path) => path
+                .last()
+                .is_some_and(|name| opaque_spec_fns.contains(name.as_str())),
+            _ => false,
+        },
+        _ => false,
+    };
+    if direct {
+        return true;
+    }
+
+    let mut found = false;
+    let _ = each_subexpr(expr, &mut |inner| {
+        if expr_reaches_opaque(inner, opaque_types, opaque_spec_fns) {
+            found = true;
+        }
+        Ok(())
+    });
+    found
+}
+
+fn block_calls_direct_name(block: &Block, name: &str) -> bool {
+    block.stmts.iter().any(|statement| match statement {
+        Stmt::Let { init, .. } | Stmt::Expr(init) | Stmt::Return(Some(init)) => {
+            expr_calls_direct_name(init, name)
+        }
+        Stmt::Assign { target, value } => {
+            expr_calls_direct_name(target, name) || expr_calls_direct_name(value, name)
+        }
+        Stmt::Return(None) | Stmt::Break | Stmt::Continue => false,
+        Stmt::If { cond, then, else_ } => {
+            expr_calls_direct_name(cond, name)
+                || block_calls_direct_name(then, name)
+                || else_
+                    .as_ref()
+                    .is_some_and(|branch| block_calls_direct_name(branch, name))
+        }
+        Stmt::Loop(node) => block_calls_direct_name(&node.body, name),
+    }) || block
+        .tail
+        .as_ref()
+        .is_some_and(|tail| expr_calls_direct_name(tail, name))
+}
+
+fn expr_calls_direct_name(expr: &Expr, name: &str) -> bool {
+    if matches!(
+        expr,
+        Expr::Call { callee, .. }
+            if matches!(callee.as_ref(), Expr::Path(path) if path.last().is_some_and(|segment| segment == name))
+    ) {
+        return true;
+    }
+    let mut found = false;
+    let _ = each_subexpr(expr, &mut |inner| {
+        if expr_calls_direct_name(inner, name) {
+            found = true;
+        }
+        Ok(())
+    });
+    found
+}
+
 // ---------------------------------------------------------------------------
 // REQ-8/REQ-9/REQ-10: ADT item lowering (struct, enum, recursive enum).
 // ---------------------------------------------------------------------------
@@ -1326,21 +1566,25 @@ fn type_needs_kernel_alloc(ty: &Type) -> bool {
 /// }
 /// ```
 ///
-/// Visibility tier (the recorded finding, REQ-8): a `pub open spec fn` body may
-/// refer only to `pub` items, so the struct, its fields, and the predicate are
-/// all emitted `pub` — otherwise verus rejects with `field expression for a
-/// non-visible datatype`. The `inv` expression is lowered with bare field-name
-/// paths rewritten to `self.<field>` (the predicate's receiver), the
-/// data-invariant the corpus `inv balance <= 1_000_000` denotes.
+/// Visibility tier (the recorded finding, REQ-8): an ordinary struct and its
+/// open invariant remain public. An explicitly opaque struct instead has
+/// crate-visible fields, and every invariant whose representation transitively
+/// reaches it is public-but-closed. This is the Verus-valid abstract surface
+/// specified by `.design/build/opaque-library-state.md`. The `inv` expression
+/// is lowered with bare field-name paths rewritten to `self.<field>` (the
+/// predicate's receiver), the data-invariant the corpus
+/// `inv balance <= 1_000_000` denotes.
 fn lower_struct(
     s: &thermite_syntax::ast::StructItem,
     spec_fn_param_types: &[(&str, &[PrimType])],
+    representation_reaches_opaque: bool,
 ) -> Result<String, LowerError> {
     let mut out = String::new();
     writeln!(out, "pub struct {} {{", s.name).ok();
     for field in &s.fields {
         let ty = lower_type(&field.ty)?;
-        writeln!(out, "    pub {}: {ty},", field.name).ok();
+        let visibility = if s.opaque { "pub(crate) " } else { "pub " };
+        writeln!(out, "    {visibility}{}: {ty},", field.name).ok();
     }
     out.push_str("}\n");
 
@@ -1375,7 +1619,11 @@ fn lower_struct(
             )?
         };
         writeln!(out, "\nimpl {} {{", s.name).ok();
-        out.push_str("    pub open spec fn well_formed(&self) -> bool {\n");
+        if representation_reaches_opaque {
+            out.push_str("    pub closed spec fn well_formed(&self) -> bool {\n");
+        } else {
+            out.push_str("    pub open spec fn well_formed(&self) -> bool {\n");
+        }
         writeln!(out, "        {body}").ok();
         out.push_str("    }\n}\n");
     }
@@ -2814,6 +3062,7 @@ fn lower_spec_fn(
     variants: &[(&str, &str)],
     user_string_spec_fns: &[&str],
     spec_fn_param_types: &[(&str, &[PrimType])],
+    reaches_opaque: bool,
     program: &Program,
 ) -> Result<String, LowerError> {
     // Basis Stage 2 (`.design/basis/02-recursion-schemes.md` REQ-6): the
@@ -2827,7 +3076,8 @@ fn lower_spec_fn(
     // (`nat` for `fold`, `bool` for `for_all`/`exists`/`traverse`, the ADT for
     // `map`); else the existing head/ADT-fold-sum or declared-type lowering.
     let ret = lower_spec_fn_ret_with_schemes(&s.ret, &s.body, &scheme_bindings);
-    // Visibility tier (#230, the #232 layer's twin): emit `pub open spec fn`,
+    // Visibility tier (#230, the #232 layer's twin): ordinarily emit `pub open
+    // spec fn`,
     // not a bare `spec fn`. A struct's `well_formed` predicate is a `pub open
     // spec fn` (REQ-8 grounding finding), and a `pub open` body may refer only
     // to `pub` items, so a `well_formed` naming a user `spec fn` over a
@@ -2836,8 +3086,17 @@ fn lower_spec_fn(
     // (hand-verus-confirmed: the `pub open` Counter form is `1 verified, 0
     // errors`). `pub open` only widens visibility and exposes the (already-pure,
     // contract-free) body for definitional unfolding, which every existing
-    // caller already relied on. No golden meaning change, a pure prefix add.
-    write!(out, "pub open spec fn {}(", s.name).ok();
+    // caller already relied on. An opaque-state predicate is the deliberate
+    // exception: its generated body reaches crate-visible representation fields,
+    // so publishing that body as `open` is both rejected by Verus and would
+    // defeat the abstraction boundary. `pub closed` preserves a callable
+    // abstract contract for external clients while the defining generated
+    // module can unfold it to prove the Thermite implementation.
+    if reaches_opaque {
+        write!(out, "pub closed spec fn {}(", s.name).ok();
+    } else {
+        write!(out, "pub open spec fn {}(", s.name).ok();
+    }
     emit_params(&mut out, &s.params, Pos::Spec)?;
 
     // The dec nuance (`.design/basis/02-recursion-schemes.md` step-lowering
@@ -2845,9 +3104,13 @@ fn lower_spec_fn(
     // non-recursive. The recursion lives in the generated `fold_<e>`, which
     // carries its own `decreases l`. The surface instance still parses with a
     // mandatory `dec l`, but emitting `decreases l` on this non-recursive body is
-    // spurious, so we suppress it for a scheme-call body. (A hand-written recursive
-    // `spec fn`, the `is_adt_fold_sum`/head-fold path, keeps its `decreases`.)
-    if is_scheme_call_body(&s.body, &scheme_bindings) {
+    // spurious, so we suppress it for a scheme-call body. A nonrecursive opaque
+    // observer has the same property, with the additional requirement that a
+    // public signature cannot expose a crate-visible field as its decreases
+    // expression. A hand-written recursive spec fn keeps its `decreases`.
+    if is_scheme_call_body(&s.body, &scheme_bindings)
+        || (reaches_opaque && !block_calls_direct_name(&s.body, &s.name))
+    {
         writeln!(out, ") -> {ret}").ok();
     } else {
         write!(

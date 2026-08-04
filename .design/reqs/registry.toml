@@ -17442,7 +17442,7 @@ status = "partial"
 scope = "forge"
 summary = "A canonical package manifest resolves explicit module roots and binds the complete transitive source closure into validation and replay."
 remaining_scope = "Independent parsing, module-local identity, direct-import/root-export enforcement, rooted graph validation, source allowlisting, L3 build/composition, complete receipt binding, validation, and replay are shipped. Extend the remaining source-oriented Forge commands (check, audit, TV, goal/edit/fill) to operate on packages without losing module-local diagnostics."
-contributors = [".design/build/l3-rich-composition.md", "thermite-syntax/src/package.rs", "forge/src/thermite_package.rs", "forge/src/verified_build.rs", "forge/src/verified_build/composition.rs"]
+contributors = [".design/build/l3-rich-composition.md", ".design/build/opaque-library-state.md", "thermite-syntax/src/package.rs", "forge/src/thermite_package.rs", "forge/src/verified_build.rs", "forge/src/verified_build/composition.rs"]
 generated_to = ["status", "forge-kernel-primitives-status"]
 
 [[requirement.evidence]]
@@ -17472,6 +17472,11 @@ note = "Rejects public exports declared outside manifest root modules for both o
 
 [[requirement.evidence]]
 kind = "test"
+target = "forge::verified_build::tests::package_opaque_construction_is_limited_to_the_defining_module"
+note = "Rejects opaque struct literals in a foreign module while accepting a call through the declaring module's verified constructor."
+
+[[requirement.evidence]]
+kind = "test"
 target = "forge/tests/verified_build.rs::package_build_binds_and_replays_the_complete_source_identified_closure"
 note = "Builds a real cross-module freestanding rlib, records module-local origins, replays it, and rejects manifest/source-map/module tampering."
 
@@ -17482,8 +17487,8 @@ owner = ".design/build/kernel-primitives.md"
 status = "partial"
 scope = "spec"
 summary = "Sealed types cannot be forged in Thermite and support verified consumption or generation transitions for platform authority."
-remaining_scope = "The sealed-construction barrier plus a receipt-bound 64-slot generation ledger now prove acquisition/renewal/release, stale-handle-after-reuse rejection, double-release rejection, monotonic rights, L3 move/clone refusal, and a strict replayed scalar surface. Add module-private/opaque ledger construction or a complete affine rule, named-aggregate/ADT body TV for strict lifecycle replay, exact authority-mint refinement, and atomic-slot integration."
-contributors = [".design/basis/06-provenance-and-sinks.md", ".design/build/generation-ownership.md"]
+remaining_scope = "The sealed-construction barrier plus an opaque receipt-bound 64-slot generation ledger now prove acquisition/renewal/release, stale-handle-after-reuse rejection, double-release rejection, monotonic rights, L3 move/clone refusal, foreign-module construction rejection, and a strict replayed scalar surface. Add a complete affine rule if stronger uniqueness is required, named-aggregate/ADT body TV for strict lifecycle replay, exact authority-mint refinement, and atomic-slot integration."
+contributors = [".design/basis/06-provenance-and-sinks.md", ".design/build/opaque-library-state.md", ".design/build/generation-ownership.md"]
 generated_to = ["status", "forge-kernel-primitives-status"]
 
 [[requirement.evidence]]
@@ -17504,7 +17509,12 @@ note = "Sealed authority, fixed ledger, acquire/renew/release transitions, expli
 [[requirement.evidence]]
 kind = "test"
 target = "forge/tests/ownership_primitives.rs"
-note = "Requires every in-language ownership item at L3, rejects ledger move/clone duplication, strictly builds and replays the freestanding rights surface, and checks faithful receipt-bound TV."
+note = "Requires every in-language ownership item at L3, rejects ledger move/clone duplication and foreign opaque-handle construction, strictly builds and replays the freestanding rights surface, checks faithful receipt-bound TV, and rejects opaque-attribute receipt tampering."
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/opaque_state.rs"
+note = "Pins crate-private generated fields, transitive public-closed specifications, unchanged plain visibility, and a real Verus proof of exported opaque construction/observation."
 
 [[requirement]]
 id = "REQ-KPRIM-5"

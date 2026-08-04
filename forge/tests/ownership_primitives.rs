@@ -145,6 +145,96 @@ fn generation_clone_ledger_rejected(ledger: GenerationLedger) -> bool
         assert_ne!(row["level"], "L3", "`{name}` duplicated authority: {row}");
     }
 
+    let opaque_package = temp.0.join("opaque-package");
+    fs::create_dir(&opaque_package).unwrap();
+    fs::write(
+        opaque_package.join("generation.th"),
+        fs::read_to_string(root().join(source)).unwrap(),
+    )
+    .unwrap();
+    fs::write(
+        opaque_package.join("api.th"),
+        r#"fn forge_generation_handle(
+  authority: usize,
+  slot: usize,
+  generation: u64,
+  rights: u64,
+) -> GenerationHandle
+  req true
+  ens result.authority == authority
+    && result.slot == slot
+    && result.generation == generation
+    && result.rights == rights
+  fx pure
+{
+  GenerationHandle {
+    authority: authority,
+    slot: slot,
+    generation: generation,
+    rights: rights,
+  }
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        opaque_package.join("attack.thpkg.json"),
+        r#"{
+  "schema": "thermite.package.v1",
+  "name": "opaque_generation_attack",
+  "roots": [
+    "api"
+  ],
+  "modules": [
+    {
+      "name": "api",
+      "path": "api.th",
+      "imports": [
+        "generation"
+      ]
+    },
+    {
+      "name": "generation",
+      "path": "generation.th",
+      "imports": []
+    }
+  ]
+}
+"#,
+    )
+    .unwrap();
+    let attack_manifest = opaque_package.join("attack.thpkg.json");
+    let attack_manifest_s = attack_manifest.to_string_lossy().to_string();
+    let attack_out = temp.0.join("opaque-attack.verified");
+    let attack_out_s = attack_out.to_string_lossy().to_string();
+    let attack = forge(&[
+        "build",
+        &attack_manifest_s,
+        "--level",
+        "l3",
+        "--export",
+        "forge_generation_handle",
+        "--target",
+        "kernel",
+        "--out",
+        &attack_out_s,
+        "--json",
+    ]);
+    assert!(
+        !attack.status.success(),
+        "a foreign package module forged an opaque generation handle"
+    );
+    let attack_diagnostic = format!(
+        "{}{}",
+        String::from_utf8_lossy(&attack.stdout),
+        String::from_utf8_lossy(&attack.stderr)
+    );
+    assert!(
+        attack_diagnostic.contains("constructs `#[opaque]` type `GenerationHandle`")
+            && attack_diagnostic.contains("declared in module `generation`"),
+        "unexpected opaque-construction diagnostic: {attack_diagnostic}"
+    );
+
     let bundle = temp.0.join("rights.verified");
     let bundle_s = bundle.to_string_lossy().to_string();
     assert_success(&forge(&[
@@ -185,5 +275,23 @@ fn generation_clone_ledger_rejected(ledger: GenerationLedger) -> bool
             .iter()
             .all(|row| row["verdict"] == "faithful"),
         "strict ownership surface contains non-faithful TV rows: {tv}"
+    );
+
+    let bound_source = bundle.join("evidence/thermite-package/source/ownership/generation.th");
+    let original = fs::read_to_string(&bound_source).unwrap();
+    let weakened = original.replacen(
+        "#[opaque] struct GenerationLedger",
+        "struct GenerationLedger",
+        1,
+    );
+    assert_ne!(
+        weakened, original,
+        "opaque receipt tamper fixture did not match"
+    );
+    fs::write(&bound_source, weakened).unwrap();
+    let tampered = forge(&["verify-build", &bundle_s, "--replay", "--json"]);
+    assert!(
+        !tampered.status.success(),
+        "removing a receipt-bound opaque barrier unexpectedly replayed"
     );
 }

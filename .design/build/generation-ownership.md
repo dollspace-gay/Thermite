@@ -3,12 +3,12 @@
 <!--
 tier: 3-component
 status: partial
-decision: Thermite ships a policy-free generation ledger whose verified transitions invalidate stale handles, reject double release, and monotonically narrow rights; language-level opacity and complete strict body-TV framing remain
+decision: Thermite ships an opaque policy-free generation ledger whose verified transitions invalidate stale handles, reject double release, and monotonically narrow rights; complete strict body-TV framing and exact platform refinement remain
 governs:
   - stdlib/kernel-primitives/ownership.thpkg.json
   - stdlib/kernel-primitives/ownership/generation.th
   - forge/tests/ownership_primitives.rs
-audited-content-sha256: 82199728a921806679beb5e7e33786457bb40874dc298f552de61fd7bda5f5f1
+audited-content-sha256: 780dae7ce051fd51284c14a31189b53f000969fd3336921f77a6cd52cb8d91bb
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/frozen-primitive-registry.md
@@ -46,14 +46,17 @@ The fixed ledger has 64 slots. Each slot stores:
 that non-`Copy` authority together with the three fixed arrays. Moving the
 ledger through a transition moves the authority; an L3 consumer cannot use the
 same ledger value twice or call `.clone()` because the generated verified type
-implements neither `Copy` nor `Clone`.
+implements neither `Copy` nor `Clone`. The ledger is also `#[opaque]`: only its
+declaring package module may construct the aggregate, and generated external
+safe Rust cannot construct or inspect its crate-visible fields.
 
 `GenerationHandle` records only the authority identity, slot, generation, and
-rights. It is deliberately treated as reconstructible data. Correctness does
-not depend on hiding those four scalar fields: every operation validates them
-against the unique ledger state, and an accepted transition either retires the
-slot or returns a refreshed generation. A handle reconstructed from stale
-fields therefore fails the next state check.
+rights. It is opaque as defense in depth, so foreign modules obtain handles
+through verified acquisition/renewal paths rather than arbitrary literals.
+Correctness still does not depend on secrecy or affine handle values: every
+operation validates the fields against the unique ledger state, and an accepted
+transition either retires the slot or returns a refreshed generation. A stale
+copied handle therefore fails the next state check.
 
 ## Transition surface
 
@@ -90,12 +93,13 @@ markers:
 - release followed by slot reuse invalidates the prior generation; and
 - a request outside the current rights mask is rejected as escalation.
 
-The integration test also synthesizes two hostile consumers. One moves the
-same authority-bearing ledger into two calls; the other calls `.clone()` on the
-ledger. Neither may certify at L3. These checks establish that verified code
-cannot duplicate the authority-bearing state through ordinary value use, while
-the generation probes establish that copied/reconstructed handle fields become
-stale after an accepted transition.
+The integration test synthesizes three hostile consumers. One moves the same
+authority-bearing ledger into two calls; another calls `.clone()` on the ledger;
+and a separate imported package module attempts to construct an opaque handle
+literal. The first two cannot certify at L3 and package validation rejects the
+third before lowering. These checks establish both value-use and construction
+barriers, while the generation probes establish that copied stale handle values
+fail after an accepted transition.
 
 ## Assurance split
 
@@ -128,20 +132,19 @@ fits that assurance class; this package does not claim a machine operation.
 This increment strengthens REQ-KPRIM-4 but does not complete it. The remaining
 work is explicit:
 
-1. add module-private/opaque construction, or a full affine type rule, so code
-   outside the defining library cannot reconstruct a ledger with arbitrary
-   arrays after moving out its sealed authority;
-2. extend independent body TV to named structs/enums, field projections, ADT
+1. extend independent body TV to named structs/enums, field projections, ADT
    matches, and aggregate results, then strictly build/replay the full lifecycle;
-3. directly refine the authority-mint implementation supplied by a synthetic
+2. directly refine the authority-mint implementation supplied by a synthetic
    consumer platform;
+3. add a complete affine/linear rule if consumers require uniqueness beyond
+   the current sealed-root, move-check, generation, and construction barriers;
 4. bind generation ownership into sealed atomic initialization slots; and
 5. add concurrent synchronization consumers that rotate generations through
    exact atomic transitions.
 
 Until those close, the accurate claim is “verified generation transition
-library with a sealed non-duplicable root,” not “complete affine ownership
-system.”
+library with a sealed non-duplicable root and opaque construction,” not
+“complete affine ownership system.”
 
 ## Auditable metrics
 

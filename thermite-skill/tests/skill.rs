@@ -97,6 +97,8 @@ fn surface_construct_coverage() {
     for marker in [
         // Items (the lie was "no struct/enum"):
         "struct NAME",
+        "#[sealed] struct",
+        "#[opaque] struct",
         "enum NAME",
         "spec fn NAME",
         // Types (Stage 1/4/7):
@@ -134,6 +136,10 @@ fn surface_construct_coverage() {
     assert!(
         !skill.contains("no `struct`"),
         "skill still carries the stale `no struct/enum` lie"
+    );
+    assert!(
+        skill.contains("Opacity is NOT affine/linear"),
+        "skill must not overclaim opaque state as affine ownership"
     );
 }
 

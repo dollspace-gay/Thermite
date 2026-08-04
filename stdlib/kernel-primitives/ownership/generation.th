@@ -4,14 +4,14 @@ const GENERATION_LEDGER_CAPACITY: usize = 64;
   identity: usize,
 }
 
-struct GenerationLedger {
+#[opaque] struct GenerationLedger {
   authority: GenerationAuthority,
   active: [bool; GENERATION_LEDGER_CAPACITY],
   generation: [u64; GENERATION_LEDGER_CAPACITY],
   rights: [u64; GENERATION_LEDGER_CAPACITY],
 }
 
-struct GenerationHandle {
+#[opaque] struct GenerationHandle {
   authority: usize,
   slot: usize,
   generation: u64,

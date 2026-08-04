@@ -1195,6 +1195,45 @@ fn validate_package_resolution(
             }
         }
     }
+
+    // `#[opaque]` is a package construction barrier: verified code in the
+    // declaring module may build the state, while every other module must obtain
+    // it through that module's functions. Resolve the complete item expression
+    // tree, not only the requested export closure, so an unreachable sibling
+    // cannot hide a forged opaque value in a receipt-bound package.
+    let opaque_modules: BTreeMap<&str, &str> = program
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Struct(structure) if structure.opaque => Some((
+                structure.name.as_str(),
+                item_modules[structure.name.as_str()],
+            )),
+            _ => None,
+        })
+        .collect();
+    for (index, item) in program.items.iter().enumerate() {
+        let from_module = package
+            .parsed
+            .origin(index)
+            .expect("package origins are aligned with package items")
+            .module
+            .as_str();
+        let mut constructed = BTreeSet::new();
+        collect_item_struct_literals(item, &mut constructed);
+        for name in constructed {
+            let Some(defining_module) = opaque_modules.get(name).copied() else {
+                continue;
+            };
+            if from_module != defining_module {
+                return Err(ForgeError::Package {
+                    detail: format!(
+                        "module `{from_module}` constructs `#[opaque]` type `{name}` declared in module `{defining_module}`; opaque struct literals are permitted only in the defining module"
+                    ),
+                });
+            }
+        }
+    }
     Ok(())
 }
 
@@ -1505,6 +1544,170 @@ fn collect_expr_capacity_refs<'a>(expr: &'a Expr, names: &mut BTreeSet<&'a str>)
         Expr::Quantifier { domain, body, .. } => {
             collect_expr_capacity_refs(domain, names);
             collect_expr_capacity_refs(body, names);
+        }
+        Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) | Expr::StrLit(_) => {}
+    }
+}
+
+fn collect_item_struct_literals<'a>(item: &'a Item, names: &mut BTreeSet<&'a str>) {
+    match item {
+        Item::Const(_) | Item::Enum(_) => {}
+        Item::Fn(function) => {
+            collect_expr_struct_literals(&function.contract.req.expr, names);
+            for clause in &function.contract.ens {
+                collect_expr_struct_literals(&clause.expr, names);
+            }
+            if let Some(dec) = &function.dec {
+                collect_expr_struct_literals(&dec.expr, names);
+            }
+            if let Some(body) = &function.body {
+                collect_block_struct_literals(body, names);
+            }
+        }
+        Item::SpecFn(function) => {
+            collect_expr_struct_literals(&function.dec.expr, names);
+            collect_block_struct_literals(&function.body, names);
+        }
+        Item::Struct(structure) => {
+            if let Some(inv) = &structure.inv {
+                collect_expr_struct_literals(&inv.expr, names);
+            }
+        }
+        Item::Forge(ForgeItem::PropFn(function)) => {
+            if let Some(dec) = &function.dec {
+                collect_expr_struct_literals(&dec.expr, names);
+            }
+            collect_block_struct_literals(&function.body, names);
+        }
+        Item::Forge(ForgeItem::Lemma(lemma)) => {
+            collect_expr_struct_literals(&lemma.req.expr, names);
+            for clause in &lemma.ens {
+                collect_expr_struct_literals(&clause.expr, names);
+            }
+        }
+        // Proof blocks are opaque tactic text at this AST layer and cannot
+        // contain executable Thermite expressions. Witness inhabitants are
+        // parsed expressions and therefore participate in the barrier.
+        Item::Forge(ForgeItem::Proof(_)) => {}
+        Item::Forge(ForgeItem::Witness(witness)) => {
+            for inhabit in &witness.inhabits {
+                for argument in &inhabit.args {
+                    collect_expr_struct_literals(argument, names);
+                }
+            }
+        }
+    }
+}
+
+fn collect_block_struct_literals<'a>(block: &'a Block, names: &mut BTreeSet<&'a str>) {
+    for statement in &block.stmts {
+        match statement {
+            Stmt::Let { init, .. } | Stmt::Expr(init) | Stmt::Return(Some(init)) => {
+                collect_expr_struct_literals(init, names);
+            }
+            Stmt::Assign { target, value } => {
+                collect_expr_struct_literals(target, names);
+                collect_expr_struct_literals(value, names);
+            }
+            Stmt::Return(None) | Stmt::Break | Stmt::Continue => {}
+            Stmt::If { cond, then, else_ } => {
+                collect_expr_struct_literals(cond, names);
+                collect_block_struct_literals(then, names);
+                if let Some(else_) = else_ {
+                    collect_block_struct_literals(else_, names);
+                }
+            }
+            Stmt::Loop(node) => {
+                for inv in &node.invs {
+                    collect_expr_struct_literals(&inv.expr, names);
+                }
+                collect_expr_struct_literals(&node.dec.expr, names);
+                if let thermite_syntax::LoopKind::While(cond) = &node.kind {
+                    collect_expr_struct_literals(cond, names);
+                }
+                collect_block_struct_literals(&node.body, names);
+            }
+        }
+    }
+    if let Some(tail) = &block.tail {
+        collect_expr_struct_literals(tail, names);
+    }
+}
+
+fn collect_expr_struct_literals<'a>(expr: &'a Expr, names: &mut BTreeSet<&'a str>) {
+    match expr {
+        Expr::Array(elements) | Expr::Tuple(elements) => {
+            for element in elements {
+                collect_expr_struct_literals(element, names);
+            }
+        }
+        Expr::ArrayRepeat { value, .. } => collect_expr_struct_literals(value, names),
+        Expr::Call { callee, args } => {
+            collect_expr_struct_literals(callee, names);
+            for argument in args {
+                collect_expr_struct_literals(argument, names);
+            }
+        }
+        Expr::MethodCall { receiver, args, .. } => {
+            collect_expr_struct_literals(receiver, names);
+            for argument in args {
+                collect_expr_struct_literals(argument, names);
+            }
+        }
+        Expr::Field { receiver, .. }
+        | Expr::TupleProj { receiver, .. }
+        | Expr::Closure { body: receiver, .. }
+        | Expr::Ref { expr: receiver, .. }
+        | Expr::Deref(receiver)
+        | Expr::Unary { expr: receiver, .. }
+        | Expr::Is {
+            scrutinee: receiver,
+            ..
+        } => collect_expr_struct_literals(receiver, names),
+        Expr::Match { scrutinee, arms } => {
+            collect_expr_struct_literals(scrutinee, names);
+            for arm in arms {
+                if let Some(guard) = &arm.guard {
+                    collect_expr_struct_literals(guard, names);
+                }
+                collect_expr_struct_literals(&arm.body, names);
+            }
+        }
+        Expr::If { cond, then, else_ } => {
+            collect_expr_struct_literals(cond, names);
+            collect_block_struct_literals(then, names);
+            collect_block_struct_literals(else_, names);
+        }
+        Expr::Binary { lhs, rhs, .. } => {
+            collect_expr_struct_literals(lhs, names);
+            collect_expr_struct_literals(rhs, names);
+        }
+        Expr::Index { base, index } => {
+            collect_expr_struct_literals(base, names);
+            match index {
+                thermite_syntax::IndexArg::Single(index)
+                | thermite_syntax::IndexArg::RangeTo(index)
+                | thermite_syntax::IndexArg::RangeFrom(index) => {
+                    collect_expr_struct_literals(index, names)
+                }
+                thermite_syntax::IndexArg::Range(start, end) => {
+                    collect_expr_struct_literals(start, names);
+                    collect_expr_struct_literals(end, names);
+                }
+            }
+        }
+        Expr::Cast { expr, .. } => collect_expr_struct_literals(expr, names),
+        Expr::StructLit { path, fields } => {
+            if let Some(name) = path.last() {
+                names.insert(name);
+            }
+            for (_, value) in fields {
+                collect_expr_struct_literals(value, names);
+            }
+        }
+        Expr::Quantifier { domain, body, .. } => {
+            collect_expr_struct_literals(domain, names);
+            collect_expr_struct_literals(body, names);
         }
         Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) | Expr::StrLit(_) => {}
     }
@@ -5212,6 +5415,56 @@ mod tests {
     }
 
     #[test]
+    fn package_opaque_construction_is_limited_to_the_defining_module() {
+        let base = r#"#[opaque] struct State { value: u64 }
+fn state_new(value: u64) -> State
+  req true
+  ens result.value == value
+  fx pure
+{ State { value: value } }
+"#;
+        let foreign_literal = r#"fn forge_state(value: u64) -> State
+  req true
+  ens result.value == value
+  fx pure
+{ State { value: value } }
+"#;
+        let (_tree, path) = package_fixture(&["api"], &["base"], base, foreign_literal);
+        let error = match prepare_thermite_input(&path) {
+            Ok(_) => panic!("a foreign module constructed an opaque type"),
+            Err(error) => error.to_string(),
+        };
+        assert!(
+            error.contains("module `api` constructs `#[opaque]` type `State`"),
+            "{error}"
+        );
+        assert!(error.contains("declared in module `base`"), "{error}");
+
+        let through_constructor = r#"fn api(value: u64) -> State
+  req true
+  ens result.value == value
+  fx pure
+{ state_new(value) }
+"#;
+        let (_tree, path) = package_fixture(&["api"], &["base"], base, through_constructor);
+        assert!(prepare_thermite_input(&path).is_ok());
+    }
+
+    #[test]
+    fn opaque_single_file_construction_remains_the_defining_module() {
+        let program = parse(
+            r#"#[opaque] struct State { value: u64 }
+fn state_new(value: u64) -> State
+  req true
+  ens result.value == value
+  fx pure
+{ State { value: value } }
+"#,
+        );
+        assert!(thermite_spec::validate(&program).is_ok());
+    }
+
+    #[test]
     fn package_exports_must_be_declared_by_root_modules() {
         let base = "fn base(x: u64) -> u64 req true ens result == x fx pure { x }\n";
         let api = "fn api(x: u64) -> u64 req true ens result == x fx pure { base(x) }\n";
@@ -5403,6 +5656,9 @@ mod tests {
             "\nfn id ( x : u64 ) -> u64\n  req x < 10\n  ens result == 10\n  fx pure\n{ 10 }\n",
         );
         let changed = parse("fn id(x: u64) -> u64 req x < 10 ens result == 11 fx pure { 10 }");
+        let plain_state = parse("struct State { value: u64 }");
+        let opaque_state = parse("#[opaque] struct State { value: u64 }");
+        let sealed_state = parse("#[sealed] struct State { value: u64 }");
         assert_eq!(
             normalized_program_sha256(&compact),
             normalized_program_sha256(&presented_differently)
@@ -5410,6 +5666,16 @@ mod tests {
         assert_ne!(
             normalized_program_sha256(&compact),
             normalized_program_sha256(&changed)
+        );
+        assert_ne!(
+            normalized_program_sha256(&plain_state),
+            normalized_program_sha256(&opaque_state),
+            "the normalized proof/build identity must bind the opaque barrier"
+        );
+        assert_ne!(
+            normalized_program_sha256(&opaque_state),
+            normalized_program_sha256(&sealed_state),
+            "opaque construction and sealed boundary-only minting are distinct semantics"
         );
     }
 

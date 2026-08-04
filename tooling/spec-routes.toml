@@ -1193,91 +1193,91 @@ conformance_ops = []
 # policy and platform implementations intentionally have no place in this tree.
 [[route]]
 crate_pattern = "thermite-syntax/src/ast.rs"
-design = ".design/build/bootable-multicore-kernel.md"
+design = ".design/build/kernel-primitives.md"
 reference = []
 conformance_ops = ["kernel-scalars", "platform-effects"]
 
 [[route]]
 crate_pattern = "thermite-syntax/src/parser.rs"
-design = ".design/build/bootable-multicore-kernel.md"
+design = ".design/build/kernel-primitives.md"
 reference = []
 conformance_ops = ["kernel-scalars", "platform-effects"]
 
 [[route]]
 crate_pattern = "thermite-syntax/src/lib.rs"
-design = ".design/build/bootable-multicore-kernel.md"
+design = ".design/build/kernel-primitives.md"
 reference = []
 conformance_ops = ["platform-domain-api"]
 
 [[route]]
 crate_pattern = "thermite-syntax/tests/kernel_surface.rs"
-design = ".design/build/bootable-multicore-kernel.md"
+design = ".design/build/kernel-primitives.md"
 reference = []
 conformance_ops = ["closed-platform-domain"]
 
 [[route]]
 crate_pattern = "thermite-syntax/tests/conformance.rs"
-design = ".design/build/bootable-multicore-kernel.md"
+design = ".design/build/kernel-primitives.md"
 reference = ["conformance/kernel_primitives.th"]
 conformance_ops = ["kernel-scalars", "platform-effects"]
 
 [[route]]
 crate_pattern = "thermite-lower/src/effects.rs"
-design = ".design/build/bootable-multicore-kernel.md"
+design = ".design/build/kernel-primitives.md"
 reference = ["conformance/kernel_primitives.th"]
 conformance_ops = ["platform-effects"]
 
 [[route]]
 crate_pattern = "thermite-lower/src/lower.rs"
-design = ".design/build/bootable-multicore-kernel.md"
+design = ".design/build/kernel-primitives.md"
 reference = ["conformance/kernel_primitives.th"]
 conformance_ops = ["kernel-scalars", "kernel-mutable-slice"]
 
 [[route]]
 crate_pattern = "thermite-lower/tests/kernel_mutable_slice.rs"
-design = ".design/build/bootable-multicore-kernel.md"
+design = ".design/build/kernel-primitives.md"
 reference = ["conformance/kernel_primitives.th"]
 conformance_ops = ["kernel-mutable-slice"]
 
 [[route]]
 crate_pattern = "thermite-lower/tests/effects_verified.rs"
-design = ".design/build/bootable-multicore-kernel.md"
+design = ".design/build/kernel-primitives.md"
 reference = ["conformance/kernel_primitives.th"]
 conformance_ops = ["platform-effects"]
 
 [[route]]
 crate_pattern = "thermite-verified/src/lib.rs"
-design = ".design/build/bootable-multicore-kernel.md"
+design = ".design/build/kernel-primitives.md"
 reference = ["conformance/kernel_primitives.th"]
 conformance_ops = ["kernel-scalars"]
 
 [[route]]
 crate_pattern = "lean/Thermite/Ast.lean"
-design = ".design/build/bootable-multicore-kernel.md"
+design = ".design/build/kernel-primitives.md"
 reference = []
 conformance_ops = ["kernel-scalars"]
 
 [[route]]
 crate_pattern = "lean/Thermite/Denote.lean"
-design = ".design/build/bootable-multicore-kernel.md"
+design = ".design/build/kernel-primitives.md"
 reference = []
 conformance_ops = ["kernel-scalars"]
 
 [[route]]
 crate_pattern = "lean/Thermite/RefEncode.lean"
-design = ".design/build/bootable-multicore-kernel.md"
+design = ".design/build/kernel-primitives.md"
 reference = []
 conformance_ops = ["kernel-scalars"]
 
 [[route]]
 crate_pattern = "conformance/kernel_primitives.th"
-design = ".design/build/bootable-multicore-kernel.md"
+design = ".design/build/kernel-primitives.md"
 reference = []
 conformance_ops = ["kernel-scalars", "platform-effects"]
 
 [[route]]
 crate_pattern = "THERMITE.skill.md"
-design = ".design/build/bootable-multicore-kernel.md"
+design = ".design/build/kernel-primitives.md"
 reference = ["conformance/kernel_primitives.th"]
 conformance_ops = ["kernel-skill-reference"]
 

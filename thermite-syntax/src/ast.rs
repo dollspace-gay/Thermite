@@ -674,14 +674,14 @@ pub enum Effect {
     /// syscall grant + the §4.1 row-subsumption every atom is subject to).
     Term,
     /// A privileged operation in one frozen kernel platform domain
-    /// (`.design/build/bootable-multicore-kernel.md` REQ-MKERNEL-3). The domain
+    /// (`.design/build/kernel-primitives.md` REQ-KPRIM-1). The domain
     /// is closed by [`PlatformDomain`]; a source program cannot mint an
     /// unregistered platform effect by spelling an arbitrary identifier.
     Platform(PlatformDomain),
 }
 
-/// The closed authority/effect domains of the bootable-kernel target platform
-/// layer (`.design/build/bootable-multicore-kernel.md` REQ-MKERNEL-3).
+/// The closed authority/effect domains available to consumer-supplied kernel
+/// platform layers (`.design/build/kernel-primitives.md` REQ-KPRIM-1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PlatformDomain {
     Boot,

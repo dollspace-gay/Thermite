@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: 2cac0592f16d56e07fa8cbbc68119e36946f2a72a36df0a14799fd0168ee1dab (re-pinned 2026-08-03 after removing the bundled kernel; existing behavior remains regression-covered)
+audited-content-sha256: be76a26ab7d2253c3341d8d242e80b8d949b0b87cb571397d2dfdbc13c40ce11 (re-pinned 2026-08-03 after adding source-identified package parsing; existing behavior remains regression-covered)
 governs: thermite-syntax/src/parser.rs
 governs: thermite-syntax/src/ast.rs
 governs: thermite-lower/src/lower.rs

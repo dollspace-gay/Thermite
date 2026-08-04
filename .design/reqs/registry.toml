@@ -17408,12 +17408,42 @@ note = "Pins executable mutable byte-slice lowering and the final(slice) content
 id = "REQ-KPRIM-3"
 title = "Receipt-bound packages and modules"
 owner = ".design/build/kernel-primitives.md"
-status = "not_started"
+status = "partial"
 scope = "forge"
 summary = "A canonical package manifest resolves explicit module roots and binds the complete transitive source closure into validation and replay."
-remaining_scope = "Implement multi-file parsing/name resolution, deterministic diagnostics, canonical allowlists, closure receipts, validation, and replay."
-contributors = [".design/build/l3-rich-composition.md"]
+remaining_scope = "Independent parsing, module-local identity, direct-import/root-export enforcement, rooted graph validation, source allowlisting, L3 build/composition, complete receipt binding, validation, and replay are shipped. Extend the remaining source-oriented Forge commands (check, audit, TV, goal/edit/fill) to operate on packages without losing module-local diagnostics."
+contributors = [".design/build/l3-rich-composition.md", "thermite-syntax/src/package.rs", "forge/src/thermite_package.rs", "forge/src/verified_build.rs", "forge/src/verified_build/composition.rs"]
 generated_to = ["status", "forge-kernel-primitives-status"]
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-syntax/tests/package.rs"
+note = "Parses modules independently, preserves module-local origins, and reports duplicate names with both locations."
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge::thermite_package::tests"
+note = "Rejects non-canonical graphs and incidental paths, then reconstructs original modules, the backend projection, and its source map."
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge::verified_build::tests::package_resolution_requires_declared_cross_module_calls"
+note = "Rejects a cross-module call without a direct declared import and accepts the same package once the import is declared."
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge::verified_build::tests::package_resolution_requires_declared_cross_module_signature_types"
+note = "Rejects cross-module signature type use without a direct declared import."
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge::verified_build::tests::package_exports_must_be_declared_by_root_modules"
+note = "Rejects public exports declared outside manifest root modules for both ordinary and rich-composition build paths."
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/verified_build.rs::package_build_binds_and_replays_the_complete_source_identified_closure"
+note = "Builds a real cross-module freestanding rlib, records module-local origins, replays it, and rejects manifest/source-map/module tampering."
 
 [[requirement]]
 id = "REQ-KPRIM-4"

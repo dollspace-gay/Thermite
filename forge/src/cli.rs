@@ -77,6 +77,9 @@ pub enum ForgeError {
     Effects(Vec<LowerError>),
     /// Lowering failed (`thermite_lower::lower`).
     Lower(LowerError),
+    /// A receipt-bound package manifest, module graph, source path, or
+    /// source-identity invariant was invalid.
+    Package { detail: String },
     /// The `verus` binary was not found on `PATH` — an environment error, not a
     /// verification failure (REQ-6 / `.design/forge/check.md` REQ-6).
     VerusAbsent { binary: String },
@@ -184,6 +187,7 @@ impl fmt::Display for ForgeError {
                 Ok(())
             }
             ForgeError::Lower(e) => write!(f, "lowering failed: {e}"),
+            ForgeError::Package { detail } => write!(f, "invalid Thermite package: {detail}"),
             ForgeError::VerusAbsent { binary } => write!(
                 f,
                 "the `{binary}` verifier was not found on PATH (environment error, not a \

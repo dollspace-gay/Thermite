@@ -1210,6 +1210,18 @@ reference = []
 conformance_ops = ["platform-domain-api"]
 
 [[route]]
+crate_pattern = "thermite-syntax/src/package.rs"
+design = ".design/build/kernel-primitives.md"
+reference = []
+conformance_ops = ["package-source-identity"]
+
+[[route]]
+crate_pattern = "thermite-syntax/tests/package.rs"
+design = ".design/build/kernel-primitives.md"
+reference = []
+conformance_ops = ["package-source-identity", "package-duplicate-name"]
+
+[[route]]
 crate_pattern = "thermite-syntax/tests/kernel_surface.rs"
 design = ".design/build/kernel-primitives.md"
 reference = []
@@ -1274,6 +1286,18 @@ crate_pattern = "conformance/kernel_primitives.th"
 design = ".design/build/kernel-primitives.md"
 reference = []
 conformance_ops = ["kernel-scalars", "platform-effects"]
+
+[[route]]
+crate_pattern = "forge/src/thermite_package.rs"
+design = ".design/build/kernel-primitives.md"
+reference = []
+conformance_ops = ["package-manifest", "package-closure", "package-allowlist", "package-source-map"]
+
+[[route]]
+crate_pattern = "forge/tests/verified_build.rs"
+design = ".design/build/kernel-primitives.md"
+reference = []
+conformance_ops = ["package-build", "package-receipt", "package-replay", "package-tamper"]
 
 [[route]]
 crate_pattern = "THERMITE.skill.md"

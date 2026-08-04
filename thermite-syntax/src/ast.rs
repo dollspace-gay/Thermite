@@ -198,6 +198,19 @@ impl Item {
             Item::Forge(forge) => forge.name(),
         }
     }
+
+    /// The source-local span of the complete item. Multi-file package tooling
+    /// pairs this span with an explicit module identity; offsets are never
+    /// interpreted as belonging to an anonymous concatenated source.
+    pub fn span(&self) -> Span {
+        match self {
+            Item::Fn(f) => f.span,
+            Item::SpecFn(s) => s.span,
+            Item::Struct(s) => s.span,
+            Item::Enum(e) => e.span,
+            Item::Forge(forge) => forge.span(),
+        }
+    }
 }
 
 /// A Stage-1 forge-tier item (`.design/stage1-forge-tier.md` REQ-3, increment 2a).
@@ -231,6 +244,16 @@ impl ForgeItem {
             ForgeItem::Lemma(l) => &l.name,
             ForgeItem::Proof(p) => &p.target,
             ForgeItem::Witness(_) => "witness",
+        }
+    }
+
+    /// The source-local span of the complete forge-tier item.
+    pub fn span(&self) -> Span {
+        match self {
+            ForgeItem::PropFn(p) => p.span,
+            ForgeItem::Lemma(l) => l.span,
+            ForgeItem::Proof(p) => p.span,
+            ForgeItem::Witness(w) => w.span,
         }
     }
 }

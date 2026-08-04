@@ -42,6 +42,7 @@ pub mod address;
 pub mod ast;
 pub mod desugar;
 pub mod lexer;
+pub mod package;
 pub mod parser;
 
 pub use address::{addresses_of, resolve, AddrKind, AddressEntry, AddressError};
@@ -54,4 +55,8 @@ pub use ast::{
     VariantShape, WitnessBlock,
 };
 pub use lexer::{tokenize, Span, TokKind, Token};
+pub use package::{
+    parse_package, ItemOrigin, PackageModuleSource, PackageParseError, PackageParseResult,
+    ParsedModule,
+};
 pub use parser::{parse, ParseResult, SyntaxError};

@@ -8,7 +8,9 @@ governs:
   - THERMITE.skill.md
   - thermite-syntax/src/ast.rs
   - thermite-syntax/src/parser.rs
+  - thermite-syntax/src/package.rs
   - thermite-syntax/src/lib.rs
+  - thermite-syntax/tests/package.rs
   - thermite-syntax/tests/kernel_surface.rs
   - thermite-syntax/tests/conformance.rs
   - thermite-spec/src/validator.rs
@@ -23,8 +25,10 @@ governs:
   - forge/src/build.rs
   - forge/src/verified_build.rs
   - forge/src/verified_build/composition.rs
+  - forge/src/thermite_package.rs
+  - forge/tests/verified_build.rs
   - conformance/kernel_primitives.th
-audited-content-sha256: fca7272907810874994ece528708fec2b2879a60ec61b8c82db7fe2db1ef6af1
+audited-content-sha256: cc033ceb3e9ab60fa3753b31eae05aafddea88d953ba1d3785fc8207245cc2e9
 extends:
   - .design/build/kernel-target.md
   - .design/build/l3-rich-composition.md
@@ -133,6 +137,18 @@ therefore provides:
 
 Single-file builds remain supported. Package support must not be implemented by
 concatenating files without preserving source identity and diagnostic spans.
+
+The current package layer independently parses manifest-declared modules,
+preserves module/path/local-span origins for every item, rejects duplicate
+declarations with both locations, validates a canonical rooted import graph,
+enforces direct imports for cross-module calls and signature types, and restricts
+public build roots to manifest root modules. It rejects cycles, unreachable
+modules, symlinks, path escapes, and incidental generated-directory components.
+L3 library and rich-composition builds consume the package AST, bind the
+canonical manifest, every original module, the backend projection, and its
+host-independent source map, and reconstruct and re-resolve all of them during
+validation and replay. Other source-oriented Forge commands remain single-file
+and are the remaining package integration work.
 
 ### Sealed authority and platform effects
 
@@ -305,7 +321,7 @@ Source: `.design/reqs/registry.toml`
 | REQ-KPRIM-1 | shipped | `.design/build/kernel-primitives.md` | Kernel scalar and effect surface |  |
 | REQ-KPRIM-10 | not_started | `.design/build/kernel-primitives.md` | Primitive-only adversarial suite | Add package, fixed-storage, atomic, waiting, registry, refinement, receipt-tamper, freestanding-consumer, and no-concrete-kernel gates. |
 | REQ-KPRIM-2 | partial | `.design/build/kernel-primitives.md` | Exact mutable and fixed storage | Mutable byte-slice assignment with final(slice) is shipped. First-class fixed arrays, static storage, mutable aggregate slices, and verified fixed-capacity vector/map/bitmap/ring libraries remain. |
-| REQ-KPRIM-3 | not_started | `.design/build/kernel-primitives.md` | Receipt-bound packages and modules | Implement multi-file parsing/name resolution, deterministic diagnostics, canonical allowlists, closure receipts, validation, and replay. |
+| REQ-KPRIM-3 | partial | `.design/build/kernel-primitives.md` | Receipt-bound packages and modules | Independent parsing, module-local identity, direct-import/root-export enforcement, rooted graph validation, source allowlisting, L3 build/composition, complete receipt binding, validation, and replay are shipped. Extend the remaining source-oriented Forge commands (check, audit, TV, goal/edit/fill) to operate on packages without losing module-local diagnostics. |
 | REQ-KPRIM-4 | partial | `.design/build/kernel-primitives.md` | Sealed authority and ownership | The sealed-construction barrier is shipped. Add affine-style consumption or a verified generation discipline that rejects stale copies, double release, and rights escalation. |
 | REQ-KPRIM-5 | not_started | `.design/build/kernel-primitives.md` | Sealed atomics and ordering model | Add the Thermite surface, legality validation, happens-before model, direct-refinement interface, and adversarial tests without adding a kernel implementation. |
 | REQ-KPRIM-6 | not_started | `.design/build/kernel-primitives.md` | Verified waiting and synchronization | Add the wait/liveness surface and implement ticket locks, once cells, barriers, bounded queues, reference counts, seqlocks, and deque mechanics in .th. |

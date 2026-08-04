@@ -4,7 +4,7 @@
 tier: 3-component
 status: shipped
 audited-sha: 5ae0816c042debb01c70eb9b89c775837f0c0f24 (content-sha256 re-pinned 2026-06-23 for stage-3 REQ-7 / AC-8 (#349), the automated Rust→Lean obligation exporter: the change to this doc's governed file (cli.rs) is the additive `forge smt-export [<file>] [--out <path>]` subcommand (`Command::SmtExport` → `run_smt_export`, emitting the `(P_prod) ⟺ (P_ref)` `by smt` Lean theorems + `#print axioms` probes via `lean_smt_export.rs`); every other subcommand + flag parse is unchanged. The legacy commit pin stays at the 5ae0816c stable-main ancestor; only the active content-sha256 digest moves. prior: 2026-06-21 stage-2 REQ-8 / AC-8 (#330) `forge strat-faithful-tv`; 2026-06-20 stage-2 REQ-4 / AC-4 (#326) `forge strat-tv` + `ForgeError::StratDifferential`; 2026-06-18 umbrella REQ-2c / AC-4 rotating-seed `--seed` flag on `forge tv`; §6 metrics dashboard `--metrics` value)
-audited-content-sha256: 568cef7428f82946143424068d5ee224c693dfd8b46d6d46ce3869b60620c57d (re-pinned 2026-08-03 after removing the bundled kernel; existing behavior remains regression-covered)
+audited-content-sha256: 2e819c134c4fe8aa2355db7fa06e1e33fdd30288b360ede2a4cb99b56e3b66be (re-pinned 2026-08-03 after adding package diagnostics; existing behavior remains regression-covered)
 governs: forge/src/cli.rs
 thesis-refs:
   - thermite-design.md §5

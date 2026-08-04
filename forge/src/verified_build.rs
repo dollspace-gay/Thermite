@@ -27,6 +27,7 @@ use crate::closure::{self, VerifiedClosure};
 use crate::contract_tv::{ClauseVerdict, TvReport};
 use crate::exec_tv::{ExecTvReport, ExecVerdict};
 use crate::manifest::{AssuranceScope, Certificate, Level, ObligationStatus};
+use crate::thermite_package::{self, LoadedPackage};
 
 mod composition;
 
@@ -103,10 +104,34 @@ pub struct PlannedNode {
     pub kind: String,
     pub source_start: Option<u64>,
     pub source_end: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_module: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_path: Option<String>,
     pub item_sha256: String,
     pub body_sha256: Option<String>,
     pub contract_sha256: Option<String>,
     pub effects_sha256: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PackagePlanV1 {
+    pub schema: String,
+    pub name: String,
+    pub manifest_sha256: String,
+    pub source_map_sha256: String,
+    pub roots: Vec<String>,
+    pub modules: Vec<PlannedPackageModuleV1>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlannedPackageModuleV1 {
+    pub name: String,
+    pub path: String,
+    pub imports: Vec<String>,
+    pub length: u64,
+    pub sha256: String,
+    pub projection_source_start: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -231,6 +256,8 @@ pub struct ArtifactPlanV1 {
     pub expected_tv_inventory: Vec<PlannedTvGate>,
     pub expected_verus_source_sha256: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub package: Option<PackagePlanV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub composition: Option<CompositionPlanV1>,
 }
 
@@ -292,6 +319,8 @@ impl ArtifactPlanV1 {
                         .map(|value| value.to_string())
                         .unwrap_or_default(),
                 );
+                c.field("source_module", node.source_module.as_deref().unwrap_or(""));
+                c.field("source_path", node.source_path.as_deref().unwrap_or(""));
                 c.field("item_sha256", &node.item_sha256);
                 c.field("body_sha256", node.body_sha256.as_deref().unwrap_or(""));
                 c.field(
@@ -331,6 +360,32 @@ impl ArtifactPlanV1 {
             "expected_verus_source_sha256",
             &self.expected_verus_source_sha256,
         );
+        if let Some(package) = &self.package {
+            c.record("package", |c| {
+                c.field("schema", &package.schema);
+                c.field("name", &package.name);
+                c.field("manifest_sha256", &package.manifest_sha256);
+                c.field("source_map_sha256", &package.source_map_sha256);
+                for root in &package.roots {
+                    c.field("root", root);
+                }
+                for module in &package.modules {
+                    c.record("module", |c| {
+                        c.field("name", &module.name);
+                        c.field("path", &module.path);
+                        for import in &module.imports {
+                            c.field("import", import);
+                        }
+                        c.field("length", &module.length.to_string());
+                        c.field("sha256", &module.sha256);
+                        c.field(
+                            "projection_source_start",
+                            &module.projection_source_start.to_string(),
+                        );
+                    });
+                }
+            });
+        }
         if let Some(composition) = &self.composition {
             c.record("composition", |c| {
                 c.field("schema", &composition.schema);
@@ -864,6 +919,243 @@ fn reject(stage: &str, detail: impl Into<String>) -> VerifiedBuildOutcome {
     }
 }
 
+struct PreparedThermiteInput {
+    raw_source: Vec<u8>,
+    program: Program,
+    package: Option<LoadedPackage>,
+}
+
+/// Freeze either a single source or a canonical package into the exact backend
+/// projection while keeping package-local AST spans as the planning identity.
+fn prepare_thermite_input(path: &Path) -> Result<PreparedThermiteInput, ForgeError> {
+    let loaded = thermite_package::load(path)?;
+    let source_text =
+        std::str::from_utf8(&loaded.bytes).map_err(|error| ForgeError::VerusOutput {
+            detail: format!("Thermite source is not UTF-8: {error}"),
+        })?;
+    let projected = thermite_syntax::parse(source_text);
+    if !projected.is_clean() {
+        return Err(ForgeError::Parse(projected.errors));
+    }
+    let program = match &loaded.package {
+        Some(package) => {
+            if normalized_program_sha256(&package.parsed.program)
+                != normalized_program_sha256(&projected.program)
+            {
+                return Err(ForgeError::Package {
+                    detail:
+                        "independent module parsing disagrees with the canonical backend projection"
+                            .to_string(),
+                });
+            }
+            package.parsed.program.clone()
+        }
+        None => projected.program,
+    };
+    thermite_spec::validate(&program).map_err(ForgeError::Spec)?;
+    thermite_lower::check_effects(&program).map_err(ForgeError::Effects)?;
+    if let Some(package) = &loaded.package {
+        validate_package_resolution(package, &program)?;
+    }
+    Ok(PreparedThermiteInput {
+        raw_source: loaded.bytes,
+        program,
+        package: loaded.package,
+    })
+}
+
+fn default_crate_name(path: &Path, package: Option<&LoadedPackage>) -> String {
+    package.map_or_else(
+        || sanitized_crate_name(path),
+        |package| package.manifest.name.clone(),
+    )
+}
+
+fn validate_package_resolution(
+    package: &LoadedPackage,
+    program: &Program,
+) -> Result<(), ForgeError> {
+    let item_modules: BTreeMap<&str, &str> = program
+        .items
+        .iter()
+        .enumerate()
+        .map(|(index, item)| {
+            let origin = package
+                .parsed
+                .origin(index)
+                .expect("package origins are aligned with package items");
+            (item.name(), origin.module.as_str())
+        })
+        .collect();
+    let imports: BTreeMap<&str, BTreeSet<&str>> = package
+        .manifest
+        .modules
+        .iter()
+        .map(|module| {
+            (
+                module.name.as_str(),
+                module.imports.iter().map(String::as_str).collect(),
+            )
+        })
+        .collect();
+    let require_import = |from_item: &str, referenced_item: &str| -> Result<(), ForgeError> {
+        let Some(from_module) = item_modules.get(from_item).copied() else {
+            return Ok(());
+        };
+        let Some(to_module) = item_modules.get(referenced_item).copied() else {
+            return Ok(());
+        };
+        if from_module != to_module && !imports[from_module].contains(to_module) {
+            return Err(ForgeError::Package {
+                detail: format!(
+                    "module `{from_module}` uses `{referenced_item}` from module `{to_module}` without declaring that import"
+                ),
+            });
+        }
+        Ok(())
+    };
+
+    // Resolve every executable function, not only the requested export closure,
+    // so an allowlisted package cannot hide an unresolved or undeclared
+    // cross-module call in a sibling item.
+    let roots: Vec<String> = program
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Fn(function) => Some(function.name.clone()),
+            _ => None,
+        })
+        .collect();
+    let closure =
+        closure::verified_closure(program, &roots).map_err(|error| ForgeError::Package {
+            detail: error.to_string(),
+        })?;
+    for (from, to) in &closure.edges {
+        require_import(from, to)?;
+    }
+
+    let type_modules: BTreeMap<&str, &str> = program
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Struct(_) | Item::Enum(_) => Some((item.name(), item_modules[item.name()])),
+            _ => None,
+        })
+        .collect();
+    for item in &program.items {
+        let mut referenced = BTreeSet::new();
+        collect_item_named_types(item, &mut referenced);
+        for name in referenced {
+            if type_modules.contains_key(name) {
+                require_import(item.name(), name)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn collect_item_named_types<'a>(item: &'a Item, names: &mut BTreeSet<&'a str>) {
+    match item {
+        Item::Fn(function) => collect_signature_named_types(&function.params, &function.ret, names),
+        Item::SpecFn(function) => {
+            collect_signature_named_types(&function.params, &function.ret, names)
+        }
+        Item::Struct(structure) => {
+            for field in &structure.fields {
+                collect_named_types(&field.ty, names);
+            }
+        }
+        Item::Enum(enumeration) => {
+            for variant in &enumeration.variants {
+                match &variant.shape {
+                    thermite_syntax::VariantShape::Unit => {}
+                    thermite_syntax::VariantShape::Tuple(types) => {
+                        for ty in types {
+                            collect_named_types(ty, names);
+                        }
+                    }
+                    thermite_syntax::VariantShape::Struct(fields) => {
+                        for field in fields {
+                            collect_named_types(&field.ty, names);
+                        }
+                    }
+                }
+            }
+        }
+        Item::Forge(ForgeItem::PropFn(function)) => {
+            collect_signature_named_types(&function.params, &function.ret, names)
+        }
+        Item::Forge(ForgeItem::Lemma(lemma)) => {
+            for param in &lemma.params {
+                collect_named_types(&param.ty, names);
+            }
+        }
+        Item::Forge(ForgeItem::Proof(_) | ForgeItem::Witness(_)) => {}
+    }
+}
+
+fn collect_signature_named_types<'a>(
+    params: &'a [thermite_syntax::Param],
+    ret: &'a Type,
+    names: &mut BTreeSet<&'a str>,
+) {
+    for param in params {
+        collect_named_types(&param.ty, names);
+    }
+    collect_named_types(ret, names);
+}
+
+fn collect_named_types<'a>(ty: &'a Type, names: &mut BTreeSet<&'a str>) {
+    match ty {
+        Type::Named(name) => {
+            names.insert(name);
+        }
+        Type::Ref { inner, .. }
+        | Type::Slice(inner)
+        | Type::Generic { arg: inner, .. }
+        | Type::Box(inner)
+        | Type::Vec(inner)
+        | Type::Option(inner) => collect_named_types(inner, names),
+        Type::Result(ok, err) | Type::Map(ok, err) => {
+            collect_named_types(ok, names);
+            collect_named_types(err, names);
+        }
+        Type::Tuple(types) => {
+            for ty in types {
+                collect_named_types(ty, names);
+            }
+        }
+        Type::Prim(_) | Type::Unit | Type::String => {}
+    }
+}
+
+fn package_exports_are_roots(package: &LoadedPackage, exports: &[String]) -> Result<(), String> {
+    let roots: BTreeSet<&str> = package.manifest.roots.iter().map(String::as_str).collect();
+    let item_modules: BTreeMap<&str, &str> = package
+        .parsed
+        .program
+        .items
+        .iter()
+        .enumerate()
+        .map(|(index, item)| {
+            (
+                item.name(),
+                package.parsed.origin(index).unwrap().module.as_str(),
+            )
+        })
+        .collect();
+    for export in exports {
+        if let Some(module) = item_modules.get(export.as_str()) {
+            if !roots.contains(module) {
+                return Err(format!(
+                    "export `{export}` is declared in non-root module `{module}`; add that module to package roots or export a root-module API"
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Construct, prove, compile, bind, self-validate, and atomically publish one
 /// correspondence-backed L3 bundle.
 pub fn build_file(
@@ -873,20 +1165,9 @@ pub fn build_file(
     out: Option<&Path>,
     target: VerifiedTarget,
 ) -> Result<VerifiedBuildOutcome, ForgeError> {
-    let raw_source = fs::read(path).map_err(|source| ForgeError::Io {
-        path: path.display().to_string(),
-        source,
-    })?;
-    let source_text =
-        std::str::from_utf8(&raw_source).map_err(|error| ForgeError::VerusOutput {
-            detail: format!("Thermite source is not UTF-8: {error}"),
-        })?;
-    let parsed = thermite_syntax::parse(source_text);
-    if !parsed.is_clean() {
-        return Err(ForgeError::Parse(parsed.errors));
-    }
-    thermite_spec::validate(&parsed.program).map_err(ForgeError::Spec)?;
-    thermite_lower::check_effects(&parsed.program).map_err(ForgeError::Effects)?;
+    let prepared = prepare_thermite_input(path)?;
+    let raw_source = &prepared.raw_source;
+    let program = &prepared.program;
 
     let crate_name = match crate_name {
         Some(name) if valid_crate_name(name) => name.to_string(),
@@ -896,13 +1177,18 @@ pub fn build_file(
                 format!("invalid crate name `{name}`; expected [A-Za-z_][A-Za-z0-9_]*"),
             ))
         }
-        None => sanitized_crate_name(path),
+        None => default_crate_name(path, prepared.package.as_ref()),
     };
     if exports.is_empty() {
         return Ok(reject(
             "plan",
             "an L3 build requires at least one explicit export",
         ));
+    }
+    if let Some(package) = &prepared.package {
+        if let Err(detail) = package_exports_are_roots(package, exports) {
+            return Ok(reject("package-exports", detail));
+        }
     }
     let destination = match out {
         Some(path) => path.to_path_buf(),
@@ -920,18 +1206,18 @@ pub fn build_file(
         ));
     }
 
-    let closure = match closure::verified_closure(&parsed.program, exports) {
+    let closure = match closure::verified_closure(program, exports) {
         Ok(closure) => closure,
         Err(error) => return Ok(reject("closure", error.to_string())),
     };
-    if let Some(detail) = strict_source_checks(&parsed.program, &closure, target) {
+    if let Some(detail) = strict_source_checks(program, &closure, target) {
         return Ok(reject("closure", detail));
     }
 
     let collected_toolchain = collect_toolchain(target)?;
     let toolchain = &collected_toolchain.evidence;
     let planned_exports = match plan_exports(
-        &parsed.program,
+        program,
         &closure.roots,
         &crate_name,
         target,
@@ -942,7 +1228,7 @@ pub fn build_file(
         Ok(exports) => exports,
         Err(detail) => return Ok(reject("exports", detail)),
     };
-    let subprogram = closure_program(&parsed.program, &closure);
+    let subprogram = closure_program(program, &closure);
     let lowering_exports: Vec<L3Export> = planned_exports
         .iter()
         .map(|export| L3Export {
@@ -967,8 +1253,9 @@ pub fn build_file(
     }
 
     let plan = make_plan(PlanInput {
-        raw_source: &raw_source,
-        program: &parsed.program,
+        raw_source,
+        program,
+        package: prepared.package.as_ref(),
         selected_program: &subprogram,
         closure: &closure,
         exports: &planned_exports,
@@ -1009,29 +1296,19 @@ pub fn build_file(
     // path here would permit a filesystem race between planning and the
     // per-item proof passes even though the final Verus source itself is frozen.
     let frozen_input = ScratchTree::new_in_temp(&format!("verified_input_{crate_name}"))?;
-    let input_name = path
-        .file_name()
-        .filter(|name| !name.is_empty())
-        .unwrap_or_else(|| std::ffi::OsStr::new("input.th"));
-    let frozen_input_path = frozen_input.path.join(input_name);
-    write_bytes(&frozen_input_path, &raw_source)?;
+    let frozen_input_path = frozen_input.path.join("input.th");
+    write_bytes(&frozen_input_path, raw_source)?;
 
     let mut certificates = check::check_file(&frozen_input_path)?;
     inject_certificate_fault(&mut certificates);
-    if let Some(detail) = reject_certificates(&certificates, &closure, &parsed.program) {
+    if let Some(detail) = reject_certificates(&certificates, &closure, program) {
         return Ok(reject("certificates", detail));
     }
 
-    let mut tv = collect_translation_validation(
-        &frozen_input_path,
-        &parsed.program,
-        &closure,
-        &planned_exports,
-    )?;
+    let mut tv =
+        collect_translation_validation(&frozen_input_path, program, &closure, &planned_exports)?;
     inject_tv_fault(&mut tv);
-    if let Some(detail) =
-        reject_translation_validation(&tv, &parsed.program, &closure, &planned_exports)
-    {
+    if let Some(detail) = reject_translation_validation(&tv, program, &closure, &planned_exports) {
         return Ok(reject("translation-validation", detail));
     }
 
@@ -1072,7 +1349,8 @@ pub fn build_file(
         destination: &destination,
         crate_name: &crate_name,
         target,
-        raw_source: &raw_source,
+        raw_source,
+        package: prepared.package.as_ref(),
         plan: &plan,
         plan_sha256: &frozen_plan_sha,
         verus_source: &verus_source,
@@ -1428,6 +1706,7 @@ fn executable_precondition(expr: &Expr) -> bool {
 struct PlanInput<'a> {
     raw_source: &'a [u8],
     program: &'a Program,
+    package: Option<&'a LoadedPackage>,
     selected_program: &'a Program,
     closure: &'a VerifiedClosure,
     exports: &'a [PlannedExport],
@@ -1443,6 +1722,7 @@ fn make_plan(input: PlanInput<'_>) -> ArtifactPlanV1 {
     let PlanInput {
         raw_source,
         program,
+        package,
         selected_program,
         closure,
         exports,
@@ -1455,7 +1735,7 @@ fn make_plan(input: PlanInput<'_>) -> ArtifactPlanV1 {
     } = input;
     let mut nodes = Vec::new();
     let mut dispositions = Vec::new();
-    for item in &program.items {
+    for (item_index, item) in program.items.iter().enumerate() {
         let (included, kind) = match item {
             Item::Fn(f) => (closure.functions.contains(&f.name), "fn"),
             Item::SpecFn(s) => (closure.spec_functions.contains(&s.name), "spec_fn"),
@@ -1498,6 +1778,12 @@ fn make_plan(input: PlanInput<'_>) -> ArtifactPlanV1 {
                 kind: kind.to_string(),
                 source_start,
                 source_end,
+                source_module: package
+                    .and_then(|package| package.parsed.origin(item_index))
+                    .map(|origin| origin.module.clone()),
+                source_path: package
+                    .and_then(|package| package.parsed.origin(item_index))
+                    .map(|origin| origin.path.clone()),
                 item_sha256: sha256(format!("{item:#?}").as_bytes()),
                 body_sha256,
                 contract_sha256,
@@ -1512,6 +1798,8 @@ fn make_plan(input: PlanInput<'_>) -> ArtifactPlanV1 {
             kind: "verified_export_wrapper".to_string(),
             source_start: None,
             source_end: None,
+            source_module: None,
+            source_path: None,
             item_sha256: sha256(export.signature.as_bytes()),
             body_sha256: Some(sha256(
                 format!("total-result-wrapper:{}", export.thermite_name).as_bytes(),
@@ -1533,6 +1821,8 @@ fn make_plan(input: PlanInput<'_>) -> ArtifactPlanV1 {
             kind: "generated_runtime_type".to_string(),
             source_start: None,
             source_end: None,
+            source_module: None,
+            source_path: None,
             item_sha256: sha256(b"pub enum ThermiteContractError { Precondition }"),
             body_sha256: None,
             contract_sha256: None,
@@ -1575,7 +1865,39 @@ fn make_plan(input: PlanInput<'_>) -> ArtifactPlanV1 {
             .collect(),
         expected_tv_inventory,
         expected_verus_source_sha256: sha256(verus_source.as_bytes()),
+        package: package.map(package_plan),
         composition: None,
+    }
+}
+
+fn package_plan(package: &LoadedPackage) -> PackagePlanV1 {
+    let mapped: BTreeMap<&str, &thermite_package::PackageSourceMapModuleV1> = package
+        .source_map
+        .modules
+        .iter()
+        .map(|module| (module.name.as_str(), module))
+        .collect();
+    PackagePlanV1 {
+        schema: package.manifest.schema.clone(),
+        name: package.manifest.name.clone(),
+        manifest_sha256: sha256(&package.manifest_bytes),
+        source_map_sha256: sha256(&package.source_map_bytes),
+        roots: package.manifest.roots.clone(),
+        modules: package
+            .modules
+            .iter()
+            .map(|module| {
+                let source_map = mapped[module.declaration.name.as_str()];
+                PlannedPackageModuleV1 {
+                    name: module.declaration.name.clone(),
+                    path: module.declaration.path.clone(),
+                    imports: module.declaration.imports.clone(),
+                    length: module.bytes.len() as u64,
+                    sha256: source_map.source_sha256.clone(),
+                    projection_source_start: source_map.projection_source_start,
+                }
+            })
+            .collect(),
     }
 }
 
@@ -3047,6 +3369,7 @@ struct StageInput<'a> {
     crate_name: &'a str,
     target: VerifiedTarget,
     raw_source: &'a [u8],
+    package: Option<&'a LoadedPackage>,
     plan: &'a ArtifactPlanV1,
     plan_sha256: &'a str,
     verus_source: &'a str,
@@ -3069,6 +3392,7 @@ fn stage_and_publish(input: StageInput<'_>) -> Result<VerifiedBuildReceiptV1, Fo
         crate_name,
         target,
         raw_source,
+        package,
         plan,
         plan_sha256,
         verus_source,
@@ -3113,6 +3437,9 @@ fn stage_and_publish(input: StageInput<'_>) -> Result<VerifiedBuildReceiptV1, Fo
     let verus_json = pretty_json(&compiled.evidence, "whole-crate Verus evidence")?;
     let toolchain_json = pretty_json(toolchain, "toolchain evidence")?;
     write_bytes(&evidence.join("input.th"), raw_source)?;
+    if let Some(package) = package {
+        thermite_package::write_evidence(&stage.path, package)?;
+    }
     write_bytes(&evidence.join("artifact-plan.v1"), plan_json.as_bytes())?;
     write_bytes(&evidence.join("source.verus.rs"), verus_source.as_bytes())?;
     if let Some(composition) = &composition {
@@ -3546,22 +3873,56 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
         std::str::from_utf8(&raw_source).map_err(|error| ForgeError::VerusOutput {
             detail: format!("bound Thermite input is not UTF-8: {error}"),
         })?;
-    let parsed = thermite_syntax::parse(source_text);
-    if !parsed.is_clean() {
+    let projected = thermite_syntax::parse(source_text);
+    if !projected.is_clean() {
         return Err(ForgeError::VerusOutput {
             detail: format!(
                 "bound Thermite input no longer parses cleanly: {:?}",
-                parsed.errors
+                projected.errors
             ),
         });
     }
-    thermite_spec::validate(&parsed.program).map_err(|errors| ForgeError::VerusOutput {
+    let package = thermite_package::load_evidence(bundle, &raw_source)?;
+    match (&plan.package, &package) {
+        (None, None) => {}
+        (Some(expected), Some(package)) if *expected == package_plan(package) => {}
+        (Some(_), Some(_)) => {
+            return Err(ForgeError::VerusOutput {
+                detail: "bound package manifest, module closure, or source map disagrees with ArtifactPlanV1"
+                    .to_string(),
+            })
+        }
+        _ => {
+            return Err(ForgeError::VerusOutput {
+                detail: "ArtifactPlanV1 package presence disagrees with bound package evidence"
+                    .to_string(),
+            })
+        }
+    }
+    let program = package.as_ref().map_or_else(
+        || projected.program.clone(),
+        |package| package.parsed.program.clone(),
+    );
+    if normalized_program_sha256(&program) != normalized_program_sha256(&projected.program) {
+        return Err(ForgeError::VerusOutput {
+            detail: "bound package modules disagree with their canonical backend projection"
+                .to_string(),
+        });
+    }
+    thermite_spec::validate(&program).map_err(|errors| ForgeError::VerusOutput {
         detail: format!("bound Thermite input fails spec validation: {errors:?}"),
     })?;
-    thermite_lower::check_effects(&parsed.program).map_err(|errors| ForgeError::VerusOutput {
+    thermite_lower::check_effects(&program).map_err(|errors| ForgeError::VerusOutput {
         detail: format!("bound Thermite input fails effect validation: {errors:?}"),
     })?;
-    if normalized_program_sha256(&parsed.program) != plan.parsed_program_sha256 {
+    if let Some(package) = &package {
+        validate_package_resolution(package, &program).map_err(|error| {
+            ForgeError::VerusOutput {
+                detail: format!("bound package fails module resolution: {error}"),
+            }
+        })?;
+    }
+    if normalized_program_sha256(&program) != plan.parsed_program_sha256 {
         return Err(ForgeError::VerusOutput {
             detail: "bound parsed-program digest disagrees with ArtifactPlanV1".to_string(),
         });
@@ -3572,18 +3933,22 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
         .map(|export| export.thermite_name.clone())
         .collect();
     let roots = plan_roots(&plan);
-    let closure = closure::verified_closure(&parsed.program, &roots).map_err(|error| {
-        ForgeError::VerusOutput {
+    if let Some(package) = &package {
+        package_exports_are_roots(package, &roots).map_err(|detail| ForgeError::VerusOutput {
+            detail: format!("bound package export plan is invalid: {detail}"),
+        })?;
+    }
+    let closure =
+        closure::verified_closure(&program, &roots).map_err(|error| ForgeError::VerusOutput {
             detail: format!("bound closure is incomplete: {error}"),
-        }
-    })?;
-    if let Some(detail) = strict_source_checks(&parsed.program, &closure, plan.target) {
+        })?;
+    if let Some(detail) = strict_source_checks(&program, &closure, plan.target) {
         return Err(ForgeError::VerusOutput {
             detail: format!("bound closure violates strict policy: {detail}"),
         });
     }
     let exports = plan_exports(
-        &parsed.program,
+        &program,
         &link_roots,
         &plan.crate_name,
         plan.target,
@@ -3600,10 +3965,10 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
                 .to_string(),
         });
     }
-    let subprogram = closure_program(&parsed.program, &closure);
+    let subprogram = closure_program(&program, &closure);
     let (independently_emitted, reconstructed_plan) = if composition_receipt {
         let (reconstructed, lowered, combined, reconstructed_closure, reconstructed_exports) =
-            composition::reconstruct_plan(&parsed.program, &raw_source, &plan, bundle)?;
+            composition::reconstruct_plan(&program, package.as_ref(), &raw_source, &plan, bundle)?;
         let lowered_bytes = file_sha256(&bundle.join("evidence/lowered-thermite.verus.rs"))?.1;
         if lowered.as_bytes() != lowered_bytes
             || plan.composition.as_ref().is_none_or(|composition| {
@@ -3636,7 +4001,8 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
             .map_err(ForgeError::Lower)?;
         let reconstructed = make_plan(PlanInput {
             raw_source: &raw_source,
-            program: &parsed.program,
+            program: &program,
+            package: package.as_ref(),
             selected_program: &subprogram,
             closure: &closure,
             exports: &exports,
@@ -3682,7 +4048,7 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
         serde_json::from_slice(&certificate_bytes).map_err(|error| ForgeError::VerusOutput {
             detail: format!("invalid bound certificate set: {error}"),
         })?;
-    if let Some(detail) = reject_certificates(&certificates, &closure, &parsed.program) {
+    if let Some(detail) = reject_certificates(&certificates, &closure, &program) {
         return Err(ForgeError::VerusOutput {
             detail: format!("bound certificate set fails strict L3 policy: {detail}"),
         });
@@ -3718,7 +4084,7 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
             detail: "bound TV evidence uses a noncanonical seed or resource limit".to_string(),
         });
     }
-    if let Some(detail) = reject_translation_validation(&tv, &parsed.program, &closure, &exports) {
+    if let Some(detail) = reject_translation_validation(&tv, &program, &closure, &exports) {
         return Err(ForgeError::VerusOutput {
             detail: format!("bound TV evidence fails strict completeness: {detail}"),
         });
@@ -4121,10 +4487,87 @@ fn test_fault(name: &str) -> bool {
 mod tests {
     use super::*;
 
+    fn package_fixture(
+        roots: &[&str],
+        api_imports: &[&str],
+        base_source: &str,
+        api_source: &str,
+    ) -> (ScratchTree, PathBuf) {
+        let tree = ScratchTree::new_in_temp("verified_package_fixture").unwrap();
+        fs::create_dir(tree.path.join("src")).unwrap();
+        fs::write(tree.path.join("src/base.th"), base_source).unwrap();
+        fs::write(tree.path.join("src/api.th"), api_source).unwrap();
+        let manifest = thermite_package::PackageManifestV1 {
+            schema: thermite_package::PACKAGE_SCHEMA.to_string(),
+            name: "package_fixture".to_string(),
+            roots: roots.iter().map(|root| (*root).to_string()).collect(),
+            modules: vec![
+                thermite_package::PackageModuleV1 {
+                    name: "api".to_string(),
+                    path: "src/api.th".to_string(),
+                    imports: api_imports
+                        .iter()
+                        .map(|import| (*import).to_string())
+                        .collect(),
+                },
+                thermite_package::PackageModuleV1 {
+                    name: "base".to_string(),
+                    path: "src/base.th".to_string(),
+                    imports: Vec::new(),
+                },
+            ],
+        };
+        let mut bytes = serde_json::to_vec_pretty(&manifest).unwrap();
+        bytes.push(b'\n');
+        let path = tree.path.join("fixture.thpkg.json");
+        fs::write(&path, bytes).unwrap();
+        (tree, path)
+    }
+
     fn parse(source: &str) -> Program {
         let parsed = thermite_syntax::parse(source);
         assert!(parsed.is_clean(), "{:?}", parsed.errors);
         parsed.program
+    }
+
+    #[test]
+    fn package_resolution_requires_declared_cross_module_calls() {
+        let base = "fn base(x: u64) -> u64 req true ens result == x fx pure { x }\n";
+        let api = "fn api(x: u64) -> u64 req true ens result == x fx pure { base(x) }\n";
+        let (_tree, path) = package_fixture(&["api", "base"], &[], base, api);
+        let error = match prepare_thermite_input(&path) {
+            Ok(_) => panic!("undeclared cross-module call was accepted"),
+            Err(error) => error.to_string(),
+        };
+        assert!(error.contains("without declaring that import"), "{error}");
+
+        let (_tree, path) = package_fixture(&["api"], &["base"], base, api);
+        assert!(prepare_thermite_input(&path).is_ok());
+    }
+
+    #[test]
+    fn package_resolution_requires_declared_cross_module_signature_types() {
+        let base = "struct Token { value: u64 }\n";
+        let api = "fn token_value(token: Token) -> u64 req true ens result == token.value fx pure { token.value }\n";
+        let (_tree, path) = package_fixture(&["api", "base"], &[], base, api);
+        let error = match prepare_thermite_input(&path) {
+            Ok(_) => panic!("undeclared cross-module signature type was accepted"),
+            Err(error) => error.to_string(),
+        };
+        assert!(error.contains("uses `Token`"), "{error}");
+        assert!(error.contains("without declaring that import"), "{error}");
+    }
+
+    #[test]
+    fn package_exports_must_be_declared_by_root_modules() {
+        let base = "fn base(x: u64) -> u64 req true ens result == x fx pure { x }\n";
+        let api = "fn api(x: u64) -> u64 req true ens result == x fx pure { base(x) }\n";
+        let (_tree, path) = package_fixture(&["api"], &["base"], base, api);
+        let prepared = prepare_thermite_input(&path).unwrap();
+        let package = prepared.package.as_ref().unwrap();
+        assert!(package_exports_are_roots(package, &["api".to_string()]).is_ok());
+        let error = package_exports_are_roots(package, &["base".to_string()]).unwrap_err();
+        assert!(error.contains("non-root module `base`"), "{error}");
     }
 
     fn sample_verus_evidence(errors: Option<u64>) -> VerusEvidence {
@@ -4240,6 +4683,7 @@ mod tests {
             strict_gates: STRICT_GATES.iter().map(|s| (*s).to_string()).collect(),
             expected_tv_inventory: Vec::new(),
             expected_verus_source_sha256: "c".repeat(64),
+            package: None,
             composition: None,
         };
         let compact = serde_json::to_string(&plan).unwrap();

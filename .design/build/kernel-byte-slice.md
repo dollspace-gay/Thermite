@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: f81b6903366ceec0ce435089c7f021c8c25f951c51aa3d2d08ca8a73ea08e5e3
+audited-content-sha256: 4bc1a01606e1791a2390d765fb65a425716e070bb0c84bc0d0e5e83e0a2a2a4e
 decision: explicit pinned vstd proof-model import plus deterministic no_std erased link metadata
 issue: github:dollspace-gay/Thermite#108
 governs:

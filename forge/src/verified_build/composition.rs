@@ -30,20 +30,9 @@ pub(super) fn build_file(
     out: Option<&Path>,
     target: VerifiedTarget,
 ) -> Result<VerifiedBuildOutcome, ForgeError> {
-    let raw_source = fs::read(path).map_err(|source| ForgeError::Io {
-        path: path.display().to_string(),
-        source,
-    })?;
-    let source_text =
-        std::str::from_utf8(&raw_source).map_err(|error| ForgeError::VerusOutput {
-            detail: format!("Thermite source is not UTF-8: {error}"),
-        })?;
-    let parsed = thermite_syntax::parse(source_text);
-    if !parsed.is_clean() {
-        return Err(ForgeError::Parse(parsed.errors));
-    }
-    thermite_spec::validate(&parsed.program).map_err(ForgeError::Spec)?;
-    thermite_lower::check_effects(&parsed.program).map_err(ForgeError::Effects)?;
+    let prepared = prepare_thermite_input(path)?;
+    let raw_source = &prepared.raw_source;
+    let program = &prepared.program;
 
     let crate_name = match crate_name {
         Some(name) if valid_crate_name(name) => name.to_string(),
@@ -53,13 +42,23 @@ pub(super) fn build_file(
                 format!("invalid crate name `{name}`; expected [A-Za-z_][A-Za-z0-9_]*"),
             ));
         }
-        None => sanitized_crate_name(path),
+        None => default_crate_name(path, prepared.package.as_ref()),
     };
     if composition_export_names.is_empty() || shell_paths.is_empty() {
         return Ok(reject(
             "plan",
             "a composition build requires at least one --compose-export and --compose-shell",
         ));
+    }
+    if let Some(package) = &prepared.package {
+        let exports: Vec<String> = link_export_names
+            .iter()
+            .chain(composition_export_names)
+            .cloned()
+            .collect();
+        if let Err(detail) = package_exports_are_roots(package, &exports) {
+            return Ok(reject("package-exports", detail));
+        }
     }
     let link_names: BTreeSet<&str> = link_export_names.iter().map(String::as_str).collect();
     if let Some(overlap) = composition_export_names
@@ -94,7 +93,7 @@ pub(super) fn build_file(
     let collected_toolchain = collect_toolchain(target)?;
     let toolchain = &collected_toolchain.evidence;
     let assembly = match assemble_from_paths(
-        &parsed.program,
+        program,
         link_export_names,
         composition_export_names,
         shell_paths,
@@ -107,8 +106,9 @@ pub(super) fn build_file(
     };
 
     let mut plan = make_plan(PlanInput {
-        raw_source: &raw_source,
-        program: &parsed.program,
+        raw_source,
+        program,
+        package: prepared.package.as_ref(),
         selected_program: &assembly.selected_program,
         closure: &assembly.closure,
         exports: &assembly.link_exports,
@@ -125,7 +125,7 @@ pub(super) fn build_file(
     // Re-open and independently reassemble all authored sources after the plan
     // is frozen. No proof or compiler consumes the earlier planning emission.
     let mut fresh = match assemble_from_paths(
-        &parsed.program,
+        program,
         link_export_names,
         composition_export_names,
         shell_paths,
@@ -157,32 +157,25 @@ pub(super) fn build_file(
     }
 
     let frozen_input = ScratchTree::new_in_temp(&format!("composition_input_{crate_name}"))?;
-    let input_name = path
-        .file_name()
-        .filter(|name| !name.is_empty())
-        .unwrap_or_else(|| std::ffi::OsStr::new("input.th"));
-    let frozen_input_path = frozen_input.path.join(input_name);
-    write_bytes(&frozen_input_path, &raw_source)?;
+    let frozen_input_path = frozen_input.path.join("input.th");
+    write_bytes(&frozen_input_path, raw_source)?;
 
     let mut certificates = check::check_file(&frozen_input_path)?;
     inject_certificate_fault(&mut certificates);
-    if let Some(detail) = reject_certificates(&certificates, &assembly.closure, &parsed.program) {
+    if let Some(detail) = reject_certificates(&certificates, &assembly.closure, program) {
         return Ok(reject("certificates", detail));
     }
     let mut tv = collect_translation_validation(
         &frozen_input_path,
-        &parsed.program,
+        program,
         &assembly.closure,
         &assembly.link_exports,
     )?;
-    complete_rich_composition_tv(&mut tv, &parsed.program, &assembly.closure);
+    complete_rich_composition_tv(&mut tv, program, &assembly.closure);
     inject_tv_fault(&mut tv);
-    if let Some(detail) = reject_translation_validation(
-        &tv,
-        &parsed.program,
-        &assembly.closure,
-        &assembly.link_exports,
-    ) {
+    if let Some(detail) =
+        reject_translation_validation(&tv, program, &assembly.closure, &assembly.link_exports)
+    {
         return Ok(reject("translation-validation", detail));
     }
 
@@ -226,7 +219,8 @@ pub(super) fn build_file(
         destination: &destination,
         crate_name: &crate_name,
         target,
-        raw_source: &raw_source,
+        raw_source,
+        package: prepared.package.as_ref(),
         plan: &plan,
         plan_sha256: &frozen_plan_sha,
         verus_source: &fresh.combined_source,
@@ -980,6 +974,7 @@ fn combine_sources(lowered: &str, shells: &[DirectVerusSource]) -> Result<String
 
 pub(super) fn reconstruct_plan(
     program: &Program,
+    package: Option<&LoadedPackage>,
     raw_source: &[u8],
     plan: &ArtifactPlanV1,
     bundle: &Path,
@@ -1048,6 +1043,7 @@ pub(super) fn reconstruct_plan(
     let mut reconstructed = make_plan(PlanInput {
         raw_source,
         program,
+        package,
         selected_program: &assembly.selected_program,
         closure: &assembly.closure,
         exports: &assembly.link_exports,

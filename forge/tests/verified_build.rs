@@ -544,6 +544,119 @@ fn kernel_bundle_final_links_into_a_separate_no_std_consumer() {
 }
 
 #[test]
+fn package_build_binds_and_replays_the_complete_source_identified_closure() {
+    let temp = TempDir::new("package");
+    let package_root = temp.0.join("package");
+    fs::create_dir(&package_root).unwrap();
+    fs::create_dir(package_root.join("src")).unwrap();
+    fs::write(
+        package_root.join("src/base.th"),
+        b"fn package_base(x: u64) -> u64 req true ens result == x fx pure { x }\n",
+    )
+    .unwrap();
+    fs::write(
+        package_root.join("src/api.th"),
+        b"fn package_api(x: u64) -> u64 req true ens result == x fx pure { package_base(x) }\n",
+    )
+    .unwrap();
+    let manifest = r#"{
+  "schema": "thermite.package.v1",
+  "name": "package_primitives",
+  "roots": [
+    "api"
+  ],
+  "modules": [
+    {
+      "name": "api",
+      "path": "src/api.th",
+      "imports": [
+        "base"
+      ]
+    },
+    {
+      "name": "base",
+      "path": "src/base.th",
+      "imports": []
+    }
+  ]
+}
+"#;
+    let manifest_path = package_root.join("primitives.thpkg.json");
+    fs::write(&manifest_path, manifest).unwrap();
+    let bundle = temp.0.join("package.verified");
+    let manifest_s = manifest_path.to_string_lossy().to_string();
+    let bundle_s = bundle.to_string_lossy().to_string();
+    assert_success(&forge(&[
+        "build",
+        &manifest_s,
+        "--level",
+        "l3",
+        "--export",
+        "package_api",
+        "--target",
+        "kernel",
+        "--out",
+        &bundle_s,
+    ]));
+
+    for relative in [
+        "evidence/thermite-package/manifest.json",
+        "evidence/thermite-package/source-map.json",
+        "evidence/thermite-package/source/src/base.th",
+        "evidence/thermite-package/source/src/api.th",
+    ] {
+        assert!(bundle.join(relative).is_file(), "missing `{relative}`");
+    }
+    assert!(bundle.join("artifact/libpackage_primitives.rlib").is_file());
+
+    let plan: serde_json::Value =
+        serde_json::from_slice(&fs::read(bundle.join("evidence/artifact-plan.v1")).unwrap())
+            .unwrap();
+    assert_eq!(plan["package"]["name"], "package_primitives");
+    assert_eq!(plan["package"]["roots"], serde_json::json!(["api"]));
+    let nodes = plan["closure_nodes"].as_array().unwrap();
+    let base = nodes
+        .iter()
+        .find(|node| node["name"] == "package_base")
+        .unwrap();
+    let api = nodes
+        .iter()
+        .find(|node| node["name"] == "package_api")
+        .unwrap();
+    assert_eq!(base["source_module"], "base");
+    assert_eq!(base["source_path"], "src/base.th");
+    assert_eq!(api["source_module"], "api");
+    assert_eq!(api["source_path"], "src/api.th");
+    assert_eq!(base["source_start"], 0);
+    assert_eq!(api["source_start"], 0);
+
+    assert_success(&forge(&["verify-build", &bundle_s, "--replay"]));
+
+    for (index, relative) in [
+        "evidence/thermite-package/manifest.json",
+        "evidence/thermite-package/source-map.json",
+        "evidence/thermite-package/source/src/base.th",
+        "evidence/thermite-package/source/src/api.th",
+    ]
+    .iter()
+    .enumerate()
+    {
+        let tampered = temp.0.join(format!("package-tampered-{index}.verified"));
+        copy_tree(&bundle, &tampered);
+        let path = tampered.join(relative);
+        let mut bytes = fs::read(&path).unwrap();
+        bytes.push(b' ');
+        fs::write(path, bytes).unwrap();
+        assert!(
+            !forge(&["verify-build", tampered.to_string_lossy().as_ref()])
+                .status
+                .success(),
+            "tampering `{relative}` was accepted"
+        );
+    }
+}
+
+#[test]
 fn every_strict_refusal_publishes_nothing() {
     for (file, export, target, expected) in [
         ("bad_body.th", "bad_identity", None, "certificates"),

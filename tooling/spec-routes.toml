@@ -1572,6 +1572,12 @@ reference = []
 conformance_ops = ["mpsc-reservation-publication", "mpsc-fifo", "mpsc-token-rejection", "mpsc-exhaustion"]
 
 [[route]]
+crate_pattern = "stdlib/kernel-primitives/synchronization/work_deque.th"
+design = ".design/build/synchronization-primitives.md"
+reference = []
+conformance_ops = ["work-deque-owner-lifo", "work-deque-thief-fifo", "work-deque-last-race", "work-deque-token-rejection", "work-deque-exhaustion"]
+
+[[route]]
 crate_pattern = "stdlib/kernel-primitives/synchronization/once.th"
 design = ".design/build/synchronization-primitives.md"
 reference = []

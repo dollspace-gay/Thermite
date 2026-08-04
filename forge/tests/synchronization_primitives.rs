@@ -1,4 +1,4 @@
-//! Primitive-only acceptance for bounded waiting, synchronization, and queue mechanics.
+//! Primitive-only acceptance for bounded waiting, synchronization, queue, and deque mechanics.
 //!
 //! In-language algorithms prove at L3. The three machine-facing wait operations
 //! remain explicit L1 boundaries for a consumer platform to directly refine.
@@ -104,6 +104,7 @@ fn synchronization_mechanics_are_receipt_bound_and_fail_closed() {
     let refcount_source = "stdlib/kernel-primitives/synchronization/refcount.th";
     let seqlock_source = "stdlib/kernel-primitives/synchronization/seqlock.th";
     let ticket_source = "stdlib/kernel-primitives/synchronization/ticket_lock.th";
+    let work_deque_source = "stdlib/kernel-primitives/synchronization/work_deque.th";
     let temp = TempDir::new("package");
 
     let wait_rows = checked_rows(wait_source);
@@ -284,6 +285,36 @@ fn synchronization_mechanics_are_receipt_bound_and_fail_closed() {
     }
     assert_eq!(mutation_total(&seqlock_rows), (49, 52));
 
+    let work_deque_rows = checked_rows(work_deque_source);
+    assert_eq!(work_deque_rows.len(), 45);
+    assert!(work_deque_rows.iter().all(|row| row["level"] == "L3"));
+    assert!(work_deque_rows.iter().all(|row| row["boundary"] == false));
+    for name in [
+        "work_deque_wf",
+        "work_deque_slot",
+        "work_deque_push",
+        "work_deque_owner_begin_pop",
+        "work_deque_owner_commit_pop",
+        "work_deque_owner_cancel",
+        "work_deque_steal_begin",
+        "work_deque_steal_commit",
+        "work_deque_owner_lifo_probe",
+        "work_deque_thief_fifo_probe",
+        "work_deque_last_race_thief_wins_probe",
+        "work_deque_last_race_owner_wins_probe",
+        "work_deque_split_ends_probe",
+        "work_deque_cancel_probe",
+        "work_deque_exhaustion_probe",
+        "work_deque_owner_generation_exhaustion_probe",
+    ] {
+        let row = work_deque_rows
+            .iter()
+            .find(|row| row["item"] == name)
+            .unwrap_or_else(|| panic!("missing work-deque certificate `{name}`"));
+        assert_ne!(row["contract_quality"]["mutants_killed"], "0/0");
+    }
+    assert_eq!(mutation_total(&work_deque_rows), (211, 247));
+
     let mut false_wait = fs::read_to_string(root().join(wait_source)).unwrap();
     false_wait.push_str(
         r#"
@@ -355,6 +386,71 @@ fn mpsc_queue_false_bypass_claim(value: u64) -> bool
 "#,
     );
     assert_false_claim_rejected(&false_mpsc, "mpsc_queue_false_bypass_claim", &temp);
+
+    let mut false_work_deque = fs::read_to_string(root().join(work_deque_source)).unwrap();
+    false_work_deque.push_str(
+        r#"
+fn work_deque_false_both_win_claim(value: u64) -> bool
+  req true
+  ens result
+  fx pure
+{
+  let mut ready: [bool; WORK_DEQUE_CAPACITY] = [false; WORK_DEQUE_CAPACITY];
+  let mut values: [u64; WORK_DEQUE_CAPACITY] = [0; WORK_DEQUE_CAPACITY];
+  ready[0] = true;
+  values[0] = value;
+  let pending: WorkDeque64 = WorkDeque64 {
+    top: 0,
+    bottom: 0,
+    owner_generation: 1,
+    owner_pending: true,
+    ready: ready,
+    tickets: [0; WORK_DEQUE_CAPACITY],
+    values: values,
+  };
+  let owner: WorkDequeOwnerToken64 = WorkDequeOwnerToken64 {
+    generation: 1,
+    observed_top: 0,
+    observed_bottom: 1,
+    ticket: 0,
+    slot: 0,
+    value: value,
+  };
+  let thief: WorkDequeStealToken64 = WorkDequeStealToken64 {
+    observed_top: 0,
+    observed_bottom: 1,
+    ticket: 0,
+    slot: 0,
+    value: value,
+  };
+  match work_deque_steal_commit(pending, thief) {
+    WorkDequeStealCommit64::WorkDequeStolen64 { deque: thief_won, ticket: _, value: _, last: _ } =>
+      match work_deque_owner_commit_pop(thief_won, owner) {
+        WorkDequeOwnerCommit64::WorkDequeOwnerPopped64 { deque: _, ticket: _, value: _, last: _ } => true,
+        WorkDequeOwnerCommit64::WorkDequeOwnerLost64 { deque: _, token: _ } => false,
+        WorkDequeOwnerCommit64::WorkDequeOwnerCommitStale64 { deque: _, token: _ } => false,
+        WorkDequeOwnerCommit64::WorkDequeOwnerCommitSlotVacant64 { deque: _, token: _ } => false,
+        WorkDequeOwnerCommit64::WorkDequeOwnerCommitSlotConflict64 {
+          deque: _,
+          token: _,
+          observed_ticket: _,
+          observed_value: _,
+        } => false,
+      },
+    WorkDequeStealCommit64::WorkDequeStealRetry64 { deque: _, token: _ } => false,
+    WorkDequeStealCommit64::WorkDequeStealTokenMalformed64 { deque: _, token: _ } => false,
+    WorkDequeStealCommit64::WorkDequeStealCommitSlotVacant64 { deque: _, token: _ } => false,
+    WorkDequeStealCommit64::WorkDequeStealCommitSlotConflict64 {
+      deque: _,
+      token: _,
+      observed_ticket: _,
+      observed_value: _,
+    } => false,
+  }
+}
+"#,
+    );
+    assert_false_claim_rejected(&false_work_deque, "work_deque_false_both_win_claim", &temp);
 
     let mut false_ticket = fs::read_to_string(root().join(ticket_source)).unwrap();
     false_ticket.push_str(
@@ -467,6 +563,7 @@ fn seqlock_false_stale_read_claim() -> bool
         "evidence/thermite-package/source/synchronization/seqlock.th",
         "evidence/thermite-package/source/synchronization/ticket_lock.th",
         "evidence/thermite-package/source/synchronization/wait.th",
+        "evidence/thermite-package/source/synchronization/work_deque.th",
     ] {
         assert!(bundle.join(relative).is_file(), "missing `{relative}`");
     }

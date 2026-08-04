@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: a43e55d098b6733bcedb63aac1d4a147d78bb89d191ea9551b976c6f11cbcd06 (re-pinned 2026-08-04 after the fixed-array frame relation and MPSC skill update; existing option/result behavior remains regression-covered)
+audited-content-sha256: 6f888226ca157e794c7e3a247371800b1eb8d2ddf9574541f1e747b4fc14bad0 (re-pinned 2026-08-04 after documenting the bounded work-deque skill surface; existing option/result behavior remains regression-covered)
 governs: thermite-syntax/src/ast.rs
 governs: thermite-syntax/src/parser.rs
 governs: thermite-spec/src/validator.rs

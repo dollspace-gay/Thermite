@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: partial
-decision: Thermite ships explicit bounded-wait, ticket-lock, barrier, once, reference-count, seqlock, and bounded MPSC queue mechanics in .th plus frozen pause, blocking-wait, and terminal-halt declarations; actual atomic and machine implementations remain consumer-refined boundaries
+decision: Thermite ships explicit bounded-wait, ticket-lock, barrier, once, reference-count, seqlock, bounded MPSC queue, and bounded work-stealing deque mechanics in .th plus frozen pause, blocking-wait, and terminal-halt declarations; actual atomic and machine implementations remain consumer-refined boundaries
 governs:
   - stdlib/kernel-primitives/synchronization.thpkg.json
   - stdlib/kernel-primitives/synchronization/barrier.th
@@ -13,8 +13,9 @@ governs:
   - stdlib/kernel-primitives/synchronization/seqlock.th
   - stdlib/kernel-primitives/synchronization/ticket_lock.th
   - stdlib/kernel-primitives/synchronization/wait.th
+  - stdlib/kernel-primitives/synchronization/work_deque.th
   - forge/tests/synchronization_primitives.rs
-audited-content-sha256: cb864cba33b4b350ff2f21ad373add90d639f6b7e4c903aefc8885c114f94649 (re-pinned 2026-08-04 after the bounded MPSC queue and exact array-frame checkpoint)
+audited-content-sha256: 2f36a2e1091fe7302bfdf3a332b11eb243073bcca0fbbaafcdf22a5ac70ad394 (re-pinned 2026-08-04 after the bounded work-stealing deque checkpoint)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/sealed-atomics.md
@@ -33,7 +34,7 @@ consumer kernels. This repository does not choose which threads block, how a
 scheduler parks them, what protected data means, or which architecture executes
 pause and halt instructions.
 
-`stdlib/kernel-primitives/synchronization.thpkg.json` is a canonical seven-root
+`stdlib/kernel-primitives/synchronization.thpkg.json` is a canonical eight-root
 package containing only Thermite source. It has no Rust or assembly runtime
 implementation and no kernel policy.
 
@@ -162,11 +163,48 @@ reservation literal; until module-private construction or affine tokens land, th
 consumer must preserve reservation ownership and treat the supplied range/slot/
 generation checks as misuse detection rather than unforgeability.
 
+## Bounded work-stealing deque mechanics
+
+`WorkDeque64` is a fixed-capacity, allocation-free Chase–Lev-style state machine:
+one owner pushes and pops at the bottom while any number of thieves snapshot and
+attempt to commit steals at the top. Slots carry exact logical tickets alongside
+ready bits and `u64` values. Push reports owner-busy, full, counter-exhausted, and
+unexpected occupied-slot states instead of overwriting storage or wrapping an
+index.
+
+Owner pop is deliberately two-phase. Begin decrements the visible bottom, marks
+an owner operation pending, and issues a generation-bound token. This hides the
+candidate from new thieves while permitting a thief that already observed the
+old top to race for the last item. Commit either pops the bottom candidate,
+reports that the thief won, or returns an explicit stale/vacant/conflicting
+state. Cancellation restores the visible bottom without consuming the item.
+The nonwrapping owner generation prevents a stale token from matching a later
+pending operation.
+
+Steal is also two-phase. Begin snapshots the top ticket, visible bottom, slot,
+and value. Commit succeeds only while the top snapshot remains current and the
+exact slot identity/value still agrees; otherwise it returns retry, malformed,
+vacant, or conflicting evidence without changing the state. A successful steal
+advances top and clears exactly its slot. The pending-state invariant admits the
+single transient `top == bottom + 1` state when a pre-existing thief wins the
+last-item race, which owner cleanup restores to the ordinary empty state.
+
+Source probes prove owner LIFO behavior, thief FIFO behavior, both possible
+last-item winners with exactly one successful consumer, opposite-end progress
+on two items, cancellation, and both index and owner-generation exhaustion.
+These are reusable linearization mechanics, not a machine-concurrency claim.
+A consumer must map begin/commit to the sealed atomic loads, stores, fences, and
+compare-exchanges with the required Chase–Lev orderings and direct refinements.
+Scheduling, retry, parking, victim selection, fairness, and task ownership remain
+consumer policy. Plain structs remain forgeable until the language gains opaque
+construction or complete affine tokens, so consumers must preserve token
+ownership in the interim.
+
 ## Assurance and remaining work
 
-`forge check --level l3` proves all 128 in-language items at L3. The three frozen
-declarations remain L1 boundaries, so the package contains 131 source items in
-total. Executable contracts kill 449 of 487 generated mutants.
+`forge check --level l3` proves all 173 in-language items at L3. The three frozen
+declarations remain L1 boundaries, so the package contains 176 source items in
+total. Executable contracts kill 660 of 734 generated mutants.
 
 `forge/tests/synchronization_primitives.rs` additionally:
 
@@ -174,16 +212,19 @@ total. Executable contracts kill 449 of 487 generated mutants.
 - requires the halt declaration to retain its explicit `diverge` effect;
 - pins wait mutation at 21/22, barrier mutation at 141/149, ticket mutation at
   41/43, once mutation at 65/68, reference-count mutation at 32/34, seqlock
-  mutation at 49/52, and MPSC queue mutation at 100/119;
+  mutation at 49/52, MPSC queue mutation at 100/119, and work-deque mutation at
+  211/247;
 - rejects a false claim that an unchanged trace reports a change;
 - rejects a false claim that the second ticket may bypass the first;
 - rejects a false claim that a duplicate barrier arrival advances the round;
 - rejects a false claim that a published later queue ticket may bypass the
   unpublished FIFO head;
+- rejects a false claim that the owner can also consume the last item after a
+  thief has won its top compare-exchange;
 - rejects false second-once-winner, retired-reference-resurrection, and stale
   seqlock-read claims;
 - builds and replays `ticket_lock_can_issue` as a strict freestanding scalar
-  export while binding all seven original modules into the receipt; and
+  export while binding all eight original modules into the receipt; and
 - tampers with the bound wait source and requires validation to fail.
 
 The strict export is scalar because current body TV cannot independently frame
@@ -192,19 +233,18 @@ receipt-bound, and every in-language aggregate transition has its individual
 L3 certificate.
 
 Remaining synchronization work includes atomic integration, named progress and
-fairness assumptions in the registry, work-stealing deque mechanics, and richer
-reader/writer coordination.
+fairness assumptions in the registry, and richer reader/writer coordination.
 
 ## Auditable metrics
 
 | Metric | Value |
 |---|---:|
-| Physical Thermite LOC | 2,669 |
-| Nonblank Thermite LOC | 2,543 |
-| Thermite functions | 100 (81 executable, 16 specification, 3 frozen declarations) |
-| In-language L3 items | 128 |
+| Physical Thermite LOC | 4,282 |
+| Nonblank Thermite LOC | 4,111 |
+| Thermite functions | 136 (103 executable, 30 specification, 3 frozen declarations) |
+| In-language L3 items | 173 |
 | Frozen boundary declarations | 3 at L1 |
-| Executable mutants killed | 449/487 |
+| Executable mutants killed | 660/734 |
 | Bodyful Rust/assembly synchronization implementations | 0 |
 | Ordinary Rust kernel-policy/algorithm LOC | 0 |
 | Direct-Verus TPL LOC shipped by this package | 0 |

@@ -17554,14 +17554,14 @@ owner = ".design/build/kernel-primitives.md"
 status = "partial"
 scope = "verified"
 summary = "Thermite distinguishes bounded waiting, blocking progress assumptions, and terminal divergence, then implements synchronization structures as verified Thermite libraries."
-remaining_scope = "A receipt-bound bounded-wait trace scan, frozen pause/block/terminal-halt declarations, and fail-closed ticket-lock/barrier/once/reference-count/seqlock/bounded-MPSC mechanics are shipped with L3 proofs, adversarial claims, strict replay, and tamper rejection. Add registry-level fairness/progress semantics, directly refined wait bodies, atomic integration and machine concurrency composition, then work-stealing deques and richer reader/writer coordination in .th."
+remaining_scope = "A receipt-bound bounded-wait trace scan, frozen pause/block/terminal-halt declarations, and fail-closed ticket-lock/barrier/once/reference-count/seqlock/bounded-MPSC/bounded-work-deque mechanics are shipped with L3 proofs, adversarial claims, strict replay, and tamper rejection. Add registry-level fairness/progress semantics, directly refined wait bodies, atomic integration and machine concurrency composition, then richer reader/writer coordination in .th."
 contributors = [".design/build/synchronization-primitives.md"]
 generated_to = ["status", "forge-kernel-primitives-status"]
 
 [[requirement.evidence]]
 kind = "file"
 target = "stdlib/kernel-primitives/synchronization.thpkg.json"
-note = "Canonical seven-root package for bounded waiting, frozen wait operations, ticket locks, participant-aware barriers, once initialization, reference counting, seqlocks, and bounded MPSC queue mechanics."
+note = "Canonical eight-root package for bounded waiting, frozen wait operations, ticket locks, participant-aware barriers, once initialization, reference counting, seqlocks, bounded MPSC queues, and bounded work-stealing deque mechanics."
 
 [[requirement.evidence]]
 kind = "file"
@@ -17599,9 +17599,14 @@ target = "stdlib/kernel-primitives/synchronization/mpsc_queue.th"
 note = "Reservation/publication separation, FIFO consumer visibility, per-slot ticket identity, stale/duplicate rejection, and full/exhausted fail-closed mechanics."
 
 [[requirement.evidence]]
+kind = "file"
+target = "stdlib/kernel-primitives/synchronization/work_deque.th"
+note = "Two-phase single-owner bottom pop and multi-thief top steal mechanics, exact last-item race arbitration, cancellation, slot identity, and nonwrapping exhaustion."
+
+[[requirement.evidence]]
 kind = "test"
 target = "forge/tests/synchronization_primitives.rs"
-note = "Pins the L3/L1 assurance split and mutation scores, rejects false wait/LIFO/barrier/once/refcount/seqlock/MPSC-bypass claims, replays the strict receipt, and detects source tampering."
+note = "Pins the L3/L1 assurance split and mutation scores, rejects false wait/LIFO/barrier/once/refcount/seqlock/MPSC-bypass/work-deque-double-winner claims, replays the strict receipt, and detects source tampering."
 
 [[requirement]]
 id = "REQ-KPRIM-7"

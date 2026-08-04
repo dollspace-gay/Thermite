@@ -8,7 +8,8 @@
     "refcount",
     "seqlock",
     "ticket_lock",
-    "wait"
+    "wait",
+    "work_deque"
   ],
   "modules": [
     {
@@ -44,6 +45,11 @@
     {
       "name": "wait",
       "path": "synchronization/wait.th",
+      "imports": []
+    },
+    {
+      "name": "work_deque",
+      "path": "synchronization/work_deque.th",
       "imports": []
     }
   ]

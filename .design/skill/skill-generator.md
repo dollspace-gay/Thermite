@@ -4,7 +4,7 @@
 tier: 3-component
 status: draft
 audited-sha: 92396428567edc6940a9e2845217f5ff4c2ea3c6 (re-pinned 2026-06-16, user-authorized: the only change to this doc's governed files since the prior pin is the additive stage-1 forge-tier increment 2a — the new Item::Forge surface + inert Item::Forge match arms, verified net-additive with no substantive removal of existing v1 logic (git log <main>..HEAD = the 8 forge commits); the v1 behavior this doc governs is unchanged, and the new forge-tier surface is specified in .design/stage1-forge-tier.md / REQ-S1-3)
-audited-content-sha256: 9445df93f3b41654c9b48d7e2cfd546b84dc2b4aeaca188ce41525bf0604c5be (re-pinned 2026-08-04 after documenting fixed-collection package support; existing behavior remains regression-covered)
+audited-content-sha256: 189f75a1da039785da21f09798c71056b740c9cdb6c9c38f620eb7e433cd7d2b (re-pinned 2026-08-04 after documenting synchronization package support; existing behavior remains regression-covered)
 governs: thermite-skill/src/generate.rs
 thesis-refs:
   - thermite-design.md §2.2

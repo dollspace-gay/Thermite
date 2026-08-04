@@ -38,6 +38,7 @@ governs:
   - forge/tests/verified_build.rs
   - forge/tests/fixed_collections.rs
   - forge/tests/ownership_primitives.rs
+  - forge/tests/synchronization_primitives.rs
   - stdlib/kernel-primitives/collections.thpkg.json
   - stdlib/kernel-primitives/collections/bitmap.th
   - stdlib/kernel-primitives/collections/direct_map.th
@@ -45,6 +46,9 @@ governs:
   - stdlib/kernel-primitives/collections/vector.th
   - stdlib/kernel-primitives/ownership.thpkg.json
   - stdlib/kernel-primitives/ownership/generation.th
+  - stdlib/kernel-primitives/synchronization.thpkg.json
+  - stdlib/kernel-primitives/synchronization/ticket_lock.th
+  - stdlib/kernel-primitives/synchronization/wait.th
   - stdlib/kernel-primitives/atomics.thpkg.json
   - stdlib/kernel-primitives/src/api.th
   - stdlib/kernel-primitives/src/model.th
@@ -53,7 +57,7 @@ governs:
   - conformance/verified-composition/frozen_primitive.th
   - conformance/verified-composition/frozen_primitive_shell.rs
   - conformance/verified-composition/frozen_primitive_registry.json
-audited-content-sha256: 8272aff81ca1402085607382df00abf5f198c338bfcb027549a449dc216307c3
+audited-content-sha256: 5471e791a69605e8bf30201f3b60b5bf91376ac29e32cac1d2dbcd231ba91a2e
 extends:
   - .design/build/kernel-target.md
   - .design/build/l3-rich-composition.md
@@ -408,6 +412,17 @@ bounded MPSC queues, and work-stealing deque mechanics are verified `.th`
 libraries built from the atomic and waiting primitives. They are not Rust
 kernel implementations and not privileged boundaries.
 
+The first receipt-bound synchronization package now ships a total bounded-wait
+trace scan, frozen pause/block/terminal-halt declarations, and fail-closed
+ticket-lock state mechanics. Thirty-one in-language items prove at L3; the
+three machine-facing declarations remain honest L1 boundaries, and executable
+contracts kill 62/65 mutants. The ticket probes prove FIFO handoff,
+stale-ticket rejection, and exhaustion without wraparound. This is not yet a
+machine mutual-exclusion proof: consumer code must connect the state mechanics
+to sealed atomics and directly refined wait/atomic implementations. Exact
+claims and residual work are in
+`.design/build/synchronization-primitives.md`.
+
 ### Irreducible platform-operation families
 
 The generic registry schema must be able to declare these families. Thermite
@@ -457,9 +472,10 @@ The primitive suite is target-independent wherever possible.
   `.th` conformance packages.
 - Mutate each operation, contract, ordering, capacity, source file, registry
   entry, shell, and receipt field; the appropriate proof or closure gate fails.
-- Prove representative reusable libraries: the fixed bitset, fixed ring, and
-  generation ledger are present; ticket lock, once cell, bounded MPSC queue,
-  packed bitmap, and epoch-acknowledgement set remain.
+- Prove representative reusable libraries: the fixed bitset, fixed ring,
+  generation ledger, bounded-wait scan, and ticket-lock state mechanics are
+  present; once cell, bounded MPSC queue, packed bitmap, and
+  epoch-acknowledgement set remain.
 - Compile those libraries for the generic freestanding target with no hosted
   effects and no concrete platform dependency.
 - Compose a synthetic test platform whose bodies are tiny direct-Verus
@@ -496,7 +512,7 @@ Source: `.design/reqs/registry.toml`
 | REQ-KPRIM-3 | partial | `.design/build/kernel-primitives.md` | Receipt-bound packages and modules | Independent parsing, module-local identity, direct-import/root-export enforcement, rooted graph validation, source allowlisting, L3 build/composition, complete receipt binding, validation, and replay are shipped. Extend the remaining source-oriented Forge commands (check, audit, TV, goal/edit/fill) to operate on packages without losing module-local diagnostics. |
 | REQ-KPRIM-4 | partial | `.design/build/kernel-primitives.md` | Sealed authority and ownership | The sealed-construction barrier plus a receipt-bound 64-slot generation ledger now prove acquisition/renewal/release, stale-handle-after-reuse rejection, double-release rejection, monotonic rights, L3 move/clone refusal, and a strict replayed scalar surface. Add module-private/opaque ledger construction or a complete affine rule, named-aggregate/ADT body TV for strict lifecycle replay, exact authority-mint refinement, and atomic-slot integration. |
 | REQ-KPRIM-5 | partial | `.design/build/kernel-primitives.md` | Sealed atomics and ordering model | The receipt-bound package, 50 sealed boundary declarations, exact ordering matrix, pre-codegen legality gate, bounded history relations, strict kernel ordering proof, strict hosted history proof, replay, and adversarial tests are present. Add enforceable single-use slot ownership, a kernel-target finite-history proof surface, exact atomic object/machine refinement, and verified synchronization consumers. |
-| REQ-KPRIM-6 | not_started | `.design/build/kernel-primitives.md` | Verified waiting and synchronization | Add the wait/liveness surface and implement ticket locks, once cells, barriers, bounded queues, reference counts, seqlocks, and deque mechanics in .th. |
+| REQ-KPRIM-6 | partial | `.design/build/kernel-primitives.md` | Verified waiting and synchronization | A receipt-bound bounded-wait trace scan, frozen pause/block/terminal-halt declarations, and fail-closed ticket-lock state mechanics are shipped with L3 proofs, adversarial claims, strict replay, and tamper rejection. Add registry-level fairness/progress semantics, directly refined wait bodies, atomic integration and mutual-exclusion composition, then once cells, barriers, bounded queues, reference counts, seqlocks, and deque mechanics in .th. |
 | REQ-KPRIM-7 | partial | `.design/build/kernel-primitives.md` | Generic frozen boundary registry | Same-crate safe direct-Verus Rust-ABI entries now close reachable boundaries exactly. Add non-empty codegen-feature binding and exact separate Rust/assembly source, object, machine-model, and refinement closure for irreducible operations without adding an architecture operation table. |
 | REQ-KPRIM-8 | shipped | `.design/build/kernel-primitives.md` | Generic freestanding verified library build |  |
 | REQ-KPRIM-9 | partial | `.design/build/kernel-primitives.md` | Exact platform refinement composition | Safe same-crate direct-Verus operations now receive exact one-to-one checked-wrapper refinement. Add direct machine-operation refinement tied to separate Rust/assembly objects and the atomic/concurrency model before every irreducible platform family is covered. |

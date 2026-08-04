@@ -1,0 +1,20 @@
+{
+  "schema": "thermite.package.v1",
+  "name": "thermite_synchronization_primitives",
+  "roots": [
+    "ticket_lock",
+    "wait"
+  ],
+  "modules": [
+    {
+      "name": "ticket_lock",
+      "path": "synchronization/ticket_lock.th",
+      "imports": []
+    },
+    {
+      "name": "wait",
+      "path": "synchronization/wait.th",
+      "imports": []
+    }
+  ]
+}

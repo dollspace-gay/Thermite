@@ -212,19 +212,14 @@ Removed from Rust: explicit lifetimes, the trait system (only built-in
 `Eq`/`Ord`/`Hash`/`Iter`/`Display`), macros, `unsafe` (→ `#[slag]`), UFCS, implicit
 widening (casts explicit; overflow is a proof obligation).
 
-Kernel-authoring library: `forge build` also accepts a receipt-bound
-`*.thpkg.json` manifest. The vendorable
-`stdlib/kernel-primitives/atomics.thpkg.json` package provides sealed
-bool/u32/u64/usize atomic declarations, ordering/history specifications, and
-pure proof probes—no kernel or machine implementation. Atomic calls require an
-exact `AtomicOrdering::Relaxed|Acquire|Release|AcqRel|SeqCst` literal; illegal
-load/store/fence/CAS pairs reject before lowering. A consumer must supply and
-directly refine the exact machine boundary; registry v1 intentionally certifies
-only sequential safe-Rust wrappers.
-
-`ownership.thpkg.json` provides a generation ledger; `collections.thpkg.json`
-provides fixed bitset, vector, FIFO-ring, and collision-explicit direct-map
-mechanics. Opacity, packing, aggregate TV, and mint refinement remain.
+Kernel libraries: `forge build` accepts receipt-bound `*.thpkg.json` manifests.
+`atomics.thpkg.json` supplies sealed bool/u32/u64/usize atomics, order/history
+models, and literal-order legality; `ownership.thpkg.json` supplies generation
+mechanics; `collections.thpkg.json` supplies fixed bitset/vector/FIFO/direct-map;
+`synchronization.thpkg.json` supplies bounded-wait and ticket-state mechanics
+plus frozen pause/block/halt declarations. No package supplies a kernel or
+machine body. Consumers directly refine boundaries; registry v1 accepts only
+sequential safe-Rust. Opacity, aggregate TV, and machine refinement remain.
 
 ## 2. SpecTherm combinator library
 

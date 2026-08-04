@@ -1,0 +1,164 @@
+const BOUNDED_WAIT_CAPACITY: usize = 64;
+
+#[sealed] struct WaitPermit {
+  identity: usize,
+}
+
+#[sealed] struct HaltPermit {
+  identity: usize,
+}
+
+#[sealed] struct WakeToken {
+  waiter: usize,
+  key: usize,
+  epoch: u64,
+}
+
+#[sealed] struct HaltReceipt {
+  identity: usize,
+}
+
+struct CpuPauseObservation {
+  resumed: bool,
+}
+
+struct WaitTrace64 {
+  observations: [usize; BOUNDED_WAIT_CAPACITY],
+  len: usize,
+}
+
+enum BoundedWait64 {
+  WaitChanged64 {
+    value: usize,
+    polls: usize,
+  },
+  WaitTimedOut64 {
+    polls: usize,
+  },
+}
+
+#[boundary("thermite::cpu::pause")]
+fn cpu_pause() -> CpuPauseObservation
+  req true
+  ens result.resumed
+  fx platform(cpu);
+
+#[boundary("thermite::wait::block")]
+fn wait_block(
+  permit: WaitPermit,
+  key: usize,
+  observed_epoch: u64,
+) -> WakeToken
+  req true
+  ens result.waiter == permit.identity
+    && result.key == key
+    && result.epoch >= observed_epoch
+  fx platform(smp);
+
+#[boundary("thermite::cpu::halt_terminal")]
+fn cpu_halt_terminal(permit: HaltPermit) -> HaltReceipt
+  req true
+  ens result.identity == permit.identity
+  fx platform(cpu), diverge;
+
+spec fn wait_trace_wf_spec(trace: &WaitTrace64) -> bool
+  dec trace.len
+{
+  trace.len <= BOUNDED_WAIT_CAPACITY
+}
+
+spec fn wait_prefix_expected_spec(
+  trace: &WaitTrace64,
+  expected: usize,
+  count: usize,
+) -> bool
+  dec count
+{
+  if count == 0 {
+    true
+  } else {
+    trace.observations[count - 1] == expected
+      && wait_prefix_expected_spec(trace, expected, count - 1)
+  }
+}
+
+fn wait_trace_wf(trace: &WaitTrace64) -> bool
+  req true
+  ens result == wait_trace_wf_spec(trace)
+  fx pure
+{
+  trace.len <= BOUNDED_WAIT_CAPACITY
+}
+
+fn bounded_wait_scan(
+  trace: &WaitTrace64,
+  expected: usize,
+  budget: usize,
+) -> BoundedWait64
+  req wait_trace_wf_spec(trace) && budget <= trace.len
+  ens match result {
+    BoundedWait64::WaitChanged64 { value, polls } =>
+      polls > 0
+        && polls <= budget
+        && value != expected
+        && value == trace.observations[polls - 1]
+        && wait_prefix_expected_spec(trace, expected, polls - 1),
+    BoundedWait64::WaitTimedOut64 { polls } =>
+      polls == budget
+        && wait_prefix_expected_spec(trace, expected, polls),
+  }
+  fx pure
+{
+  let mut checked: usize = 0;
+  while checked < budget && trace.observations[checked] == expected
+    inv checked <= budget
+    inv budget <= trace.len
+    inv wait_prefix_expected_spec(trace, expected, checked)
+    dec budget - checked
+  {
+    checked = checked + 1;
+  }
+  if checked < budget {
+    BoundedWait64::WaitChanged64 {
+      value: trace.observations[checked],
+      polls: checked + 1,
+    }
+  } else {
+    BoundedWait64::WaitTimedOut64 { polls: checked }
+  }
+}
+
+fn bounded_wait_change_probe(expected: usize, changed: usize) -> bool
+  req expected != changed
+  ens result
+  fx pure
+{
+  let mut observations: [usize; BOUNDED_WAIT_CAPACITY] =
+    [expected; BOUNDED_WAIT_CAPACITY];
+  observations[0] = changed;
+  let trace: WaitTrace64 = WaitTrace64 {
+    observations: observations,
+    len: BOUNDED_WAIT_CAPACITY,
+  };
+  match bounded_wait_scan(&trace, expected, 1) {
+    BoundedWait64::WaitChanged64 { value, polls } =>
+      value == changed && polls == 1,
+    BoundedWait64::WaitTimedOut64 { polls: _ } => false,
+  }
+}
+
+fn bounded_wait_timeout_probe(expected: usize) -> bool
+  req true
+  ens result
+  fx pure
+{
+  let trace: WaitTrace64 = WaitTrace64 {
+    observations: [expected; BOUNDED_WAIT_CAPACITY],
+    len: BOUNDED_WAIT_CAPACITY,
+  };
+  match bounded_wait_scan(&trace, expected, BOUNDED_WAIT_CAPACITY) {
+    BoundedWait64::WaitChanged64 { value: _, polls: _ } => false,
+    BoundedWait64::WaitTimedOut64 { polls } =>
+      polls == BOUNDED_WAIT_CAPACITY,
+  }
+}

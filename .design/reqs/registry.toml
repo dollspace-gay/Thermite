@@ -17541,12 +17541,32 @@ note = "Prevents safe-Rust registry v1 from overstating atomic, volatile, or pri
 id = "REQ-KPRIM-6"
 title = "Verified waiting and synchronization"
 owner = ".design/build/kernel-primitives.md"
-status = "not_started"
+status = "partial"
 scope = "verified"
 summary = "Thermite distinguishes bounded waiting, blocking progress assumptions, and terminal divergence, then implements synchronization structures as verified Thermite libraries."
-remaining_scope = "Add the wait/liveness surface and implement ticket locks, once cells, barriers, bounded queues, reference counts, seqlocks, and deque mechanics in .th."
-contributors = []
+remaining_scope = "A receipt-bound bounded-wait trace scan, frozen pause/block/terminal-halt declarations, and fail-closed ticket-lock state mechanics are shipped with L3 proofs, adversarial claims, strict replay, and tamper rejection. Add registry-level fairness/progress semantics, directly refined wait bodies, atomic integration and mutual-exclusion composition, then once cells, barriers, bounded queues, reference counts, seqlocks, and deque mechanics in .th."
+contributors = [".design/build/synchronization-primitives.md"]
 generated_to = ["status", "forge-kernel-primitives-status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "stdlib/kernel-primitives/synchronization.thpkg.json"
+note = "Canonical two-root package for bounded waiting, frozen wait operations, and ticket-lock state mechanics."
+
+[[requirement.evidence]]
+kind = "file"
+target = "stdlib/kernel-primitives/synchronization/wait.th"
+note = "Bounded first-change/timeout scan plus frozen pause, block, and divergent terminal-halt declarations."
+
+[[requirement.evidence]]
+kind = "file"
+target = "stdlib/kernel-primitives/synchronization/ticket_lock.th"
+note = "No-wrap ticket issue, enter/wait/stale/unknown classification, guarded release, and FIFO/stale/exhaustion probes in Thermite."
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/synchronization_primitives.rs"
+note = "Pins the L3/L1 assurance split and mutation scores, rejects false wait/LIFO claims, replays the strict receipt, and detects source tampering."
 
 [[requirement]]
 id = "REQ-KPRIM-7"

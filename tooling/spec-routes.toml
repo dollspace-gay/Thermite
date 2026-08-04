@@ -1503,6 +1503,32 @@ design = ".design/build/fixed-collections.md"
 reference = ["stdlib/kernel-primitives/collections.thpkg.json"]
 conformance_ops = ["fixed-collections-l3", "fixed-collections-adversarial", "fixed-collections-replay"]
 
+# Policy-free bounded waiting and synchronization state mechanics. Frozen
+# machine-facing operations are declarations; no consumer platform is bundled.
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/synchronization.thpkg.json"
+design = ".design/build/synchronization-primitives.md"
+reference = []
+conformance_ops = ["synchronization-package-closure"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/synchronization/ticket_lock.th"
+design = ".design/build/synchronization-primitives.md"
+reference = []
+conformance_ops = ["ticket-lock-fifo", "ticket-lock-stale", "ticket-lock-exhaustion"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/synchronization/wait.th"
+design = ".design/build/synchronization-primitives.md"
+reference = []
+conformance_ops = ["bounded-wait-change", "bounded-wait-timeout", "frozen-wait-boundaries"]
+
+[[route]]
+crate_pattern = "forge/tests/synchronization_primitives.rs"
+design = ".design/build/synchronization-primitives.md"
+reference = ["stdlib/kernel-primitives/synchronization.thpkg.json"]
+conformance_ops = ["synchronization-l3", "synchronization-adversarial", "synchronization-replay"]
+
 # Policy-free ownership discipline. The route intentionally names only the
 # Thermite package and its proof harness; there is no runtime Rust implementation.
 [[route]]

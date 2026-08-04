@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: 3311d5ed5393b0587815963034f654deb96740e6cc8c64fe178e0ca70232a7d5 (re-pinned 2026-08-04 after fixed-collection skill documentation; existing behavior remains regression-covered)
+audited-content-sha256: 83ade57be36c7e2c69ad98422c7a8b79b9ed215179d653ad9e0793393d252354 (re-pinned 2026-08-04 after synchronization skill documentation; existing behavior remains regression-covered)
 governs: thermite-syntax/src/parser.rs
 governs: thermite-syntax/src/ast.rs
 governs: thermite-lower/src/lower.rs

@@ -10,7 +10,7 @@ use core::arch::{asm, global_asm};
 use core::ffi::c_void;
 use core::ptr;
 use core::sync::atomic::{AtomicU64, Ordering};
-use thermite_kernel_policy::atomic::ExactAtomicU64;
+use thermite_kernel_policy::{atomic::ExactAtomicU64, ServiceRuntimePlan};
 use thermite_kernel_policy::kernel_policy_ingress::{
     thermite_allocator_claim_first as allocator_claim_first,
     thermite_allocator_run_mask as allocator_run_mask, thermite_ap_cpu_bit as ap_cpu_bit,
@@ -49,12 +49,8 @@ use thermite_kernel_policy::kernel_policy_ingress::{
     thermite_synchronization_worker_can_enter as synchronization_worker_can_enter,
     thermite_synchronization_worker_complete as synchronization_worker_complete,
     thermite_synchronization_worker_issue as synchronization_worker_issue,
-    thermite_service_finish_value as service_finish_value,
-    thermite_service_syscall_value as service_syscall_value,
-    thermite_service_user_base as service_user_base,
-    thermite_service_user_fault_address as service_user_fault_address,
-    thermite_service_user_stack as service_user_stack,
-    thermite_service_user_stack_pointer as service_user_stack_pointer,
+    thermite_service_runtime_plan as service_runtime_plan,
+    thermite_service_runtime_validate as service_runtime_validate,
     thermite_service_write_user_byte as service_write_user_byte,
 };
 
@@ -1807,7 +1803,7 @@ fn entropy_probe() -> Result<usize, PostFirmwareError> {
     Ok(32)
 }
 
-unsafe fn run_user_mode(user_base: u64, user_stack: u64) -> Result<(u64, u64), PostFirmwareError> {
+unsafe fn run_user_mode(plan: ServiceRuntimePlan) -> Result<(u64, u64), PostFirmwareError> {
     USER_SYSCALLS.store(0, Ordering::Release);
     USER_FAULTS.store(0, Ordering::Release);
     USER_FINISHED.store(0, Ordering::Release);
@@ -1817,10 +1813,11 @@ unsafe fn run_user_mode(user_base: u64, user_stack: u64) -> Result<(u64, u64), P
     // SAFETY: USER_BASE and USER_STACK are user-accessible mappings, the TSS
     // supplies a bounded ring-0 stack, and both software-interrupt gates carry
     // DPL 3.  The completion gate returns to this exact call frame.
-    unsafe { thermite_enter_user(user_base, service_user_stack_pointer(user_stack)) };
+    unsafe { thermite_enter_user(plan.user_base, plan.stack_pointer) };
     let syscalls = USER_SYSCALLS.load(Ordering::Acquire);
     let faults = USER_FAULTS.load(Ordering::Acquire);
-    if !thermite_kernel_policy::kernel_policy_ingress::thermite_service_runtime_complete(
+    if !service_runtime_validate(
+        plan,
         syscalls,
         faults,
         USER_FINISHED.load(Ordering::Acquire),
@@ -1898,16 +1895,16 @@ pub unsafe fn run(
     {
         return Err(PostFirmwareError::Memory);
     }
-    let user_base = service_user_base();
-    let user_stack = service_user_stack(user_base);
-    let user_fault_address = service_user_fault_address(user_base);
-    let user_syscall_value = service_syscall_value();
-    let user_finish_value = service_finish_value();
-    USER_EXPECTED_FAULT_ADDRESS.store(user_fault_address, Ordering::Release);
+    let service_plan = service_runtime_plan();
+    USER_EXPECTED_FAULT_ADDRESS.store(service_plan.fault_address, Ordering::Release);
     // SAFETY: initialization occurs on the BSP before AP release.
-    let cr3 = unsafe { setup_page_tables(user_base)? };
+    let cr3 = unsafe { setup_page_tables(service_plan.user_base)? };
     unsafe {
-        setup_user_code(user_fault_address, user_syscall_value, user_finish_value);
+        setup_user_code(
+            service_plan.fault_address,
+            service_plan.syscall_value,
+            service_plan.finish_value,
+        );
         setup_descriptor_tables();
         install_trampoline(boot_services, cr3, apic_ids)?;
         reserve_boot_heap(boot_services)?;
@@ -2164,7 +2161,7 @@ pub unsafe fn run(
     }
     // SAFETY: paging, TSS, GDT, and all relevant IDT gates are now live.
     serial.bytes(b"THERMITE_POST_STAGE user_enter=1\n");
-    let (syscalls, faults) = unsafe { run_user_mode(user_base, user_stack)? };
+    let (syscalls, faults) = unsafe { run_user_mode(service_plan)? };
     Ok(PostFirmwareReport {
         online: exact_load(&POST_ONLINE_MASK).count_ones() as usize,
         failed: usize::from(failed_apic.is_some()),

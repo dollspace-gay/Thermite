@@ -34,6 +34,8 @@ cargo run -p forge -- build conformance/thermite-kernel.thpkg.json \
   --compose-export ap_worker_task_complete \
   --compose-export dma_device_plan \
   --compose-export dma_queue_plan \
+  --compose-export service_runtime_plan \
+  --compose-export service_runtime_validate \
   --compose-export service_write_user_byte \
   --compose-export ap_expected_mask \
   --compose-export apic_profile_supported \
@@ -102,7 +104,10 @@ stale accounting, and completion acknowledgement. The allocator retains only
 pointer/provenance and zeroing operations in Rust. Generated Thermite now
 constructs the live DMA register/status plan, queue layout, descriptor chain,
 availability publication, and pin-to-reclaim state receipt; Rust performs the
-raw PIO, volatile buffer access, fences, and completion polling. Interrupt
+raw PIO, volatile buffer access, fences, and completion polling. Generated
+Thermite also executes the live service create-to-dispatch state
+machine and supplies the user mapping, entry, syscall, fault, and completion
+values consumed by ring-3 execution and its final validation. Interrupt
 assembly still has raw atomic operations awaiting exact refinement. QEMU checks
 execution with 1, 2, 4, and 8 CPUs. The runtime no longer links the parallel
 safe-Rust kernel model. Page-table traversal and

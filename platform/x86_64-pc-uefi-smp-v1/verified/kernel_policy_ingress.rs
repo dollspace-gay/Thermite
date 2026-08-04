@@ -1071,6 +1071,54 @@ pub fn thermite_service_write_user_byte(
     super::service_write_user_byte(data, at, value)
 }
 
+pub fn thermite_service_runtime_plan() -> (result: super::ServiceRuntimePlan)
+    ensures
+        result.service_id == 1,
+        result.generation == 1,
+        result.requests == 1,
+        result.phase == 2,
+        result.user_base == 70368744177664,
+        result.user_stack == 70368744181760,
+        result.fault_address == 70368744185856,
+        result.stack_pointer == 70368744185840,
+        result.syscall_value == 4660,
+        result.finish_value == 22136,
+{
+    super::service_runtime_plan()
+}
+
+pub fn thermite_service_runtime_validate(
+    plan: super::ServiceRuntimePlan,
+    syscalls: u64,
+    faults: u64,
+    finished: u64,
+    syscall_value: u64,
+    finish_value: u64,
+    kernel_faults: u64,
+) -> (result: bool)
+    ensures
+        result == (plan.service_id == 1
+            && plan.generation == 1
+            && plan.requests == 1
+            && plan.phase == 2
+            && syscalls == 1
+            && faults == 1
+            && finished == 1
+            && syscall_value == plan.syscall_value
+            && finish_value == plan.finish_value
+            && kernel_faults == 0),
+{
+    super::service_runtime_validate(
+        plan,
+        syscalls,
+        faults,
+        finished,
+        syscall_value,
+        finish_value,
+        kernel_faults,
+    )
+}
+
 pub fn thermite_service_runtime_complete(
     syscalls: u64,
     faults: u64,

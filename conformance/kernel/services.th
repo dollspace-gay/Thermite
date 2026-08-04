@@ -13,6 +13,19 @@ struct ServiceState {
   phase: u64
 }
 
+struct ServiceRuntimePlan {
+  service_id: u64,
+  generation: u64,
+  requests: u64,
+  phase: u64,
+  user_base: u64,
+  user_stack: u64,
+  fault_address: u64,
+  stack_pointer: u64,
+  syscall_value: u64,
+  finish_value: u64
+}
+
 fn service_user_base() -> u64
   req true
   ens result == 70368744177664
@@ -133,6 +146,56 @@ fn service_dispatch(state: ServiceState) -> ServiceState
     requests: state.requests + 1,
     phase: 2
   }
+}
+
+fn service_runtime_plan() -> ServiceRuntimePlan
+  req true
+  ens result.service_id == 1
+  ens result.generation == 1
+  ens result.requests == 1
+  ens result.phase == 2
+  ens result.user_base == 70368744177664
+  ens result.user_stack == 70368744181760
+  ens result.fault_address == 70368744185856
+  ens result.stack_pointer == 70368744185840
+  ens result.syscall_value == 4660
+  ens result.finish_value == 22136
+  fx pure
+{
+  let created: ServiceState = service_create(1);
+  let starting: ServiceState = service_start(created);
+  let running: ServiceState = service_ready(starting);
+  let dispatched: ServiceState = service_dispatch(running);
+  let user_base: u64 = service_user_base();
+  let user_stack: u64 = service_user_stack(user_base);
+  ServiceRuntimePlan {
+    service_id: dispatched.service_id,
+    generation: dispatched.generation,
+    requests: dispatched.requests,
+    phase: dispatched.phase,
+    user_base: user_base,
+    user_stack: user_stack,
+    fault_address: service_user_fault_address(user_base),
+    stack_pointer: service_user_stack_pointer(user_stack),
+    syscall_value: service_syscall_value(),
+    finish_value: service_finish_value()
+  }
+}
+
+fn service_runtime_validate(
+  plan: ServiceRuntimePlan,
+  syscalls: u64,
+  faults: u64,
+  finished: u64,
+  syscall_value: u64,
+  finish_value: u64,
+  kernel_faults: u64
+) -> bool
+  req true
+  ens result == (plan.service_id == 1 && plan.generation == 1 && plan.requests == 1 && plan.phase == 2 && syscalls == 1 && faults == 1 && finished == 1 && syscall_value == plan.syscall_value && finish_value == plan.finish_value && kernel_faults == 0)
+  fx pure
+{
+  plan.service_id == 1 && plan.generation == 1 && plan.requests == 1 && plan.phase == 2 && syscalls == 1 && faults == 1 && finished == 1 && syscall_value == plan.syscall_value && finish_value == plan.finish_value && kernel_faults == 0
 }
 
 fn service_policy_bootstrap() -> u64

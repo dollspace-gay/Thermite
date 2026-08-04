@@ -777,9 +777,17 @@ fn encode_method_call(
             let right = encode(&args[0], ctx)?;
             return Ok(format!("(({left})@ =~= ({right})@)"));
         }
+        if name == "array_same_except" && args.len() == 2 && is_fixed_array_value(&args[0]) {
+            let left = encode(receiver, ctx)?;
+            let right = encode(&args[0], ctx)?;
+            let except = encode(&args[1], ctx)?;
+            return Ok(format!(
+                "(forall|__thermite_i: int| 0 <= __thermite_i < ({left})@.len() && __thermite_i != ({except}) as int ==> ({left})@[__thermite_i] == ({right})@[__thermite_i])"
+            ));
+        }
         return Err(RefEncodeError::Unsupported(format!(
-            "spec method `.{name}()` on a fixed array (only `.len()` and \
-             `.array_eq(other)` with another fixed array are frozen)"
+            "spec method `.{name}()` on a fixed array (only `.len()` and the \
+             fixed-array relations are frozen)"
         )));
     }
 

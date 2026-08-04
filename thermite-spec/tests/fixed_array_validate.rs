@@ -171,3 +171,35 @@ fn array_equality_requires_matching_primitive_scalar_arrays() {
         SpecError::ArrayEqualityRequiresPrimitiveArrays { .. }
     )));
 }
+
+#[test]
+fn array_same_except_requires_matching_primitive_scalar_arrays() {
+    assert!(validate_src(
+        "fn same_except(left: [u64; 4], right: [u64; 4], at: usize) -> bool\n\
+         req true\n\
+         ens result == left.array_same_except(right, at)\n\
+         fx pure\n\
+         { left.array_same_except(right, at) }"
+    )
+    .is_ok());
+
+    let capacity_mismatch = validate_src(
+        "fn bad(left: [u64; 2], right: [u64; 3], at: usize) -> bool\n\
+         req true ens true fx pure { left.array_same_except(right, at) }",
+    )
+    .expect_err("the frame relation requires equal array types");
+    assert!(capacity_mismatch.iter().any(|error| matches!(
+        error,
+        SpecError::ArrayEqualityRequiresPrimitiveArrays { .. }
+    )));
+
+    let scalar = validate_src(
+        "fn bad(left: u64, right: u64, at: usize) -> bool\n\
+         req true ens true fx pure { left.array_same_except(right, at) }",
+    )
+    .expect_err("the frame relation must reject scalar receivers");
+    assert!(scalar.iter().any(|error| matches!(
+        error,
+        SpecError::ArrayEqualityRequiresPrimitiveArrays { .. }
+    )));
+}

@@ -3,17 +3,18 @@
 <!--
 tier: 3-component
 status: partial
-decision: Thermite ships explicit bounded-wait, ticket-lock, barrier, once, reference-count, and seqlock mechanics in .th plus frozen pause, blocking-wait, and terminal-halt declarations; actual atomic and machine implementations remain consumer-refined boundaries
+decision: Thermite ships explicit bounded-wait, ticket-lock, barrier, once, reference-count, seqlock, and bounded MPSC queue mechanics in .th plus frozen pause, blocking-wait, and terminal-halt declarations; actual atomic and machine implementations remain consumer-refined boundaries
 governs:
   - stdlib/kernel-primitives/synchronization.thpkg.json
   - stdlib/kernel-primitives/synchronization/barrier.th
+  - stdlib/kernel-primitives/synchronization/mpsc_queue.th
   - stdlib/kernel-primitives/synchronization/once.th
   - stdlib/kernel-primitives/synchronization/refcount.th
   - stdlib/kernel-primitives/synchronization/seqlock.th
   - stdlib/kernel-primitives/synchronization/ticket_lock.th
   - stdlib/kernel-primitives/synchronization/wait.th
   - forge/tests/synchronization_primitives.rs
-audited-content-sha256: 5d68e1a8bfb52985712a453289083faef992e21606e955412e2162c591c156c5 (re-pinned 2026-08-04 after the participant-aware barrier primitive checkpoint)
+audited-content-sha256: cb864cba33b4b350ff2f21ad373add90d639f6b7e4c903aefc8885c114f94649 (re-pinned 2026-08-04 after the bounded MPSC queue and exact array-frame checkpoint)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/sealed-atomics.md
@@ -32,7 +33,7 @@ consumer kernels. This repository does not choose which threads block, how a
 scheduler parks them, what protected data means, or which architecture executes
 pause and halt instructions.
 
-`stdlib/kernel-primitives/synchronization.thpkg.json` is a canonical six-root
+`stdlib/kernel-primitives/synchronization.thpkg.json` is a canonical seven-root
 package containing only Thermite source. It has no Rust or assembly runtime
 implementation and no kernel policy.
 
@@ -129,26 +130,60 @@ post-write read validates, and the counter never wraps. The module governs
 version mechanics only; copying protected payload data and the atomic load/store
 realization remain consumer composition obligations.
 
+## Bounded MPSC queue mechanics
+
+`MpscQueue64` separates producer reservation from publication. A successful
+reservation returns a ticket/slot token without making the value visible. Any
+producer may publish its own live reservation out of order, while the single
+consumer may pop only the lowest outstanding ticket. If that ticket has not yet
+been published, pop returns `MpscPending64` instead of bypassing it. The model is
+allocation-free and uses 64 fixed slots, per-slot ready bits, exact tickets, and
+`u64` payloads.
+The empty constructor pins all 64 elements of all three storage arrays through
+extensional equality; it does not infer initialization from sentinel slots.
+
+Publication rejects slot-mismatched, stale, unknown, duplicate, and conflicting
+tokens explicitly. Reservation reports full capacity, counter exhaustion, and an
+unexpected busy slot without wrapping or overwriting live storage. Pop reports
+empty, pending, and conflicting slot identity separately. The contracts use the
+native fixed-array `array_same_except` relation to frame every untouched element;
+that relation has runnable L1/L3 scans and independent contract, expression, and
+body translation validation.
+
+Source probes establish out-of-order producer publication with FIFO consumer
+visibility, duplicate-publication rejection, stale-token rejection after
+consumption, and fail-closed slot conflict. The pure transitions are reusable
+queue mechanics, not a claim that sequential state alone implements concurrency.
+A consumer must linearize reservation/publication/pop through sealed atomics and
+directly refined machine operations, and must choose any blocking, retry,
+backpressure, payload-ownership, and scheduling policy.
+Thermite structs are not yet opaque, so a consumer can still spell a live-looking
+reservation literal; until module-private construction or affine tokens land, the
+consumer must preserve reservation ownership and treat the supplied range/slot/
+generation checks as misuse detection rather than unforgeability.
+
 ## Assurance and remaining work
 
-`forge check --level l3` proves all 96 in-language items at L3. The three frozen
-declarations remain L1 boundaries, so the package contains 99 source items in
-total. Executable contracts kill 349 of 368 generated mutants.
+`forge check --level l3` proves all 128 in-language items at L3. The three frozen
+declarations remain L1 boundaries, so the package contains 131 source items in
+total. Executable contracts kill 449 of 487 generated mutants.
 
 `forge/tests/synchronization_primitives.rs` additionally:
 
 - pins the exact L3/L1 split and all three boundary targets;
 - requires the halt declaration to retain its explicit `diverge` effect;
 - pins wait mutation at 21/22, barrier mutation at 141/149, ticket mutation at
-  41/43, once mutation at 65/68, reference-count mutation at 32/34, and seqlock
-  mutation at 49/52;
+  41/43, once mutation at 65/68, reference-count mutation at 32/34, seqlock
+  mutation at 49/52, and MPSC queue mutation at 100/119;
 - rejects a false claim that an unchanged trace reports a change;
 - rejects a false claim that the second ticket may bypass the first;
 - rejects a false claim that a duplicate barrier arrival advances the round;
+- rejects a false claim that a published later queue ticket may bypass the
+  unpublished FIFO head;
 - rejects false second-once-winner, retired-reference-resurrection, and stale
   seqlock-read claims;
 - builds and replays `ticket_lock_can_issue` as a strict freestanding scalar
-  export while binding all six original modules into the receipt; and
+  export while binding all seven original modules into the receipt; and
 - tampers with the bound wait source and requires validation to fail.
 
 The strict export is scalar because current body TV cannot independently frame
@@ -157,19 +192,19 @@ receipt-bound, and every in-language aggregate transition has its individual
 L3 certificate.
 
 Remaining synchronization work includes atomic integration, named progress and
-fairness assumptions in the registry, bounded concurrent queues, work-stealing
-deque mechanics, and richer reader/writer coordination.
+fairness assumptions in the registry, work-stealing deque mechanics, and richer
+reader/writer coordination.
 
 ## Auditable metrics
 
 | Metric | Value |
 |---|---:|
-| Physical Thermite LOC | 1,837 |
-| Nonblank Thermite LOC | 1,743 |
-| Thermite functions | 73 (64 executable, 6 specification, 3 frozen declarations) |
-| In-language L3 items | 96 |
+| Physical Thermite LOC | 2,669 |
+| Nonblank Thermite LOC | 2,543 |
+| Thermite functions | 100 (81 executable, 16 specification, 3 frozen declarations) |
+| In-language L3 items | 128 |
 | Frozen boundary declarations | 3 at L1 |
-| Executable mutants killed | 349/368 |
+| Executable mutants killed | 449/487 |
 | Bodyful Rust/assembly synchronization implementations | 0 |
 | Ordinary Rust kernel-policy/algorithm LOC | 0 |
 | Direct-Verus TPL LOC shipped by this package | 0 |

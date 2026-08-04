@@ -3,7 +3,7 @@
 tier: 3-component
 status: draft
 audited-sha: 6b86f74476122cfddbdcf168d37a3561d2598054 (re-pinned 2026-06-16 for PR #46 after merging main: lower_l1's TString runtime gate now treats String-typed ADT declarations as TString users so ADT fields cannot name an unemitted runtime; main's inert Item::Forge skip is preserved; core req/ens/inv check emission is unchanged.)
-audited-content-sha256: 949864b871d96758dd95242ab1197cf6774f40c3c4dc2f0d9269cc1255c18fad
+audited-content-sha256: d074160950aea70072c0667a6cdef0b047924e23e76a50bf60300d87010174c6
 governs: thermite-lower/src/l1.rs
 thesis-refs:
   - thermite-design.md §4.2
@@ -159,6 +159,10 @@ ENTIRELY exec: every clause is a Rust `bool` expression over real values, every
 combinator is a real loop over `&[T]`, every `spec fn` is a real recursive fn.
 There is no `vstd`, no `Seq`, no proof. A clause's verbatim `Clause.text` is
 carried into the violation message for legibility (§2.4).
+Primitive fixed-array `.array_eq(other)` checks use native equality at L1;
+`.array_same_except(other, index)` lowers to a bounded allocation-free scan that
+checks every slot other than the selected index. An out-of-bounds exception
+therefore performs full equality, matching the L3 finite-view relation.
 
 ### The always-active check primitive (REQ-2)
 

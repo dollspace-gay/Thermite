@@ -14,13 +14,17 @@ governs:
   - thermite-syntax/tests/kernel_surface.rs
   - thermite-syntax/tests/conformance.rs
   - thermite-spec/src/validator.rs
+  - thermite-spec/tests/fixed_array_validate.rs
   - thermite-spec/tests/atomic_ordering_validate.rs
   - thermite-lower/src/effects.rs
+  - thermite-lower/src/l1.rs
   - thermite-lower/src/lower.rs
+  - thermite-lower/tests/fixed_array.rs
   - thermite-lower/tests/kernel_mutable_slice.rs
   - thermite-lower/tests/effects_verified.rs
   - thermite-verified/src/lib.rs
   - thermite-tv/src/exec_stmt_encode.rs
+  - thermite-tv/src/exec_encode.rs
   - thermite-tv/src/obligation.rs
   - thermite-tv/src/ref_encode.rs
   - thermite-tv/tests/fixed_array_tv.rs
@@ -31,6 +35,9 @@ governs:
   - forge/src/body_tv.rs
   - forge/src/contract_tv.rs
   - forge/src/exec_tv.rs
+  - forge/tests/body_tv.rs
+  - forge/tests/contract_tv_conformance.rs
+  - forge/tests/exec_tv_conformance.rs
   - forge/src/verified_build.rs
   - forge/src/verified_build/composition.rs
   - forge/src/verified_build/primitive_registry.rs
@@ -48,6 +55,7 @@ governs:
   - stdlib/kernel-primitives/ownership/generation.th
   - stdlib/kernel-primitives/synchronization.thpkg.json
   - stdlib/kernel-primitives/synchronization/barrier.th
+  - stdlib/kernel-primitives/synchronization/mpsc_queue.th
   - stdlib/kernel-primitives/synchronization/once.th
   - stdlib/kernel-primitives/synchronization/refcount.th
   - stdlib/kernel-primitives/synchronization/seqlock.th
@@ -61,7 +69,7 @@ governs:
   - conformance/verified-composition/frozen_primitive.th
   - conformance/verified-composition/frozen_primitive_shell.rs
   - conformance/verified-composition/frozen_primitive_registry.json
-audited-content-sha256: 186b49501785ce000a7542e492110bd2d090eb79f34473bc0a5af9e3b6f8c076 (re-pinned 2026-08-04 after adding reusable participant-aware barrier mechanics; no kernel policy or implementation was added)
+audited-content-sha256: 48eaac5b6b687c97e455097cc63ef9d8d8b21ef7c01918cdf44f0e93347a8400 (re-pinned 2026-08-04 after adding exact fixed-array framing and reusable bounded MPSC mechanics; no kernel policy or implementation was added)
 extends:
   - .design/build/kernel-target.md
   - .design/build/l3-rich-composition.md
@@ -159,8 +167,10 @@ those contract, executable-guard, body-state, and wrapper proof rows, and record
 shared/exclusive borrow ownership in the public ABI receipt.
 Repeat initialization rejects non-copy element types before lowering.
 `.array_eq(other)` now provides allocation-free extensional equality for every
-primitive-scalar array through a const-generic scan whose exact generated body is
-verified by Verus and independently translation-validated. Static ownership,
+primitive-scalar array, while `.array_same_except(other, index)` proves exact
+frame preservation around one updated index. Both use const-generic scans whose
+exact generated bodies are verified by Verus and independently
+translation-validated. Static ownership,
 borrows of general named aggregates, and aggregate-element equality remain. The
 allocation-free collection package now supplies a 256-entry boolean bitset,
 64-entry `u64` vector, FIFO ring, and collision-explicit `usize`-to-`u64` direct
@@ -202,7 +212,11 @@ context. Existing indexing and indexed assignment are the only access/mutation
 forms; bounded `for i in 0..N` supplies iteration without an allocator or hidden
 iterator state. `.len()` is the constant `N`. For arrays whose element is one of
 `u8`, `u16`, `u32`, `u64`, `usize`, or `bool`, `.array_eq(other)` compares every
-element and returns exactly finite-view extensional equality. Arrays nest, may
+element and returns exactly finite-view extensional equality.
+`.array_same_except(other, index)` returns true exactly when every in-bounds
+element other than `index` agrees; an out-of-bounds exception therefore means
+full equality. This combines with an exact indexed postcondition to frame an
+owned array update compositionally. Arrays nest, may
 appear in plain structs/enums/tuples, and may be borrowed as immutable or mutable
 arrays.
 
@@ -418,12 +432,14 @@ kernel implementations and not privileged boundaries.
 
 The receipt-bound synchronization package now ships a total bounded-wait trace
 scan, frozen pause/block/terminal-halt declarations, and fail-closed ticket-lock,
-participant-aware barrier, once, reference-count, and seqlock mechanics.
-Ninety-six in-language items prove at L3; the three machine-facing declarations
-remain honest L1 boundaries, and executable contracts kill 349/368 mutants.
+participant-aware barrier, once, reference-count, seqlock, and bounded MPSC queue
+mechanics. One hundred twenty-eight in-language items prove at L3; the three
+machine-facing declarations remain honest L1 boundaries, and executable
+contracts kill 449/487 mutants.
 Probes cover FIFO handoff, frozen barrier membership, stale generations,
 stale tickets and once tokens, poison, last-reference retirement without
-resurrection, stale seqlock reads, and nonwrapping exhaustion. These are not yet
+resurrection, stale seqlock reads, out-of-order MPSC publication with FIFO
+visibility, duplicate/stale queue tokens, and nonwrapping exhaustion. These are not yet
 machine concurrency proofs: consumer code must connect the state mechanics to
 sealed atomics and directly refined wait/atomic implementations. Exact claims
 and residual work are in
@@ -480,8 +496,8 @@ The primitive suite is target-independent wherever possible.
   entry, shell, and receipt field; the appropriate proof or closure gate fails.
 - Prove representative reusable libraries: the fixed bitset, fixed ring,
   generation ledger, bounded-wait scan, ticket lock, participant-aware barrier,
-  once, reference-count, and seqlock state mechanics are present; bounded MPSC
-  queue, packed bitmap, and epoch-acknowledgement set remain.
+  once, reference-count, seqlock, and bounded MPSC queue mechanics are present;
+  work-stealing deque, packed bitmap, and epoch-acknowledgement set remain.
 - Compile those libraries for the generic freestanding target with no hosted
   effects and no concrete platform dependency.
 - Compose a synthetic test platform whose bodies are tiny direct-Verus
@@ -514,11 +530,11 @@ Source: `.design/reqs/registry.toml`
 |---|---|---|---|---|
 | REQ-KPRIM-1 | shipped | `.design/build/kernel-primitives.md` | Kernel scalar and effect surface |  |
 | REQ-KPRIM-10 | not_started | `.design/build/kernel-primitives.md` | Primitive-only adversarial suite | Add package, fixed-storage, atomic, waiting, registry, refinement, receipt-tamper, freestanding-consumer, and no-concrete-kernel gates. |
-| REQ-KPRIM-2 | partial | `.design/build/kernel-primitives.md` | Exact mutable and fixed storage | Mutable borrowed slices/arrays, arbitrary old/final snapshot framing, native fixed arrays, scalar extensional equality, strict public-borrow receipts, exact array TV, and a receipt-bound boolean bitset/u64 vector/u64 FIFO-ring/collision-explicit direct-map package are shipped. Add static storage, general named-aggregate borrows, aggregate-element equality, packed bitmap refinement, richer collision-resolving maps, slabs/freelists, generic library capacities, and complete aggregate lifecycle TV. |
+| REQ-KPRIM-2 | partial | `.design/build/kernel-primitives.md` | Exact mutable and fixed storage | Mutable borrowed slices/arrays, arbitrary old/final snapshot framing, native fixed arrays, scalar extensional equality and same-except update framing, strict public-borrow receipts, exact array TV, and a receipt-bound boolean bitset/u64 vector/u64 FIFO-ring/collision-explicit direct-map package are shipped. Add static storage, general named-aggregate borrows, aggregate-element equality, packed bitmap refinement, richer collision-resolving maps, slabs/freelists, generic library capacities, and complete aggregate lifecycle TV. |
 | REQ-KPRIM-3 | partial | `.design/build/kernel-primitives.md` | Receipt-bound packages and modules | Independent parsing, module-local identity, direct-import/root-export enforcement, rooted graph validation, source allowlisting, L3 build/composition, complete receipt binding, validation, and replay are shipped. Extend the remaining source-oriented Forge commands (check, audit, TV, goal/edit/fill) to operate on packages without losing module-local diagnostics. |
 | REQ-KPRIM-4 | partial | `.design/build/kernel-primitives.md` | Sealed authority and ownership | The sealed-construction barrier plus a receipt-bound 64-slot generation ledger now prove acquisition/renewal/release, stale-handle-after-reuse rejection, double-release rejection, monotonic rights, L3 move/clone refusal, and a strict replayed scalar surface. Add module-private/opaque ledger construction or a complete affine rule, named-aggregate/ADT body TV for strict lifecycle replay, exact authority-mint refinement, and atomic-slot integration. |
 | REQ-KPRIM-5 | partial | `.design/build/kernel-primitives.md` | Sealed atomics and ordering model | The receipt-bound package, 50 sealed boundary declarations, exact ordering matrix, pre-codegen legality gate, bounded history relations, strict kernel ordering proof, strict hosted history proof, replay, and adversarial tests are present. Add enforceable single-use slot ownership, a kernel-target finite-history proof surface, exact atomic object/machine refinement, and verified synchronization consumers. |
-| REQ-KPRIM-6 | partial | `.design/build/kernel-primitives.md` | Verified waiting and synchronization | A receipt-bound bounded-wait trace scan, frozen pause/block/terminal-halt declarations, and fail-closed ticket-lock/barrier/once/reference-count/seqlock mechanics are shipped with L3 proofs, adversarial claims, strict replay, and tamper rejection. Add registry-level fairness/progress semantics, directly refined wait bodies, atomic integration and machine concurrency composition, then bounded queues, deques, and richer reader/writer coordination in .th. |
+| REQ-KPRIM-6 | partial | `.design/build/kernel-primitives.md` | Verified waiting and synchronization | A receipt-bound bounded-wait trace scan, frozen pause/block/terminal-halt declarations, and fail-closed ticket-lock/barrier/once/reference-count/seqlock/bounded-MPSC mechanics are shipped with L3 proofs, adversarial claims, strict replay, and tamper rejection. Add registry-level fairness/progress semantics, directly refined wait bodies, atomic integration and machine concurrency composition, then work-stealing deques and richer reader/writer coordination in .th. |
 | REQ-KPRIM-7 | partial | `.design/build/kernel-primitives.md` | Generic frozen boundary registry | Same-crate safe direct-Verus Rust-ABI entries now close reachable boundaries exactly. Add non-empty codegen-feature binding and exact separate Rust/assembly source, object, machine-model, and refinement closure for irreducible operations without adding an architecture operation table. |
 | REQ-KPRIM-8 | shipped | `.design/build/kernel-primitives.md` | Generic freestanding verified library build |  |
 | REQ-KPRIM-9 | partial | `.design/build/kernel-primitives.md` | Exact platform refinement composition | Safe same-crate direct-Verus operations now receive exact one-to-one checked-wrapper refinement. Add direct machine-operation refinement tied to separate Rust/assembly objects and the atomic/concurrency model before every irreducible platform family is covered. |

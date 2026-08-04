@@ -3,6 +3,7 @@
   "name": "thermite_synchronization_primitives",
   "roots": [
     "barrier",
+    "mpsc_queue",
     "once",
     "refcount",
     "seqlock",
@@ -13,6 +14,11 @@
     {
       "name": "barrier",
       "path": "synchronization/barrier.th",
+      "imports": []
+    },
+    {
+      "name": "mpsc_queue",
+      "path": "synchronization/mpsc_queue.th",
       "imports": []
     },
     {

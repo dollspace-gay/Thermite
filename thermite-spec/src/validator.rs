@@ -241,6 +241,7 @@ const BUILTIN_METHODS: &[&str] = &[
     // the L3 lowerer maps this explicit surface operation to a directly verified
     // const-generic scan and maps contract occurrences to finite-view equality.
     "array_eq",
+    "array_same_except",
     "get",
     "last",
     "contains",
@@ -372,9 +373,10 @@ pub enum SpecError {
     /// opaque user ADTs here would either fail only in a backend or silently
     /// change ownership semantics.
     ArrayRepeatRequiresCopy { span: Span },
-    /// `.array_eq(other)` is defined only for two equally typed fixed arrays
-    /// whose element is a primitive scalar. Richer element equality must be
-    /// supplied explicitly by a verified library rather than inferred by Rust.
+    /// `.array_eq(other)` and `.array_same_except(other, index)` are defined only
+    /// for two equally typed fixed arrays whose element is a primitive scalar.
+    /// Richer element equality must be supplied explicitly by a verified library
+    /// rather than inferred by Rust.
     ArrayEqualityRequiresPrimitiveArrays { detail: String, span: Span },
     /// An executable call to a frozen `thermite::atomic::*` boundary uses an
     /// ordering expression that is not an exact `AtomicOrdering::Variant`
@@ -613,7 +615,7 @@ impl fmt::Display for SpecError {
             ),
             SpecError::ArrayEqualityRequiresPrimitiveArrays { detail, .. } => write!(
                 f,
-                "fixed-array `.array_eq(other)` requires equally typed primitive-scalar arrays: {detail}"
+                "fixed-array relations require equally typed primitive-scalar arrays: {detail}"
             ),
             SpecError::IllegalAtomicOrdering {
                 operation, detail, ..
@@ -1409,8 +1411,16 @@ impl Validator {
         Some(current)
     }
 
-    fn check_array_equality_call(&mut self, receiver: &Expr, args: &[Expr], span: Span) {
-        let valid = if let [right] = args {
+    fn check_array_relation_call(
+        &mut self,
+        name: &str,
+        receiver: &Expr,
+        args: &[Expr],
+        span: Span,
+    ) {
+        let expected_arity = if name == "array_eq" { 1 } else { 2 };
+        let valid = if args.len() == expected_arity {
+            let right = &args[0];
             match (
                 self.array_equality_operand_type(receiver),
                 self.array_equality_operand_type(right),
@@ -1426,11 +1436,14 @@ impl Validator {
         if !valid {
             self.errors
                 .push(SpecError::ArrayEqualityRequiresPrimitiveArrays {
-                    detail: if args.len() == 1 {
+                    detail: if args.len() == expected_arity {
                         "both operands must be named arrays with the same primitive element and capacity"
                             .to_string()
                     } else {
-                        format!("expected exactly one argument, found {}", args.len())
+                        format!(
+                            "`.{name}()` expects {expected_arity} argument(s), found {}",
+                            args.len()
+                        )
                     },
                     span,
                 });
@@ -1726,8 +1739,8 @@ impl Validator {
                 name,
                 args,
             } => {
-                if name == "array_eq" {
-                    self.check_array_equality_call(receiver, args, span);
+                if name == "array_eq" || name == "array_same_except" {
+                    self.check_array_relation_call(name, receiver, args, span);
                 }
                 self.scan_expr_for_loops(receiver, span);
                 for arg in args {
@@ -1910,8 +1923,8 @@ impl Validator {
                 name,
                 args,
             } => {
-                if name == "array_eq" {
-                    self.check_array_equality_call(receiver, args, span);
+                if name == "array_eq" || name == "array_same_except" {
+                    self.check_array_relation_call(name, receiver, args, span);
                 }
                 if !BUILTIN_METHODS.contains(&name.as_str()) {
                     self.errors.push(SpecError::ForbiddenCall {

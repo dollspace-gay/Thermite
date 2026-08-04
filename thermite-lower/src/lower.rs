@@ -1613,6 +1613,27 @@ fn lower_inv_expr(
                 )?;
                 return Ok(format!("(({r})@ =~= ({right})@)"));
             }
+            if name == "array_same_except" && args.len() == 2 {
+                let right = lower_inv_expr(
+                    &args[0],
+                    field_names,
+                    string_fields,
+                    spec_fn_param_types,
+                    d,
+                    span,
+                )?;
+                let except = lower_inv_expr(
+                    &args[1],
+                    field_names,
+                    string_fields,
+                    spec_fn_param_types,
+                    d,
+                    span,
+                )?;
+                return Ok(format!(
+                    "(forall|__thermite_i: int| 0 <= __thermite_i < ({r})@.len() && __thermite_i != ({except}) as int ==> ({r})@[__thermite_i] == ({right})@[__thermite_i])"
+                ));
+            }
             let recv_is_string_field = matches!(
                 receiver.as_ref(),
                 Expr::Path(segs) if segs.len() == 1 && string_fields.contains(&segs[0].as_str())
@@ -4868,7 +4889,8 @@ fn lower_array_len(len: &ArrayLen) -> String {
 /// implementation only for obligations whose production column calls it.
 pub fn expr_uses_fixed_array_equality(expr: &Expr) -> bool {
     if matches!(expr, Expr::MethodCall { name, args, .. }
-        if name == "array_eq" && args.len() == 1)
+        if (name == "array_eq" && args.len() == 1)
+            || (name == "array_same_except" && args.len() == 2))
     {
         return true;
     }
@@ -4936,6 +4958,7 @@ pub fn fixed_array_equality_defs() -> String {
     let mut out = String::from(
         "\npub trait __thermite_FixedArrayEq {\n\
          \x20   fn __thermite_fixed_array_eq(&self, right: &Self) -> (result: bool);\n\
+         \x20   fn __thermite_fixed_array_same_except(&self, right: &Self, except: usize) -> (result: bool);\n\
          }\n",
     );
     for primitive in PRIMITIVES {
@@ -4966,6 +4989,30 @@ pub fn fixed_array_equality_defs() -> String {
         out.push_str("            i = i + 1;\n");
         out.push_str("        }\n");
         out.push_str("        assert(self@ =~= right@);\n");
+        out.push_str("        true\n");
+        out.push_str("    }\n");
+        writeln!(
+            out,
+            "    fn __thermite_fixed_array_same_except(&self, right: &[{primitive}; N], except: usize) -> (result: bool)"
+        )
+        .ok();
+        out.push_str("        ensures\n");
+        out.push_str("            result <==> forall|j: int| 0 <= j < N && j != except as int ==> self@[j] == right@[j],\n");
+        out.push_str("    {\n");
+        out.push_str("        let mut i: usize = 0;\n");
+        out.push_str("        while i < N\n");
+        out.push_str("            invariant\n");
+        out.push_str("                i <= N,\n");
+        out.push_str("                forall|j: int| 0 <= j < i && j != except as int ==> self@[j] == right@[j],\n");
+        out.push_str("            decreases N - i,\n");
+        out.push_str("        {\n");
+        out.push_str("            if i != except && self[i] != right[i] {\n");
+        out.push_str("                assert(i as int != except as int);\n");
+        out.push_str("                assert(self@[i as int] != right@[i as int]);\n");
+        out.push_str("                return false;\n");
+        out.push_str("            }\n");
+        out.push_str("            i = i + 1;\n");
+        out.push_str("        }\n");
         out.push_str("        true\n");
         out.push_str("    }\n");
         out.push_str("}\n");
@@ -8260,6 +8307,18 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
                     return Ok(format!("(({r})@ =~= ({right})@)"));
                 }
                 return Ok(format!("({r}).__thermite_fixed_array_eq(&({right}))"));
+            }
+            if name == "array_same_except" && args.len() == 2 {
+                let right = lower_expr(&args[0], ctx, d, span)?;
+                let except = lower_expr(&args[1], ctx, d, span)?;
+                if ctx.is_spec() {
+                    return Ok(format!(
+                        "(forall|__thermite_i: int| 0 <= __thermite_i < ({r})@.len() && __thermite_i != ({except}) as int ==> ({r})@[__thermite_i] == ({right})@[__thermite_i])"
+                    ));
+                }
+                return Ok(format!(
+                    "({r}).__thermite_fixed_array_same_except(&({right}), {except})"
+                ));
             }
             // Cluster C4 (`.design/basis/07-strings.md` REQ-8, issue #94): the
             // `u64`→decimal-`String` method `n.to_string()` lowers to a call of the

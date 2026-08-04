@@ -213,10 +213,12 @@ Removed from Rust: explicit lifetimes, the trait system (only built-in
 widening (casts explicit; overflow is a proof obligation).
 
 Kernel libraries: `forge build` accepts receipt-bound `*.thpkg.json` manifests.
+Primitive fixed arrays expose `.array_eq(other)` for extensional equality and
+`.array_same_except(other, index)` for exact one-slot update framing.
 `atomics.thpkg.json` supplies sealed bool/u32/u64/usize atomics, order/history
 models, and literal-order legality; `ownership.thpkg.json` supplies generation
 mechanics; `collections.thpkg.json` supplies fixed bitset/vector/FIFO/direct-map;
-`synchronization.thpkg.json` supplies wait/ticket/barrier/once/refcount/seqlock
+`synchronization.thpkg.json` supplies wait/ticket/barrier/once/refcount/seqlock/MPSC
 mechanics plus frozen pause/block/halt declarations. No package supplies a kernel or
 machine body. Consumers directly refine boundaries; registry v1 accepts only
 sequential safe-Rust. Opacity, aggregate TV, and machine refinement remain.

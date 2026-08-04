@@ -1579,6 +1579,13 @@ pub(crate) fn lower_expr_exec(
                 let right = lower_expr_exec(&args[0], d, span, variants)?;
                 return Ok(format!("({r}) == ({right})"));
             }
+            if name == "array_same_except" && args.len() == 2 {
+                let right = lower_expr_exec(&args[0], d, span, variants)?;
+                let except = lower_expr_exec(&args[1], d, span, variants)?;
+                return Ok(format!(
+                    "({{ let __thermite_left = &({r}); let __thermite_right = &({right}); let __thermite_except: usize = {except}; let mut __thermite_i: usize = 0; let mut __thermite_same: bool = true; while __thermite_i < __thermite_left.len() {{ if __thermite_i != __thermite_except && __thermite_left[__thermite_i] != __thermite_right[__thermite_i] {{ __thermite_same = false; break; }} __thermite_i += 1; }} __thermite_same }})"
+                ));
+            }
             // Cluster C4 (`.design/basis/07-strings.md` REQ-8, issue #94): the
             // `u64`→decimal-`String` method `n.to_string()` lowers to a call of the
             // generated free fn `u64_to_string(n)` (emitted by

@@ -349,6 +349,92 @@ pub fn __thermite_array_eq_u64(
 }
 
 #[test]
+fn fixed_array_same_except_is_a_verified_frame_scan() {
+    let source = "const SLOTS: usize = 4;\n\
+fn arrays_same_except(left: [u64; SLOTS], right: [u64; SLOTS], except: usize) -> bool\n\
+req true\n\
+ens result == left.array_same_except(right, except)\n\
+fx pure\n\
+{ left.array_same_except(right, except) }\n";
+    let parsed = thermite_syntax::parse(source);
+    assert!(parsed.is_clean(), "parse errors: {:?}", parsed.errors);
+    let Item::Fn(function) = &parsed.program.items[1] else {
+        panic!("expected arrays_same_except function");
+    };
+    let tail = function.body.as_ref().unwrap().tail.as_ref().unwrap();
+    let production = "__thermite_array_same_except_u64(&(left), &(right), except)";
+    let helper = r#"
+pub fn __thermite_array_same_except_u64(
+    left: &[u64; SLOTS],
+    right: &[u64; SLOTS],
+    except: usize,
+) -> (result: bool)
+    ensures
+        result <==> forall|j: int|
+            0 <= j < SLOTS && j != except as int ==> left@[j] == right@[j],
+{
+    let mut i: usize = 0;
+    while i < SLOTS
+        invariant
+            i <= SLOTS,
+            forall|j: int|
+                0 <= j < i && j != except as int ==> left@[j] == right@[j],
+        decreases SLOTS - i,
+    {
+        if i != except && left[i] != right[i] {
+            assert(i as int != except as int);
+            assert(left@[i as int] != right@[i as int]);
+            return false;
+        }
+        i = i + 1;
+    }
+    true
+}
+
+"#
+    .to_string();
+    let exec_frame = ExecObligationFrame {
+        spec_defs: vec!["pub const SLOTS: usize = 4;".to_string(), helper],
+        params: vec![
+            ExecParamDecl::new("left", "[u64; SLOTS]"),
+            ExecParamDecl::new("right", "[u64; SLOTS]"),
+            ExecParamDecl::new("except", "usize"),
+        ],
+        ret_type: "bool".to_string(),
+        fixed_array_params: vec!["left".to_string(), "right".to_string()],
+        ..Default::default()
+    };
+    let exec_program = exec_equivalence_obligation(tail, production, &exec_frame)
+        .expect("array frame exec obligation must build");
+    assert!(
+        exec_program.contains("__thermite_i != (except) as int"),
+        "{exec_program}"
+    );
+    assert_verus("array_same_except_exec", &exec_program, true);
+
+    let wrong_exec = exec_equivalence_obligation(tail, "true", &exec_frame)
+        .expect("wrong frame production must still build");
+    assert_verus("array_same_except_wrong", &wrong_exec, false);
+
+    let contract_frame = ObligationFrame {
+        spec_defs: vec!["pub const SLOTS: usize = 4;".to_string()],
+        params: vec![
+            ParamDecl::new("left", "[u64; SLOTS]"),
+            ParamDecl::new("right", "[u64; SLOTS]"),
+            ParamDecl::new("except", "usize"),
+            ParamDecl::new("result", "bool"),
+        ],
+        fixed_array_params: vec!["left".to_string(), "right".to_string()],
+        ..Default::default()
+    };
+    let expected = "result == (forall|__thermite_i: int| 0 <= __thermite_i < (left)@.len() && __thermite_i != (except) as int ==> (left)@[__thermite_i] == (right)@[__thermite_i])";
+    let contract_program =
+        equivalence_obligation(&function.contract.ens[0].expr, expected, &contract_frame)
+            .expect("array frame contract obligation must build");
+    assert_verus("array_same_except_contract", &contract_program, true);
+}
+
+#[test]
 fn exclusive_aggregate_slice_write_has_an_exact_post_state() {
     let source = "fn write_pair(data: &mut [[u64; 2]], at: usize, value: u64) -> u64\n\
 req at < data.len()\n\

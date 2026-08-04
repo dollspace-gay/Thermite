@@ -1299,7 +1299,19 @@ conformance_ops = ["platform-effects"]
 crate_pattern = "thermite-lower/src/lower.rs"
 design = ".design/build/kernel-primitives.md"
 reference = ["conformance/kernel_primitives.th"]
-conformance_ops = ["kernel-scalars", "kernel-mutable-slice"]
+conformance_ops = ["kernel-scalars", "kernel-mutable-slice", "fixed-array-frame"]
+
+[[route]]
+crate_pattern = "thermite-lower/src/l1.rs"
+design = ".design/build/kernel-primitives.md"
+reference = ["conformance/verified-build/aggregate_storage.th"]
+conformance_ops = ["fixed-array-frame-l1"]
+
+[[route]]
+crate_pattern = "thermite-lower/tests/fixed_array.rs"
+design = ".design/build/kernel-primitives.md"
+reference = ["conformance/verified-build/aggregate_storage.th"]
+conformance_ops = ["fixed-array-frame-l1", "fixed-array-frame-l3"]
 
 [[route]]
 crate_pattern = "thermite-lower/tests/kernel_mutable_slice.rs"
@@ -1359,7 +1371,19 @@ conformance_ops = ["package-build", "package-receipt", "package-replay", "packag
 crate_pattern = "thermite-spec/src/validator.rs"
 design = ".design/build/kernel-primitives.md"
 reference = ["conformance/verified-build/aggregate_storage.th"]
-conformance_ops = ["fixed-capacity-bound"]
+conformance_ops = ["fixed-capacity-bound", "fixed-array-frame-validation"]
+
+[[route]]
+crate_pattern = "thermite-spec/tests/fixed_array_validate.rs"
+design = ".design/build/kernel-primitives.md"
+reference = ["conformance/verified-build/aggregate_storage.th"]
+conformance_ops = ["fixed-array-frame-validation"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/exec_encode.rs"
+design = ".design/build/kernel-primitives.md"
+reference = ["conformance/verified-build/aggregate_storage.th"]
+conformance_ops = ["fixed-array-frame-tv"]
 
 [[route]]
 crate_pattern = "thermite-tv/src/exec_stmt_encode.rs"
@@ -1377,7 +1401,7 @@ conformance_ops = ["aggregate-storage"]
 crate_pattern = "thermite-tv/tests/fixed_array_tv.rs"
 design = ".design/build/kernel-primitives.md"
 reference = ["conformance/verified-build/aggregate_storage.th"]
-conformance_ops = ["fixed-array-tv", "aggregate-storage-tv"]
+conformance_ops = ["fixed-array-tv", "fixed-array-frame-tv", "aggregate-storage-tv"]
 
 [[route]]
 crate_pattern = "forge/src/body_tv.rs"
@@ -1396,6 +1420,24 @@ crate_pattern = "forge/src/exec_tv.rs"
 design = ".design/build/kernel-primitives.md"
 reference = ["conformance/verified-build/aggregate_storage.th"]
 conformance_ops = ["aggregate-export-guard"]
+
+[[route]]
+crate_pattern = "forge/tests/body_tv.rs"
+design = ".design/build/kernel-primitives.md"
+reference = ["conformance/verified-build/aggregate_storage.th"]
+conformance_ops = ["fixed-array-frame-body-tv"]
+
+[[route]]
+crate_pattern = "forge/tests/contract_tv_conformance.rs"
+design = ".design/build/kernel-primitives.md"
+reference = ["conformance/verified-build/aggregate_storage.th"]
+conformance_ops = ["fixed-array-frame-contract-tv"]
+
+[[route]]
+crate_pattern = "forge/tests/exec_tv_conformance.rs"
+design = ".design/build/kernel-primitives.md"
+reference = ["conformance/verified-build/aggregate_storage.th"]
+conformance_ops = ["fixed-array-frame-exec-tv"]
 
 [[route]]
 crate_pattern = "forge/src/verified_build.rs"
@@ -1522,6 +1564,12 @@ crate_pattern = "stdlib/kernel-primitives/synchronization/barrier.th"
 design = ".design/build/synchronization-primitives.md"
 reference = []
 conformance_ops = ["barrier-membership-freeze", "barrier-stale-generation", "barrier-exhaustion"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/synchronization/mpsc_queue.th"
+design = ".design/build/synchronization-primitives.md"
+reference = []
+conformance_ops = ["mpsc-reservation-publication", "mpsc-fifo", "mpsc-token-rejection", "mpsc-exhaustion"]
 
 [[route]]
 crate_pattern = "stdlib/kernel-primitives/synchronization/once.th"

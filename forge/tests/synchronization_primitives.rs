@@ -1,4 +1,4 @@
-//! Primitive-only acceptance for bounded waiting and synchronization mechanics.
+//! Primitive-only acceptance for bounded waiting, synchronization, and queue mechanics.
 //!
 //! In-language algorithms prove at L3. The three machine-facing wait operations
 //! remain explicit L1 boundaries for a consumer platform to directly refine.
@@ -99,6 +99,7 @@ fn assert_false_claim_rejected(source: &str, name: &str, temp: &TempDir) {
 fn synchronization_mechanics_are_receipt_bound_and_fail_closed() {
     let wait_source = "stdlib/kernel-primitives/synchronization/wait.th";
     let barrier_source = "stdlib/kernel-primitives/synchronization/barrier.th";
+    let mpsc_source = "stdlib/kernel-primitives/synchronization/mpsc_queue.th";
     let once_source = "stdlib/kernel-primitives/synchronization/once.th";
     let refcount_source = "stdlib/kernel-primitives/synchronization/refcount.th";
     let seqlock_source = "stdlib/kernel-primitives/synchronization/seqlock.th";
@@ -176,6 +177,30 @@ fn synchronization_mechanics_are_receipt_bound_and_fail_closed() {
         assert_ne!(row["contract_quality"]["mutants_killed"], "0/0");
     }
     assert_eq!(mutation_total(&barrier_rows), (141, 149));
+
+    let mpsc_rows = checked_rows(mpsc_source);
+    assert_eq!(mpsc_rows.len(), 32);
+    assert!(mpsc_rows.iter().all(|row| row["level"] == "L3"));
+    assert!(mpsc_rows.iter().all(|row| row["boundary"] == false));
+    for name in [
+        "mpsc_queue_wf",
+        "mpsc_queue_slot",
+        "mpsc_queue_empty",
+        "mpsc_queue_reserve",
+        "mpsc_queue_publish",
+        "mpsc_queue_pop",
+        "mpsc_queue_fifo_probe",
+        "mpsc_queue_duplicate_publish_probe",
+        "mpsc_queue_stale_publish_probe",
+        "mpsc_queue_slot_conflict_probe",
+    ] {
+        let row = mpsc_rows
+            .iter()
+            .find(|row| row["item"] == name)
+            .unwrap_or_else(|| panic!("missing MPSC queue certificate `{name}`"));
+        assert_ne!(row["contract_quality"]["mutants_killed"], "0/0");
+    }
+    assert_eq!(mutation_total(&mpsc_rows), (100, 119));
 
     let ticket_rows = checked_rows(ticket_source);
     assert_eq!(ticket_rows.len(), 18);
@@ -298,6 +323,39 @@ fn barrier_false_duplicate_advances_claim() -> bool
         &temp,
     );
 
+    let mut false_mpsc = fs::read_to_string(root().join(mpsc_source)).unwrap();
+    false_mpsc.push_str(
+        r#"
+fn mpsc_queue_false_bypass_claim(value: u64) -> bool
+  req true
+  ens result
+  fx pure
+{
+  let mut ready: [bool; MPSC_QUEUE_CAPACITY] = [false; MPSC_QUEUE_CAPACITY];
+  let mut tickets: [usize; MPSC_QUEUE_CAPACITY] = [0; MPSC_QUEUE_CAPACITY];
+  let mut values: [u64; MPSC_QUEUE_CAPACITY] = [0; MPSC_QUEUE_CAPACITY];
+  ready[1] = true;
+  tickets[1] = 1;
+  values[1] = value;
+  let queue: MpscQueue64 = MpscQueue64 {
+    reserved: 2,
+    consumed: 0,
+    ready: ready,
+    tickets: tickets,
+    values: values,
+  };
+  match mpsc_queue_pop(queue) {
+    MpscPop64::MpscPopped64 { queue: _, ticket, value: got } =>
+      ticket == 1 && got == value,
+    MpscPop64::MpscEmpty64 { queue: _ } => false,
+    MpscPop64::MpscPending64 { queue: _, ticket: _ } => false,
+    MpscPop64::MpscSlotConflict64 { queue: _, ticket: _, observed_ticket: _ } => false,
+  }
+}
+"#,
+    );
+    assert_false_claim_rejected(&false_mpsc, "mpsc_queue_false_bypass_claim", &temp);
+
     let mut false_ticket = fs::read_to_string(root().join(ticket_source)).unwrap();
     false_ticket.push_str(
         r#"
@@ -403,6 +461,7 @@ fn seqlock_false_stale_read_claim() -> bool
         "evidence/thermite-package/manifest.json",
         "evidence/thermite-package/source-map.json",
         "evidence/thermite-package/source/synchronization/barrier.th",
+        "evidence/thermite-package/source/synchronization/mpsc_queue.th",
         "evidence/thermite-package/source/synchronization/once.th",
         "evidence/thermite-package/source/synchronization/refcount.th",
         "evidence/thermite-package/source/synchronization/seqlock.th",

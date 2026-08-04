@@ -17405,7 +17405,7 @@ owner = ".design/build/kernel-primitives.md"
 status = "partial"
 scope = "verified"
 summary = "Thermite provides executable/specification mutation over slices and allocation-free fixed storage and collections."
-remaining_scope = "Mutable borrowed slices/arrays, arbitrary old/final snapshot framing, native fixed arrays, scalar extensional equality, strict public-borrow receipts, exact array TV, and a receipt-bound boolean bitset/u64 vector/u64 FIFO-ring/collision-explicit direct-map package are shipped. Add static storage, general named-aggregate borrows, aggregate-element equality, packed bitmap refinement, richer collision-resolving maps, slabs/freelists, generic library capacities, and complete aggregate lifecycle TV."
+remaining_scope = "Mutable borrowed slices/arrays, arbitrary old/final snapshot framing, native fixed arrays, scalar extensional equality and same-except update framing, strict public-borrow receipts, exact array TV, and a receipt-bound boolean bitset/u64 vector/u64 FIFO-ring/collision-explicit direct-map package are shipped. Add static storage, general named-aggregate borrows, aggregate-element equality, packed bitmap refinement, richer collision-resolving maps, slabs/freelists, generic library capacities, and complete aggregate lifecycle TV."
 contributors = [".design/build/kernel-byte-slice.md", ".design/build/fixed-collections.md", "thermite-syntax/src/parser.rs", "thermite-lower/src/lower.rs", "thermite-tv/src/exec_stmt_encode.rs", "thermite-tv/src/obligation.rs", "forge/src/body_tv.rs", "forge/src/contract_tv.rs", "forge/src/verified_build.rs"]
 generated_to = ["status", "forge-kernel-primitives-status"]
 
@@ -17417,7 +17417,7 @@ note = "Pins executable mutable byte-slice lowering and the final(slice) content
 [[requirement.evidence]]
 kind = "test"
 target = "thermite-tv/tests/fixed_array_tv.rs"
-note = "Proves faithful aggregate-slice updates and arbitrary final-state contract snapshots while rejecting wrong-value, dropped-write, and current-state mutants."
+note = "Proves faithful aggregate-slice updates, extensional equality, same-except frame scans, and arbitrary final-state contract snapshots while rejecting wrong-value, dropped-write, relation, and current-state mutants."
 
 [[requirement.evidence]]
 kind = "test"
@@ -17554,14 +17554,14 @@ owner = ".design/build/kernel-primitives.md"
 status = "partial"
 scope = "verified"
 summary = "Thermite distinguishes bounded waiting, blocking progress assumptions, and terminal divergence, then implements synchronization structures as verified Thermite libraries."
-remaining_scope = "A receipt-bound bounded-wait trace scan, frozen pause/block/terminal-halt declarations, and fail-closed ticket-lock/barrier/once/reference-count/seqlock mechanics are shipped with L3 proofs, adversarial claims, strict replay, and tamper rejection. Add registry-level fairness/progress semantics, directly refined wait bodies, atomic integration and machine concurrency composition, then bounded queues, deques, and richer reader/writer coordination in .th."
+remaining_scope = "A receipt-bound bounded-wait trace scan, frozen pause/block/terminal-halt declarations, and fail-closed ticket-lock/barrier/once/reference-count/seqlock/bounded-MPSC mechanics are shipped with L3 proofs, adversarial claims, strict replay, and tamper rejection. Add registry-level fairness/progress semantics, directly refined wait bodies, atomic integration and machine concurrency composition, then work-stealing deques and richer reader/writer coordination in .th."
 contributors = [".design/build/synchronization-primitives.md"]
 generated_to = ["status", "forge-kernel-primitives-status"]
 
 [[requirement.evidence]]
 kind = "file"
 target = "stdlib/kernel-primitives/synchronization.thpkg.json"
-note = "Canonical six-root package for bounded waiting, frozen wait operations, ticket locks, participant-aware barriers, once initialization, reference counting, and seqlock mechanics."
+note = "Canonical seven-root package for bounded waiting, frozen wait operations, ticket locks, participant-aware barriers, once initialization, reference counting, seqlocks, and bounded MPSC queue mechanics."
 
 [[requirement.evidence]]
 kind = "file"
@@ -17594,9 +17594,14 @@ target = "stdlib/kernel-primitives/synchronization/seqlock.th"
 note = "Odd/even writer epochs, reader retry/validation, stale-read rejection, and nonwrapping exhaustion mechanics."
 
 [[requirement.evidence]]
+kind = "file"
+target = "stdlib/kernel-primitives/synchronization/mpsc_queue.th"
+note = "Reservation/publication separation, FIFO consumer visibility, per-slot ticket identity, stale/duplicate rejection, and full/exhausted fail-closed mechanics."
+
+[[requirement.evidence]]
 kind = "test"
 target = "forge/tests/synchronization_primitives.rs"
-note = "Pins the L3/L1 assurance split and mutation scores, rejects false wait/LIFO/barrier/once/refcount/seqlock claims, replays the strict receipt, and detects source tampering."
+note = "Pins the L3/L1 assurance split and mutation scores, rejects false wait/LIFO/barrier/once/refcount/seqlock/MPSC-bypass claims, replays the strict receipt, and detects source tampering."
 
 [[requirement]]
 id = "REQ-KPRIM-7"

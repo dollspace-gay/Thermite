@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: partial
-audited-content-sha256: ab9e62d87330f238d8bdabd2e79ba5d2c0f6af2a23a095bdd489a829c75fa827
+audited-content-sha256: 901a4d64eb0cbf7c74e2586f9826f1e70470f9f6efe66ab75d44778040e91bf1
 decision: consumer-owned registry entries close reachable Thermite boundaries through non-exempt same-crate direct-Verus calls
 governs:
   - thermite-lower/src/lower.rs

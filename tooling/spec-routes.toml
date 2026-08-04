@@ -1480,10 +1480,22 @@ reference = []
 conformance_ops = ["fixed-bitmap-membership", "fixed-bitmap-update"]
 
 [[route]]
+crate_pattern = "stdlib/kernel-primitives/collections/direct_map.th"
+design = ".design/build/fixed-collections.md"
+reference = []
+conformance_ops = ["fixed-direct-map-lookup", "fixed-direct-map-insert", "fixed-direct-map-remove"]
+
+[[route]]
 crate_pattern = "stdlib/kernel-primitives/collections/ring.th"
 design = ".design/build/fixed-collections.md"
 reference = []
 conformance_ops = ["fixed-ring-fifo", "fixed-ring-wrap", "fixed-ring-rejection"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/collections/vector.th"
+design = ".design/build/fixed-collections.md"
+reference = []
+conformance_ops = ["fixed-vector-random-access", "fixed-vector-push", "fixed-vector-pop"]
 
 [[route]]
 crate_pattern = "forge/tests/fixed_collections.rs"

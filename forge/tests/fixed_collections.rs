@@ -1,9 +1,9 @@
 //! Primitive-only acceptance for the allocation-free fixed collections.
 //!
-//! Both algorithms are authored in Thermite. The package contains no platform
+//! All four collection families are authored in Thermite. The package contains no platform
 //! boundary and no Rust implementation: Forge proves every source item at L3,
 //! rejects deliberately false collection claims, builds a freestanding strict
-//! export, and replays the receipt-bound two-module source closure.
+//! export, and replays the receipt-bound four-module source closure.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -117,10 +117,12 @@ fn assert_false_claim_rejected(source: &str, name: &str, temp: &TempDir) {
 }
 
 #[test]
-fn bitmap_and_ring_are_l3_freestanding_receipt_bound_primitives() {
+fn fixed_collections_are_l3_freestanding_receipt_bound_primitives() {
     let temp = TempDir::new("package");
     let bitmap_source = "stdlib/kernel-primitives/collections/bitmap.th";
+    let direct_map_source = "stdlib/kernel-primitives/collections/direct_map.th";
     let ring_source = "stdlib/kernel-primitives/collections/ring.th";
+    let vector_source = "stdlib/kernel-primitives/collections/vector.th";
 
     let bitmap_rows = checked_rows(bitmap_source);
     assert_l3_functions(
@@ -153,6 +155,39 @@ fn bitmap_and_ring_are_l3_freestanding_receipt_bound_primitives() {
         ],
     );
     assert_eq!(mutation_total(&ring_rows), (64, 71));
+
+    let vector_rows = checked_rows(vector_source);
+    assert_l3_functions(
+        &vector_rows,
+        &[
+            "fixed_vec_empty",
+            "fixed_vec_get",
+            "fixed_vec_set",
+            "fixed_vec_push",
+            "fixed_vec_pop",
+            "fixed_vec_random_access_probe",
+            "fixed_vec_lifo_probe",
+            "fixed_vec_set_probe",
+        ],
+    );
+    assert_eq!(mutation_total(&vector_rows), (45, 49));
+
+    let direct_map_rows = checked_rows(direct_map_source);
+    assert_l3_functions(
+        &direct_map_rows,
+        &[
+            "fixed_direct_map_slot",
+            "fixed_direct_map_empty_for",
+            "fixed_direct_map_lookup",
+            "fixed_direct_map_insert",
+            "fixed_direct_map_remove",
+            "fixed_direct_map_insert_lookup_probe",
+            "fixed_direct_map_replace_probe",
+            "fixed_direct_map_collision_probe",
+            "fixed_direct_map_remove_probe",
+        ],
+    );
+    assert_eq!(mutation_total(&direct_map_rows), (54, 58));
 
     let mut false_bitmap = fs::read_to_string(root().join(bitmap_source)).unwrap();
     false_bitmap.push_str(
@@ -196,6 +231,59 @@ fn fixed_ring_false_lifo_claim(first: u64, second: u64) -> u64
     );
     assert_false_claim_rejected(&false_ring, "fixed_ring_false_lifo_claim", &temp);
 
+    let mut false_vector = fs::read_to_string(root().join(vector_source)).unwrap();
+    false_vector.push_str(
+        r#"
+fn fixed_vec_false_fifo_claim(first: u64, second: u64) -> u64
+  req first != second
+  ens result == first
+  fx pure
+{
+  let empty: FixedVec64 = fixed_vec_empty();
+  match fixed_vec_push(empty, first) {
+    FixedVecPush64::VecPushed64 { vector: one } =>
+      match fixed_vec_push(one, second) {
+        FixedVecPush64::VecPushed64 { vector: two } =>
+          match fixed_vec_pop(two) {
+            FixedVecPop64::VecPopped64 { vector: _, value } => value,
+            FixedVecPop64::VecEmpty64 { vector: _ } => first,
+          },
+        FixedVecPush64::VecFull64 { vector: _, value: _ } => first,
+      },
+    FixedVecPush64::VecFull64 { vector: _, value: _ } => first,
+  }
+}
+"#,
+    );
+    assert_false_claim_rejected(&false_vector, "fixed_vec_false_fifo_claim", &temp);
+
+    let mut false_map = fs::read_to_string(root().join(direct_map_source)).unwrap();
+    false_map.push_str(
+        r#"
+fn fixed_direct_map_false_missing_claim(key: usize, value: u64) -> bool
+  req true
+  ens result
+  fx pure
+{
+  let empty: FixedDirectMap64 = fixed_direct_map_empty_for(key);
+  match fixed_direct_map_insert(empty, key, value) {
+    FixedMapInsert64::MapAdded64 { map } =>
+      match fixed_direct_map_lookup(&map, key) {
+        FixedMapLookup64::MapFound64 { value: _ } => false,
+        FixedMapLookup64::MapVacant64 => true,
+        FixedMapLookup64::MapLookupCollision64 { stored_key: _ } => true,
+      },
+    FixedMapInsert64::MapReplaced64 { map: _, old_value: _ } => true,
+    FixedMapInsert64::MapInsertCollision64 {
+      map: _, key: _, value: _, stored_key: _,
+    } => true,
+    FixedMapInsert64::MapInsertCountInvalid64 { map: _, key: _, value: _ } => true,
+  }
+}
+"#,
+    );
+    assert_false_claim_rejected(&false_map, "fixed_direct_map_false_missing_claim", &temp);
+
     let bundle = temp.0.join("collections.verified");
     let bundle_s = bundle.to_string_lossy().to_string();
     assert_success(&forge(&[
@@ -217,7 +305,9 @@ fn fixed_ring_false_lifo_claim(first: u64, second: u64) -> u64
         "evidence/thermite-package/manifest.json",
         "evidence/thermite-package/source-map.json",
         "evidence/thermite-package/source/collections/bitmap.th",
+        "evidence/thermite-package/source/collections/direct_map.th",
         "evidence/thermite-package/source/collections/ring.th",
+        "evidence/thermite-package/source/collections/vector.th",
     ] {
         assert!(bundle.join(relative).is_file(), "missing `{relative}`");
     }
@@ -241,10 +331,10 @@ fn fixed_ring_false_lifo_claim(first: u64, second: u64) -> u64
         "strict collection surface contains non-faithful TV rows: {tv}"
     );
 
-    let bound_ring = bundle.join("evidence/thermite-package/source/collections/ring.th");
-    let mut tampered = fs::read_to_string(&bound_ring).unwrap();
+    let bound_map = bundle.join("evidence/thermite-package/source/collections/direct_map.th");
+    let mut tampered = fs::read_to_string(&bound_map).unwrap();
     tampered.push_str("\n// receipt tamper\n");
-    fs::write(&bound_ring, tampered).unwrap();
+    fs::write(&bound_map, tampered).unwrap();
     let tamper_rejected = forge(&["verify-build", &bundle_s, "--json"]);
     assert!(
         !tamper_rejected.status.success(),

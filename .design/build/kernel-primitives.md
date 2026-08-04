@@ -40,7 +40,9 @@ governs:
   - forge/tests/ownership_primitives.rs
   - stdlib/kernel-primitives/collections.thpkg.json
   - stdlib/kernel-primitives/collections/bitmap.th
+  - stdlib/kernel-primitives/collections/direct_map.th
   - stdlib/kernel-primitives/collections/ring.th
+  - stdlib/kernel-primitives/collections/vector.th
   - stdlib/kernel-primitives/ownership.thpkg.json
   - stdlib/kernel-primitives/ownership/generation.th
   - stdlib/kernel-primitives/atomics.thpkg.json
@@ -51,7 +53,7 @@ governs:
   - conformance/verified-composition/frozen_primitive.th
   - conformance/verified-composition/frozen_primitive_shell.rs
   - conformance/verified-composition/frozen_primitive_registry.json
-audited-content-sha256: 3d14fe1c1e5fd14de929b574af673d30f73192b830a2549cf4deda13b8dc863f
+audited-content-sha256: 8272aff81ca1402085607382df00abf5f198c338bfcb027549a449dc216307c3
 extends:
   - .design/build/kernel-target.md
   - .design/build/l3-rich-composition.md
@@ -152,9 +154,10 @@ Repeat initialization rejects non-copy element types before lowering.
 primitive-scalar array through a const-generic scan whose exact generated body is
 verified by Verus and independently translation-validated. Static ownership,
 borrows of general named aggregates, and aggregate-element equality remain. The
-first allocation-free collection package now supplies a 256-entry boolean
-bitset and a 64-entry `u64` FIFO ring in Thermite; packed bitmaps, fixed vectors,
-maps, slabs/freelists, and generic capacities remain.
+allocation-free collection package now supplies a 256-entry boolean bitset,
+64-entry `u64` vector, FIFO ring, and collision-explicit `usize`-to-`u64` direct
+map in Thermite. Packed bitmaps, richer collision-resolving maps,
+slabs/freelists, deques, and generic library capacities remain.
 
 #### Fixed-array surface lock
 
@@ -210,15 +213,19 @@ index.
 
 #### Fixed-collection package
 
-`stdlib/kernel-primitives/collections.thpkg.json` contains two policy-free root
+`stdlib/kernel-primitives/collections.thpkg.json` contains four policy-free root
 modules. `FixedBitmap256` supplies bounded membership and owned insert/remove/
 set-to transitions over `[bool; 256]`. `FixedRing64` supplies explicit full and
 empty result variants, FIFO push/pop, modulo wraparound, and returned ownership
-over `[u64; 64]`. All 30 source items prove at L3 with no boundary or runtime
-implementation; the executable contracts kill 78/87 generated mutants.
+over `[u64; 64]`. `FixedVec64` adds bounded random access, replacement, and
+owned LIFO push/pop. `FixedDirectMap64` adds deterministic direct-slot lookup,
+insert, replacement, and removal while reporting key collisions and invalid
+counts as explicit result variants. All 68 source items prove at L3 with no
+boundary or runtime implementation; the executable contracts kill 177/194
+generated mutants.
 
 The package builds and replays as a strict freestanding receipt rooted at the
-scalar ring-index transition, binding both original modules and rejecting
+scalar ring-index transition, binding all four original modules and rejecting
 receipt-source tampering. Full aggregate lifecycle export remains gated by
 named-aggregate/ADT body TV. The bitmap is intentionally unpacked until a
 dynamic-shift bitvector proof can refine an ordinary compositional L3 contract.
@@ -485,7 +492,7 @@ Source: `.design/reqs/registry.toml`
 |---|---|---|---|---|
 | REQ-KPRIM-1 | shipped | `.design/build/kernel-primitives.md` | Kernel scalar and effect surface |  |
 | REQ-KPRIM-10 | not_started | `.design/build/kernel-primitives.md` | Primitive-only adversarial suite | Add package, fixed-storage, atomic, waiting, registry, refinement, receipt-tamper, freestanding-consumer, and no-concrete-kernel gates. |
-| REQ-KPRIM-2 | partial | `.design/build/kernel-primitives.md` | Exact mutable and fixed storage | Mutable borrowed slices/arrays, arbitrary old/final snapshot framing, native fixed arrays, scalar extensional equality, strict public-borrow receipts, exact array TV, and the first receipt-bound boolean bitset/u64 FIFO-ring package are shipped. Add static storage, general named-aggregate borrows, aggregate-element equality, packed bitmap refinement, fixed vectors/maps/slabs/freelists, generic capacities, and complete aggregate lifecycle TV. |
+| REQ-KPRIM-2 | partial | `.design/build/kernel-primitives.md` | Exact mutable and fixed storage | Mutable borrowed slices/arrays, arbitrary old/final snapshot framing, native fixed arrays, scalar extensional equality, strict public-borrow receipts, exact array TV, and a receipt-bound boolean bitset/u64 vector/u64 FIFO-ring/collision-explicit direct-map package are shipped. Add static storage, general named-aggregate borrows, aggregate-element equality, packed bitmap refinement, richer collision-resolving maps, slabs/freelists, generic library capacities, and complete aggregate lifecycle TV. |
 | REQ-KPRIM-3 | partial | `.design/build/kernel-primitives.md` | Receipt-bound packages and modules | Independent parsing, module-local identity, direct-import/root-export enforcement, rooted graph validation, source allowlisting, L3 build/composition, complete receipt binding, validation, and replay are shipped. Extend the remaining source-oriented Forge commands (check, audit, TV, goal/edit/fill) to operate on packages without losing module-local diagnostics. |
 | REQ-KPRIM-4 | partial | `.design/build/kernel-primitives.md` | Sealed authority and ownership | The sealed-construction barrier plus a receipt-bound 64-slot generation ledger now prove acquisition/renewal/release, stale-handle-after-reuse rejection, double-release rejection, monotonic rights, L3 move/clone refusal, and a strict replayed scalar surface. Add module-private/opaque ledger construction or a complete affine rule, named-aggregate/ADT body TV for strict lifecycle replay, exact authority-mint refinement, and atomic-slot integration. |
 | REQ-KPRIM-5 | partial | `.design/build/kernel-primitives.md` | Sealed atomics and ordering model | The receipt-bound package, 50 sealed boundary declarations, exact ordering matrix, pre-codegen legality gate, bounded history relations, strict kernel ordering proof, strict hosted history proof, replay, and adversarial tests are present. Add enforceable single-use slot ownership, a kernel-target finite-history proof surface, exact atomic object/machine refinement, and verified synchronization consumers. |

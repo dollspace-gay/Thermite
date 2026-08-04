@@ -1376,10 +1376,9 @@ load/store/fence/CAS pairs reject before lowering. A consumer must supply and
 directly refine the exact machine boundary; registry v1 intentionally certifies
 only sequential safe-Rust wrappers.
 
-`ownership.thpkg.json` provides a policy-free 64-slot generation ledger;
-`collections.thpkg.json` provides an unpacked fixed bitset and `u64` FIFO ring.
-Opacity, packed refinement, aggregate body TV, and authority-mint refinement
-remain.
+`ownership.thpkg.json` provides a generation ledger; `collections.thpkg.json`
+provides fixed bitset, vector, FIFO-ring, and collision-explicit direct-map
+mechanics. Opacity, packing, aggregate TV, and mint refinement remain.
 
 ",
     );

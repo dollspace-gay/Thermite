@@ -3,7 +3,9 @@
   "name": "thermite_fixed_collections",
   "roots": [
     "bitmap",
-    "ring"
+    "direct_map",
+    "ring",
+    "vector"
   ],
   "modules": [
     {
@@ -12,8 +14,18 @@
       "imports": []
     },
     {
+      "name": "direct_map",
+      "path": "collections/direct_map.th",
+      "imports": []
+    },
+    {
       "name": "ring",
       "path": "collections/ring.th",
+      "imports": []
+    },
+    {
+      "name": "vector",
+      "path": "collections/vector.th",
       "imports": []
     }
   ]

@@ -3,13 +3,15 @@
 <!--
 tier: 3-component
 status: partial
-decision: Thermite ships policy-free fixed bitset and FIFO mechanics in .th; packed representations, generic capacities, maps, vectors, slabs, and complete aggregate receipt TV remain
+decision: Thermite ships policy-free fixed bitset, vector, FIFO-ring, and collision-explicit direct-map mechanics in .th; packed representations, generic capacities, richer maps, slabs, and complete aggregate receipt TV remain
 governs:
   - stdlib/kernel-primitives/collections.thpkg.json
   - stdlib/kernel-primitives/collections/bitmap.th
+  - stdlib/kernel-primitives/collections/direct_map.th
   - stdlib/kernel-primitives/collections/ring.th
+  - stdlib/kernel-primitives/collections/vector.th
   - forge/tests/fixed_collections.rs
-audited-content-sha256: 604d4609d33a23ee98b01954bfb8d3d7bbbd5dda4c0a6765ba2b9cb2b8edd3e5
+audited-content-sha256: 064d3455a3825e8b4d23ad688ca9c351932cce6e74b54f7c237ebf2caaab5cdb
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/l3-verified-artifact.md
@@ -27,10 +29,10 @@ can reuse. It does not decide what a bit or queue entry means, which subsystem
 owns a collection, how producers are scheduled, or whether an operation should
 block. Those are consumer policies.
 
-`stdlib/kernel-primitives/collections.thpkg.json` is a canonical two-root
-package. It binds `collections/bitmap.th` and `collections/ring.th` without a
+`stdlib/kernel-primitives/collections.thpkg.json` is a canonical collection
+package. It binds its four manifest-declared Thermite modules without a
 Rust runtime implementation, platform boundary, heap dependency, or hosted
-effect. Both modules use native fixed arrays and ordinary verified Thermite
+effect. The modules use native fixed arrays and ordinary verified Thermite
 control flow.
 
 ## Fixed bitset
@@ -83,23 +85,58 @@ wraparound from slot 63 to slot 0, and full-capacity rejection. The module is
 single-threaded mechanics; synchronization and memory ordering are layered on
 top rather than hidden inside the queue.
 
+## Fixed vector
+
+`FixedVec64` owns 64 `u64` slots and a live length. It provides bounded length,
+empty/full, and random-access queries; an in-range replacement transition; and
+owned push/pop transitions with explicit full and empty result variants.
+Successful pop is LIFO, clears the released slot, and returns both the shortened
+vector and removed value. Rejected push returns the vector and unconsumed value.
+
+The contracts expose the inserted/replaced slot and length transitions needed
+for consumer proofs. Source probes compose two pushes with random reads, compose
+two pops into a LIFO proof, and prove replacement at index zero. Element type
+and capacity are deliberately concrete library choices; language-level fixed
+arrays remain capacity-generic.
+
+## Collision-explicit direct map
+
+`FixedDirectMap64` owns 64 occupancy bits, `usize` keys, `u64` values, and a live
+count. A key selects `key % 64`. Lookup, insert, replacement, and removal are
+allocation-free. Every operation reports a colliding stored key explicitly;
+the library does not silently discard it or smuggle in an unproved probing,
+eviction, or hashing policy. Insert and remove also expose count-invalid results
+because ordinary named structs are not yet opaque and a consumer can presently
+construct representation-inconsistent values.
+
+Source probes prove insert-then-lookup, replacement with the prior value,
+collision preservation for keys 0 and 64, and remove-then-vacancy. This is a
+useful deterministic slot-map mechanic, not a claim of general collision
+resolution. A later consumer can select a collision policy in Thermite, while a
+future library can add open addressing once quantified aggregate framing and
+opaque representations are available.
+
 ## Assurance and adversarial evidence
 
-`forge check --level l3` proves all 30 source items across the two modules at
-L3. There are no boundaries. Executable contract mutation kills 78 of 87
+`forge check --level l3` proves all 68 source items across the four modules at
+L3. There are no boundaries. Executable contract mutation kills 177 of 194
 generated mutants; the surviving mutants remain counted and the per-function
 scores stay above the configured floor.
 
 `forge/tests/fixed_collections.rs` additionally:
 
 - requires every source row to be L3 and boundary-free;
-- pins the bitmap score at 14/16 and ring score at 64/71;
+- pins the bitmap score at 14/16, ring score at 64/71, vector score at 45/49,
+  and direct-map score at 54/58;
 - rejects a hostile function claiming an inserted bit is absent;
 - rejects a hostile function claiming the FIFO is LIFO;
+- rejects a hostile function claiming vector pop is FIFO;
+- rejects a hostile function claiming an inserted map entry is missing;
 - builds `fixed_ring_advance` as a strict freestanding L3 export;
 - replays every strict translation-validation row;
-- requires both original package modules and the source map in the receipt; and
-- tampers with the bound ring source and requires validation to fail.
+- requires all four original package modules and the source map in the receipt;
+  and
+- tampers with the bound direct-map source and requires validation to fail.
 
 The strict export is intentionally scalar. Current body TV cannot frame a
 complete named-aggregate/ADT push-pop closure, so this increment does not claim
@@ -112,8 +149,8 @@ their individual L3 certificates and the generic fixed-array TV evidence.
 This is a substantial REQ-KPRIM-2 increment, not completion. Remaining work is:
 
 1. a packed bitmap with a proved bitvector-to-L3 refinement bridge;
-2. fixed-capacity vectors, key/value maps, slabs/freelists, intrusive-list
-   metadata, and deque mechanics;
+2. open-addressed or chained maps, slabs/freelists, intrusive-list metadata,
+   and deque mechanics;
 3. capacity/type parameterization that does not rely on privileged generated
    policy types;
 4. quantified framing and equality for aggregate collection states;
@@ -127,12 +164,12 @@ At this increment:
 
 | Metric | Value |
 |---|---:|
-| Physical Thermite LOC | 400 |
-| Nonblank Thermite LOC | 370 |
-| Thermite functions | 26 (22 executable, 4 specification) |
-| In-language L3 items | 30 |
+| Physical Thermite LOC | 1,179 |
+| Nonblank Thermite LOC | 1,111 |
+| Thermite functions | 57 (50 executable, 7 specification) |
+| In-language L3 items | 68 |
 | Frozen boundary declarations | 0 |
-| Executable mutants killed | 78/87 |
+| Executable mutants killed | 177/194 |
 | Bodyful Rust/assembly collection implementations | 0 |
 | Ordinary Rust kernel-policy/algorithm LOC | 0 |
 | Direct-Verus TPL LOC shipped by this package | 0 |

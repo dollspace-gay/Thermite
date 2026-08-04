@@ -17395,7 +17395,7 @@ owner = ".design/build/kernel-primitives.md"
 status = "partial"
 scope = "verified"
 summary = "Thermite provides executable/specification mutation over slices and allocation-free fixed storage and collections."
-remaining_scope = "Mutable borrowed slices/arrays, arbitrary old/final snapshot framing, native fixed arrays, scalar extensional equality, strict public-borrow receipts, exact array TV, and the first receipt-bound boolean bitset/u64 FIFO-ring package are shipped. Add static storage, general named-aggregate borrows, aggregate-element equality, packed bitmap refinement, fixed vectors/maps/slabs/freelists, generic capacities, and complete aggregate lifecycle TV."
+remaining_scope = "Mutable borrowed slices/arrays, arbitrary old/final snapshot framing, native fixed arrays, scalar extensional equality, strict public-borrow receipts, exact array TV, and a receipt-bound boolean bitset/u64 vector/u64 FIFO-ring/collision-explicit direct-map package are shipped. Add static storage, general named-aggregate borrows, aggregate-element equality, packed bitmap refinement, richer collision-resolving maps, slabs/freelists, generic library capacities, and complete aggregate lifecycle TV."
 contributors = [".design/build/kernel-byte-slice.md", ".design/build/fixed-collections.md", "thermite-syntax/src/parser.rs", "thermite-lower/src/lower.rs", "thermite-tv/src/exec_stmt_encode.rs", "thermite-tv/src/obligation.rs", "forge/src/body_tv.rs", "forge/src/contract_tv.rs", "forge/src/verified_build.rs"]
 generated_to = ["status", "forge-kernel-primitives-status"]
 
@@ -17417,12 +17417,12 @@ note = "Builds and replays the strict L3 aggregate-storage fixture with exact co
 [[requirement.evidence]]
 kind = "file"
 target = "stdlib/kernel-primitives/collections.thpkg.json"
-note = "Canonical two-root package for the policy-free fixed bitset and FIFO ring modules."
+note = "Canonical four-root package for policy-free fixed bitset, vector, FIFO-ring, and collision-explicit direct-map modules."
 
 [[requirement.evidence]]
 kind = "test"
 target = "forge/tests/fixed_collections.rs"
-note = "Requires every collection item at L3, rejects false bitmap/LIFO claims, replays the freestanding receipt, and detects bound-source tampering."
+note = "Requires every collection item at L3, rejects false bitmap/ring/vector/map claims, replays the freestanding receipt, and detects bound-source tampering."
 
 [[requirement]]
 id = "REQ-KPRIM-3"

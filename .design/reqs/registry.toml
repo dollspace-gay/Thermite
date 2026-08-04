@@ -17462,14 +17462,29 @@ owner = ".design/build/kernel-primitives.md"
 status = "partial"
 scope = "spec"
 summary = "Sealed types cannot be forged in Thermite and support verified consumption or generation transitions for platform authority."
-remaining_scope = "The sealed-construction barrier is shipped. Add affine-style consumption or a verified generation discipline that rejects stale copies, double release, and rights escalation."
-contributors = [".design/basis/06-provenance-and-sinks.md"]
+remaining_scope = "The sealed-construction barrier plus a receipt-bound 64-slot generation ledger now prove acquisition/renewal/release, stale-handle-after-reuse rejection, double-release rejection, monotonic rights, L3 move/clone refusal, and a strict replayed scalar surface. Add module-private/opaque ledger construction or a complete affine rule, named-aggregate/ADT body TV for strict lifecycle replay, exact authority-mint refinement, and atomic-slot integration."
+contributors = [".design/basis/06-provenance-and-sinks.md", ".design/build/generation-ownership.md"]
 generated_to = ["status", "forge-kernel-primitives-status"]
 
 [[requirement.evidence]]
 kind = "test"
 target = "forge/tests/divergence_provenance.rs"
 note = "Pins the fail-closed sealed-construction barrier and boundary-only minting."
+
+[[requirement.evidence]]
+kind = "file"
+target = "stdlib/kernel-primitives/ownership.thpkg.json"
+note = "Receipt-bound, policy-free generation ownership package."
+
+[[requirement.evidence]]
+kind = "file"
+target = "stdlib/kernel-primitives/ownership/generation.th"
+note = "Sealed authority, fixed ledger, acquire/renew/release transitions, explicit rejection reasons, and adversarial proof probes written in Thermite."
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/ownership_primitives.rs"
+note = "Requires every in-language ownership item at L3, rejects ledger move/clone duplication, strictly builds and replays the freestanding rights surface, and checks faithful receipt-bound TV."
 
 [[requirement]]
 id = "REQ-KPRIM-5"

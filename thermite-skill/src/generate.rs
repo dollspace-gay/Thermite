@@ -1376,6 +1376,11 @@ load/store/fence/CAS pairs reject before lowering. A consumer must supply and
 directly refine the exact machine boundary; registry v1 intentionally certifies
 only sequential safe-Rust wrappers.
 
+The sibling `stdlib/kernel-primitives/ownership.thpkg.json` is a policy-free
+64-slot generation ledger rejecting stale reuse, double release, and rights
+escalation. It remains partial: ledger construction is not private, and
+named-aggregate body TV plus authority-mint refinement remain.
+
 ",
     );
     s

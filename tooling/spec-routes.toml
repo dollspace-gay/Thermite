@@ -1466,6 +1466,26 @@ design = ".design/build/kernel-primitives.md"
 reference = ["stdlib/kernel-primitives/src/model.th"]
 conformance_ops = ["borrowed-fixed-array-spec-call"]
 
+# Policy-free ownership discipline. The route intentionally names only the
+# Thermite package and its proof harness; there is no runtime Rust implementation.
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/ownership.thpkg.json"
+design = ".design/build/generation-ownership.md"
+reference = []
+conformance_ops = ["generation-package-closure"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/ownership/generation.th"
+design = ".design/build/generation-ownership.md"
+reference = []
+conformance_ops = ["generation-ledger", "stale-handle", "double-release", "rights-monotonicity"]
+
+[[route]]
+crate_pattern = "forge/tests/ownership_primitives.rs"
+design = ".design/build/generation-ownership.md"
+reference = ["stdlib/kernel-primitives/ownership.thpkg.json"]
+conformance_ops = ["generation-l3", "generation-adversarial", "generation-strict-replay"]
+
 [[route]]
 crate_pattern = ".github/workflows/ci.yml"
 design = ".design/stage4-epr-reconstruction.md"

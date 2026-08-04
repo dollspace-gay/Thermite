@@ -36,6 +36,9 @@ governs:
   - forge/src/verified_build/primitive_registry.rs
   - forge/src/thermite_package.rs
   - forge/tests/verified_build.rs
+  - forge/tests/ownership_primitives.rs
+  - stdlib/kernel-primitives/ownership.thpkg.json
+  - stdlib/kernel-primitives/ownership/generation.th
   - stdlib/kernel-primitives/atomics.thpkg.json
   - stdlib/kernel-primitives/src/api.th
   - stdlib/kernel-primitives/src/model.th
@@ -44,7 +47,7 @@ governs:
   - conformance/verified-composition/frozen_primitive.th
   - conformance/verified-composition/frozen_primitive_shell.rs
   - conformance/verified-composition/frozen_primitive_registry.json
-audited-content-sha256: ccb3c4174b2ed425e1d9960f162da39c23f9353212fffcd4f0a525eb64f33532
+audited-content-sha256: 670a8b51fe41e9233b27c682fa54c1a5d7dc0136cfc0d517c4673fcc9226b7c4
 extends:
   - .design/build/kernel-target.md
   - .design/build/l3-rich-composition.md
@@ -252,6 +255,22 @@ to reject copies, stale generations, double release, and rights escalation.
 That ownership facility is a language/library primitive; the policy governing
 which capabilities a kernel grants is not.
 
+The first policy-free generation discipline is now shipped as the receipt-bound
+`stdlib/kernel-primitives/ownership.thpkg.json` package. A sealed authority is
+moved into a 64-slot fixed ledger; acquisition and renewal rotate generations,
+release retires a handle, and rights may only remain equal or narrow. All 23
+in-language items prove at L3 and the executable surface kills 90/90 mutants.
+Probes prove double-release rejection, stale-handle rejection after slot reuse,
+and rights-escalation rejection. The package contains no kernel ledger policy
+and no Rust/assembly implementation.
+
+This does not yet complete affine ownership. Code outside the defining module
+still lacks a module-private/opaque construction barrier for the plain ledger
+wrapper, strict body TV cannot yet frame the full named-aggregate lifecycle,
+and the authority-mint boundary has no package-owned implementation/refinement.
+The exact shipped claim and residual trust are in
+`.design/build/generation-ownership.md`.
+
 ### Frozen boundary registry
 
 Thermite defines a generic, versioned registry schema. Consumer projects supply
@@ -446,7 +465,7 @@ Source: `.design/reqs/registry.toml`
 | REQ-KPRIM-10 | not_started | `.design/build/kernel-primitives.md` | Primitive-only adversarial suite | Add package, fixed-storage, atomic, waiting, registry, refinement, receipt-tamper, freestanding-consumer, and no-concrete-kernel gates. |
 | REQ-KPRIM-2 | partial | `.design/build/kernel-primitives.md` | Exact mutable and fixed storage | Mutable borrowed slices/arrays (including nested primitive-array elements), arbitrary old/final snapshot framing, native fixed arrays, copy-safe repetition, primitive-scalar extensional equality, strict public-borrow ABI receipts, and exact initialization/read/indexed-write/length/equality TV are shipped. Add static storage, general named-aggregate borrows, aggregate-element equality, and verified fixed-capacity vector/map/bitmap/ring libraries. |
 | REQ-KPRIM-3 | partial | `.design/build/kernel-primitives.md` | Receipt-bound packages and modules | Independent parsing, module-local identity, direct-import/root-export enforcement, rooted graph validation, source allowlisting, L3 build/composition, complete receipt binding, validation, and replay are shipped. Extend the remaining source-oriented Forge commands (check, audit, TV, goal/edit/fill) to operate on packages without losing module-local diagnostics. |
-| REQ-KPRIM-4 | partial | `.design/build/kernel-primitives.md` | Sealed authority and ownership | The sealed-construction barrier is shipped. Add affine-style consumption or a verified generation discipline that rejects stale copies, double release, and rights escalation. |
+| REQ-KPRIM-4 | partial | `.design/build/kernel-primitives.md` | Sealed authority and ownership | The sealed-construction barrier plus a receipt-bound 64-slot generation ledger now prove acquisition/renewal/release, stale-handle-after-reuse rejection, double-release rejection, monotonic rights, L3 move/clone refusal, and a strict replayed scalar surface. Add module-private/opaque ledger construction or a complete affine rule, named-aggregate/ADT body TV for strict lifecycle replay, exact authority-mint refinement, and atomic-slot integration. |
 | REQ-KPRIM-5 | partial | `.design/build/kernel-primitives.md` | Sealed atomics and ordering model | The receipt-bound package, 50 sealed boundary declarations, exact ordering matrix, pre-codegen legality gate, bounded history relations, strict kernel ordering proof, strict hosted history proof, replay, and adversarial tests are present. Add enforceable single-use slot ownership, a kernel-target finite-history proof surface, exact atomic object/machine refinement, and verified synchronization consumers. |
 | REQ-KPRIM-6 | not_started | `.design/build/kernel-primitives.md` | Verified waiting and synchronization | Add the wait/liveness surface and implement ticket locks, once cells, barriers, bounded queues, reference counts, seqlocks, and deque mechanics in .th. |
 | REQ-KPRIM-7 | partial | `.design/build/kernel-primitives.md` | Generic frozen boundary registry | Same-crate safe direct-Verus Rust-ABI entries now close reachable boundaries exactly. Add non-empty codegen-feature binding and exact separate Rust/assembly source, object, machine-model, and refinement closure for irreducible operations without adding an architecture operation table. |

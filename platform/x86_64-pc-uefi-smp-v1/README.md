@@ -32,6 +32,8 @@ cargo run -p forge -- build conformance/thermite-kernel.thpkg.json \
   --compose-export synchronization_worker_complete \
   --compose-export ap_worker_online \
   --compose-export ap_worker_task_complete \
+  --compose-export dma_device_plan \
+  --compose-export dma_queue_plan \
   --compose-export service_write_user_byte \
   --compose-export ap_expected_mask \
   --compose-export apic_profile_supported \
@@ -97,12 +99,15 @@ as do critical-section accounting, release, and the once-owner claim; Rust
 retains the physical spin/retry loop. After the irreducible volatile mapping
 read, generated Thermite now owns per-CPU shootdown observation publication,
 stale accounting, and completion acknowledgement. The allocator retains only
-pointer/provenance and zeroing operations in Rust. Interrupt assembly still has
-raw atomic operations awaiting exact refinement. QEMU checks
+pointer/provenance and zeroing operations in Rust. Generated Thermite now
+constructs the live DMA register/status plan, queue layout, descriptor chain,
+availability publication, and pin-to-reclaim state receipt; Rust performs the
+raw PIO, volatile buffer access, fences, and completion polling. Interrupt
+assembly still has raw atomic operations awaiting exact refinement. QEMU checks
 execution with 1, 2, 4, and 8 CPUs. The runtime no longer links the parallel
 safe-Rust kernel model. Page-table traversal and
-writes, synchronization orchestration, AP/shootdown execution, DMA setup,
-device, and protocol logic remain in runtime Rust and must still migrate before
+writes, synchronization orchestration, AP/shootdown execution, and remaining
+device/protocol sequencing remain in runtime Rust and must still migrate before
 this artifact can be called a Thermite-authored formally verified kernel.
 
 `source-allowlist.txt` is the canonical source closure. Forge rejects unsorted,

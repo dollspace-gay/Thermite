@@ -13,6 +13,41 @@ struct DmaTransferState {
   synchronized: bool
 }
 
+struct DmaDevicePlan {
+  host_features_port: u64,
+  guest_features_port: u64,
+  queue_pfn_port: u64,
+  queue_size_port: u64,
+  queue_select_port: u64,
+  queue_notify_port: u64,
+  device_status_port: u64,
+  reset_status: u64,
+  acknowledge_status: u64,
+  driver_status: u64,
+  ready_status: u64
+}
+
+struct DmaQueuePlan {
+  available_offset: u64,
+  used_offset: u64,
+  queue_pfn: u64,
+  layout_valid: bool,
+  descriptor0_length: u64,
+  descriptor0_flags: u64,
+  descriptor0_next: u64,
+  descriptor1_length: u64,
+  descriptor1_flags: u64,
+  descriptor1_next: u64,
+  descriptor2_length: u64,
+  descriptor2_flags: u64,
+  descriptor2_next: u64,
+  available_index: u64,
+  bytes: u64,
+  generation: u64,
+  phase: u64,
+  synchronized: bool
+}
+
 fn pci_config_address(bus: u64, device: u64, function: u64, offset: u64) -> u64
   req bus <= 255 && device < 32 && function < 8 && offset <= 255
   ens result == 2147483648 + bus * 65536 + device * 2048 + function * 256 + (offset / 4) * 4
@@ -270,6 +305,85 @@ fn dma_reclaim(state: DmaTransferState) -> DmaTransferState
     generation: state.generation + 1,
     phase: 4,
     synchronized: false
+  }
+}
+
+fn dma_device_plan(io_base: u64) -> DmaDevicePlan
+  req io_base < 65536 && io_base % 4 == 0 && io_base + 18 < 65536
+  ens result.host_features_port == io_base
+  ens result.guest_features_port == io_base + 4
+  ens result.queue_pfn_port == io_base + 8
+  ens result.queue_size_port == io_base + 12
+  ens result.queue_select_port == io_base + 14
+  ens result.queue_notify_port == io_base + 16
+  ens result.device_status_port == io_base + 18
+  ens result.reset_status == 0
+  ens result.acknowledge_status == 1
+  ens result.driver_status == 3
+  ens result.ready_status == 7
+  fx pure
+{
+  DmaDevicePlan {
+    host_features_port: dma_register_port(io_base, 0),
+    guest_features_port: dma_register_port(io_base, 4),
+    queue_pfn_port: dma_register_port(io_base, 8),
+    queue_size_port: dma_register_port(io_base, 12),
+    queue_select_port: dma_register_port(io_base, 14),
+    queue_notify_port: dma_register_port(io_base, 16),
+    device_status_port: dma_register_port(io_base, 18),
+    reset_status: dma_device_status(0),
+    acknowledge_status: dma_device_status(1),
+    driver_status: dma_device_status(2),
+    ready_status: dma_device_status(3)
+  }
+}
+
+fn dma_queue_plan(queue_size: u64, capacity: u64, queue_address: u64) -> DmaQueuePlan
+  req queue_size >= 3 && queue_size <= 256 && queue_address <= 4294967295 && queue_address % 4096 == 0
+  ens result.available_offset == queue_size * 16
+  ens result.used_offset == ((queue_size * 18 + 4101) / 4096) * 4096
+  ens result.queue_pfn == queue_address / 4096
+  ens result.layout_valid == (result.used_offset + 6 + queue_size * 8 <= capacity)
+  ens result.descriptor0_length == 16
+  ens result.descriptor0_flags == 1
+  ens result.descriptor0_next == 1
+  ens result.descriptor1_length == 512
+  ens result.descriptor1_flags == 3
+  ens result.descriptor1_next == 2
+  ens result.descriptor2_length == 1
+  ens result.descriptor2_flags == 2
+  ens result.descriptor2_next == 0
+  ens result.available_index == 1
+  ens result.bytes == 512
+  ens result.generation == 1
+  ens result.phase == 4
+  ens !result.synchronized
+  fx pure
+{
+  let fresh: DmaTransferState = dma_transfer_new(512);
+  let pinned: DmaTransferState = dma_pin(fresh);
+  let device_owned: DmaTransferState = dma_give_device(pinned);
+  let completed: DmaTransferState = dma_complete(device_owned);
+  let reclaimed: DmaTransferState = dma_reclaim(completed);
+  DmaQueuePlan {
+    available_offset: dma_descriptor_bytes(queue_size),
+    used_offset: dma_used_offset(queue_size),
+    queue_pfn: dma_queue_pfn(queue_address),
+    layout_valid: dma_queue_layout_valid(queue_size, capacity),
+    descriptor0_length: dma_descriptor_length(0),
+    descriptor0_flags: dma_descriptor_flags(0),
+    descriptor0_next: dma_descriptor_next(0),
+    descriptor1_length: dma_descriptor_length(1),
+    descriptor1_flags: dma_descriptor_flags(1),
+    descriptor1_next: dma_descriptor_next(1),
+    descriptor2_length: dma_descriptor_length(2),
+    descriptor2_flags: dma_descriptor_flags(2),
+    descriptor2_next: dma_descriptor_next(2),
+    available_index: dma_publish_available(0),
+    bytes: reclaimed.bytes,
+    generation: reclaimed.generation,
+    phase: reclaimed.phase,
+    synchronized: reclaimed.synchronized
   }
 }
 

@@ -23,15 +23,9 @@ use thermite_kernel_policy::kernel_policy_ingress::{
     thermite_atomic_fetch_add as exact_fetch_add, thermite_atomic_fetch_and as exact_fetch_and,
     thermite_atomic_fetch_or as exact_fetch_or, thermite_atomic_load as exact_load,
     thermite_atomic_store as exact_store,
-    thermite_dma_descriptor_bytes as dma_descriptor_bytes,
-    thermite_dma_descriptor_flags as dma_descriptor_flags,
-    thermite_dma_descriptor_length as dma_descriptor_length,
-    thermite_dma_descriptor_next as dma_descriptor_next,
-    thermite_dma_device_ready as dma_device_ready, thermite_dma_device_status as dma_device_status,
-    thermite_dma_publish_available as dma_publish_available,
-    thermite_dma_queue_layout_valid as dma_queue_layout_valid,
-    thermite_dma_queue_pfn as dma_queue_pfn, thermite_dma_queue_size_valid as dma_queue_size_valid,
-    thermite_dma_register_port as dma_register_port, thermite_dma_used_offset as dma_used_offset,
+    thermite_dma_device_plan as dma_device_plan, thermite_dma_device_ready as dma_device_ready,
+    thermite_dma_queue_plan as dma_queue_plan,
+    thermite_dma_queue_size_valid as dma_queue_size_valid,
     thermite_kernel_signature_policy_flags as signature_policy_flags,
     thermite_kernel_signature_task_base as signature_task_base,
     thermite_ipc_worker_dispatch as ipc_worker_dispatch,
@@ -1638,20 +1632,21 @@ unsafe fn find_legacy_virtio_block() -> Result<(u8, u8, u8, u16), PostFirmwareEr
 
 unsafe fn virtio_block_dma_probe() -> Result<(usize, u64), PostFirmwareError> {
     let (_bus, _device, _function, io) = unsafe { find_legacy_virtio_block()? };
-    let host_features = dma_register_port(u64::from(io), 0) as u16;
-    let guest_features = dma_register_port(u64::from(io), 4) as u16;
-    let queue_pfn_port = dma_register_port(u64::from(io), 8) as u16;
-    let queue_size_port = dma_register_port(u64::from(io), 12) as u16;
-    let queue_select = dma_register_port(u64::from(io), 14) as u16;
-    let queue_notify = dma_register_port(u64::from(io), 16) as u16;
-    let device_status = dma_register_port(u64::from(io), 18) as u16;
+    let device_plan = dma_device_plan(u64::from(io));
+    let host_features = device_plan.host_features_port as u16;
+    let guest_features = device_plan.guest_features_port as u16;
+    let queue_pfn_port = device_plan.queue_pfn_port as u16;
+    let queue_size_port = device_plan.queue_size_port as u16;
+    let queue_select = device_plan.queue_select_port as u16;
+    let queue_notify = device_plan.queue_notify_port as u16;
+    let device_status = device_plan.device_status_port as u16;
 
     // SAFETY: these ports are within BAR0 and the device is reset before queue
     // configuration.  Feature zero is sufficient for the legacy read request.
     unsafe {
-        pio_write8(device_status, dma_device_status(0) as u8);
-        pio_write8(device_status, dma_device_status(1) as u8);
-        pio_write8(device_status, dma_device_status(2) as u8);
+        pio_write8(device_status, device_plan.reset_status as u8);
+        pio_write8(device_status, device_plan.acknowledge_status as u8);
+        pio_write8(device_status, device_plan.driver_status as u8);
         let _available_features = pio_read32(host_features);
         pio_write32(guest_features, 0);
         pio_write16(queue_select, 0);
@@ -1670,12 +1665,16 @@ unsafe fn virtio_block_dma_probe() -> Result<(usize, u64), PostFirmwareError> {
             ptr::addr_of_mut!(VIRTIO_REQUEST),
         )
     };
-    if queue as u64 > u64::from(u32::MAX) || request as u64 > u64::from(u32::MAX) {
+    if queue as u64 > u64::from(u32::MAX)
+        || queue as u64 % 4096 != 0
+        || request as u64 > u64::from(u32::MAX)
+    {
         return Err(PostFirmwareError::Dma);
     }
-    let available_offset = dma_descriptor_bytes(queue_size) as usize;
-    let used_offset = dma_used_offset(queue_size) as usize;
-    if !dma_queue_layout_valid(queue_size, (16 * 1024) as u64) {
+    let queue_plan = dma_queue_plan(queue_size, (16 * 1024) as u64, queue as u64);
+    let available_offset = queue_plan.available_offset as usize;
+    let used_offset = queue_plan.used_offset as usize;
+    if !queue_plan.layout_valid {
         return Err(PostFirmwareError::Dma);
     }
     unsafe {
@@ -1692,27 +1691,27 @@ unsafe fn virtio_block_dma_probe() -> Result<(usize, u64), PostFirmwareError> {
             descriptors.add(0),
             VirtqDescriptor {
                 address: ptr::addr_of!((*request).request_type) as u64,
-                length: dma_descriptor_length(0) as u32,
-                flags: dma_descriptor_flags(0) as u16,
-                next: dma_descriptor_next(0) as u16,
+                length: queue_plan.descriptor0_length as u32,
+                flags: queue_plan.descriptor0_flags as u16,
+                next: queue_plan.descriptor0_next as u16,
             },
         );
         ptr::write_volatile(
             descriptors.add(1),
             VirtqDescriptor {
                 address: ptr::addr_of!((*request).data) as u64,
-                length: dma_descriptor_length(1) as u32,
-                flags: dma_descriptor_flags(1) as u16,
-                next: dma_descriptor_next(1) as u16,
+                length: queue_plan.descriptor1_length as u32,
+                flags: queue_plan.descriptor1_flags as u16,
+                next: queue_plan.descriptor1_next as u16,
             },
         );
         ptr::write_volatile(
             descriptors.add(2),
             VirtqDescriptor {
                 address: ptr::addr_of!((*request).status) as u64,
-                length: dma_descriptor_length(2) as u32,
-                flags: dma_descriptor_flags(2) as u16,
-                next: dma_descriptor_next(2) as u16,
+                length: queue_plan.descriptor2_length as u32,
+                flags: queue_plan.descriptor2_flags as u16,
+                next: queue_plan.descriptor2_next as u16,
             },
         );
         let available = queue.add(available_offset);
@@ -1720,8 +1719,8 @@ unsafe fn virtio_block_dma_probe() -> Result<(usize, u64), PostFirmwareError> {
         ptr::write_volatile(available.cast::<u16>().add(2), 0);
         ptr::write_volatile(available.cast::<u16>().add(4), 0);
 
-        pio_write32(queue_pfn_port, dma_queue_pfn(queue as u64) as u32);
-        pio_write8(device_status, dma_device_status(3) as u8);
+        pio_write32(queue_pfn_port, queue_plan.queue_pfn as u32);
+        pio_write8(device_status, device_plan.ready_status as u8);
         if !dma_device_ready(u64::from(pio_read8(device_status))) {
             return Err(PostFirmwareError::Dma);
         }
@@ -1730,7 +1729,7 @@ unsafe fn virtio_block_dma_probe() -> Result<(usize, u64), PostFirmwareError> {
         // Ownership passes from CPU to device when avail.idx becomes visible.
         ptr::write_volatile(
             available.cast::<u16>().add(1),
-            dma_publish_available(0) as u16,
+            queue_plan.available_index as u16,
         );
         pio_write16(queue_notify, 0);
     }
@@ -1759,15 +1758,15 @@ unsafe fn virtio_block_dma_probe() -> Result<(usize, u64), PostFirmwareError> {
         u64::from(status),
         u64::from(signature_low),
         u64::from(signature_high),
-        512,
-        1,
+        queue_plan.bytes,
+        queue_plan.generation,
     );
     if !valid {
         return Err(PostFirmwareError::Dma);
     }
     // Generation zero was pinned and transferred device->CPU; unpin advances
     // the now-inaccessible mapping to generation one.
-    Ok((512, 1))
+    Ok((queue_plan.bytes as usize, queue_plan.generation))
 }
 
 fn entropy_probe() -> Result<usize, PostFirmwareError> {

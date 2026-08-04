@@ -955,6 +955,60 @@ pub fn thermite_dma_queue_layout_valid(queue_size: u64, capacity: u64) -> (resul
     super::dma_queue_layout_valid(queue_size, capacity)
 }
 
+pub fn thermite_dma_device_plan(io_base: u64) -> (result: super::DmaDevicePlan)
+    requires
+        io_base < 65536,
+        io_base % 4 == 0,
+        io_base + 18 < 65536,
+    ensures
+        result.host_features_port == io_base,
+        result.guest_features_port == io_base + 4,
+        result.queue_pfn_port == io_base + 8,
+        result.queue_size_port == io_base + 12,
+        result.queue_select_port == io_base + 14,
+        result.queue_notify_port == io_base + 16,
+        result.device_status_port == io_base + 18,
+        result.reset_status == 0,
+        result.acknowledge_status == 1,
+        result.driver_status == 3,
+        result.ready_status == 7,
+{
+    super::dma_device_plan(io_base)
+}
+
+pub fn thermite_dma_queue_plan(
+    queue_size: u64,
+    capacity: u64,
+    queue_address: u64,
+) -> (result: super::DmaQueuePlan)
+    requires
+        queue_size >= 3,
+        queue_size <= 256,
+        queue_address <= 4294967295,
+        queue_address % 4096 == 0,
+    ensures
+        result.available_offset == queue_size * 16,
+        result.used_offset == ((queue_size * 18 + 4101) / 4096) * 4096,
+        result.queue_pfn == queue_address / 4096,
+        result.layout_valid == (result.used_offset + 6 + queue_size * 8 <= capacity),
+        result.descriptor0_length == 16,
+        result.descriptor0_flags == 1,
+        result.descriptor0_next == 1,
+        result.descriptor1_length == 512,
+        result.descriptor1_flags == 3,
+        result.descriptor1_next == 2,
+        result.descriptor2_length == 1,
+        result.descriptor2_flags == 2,
+        result.descriptor2_next == 0,
+        result.available_index == 1,
+        result.bytes == 512,
+        result.generation == 1,
+        result.phase == 4,
+        !result.synchronized,
+{
+    super::dma_queue_plan(queue_size, capacity, queue_address)
+}
+
 pub fn thermite_service_user_base() -> (result: u64)
     ensures
         result == 70368744177664,

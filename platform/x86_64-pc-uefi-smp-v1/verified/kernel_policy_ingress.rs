@@ -325,6 +325,48 @@ pub fn thermite_ticket_lock_release_value(issued_ticket: u64) -> (result: u64)
     super::ticket_lock_release_value(issued_ticket)
 }
 
+pub fn thermite_synchronization_worker_issue(
+    next_ticket: &super::atomic::ExactAtomicU64,
+) -> (result: super::SynchronizationTicket)
+    ensures
+        result.receipt == result.ticket ^ 1,
+{
+    super::synchronization_worker_issue(next_ticket)
+}
+
+pub fn thermite_synchronization_worker_can_enter(
+    owner_ticket: &super::atomic::ExactAtomicU64,
+    issued_ticket: u64,
+) -> (result: super::SynchronizationProbe)
+    ensures
+        result.issued_ticket == issued_ticket,
+        result.can_enter == (result.owner_ticket == result.issued_ticket),
+{
+    super::synchronization_worker_can_enter(owner_ticket, issued_ticket)
+}
+
+pub fn thermite_synchronization_worker_complete(
+    cpu: u64,
+    issued_ticket: u64,
+    owner_ticket: &super::atomic::ExactAtomicU64,
+    entries: &super::atomic::ExactAtomicU64,
+    once_owner: &super::atomic::ExactAtomicU64,
+) -> (result: u64)
+    requires
+        cpu < 8,
+        issued_ticket < 18446744073709551615,
+    ensures
+        result == cpu + 10,
+{
+    super::synchronization_worker_complete(
+        cpu,
+        issued_ticket,
+        owner_ticket,
+        entries,
+        once_owner,
+    )
+}
+
 pub fn thermite_allocator_request_pages(size: u64, alignment: u64) -> (result: u64)
     ensures
         result == if alignment > 4096 || size > 262144 {

@@ -28,6 +28,17 @@ struct TicketLockState {
   held: bool
 }
 
+struct SynchronizationTicket {
+  ticket: u64,
+  receipt: u64
+}
+
+struct SynchronizationProbe {
+  owner_ticket: u64,
+  issued_ticket: u64,
+  can_enter: bool
+}
+
 fn atomic_load_order_legal(order: Ordering) -> bool
   req true
   ens result == (!(order is Release) && !(order is AcqRel))
@@ -179,6 +190,45 @@ fn atomic_claim_once(cell: &Atomic, owner: u64) -> u64
   } else {
     compared.previous
   }
+}
+
+fn synchronization_worker_issue(next_ticket: &Atomic) -> SynchronizationTicket
+  req true
+  ens result.receipt == result.ticket ^ 1
+  fx platform(atomic)
+{
+  let ticket: u64 = atomic_boundary_fetch(next_ticket, FetchOp::Add, 1, Ordering::SeqCst);
+  SynchronizationTicket { ticket: ticket, receipt: ticket ^ 1 }
+}
+
+fn synchronization_worker_can_enter(owner_ticket: &Atomic, issued_ticket: u64) -> SynchronizationProbe
+  req true
+  ens result.issued_ticket == issued_ticket
+  ens result.can_enter == (result.owner_ticket == result.issued_ticket)
+  fx platform(atomic)
+{
+  let owner: u64 = atomic_boundary_load(owner_ticket, Ordering::SeqCst);
+  let allowed: bool = ticket_lock_can_enter(owner, issued_ticket);
+  SynchronizationProbe { owner_ticket: owner, issued_ticket: issued_ticket, can_enter: allowed }
+}
+
+fn synchronization_worker_complete(
+  cpu: u64,
+  issued_ticket: u64,
+  owner_ticket: &Atomic,
+  entries: &Atomic,
+  once_owner: &Atomic
+) -> u64
+  req cpu < 8 && issued_ticket < 18446744073709551615
+  ens result == cpu + 10
+  fx platform(atomic)
+{
+  let completion_delta: u64 = 1;
+  atomic_boundary_fetch(entries, FetchOp::Add, completion_delta, Ordering::SeqCst);
+  let next_owner: u64 = ticket_lock_release_value(issued_ticket);
+  atomic_boundary_store(owner_ticket, next_owner, Ordering::SeqCst);
+  atomic_claim_once(once_owner, cpu + completion_delta);
+  cpu + completion_delta + 9
 }
 
 #[boundary("kernel::atomic::load@v1")]

@@ -18,7 +18,6 @@ use thermite_kernel_policy::kernel_policy_ingress::{
     thermite_ap_should_start as ap_should_start,
     thermite_apic_physical_base as apic_physical_base,
     thermite_apic_profile_supported as apic_profile_supported,
-    thermite_atomic_claim_once as exact_claim_once,
     thermite_atomic_fetch_add as exact_fetch_add, thermite_atomic_fetch_and as exact_fetch_and,
     thermite_atomic_fetch_or as exact_fetch_or, thermite_atomic_load as exact_load,
     thermite_atomic_store as exact_store,
@@ -51,6 +50,9 @@ use thermite_kernel_policy::kernel_policy_ingress::{
     thermite_scheduler_worker_drain as scheduler_worker_drain,
     thermite_scheduler_worker_enter as scheduler_worker_enter,
     thermite_shootdown_worker_report as shootdown_worker_report,
+    thermite_synchronization_worker_can_enter as synchronization_worker_can_enter,
+    thermite_synchronization_worker_complete as synchronization_worker_complete,
+    thermite_synchronization_worker_issue as synchronization_worker_issue,
     thermite_service_finish_value as service_finish_value,
     thermite_service_syscall_value as service_syscall_value,
     thermite_service_user_base as service_user_base,
@@ -927,20 +929,17 @@ fn message_probe(cpu: usize) {
 }
 
 fn lock_once(cpu: usize) {
-    let ticket =
-        thermite_kernel_policy::kernel_policy_ingress::thermite_ticket_issue(&POST_LOCK_NEXT);
-    while !thermite_kernel_policy::kernel_policy_ingress::thermite_ticket_lock_cell_can_enter(
-        &POST_LOCK_OWNER,
-        ticket,
-    ) {
+    let issued = synchronization_worker_issue(&POST_LOCK_NEXT);
+    while !synchronization_worker_can_enter(&POST_LOCK_OWNER, issued.ticket).can_enter {
         core::hint::spin_loop();
     }
-    exact_fetch_add(&POST_LOCK_ENTRIES, 1);
-    thermite_kernel_policy::kernel_policy_ingress::thermite_ticket_lock_cell_release(
+    let _ = synchronization_worker_complete(
+        cpu as u64,
+        issued.ticket,
         &POST_LOCK_OWNER,
-        ticket,
+        &POST_LOCK_ENTRIES,
+        &POST_ONCE,
     );
-    exact_claim_once(&POST_ONCE, (cpu + 1) as u64);
 }
 
 fn shootdown_probe(cpu: usize, expected: u64, mask: &ExactAtomicU64) {

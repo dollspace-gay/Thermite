@@ -130,6 +130,15 @@ fn synchronization_mechanics_are_receipt_bound_and_fail_closed() {
             .count(),
         3
     );
+    for row in &wait_rows {
+        if row["boundary"] == true {
+            continue;
+        }
+        assert_eq!(
+            row["level"], "L3",
+            "an in-language waiting primitive fell below L3: {row}"
+        );
+    }
     for name in [
         "wait_trace_wf",
         "bounded_wait_scan",

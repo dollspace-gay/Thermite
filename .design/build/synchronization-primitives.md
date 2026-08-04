@@ -16,7 +16,7 @@ governs:
   - stdlib/kernel-primitives/synchronization/wait.th
   - stdlib/kernel-primitives/synchronization/work_deque.th
   - forge/tests/synchronization_primitives.rs
-audited-content-sha256: 5e91dd3ab36f637593d29651782330885e7d3213e98f22a0f29ca3f9e38ec847 (re-pinned 2026-08-04 after the epoch-acknowledgement checkpoint)
+audited-content-sha256: ac71262f18e20c8acc8ada370887f5ed9a00b4d1ad322ec03725df52f2bd3c72 (re-pinned 2026-08-04 after complete-certificate L3-floor enforcement)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/sealed-atomics.md
@@ -234,7 +234,8 @@ total. Executable contracts kill 756 of 834 generated mutants.
 
 `forge/tests/synchronization_primitives.rs` additionally:
 
-- pins the exact L3/L1 split and all three boundary targets;
+- iterates every certificate row, pins every bodyful item at L3, and pins the
+  exact three-item L1 exception set and all three boundary targets;
 - requires the halt declaration to retain its explicit `diverge` effect;
 - pins wait mutation at 21/22, barrier mutation at 141/149, ticket mutation at
   41/43, once mutation at 65/68, reference-count mutation at 32/34, seqlock

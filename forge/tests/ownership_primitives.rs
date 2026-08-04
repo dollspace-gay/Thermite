@@ -76,6 +76,20 @@ fn generation_discipline_proves_rejections_and_replays_its_strict_surface() {
         "thermite::ownership::generation_authority"
     );
 
+    for row in certificates {
+        if row["item"] == "generation_authority" {
+            continue;
+        }
+        assert_eq!(
+            row["level"], "L3",
+            "an in-language ownership primitive fell below L3: {row}"
+        );
+        assert_eq!(
+            row["boundary"], false,
+            "only the bodyless authority mint may be a boundary: {row}"
+        );
+    }
+
     for name in [
         "generation_ledger_init",
         "generation_handle_live",

@@ -13,7 +13,7 @@ governs:
   - forge/src/verified_build.rs
   - forge/tests/ownership_primitives.rs
   - stdlib/kernel-primitives/ownership/generation.th
-audited-content-sha256: bbb008c7839bec1e163062722c96d2892014fac0eaed7a88141982bd5447087c (re-pinned 2026-08-04 after defining-module lifecycle support strengthened the opaque export barrier)
+audited-content-sha256: e778cb57296cff13ce6d27a27feac186e82aa8e406bccefa74f57f57582c14ee (re-pinned 2026-08-04 after complete ownership assurance-floor enforcement; opaque semantics are unchanged)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/generation-ownership.md

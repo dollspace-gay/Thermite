@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: 5ea868b97da5aaa4697c7daf5ea4987fb1a8a235623a422b98a26f4f4304f4d1
+audited-content-sha256: 08a4983dbbbd60d03c6c4fdc58ad422a274a41d9a86655d5c2dde8876f5d4a30 (re-pinned 2026-08-04 after the cross-package assurance-floor gate; borrowed-record semantics are unchanged)
 decision: direct mutation through an exclusive borrow of finite non-sealed named record state is admitted only when validator, L3, independent contract/exec/body TV, strict ABI, receipt replay, and representation ownership all describe the same field-exact transition
 governs:
   - thermite-spec/src/validator.rs
@@ -222,10 +222,10 @@ This increment is shipped only when all of the following are true:
 
 ## Residual work
 
-This increment does not claim nested mutable projections, strict body TV for a
-mutable local record returned as an aggregate, mutable enum payloads,
-heap-backed record fields, an affine type system, static global ownership,
-concurrent access to a record, atomic-object machine refinement, record-state
-loop/call-effect TV, or separate Rust/assembly TPL refinement. Those remain
-explicit later primitive increments. It also does not add any kernel policy or
-kernel artifact.
+The follow-on owned-aggregate increment now supplies strict body TV for a typed
+mutable local record returned as an aggregate and pure value-call composition.
+Nested mutable projections, mutable enum payloads, heap-backed record fields, an
+affine type system, static global ownership, concurrent access to a record,
+atomic-object machine refinement, record-state loops, mutable-reference
+call-effect TV, and separate Rust/assembly TPL refinement remain explicit later
+primitive increments. It also does not add any kernel policy or kernel artifact.

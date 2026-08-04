@@ -12,7 +12,7 @@ governs:
   - thermite-spec/tests/atomic_ordering_validate.rs
   - forge/src/verified_build/primitive_registry.rs
   - forge/tests/verified_build.rs
-audited-content-sha256: c69c8c69eb4f66a91bccc9b73d7cc889c00197e0bb804640c80203c18360f99d (re-pinned 2026-08-04 after named-record mutation explicitly excluded sealed roots; atomic ordering semantics are unchanged)
+audited-content-sha256: 471c43791b4fe748746483ac2d9a2d7b4a15586e187652bc08eed8c65adc9c46 (re-pinned 2026-08-04 after complete atomic L3-floor enforcement)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/frozen-primitive-registry.md
@@ -149,7 +149,14 @@ boundary.
 
 ## Verification and target split
 
-One package currently has two strict proof surfaces:
+The assurance-floor gate checks the dependency-first `model.th` + `api.th`
+projection as one program. It requires every non-boundary certificate row to be
+L3 and requires exactly 50 boundary rows, all at L1. The standalone model also
+has 47 certificate rows and every one must remain non-boundary L3. This is a
+whole-source assertion: adding an unproved bodyful helper fails the gate even if
+the two public receipt probes below still pass.
+
+The package currently has two strict receipt proof surfaces:
 
 1. `atomic_ordering_matrix_probe` builds for `--target kernel --level l3`.
    This proves the executable ordering algorithms and their generated export
@@ -160,8 +167,8 @@ One package currently has two strict proof surfaces:
 
 Both bundles bind and replay the package manifest, source map, `model.th`,
 `api.th`, generated Verus source, translation-validation inventory, toolchain,
-and artifact. The integration test requires every recorded TV row to be
-`faithful`.
+and artifact. The integration test requires assurance L3 for every reachable
+receipt member and requires every recorded TV row to be `faithful`.
 
 The split is explicit because the generic kernel target invokes Verus with
 `--no-vstd`; its built-in-only environment does not provide the array `View`

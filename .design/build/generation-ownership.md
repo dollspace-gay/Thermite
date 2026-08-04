@@ -8,7 +8,7 @@ governs:
   - stdlib/kernel-primitives/ownership.thpkg.json
   - stdlib/kernel-primitives/ownership/generation.th
   - forge/tests/ownership_primitives.rs
-audited-content-sha256: 780dae7ce051fd51284c14a31189b53f000969fd3336921f77a6cd52cb8d91bb
+audited-content-sha256: 6bbf66cde8d8444b3146d5462f997d731da4dc24e2f7b7136c1d840fff648c0b (re-pinned 2026-08-04 after complete-certificate L3-floor enforcement)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/frozen-primitive-registry.md
@@ -111,18 +111,23 @@ fail after an accepted transition.
   supplies no machine/platform implementation; and
 - zero Rust/assembly TPL bodies and zero ordinary Rust kernel-policy lines.
 
+The acceptance gate iterates the complete certificate inventory: every row
+other than `generation_authority` must be non-boundary L3. The one exception is
+matched by exact name and exact frozen target, so a newly introduced L1/L2
+algorithm cannot hide outside a hand-picked positive list.
+
 The package also has a strict freestanding build/replay surface rooted at
 `generation_rights_narrow`. It binds the complete package source closure and
 requires every recorded translation-validation row to be faithful.
 
 The complete generation-ledger lifecycle is not yet claimed as a strict receipt
-export. Strict body TV now independently frames direct one-level reads/writes
-through an exclusive finite named-record borrow, including opaque constructor,
-observer, and transition exports. This package additionally consumes and returns
-large aggregate values through nested ADT matches and callee chains. Those
-aggregate-result/match/call-effect forms are still rejected as `skipped`, rather
-than silently promoted from the per-item L3 proof. Closing that narrower gap
-requires exact ADT result state and mutable callee-effect composition.
+export. Strict body TV now independently frames both direct one-level writes
+through exclusive finite named-record borrows and typed owned-record local
+mutation/pure value-call composition. This package additionally consumes and
+returns large aggregate values through nested ADT matches and mutable callee
+chains. Those match/result/call-effect forms are still rejected as `skipped`,
+rather than silently promoted from the per-item L3 proof. Closing that narrower
+gap requires exact ADT result state and mutable callee-effect composition.
 
 Likewise, the frozen authority mint is only a declaration in this package. A
 consumer must bind it to an exact implementation and direct refinement. The
@@ -134,9 +139,9 @@ fits that assurance class; this package does not claim a machine operation.
 This increment strengthens REQ-KPRIM-4 but does not complete it. The remaining
 work is explicit:
 
-1. extend the shipped direct named-record lifecycle TV to aggregate struct/enum
-   results, ADT matches, mutable local records, and callee effects, then strictly
-   build/replay the full generation lifecycle;
+1. extend the shipped owned-record value TV to nested aggregate/enum results,
+   ADT matches, and mutable-reference callee effects, then strictly build/replay
+   the full generation lifecycle;
 2. directly refine the authority-mint implementation supplied by a synthetic
    consumer platform;
 3. add a complete affine/linear rule if consumers require uniqueness beyond

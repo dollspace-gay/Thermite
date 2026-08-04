@@ -2,17 +2,20 @@
 
 <!--
 tier: 3-component
-status: draft
+status: shipped
 decision: a typed mutable local of a finite non-sealed record may be updated and returned only when the independent body semantics reconstruct every field exactly, while calls compose only through independently derived pure value specifications and mutable-reference callees remain fail-closed
 governs:
   - thermite-tv/src/exec_encode.rs
   - thermite-tv/src/exec_stmt_encode.rs
+  - thermite-tv/src/lib.rs
   - thermite-tv/src/obligation.rs
   - thermite-tv/tests/owned_aggregate_lifecycle_tv.rs
   - forge/src/body_tv.rs
+  - forge/src/exec_tv.rs
   - forge/tests/body_tv.rs
   - forge/tests/verified_build.rs
   - conformance/verified-build/owned_aggregate_lifecycle.th
+audited-content-sha256: c037c15296ef0f7ddf781f791fe713345b7c45cda2a2d3e57ea1f338ce42d22c (re-pinned 2026-08-04 after the cross-package assurance-floor gate)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/named-record-lifecycle.md

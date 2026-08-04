@@ -17405,8 +17405,8 @@ owner = ".design/build/kernel-primitives.md"
 status = "partial"
 scope = "verified"
 summary = "Thermite provides executable/specification mutation over slices and allocation-free fixed storage and collections."
-remaining_scope = "Mutable borrowed slices/arrays, arbitrary old/final snapshot framing, native fixed arrays, scalar and recursively finite plain-aggregate relations, direct one-level mutation of finite non-sealed named records, defining-module opaque state transitions, exact contract/exec/body lifecycle TV, strict opaque constructor/observer/mutator receipts, total directly proved u64 bit methods, and a receipt-bound packed bitmap/u64 vector/u64 FIFO-ring/collision-explicit direct-map package are shipped. Add static storage, nested mutable projections, strict body TV for mutable local records and record-state loops/call effects, finite-enum equality/mutation if required, richer collision-resolving maps, slabs/freelists, and generic library capacities."
-contributors = [".design/build/kernel-byte-slice.md", ".design/build/fixed-collections.md", ".design/build/aggregate-array-relations.md", ".design/build/named-record-lifecycle.md", "thermite-syntax/src/parser.rs", "thermite-spec/src/validator.rs", "thermite-lower/src/lower.rs", "thermite-tv/src/exec_stmt_encode.rs", "thermite-tv/src/obligation.rs", "forge/src/body_tv.rs", "forge/src/contract_tv.rs", "forge/src/verified_build.rs"]
+remaining_scope = "Mutable borrowed slices/arrays, arbitrary old/final snapshot framing, native fixed arrays, scalar and recursively finite plain-aggregate relations, direct one-level mutation of finite non-sealed named records, defining-module opaque state transitions, typed owned-record local mutation and pure value-call composition, exact contract/exec/body lifecycle TV, strict freestanding L3 record receipts, total directly proved u64 bit methods, and a receipt-bound packed bitmap/u64 vector/u64 FIFO-ring/collision-explicit direct-map package are shipped. Add static storage, nested mutable projections, record-state loops and mutable-reference call effects, finite-enum equality/mutation if required, richer collision-resolving maps, slabs/freelists, and generic library capacities."
+contributors = [".design/build/kernel-byte-slice.md", ".design/build/fixed-collections.md", ".design/build/aggregate-array-relations.md", ".design/build/named-record-lifecycle.md", ".design/build/owned-aggregate-lifecycle.md", "thermite-syntax/src/parser.rs", "thermite-spec/src/validator.rs", "thermite-lower/src/lower.rs", "thermite-tv/src/exec_stmt_encode.rs", "thermite-tv/src/obligation.rs", "forge/src/body_tv.rs", "forge/src/contract_tv.rs", "forge/src/verified_build.rs"]
 generated_to = ["status", "forge-kernel-primitives-status"]
 
 [[requirement.evidence]]
@@ -17433,6 +17433,16 @@ note = "Pins deterministic program-shaped helpers, discharges a representative n
 kind = "file"
 target = "conformance/verified-build/aggregate_array_relations.th"
 note = "Policy-free nested-record array source used by strict L3 build and receipt replay."
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-tv/tests/owned_aggregate_lifecycle_tv.rs"
+note = "Discharges exact owned-record and array-field lifecycle obligations at L3 and rejects dropped, wrong-field, wrong-value, reordered, collateral, stale-read, and wrong-callee mutants."
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/verified_build.rs::owned_aggregate_pipeline_is_strict_freestanding_l3_and_executes_generated_logic"
+note = "Builds and replays an L3-only kernel-target record pipeline, executes its generated logic from a linked consumer, and rejects source-layout tampering."
 
 [[requirement.evidence]]
 kind = "test"
@@ -17522,8 +17532,8 @@ owner = ".design/build/kernel-primitives.md"
 status = "partial"
 scope = "spec"
 summary = "Sealed types cannot be forged in Thermite and support verified consumption or generation transitions for platform authority."
-remaining_scope = "The sealed-construction barrier, direct opaque constructor/observer/exclusive-record lifecycle receipts, and opaque receipt-bound 64-slot generation ledger prove acquisition/renewal/release, stale-handle-after-reuse rejection, double-release rejection, monotonic rights, L3 move/clone refusal, and foreign-module construction/read/write rejection. Add a complete affine rule if stronger uniqueness is required, aggregate-result/ADT/call-effect body TV for the full generation-ledger lifecycle, exact authority-mint refinement, and atomic-slot integration."
-contributors = [".design/basis/06-provenance-and-sinks.md", ".design/build/opaque-library-state.md", ".design/build/generation-ownership.md"]
+remaining_scope = "The sealed-construction barrier, direct opaque constructor/observer/exclusive-record lifecycle receipts, typed owned-record local/value-call L3 receipts, and opaque receipt-bound 64-slot generation ledger prove acquisition/renewal/release, stale-handle-after-reuse rejection, double-release rejection, monotonic rights, L3 move/clone refusal, and foreign-module construction/read/write rejection. Add a complete affine rule if stronger uniqueness is required, nested aggregate/ADT/mutable-callee body TV for the full generation-ledger lifecycle, exact authority-mint refinement, and atomic-slot integration."
+contributors = [".design/basis/06-provenance-and-sinks.md", ".design/build/opaque-library-state.md", ".design/build/generation-ownership.md", ".design/build/owned-aggregate-lifecycle.md"]
 generated_to = ["status", "forge-kernel-primitives-status"]
 
 [[requirement.evidence]]

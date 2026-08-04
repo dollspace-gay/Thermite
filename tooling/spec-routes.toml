@@ -1703,6 +1703,68 @@ design = ".design/build/named-record-lifecycle.md"
 reference = []
 conformance_ops = ["named-record-lifecycle"]
 
+# Typed owned-record values, exact local field replacement, and pure value-call
+# composition. This is reusable language/proof/build infrastructure only.
+[[route]]
+crate_pattern = "thermite-tv/src/exec_encode.rs"
+design = ".design/build/owned-aggregate-lifecycle.md"
+reference = ["conformance/verified-build/owned_aggregate_lifecycle.th"]
+conformance_ops = ["owned-aggregate-exec-reference"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/exec_stmt_encode.rs"
+design = ".design/build/owned-aggregate-lifecycle.md"
+reference = ["conformance/verified-build/owned_aggregate_lifecycle.th"]
+conformance_ops = ["owned-aggregate-body-reference"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/lib.rs"
+design = ".design/build/owned-aggregate-lifecycle.md"
+reference = ["conformance/verified-build/owned_aggregate_lifecycle.th"]
+conformance_ops = ["owned-aggregate-frame-api"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/obligation.rs"
+design = ".design/build/owned-aggregate-lifecycle.md"
+reference = ["conformance/verified-build/owned_aggregate_lifecycle.th"]
+conformance_ops = ["owned-aggregate-obligation"]
+
+[[route]]
+crate_pattern = "thermite-tv/tests/owned_aggregate_lifecycle_tv.rs"
+design = ".design/build/owned-aggregate-lifecycle.md"
+reference = ["conformance/verified-build/owned_aggregate_lifecycle.th"]
+conformance_ops = ["owned-aggregate-mutants", "owned-aggregate-wrong-callee"]
+
+[[route]]
+crate_pattern = "forge/src/body_tv.rs"
+design = ".design/build/owned-aggregate-lifecycle.md"
+reference = ["conformance/verified-build/owned_aggregate_lifecycle.th"]
+conformance_ops = ["owned-aggregate-body-tv"]
+
+[[route]]
+crate_pattern = "forge/src/exec_tv.rs"
+design = ".design/build/owned-aggregate-lifecycle.md"
+reference = ["conformance/verified-build/owned_aggregate_lifecycle.th"]
+conformance_ops = ["owned-aggregate-exec-tv"]
+
+[[route]]
+crate_pattern = "forge/tests/body_tv.rs"
+design = ".design/build/owned-aggregate-lifecycle.md"
+reference = ["conformance/verified-build/owned_aggregate_lifecycle.th"]
+conformance_ops = ["owned-aggregate-body-tv", "mutable-callee-fail-closed"]
+
+[[route]]
+crate_pattern = "forge/tests/verified_build.rs"
+design = ".design/build/owned-aggregate-lifecycle.md"
+reference = ["conformance/verified-build/owned_aggregate_lifecycle.th"]
+conformance_ops = ["owned-aggregate-strict-l3", "owned-aggregate-replay", "owned-aggregate-runtime", "owned-aggregate-tamper"]
+
+[[route]]
+crate_pattern = "conformance/verified-build/owned_aggregate_lifecycle.th"
+design = ".design/build/owned-aggregate-lifecycle.md"
+reference = []
+conformance_ops = ["owned-aggregate-lifecycle"]
+
 # Primitive-only sealed atomic declarations and proof vocabulary. These routes
 # intentionally cover no machine implementation: registry v1 must refuse that
 # assurance class until the separate object/machine refinement increment.

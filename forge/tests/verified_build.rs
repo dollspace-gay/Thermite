@@ -1181,10 +1181,58 @@ fn package_build_binds_and_replays_the_complete_source_identified_closure() {
 }
 
 #[test]
-fn atomic_primitive_package_builds_and_replays_both_strict_proof_surfaces() {
+fn atomic_primitive_package_keeps_every_in_language_item_at_l3() {
     let temp = TempDir::new("atomic-primitives");
     let manifest = root().join("stdlib/kernel-primitives/atomics.thpkg.json");
     let manifest_s = manifest.to_string_lossy().to_string();
+
+    let model = forge(&[
+        "check",
+        "stdlib/kernel-primitives/src/model.th",
+        "--level",
+        "l3",
+        "--json",
+    ]);
+    assert_success(&model);
+    let model_rows: serde_json::Value = serde_json::from_slice(&model.stdout).unwrap();
+    let model_rows = model_rows.as_array().unwrap();
+    assert_eq!(model_rows.len(), 47);
+    assert!(
+        model_rows
+            .iter()
+            .all(|row| row["level"] == "L3" && row["boundary"] == false),
+        "an in-language atomic model item fell below L3: {model_rows:?}"
+    );
+
+    let projection = temp.0.join("atomic-primitives-projection.th");
+    let mut projection_source =
+        fs::read_to_string(root().join("stdlib/kernel-primitives/src/model.th")).unwrap();
+    projection_source.push('\n');
+    projection_source
+        .push_str(&fs::read_to_string(root().join("stdlib/kernel-primitives/src/api.th")).unwrap());
+    fs::write(&projection, projection_source).unwrap();
+    let projection_s = projection.to_string_lossy().to_string();
+    let checked = forge(&["check", &projection_s, "--level", "l3", "--json"]);
+    assert_success(&checked);
+    let rows: serde_json::Value = serde_json::from_slice(&checked.stdout).unwrap();
+    let rows = rows.as_array().unwrap();
+    assert_eq!(
+        rows.iter().filter(|row| row["boundary"] == true).count(),
+        50
+    );
+    for row in rows {
+        if row["boundary"] == true {
+            assert_eq!(
+                row["level"], "L1",
+                "a bodyless atomic machine declaration changed assurance class: {row}"
+            );
+        } else {
+            assert_eq!(
+                row["level"], "L3",
+                "an in-language atomic primitive fell below L3: {row}"
+            );
+        }
+    }
 
     for (name, export, target) in [
         ("ordering", "atomic_ordering_matrix_probe", "kernel"),
@@ -1221,6 +1269,12 @@ fn atomic_primitive_package_builds_and_replays_both_strict_proof_surfaces() {
         let receipt: serde_json::Value =
             serde_json::from_slice(&fs::read(bundle.join("receipt.json")).unwrap()).unwrap();
         assert_eq!(receipt["binding"]["exports"][0]["thermite_name"], export);
+        assert_eq!(receipt["binding"]["assurance"], "L3");
+        assert!(receipt["binding"]["assurance_aggregate"]["members"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|member| member["achieved"] == "L3"));
         let plan: serde_json::Value =
             serde_json::from_slice(&fs::read(bundle.join("evidence/artifact-plan.v1")).unwrap())
                 .unwrap();

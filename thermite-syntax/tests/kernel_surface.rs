@@ -1,9 +1,9 @@
-//! Hand-derived surface tests for the bootable multicore kernel design.
+//! Hand-derived surface tests for reusable kernel-authoring primitives.
 
 use thermite_syntax::{parse, Effect, Item, PlatformDomain, PrimType, Type};
 
 #[test]
-fn parses_kernel_scalar_widths_and_every_platform_domain() {
+fn parses_freestanding_scalar_widths_and_every_platform_domain() {
     let source = r#"
 fn platform_probe(byte: u8, word: u16) -> u16
   req byte as u16 <= word
@@ -19,7 +19,7 @@ fn platform_probe(byte: u8, word: u16) -> u16
     let parsed = parse(source);
     assert!(
         parsed.is_clean(),
-        "kernel scalar/effect surface must parse: {:?}",
+        "freestanding scalar/effect surface must parse: {:?}",
         parsed.errors
     );
     let Item::Fn(function) = &parsed.program.items[0] else {

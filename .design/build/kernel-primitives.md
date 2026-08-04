@@ -24,7 +24,7 @@ governs:
   - forge/src/verified_build.rs
   - forge/src/verified_build/composition.rs
   - conformance/kernel_primitives.th
-audited-content-sha256: 031e8040d7fcde5a76fa4ed49f6e02ae6f424d4a7f6ea99fe3eed1e50774cbdb
+audited-content-sha256: fca7272907810874994ece528708fec2b2879a60ec61b8c82db7fe2db1ef6af1
 extends:
   - .design/build/kernel-target.md
   - .design/build/l3-rich-composition.md

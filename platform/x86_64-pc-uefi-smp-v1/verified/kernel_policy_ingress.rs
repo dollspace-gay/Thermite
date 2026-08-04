@@ -147,6 +147,17 @@ pub fn thermite_scheduler_worker_enter(
     )
 }
 
+pub fn thermite_scheduler_worker_drain(
+    task_base: &super::atomic::ExactAtomicU64,
+    next_task: &super::atomic::ExactAtomicU64,
+    task_sum: &super::atomic::ExactAtomicU64,
+) -> (result: u64)
+    ensures
+        result <= 4097 * 5095,
+{
+    super::scheduler_worker_drain(task_base, next_task, task_sum)
+}
+
 pub fn thermite_atomic_load(cell: &super::atomic::ExactAtomicU64) -> (result: u64) {
     super::atomic_boundary_load(cell, super::Ordering::SeqCst)
 }

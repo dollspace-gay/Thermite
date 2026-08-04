@@ -167,6 +167,39 @@ fn scheduler_worker_enter(
   cpu + admission_delta + 9
 }
 
+fn scheduler_worker_drain(
+  task_base: &Atomic,
+  next_task: &Atomic,
+  task_sum: &Atomic
+) -> u64
+  req true
+  ens result <= 4097 * 5095
+  fx platform(atomic)
+{
+  let base: u64 = atomic_boundary_load(task_base, Ordering::SeqCst);
+  let mut attempts: u64 = 0;
+  let mut consumed: u64 = 0;
+  let mut draining: bool = base > 0 && base <= 1000;
+  while attempts < 4097 && draining
+    inv attempts <= 4097
+    inv consumed <= attempts * 5095
+    inv consumed <= 20874215
+    inv !draining || (base > 0 && base <= 1000)
+    dec 4097 - attempts
+  {
+    let task: u64 = scheduler_claim(next_task);
+    if scheduler_task_available(task) {
+      let task_value: u64 = scheduler_task_value(base, task);
+      atomic_boundary_fetch(task_sum, FetchOp::Add, task_value, Ordering::SeqCst);
+      consumed = consumed + task_value;
+    } else {
+      draining = false;
+    }
+    attempts = attempts + 1;
+  }
+  consumed
+}
+
 fn scheduler_expected_sum(task_base: u64) -> u64
   req task_base > 0 && task_base <= 1000
   ens result == 4096 * 4095 / 2 + 4096 * task_base

@@ -48,6 +48,7 @@ use thermite_kernel_policy::kernel_policy_ingress::{
     thermite_pci_virtio_block_identity as pci_virtio_block_identity,
     thermite_scheduler_required_ap_workers as scheduler_required_ap_workers,
     thermite_scheduler_required_parallel_cpus as scheduler_required_parallel_cpus,
+    thermite_scheduler_worker_drain as scheduler_worker_drain,
     thermite_scheduler_worker_enter as scheduler_worker_enter,
     thermite_shootdown_worker_report as shootdown_worker_report,
     thermite_service_finish_value as service_finish_value,
@@ -913,23 +914,7 @@ fn run_tasks(cpu: usize) {
     while exact_load(&POST_TASK_GATE) == 0 {
         core::hint::spin_loop();
     }
-    let task_base = exact_load(&POST_TASK_BASE);
-    loop {
-        let task = thermite_kernel_policy::kernel_policy_ingress::thermite_scheduler_claim(
-            &POST_NEXT_TASK,
-        );
-        if !thermite_kernel_policy::kernel_policy_ingress::thermite_scheduler_task_available(task) {
-            break;
-        }
-        let task_value =
-            thermite_kernel_policy::kernel_policy_ingress::thermite_scheduler_task_value(
-                task_base, task,
-            );
-        exact_fetch_add(&POST_TASK_SUM, task_value);
-        for _ in 0..32 {
-            core::hint::spin_loop();
-        }
-    }
+    let _ = scheduler_worker_drain(&POST_TASK_BASE, &POST_NEXT_TASK, &POST_TASK_SUM);
 }
 
 fn message_probe(cpu: usize) {

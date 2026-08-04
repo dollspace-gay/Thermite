@@ -25,6 +25,7 @@ cargo run -p forge -- build conformance/thermite-kernel.thpkg.json \
   --compose-export ipc_worker_dispatch \
   --compose-export scheduler_observe_max \
   --compose-export scheduler_worker_enter \
+  --compose-export scheduler_worker_drain \
   --compose-export shootdown_worker_report \
   --compose-export service_write_user_byte \
   --compose-export ap_expected_mask \
@@ -83,8 +84,9 @@ accounting, and delivery-mask publication. The scheduler's live maximum-active
 publication also executes generated Thermite through an exact atomic maximum
 primitive. Generated Thermite owns the live worker-admission transaction,
 including seed-task accounting, worker publication, and final barrier release.
-Rust-managed scheduler wait/drain orchestration, AP, and shootdown state uses
-those sealed atomics. After the irreducible volatile mapping read, generated
+The complete bounded task-claim and sum-publication drain also runs in generated
+Thermite; Rust retains the admission-barrier wait. AP and shootdown state use
+the sealed atomics. After the irreducible volatile mapping read, generated
 Thermite now owns per-CPU shootdown observation publication, stale accounting,
 and completion acknowledgement. The allocator retains only
 pointer/provenance and zeroing operations in Rust. Interrupt assembly still has

@@ -122,6 +122,9 @@ pub struct RefCtx {
     /// Names bound as native fixed arrays. Their frozen length operation is
     /// independently encoded through the finite `@` view.
     fixed_array_bound: BTreeSet<String>,
+    /// User `spec fn` declarations keyed to the argument positions whose source
+    /// type is a slice view. Other argument positions remain values or references.
+    spec_call_slice_args: BTreeMap<String, BTreeSet<usize>>,
     /// Names that are a bounded integer (`u64`/`u32`/`usize`) and must be coerced
     /// `as nat` when they appear as a top-level operand of a comparison against a
     /// `nat`-valued term (a `nat`-returning spec-fn call). This re-implements,
@@ -154,6 +157,7 @@ impl RefCtx {
             string_bound: BTreeSet::new(),
             map_bound: BTreeSet::new(),
             fixed_array_bound: BTreeSet::new(),
+            spec_call_slice_args: BTreeMap::new(),
             nat_coerce: BTreeSet::new(),
             old_state_views: BTreeMap::new(),
             final_state_views: BTreeMap::new(),
@@ -184,6 +188,19 @@ impl RefCtx {
         S: Into<String>,
     {
         self.fixed_array_bound = names.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Declare the slice-view positions for every user `spec fn` in the source
+    /// program. An empty position list records a known all-value signature.
+    pub fn with_spec_call_slice_args<I>(mut self, entries: I) -> Self
+    where
+        I: IntoIterator<Item = (String, Vec<usize>)>,
+    {
+        self.spec_call_slice_args = entries
+            .into_iter()
+            .map(|(name, positions)| (name, positions.into_iter().collect()))
+            .collect();
         self
     }
 
@@ -238,6 +255,10 @@ impl RefCtx {
 
     fn is_fixed_array_bound(&self, name: &str) -> bool {
         self.fixed_array_bound.contains(name)
+    }
+
+    fn spec_call_slice_positions(&self, name: &str) -> Option<&BTreeSet<usize>> {
+        self.spec_call_slice_args.get(name)
     }
 
     fn needs_nat_coerce(&self, name: &str) -> bool {
@@ -567,10 +588,24 @@ fn encode_call(callee: &Expr, args: &[Expr], ctx: &RefCtx) -> Result<String, Ref
     }
 
     // (3) a named spec-fn call.
-    let encoded_args = args
-        .iter()
-        .map(|a| encode_call_arg(a, ctx))
-        .collect::<Result<Vec<_>, _>>()?;
+    let encoded_args = if let Some(slice_positions) = ctx.spec_call_slice_positions(&name) {
+        args.iter()
+            .enumerate()
+            .map(|(index, arg)| {
+                if matches!(arg, Expr::Closure { .. }) {
+                    encode_pred_arg(arg, ctx)
+                } else if slice_positions.contains(&index) {
+                    encode_slice_arg(arg, ctx)
+                } else {
+                    encode(arg, ctx)
+                }
+            })
+            .collect::<Result<Vec<_>, _>>()?
+    } else {
+        args.iter()
+            .map(|arg| encode_call_arg(arg, ctx))
+            .collect::<Result<Vec<_>, _>>()?
+    };
     Ok(format!("{name}({})", encoded_args.join(", ")))
 }
 

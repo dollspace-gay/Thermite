@@ -203,6 +203,9 @@ pub struct ObligationFrame {
     /// Native fixed-array parameters/results whose specification meaning exposes
     /// the finite `@` view for the independently encoded length operation.
     pub fixed_array_params: Vec<String>,
+    /// User `spec fn` names and zero-based argument positions declared as slice
+    /// views. Named calls apply `@` only at these positions.
+    pub spec_call_slice_args: Vec<(String, Vec<usize>)>,
     /// Arbitrary pre/post-state snapshots used to reify `old(..)` and
     /// `final(..)` outside an executable Verus postcondition. The production
     /// predicate is rewritten only at exact emitted state-view calls; the
@@ -224,6 +227,7 @@ impl ObligationFrame {
             .with_string_bound(self.string_params.iter().cloned())
             .with_map_bound(self.map_params.iter().cloned())
             .with_fixed_array_bound(self.fixed_array_params.iter().cloned())
+            .with_spec_call_slice_args(self.spec_call_slice_args.clone())
             .with_state_views(self.state_views.iter().map(|view| {
                 (
                     view.kind,

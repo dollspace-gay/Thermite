@@ -3,7 +3,7 @@
 tier: 3-component
 status: draft
 audited-sha: 92396428567edc6940a9e2845217f5ff4c2ea3c6 (re-pinned 2026-06-16, user-authorized: the only change to this doc's governed files since the prior pin is the additive stage-1 forge-tier increment 2a — the new Item::Forge surface + inert Item::Forge match arms, verified net-additive with no substantive removal of existing v1 logic (git log <main>..HEAD = the 8 forge commits); the v1 behavior this doc governs is unchanged, and the new forge-tier surface is specified in .design/stage1-forge-tier.md / REQ-S1-3)
-audited-content-sha256: 629e0f8c1db2010b00e64e6e8f82223a5c9e88a5aa2a42f070f6e551de244d75 (re-pinned 2026-08-04 after adding exact frozen-boundary refinement; existing behavior remains regression-covered)
+audited-content-sha256: 3fa8f3a70bfae3d5280b9d7da9f7acac1ebcec542d9f443c0f24bdf4f9b5f10a (re-pinned 2026-08-04 after sealed-atomic and fixed-array lowering changes; existing behavior remains regression-covered)
 governs: thermite-syntax/src/ast.rs
 governs: thermite-syntax/src/parser.rs
 governs: thermite-spec/src/validator.rs

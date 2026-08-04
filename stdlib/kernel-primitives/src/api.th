@@ -1,0 +1,567 @@
+#[sealed] struct AtomicBoolSlot { identity: usize }
+#[sealed] struct AtomicU32Slot { identity: usize }
+#[sealed] struct AtomicU64Slot { identity: usize }
+#[sealed] struct AtomicUsizeSlot { identity: usize }
+
+#[sealed] struct AtomicBool { identity: usize }
+#[sealed] struct AtomicU32 { identity: usize }
+#[sealed] struct AtomicU64 { identity: usize }
+#[sealed] struct AtomicUsize { identity: usize }
+
+struct AtomicBoolObservation {
+  value: bool,
+  cell: usize,
+  order: u8,
+}
+
+struct AtomicU32Observation {
+  value: u32,
+  cell: usize,
+  order: u8,
+}
+
+struct AtomicU64Observation {
+  value: u64,
+  cell: usize,
+  order: u8,
+}
+
+struct AtomicUsizeObservation {
+  value: usize,
+  cell: usize,
+  order: u8,
+}
+
+struct AtomicBoolTransition {
+  previous: bool,
+  next: bool,
+  exchanged: bool,
+  cell: usize,
+  success_order: u8,
+  failure_order: u8,
+}
+
+struct AtomicU32Transition {
+  previous: u32,
+  next: u32,
+  exchanged: bool,
+  cell: usize,
+  success_order: u8,
+  failure_order: u8,
+}
+
+struct AtomicU64Transition {
+  previous: u64,
+  next: u64,
+  exchanged: bool,
+  cell: usize,
+  success_order: u8,
+  failure_order: u8,
+}
+
+struct AtomicUsizeTransition {
+  previous: usize,
+  next: usize,
+  exchanged: bool,
+  cell: usize,
+  success_order: u8,
+  failure_order: u8,
+}
+
+struct AtomicWrite {
+  cell: usize,
+  width: u8,
+  order: u8,
+  value: u64,
+}
+
+struct AtomicFence {
+  kind: u8,
+  order: u8,
+}
+
+#[boundary("thermite::atomic::bool::init")]
+fn atomic_bool_init(slot: AtomicBoolSlot, initial: bool) -> AtomicBool
+  req true
+  ens result.identity == slot.identity
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::u32::init")]
+fn atomic_u32_init(slot: AtomicU32Slot, initial: u32) -> AtomicU32
+  req true
+  ens result.identity == slot.identity
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::u64::init")]
+fn atomic_u64_init(slot: AtomicU64Slot, initial: u64) -> AtomicU64
+  req true
+  ens result.identity == slot.identity
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::usize::init")]
+fn atomic_usize_init(slot: AtomicUsizeSlot, initial: usize) -> AtomicUsize
+  req true
+  ens result.identity == slot.identity
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::bool::load")]
+fn atomic_bool_load(cell: &AtomicBool, order: AtomicOrdering) -> AtomicBoolObservation
+  req atomic_load_order_legal_spec(order)
+  ens result.cell == cell.identity && result.order == atomic_order_code(order)
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::u32::load")]
+fn atomic_u32_load(cell: &AtomicU32, order: AtomicOrdering) -> AtomicU32Observation
+  req atomic_load_order_legal_spec(order)
+  ens result.cell == cell.identity && result.order == atomic_order_code(order)
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::u64::load")]
+fn atomic_u64_load(cell: &AtomicU64, order: AtomicOrdering) -> AtomicU64Observation
+  req atomic_load_order_legal_spec(order)
+  ens result.cell == cell.identity && result.order == atomic_order_code(order)
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::usize::load")]
+fn atomic_usize_load(cell: &AtomicUsize, order: AtomicOrdering) -> AtomicUsizeObservation
+  req atomic_load_order_legal_spec(order)
+  ens result.cell == cell.identity && result.order == atomic_order_code(order)
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::bool::store")]
+fn atomic_bool_store(cell: &AtomicBool, value: bool, order: AtomicOrdering) -> AtomicWrite
+  req atomic_store_order_legal_spec(order)
+  ens result.cell == cell.identity && result.width == 0
+    && result.order == atomic_order_code(order) && result.value == value as u64
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::u32::store")]
+fn atomic_u32_store(cell: &AtomicU32, value: u32, order: AtomicOrdering) -> AtomicWrite
+  req atomic_store_order_legal_spec(order)
+  ens result.cell == cell.identity && result.width == 1
+    && result.order == atomic_order_code(order) && result.value == value as u64
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::u64::store")]
+fn atomic_u64_store(cell: &AtomicU64, value: u64, order: AtomicOrdering) -> AtomicWrite
+  req atomic_store_order_legal_spec(order)
+  ens result.cell == cell.identity && result.width == 2
+    && result.order == atomic_order_code(order) && result.value == value
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::usize::store")]
+fn atomic_usize_store(cell: &AtomicUsize, value: usize, order: AtomicOrdering) -> AtomicWrite
+  req atomic_store_order_legal_spec(order)
+  ens result.cell == cell.identity && result.width == 3
+    && result.order == atomic_order_code(order) && result.value == value as u64
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::bool::swap")]
+fn atomic_bool_swap(cell: &AtomicBool, value: bool, order: AtomicOrdering) -> AtomicBoolTransition
+  req atomic_rmw_order_legal_spec(order)
+  ens result.cell == cell.identity && result.next == value && result.exchanged
+    && result.success_order == atomic_order_code(order) && result.failure_order == 0
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::u32::swap")]
+fn atomic_u32_swap(cell: &AtomicU32, value: u32, order: AtomicOrdering) -> AtomicU32Transition
+  req atomic_rmw_order_legal_spec(order)
+  ens result.cell == cell.identity && result.next == value && result.exchanged
+    && result.success_order == atomic_order_code(order) && result.failure_order == 0
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::u64::swap")]
+fn atomic_u64_swap(cell: &AtomicU64, value: u64, order: AtomicOrdering) -> AtomicU64Transition
+  req atomic_rmw_order_legal_spec(order)
+  ens result.cell == cell.identity && result.next == value && result.exchanged
+    && result.success_order == atomic_order_code(order) && result.failure_order == 0
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::usize::swap")]
+fn atomic_usize_swap(cell: &AtomicUsize, value: usize, order: AtomicOrdering) -> AtomicUsizeTransition
+  req atomic_rmw_order_legal_spec(order)
+  ens result.cell == cell.identity && result.next == value && result.exchanged
+    && result.success_order == atomic_order_code(order) && result.failure_order == 0
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::bool::compare_exchange")]
+fn atomic_bool_compare_exchange(
+  cell: &AtomicBool,
+  current: bool,
+  value: bool,
+  success: AtomicOrdering,
+  failure: AtomicOrdering,
+) -> AtomicBoolTransition
+  req atomic_cas_order_legal_spec(success, failure)
+  ens result.cell == cell.identity
+    && result.success_order == atomic_order_code(success)
+    && result.failure_order == atomic_order_code(failure)
+    && result.exchanged == (result.previous == current)
+    && result.next == if result.exchanged { value } else { result.previous }
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::u32::compare_exchange")]
+fn atomic_u32_compare_exchange(
+  cell: &AtomicU32,
+  current: u32,
+  value: u32,
+  success: AtomicOrdering,
+  failure: AtomicOrdering,
+) -> AtomicU32Transition
+  req atomic_cas_order_legal_spec(success, failure)
+  ens result.cell == cell.identity
+    && result.success_order == atomic_order_code(success)
+    && result.failure_order == atomic_order_code(failure)
+    && result.exchanged == (result.previous == current)
+    && result.next == if result.exchanged { value } else { result.previous }
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::u64::compare_exchange")]
+fn atomic_u64_compare_exchange(
+  cell: &AtomicU64,
+  current: u64,
+  value: u64,
+  success: AtomicOrdering,
+  failure: AtomicOrdering,
+) -> AtomicU64Transition
+  req atomic_cas_order_legal_spec(success, failure)
+  ens result.cell == cell.identity
+    && result.success_order == atomic_order_code(success)
+    && result.failure_order == atomic_order_code(failure)
+    && result.exchanged == (result.previous == current)
+    && result.next == if result.exchanged { value } else { result.previous }
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::usize::compare_exchange")]
+fn atomic_usize_compare_exchange(
+  cell: &AtomicUsize,
+  current: usize,
+  value: usize,
+  success: AtomicOrdering,
+  failure: AtomicOrdering,
+) -> AtomicUsizeTransition
+  req atomic_cas_order_legal_spec(success, failure)
+  ens result.cell == cell.identity
+    && result.success_order == atomic_order_code(success)
+    && result.failure_order == atomic_order_code(failure)
+    && result.exchanged == (result.previous == current)
+    && result.next == if result.exchanged { value } else { result.previous }
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::bool::compare_exchange_weak")]
+fn atomic_bool_compare_exchange_weak(
+  cell: &AtomicBool,
+  current: bool,
+  value: bool,
+  success: AtomicOrdering,
+  failure: AtomicOrdering,
+) -> AtomicBoolTransition
+  req atomic_cas_order_legal_spec(success, failure)
+  ens result.cell == cell.identity
+    && result.success_order == atomic_order_code(success)
+    && result.failure_order == atomic_order_code(failure)
+    && (!result.exchanged || result.previous == current)
+    && result.next == if result.exchanged { value } else { result.previous }
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::u32::compare_exchange_weak")]
+fn atomic_u32_compare_exchange_weak(
+  cell: &AtomicU32,
+  current: u32,
+  value: u32,
+  success: AtomicOrdering,
+  failure: AtomicOrdering,
+) -> AtomicU32Transition
+  req atomic_cas_order_legal_spec(success, failure)
+  ens result.cell == cell.identity
+    && result.success_order == atomic_order_code(success)
+    && result.failure_order == atomic_order_code(failure)
+    && (!result.exchanged || result.previous == current)
+    && result.next == if result.exchanged { value } else { result.previous }
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::u64::compare_exchange_weak")]
+fn atomic_u64_compare_exchange_weak(
+  cell: &AtomicU64,
+  current: u64,
+  value: u64,
+  success: AtomicOrdering,
+  failure: AtomicOrdering,
+) -> AtomicU64Transition
+  req atomic_cas_order_legal_spec(success, failure)
+  ens result.cell == cell.identity
+    && result.success_order == atomic_order_code(success)
+    && result.failure_order == atomic_order_code(failure)
+    && (!result.exchanged || result.previous == current)
+    && result.next == if result.exchanged { value } else { result.previous }
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::usize::compare_exchange_weak")]
+fn atomic_usize_compare_exchange_weak(
+  cell: &AtomicUsize,
+  current: usize,
+  value: usize,
+  success: AtomicOrdering,
+  failure: AtomicOrdering,
+) -> AtomicUsizeTransition
+  req atomic_cas_order_legal_spec(success, failure)
+  ens result.cell == cell.identity
+    && result.success_order == atomic_order_code(success)
+    && result.failure_order == atomic_order_code(failure)
+    && (!result.exchanged || result.previous == current)
+    && result.next == if result.exchanged { value } else { result.previous }
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::bool::fetch_and")]
+fn atomic_bool_fetch_and(cell: &AtomicBool, value: bool, order: AtomicOrdering) -> AtomicBoolTransition
+  req atomic_rmw_order_legal_spec(order)
+  ens result.cell == cell.identity && result.next == (result.previous && value)
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::bool::fetch_or")]
+fn atomic_bool_fetch_or(cell: &AtomicBool, value: bool, order: AtomicOrdering) -> AtomicBoolTransition
+  req atomic_rmw_order_legal_spec(order)
+  ens result.cell == cell.identity && result.next == (result.previous || value)
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::bool::fetch_xor")]
+fn atomic_bool_fetch_xor(cell: &AtomicBool, value: bool, order: AtomicOrdering) -> AtomicBoolTransition
+  req atomic_rmw_order_legal_spec(order)
+  ens result.cell == cell.identity && result.next == (result.previous != value)
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::u32::fetch_add")]
+fn atomic_u32_fetch_add(cell: &AtomicU32, value: u32, order: AtomicOrdering) -> AtomicU32Transition
+  req atomic_rmw_order_legal_spec(order)
+  ens result.cell == cell.identity && result.next == atomic_u32_wrapping_add(result.previous, value)
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::u32::fetch_sub")]
+fn atomic_u32_fetch_sub(cell: &AtomicU32, value: u32, order: AtomicOrdering) -> AtomicU32Transition
+  req atomic_rmw_order_legal_spec(order)
+  ens result.cell == cell.identity && result.next == atomic_u32_wrapping_sub(result.previous, value)
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::u64::fetch_add")]
+fn atomic_u64_fetch_add(cell: &AtomicU64, value: u64, order: AtomicOrdering) -> AtomicU64Transition
+  req atomic_rmw_order_legal_spec(order)
+  ens result.cell == cell.identity && result.next == atomic_u64_wrapping_add(result.previous, value)
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::u64::fetch_sub")]
+fn atomic_u64_fetch_sub(cell: &AtomicU64, value: u64, order: AtomicOrdering) -> AtomicU64Transition
+  req atomic_rmw_order_legal_spec(order)
+  ens result.cell == cell.identity && result.next == atomic_u64_wrapping_sub(result.previous, value)
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::usize::fetch_add")]
+fn atomic_usize_fetch_add(cell: &AtomicUsize, value: usize, order: AtomicOrdering) -> AtomicUsizeTransition
+  req atomic_rmw_order_legal_spec(order)
+  ens result.cell == cell.identity && result.next == atomic_usize_wrapping_add(result.previous, value)
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::usize::fetch_sub")]
+fn atomic_usize_fetch_sub(cell: &AtomicUsize, value: usize, order: AtomicOrdering) -> AtomicUsizeTransition
+  req atomic_rmw_order_legal_spec(order)
+  ens result.cell == cell.identity && result.next == atomic_usize_wrapping_sub(result.previous, value)
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::u32::fetch_and")]
+fn atomic_u32_fetch_and(cell: &AtomicU32, value: u32, order: AtomicOrdering) -> AtomicU32Transition
+  req atomic_rmw_order_legal_spec(order)
+  ens result.cell == cell.identity && result.next == (result.previous & value)
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::u32::fetch_or")]
+fn atomic_u32_fetch_or(cell: &AtomicU32, value: u32, order: AtomicOrdering) -> AtomicU32Transition
+  req atomic_rmw_order_legal_spec(order)
+  ens result.cell == cell.identity && result.next == (result.previous | value)
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::u32::fetch_xor")]
+fn atomic_u32_fetch_xor(cell: &AtomicU32, value: u32, order: AtomicOrdering) -> AtomicU32Transition
+  req atomic_rmw_order_legal_spec(order)
+  ens result.cell == cell.identity && result.next == (result.previous ^ value)
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::u64::fetch_and")]
+fn atomic_u64_fetch_and(cell: &AtomicU64, value: u64, order: AtomicOrdering) -> AtomicU64Transition
+  req atomic_rmw_order_legal_spec(order)
+  ens result.cell == cell.identity && result.next == (result.previous & value)
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::u64::fetch_or")]
+fn atomic_u64_fetch_or(cell: &AtomicU64, value: u64, order: AtomicOrdering) -> AtomicU64Transition
+  req atomic_rmw_order_legal_spec(order)
+  ens result.cell == cell.identity && result.next == (result.previous | value)
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::u64::fetch_xor")]
+fn atomic_u64_fetch_xor(cell: &AtomicU64, value: u64, order: AtomicOrdering) -> AtomicU64Transition
+  req atomic_rmw_order_legal_spec(order)
+  ens result.cell == cell.identity && result.next == (result.previous ^ value)
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::usize::fetch_and")]
+fn atomic_usize_fetch_and(cell: &AtomicUsize, value: usize, order: AtomicOrdering) -> AtomicUsizeTransition
+  req atomic_rmw_order_legal_spec(order)
+  ens result.cell == cell.identity && result.next == (result.previous & value)
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::usize::fetch_or")]
+fn atomic_usize_fetch_or(cell: &AtomicUsize, value: usize, order: AtomicOrdering) -> AtomicUsizeTransition
+  req atomic_rmw_order_legal_spec(order)
+  ens result.cell == cell.identity && result.next == (result.previous | value)
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::usize::fetch_xor")]
+fn atomic_usize_fetch_xor(cell: &AtomicUsize, value: usize, order: AtomicOrdering) -> AtomicUsizeTransition
+  req atomic_rmw_order_legal_spec(order)
+  ens result.cell == cell.identity && result.next == (result.previous ^ value)
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::u32::fetch_min")]
+fn atomic_u32_fetch_min(cell: &AtomicU32, value: u32, order: AtomicOrdering) -> AtomicU32Transition
+  req atomic_rmw_order_legal_spec(order)
+  ens result.cell == cell.identity
+    && result.next == if result.previous < value { result.previous } else { value }
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::u32::fetch_max")]
+fn atomic_u32_fetch_max(cell: &AtomicU32, value: u32, order: AtomicOrdering) -> AtomicU32Transition
+  req atomic_rmw_order_legal_spec(order)
+  ens result.cell == cell.identity
+    && result.next == if result.previous > value { result.previous } else { value }
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::u64::fetch_min")]
+fn atomic_u64_fetch_min(cell: &AtomicU64, value: u64, order: AtomicOrdering) -> AtomicU64Transition
+  req atomic_rmw_order_legal_spec(order)
+  ens result.cell == cell.identity
+    && result.next == if result.previous < value { result.previous } else { value }
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::u64::fetch_max")]
+fn atomic_u64_fetch_max(cell: &AtomicU64, value: u64, order: AtomicOrdering) -> AtomicU64Transition
+  req atomic_rmw_order_legal_spec(order)
+  ens result.cell == cell.identity
+    && result.next == if result.previous > value { result.previous } else { value }
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::usize::fetch_min")]
+fn atomic_usize_fetch_min(cell: &AtomicUsize, value: usize, order: AtomicOrdering) -> AtomicUsizeTransition
+  req atomic_rmw_order_legal_spec(order)
+  ens result.cell == cell.identity
+    && result.next == if result.previous < value { result.previous } else { value }
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::usize::fetch_max")]
+fn atomic_usize_fetch_max(cell: &AtomicUsize, value: usize, order: AtomicOrdering) -> AtomicUsizeTransition
+  req atomic_rmw_order_legal_spec(order)
+  ens result.cell == cell.identity
+    && result.next == if result.previous > value { result.previous } else { value }
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::compiler_fence")]
+fn atomic_compiler_fence(order: AtomicOrdering) -> AtomicFence
+  req atomic_fence_order_legal_spec(order)
+  ens result.kind == 0 && result.order == atomic_order_code(order)
+  fx platform(atomic);
+
+#[boundary("thermite::atomic::hardware_fence")]
+fn atomic_hardware_fence(order: AtomicOrdering) -> AtomicFence
+  req atomic_fence_order_legal_spec(order)
+  ens result.kind == 1 && result.order == atomic_order_code(order)
+  fx platform(atomic);
+
+fn atomic_load_order_probe(order: AtomicOrdering) -> bool
+  req true
+  ens result == atomic_load_order_legal_spec(order)
+  fx pure
+{
+  atomic_load_order_legal(order)
+}
+
+fn atomic_cas_order_probe(success: AtomicOrdering, failure: AtomicOrdering) -> bool
+  req true
+  ens result == atomic_cas_order_legal_spec(success, failure)
+  fx pure
+{
+  atomic_cas_order_legal(success, failure)
+}
+
+fn atomic_happens_before_probe(history: &AtomicHistory, event: usize) -> bool
+  req event > 0 && event <= history.len
+  ens result && atomic_happens_before(history, event, event, history.len)
+  fx pure
+{
+  atomic_happens_before_reflexive(history, event)
+}
+
+fn atomic_ordering_matrix_probe(case: u8) -> bool
+  req case < 45
+  ens result == atomic_ordering_matrix_spec(case)
+  fx pure
+{
+  (case < 5 && atomic_load_code_legal(case))
+    || (case >= 5 && case < 10 && atomic_store_code_legal((case - 5) as u8))
+    || (case >= 10 && case < 15 && atomic_fence_code_legal((case - 10) as u8))
+    || (case >= 15 && case < 40 && atomic_cas_code_legal(
+      ((case - 15) / 5) as u8,
+      ((case - 15) % 5) as u8,
+    ))
+    || (case >= 40 && atomic_rmw_code_legal((case - 40) as u8))
+}
+
+fn atomic_history_model_probe(
+  program_parent: &[usize; ATOMIC_HISTORY_CAPACITY],
+  synchronize_parent: &[usize; ATOMIC_HISTORY_CAPACITY],
+  release_parent: &[usize; ATOMIC_HISTORY_CAPACITY],
+  len: usize,
+  event: usize,
+) -> bool
+  req len <= ATOMIC_HISTORY_CAPACITY && event > 0 && event <= len
+  ens result
+    && atomic_happens_before_edges(
+      program_parent,
+      synchronize_parent,
+      len,
+      event,
+      event,
+      len,
+    )
+    && atomic_release_sequence_edges(
+      release_parent,
+      len,
+      event,
+      event,
+      len,
+    )
+  fx pure
+{
+  true
+}

@@ -31,7 +31,7 @@ fn forall_lowers_to_bounded_int_quantifier() {
             rhs: Box::new(path("n")),
         }),
     };
-    let out = lower_contract_expr(&phi, &[], &[], &[], &[], &[], &[]).expect("lowers");
+    let out = lower_contract_expr(&phi, &[], &[], &[], &[], &[], &[], &[]).expect("lowers");
     // The bounded index form: `forall|i: int| 0 <= i < xs.len() ==> (i < n)`.
     assert!(out.starts_with("forall|i: int|"), "{out}");
     assert!(out.contains("0 <= i < xs.len()"), "membership guard: {out}");
@@ -55,7 +55,7 @@ fn exists_lowers_to_bounded_conjunction() {
             rhs: Box::new(int(0)),
         }),
     };
-    let out = lower_contract_expr(&phi, &[], &[], &[], &[], &[], &[]).expect("lowers");
+    let out = lower_contract_expr(&phi, &[], &[], &[], &[], &[], &[], &[]).expect("lowers");
     // The bounded existential form: `exists|i: int| 0 <= i < xs.len() && (i == 0)`.
     assert!(out.starts_with("exists|i: int|"), "{out}");
     assert!(out.contains("0 <= i < xs.len()"), "membership guard: {out}");

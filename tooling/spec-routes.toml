@@ -1415,6 +1415,57 @@ design = ".design/build/kernel-primitives.md"
 reference = ["conformance/kernel_primitives.th"]
 conformance_ops = ["kernel-skill-reference"]
 
+# Primitive-only sealed atomic declarations and proof vocabulary. These routes
+# intentionally cover no machine implementation: registry v1 must refuse that
+# assurance class until the separate object/machine refinement increment.
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/atomics.thpkg.json"
+design = ".design/build/sealed-atomics.md"
+reference = []
+conformance_ops = ["atomic-package-closure"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/src/model.th"
+design = ".design/build/sealed-atomics.md"
+reference = []
+conformance_ops = ["atomic-ordering-model", "atomic-history-model"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/src/api.th"
+design = ".design/build/sealed-atomics.md"
+reference = ["stdlib/kernel-primitives/src/model.th"]
+conformance_ops = ["sealed-atomic-api", "atomic-ordering-probe", "atomic-history-probe"]
+
+[[route]]
+crate_pattern = "thermite-spec/src/validator.rs"
+design = ".design/build/sealed-atomics.md"
+reference = ["stdlib/kernel-primitives/src/api.th"]
+conformance_ops = ["atomic-ordering-pre-codegen-gate"]
+
+[[route]]
+crate_pattern = "thermite-spec/tests/atomic_ordering_validate.rs"
+design = ".design/build/sealed-atomics.md"
+reference = ["stdlib/kernel-primitives/src/api.th"]
+conformance_ops = ["atomic-ordering-legal-matrix", "atomic-ordering-rejections"]
+
+[[route]]
+crate_pattern = "forge/src/verified_build/primitive_registry.rs"
+design = ".design/build/sealed-atomics.md"
+reference = ["stdlib/kernel-primitives/src/api.th"]
+conformance_ops = ["machine-concurrency-assurance-refusal"]
+
+[[route]]
+crate_pattern = "forge/tests/verified_build.rs"
+design = ".design/build/sealed-atomics.md"
+reference = ["stdlib/kernel-primitives/atomics.thpkg.json"]
+conformance_ops = ["atomic-package-l3-kernel", "atomic-history-l3-hosted", "atomic-package-replay"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/ref_encode.rs"
+design = ".design/build/kernel-primitives.md"
+reference = ["stdlib/kernel-primitives/src/model.th"]
+conformance_ops = ["borrowed-fixed-array-spec-call"]
+
 [[route]]
 crate_pattern = ".github/workflows/ci.yml"
 design = ".design/stage4-epr-reconstruction.md"

@@ -172,7 +172,7 @@ forge_methods! {
     }
     Build {
         name: "build",
-        usage: "forge build <file> [--level l1|l3] [--export <fn>] [--compose-export <fn> --compose-shell <file.rs> [--primitive-registry <registry.json>]] [--crate-name <name>] [--entry <fn>] [--out <path>] [--target std|kernel] [--json] [--no-sandbox] [--sandbox-self-test]",
+        usage: "forge build <file-or-package> [--level l1|l3] [--export <fn>] [--compose-export <fn> --compose-shell <file.rs> [--primitive-registry <registry.json>]] [--crate-name <name>] [--entry <fn>] [--out <path>] [--target std|kernel] [--json] [--no-sandbox] [--sandbox-self-test]",
         purpose: "Build L1 checked Rust or an exact-source L3 link/composition bundle.",
     }
     VerifyBuild {
@@ -1365,6 +1365,16 @@ behind the language.
 \nRemoved from Rust: explicit lifetimes, the trait system (only built-in
 `Eq`/`Ord`/`Hash`/`Iter`/`Display`), macros, `unsafe` (→ `#[slag]`), UFCS, implicit
 widening (casts explicit; overflow is a proof obligation).
+
+Kernel-authoring library: `forge build` also accepts a receipt-bound
+`*.thpkg.json` manifest. The vendorable
+`stdlib/kernel-primitives/atomics.thpkg.json` package provides sealed
+bool/u32/u64/usize atomic declarations, ordering/history specifications, and
+pure proof probes—no kernel or machine implementation. Atomic calls require an
+exact `AtomicOrdering::Relaxed|Acquire|Release|AcqRel|SeqCst` literal; illegal
+load/store/fence/CAS pairs reject before lowering. A consumer must supply and
+directly refine the exact machine boundary; registry v1 intentionally certifies
+only sequential safe-Rust wrappers.
 
 ",
     );

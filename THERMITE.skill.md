@@ -212,6 +212,16 @@ Removed from Rust: explicit lifetimes, the trait system (only built-in
 `Eq`/`Ord`/`Hash`/`Iter`/`Display`), macros, `unsafe` (→ `#[slag]`), UFCS, implicit
 widening (casts explicit; overflow is a proof obligation).
 
+Kernel-authoring library: `forge build` also accepts a receipt-bound
+`*.thpkg.json` manifest. The vendorable
+`stdlib/kernel-primitives/atomics.thpkg.json` package provides sealed
+bool/u32/u64/usize atomic declarations, ordering/history specifications, and
+pure proof probes—no kernel or machine implementation. Atomic calls require an
+exact `AtomicOrdering::Relaxed|Acquire|Release|AcqRel|SeqCst` literal; illegal
+load/store/fence/CAS pairs reject before lowering. A consumer must supply and
+directly refine the exact machine boundary; registry v1 intentionally certifies
+only sequential safe-Rust wrappers.
+
 ## 2. SpecTherm combinator library
 
 Use these to QUANTIFY in a contract. You may NOT write a raw `forall`/`exists` in a
@@ -276,7 +286,7 @@ through checked reconstruction.
 - `forge audit <file> [--json] [--meaning] [--metrics]` — Show assurance, boundaries, meaning, and metrics.
 - `forge repair <file> [item] [--json]` — Retry timeout-lowered items.
 - `forge review <file> [item] [--json] [--reviewer <cmd>]` — Emit contracts for intent review.
-- `forge build <file> [--level l1|l3] [--export <fn>] [--compose-export <fn> --compose-shell <file.rs> [--primitive-registry <registry.json>]] [--crate-name <name>] [--entry <fn>] [--out <path>] [--target std|kernel] [--json] [--no-sandbox] [--sandbox-self-test]` — Build L1 checked Rust or an exact-source L3 link/composition bundle.
+- `forge build <file-or-package> [--level l1|l3] [--export <fn>] [--compose-export <fn> --compose-shell <file.rs> [--primitive-registry <registry.json>]] [--crate-name <name>] [--entry <fn>] [--out <path>] [--target std|kernel] [--json] [--no-sandbox] [--sandbox-self-test]` — Build L1 checked Rust or an exact-source L3 link/composition bundle.
 - `forge verify-build <bundle-dir> [--replay] [--json]` — Validate or replay a correspondence-backed L3 build receipt.
 - `forge tv <file> [--generated [N]] [--seed <u64>] [--json]` — Validate contract lowering.
 - `forge exec-tv <file> [--generated [N]] [--no-generated] [--json]` — Validate expression lowering.

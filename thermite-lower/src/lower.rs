@@ -379,6 +379,9 @@ enum Pos {
 struct Ctx<'a> {
     pos: Pos,
     slices: &'a [&'a str],
+    /// Names of parameters borrowed as native fixed arrays. Their spec view is
+    /// `(*array_ref)@`, unlike a slice parameter's direct `slice@` view.
+    array_refs: &'a [&'a str],
     /// Names of `spec fn`s lowered with a `nat` return type (the head-fold-sum
     /// shape — OQ-1). An `Eq` between a `u64`-valued scalar and a call to one of
     /// these coerces the scalar with `as nat`, since `nat` and `u64` are not the
@@ -487,6 +490,7 @@ impl<'a> Ctx<'a> {
         Ctx {
             pos: Pos::Exec,
             slices: NO_SLICES,
+            array_refs: NO_SLICES,
             nat_fns: NO_SLICES,
             variants: NO_VARIANTS,
             nat_ret: false,
@@ -502,6 +506,7 @@ impl<'a> Ctx<'a> {
         Ctx {
             pos: Pos::Spec,
             slices,
+            array_refs: NO_SLICES,
             nat_fns,
             variants: NO_VARIANTS,
             nat_ret: false,
@@ -520,6 +525,7 @@ impl<'a> Ctx<'a> {
         Ctx {
             pos: Pos::Spec,
             slices: NO_SLICES,
+            array_refs: NO_SLICES,
             nat_fns: NO_SLICES,
             variants: NO_VARIANTS,
             nat_ret: false,
@@ -535,6 +541,10 @@ impl<'a> Ctx<'a> {
     /// qualification). Carried through `match`/pattern lowering.
     fn with_variants(mut self, variants: &'a [(&'a str, &'a str)]) -> Ctx<'a> {
         self.variants = variants;
+        self
+    }
+    fn with_array_refs(mut self, names: &'a [&'a str]) -> Ctx<'a> {
+        self.array_refs = names;
         self
     }
     /// This context marked as a `nat`-returning spec-fn body (REQ-10 — integer
@@ -657,6 +667,9 @@ impl<'a> Ctx<'a> {
     /// True if `name` is an in-scope slice-typed parameter (gets `@` in spec).
     fn is_slice(&self, name: &str) -> bool {
         self.slices.contains(&name)
+    }
+    fn is_array_ref(&self, name: &str) -> bool {
+        self.array_refs.contains(&name)
     }
     /// True if `name` is a `nat`-returning spec fn (drives `as nat` coercion).
     fn is_nat_fn(&self, name: &str) -> bool {
@@ -2889,7 +2902,9 @@ fn lower_spec_fn_body_with_schemes(
     // uses, covering the whole spec-fn-body class (no scheme sibling left to
     // re-pin). Empty for a non-`String` spec fn (byte-stable).
     let strings = string_param_names(params);
+    let array_refs = fixed_array_ref_param_names(params);
     let ctx = Ctx::spec_seq()
+        .with_array_refs(&array_refs)
         .with_variants(variants)
         .with_nat_ret(ret == "nat")
         .with_schemes(bindings)
@@ -2911,6 +2926,20 @@ fn slice_param_names(params: &[Param]) -> Vec<&str> {
         .filter_map(|p| match &p.ty {
             Type::Ref { inner, .. } if matches!(inner.as_ref(), Type::Slice(_)) => {
                 Some(p.name.as_str())
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// Parameters borrowed as native fixed arrays. Unlike `&[T]` slices, these keep
+/// their reference type in a user `spec fn`; indexing observes `(*name)@`.
+fn fixed_array_ref_param_names(params: &[Param]) -> Vec<&str> {
+    params
+        .iter()
+        .filter_map(|param| match &param.ty {
+            Type::Ref { inner, .. } if matches!(inner.as_ref(), Type::Array { .. }) => {
+                Some(param.name.as_str())
             }
             _ => None,
         })
@@ -3250,12 +3279,14 @@ fn lower_fn_signature(
     writeln!(out, ") -> (result: {ret})").ok();
 
     let slices = slice_param_names(&f.params);
+    let array_refs = fixed_array_ref_param_names(&f.params);
     // Basis Stage 7 (`.design/basis/07-strings.md` REQ-4): the `String`-named
     // values in scope for this fn's contract — every `String`/`&String` param plus
     // `result` when the return is `String`. A `String` receiver's spec-position
     // `.len()`/`.byte_at(i)` rewrites to `.spec_len()`/`.spec_byte_at(i as int)`.
     let strings = string_value_names(f);
     let spec = Ctx::spec(&slices, nat_fns)
+        .with_array_refs(&array_refs)
         .with_strings(&strings)
         .with_string_fields(string_fields)
         .with_user_string_spec_fns(user_string_spec_fns)
@@ -3412,6 +3443,7 @@ fn lower_fn_signature(
 pub fn lower_contract_expr(
     expr: &Expr,
     slices: &[&str],
+    array_refs: &[&str],
     nat_fns: &[&str],
     strings: &[&str],
     string_fields: &[&str],
@@ -3419,6 +3451,7 @@ pub fn lower_contract_expr(
     spec_fn_param_types: &[(&str, &[PrimType])],
 ) -> Result<String, LowerError> {
     let ctx = Ctx::spec(slices, nat_fns)
+        .with_array_refs(array_refs)
         .with_strings(strings)
         .with_string_fields(string_fields)
         .with_user_string_spec_fns(user_string_spec_fns)
@@ -3515,8 +3548,10 @@ fn lower_l3_export_wrapper(
     writeln!(out, ") -> (result: Result<{ret}, ThermiteContractError>)").ok();
 
     let slices = slice_param_names(&f.params);
+    let array_refs = fixed_array_ref_param_names(&f.params);
     let strings = string_value_names(f);
     let spec = Ctx::spec(&slices, nat_fns)
+        .with_array_refs(&array_refs)
         .with_strings(&strings)
         .with_string_fields(string_fields)
         .with_user_string_spec_fns(user_string_spec_fns)
@@ -4387,7 +4422,9 @@ fn lower_spec_fn_body(
     // non-`String` spec fn (byte-stable for the existing corpus; `spec_sum`/ADT
     // folds carry no `String` param, so the set is empty and nothing changes).
     let strings = string_param_names(params);
+    let array_refs = fixed_array_ref_param_names(params);
     let ctx = Ctx::spec_seq()
+        .with_array_refs(&array_refs)
         .with_variants(variants)
         .with_nat_ret(ret == "nat")
         .with_strings(&strings)
@@ -8895,20 +8932,44 @@ fn lower_index(
     span: Span,
 ) -> Result<String, LowerError> {
     let b = lower_expr(base, ctx, depth, span)?;
+    let borrowed_array = matches!(base, Expr::Path(parts)
+        if parts.len() == 1 && ctx.is_array_ref(&parts[0]));
     match (ctx.pos, index) {
         (Pos::Spec, IndexArg::Single(i)) => {
             let idx = lower_expr(i, ctx, depth, span)?;
-            Ok(format!("{b}@[{idx} as int]"))
+            if borrowed_array {
+                Ok(format!("(*{b})[({idx}) as int]"))
+            } else {
+                Ok(format!("{b}@[{idx} as int]"))
+            }
         }
         (Pos::Spec, IndexArg::RangeTo(i)) => {
+            if borrowed_array {
+                return Err(LowerError::Unsupported {
+                    what: "range indexing through a borrowed fixed array".to_string(),
+                    span,
+                });
+            }
             let idx = lower_expr(i, ctx, depth, span)?;
             Ok(format!("{b}@.subrange(0, {idx} as int)"))
         }
         (Pos::Spec, IndexArg::RangeFrom(i)) => {
+            if borrowed_array {
+                return Err(LowerError::Unsupported {
+                    what: "range indexing through a borrowed fixed array".to_string(),
+                    span,
+                });
+            }
             let idx = lower_expr(i, ctx, depth, span)?;
             Ok(format!("{b}@.subrange({idx} as int, {b}@.len() as int)"))
         }
         (Pos::Spec, IndexArg::Range(i, j)) => {
+            if borrowed_array {
+                return Err(LowerError::Unsupported {
+                    what: "range indexing through a borrowed fixed array".to_string(),
+                    span,
+                });
+            }
             let lo = lower_expr(i, ctx, depth, span)?;
             let hi = lower_expr(j, ctx, depth, span)?;
             Ok(format!("{b}@.subrange({lo} as int, {hi} as int)"))
@@ -9731,6 +9792,7 @@ fn lower_loop(
     };
 
     let slices = slice_param_names(&f.params);
+    let array_refs = fixed_array_ref_param_names(&f.params);
     let strings = string_value_names(f);
     // The loop's `inv` clauses and its `dec` measure lower in spec context, and a
     // loop invariant / decreases measure may name a user `spec fn` with an
@@ -9745,6 +9807,7 @@ fn lower_loop(
     // `lift_immutable_preconds` below, so a precondition lifted into the invariants
     // that names a spec fn narrows identically.
     let spec = Ctx::spec(&slices, nat_fns)
+        .with_array_refs(&array_refs)
         .with_strings(&strings)
         .with_string_fields(string_fields)
         .with_spec_fn_param_types(spec_fn_param_types);
@@ -10539,7 +10602,9 @@ fn spec_dec(dec: &Clause, params: &[Param], spec_fn_param_types: &[(&str, &[Prim
     // correct). Thread the program-wide map so a `dec`-measure spec-call narrows to
     // the callee's declared param type (`Ctx::spec_call_param_cast`, #227).
     let strings = string_param_names(params);
+    let array_refs = fixed_array_ref_param_names(params);
     let ctx = Ctx::spec_seq()
+        .with_array_refs(&array_refs)
         .with_strings(&strings)
         .with_spec_fn_param_types(spec_fn_param_types);
     lower_expr(&dec.expr, ctx, 0, zero_span()).unwrap_or_else(|_| "0".to_string())

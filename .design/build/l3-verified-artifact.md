@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: c6d292b8bb892b3d06908768640591c65aa4c0e911e6ff8af3b9cc1150f76b36
+audited-content-sha256: 8525f65bc457f6e5eeae02e5715d66c0ee2e430c0001cf04d4d99a1b14d97913
 decision: Option A — compile the canonical Verus executable body that was verified
 issue: github:dollspace-gay/Thermite#101, github:dollspace-gay/Thermite#103, github:dollspace-gay/Thermite#104, github:dollspace-gay/Thermite#108, github:dollspace-gay/Thermite#111
 governs:

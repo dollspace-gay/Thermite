@@ -376,6 +376,18 @@ pub enum SpecError {
     /// whose element is a primitive scalar. Richer element equality must be
     /// supplied explicitly by a verified library rather than inferred by Rust.
     ArrayEqualityRequiresPrimitiveArrays { detail: String, span: Span },
+    /// An executable call to a frozen `thermite::atomic::*` boundary uses an
+    /// ordering expression that is not an exact `AtomicOrdering::Variant`
+    /// literal, supplies an ordering forbidden for that operation, or has an
+    /// arity that prevents the ordering positions from being checked. Atomic
+    /// ordering is part of the machine operation, so this gate is deliberately
+    /// fail-closed before lowering/code generation rather than relying on a
+    /// backend panic or a dynamically selected Rust ordering.
+    IllegalAtomicOrdering {
+        operation: String,
+        detail: String,
+        span: Span,
+    },
     /// A call in a contract position whose callee is neither a registered
     /// combinator nor a declared `spec fn` — an arbitrary free-function call,
     /// forbidden by the §4.2 cage (REQ-4 (i)). `name` is the unresolved callee.
@@ -546,6 +558,7 @@ impl SpecError {
             | SpecError::ArrayLengthMismatch { span, .. }
             | SpecError::ArrayRepeatRequiresCopy { span }
             | SpecError::ArrayEqualityRequiresPrimitiveArrays { span, .. }
+            | SpecError::IllegalAtomicOrdering { span, .. }
             | SpecError::UnknownCombinator { span, .. }
             | SpecError::WrongArity { span, .. }
             | SpecError::WrongArgKind { span, .. }
@@ -601,6 +614,12 @@ impl fmt::Display for SpecError {
             SpecError::ArrayEqualityRequiresPrimitiveArrays { detail, .. } => write!(
                 f,
                 "fixed-array `.array_eq(other)` requires equally typed primitive-scalar arrays: {detail}"
+            ),
+            SpecError::IllegalAtomicOrdering {
+                operation, detail, ..
+            } => write!(
+                f,
+                "atomic operation `{operation}` has an illegal ordering: {detail}"
             ),
             SpecError::UnknownCombinator { name, .. } => write!(
                 f,
@@ -760,10 +779,98 @@ pub fn validate(program: &Program) -> Result<(), Vec<SpecError>> {
     }
 }
 
+/// The ordering-sensitive shapes in the frozen atomic boundary namespace.
+/// Initialization has no ordering argument and therefore needs no entry here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AtomicOperation {
+    Load,
+    Store,
+    ReadModifyWrite,
+    CompareExchange,
+    Fence,
+}
+
+impl AtomicOperation {
+    fn expected_arity(self) -> usize {
+        match self {
+            AtomicOperation::Load => 2,
+            AtomicOperation::Store | AtomicOperation::ReadModifyWrite => 3,
+            AtomicOperation::CompareExchange => 5,
+            AtomicOperation::Fence => 1,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AtomicOrdering {
+    Relaxed,
+    Acquire,
+    Release,
+    AcqRel,
+    SeqCst,
+}
+
+impl AtomicOrdering {
+    fn parse_literal(expr: &Expr) -> Option<Self> {
+        let Expr::Path(path) = expr else {
+            return None;
+        };
+        match path.as_slice() {
+            [ty, variant] if ty == "AtomicOrdering" => match variant.as_str() {
+                "Relaxed" => Some(AtomicOrdering::Relaxed),
+                "Acquire" => Some(AtomicOrdering::Acquire),
+                "Release" => Some(AtomicOrdering::Release),
+                "AcqRel" => Some(AtomicOrdering::AcqRel),
+                "SeqCst" => Some(AtomicOrdering::SeqCst),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            AtomicOrdering::Relaxed => "Relaxed",
+            AtomicOrdering::Acquire => "Acquire",
+            AtomicOrdering::Release => "Release",
+            AtomicOrdering::AcqRel => "AcqRel",
+            AtomicOrdering::SeqCst => "SeqCst",
+        }
+    }
+}
+
+/// Recognize only exact frozen boundary targets. This is intentionally keyed by
+/// declaration metadata rather than the Thermite function name: a package may
+/// rename an imported declaration, while an unrelated function named
+/// `atomic_u64_load` must retain ordinary language semantics.
+fn classify_atomic_boundary(target: &str) -> Option<AtomicOperation> {
+    let suffix = target.strip_prefix("thermite::atomic::")?;
+    if matches!(suffix, "compiler_fence" | "hardware_fence") {
+        return Some(AtomicOperation::Fence);
+    }
+
+    let (width, operation) = suffix.split_once("::")?;
+    if !matches!(width, "bool" | "u32" | "u64" | "usize") {
+        return None;
+    }
+    match operation {
+        "load" => Some(AtomicOperation::Load),
+        "store" => Some(AtomicOperation::Store),
+        "compare_exchange" | "compare_exchange_weak" => Some(AtomicOperation::CompareExchange),
+        "swap" | "fetch_add" | "fetch_sub" | "fetch_and" | "fetch_or" | "fetch_xor"
+        | "fetch_min" | "fetch_max" => Some(AtomicOperation::ReadModifyWrite),
+        _ => None,
+    }
+}
+
 /// The walk state: the declared `spec fn` name set, the current recursion depth,
 /// the accumulated diagnostics, and the "caged-flat" mode flag (REQ-6).
 struct Validator {
     spec_fns: HashSet<String>,
+    /// Thermite declaration name -> exact frozen atomic operation shape. The
+    /// map contains only declarations carrying a recognized
+    /// `#[boundary("thermite::atomic::...")]` target.
+    atomic_functions: HashMap<String, AtomicOperation>,
     /// Closed, literal-valued package capacity declarations. The parser admits
     /// no expressions here, so resolution cannot be cyclic or target-dependent.
     array_capacities: HashMap<String, u128>,
@@ -848,6 +955,19 @@ impl Validator {
         for name in GENERATED_SPEC_FNS {
             spec_fns.insert((*name).to_string());
         }
+
+        let atomic_functions: HashMap<String, AtomicOperation> = program
+            .items
+            .iter()
+            .filter_map(|item| {
+                let Item::Fn(function) = item else {
+                    return None;
+                };
+                let boundary = function.boundary.as_ref()?;
+                classify_atomic_boundary(&boundary.target)
+                    .map(|operation| (function.name.clone(), operation))
+            })
+            .collect();
 
         // The ADT declaration pre-pass (`.design/basis/01-adts.md` REQ-5/REQ-6;
         // mirrors the spec-fn-name collection above). A program references types
@@ -978,6 +1098,7 @@ impl Validator {
 
         Validator {
             spec_fns,
+            atomic_functions,
             array_capacities,
             enums,
             variant_to_enum,
@@ -1415,6 +1536,139 @@ impl Validator {
     /// `span` is the enclosing `fn`/loop span (the AST carries no per-`Expr`
     /// span). When no ADT is declared, every ADT check is inert, so the existing
     /// non-ADT corpus body walk (`binary_search.th`) is unchanged.
+    fn check_atomic_ordering_call(&mut self, callee: &Expr, args: &[Expr], span: Span) {
+        let Expr::Path(path) = callee else {
+            return;
+        };
+        let [name] = path.as_slice() else {
+            return;
+        };
+        let Some(operation) = self.atomic_functions.get(name).copied() else {
+            return;
+        };
+
+        let expected = operation.expected_arity();
+        if args.len() != expected {
+            self.errors.push(SpecError::IllegalAtomicOrdering {
+                operation: name.clone(),
+                detail: format!(
+                    "the frozen declaration expects {expected} argument(s), found {}",
+                    args.len()
+                ),
+                span,
+            });
+            return;
+        }
+
+        let literal = |position: usize| AtomicOrdering::parse_literal(&args[position]);
+        match operation {
+            AtomicOperation::Load => match literal(1) {
+                Some(
+                    AtomicOrdering::Relaxed
+                    | AtomicOrdering::Acquire
+                    | AtomicOrdering::SeqCst,
+                ) => {}
+                Some(order) => self.errors.push(SpecError::IllegalAtomicOrdering {
+                    operation: name.clone(),
+                    detail: format!(
+                        "load does not permit AtomicOrdering::{}; expected Relaxed, Acquire, or SeqCst",
+                        order.name()
+                    ),
+                    span,
+                }),
+                None => self.errors.push(SpecError::IllegalAtomicOrdering {
+                    operation: name.clone(),
+                    detail: "load ordering must be an exact `AtomicOrdering::Relaxed`, `::Acquire`, or `::SeqCst` literal".to_string(),
+                    span,
+                }),
+            },
+            AtomicOperation::Store => match literal(2) {
+                Some(
+                    AtomicOrdering::Relaxed
+                    | AtomicOrdering::Release
+                    | AtomicOrdering::SeqCst,
+                ) => {}
+                Some(order) => self.errors.push(SpecError::IllegalAtomicOrdering {
+                    operation: name.clone(),
+                    detail: format!(
+                        "store does not permit AtomicOrdering::{}; expected Relaxed, Release, or SeqCst",
+                        order.name()
+                    ),
+                    span,
+                }),
+                None => self.errors.push(SpecError::IllegalAtomicOrdering {
+                    operation: name.clone(),
+                    detail: "store ordering must be an exact `AtomicOrdering::Relaxed`, `::Release`, or `::SeqCst` literal".to_string(),
+                    span,
+                }),
+            },
+            AtomicOperation::ReadModifyWrite => {
+                if literal(2).is_none() {
+                    self.errors.push(SpecError::IllegalAtomicOrdering {
+                        operation: name.clone(),
+                        detail: "read-modify-write ordering must be an exact `AtomicOrdering` variant literal".to_string(),
+                        span,
+                    });
+                }
+            }
+            AtomicOperation::Fence => match literal(0) {
+                Some(AtomicOrdering::Relaxed) => {
+                    self.errors.push(SpecError::IllegalAtomicOrdering {
+                        operation: name.clone(),
+                        detail: "fences do not permit AtomicOrdering::Relaxed; expected Acquire, Release, AcqRel, or SeqCst".to_string(),
+                        span,
+                    })
+                }
+                Some(
+                    AtomicOrdering::Acquire
+                    | AtomicOrdering::Release
+                    | AtomicOrdering::AcqRel
+                    | AtomicOrdering::SeqCst,
+                ) => {}
+                None => self.errors.push(SpecError::IllegalAtomicOrdering {
+                    operation: name.clone(),
+                    detail: "fence ordering must be an exact non-Relaxed `AtomicOrdering` variant literal".to_string(),
+                    span,
+                }),
+            },
+            AtomicOperation::CompareExchange => {
+                let success = literal(3);
+                let failure = literal(4);
+                let (Some(success), Some(failure)) = (success, failure) else {
+                    self.errors.push(SpecError::IllegalAtomicOrdering {
+                        operation: name.clone(),
+                        detail: "compare-exchange success and failure orderings must both be exact `AtomicOrdering` variant literals".to_string(),
+                        span,
+                    });
+                    return;
+                };
+                let legal = matches!(
+                    (success, failure),
+                    (AtomicOrdering::Relaxed, AtomicOrdering::Relaxed)
+                        | (AtomicOrdering::Acquire, AtomicOrdering::Relaxed)
+                        | (AtomicOrdering::Acquire, AtomicOrdering::Acquire)
+                        | (AtomicOrdering::Release, AtomicOrdering::Relaxed)
+                        | (AtomicOrdering::AcqRel, AtomicOrdering::Relaxed)
+                        | (AtomicOrdering::AcqRel, AtomicOrdering::Acquire)
+                        | (AtomicOrdering::SeqCst, AtomicOrdering::Relaxed)
+                        | (AtomicOrdering::SeqCst, AtomicOrdering::Acquire)
+                        | (AtomicOrdering::SeqCst, AtomicOrdering::SeqCst)
+                );
+                if !legal {
+                    self.errors.push(SpecError::IllegalAtomicOrdering {
+                        operation: name.clone(),
+                        detail: format!(
+                            "compare-exchange pair AtomicOrdering::{}/AtomicOrdering::{} is forbidden: failure may not be Release or AcqRel and may not be stronger than success",
+                            success.name(),
+                            failure.name()
+                        ),
+                        span,
+                    });
+                }
+            }
+        }
+    }
+
     fn scan_expr_for_loops(&mut self, expr: &Expr, span: Span) {
         match expr {
             Expr::Array(elements) => {
@@ -1447,7 +1701,22 @@ impl Validator {
                     self.scan_expr_for_loops(&arm.body, span);
                 }
             }
-            Expr::Call { args, .. } => {
+            Expr::Call { callee, args } => {
+                let direct_atomic = match callee.as_ref() {
+                    Expr::Path(path) => match path.as_slice() {
+                        [name] => self.atomic_functions.contains_key(name),
+                        _ => false,
+                    },
+                    _ => false,
+                };
+                self.check_atomic_ordering_call(callee, args, span);
+                // Atomic boundary calls are intentionally first-order. If the
+                // callee is not the recognized direct path, descend into it so
+                // an attempted alias/function-value reference is rejected by
+                // the Path arm below rather than bypassing ordering inspection.
+                if !direct_atomic {
+                    self.scan_expr_for_loops(callee, span);
+                }
                 for arg in args {
                     self.scan_expr_for_loops(arg, span);
                 }
@@ -1533,7 +1802,18 @@ impl Validator {
             // Leaves — no nested loop / ADT node possible. A string literal
             // (`.design/basis/07-strings.md` REQ-1) is a value-carrying leaf, like
             // an int/bool literal — no sub-expression to descend.
-            Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) | Expr::StrLit(_) => {}
+            Expr::Path(path) => {
+                if let [name] = path.as_slice() {
+                    if self.atomic_functions.contains_key(name) {
+                        self.errors.push(SpecError::IllegalAtomicOrdering {
+                            operation: name.clone(),
+                            detail: "a frozen atomic boundary must be called directly; aliases and function-value references cannot preserve the statically checked ordering positions".to_string(),
+                            span,
+                        });
+                    }
+                }
+            }
+            Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::StrLit(_) => {}
         }
     }
 

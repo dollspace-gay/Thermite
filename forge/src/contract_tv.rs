@@ -156,6 +156,7 @@ pub fn tv_file(path: &Path, seed: u64, rlimit: f64) -> Result<TvReport, ForgeErr
     let pt_owned = thermite_lower::spec_fn_param_type_map(&parsed.program);
     let spec_fn_param_types: Vec<(&str, &[PrimType])> =
         pt_owned.iter().map(|(n, ps)| (*n, ps.as_slice())).collect();
+    let spec_call_slice_args = spec_fn_slice_arg_positions(&parsed.program);
 
     let mut report = TvReport::default();
     for item in &parsed.program.items {
@@ -164,6 +165,7 @@ pub fn tv_file(path: &Path, seed: u64, rlimit: f64) -> Result<TvReport, ForgeErr
                 f,
                 &preamble,
                 &spec_fn_param_types,
+                &spec_call_slice_args,
                 seed,
                 rlimit,
                 &mut report,
@@ -192,6 +194,7 @@ fn tv_fn(
     f: &FnItem,
     preamble: &[String],
     spec_fn_param_types: &[(&str, &[PrimType])],
+    spec_call_slice_args: &[(String, Vec<usize>)],
     seed: u64,
     rlimit: f64,
     report: &mut TvReport,
@@ -210,7 +213,7 @@ fn tv_fn(
     // only drops the `result` param (a `req`/`inv`/`dec` clause that does not
     // mention `result` still frames + checks — e.g. binary_search's
     // `sorted(haystack)` req + its `forall_below`/`forall_from` loop invariants).
-    let Some(base_frame) = signature_frame(f, preamble) else {
+    let Some(base_frame) = signature_frame(f, preamble, spec_call_slice_args) else {
         report.clauses.push(ClauseResult {
             label: format!("{}.signature", f.name),
             verdict: ClauseVerdict::Skipped {
@@ -273,8 +276,11 @@ fn tv_fn(
                         None => r,
                     });
                 }
-                SpecType::Bool | SpecType::Array(_, _) | SpecType::Opt(_) | SpecType::Res(_, _) => {
-                }
+                SpecType::Bool
+                | SpecType::Array(_, _)
+                | SpecType::ArrayRef(_, _, _)
+                | SpecType::Opt(_)
+                | SpecType::Res(_, _) => {}
             }
             loop_frame
                 .params
@@ -449,6 +455,8 @@ fn tv_clause(
     // against the `&[elem]` binding. nat_fns drive the `as nat` coercion.
     let slice_params = slice_param_names(base_frame);
     let slices: Vec<&str> = slice_params.iter().map(String::as_str).collect();
+    let array_ref_params = fixed_array_ref_param_names(base_frame);
+    let array_refs: Vec<&str> = array_ref_params.iter().map(String::as_str).collect();
     // The frame's `String` params (bound `&TString`, #150 gap #2) are threaded as
     // production's `strings` so a `String`-receiver `.len()`/`.byte_at(i)` in the
     // clause rewrites to the wrapper spec fns (`s.spec_len()`/`s.spec_byte_at(i as
@@ -463,6 +471,7 @@ fn tv_clause(
     let p_production = match thermite_lower::lower_contract_expr(
         &clause.expr,
         &slices,
+        &array_refs,
         nat_fns,
         &strings,
         &[],
@@ -561,6 +570,7 @@ pub fn run_generated(seed: u64, n: usize, rlimit: f64) -> Result<TvReport, Forge
         let p_production = match thermite_lower::lower_contract_expr(
             clause,
             &[],
+            &[],
             &nat_fns,
             &strings,
             &[],
@@ -631,7 +641,41 @@ fn generated_frame(preamble: &[String]) -> ObligationFrame {
         string_params: vec!["t".to_string()],
         map_params: vec![],
         fixed_array_params: vec![],
+        spec_call_slice_args: vec![("spec_sum".to_string(), vec![0])],
         state_views: vec![],
+    }
+}
+
+/// Derive the independent reference encoder's named-spec-call argument shapes
+/// from source declarations. Only borrowed slices and `Vec` views receive the
+/// slice-to-`@` rewrite; fixed arrays, including borrowed fixed arrays, remain at
+/// their declared value/reference type.
+fn spec_fn_slice_arg_positions(
+    program: &thermite_syntax::ast::Program,
+) -> Vec<(String, Vec<usize>)> {
+    program
+        .items
+        .iter()
+        .filter_map(|item| {
+            let Item::SpecFn(function) = item else {
+                return None;
+            };
+            let positions = function
+                .params
+                .iter()
+                .enumerate()
+                .filter_map(|(index, param)| type_is_slice_view(&param.ty).then_some(index))
+                .collect();
+            Some((function.name.clone(), positions))
+        })
+        .collect()
+}
+
+fn type_is_slice_view(ty: &Type) -> bool {
+    match ty {
+        Type::Slice(_) | Type::Vec(_) => true,
+        Type::Ref { inner, .. } => type_is_slice_view(inner),
+        _ => false,
     }
 }
 
@@ -710,7 +754,7 @@ fn program_spec_preamble(
     Ok(extract_spec_defs(&lowered))
 }
 
-/// Extract the `spec fn` / `proof fn` / `struct` / `impl` definition blocks from a
+/// Extract the `spec fn` / `proof fn` / `struct` / `enum` / `impl` definition blocks from a
 /// lowered Verus file, dropping the `use`/`verus! {`/`}`/`fn main()` frame and the
 /// exec `fn` items. A definition block runs from its header to the brace-balanced
 /// close (so a nested `impl { fn … {} }` is captured whole).
@@ -733,6 +777,8 @@ fn extract_spec_defs(lowered: &str) -> Vec<String> {
                 || trimmed.starts_with("proof fn ")
                 || trimmed.starts_with("pub struct ")
                 || trimmed.starts_with("struct ")
+                || trimmed.starts_with("pub enum ")
+                || trimmed.starts_with("enum ")
                 || trimmed.starts_with("impl "));
         if is_def_header {
             let (block, next) = capture_block(&lines, i);
@@ -773,7 +819,11 @@ fn capture_block(lines: &[&str], start: usize) -> (String, usize) {
 /// `Seq`-bound + `nat`-coerced sets, and the spec-fn/combinator preamble. Returns
 /// `None` if any param/return is outside the framed sublanguage (Map/Option/Result/
 /// struct/enum) — the clause is then reported `Skipped`.
-fn signature_frame(f: &FnItem, preamble: &[String]) -> Option<ObligationFrame> {
+fn signature_frame(
+    f: &FnItem,
+    preamble: &[String],
+    spec_call_slice_args: &[(String, Vec<usize>)],
+) -> Option<ObligationFrame> {
     let mut params = Vec::new();
     // No signature slice param is seq-bound (#149): slices are bound `&[elem]` and
     // viewed `@` on both columns. `seq_params` stays empty here; a loop frame adds
@@ -806,7 +856,9 @@ fn signature_frame(f: &FnItem, preamble: &[String]) -> Option<ObligationFrame> {
             // wrapper spec fns (matching production's `recv_is_string` rewrite).
             SpecType::Strng => string_params.push(p.name.clone()),
             SpecType::BoundedInt(_) => nat_coerce_params.push(p.name.clone()),
-            SpecType::Array(_, _) => fixed_array_params.push(p.name.clone()),
+            SpecType::Array(_, _) | SpecType::ArrayRef(_, _, _) => {
+                fixed_array_params.push(p.name.clone())
+            }
             SpecType::Bool => {}
             // A `Map` param (#150 gap #3) is bound as the `TMap` wrapper; production
             // weaves `well_formed()` for it (`is_map_param_ty`), so the obligation
@@ -843,7 +895,9 @@ fn signature_frame(f: &FnItem, preamble: &[String]) -> Option<ObligationFrame> {
                 // emit `result@`.
                 SpecType::Seq(_) => {}
                 SpecType::Strng => string_params.push("result".to_string()),
-                SpecType::Array(_, _) => fixed_array_params.push("result".to_string()),
+                SpecType::Array(_, _) | SpecType::ArrayRef(_, _, _) => {
+                    fixed_array_params.push("result".to_string())
+                }
                 SpecType::Bool => {}
                 // A `Map` result (#150 gap #3): production proves `result.well_formed()`
                 // (the constructed map is well-formed), so a `result.spec_contains_key(k)`
@@ -875,6 +929,7 @@ fn signature_frame(f: &FnItem, preamble: &[String]) -> Option<ObligationFrame> {
         string_params,
         map_params,
         fixed_array_params,
+        spec_call_slice_args: spec_call_slice_args.to_vec(),
         state_views: vec![],
     })
 }
@@ -889,8 +944,20 @@ fn slice_param_names(frame: &ObligationFrame) -> Vec<String> {
     frame
         .params
         .iter()
-        .filter(|p| p.type_str.starts_with("&["))
+        .filter(|p| p.type_str.starts_with("&[") && !frame.fixed_array_params.contains(&p.name))
         .map(|p| p.name.clone())
+        .collect()
+}
+
+fn fixed_array_ref_param_names(frame: &ObligationFrame) -> Vec<String> {
+    frame
+        .params
+        .iter()
+        .filter(|param| {
+            (param.type_str.starts_with("&[") || param.type_str.starts_with("&mut ["))
+                && frame.fixed_array_params.contains(&param.name)
+        })
+        .map(|param| param.name.clone())
         .collect()
 }
 
@@ -925,6 +992,9 @@ enum SpecType {
     /// A native fixed array. Contract expressions observe it through the same
     /// finite `@` view used by production lowering.
     Array(String, String),
+    /// A shared or exclusive reference to a native fixed array. Named spec calls
+    /// preserve this reference instead of coercing it to a sequence view.
+    ArrayRef(String, String, bool),
     /// A `Map<K, V>` bound as the `TMap` wrapper (#150 gap #3). The string is the
     /// Verus wrapper spelling (`TMapU64U64`). Production weaves `well_formed()` for
     /// a `Map` param/result, so the obligation threads it as a `requires`; the
@@ -952,6 +1022,13 @@ impl SpecType {
             SpecType::BoundedInt(width) => width.clone(),
             SpecType::Bool => "bool".to_string(),
             SpecType::Array(elem, len) => format!("[{elem}; {len}]"),
+            SpecType::ArrayRef(elem, len, mutable) => {
+                if *mutable {
+                    format!("&mut [{elem}; {len}]")
+                } else {
+                    format!("&[{elem}; {len}]")
+                }
+            }
             // The `Map` wrapper spelling (`TMapU64U64`); the inner `(K, V)` pair is
             // carried for completeness. The wrapper struct is in the preamble.
             SpecType::Map(_, _) => self.map_wrapper_name(),
@@ -1014,7 +1091,10 @@ fn spec_type_of(ty: &Type) -> Option<SpecType> {
             verus_type_spelling(elem)?,
             array_len_spelling(len),
         )),
-        Type::Ref { inner, .. } => spec_type_of(inner),
+        Type::Ref { mutable, inner } => match spec_type_of(inner)? {
+            SpecType::Array(elem, len) => Some(SpecType::ArrayRef(elem, len, *mutable)),
+            other => Some(other),
+        },
         Type::Slice(inner) => Some(SpecType::Seq(elem_spelling(inner)?)),
         Type::Vec(inner) => Some(SpecType::Seq(elem_spelling(inner)?)),
         // A `String`/`&String` is bound as the `TString` wrapper (#150 gap #2):
@@ -1164,7 +1244,10 @@ fn collect_state_views(expr: &Expr, f: &FnItem, out: &mut Vec<StateSnapshotParam
                                         matches!(spec_ty, SpecType::Seq(_)),
                                     ),
                                     type_str: spec_ty.verus_spelling(),
-                                    fixed_array: matches!(spec_ty, SpecType::Array(_, _)),
+                                    fixed_array: matches!(
+                                        spec_ty,
+                                        SpecType::Array(_, _) | SpecType::ArrayRef(_, _, _)
+                                    ),
                                 });
                             }
                             return;
@@ -1524,6 +1607,25 @@ mod divergent_teeth {
             params: vec![ParamDecl::new("x", "u64")],
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn contract_preamble_preserves_user_enums() {
+        let lowered = "use vstd::prelude::*;\nverus! {\n\
+pub enum Ordering { Relaxed, Acquire }\n\
+pub open spec fn is_acquire(order: Ordering) -> bool {\n\
+    match order { Ordering::Relaxed => false, Ordering::Acquire => true }\n\
+}\n\
+}\nfn main() {}\n";
+        let defs = extract_spec_defs(lowered);
+        assert_eq!(
+            defs.len(),
+            2,
+            "enum and dependent spec fn must share the TV frame"
+        );
+        assert!(defs[0].starts_with("pub enum Ordering"));
+        assert!(defs[0].contains("Relaxed"));
+        assert!(defs[1].starts_with("pub open spec fn is_acquire"));
     }
 
     /// Build the equivalence obligation, returning `Ok`/`Err` (no `unwrap`/`expect` —

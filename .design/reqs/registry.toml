@@ -17475,12 +17475,42 @@ note = "Pins the fail-closed sealed-construction barrier and boundary-only minti
 id = "REQ-KPRIM-5"
 title = "Sealed atomics and ordering model"
 owner = ".design/build/kernel-primitives.md"
-status = "not_started"
+status = "partial"
 scope = "verified"
 summary = "Thermite exposes sealed bool/u32/u64/usize atomics, legal orderings, RMW/CAS/fence operations, and a concurrency proof model."
-remaining_scope = "Add the Thermite surface, legality validation, happens-before model, direct-refinement interface, and adversarial tests without adding a kernel implementation."
-contributors = []
+remaining_scope = "The receipt-bound package, 50 sealed boundary declarations, exact ordering matrix, pre-codegen legality gate, bounded history relations, strict kernel ordering proof, strict hosted history proof, replay, and adversarial tests are present. Add enforceable single-use slot ownership, a kernel-target finite-history proof surface, exact atomic object/machine refinement, and verified synchronization consumers."
+contributors = [".design/build/sealed-atomics.md", ".design/build/frozen-primitive-registry.md"]
 generated_to = ["status", "forge-kernel-primitives-status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "stdlib/kernel-primitives/atomics.thpkg.json"
+note = "Receipt-bound two-module atomic primitive package with no Rust or assembly implementation."
+
+[[requirement.evidence]]
+kind = "file"
+target = "stdlib/kernel-primitives/src/api.th"
+note = "Sealed bool/u32/u64/usize slots and cells plus 50 frozen init/load/store/swap/CAS/RMW/fence declarations and pure proof probes."
+
+[[requirement.evidence]]
+kind = "file"
+target = "stdlib/kernel-primitives/src/model.th"
+note = "Exact ordering legality, wrapping RMW arithmetic, and bounded reads-from/modification-order/release-sequence/synchronizes-with/happens-before/SC relations."
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-spec/tests/atomic_ordering_validate.rs"
+note = "Classifies all 25 CAS pairs and rejects illegal, dynamic, bogus-path, wrong-arity, and aliased ordering calls before lowering without reserving ordinary source names."
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/verified_build.rs::atomic_primitive_package_builds_and_replays_both_strict_proof_surfaces"
+note = "Builds and replays the kernel-target ordering bundle and hosted finite-history bundle at strict L3, checks complete package evidence, and requires faithful TV rows."
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/src/verified_build/primitive_registry.rs::tests::registry_v1_refuses_machine_concurrency_assurance_claims"
+note = "Prevents safe-Rust registry v1 from overstating atomic, volatile, or privileged object/machine refinement."
 
 [[requirement]]
 id = "REQ-KPRIM-6"

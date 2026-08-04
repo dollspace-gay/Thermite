@@ -760,6 +760,64 @@ fn package_build_binds_and_replays_the_complete_source_identified_closure() {
 }
 
 #[test]
+fn atomic_primitive_package_builds_and_replays_both_strict_proof_surfaces() {
+    let temp = TempDir::new("atomic-primitives");
+    let manifest = root().join("stdlib/kernel-primitives/atomics.thpkg.json");
+    let manifest_s = manifest.to_string_lossy().to_string();
+
+    for (name, export, target) in [
+        ("ordering", "atomic_ordering_matrix_probe", "kernel"),
+        ("history", "atomic_history_model_probe", "std"),
+    ] {
+        let bundle = temp.0.join(format!("{name}.verified"));
+        let bundle_s = bundle.to_string_lossy().to_string();
+        assert_success(&forge(&[
+            "build",
+            &manifest_s,
+            "--level",
+            "l3",
+            "--export",
+            export,
+            "--target",
+            target,
+            "--out",
+            &bundle_s,
+            "--json",
+        ]));
+        assert_success(&forge(&["verify-build", &bundle_s, "--replay", "--json"]));
+
+        for relative in [
+            "evidence/thermite-package/manifest.json",
+            "evidence/thermite-package/source-map.json",
+            "evidence/thermite-package/source/src/model.th",
+            "evidence/thermite-package/source/src/api.th",
+        ] {
+            assert!(
+                bundle.join(relative).is_file(),
+                "{name} bundle omitted `{relative}`"
+            );
+        }
+        let receipt: serde_json::Value =
+            serde_json::from_slice(&fs::read(bundle.join("receipt.json")).unwrap()).unwrap();
+        assert_eq!(receipt["binding"]["exports"][0]["thermite_name"], export);
+        let plan: serde_json::Value =
+            serde_json::from_slice(&fs::read(bundle.join("evidence/artifact-plan.v1")).unwrap())
+                .unwrap();
+        assert_eq!(plan["package"]["name"], "thermite_atomic_primitives");
+
+        let tv: serde_json::Value = serde_json::from_slice(
+            &fs::read(bundle.join("evidence/translation-validation.json")).unwrap(),
+        )
+        .unwrap();
+        let rows = tv["rows"].as_array().unwrap();
+        assert!(
+            rows.iter().all(|row| row["verdict"] == "faithful"),
+            "{name} bundle contains non-faithful translation validation rows: {tv}"
+        );
+    }
+}
+
+#[test]
 fn every_strict_refusal_publishes_nothing() {
     for (file, export, target, expected) in [
         ("bad_body.th", "bad_identity", None, "certificates"),

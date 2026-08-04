@@ -14,6 +14,7 @@ governs:
   - thermite-syntax/tests/kernel_surface.rs
   - thermite-syntax/tests/conformance.rs
   - thermite-spec/src/validator.rs
+  - thermite-spec/tests/atomic_ordering_validate.rs
   - thermite-lower/src/effects.rs
   - thermite-lower/src/lower.rs
   - thermite-lower/tests/kernel_mutable_slice.rs
@@ -21,6 +22,7 @@ governs:
   - thermite-verified/src/lib.rs
   - thermite-tv/src/exec_stmt_encode.rs
   - thermite-tv/src/obligation.rs
+  - thermite-tv/src/ref_encode.rs
   - thermite-tv/tests/fixed_array_tv.rs
   - lean/Thermite/Ast.lean
   - lean/Thermite/Denote.lean
@@ -34,12 +36,15 @@ governs:
   - forge/src/verified_build/primitive_registry.rs
   - forge/src/thermite_package.rs
   - forge/tests/verified_build.rs
+  - stdlib/kernel-primitives/atomics.thpkg.json
+  - stdlib/kernel-primitives/src/api.th
+  - stdlib/kernel-primitives/src/model.th
   - conformance/kernel_primitives.th
   - conformance/verified-build/aggregate_storage.th
   - conformance/verified-composition/frozen_primitive.th
   - conformance/verified-composition/frozen_primitive_shell.rs
   - conformance/verified-composition/frozen_primitive_registry.json
-audited-content-sha256: 8c4426ed2d4513c41ad5ac8ab0144a82fcc1888719d0443953ccab988838982e
+audited-content-sha256: ccb3c4174b2ed425e1d9960f162da39c23f9353212fffcd4f0a525eb64f33532
 extends:
   - .design/build/kernel-target.md
   - .design/build/l3-rich-composition.md
@@ -281,10 +286,13 @@ extra reachable bindings, post-plan mutation, receipt tampering, and a lying
 implementation all reject without publication.
 
 This v1 path intentionally accepts only the Rust ABI, an empty target-feature
-set, and safe direct-Verus shell bodies. Exact separate Rust/assembly object
-closure for irreducible machine instructions remains; it cannot be claimed as
-directly refined through this schema. The precise contract and limitations are
-in `.design/build/frozen-primitive-registry.md`.
+set, safe direct-Verus shell bodies, and `sequential` concurrency. It rejects
+otherwise well-formed `atomic`, `volatile`, and `privileged` entries because
+the same-crate checked-wrapper proof does not model their object or machine
+semantics. Exact separate Rust/assembly object closure for irreducible machine
+instructions remains; it cannot be claimed as directly refined through this
+schema. The precise contract and limitations are in
+`.design/build/frozen-primitive-registry.md`.
 
 ### Atomics and memory ordering
 
@@ -300,6 +308,31 @@ The sealed atomic surface is monomorphic over `bool`, `u32`, `u64`, and
 The frozen ordering enum is `Relaxed | Acquire | Release | AcqRel | SeqCst`.
 The validator rejects illegal load/store/fence orders and illegal
 compare-exchange failure orders before code generation.
+
+The first primitive-only atomic package is now present at
+`stdlib/kernel-primitives/atomics.thpkg.json`. It contains 50 bodyless frozen
+boundary declarations, sealed initialization-slot and cell-handle types,
+explicit observation/transition witnesses, exact wrapping fetch arithmetic,
+the complete 45-case ordering table, and a bounded 256-event history model.
+The validator recognizes atomic operations only from their exact
+`#[boundary("thermite::atomic::...")]` target and requires literal ordering
+variants; dynamic, malformed, wrong-arity, and illegal pairs fail before
+lowering, and atomic boundary aliases are rejected. An unrelated function with
+an atomic-looking source name is not special.
+
+The executable ordering matrix builds and replays at strict L3 for the generic
+freestanding target. The fixed-array history relations build and replay at
+strict L3 for the hosted target because the current kernel-target Verus path is
+deliberately `--no-vstd`, while array-view relation proofs use vstd's finite
+array model. These are two proof surfaces over the same receipt-bound package,
+not a claim that hosted evidence proves a machine atomic implementation. The
+consumer still owes exact object/machine semantics and direct refinement for
+every reachable atomic boundary. Registry v1 refuses to overstate that missing
+assurance. Slot single-use also remains dependent on the unfinished affine or
+generation discipline; sealing alone prevents construction, not stale copies.
+
+The detailed contract, ordering matrix, verification split, and residual trust
+statement are in `.design/build/sealed-atomics.md`.
 
 The proof interface exposes modification order, reads-from, happens-before,
 release sequences, and sequentially consistent order at the abstraction level
@@ -414,7 +447,7 @@ Source: `.design/reqs/registry.toml`
 | REQ-KPRIM-2 | partial | `.design/build/kernel-primitives.md` | Exact mutable and fixed storage | Mutable borrowed slices/arrays (including nested primitive-array elements), arbitrary old/final snapshot framing, native fixed arrays, copy-safe repetition, primitive-scalar extensional equality, strict public-borrow ABI receipts, and exact initialization/read/indexed-write/length/equality TV are shipped. Add static storage, general named-aggregate borrows, aggregate-element equality, and verified fixed-capacity vector/map/bitmap/ring libraries. |
 | REQ-KPRIM-3 | partial | `.design/build/kernel-primitives.md` | Receipt-bound packages and modules | Independent parsing, module-local identity, direct-import/root-export enforcement, rooted graph validation, source allowlisting, L3 build/composition, complete receipt binding, validation, and replay are shipped. Extend the remaining source-oriented Forge commands (check, audit, TV, goal/edit/fill) to operate on packages without losing module-local diagnostics. |
 | REQ-KPRIM-4 | partial | `.design/build/kernel-primitives.md` | Sealed authority and ownership | The sealed-construction barrier is shipped. Add affine-style consumption or a verified generation discipline that rejects stale copies, double release, and rights escalation. |
-| REQ-KPRIM-5 | not_started | `.design/build/kernel-primitives.md` | Sealed atomics and ordering model | Add the Thermite surface, legality validation, happens-before model, direct-refinement interface, and adversarial tests without adding a kernel implementation. |
+| REQ-KPRIM-5 | partial | `.design/build/kernel-primitives.md` | Sealed atomics and ordering model | The receipt-bound package, 50 sealed boundary declarations, exact ordering matrix, pre-codegen legality gate, bounded history relations, strict kernel ordering proof, strict hosted history proof, replay, and adversarial tests are present. Add enforceable single-use slot ownership, a kernel-target finite-history proof surface, exact atomic object/machine refinement, and verified synchronization consumers. |
 | REQ-KPRIM-6 | not_started | `.design/build/kernel-primitives.md` | Verified waiting and synchronization | Add the wait/liveness surface and implement ticket locks, once cells, barriers, bounded queues, reference counts, seqlocks, and deque mechanics in .th. |
 | REQ-KPRIM-7 | partial | `.design/build/kernel-primitives.md` | Generic frozen boundary registry | Same-crate safe direct-Verus Rust-ABI entries now close reachable boundaries exactly. Add non-empty codegen-feature binding and exact separate Rust/assembly source, object, machine-model, and refinement closure for irreducible operations without adding an architecture operation table. |
 | REQ-KPRIM-8 | shipped | `.design/build/kernel-primitives.md` | Generic freestanding verified library build |  |

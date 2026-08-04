@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: partial
-audited-content-sha256: a14415d2687f27aec26c831534477112e037e2f2ee342e39359ecfa822c2570a
+audited-content-sha256: ab9e62d87330f238d8bdabd2e79ba5d2c0f6af2a23a095bdd489a829c75fa827
 decision: consumer-owned registry entries close reachable Thermite boundaries through non-exempt same-crate direct-Verus calls
 governs:
   - thermite-lower/src/lower.rs
@@ -48,11 +48,13 @@ contains. Forge resolves those declarations against the source-reachable
 boundary closure selected by the link and composition roots.
 
 Registry v1 deliberately supports exact same-crate Rust-ABI functions authored
-in a direct-Verus shell. Non-empty target-feature sets, foreign ABIs, separate
-objects, unsafe Rust, assembly, and privileged instructions remain unsupported.
-They must fail closed rather than being mislabeled as directly refined. A later
+in a direct-Verus shell with `sequential` concurrency semantics. Non-empty
+target-feature sets, foreign ABIs, separate objects, unsafe Rust, assembly,
+atomics, volatile access, and privileged instructions remain unsupported. They
+must fail closed rather than being mislabeled as directly refined. A later
 schema must bind their exact source/object/codegen identities and direct-Verus
-machine model before those implementations can receive this assurance label.
+object or machine model before those implementations can receive this assurance
+label.
 
 ## Schema v1
 
@@ -73,8 +75,10 @@ Each entry declares:
   `same_crate_verus_checked_wrapper` as the refinement mechanism;
 - the mandatory `contract_refinement`, `exact_implementation_call`, and
   `whole_crate_no_cheating` obligations;
-- concurrency class, canonical memory-ordering vocabulary, and failure
-  behavior.
+- the `sequential` concurrency class, an empty memory-ordering list, and failure
+  behavior. The parser recognizes the future `atomic`, `volatile`, and
+  `privileged` vocabulary only to return a precise unsupported-assurance error;
+  registry v1 never accepts those classes into a plan.
 
 The registry cannot weaken or replace source facts. Forge independently derives
 the function signature, contract/effects digests, effects, and ownership, then
@@ -156,14 +160,18 @@ drift rejects.
 - Registry tampering and a registry change after plan freeze publish nothing.
 - A digest-updated shell whose body violates the Thermite contract reaches the
   real whole-crate proof, fails there, and publishes nothing.
+- Otherwise well-formed `atomic`, `volatile`, and `privileged` entries reject
+  because this proof path has no object/machine semantics.
 - Builds without a registry retain the previous strict policy and continue to
   reject reachable boundaries.
 
 ## Remaining work
 
-Registry v1 is the exact safe/direct-Verus substrate needed by later atomic and
-platform declaration work. Completion of the larger primitive goal still
-requires affine sealed ownership, separate object/source closure for
-irreducible Rust/assembly machine operations, non-empty codegen feature
-binding, sealed atomics and their memory model, waiting/liveness primitives,
-and verified synchronization libraries. None of those are claimed here.
+Registry v1 is the exact safe/direct-Verus substrate needed by later platform
+declaration work. The sealed atomic declaration and finite proof-model package
+now exists, but it deliberately cannot use this schema to claim machine
+refinement. Completion of the larger primitive goal still requires affine
+sealed ownership, separate object/source closure for irreducible Rust/assembly
+machine operations, an atomic object/machine refinement model, non-empty
+codegen-feature binding, waiting/liveness primitives, and verified
+synchronization libraries. None of those are claimed here.

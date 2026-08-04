@@ -377,7 +377,13 @@ fn plan_from_bytes(
             &entry.memory_orderings,
             valid_memory_ordering,
         )?;
-        if entry.concurrency == "sequential" && !entry.memory_orderings.is_empty() {
+        if entry.concurrency != "sequential" {
+            return Err(format!(
+                "primitive entry `{}` requests `{}` concurrency, but frozen primitive registry v1 can directly refine only sequential safe-Rust operations; atomic, volatile, and privileged implementations require exact object/machine semantics and refinement evidence",
+                entry.semantic_name, entry.concurrency
+            ));
+        }
+        if !entry.memory_orderings.is_empty() {
             return Err(format!(
                 "sequential primitive entry `{}` cannot declare memory orderings",
                 entry.semantic_name
@@ -781,5 +787,22 @@ mod tests {
         assert!(plan(&changed)
             .unwrap_err()
             .contains("whole_crate_no_cheating"));
+    }
+
+    #[test]
+    fn registry_v1_refuses_machine_concurrency_assurance_claims() {
+        let (_, _, _, registry) = fixture();
+        for concurrency in ["atomic", "volatile", "privileged"] {
+            let mut changed = registry.clone();
+            changed["entries"][0]["concurrency"] = serde_json::json!(concurrency);
+            changed["entries"][0]["memory_orderings"] = if concurrency == "atomic" {
+                serde_json::json!(["acquire", "relaxed"])
+            } else {
+                serde_json::json!([])
+            };
+            let error = plan(&changed).expect_err("v1 must not overclaim machine refinement");
+            assert!(error.contains("can directly refine only sequential safe-Rust"));
+            assert!(error.contains("exact object/machine semantics"));
+        }
     }
 }

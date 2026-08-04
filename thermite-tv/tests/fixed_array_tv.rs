@@ -214,6 +214,56 @@ fx pure\n\
 }
 
 #[test]
+fn named_spec_call_preserves_a_borrowed_fixed_array() {
+    let source = "const SLOTS: usize = 4;\n\
+spec fn first_is_zero(slots: &[u64; SLOTS]) -> bool\n\
+dec 0\n\
+{ slots[0] == 0 }\n\
+fn observe(slots: &[u64; SLOTS]) -> bool\n\
+req true\n\
+ens result == first_is_zero(slots)\n\
+fx pure\n\
+{ slots[0] == 0 }\n";
+    let parsed = thermite_syntax::parse(source);
+    assert!(parsed.is_clean(), "parse errors: {:?}", parsed.errors);
+    let Item::Fn(function) = &parsed.program.items[2] else {
+        panic!("expected observe function");
+    };
+    let frame = ObligationFrame {
+        spec_defs: vec![
+            "pub const SLOTS: usize = 4;".to_string(),
+            "pub open spec fn first_is_zero(slots: &[u64; SLOTS]) -> bool { \
+             slots@[0] == 0 }"
+                .to_string(),
+        ],
+        params: vec![
+            ParamDecl::new("slots", "&[u64; SLOTS]"),
+            ParamDecl::new("result", "bool"),
+        ],
+        fixed_array_params: vec!["slots".to_string()],
+        spec_call_slice_args: vec![("first_is_zero".to_string(), vec![])],
+        ..Default::default()
+    };
+    let program = equivalence_obligation(
+        &function.contract.ens[0].expr,
+        "result == first_is_zero(slots)",
+        &frame,
+    )
+    .expect("borrowed-array named-call obligation must build");
+    assert!(program.contains("first_is_zero(slots)"), "{program}");
+    assert!(!program.contains("first_is_zero(slots@)"), "{program}");
+    assert_verus("borrowed_array_named_spec", &program, true);
+
+    let wrong = equivalence_obligation(
+        &function.contract.ens[0].expr,
+        "result != first_is_zero(slots)",
+        &frame,
+    )
+    .expect("wrong borrowed-array named-call obligation must still build");
+    assert_verus("borrowed_array_named_spec_wrong", &wrong, false);
+}
+
+#[test]
 fn fixed_array_equality_is_a_verified_extensional_scan() {
     let source = "const SLOTS: usize = 4;\n\
 fn arrays_equal(left: [u64; SLOTS], right: [u64; SLOTS]) -> bool\n\

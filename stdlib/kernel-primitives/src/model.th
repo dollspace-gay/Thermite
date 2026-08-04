@@ -1,0 +1,593 @@
+const ATOMIC_HISTORY_CAPACITY: usize = 256;
+
+enum AtomicOrdering {
+  Relaxed,
+  Acquire,
+  Release,
+  AcqRel,
+  SeqCst,
+}
+
+spec fn atomic_order_code(order: AtomicOrdering) -> u8
+  dec order
+{
+  match order {
+    AtomicOrdering::Relaxed => 0,
+    AtomicOrdering::Acquire => 1,
+    AtomicOrdering::Release => 2,
+    AtomicOrdering::AcqRel => 3,
+    AtomicOrdering::SeqCst => 4,
+  }
+}
+
+spec fn atomic_order_from_code(code: u8) -> AtomicOrdering
+  dec code
+{
+  match code {
+    0 => AtomicOrdering::Relaxed,
+    1 => AtomicOrdering::Acquire,
+    2 => AtomicOrdering::Release,
+    3 => AtomicOrdering::AcqRel,
+    _ => AtomicOrdering::SeqCst,
+  }
+}
+
+spec fn atomic_load_order_legal_spec(order: AtomicOrdering) -> bool
+  dec order
+{
+  match order {
+    AtomicOrdering::Relaxed => true,
+    AtomicOrdering::Acquire => true,
+    AtomicOrdering::Release => false,
+    AtomicOrdering::AcqRel => false,
+    AtomicOrdering::SeqCst => true,
+  }
+}
+
+spec fn atomic_store_order_legal_spec(order: AtomicOrdering) -> bool
+  dec order
+{
+  match order {
+    AtomicOrdering::Relaxed => true,
+    AtomicOrdering::Acquire => false,
+    AtomicOrdering::Release => true,
+    AtomicOrdering::AcqRel => false,
+    AtomicOrdering::SeqCst => true,
+  }
+}
+
+spec fn atomic_rmw_order_legal_spec(order: AtomicOrdering) -> bool
+  dec order
+{
+  match order {
+    AtomicOrdering::Relaxed => true,
+    AtomicOrdering::Acquire => true,
+    AtomicOrdering::Release => true,
+    AtomicOrdering::AcqRel => true,
+    AtomicOrdering::SeqCst => true,
+  }
+}
+
+spec fn atomic_fence_order_legal_spec(order: AtomicOrdering) -> bool
+  dec order
+{
+  match order {
+    AtomicOrdering::Relaxed => false,
+    AtomicOrdering::Acquire => true,
+    AtomicOrdering::Release => true,
+    AtomicOrdering::AcqRel => true,
+    AtomicOrdering::SeqCst => true,
+  }
+}
+
+spec fn atomic_cas_order_legal_spec(
+  success: AtomicOrdering,
+  failure: AtomicOrdering,
+) -> bool
+  dec success
+{
+  match success {
+    AtomicOrdering::Relaxed => match failure {
+      AtomicOrdering::Relaxed => true,
+      _ => false,
+    },
+    AtomicOrdering::Acquire => match failure {
+      AtomicOrdering::Relaxed => true,
+      AtomicOrdering::Acquire => true,
+      _ => false,
+    },
+    AtomicOrdering::Release => match failure {
+      AtomicOrdering::Relaxed => true,
+      _ => false,
+    },
+    AtomicOrdering::AcqRel => match failure {
+      AtomicOrdering::Relaxed => true,
+      AtomicOrdering::Acquire => true,
+      _ => false,
+    },
+    AtomicOrdering::SeqCst => match failure {
+      AtomicOrdering::Relaxed => true,
+      AtomicOrdering::Acquire => true,
+      AtomicOrdering::SeqCst => true,
+      _ => false,
+    },
+  }
+}
+
+fn atomic_load_order_legal(order: AtomicOrdering) -> bool
+  req true
+  ens result == atomic_load_order_legal_spec(order)
+  fx pure
+{
+  match order {
+    AtomicOrdering::Relaxed => true,
+    AtomicOrdering::Acquire => true,
+    AtomicOrdering::Release => false,
+    AtomicOrdering::AcqRel => false,
+    AtomicOrdering::SeqCst => true,
+  }
+}
+
+fn atomic_store_order_legal(order: AtomicOrdering) -> bool
+  req true
+  ens result == atomic_store_order_legal_spec(order)
+  fx pure
+{
+  match order {
+    AtomicOrdering::Relaxed => true,
+    AtomicOrdering::Acquire => false,
+    AtomicOrdering::Release => true,
+    AtomicOrdering::AcqRel => false,
+    AtomicOrdering::SeqCst => true,
+  }
+}
+
+fn atomic_rmw_order_legal(order: AtomicOrdering) -> bool
+  req true
+  ens result == atomic_rmw_order_legal_spec(order)
+  fx pure
+{
+  match order {
+    AtomicOrdering::Relaxed => true,
+    AtomicOrdering::Acquire => true,
+    AtomicOrdering::Release => true,
+    AtomicOrdering::AcqRel => true,
+    AtomicOrdering::SeqCst => true,
+  }
+}
+
+fn atomic_fence_order_legal(order: AtomicOrdering) -> bool
+  req true
+  ens result == atomic_fence_order_legal_spec(order)
+  fx pure
+{
+  match order {
+    AtomicOrdering::Relaxed => false,
+    AtomicOrdering::Acquire => true,
+    AtomicOrdering::Release => true,
+    AtomicOrdering::AcqRel => true,
+    AtomicOrdering::SeqCst => true,
+  }
+}
+
+fn atomic_cas_order_legal(
+  success: AtomicOrdering,
+  failure: AtomicOrdering,
+) -> bool
+  req true
+  ens result == atomic_cas_order_legal_spec(success, failure)
+  fx pure
+{
+  match success {
+    AtomicOrdering::Relaxed => match failure {
+      AtomicOrdering::Relaxed => true,
+      _ => false,
+    },
+    AtomicOrdering::Acquire => match failure {
+      AtomicOrdering::Relaxed => true,
+      AtomicOrdering::Acquire => true,
+      _ => false,
+    },
+    AtomicOrdering::Release => match failure {
+      AtomicOrdering::Relaxed => true,
+      _ => false,
+    },
+    AtomicOrdering::AcqRel => match failure {
+      AtomicOrdering::Relaxed => true,
+      AtomicOrdering::Acquire => true,
+      _ => false,
+    },
+    AtomicOrdering::SeqCst => match failure {
+      AtomicOrdering::Relaxed => true,
+      AtomicOrdering::Acquire => true,
+      AtomicOrdering::SeqCst => true,
+      _ => false,
+    },
+  }
+}
+
+spec fn atomic_load_code_legal_spec(code: u8) -> bool
+  dec code
+{
+  code == 0 || code == 1 || code == 4
+}
+
+spec fn atomic_store_code_legal_spec(code: u8) -> bool
+  dec code
+{
+  code == 0 || code == 2 || code == 4
+}
+
+spec fn atomic_fence_code_legal_spec(code: u8) -> bool
+  dec code
+{
+  code != 0 && code < 5
+}
+
+spec fn atomic_rmw_code_legal_spec(code: u8) -> bool
+  dec code
+{
+  code < 5
+}
+
+spec fn atomic_cas_code_legal_spec(success: u8, failure: u8) -> bool
+  dec success
+{
+  (success == 0 && failure == 0)
+    || (success == 1 && failure <= 1)
+    || (success == 2 && failure == 0)
+    || (success == 3 && failure <= 1)
+    || (success == 4 && (failure <= 1 || failure == 4))
+}
+
+fn atomic_load_code_legal(code: u8) -> bool
+  req code < 5
+  ens result == atomic_load_code_legal_spec(code)
+  fx pure
+{
+  code == 0 || code == 1 || code == 4
+}
+
+fn atomic_store_code_legal(code: u8) -> bool
+  req code < 5
+  ens result == atomic_store_code_legal_spec(code)
+  fx pure
+{
+  code == 0 || code == 2 || code == 4
+}
+
+fn atomic_fence_code_legal(code: u8) -> bool
+  req code < 5
+  ens result == atomic_fence_code_legal_spec(code)
+  fx pure
+{
+  code != 0
+}
+
+fn atomic_rmw_code_legal(code: u8) -> bool
+  req code < 5
+  ens result == atomic_rmw_code_legal_spec(code)
+  fx pure
+{
+  code < 5
+}
+
+fn atomic_cas_code_legal(success: u8, failure: u8) -> bool
+  req success < 5 && failure < 5
+  ens result == atomic_cas_code_legal_spec(success, failure)
+  fx pure
+{
+  (success == 0 && failure == 0)
+    || (success == 1 && failure <= 1)
+    || (success == 2 && failure == 0)
+    || (success == 3 && failure <= 1)
+    || (success == 4 && (failure <= 1 || failure == 4))
+}
+
+spec fn atomic_ordering_matrix_spec(case: u8) -> bool
+  dec case
+{
+  if case < 5 {
+    atomic_load_code_legal_spec(case)
+  } else {
+    if case < 10 {
+      atomic_store_code_legal_spec(case - 5)
+    } else {
+      if case < 15 {
+        atomic_fence_code_legal_spec(case - 10)
+      } else {
+        if case < 40 {
+          atomic_cas_code_legal_spec(
+            (case - 15) / 5,
+            (case - 15) % 5,
+          )
+        } else {
+          atomic_rmw_code_legal_spec(case - 40)
+        }
+      }
+    }
+  }
+}
+
+spec fn atomic_u32_wrapping_add(left: u32, right: u32) -> u32
+  dec left
+{
+  if right <= u32::MAX - left {
+    left + right
+  } else {
+    right - (u32::MAX - left) - 1
+  }
+}
+
+spec fn atomic_u32_wrapping_sub(left: u32, right: u32) -> u32
+  dec left
+{
+  if right <= left {
+    left - right
+  } else {
+    u32::MAX - (right - left - 1)
+  }
+}
+
+spec fn atomic_u64_wrapping_add(left: u64, right: u64) -> u64
+  dec left
+{
+  if right <= u64::MAX - left {
+    left + right
+  } else {
+    right - (u64::MAX - left) - 1
+  }
+}
+
+spec fn atomic_u64_wrapping_sub(left: u64, right: u64) -> u64
+  dec left
+{
+  if right <= left {
+    left - right
+  } else {
+    u64::MAX - (right - left - 1)
+  }
+}
+
+spec fn atomic_usize_wrapping_add(left: usize, right: usize) -> usize
+  dec left
+{
+  if right <= usize::MAX - left {
+    left + right
+  } else {
+    right - (usize::MAX - left) - 1
+  }
+}
+
+spec fn atomic_usize_wrapping_sub(left: usize, right: usize) -> usize
+  dec left
+{
+  if right <= left {
+    left - right
+  } else {
+    usize::MAX - (right - left - 1)
+  }
+}
+
+struct AtomicEvent {
+  id: usize,
+  cpu: u16,
+  cpu_sequence: usize,
+  cell: usize,
+  kind: u8,
+  order: u8,
+  observed: u64,
+  written: u64,
+  reads_from: usize,
+  modification_order: usize,
+  release_head: usize,
+  sc_order: usize,
+}
+
+spec fn atomic_event_is_write(event: AtomicEvent) -> bool
+  dec event.id
+{
+  event.kind == 0 || event.kind == 2 || event.kind == 3
+}
+
+spec fn atomic_event_is_read(event: AtomicEvent) -> bool
+  dec event.id
+{
+  event.kind == 1 || event.kind == 3
+}
+
+spec fn atomic_order_code_is_acquire(order: u8) -> bool
+  dec order
+{
+  order == 1 || order == 3 || order == 4
+}
+
+spec fn atomic_order_code_is_release(order: u8) -> bool
+  dec order
+{
+  order == 2 || order == 3 || order == 4
+}
+
+spec fn atomic_modification_precedes(left: AtomicEvent, right: AtomicEvent) -> bool
+  dec left.id
+{
+  atomic_event_is_write(left)
+    && atomic_event_is_write(right)
+    && left.cell == right.cell
+    && left.modification_order > 0
+    && left.modification_order < right.modification_order
+}
+
+spec fn atomic_reads_from(write: AtomicEvent, read: AtomicEvent) -> bool
+  dec write.id
+{
+  atomic_event_is_write(write)
+    && atomic_event_is_read(read)
+    && write.cell == read.cell
+    && read.reads_from == write.id
+}
+
+spec fn atomic_release_sequence_member(head: AtomicEvent, member: AtomicEvent) -> bool
+  dec head.id
+{
+  atomic_event_is_write(head)
+    && atomic_order_code_is_release(head.order)
+    && atomic_event_is_write(member)
+    && head.cell == member.cell
+    && (member.id == head.id || member.release_head == head.id)
+}
+
+spec fn atomic_synchronizes_with(release: AtomicEvent, acquire: AtomicEvent) -> bool
+  dec release.id
+{
+  (atomic_order_code_is_release(release.order)
+      && atomic_order_code_is_acquire(acquire.order)
+      && atomic_reads_from(release, acquire))
+    || (atomic_order_code_is_release(release.order)
+      && atomic_order_code_is_acquire(acquire.order)
+      && atomic_event_is_write(release)
+      && atomic_event_is_read(acquire)
+      && release.cell == acquire.cell
+      && acquire.release_head == release.id)
+}
+
+struct AtomicHistory {
+  len: usize,
+  program_parent: [usize; ATOMIC_HISTORY_CAPACITY],
+  synchronize_parent: [usize; ATOMIC_HISTORY_CAPACITY],
+  release_parent: [usize; ATOMIC_HISTORY_CAPACITY],
+  sc_order: [usize; ATOMIC_HISTORY_CAPACITY],
+}
+
+spec fn atomic_happens_before_edges(
+  program_parent: &[usize; ATOMIC_HISTORY_CAPACITY],
+  synchronize_parent: &[usize; ATOMIC_HISTORY_CAPACITY],
+  len: usize,
+  before: usize,
+  after: usize,
+  fuel: usize,
+) -> bool
+  dec fuel
+{
+  if before == after {
+    before > 0 && before <= len
+  } else {
+    if fuel == 0 || after == 0 || after > len {
+      false
+    } else {
+      atomic_happens_before_edges(
+        program_parent,
+        synchronize_parent,
+        len,
+        before,
+        program_parent[after - 1],
+        fuel - 1,
+      ) || atomic_happens_before_edges(
+        program_parent,
+        synchronize_parent,
+        len,
+        before,
+        synchronize_parent[after - 1],
+        fuel - 1,
+      )
+    }
+  }
+}
+
+spec fn atomic_happens_before(
+  history: &AtomicHistory,
+  before: usize,
+  after: usize,
+  fuel: usize,
+) -> bool
+  dec fuel
+{
+  atomic_happens_before_edges(
+    &history.program_parent,
+    &history.synchronize_parent,
+    history.len,
+    before,
+    after,
+    fuel,
+  )
+}
+
+spec fn atomic_release_sequence_edges(
+  release_parent: &[usize; ATOMIC_HISTORY_CAPACITY],
+  len: usize,
+  head: usize,
+  member: usize,
+  fuel: usize,
+) -> bool
+  dec fuel
+{
+  if head == member {
+    head > 0 && head <= len
+  } else {
+    if fuel == 0 || member == 0 || member > len {
+      false
+    } else {
+      atomic_release_sequence_edges(
+        release_parent,
+        len,
+        head,
+        release_parent[member - 1],
+        fuel - 1,
+      )
+    }
+  }
+}
+
+spec fn atomic_release_sequence_reaches(
+  history: &AtomicHistory,
+  head: usize,
+  member: usize,
+  fuel: usize,
+) -> bool
+  dec fuel
+{
+  atomic_release_sequence_edges(
+    &history.release_parent,
+    history.len,
+    head,
+    member,
+    fuel,
+  )
+}
+
+spec fn atomic_sc_precedes(
+  history: &AtomicHistory,
+  before: usize,
+  after: usize,
+) -> bool
+  dec before
+{
+  before > 0
+    && before <= history.len
+    && after > 0
+    && after <= history.len
+    && history.sc_order[before - 1] > 0
+    && history.sc_order[before - 1] < history.sc_order[after - 1]
+}
+
+fn atomic_happens_before_reflexive(
+  history: &AtomicHistory,
+  event: usize,
+) -> bool
+  req event > 0 && event <= history.len
+  ens result && atomic_happens_before(history, event, event, history.len)
+  fx pure
+{
+  true
+}
+
+fn atomic_release_sequence_reflexive(
+  history: &AtomicHistory,
+  event: usize,
+) -> bool
+  req event > 0 && event <= history.len
+  ens result && atomic_release_sequence_reaches(history, event, event, history.len)
+  fx pure
+{
+  true
+}

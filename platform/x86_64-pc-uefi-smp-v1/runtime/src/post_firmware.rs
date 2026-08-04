@@ -16,6 +16,8 @@ use thermite_kernel_policy::kernel_policy_ingress::{
     thermite_allocator_run_mask as allocator_run_mask, thermite_ap_cpu_bit as ap_cpu_bit,
     thermite_ap_expected_mask as ap_expected_mask,
     thermite_ap_should_start as ap_should_start,
+    thermite_ap_worker_online as ap_worker_online,
+    thermite_ap_worker_task_complete as ap_worker_task_complete,
     thermite_apic_physical_base as apic_physical_base,
     thermite_apic_profile_supported as apic_profile_supported,
     thermite_atomic_fetch_add as exact_fetch_add, thermite_atomic_fetch_and as exact_fetch_and,
@@ -974,10 +976,7 @@ extern "C" fn thermite_ap_rust_entry(apic_id: usize) -> ! {
         }
         asm!("sti", options(nomem, nostack));
     }
-    if let Ok(cpu_bit) = bit(apic_id) {
-        exact_fetch_or(&POST_ONLINE_MASK, cpu_bit);
-    }
-    exact_fetch_add(&POST_READY, 1);
+    let _ = ap_worker_online(apic_id as u64, &POST_ONLINE_MASK, &POST_READY);
     while exact_load(&POST_PHASE) < 1 {
         core::hint::spin_loop();
     }
@@ -985,7 +984,7 @@ extern "C" fn thermite_ap_rust_entry(apic_id: usize) -> ! {
     run_tasks(apic_id);
     lock_once(apic_id);
     shootdown_probe(apic_id, 0xaaaa_5555_1111_2222, &POST_TLB_PRE_MASK);
-    exact_fetch_add(&POST_TASK_DONE, 1);
+    let _ = ap_worker_task_complete(apic_id as u64, &POST_TASK_DONE);
 
     while exact_load(&POST_PHASE) < 2 {
         core::hint::spin_loop();

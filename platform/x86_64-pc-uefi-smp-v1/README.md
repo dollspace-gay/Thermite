@@ -30,6 +30,8 @@ cargo run -p forge -- build conformance/thermite-kernel.thpkg.json \
   --compose-export synchronization_worker_issue \
   --compose-export synchronization_worker_can_enter \
   --compose-export synchronization_worker_complete \
+  --compose-export ap_worker_online \
+  --compose-export ap_worker_task_complete \
   --compose-export service_write_user_byte \
   --compose-export ap_expected_mask \
   --compose-export apic_profile_supported \
@@ -88,8 +90,9 @@ publication also executes generated Thermite through an exact atomic maximum
 primitive. Generated Thermite owns the live worker-admission transaction,
 including seed-task accounting, worker publication, and final barrier release.
 The complete bounded task-claim and sum-publication drain also runs in generated
-Thermite; Rust retains the admission-barrier wait. AP and shootdown state use
-the sealed atomics. Ticket issue and owner checks execute in generated Thermite,
+Thermite; Rust retains the admission-barrier wait. Generated Thermite publishes
+AP online membership and readiness and accounts completed AP task phases.
+Ticket issue and owner checks execute in generated Thermite,
 as do critical-section accounting, release, and the once-owner claim; Rust
 retains the physical spin/retry loop. After the irreducible volatile mapping
 read, generated Thermite now owns per-CPU shootdown observation publication,

@@ -639,6 +639,31 @@ pub fn thermite_ap_runtime_ready(
     )
 }
 
+pub fn thermite_ap_worker_online(
+    cpu: u64,
+    online_mask: &super::atomic::ExactAtomicU64,
+    ready_aps: &super::atomic::ExactAtomicU64,
+) -> (result: u64)
+    requires
+        cpu < 8,
+    ensures
+        result == cpu + 10,
+{
+    super::ap_worker_online(cpu, online_mask, ready_aps)
+}
+
+pub fn thermite_ap_worker_task_complete(
+    cpu: u64,
+    completed_aps: &super::atomic::ExactAtomicU64,
+) -> (result: u64)
+    requires
+        cpu < 8,
+    ensures
+        result == cpu + 10,
+{
+    super::ap_worker_task_complete(cpu, completed_aps)
+}
+
 pub fn thermite_scheduler_runtime_complete(
     task_sum: u64,
     expected_sum: u64,

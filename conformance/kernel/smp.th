@@ -296,3 +296,29 @@ fn ap_failure_selection_valid(
 {
   cpu_count > 0 && cpu_count <= 8 && !bsp_failed && !failed_outside_set && effective_count > 0 && effective_count <= cpu_count
 }
+
+fn ap_worker_online(
+  cpu: u64,
+  online_mask: &Atomic,
+  ready_aps: &Atomic
+) -> u64
+  req cpu < 8
+  ens result == cpu + 10
+  fx platform(atomic)
+{
+  let publication_delta: u64 = 1;
+  let cpu_bit: u64 = ap_cpu_bit(cpu);
+  atomic_boundary_fetch(online_mask, FetchOp::Or, cpu_bit, Ordering::SeqCst);
+  atomic_boundary_fetch(ready_aps, FetchOp::Add, publication_delta, Ordering::SeqCst);
+  cpu + publication_delta + 9
+}
+
+fn ap_worker_task_complete(cpu: u64, completed_aps: &Atomic) -> u64
+  req cpu < 8
+  ens result == cpu + 10
+  fx platform(atomic)
+{
+  let completion_delta: u64 = 1;
+  atomic_boundary_fetch(completed_aps, FetchOp::Add, completion_delta, Ordering::SeqCst);
+  cpu + completion_delta + 9
+}

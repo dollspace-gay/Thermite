@@ -1578,6 +1578,12 @@ reference = []
 conformance_ops = ["barrier-membership-freeze", "barrier-stale-generation", "barrier-exhaustion"]
 
 [[route]]
+crate_pattern = "stdlib/kernel-primitives/synchronization/epoch_ack.th"
+design = ".design/build/synchronization-primitives.md"
+reference = []
+conformance_ops = ["epoch-ack-snapshot", "epoch-ack-framing", "epoch-ack-token-rejection", "epoch-ack-exhaustion"]
+
+[[route]]
 crate_pattern = "stdlib/kernel-primitives/synchronization/mpsc_queue.th"
 design = ".design/build/synchronization-primitives.md"
 reference = []

@@ -21,6 +21,15 @@ fn bit_oob(word: u64, bit: usize) -> bool
     && word.bit_set(bit) == word
     && word.bit_clear(bit) == word
 }
+
+fn bit_other(word: u64, changed: usize, observed: usize) -> bool
+  req changed < 64 && observed < 64 && changed != observed
+  ens result
+  fx pure
+{
+  word.bit_set_preserves_other(changed, observed)
+    && word.bit_clear_preserves_other(changed, observed)
+}
 "#;
 
 fn program() -> thermite_syntax::Program {
@@ -54,6 +63,22 @@ fn l3_emits_the_finite_directly_verified_bit_bridge() {
         emitted.contains("__thermite_u64_bit_test(set, bit)"),
         "{emitted}"
     );
+    assert!(
+        emitted.contains("fn __thermite_u64_bit_set_preserves_other"),
+        "{emitted}"
+    );
+    assert!(
+        emitted.contains("fn __thermite_u64_bit_clear_preserves_other"),
+        "{emitted}"
+    );
+    assert!(
+        emitted.contains("__thermite_u64_bit_mask_shift_lemma"),
+        "{emitted}"
+    );
+    assert!(
+        emitted.contains("requires\n                changed64 < 64u64"),
+        "{emitted}"
+    );
 }
 
 #[test]
@@ -64,9 +89,12 @@ fn runtime_and_bounded_backends_keep_total_out_of_range_semantics() {
     assert!(l1.contains("1u64 <<"), "{l1}");
     assert!(l1.contains("else { false }"), "{l1}");
     assert!(l1.contains("else { word }"), "{l1}");
+    assert!(l1.contains("__thermite_changed_mask"), "{l1}");
+    assert!(l1.contains("__thermite_observed_mask"), "{l1}");
 
     let l2 = lower_l2(&program).expect("L2 u64 bit lowering must succeed");
     assert!(l2.contains("< 64usize"), "{l2}");
     assert!(l2.contains("1u64 <<"), "{l2}");
     assert!(l2.contains("else { false }"), "{l2}");
+    assert!(l2.contains("__thermite_changed_mask"), "{l2}");
 }

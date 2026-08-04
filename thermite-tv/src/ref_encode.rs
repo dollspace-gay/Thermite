@@ -772,6 +772,19 @@ fn encode_method_call(
         let offset = encode(&args[0], ctx)?;
         return Ok(encode_u64_bit_reference(&word, &offset, name));
     }
+    if args.len() == 2
+        && matches!(
+            name,
+            "bit_set_preserves_other" | "bit_clear_preserves_other"
+        )
+    {
+        let word = encode(receiver, ctx)?;
+        let changed = encode(&args[0], ctx)?;
+        let observed = encode(&args[1], ctx)?;
+        return Ok(encode_u64_bit_preservation_reference(
+            &word, &changed, &observed, name,
+        ));
+    }
 
     if is_fixed_array_value(receiver) {
         if name == "len" && args.is_empty() {
@@ -871,6 +884,25 @@ fn encode_u64_bit_reference(word: &str, offset: &str, method: &str) -> String {
     };
     write!(out, "_ => {fallback} }})").ok();
     out
+}
+
+fn encode_u64_bit_preservation_reference(
+    word: &str,
+    changed: &str,
+    observed: &str,
+    method: &str,
+) -> String {
+    let update = if method == "bit_set_preserves_other" {
+        "bit_set"
+    } else {
+        "bit_clear"
+    };
+    let updated = encode_u64_bit_reference(word, changed, update);
+    let after = encode_u64_bit_reference(&updated, observed, "bit_test");
+    let before = encode_u64_bit_reference(word, observed, "bit_test");
+    format!(
+        "(({changed}) < 64usize && ({observed}) < 64usize && ({changed}) != ({observed}) && (({after}) == ({before})))"
+    )
 }
 
 /// Encode a `String`/`&String`-receiver byte-view method (#150 gap #2). The

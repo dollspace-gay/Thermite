@@ -263,15 +263,31 @@ fn u64_bit_method_expressions_are_faithful() {
         "  ens result == word.bit_test(bit)\n",
         "  fx pure\n",
         "{ word.bit_test(bit) }\n",
+        "fn set_preserves(word: u64, changed: usize, observed: usize) -> bool\n",
+        "  req true\n",
+        "  ens result == word.bit_set_preserves_other(changed, observed)\n",
+        "  fx pure\n",
+        "{ word.bit_set_preserves_other(changed, observed) }\n",
+        "fn clear_preserves(word: u64, changed: usize, observed: usize) -> bool\n",
+        "  req true\n",
+        "  ens result == word.bit_clear_preserves_other(changed, observed)\n",
+        "  fx pure\n",
+        "{ word.bit_clear_preserves_other(changed, observed) }\n",
     );
     let path = std::env::temp_dir().join("thermite_exec_tv_u64_bits.th");
     std::fs::write(&path, source).expect("write u64-bit exec-TV fixture");
     let report = run_exec_tv_json(&path, None);
     let counts = &report["corpus"]["counts"];
-    assert_eq!(counts["checked"].as_u64(), Some(3), "{report}");
-    assert_eq!(counts["faithful"].as_u64(), Some(3), "{report}");
+    assert_eq!(counts["checked"].as_u64(), Some(5), "{report}");
+    assert_eq!(counts["faithful"].as_u64(), Some(5), "{report}");
     assert_eq!(counts["divergent"].as_u64(), Some(0), "{report}");
-    for expression in ["set_bit.tail", "clear_bit.tail", "test_bit.tail"] {
+    for expression in [
+        "set_bit.tail",
+        "clear_bit.tail",
+        "test_bit.tail",
+        "set_preserves.tail",
+        "clear_preserves.tail",
+    ] {
         assert!(
             report["corpus"]["exprs"]
                 .as_array()

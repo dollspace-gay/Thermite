@@ -3,10 +3,11 @@
 <!--
 tier: 3-component
 status: partial
-decision: Thermite ships explicit bounded-wait, ticket-lock, barrier, once, reference-count, seqlock, bounded MPSC queue, and bounded work-stealing deque mechanics in .th plus frozen pause, blocking-wait, and terminal-halt declarations; actual atomic and machine implementations remain consumer-refined boundaries
+decision: Thermite ships explicit bounded-wait, ticket-lock, barrier, epoch-acknowledgement, once, reference-count, seqlock, bounded MPSC queue, and bounded work-stealing deque mechanics in .th plus frozen pause, blocking-wait, and terminal-halt declarations; actual atomic and machine implementations remain consumer-refined boundaries
 governs:
   - stdlib/kernel-primitives/synchronization.thpkg.json
   - stdlib/kernel-primitives/synchronization/barrier.th
+  - stdlib/kernel-primitives/synchronization/epoch_ack.th
   - stdlib/kernel-primitives/synchronization/mpsc_queue.th
   - stdlib/kernel-primitives/synchronization/once.th
   - stdlib/kernel-primitives/synchronization/refcount.th
@@ -15,7 +16,7 @@ governs:
   - stdlib/kernel-primitives/synchronization/wait.th
   - stdlib/kernel-primitives/synchronization/work_deque.th
   - forge/tests/synchronization_primitives.rs
-audited-content-sha256: 2f36a2e1091fe7302bfdf3a332b11eb243073bcca0fbbaafcdf22a5ac70ad394 (re-pinned 2026-08-04 after the bounded work-stealing deque checkpoint)
+audited-content-sha256: 5e91dd3ab36f637593d29651782330885e7d3213e98f22a0f29ca3f9e38ec847 (re-pinned 2026-08-04 after the epoch-acknowledgement checkpoint)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/sealed-atomics.md
@@ -34,7 +35,7 @@ consumer kernels. This repository does not choose which threads block, how a
 scheduler parks them, what protected data means, or which architecture executes
 pause and halt instructions.
 
-`stdlib/kernel-primitives/synchronization.thpkg.json` is a canonical eight-root
+`stdlib/kernel-primitives/synchronization.thpkg.json` is a canonical nine-root
 package containing only Thermite source. It has no Rust or assembly runtime
 implementation and no kernel policy.
 
@@ -91,6 +92,31 @@ Thermite structs are not yet opaque, so arbitrary literal construction is not
 excluded by the type system; consumers should construct through the supplied
 operations and explicitly check externally supplied state. Atomic realization,
 parking, wakeup, and barrier participation policy remain consumer obligations.
+
+## Epoch acknowledgement sets
+
+`EpochAckState64` provides a bounded 64-participant epoch mechanism for such
+uses as cross-CPU acknowledgements, grace periods, or caller-defined rendezvous.
+Registration issues a per-slot generation token and is frozen while a round is
+open. Beginning a round increments the nonwrapping epoch and snapshots the
+active membership mask into a pending mask. A matching participant may either
+acknowledge or be explicitly withdrawn; both operations clear exactly that
+pending bit. Closing succeeds only after the pending mask reaches zero.
+
+No-round, stale-epoch, future-epoch, stale-participant, duplicate/not-pending,
+pending-close, epoch-exhaustion, and participant-generation-exhaustion outcomes
+are distinct. The packed-bit preservation bridge proves that clearing one
+participant leaves every specifically observed distinct participant unchanged.
+Source probes cover acknowledgement and withdrawal framing, duplicate rejection,
+stale/future tokens, frozen membership, membership snapshot, both exhaustion
+paths, and complete versus pending close.
+
+The primitive does not choose participants, withdrawal policy, timeouts, retry,
+or what an epoch means. It is a pure state machine; a consumer must map its
+transitions to sealed atomics and directly refined machine operations. Its plain
+state and token structs remain forgeable until opaque construction or a complete
+affine rule lands, so consumers must preserve token ownership and construct
+states through the supplied operations.
 
 ## Once initialization
 
@@ -202,9 +228,9 @@ ownership in the interim.
 
 ## Assurance and remaining work
 
-`forge check --level l3` proves all 173 in-language items at L3. The three frozen
-declarations remain L1 boundaries, so the package contains 176 source items in
-total. Executable contracts kill 660 of 734 generated mutants.
+`forge check --level l3` proves all 222 in-language items at L3. The three frozen
+declarations remain L1 boundaries, so the package contains 225 source items in
+total. Executable contracts kill 756 of 834 generated mutants.
 
 `forge/tests/synchronization_primitives.rs` additionally:
 
@@ -213,10 +239,12 @@ total. Executable contracts kill 660 of 734 generated mutants.
 - pins wait mutation at 21/22, barrier mutation at 141/149, ticket mutation at
   41/43, once mutation at 65/68, reference-count mutation at 32/34, seqlock
   mutation at 49/52, MPSC queue mutation at 100/119, and work-deque mutation at
-  211/247;
+  211/247, plus epoch-ack mutation at 96/100;
 - rejects a false claim that an unchanged trace reports a change;
 - rejects a false claim that the second ticket may bypass the first;
 - rejects a false claim that a duplicate barrier arrival advances the round;
+- rejects a false claim that acknowledging one epoch participant clears a
+  distinct pending participant;
 - rejects a false claim that a published later queue ticket may bypass the
   unpublished FIFO head;
 - rejects a false claim that the owner can also consume the last item after a
@@ -224,7 +252,7 @@ total. Executable contracts kill 660 of 734 generated mutants.
 - rejects false second-once-winner, retired-reference-resurrection, and stale
   seqlock-read claims;
 - builds and replays `ticket_lock_can_issue` as a strict freestanding scalar
-  export while binding all eight original modules into the receipt; and
+  export while binding all nine original modules into the receipt; and
 - tampers with the bound wait source and requires validation to fail.
 
 The strict export is scalar because current body TV cannot independently frame
@@ -239,12 +267,12 @@ fairness assumptions in the registry, and richer reader/writer coordination.
 
 | Metric | Value |
 |---|---:|
-| Physical Thermite LOC | 4,282 |
-| Nonblank Thermite LOC | 4,111 |
-| Thermite functions | 136 (103 executable, 30 specification, 3 frozen declarations) |
-| In-language L3 items | 173 |
+| Physical Thermite LOC | 5,587 |
+| Nonblank Thermite LOC | 5,367 |
+| Thermite functions | 176 (135 executable, 38 specification, 3 frozen declarations) |
+| In-language L3 items | 222 |
 | Frozen boundary declarations | 3 at L1 |
-| Executable mutants killed | 660/734 |
+| Executable mutants killed | 756/834 |
 | Bodyful Rust/assembly synchronization implementations | 0 |
 | Ordinary Rust kernel-policy/algorithm LOC | 0 |
 | Direct-Verus TPL LOC shipped by this package | 0 |

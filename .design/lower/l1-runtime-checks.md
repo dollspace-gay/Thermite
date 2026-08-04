@@ -3,7 +3,7 @@
 tier: 3-component
 status: draft
 audited-sha: 6b86f74476122cfddbdcf168d37a3561d2598054 (re-pinned 2026-06-16 for PR #46 after merging main: lower_l1's TString runtime gate now treats String-typed ADT declarations as TString users so ADT fields cannot name an unemitted runtime; main's inert Item::Forge skip is preserved; core req/ens/inv check emission is unchanged.)
-audited-content-sha256: 6086157f9a4699c305c32aee436be6fa58539e601be1f5d07522da3f8b89bbee
+audited-content-sha256: 309e67745f75e94df674b14521da03709c937d838ac7770b4cb271a50538adc8
 governs: thermite-lower/src/l1.rs
 thesis-refs:
   - thermite-design.md §4.2
@@ -166,6 +166,10 @@ therefore performs full equality, matching the L3 finite-view relation.
 Total `u64.bit_test(index)`, `.bit_set(index)`, and `.bit_clear(index)` lower to
 guarded native shifts. At `index >= 64`, test returns false and updates return
 the original word, avoiding a target-dependent overshift.
+`u64.bit_set_preserves_other(changed, observed)` and
+`.bit_clear_preserves_other(changed, observed)` evaluate the corresponding
+guarded update/test equality exactly once per operand and return false unless
+both indices are in range and distinct.
 
 ### The always-active check primitive (REQ-2)
 

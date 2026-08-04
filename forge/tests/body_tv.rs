@@ -380,14 +380,26 @@ fn faithful_u64_bit_method_body_is_faithful() {
         "  let updated: u64 = word.bit_set(bit);\n",
         "  updated\n",
         "}\n",
+        "fn preserve_through_local(word: u64, changed: usize, observed: usize) -> bool\n",
+        "  req true\n",
+        "  ens result == word.bit_clear_preserves_other(changed, observed)\n",
+        "  fx pure\n",
+        "{\n",
+        "  let preserved: bool = word.bit_clear_preserves_other(changed, observed);\n",
+        "  preserved\n",
+        "}\n",
     );
     let file = write_th("u64_bit_methods", src);
     let report = run_body_tv_json(&file);
-    assert_eq!(report["counts"]["checked"].as_u64(), Some(1), "{report}");
-    assert_eq!(report["counts"]["faithful"].as_u64(), Some(1), "{report}");
+    assert_eq!(report["counts"]["checked"].as_u64(), Some(2), "{report}");
+    assert_eq!(report["counts"]["faithful"].as_u64(), Some(2), "{report}");
     assert_eq!(report["counts"]["divergent"].as_u64(), Some(0), "{report}");
     assert!(report["bodies"].as_array().unwrap().iter().any(|body| {
         body["body"].as_str() == Some("set_through_local")
+            && body["verdict"].as_str() == Some("faithful")
+    }));
+    assert!(report["bodies"].as_array().unwrap().iter().any(|body| {
+        body["body"].as_str() == Some("preserve_through_local")
             && body["verdict"].as_str() == Some("faithful")
     }));
 }

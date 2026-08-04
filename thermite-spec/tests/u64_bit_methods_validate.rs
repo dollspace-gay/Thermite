@@ -31,6 +31,16 @@ fn clear(word: u64, bit: usize) -> u64
 {
   word.bit_clear(bit)
 }
+
+fn preserve(word: u64, changed: usize, observed: usize) -> bool
+  req true
+  ens result == word.bit_set_preserves_other(changed, observed)
+    && result == word.bit_clear_preserves_other(changed, observed)
+  fx pure
+{
+  word.bit_set_preserves_other(changed, observed)
+    && word.bit_clear_preserves_other(changed, observed)
+}
 "#;
     assert!(validate_src(source).is_ok());
 }
@@ -47,6 +57,18 @@ fn rejects_wrong_u64_bit_method_arity() {
             error,
             SpecError::ForbiddenCall { detail, .. }
                 if detail.contains("expects exactly one bit-index argument")
+        )));
+    }
+
+    for source in [
+        "fn bad(word: u64, bit: usize) -> bool req true ens true fx pure { word.bit_set_preserves_other(bit) }",
+        "fn bad(word: u64, bit: usize) -> bool req true ens true fx pure { word.bit_clear_preserves_other(bit, bit, bit) }",
+    ] {
+        let errors = validate_src(source).expect_err("wrong preservation-method arity must fail");
+        assert!(errors.iter().any(|error| matches!(
+            error,
+            SpecError::ForbiddenCall { detail, .. }
+                if detail.contains("expects exactly 2 bit-index argument")
         )));
     }
 }

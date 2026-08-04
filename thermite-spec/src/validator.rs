@@ -244,10 +244,13 @@ const BUILTIN_METHODS: &[&str] = &[
     "array_same_except",
     // Total `u64` packed-bit operations. An index at least 64 leaves a word
     // unchanged for updates and observes `false`; the directly verified L3
-    // helper supplies the ordinary contract bridge needed by packed storage.
+    // helpers supply the ordinary contract bridge and distinct-bit framing
+    // witnesses needed by packed storage.
     "bit_test",
     "bit_set",
     "bit_clear",
+    "bit_set_preserves_other",
+    "bit_clear_preserves_other",
     "get",
     "last",
     "contains",
@@ -1457,10 +1460,25 @@ impl Validator {
     }
 
     fn check_u64_bit_method_call(&mut self, name: &str, args: &[Expr], span: Span) {
-        if matches!(name, "bit_test" | "bit_set" | "bit_clear") && args.len() != 1 {
+        let expected = if matches!(name, "bit_test" | "bit_set" | "bit_clear") {
+            Some(1)
+        } else if matches!(
+            name,
+            "bit_set_preserves_other" | "bit_clear_preserves_other"
+        ) {
+            Some(2)
+        } else {
+            None
+        };
+        if let Some(expected) = expected.filter(|expected| args.len() != *expected) {
+            let expected_label = if expected == 1 {
+                "one".to_string()
+            } else {
+                expected.to_string()
+            };
             self.errors.push(SpecError::ForbiddenCall {
                 detail: format!(
-                    "`.{name}()` expects exactly one bit-index argument, found {}",
+                    "`.{name}()` expects exactly {expected_label} bit-index argument(s), found {}",
                     args.len()
                 ),
                 span,

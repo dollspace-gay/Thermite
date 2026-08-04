@@ -233,15 +233,31 @@ fn u64_bit_method_contract_clauses_are_faithful() {
         "  ens result == word.bit_test(bit)\n",
         "  fx pure\n",
         "{ word.bit_test(bit) }\n",
+        "fn set_preserves(word: u64, changed: usize, observed: usize) -> bool\n",
+        "  req true\n",
+        "  ens result == word.bit_set_preserves_other(changed, observed)\n",
+        "  fx pure\n",
+        "{ word.bit_set_preserves_other(changed, observed) }\n",
+        "fn clear_preserves(word: u64, changed: usize, observed: usize) -> bool\n",
+        "  req true\n",
+        "  ens result == word.bit_clear_preserves_other(changed, observed)\n",
+        "  fx pure\n",
+        "{ word.bit_clear_preserves_other(changed, observed) }\n",
     );
     let path = std::env::temp_dir().join("thermite_contract_tv_u64_bits.th");
     std::fs::write(&path, source).expect("write u64-bit contract-TV fixture");
     let report = run_tv_json(&path, None);
     let (checked, faithful, divergent) = corpus_counts(&report);
-    assert_eq!(checked, 6, "each req/ens pair must be checked: {report}");
+    assert_eq!(checked, 10, "each req/ens pair must be checked: {report}");
     assert_eq!(faithful, checked, "{report}");
     assert_eq!(divergent, 0, "{report}");
-    for clause in ["set_bit.ens#1", "clear_bit.ens#1", "test_bit.ens#1"] {
+    for clause in [
+        "set_bit.ens#1",
+        "clear_bit.ens#1",
+        "test_bit.ens#1",
+        "set_preserves.ens#1",
+        "clear_preserves.ens#1",
+    ] {
         assert_eq!(
             corpus_clause_verdict(&report, clause),
             Some("faithful"),

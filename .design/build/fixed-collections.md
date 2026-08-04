@@ -50,7 +50,10 @@ word is unchanged. Bits 0–63 occupy word 0, 64–127 word 1, and so on; a boun
 probe composes inserts at bits 63 and 64 and observes both words.
 
 The language surface now provides total `u64.bit_test(index)`,
-`u64.bit_set(index)`, and `u64.bit_clear(index)` methods. For an index at least
+`u64.bit_set(index)`, and `u64.bit_clear(index)` methods, plus
+`u64.bit_set_preserves_other(changed, observed)` and
+`u64.bit_clear_preserves_other(changed, observed)` composition witnesses. For
+an index at least
 64, observation is false and updates return the original word. L3 lowering
 emits a finite 64-mask helper only when these methods are reachable. Each
 constant-mask update is discharged directly with Verus bit-vector reasoning,
@@ -63,10 +66,12 @@ body reference state machine also substitutes bit-method receivers and
 arguments through local bindings, closing the multi-statement validation gap
 found by this increment.
 
-The exact word-update equation is available to callers, but a convenience
-theorem spelling arbitrary same-word, other-bit preservation is not yet part of
-the surface. It remains useful follow-up rather than being silently inferred
-from a weaker collection contract.
+For in-range distinct indices, the preservation methods directly prove that
+setting or clearing `changed` leaves membership at `observed` unchanged. Their
+generated implementations bridge the finite mask table to a dynamic-shift
+bit-vector proof, and independent contract, expression, and body encoders derive
+the equality separately. This closes the former same-word framing residual
+without weakening the exact word-update contracts.
 
 Popcount, first-set search, range scans, bulk union/intersection, and a fully
 quantified all-indices collection contract remain future operations.
@@ -157,8 +162,7 @@ their individual L3 certificates and the generic fixed-array TV evidence.
 
 This is a substantial REQ-KPRIM-2 increment, not completion. Remaining work is:
 
-1. popcount, set-bit search, bulk operations, and a reusable same-word
-   other-bit frame theorem for the packed bitmap;
+1. popcount, set-bit search, and bulk bitmap operations;
 2. open-addressed or chained maps, slabs/freelists, and intrusive-list metadata;
 3. capacity/type parameterization that does not rely on privileged generated
    policy types;

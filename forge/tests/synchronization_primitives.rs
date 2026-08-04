@@ -99,6 +99,7 @@ fn assert_false_claim_rejected(source: &str, name: &str, temp: &TempDir) {
 fn synchronization_mechanics_are_receipt_bound_and_fail_closed() {
     let wait_source = "stdlib/kernel-primitives/synchronization/wait.th";
     let barrier_source = "stdlib/kernel-primitives/synchronization/barrier.th";
+    let epoch_ack_source = "stdlib/kernel-primitives/synchronization/epoch_ack.th";
     let mpsc_source = "stdlib/kernel-primitives/synchronization/mpsc_queue.th";
     let once_source = "stdlib/kernel-primitives/synchronization/once.th";
     let refcount_source = "stdlib/kernel-primitives/synchronization/refcount.th";
@@ -178,6 +179,36 @@ fn synchronization_mechanics_are_receipt_bound_and_fail_closed() {
         assert_ne!(row["contract_quality"]["mutants_killed"], "0/0");
     }
     assert_eq!(mutation_total(&barrier_rows), (141, 149));
+
+    let epoch_ack_rows = checked_rows(epoch_ack_source);
+    assert_eq!(epoch_ack_rows.len(), 49);
+    assert!(epoch_ack_rows.iter().all(|row| row["level"] == "L3"));
+    assert!(epoch_ack_rows.iter().all(|row| row["boundary"] == false));
+    for name in [
+        "epoch_ack_wf",
+        "epoch_ack_register",
+        "epoch_ack_unregister",
+        "epoch_ack_begin",
+        "epoch_ack_record",
+        "epoch_ack_withdraw",
+        "epoch_ack_close",
+        "epoch_ack_record_preserves_other_probe",
+        "epoch_ack_duplicate_probe",
+        "epoch_ack_stale_epoch_probe",
+        "epoch_ack_future_epoch_probe",
+        "epoch_ack_register_frozen_probe",
+        "epoch_ack_begin_snapshot_probe",
+        "epoch_ack_epoch_exhaustion_probe",
+        "epoch_ack_generation_exhaustion_probe",
+        "epoch_ack_close_complete_probe",
+    ] {
+        let row = epoch_ack_rows
+            .iter()
+            .find(|row| row["item"] == name)
+            .unwrap_or_else(|| panic!("missing epoch/ack certificate `{name}`"));
+        assert_ne!(row["contract_quality"]["mutants_killed"], "0/0");
+    }
+    assert_eq!(mutation_total(&epoch_ack_rows), (96, 100));
 
     let mpsc_rows = checked_rows(mpsc_source);
     assert_eq!(mpsc_rows.len(), 32);
@@ -351,6 +382,44 @@ fn barrier_false_duplicate_advances_claim() -> bool
     assert_false_claim_rejected(
         &false_barrier,
         "barrier_false_duplicate_advances_claim",
+        &temp,
+    );
+
+    let mut false_epoch_ack = fs::read_to_string(root().join(epoch_ack_source)).unwrap();
+    false_epoch_ack.push_str(
+        r#"
+fn epoch_ack_false_other_cleared_claim() -> bool
+  req true
+  ens result
+  fx pure
+{
+  let state: EpochAckState64 = EpochAckState64 {
+    active: 3,
+    pending: 3,
+    generations: [0; EPOCH_ACK_CAPACITY],
+    epoch: 1,
+    open: true,
+    capacity: EPOCH_ACK_CAPACITY,
+  };
+  let participant: EpochAckParticipant64 = EpochAckParticipant64 {
+    slot: 0,
+    generation: 0,
+  };
+  let round: EpochAckRound64 = EpochAckRound64 { epoch: 1 };
+  match epoch_ack_record(state, participant, round) {
+    EpochAckRecord64::EpochAckRecorded64 {
+      state: next,
+      participant: returned,
+      round: returned_round,
+    } => !epoch_ack_is_pending(&next, 1),
+    _ => false,
+  }
+}
+"#,
+    );
+    assert_false_claim_rejected(
+        &false_epoch_ack,
+        "epoch_ack_false_other_cleared_claim",
         &temp,
     );
 
@@ -557,6 +626,7 @@ fn seqlock_false_stale_read_claim() -> bool
         "evidence/thermite-package/manifest.json",
         "evidence/thermite-package/source-map.json",
         "evidence/thermite-package/source/synchronization/barrier.th",
+        "evidence/thermite-package/source/synchronization/epoch_ack.th",
         "evidence/thermite-package/source/synchronization/mpsc_queue.th",
         "evidence/thermite-package/source/synchronization/once.th",
         "evidence/thermite-package/source/synchronization/refcount.th",

@@ -1660,6 +1660,33 @@ fn lower_inv_expr(
                 };
                 return Ok(format!("{helper}({r}, {index})"));
             }
+            if args.len() == 2
+                && matches!(
+                    name.as_str(),
+                    "bit_set_preserves_other" | "bit_clear_preserves_other"
+                )
+            {
+                let changed = lower_inv_expr(
+                    &args[0],
+                    field_names,
+                    string_fields,
+                    spec_fn_param_types,
+                    d,
+                    span,
+                )?;
+                let observed = lower_inv_expr(
+                    &args[1],
+                    field_names,
+                    string_fields,
+                    spec_fn_param_types,
+                    d,
+                    span,
+                )?;
+                let suffix = name.trim_start_matches("bit_");
+                return Ok(format!(
+                    "__thermite_u64_bit_{suffix}_spec({r}, {changed}, {observed})"
+                ));
+            }
             let recv_is_string_field = matches!(
                 receiver.as_ref(),
                 Expr::Path(segs) if segs.len() == 1 && string_fields.contains(&segs[0].as_str())
@@ -4978,7 +5005,9 @@ fn program_uses_fixed_array_equality(program: &Program) -> bool {
 pub fn expr_uses_u64_bit_methods(expr: &Expr) -> bool {
     if matches!(expr, Expr::MethodCall { name, args, .. }
         if matches!(name.as_str(), "bit_test" | "bit_set" | "bit_clear")
-            && args.len() == 1)
+            && args.len() == 1
+            || matches!(name.as_str(), "bit_set_preserves_other" | "bit_clear_preserves_other")
+                && args.len() == 2)
     {
         return true;
     }
@@ -5120,9 +5149,11 @@ pub fn fixed_array_equality_defs() -> String {
 /// methods. The finite mask table is deliberately generated rather than
 /// expressed with a dynamic shift in the specification: ordinary Verus/Z3 does
 /// not expose enough dynamic-shift algebra to callers. Each update arm proves
-/// its one-bit fact with Verus's QF_BV tactic, then exports that fact as an
-/// ordinary L3 postcondition. Out-of-range indices are total and fail closed:
-/// tests return `false`, updates return the original word.
+/// its one-bit fact with Verus's QF_BV tactic; a directly verified shift lemma
+/// also exports preservation of every distinct bit as an ordinary L3
+/// postcondition. Out-of-range indices are total and fail closed: tests return
+/// `false`, updates return the original word, and preservation witnesses return
+/// `false` unless both indices are in range and distinct.
 pub fn u64_bit_defs() -> String {
     let mut out = String::from(
         "\npub open spec fn __thermite_u64_bit_mask(offset: usize) -> u64 {\n\
@@ -5156,6 +5187,118 @@ pub fn u64_bit_defs() -> String {
         writeln!(out, "        {offset} => word & {mask}u64 != 0u64,").ok();
     }
     out.push_str("        _ => false,\n    }\n}\n");
+
+    out.push_str(
+        r#"
+pub open spec fn __thermite_u64_bit_set_preserves_other_spec(
+    word: u64,
+    changed: usize,
+    observed: usize,
+) -> bool {
+    changed < 64 && observed < 64 && changed != observed
+        && (__thermite_u64_bit_test_spec(
+            __thermite_u64_bit_set_spec(word, changed),
+            observed,
+        ) == __thermite_u64_bit_test_spec(word, observed))
+}
+
+pub open spec fn __thermite_u64_bit_clear_preserves_other_spec(
+    word: u64,
+    changed: usize,
+    observed: usize,
+) -> bool {
+    changed < 64 && observed < 64 && changed != observed
+        && (__thermite_u64_bit_test_spec(
+            __thermite_u64_bit_clear_spec(word, changed),
+            observed,
+        ) == __thermite_u64_bit_test_spec(word, observed))
+}
+
+pub proof fn __thermite_u64_bit_mask_shift_lemma(offset: usize)
+    requires offset < 64,
+    ensures __thermite_u64_bit_mask(offset) == 1u64 << (offset as u64),
+{
+    match offset {
+"#,
+    );
+    for offset in 0..64usize {
+        let mask = 1u64 << offset;
+        writeln!(
+            out,
+            "        {offset} => {{ assert(1u64 << {offset}u64 == {mask}u64) by(bit_vector); }},"
+        )
+        .ok();
+    }
+    out.push_str(
+        r#"        _ => {},
+    }
+}
+
+pub fn __thermite_u64_bit_set_preserves_other(
+    word: u64,
+    changed: usize,
+    observed: usize,
+) -> (result: bool)
+    ensures
+        result == __thermite_u64_bit_set_preserves_other_spec(word, changed, observed),
+        changed < 64 && observed < 64 && changed != observed ==> result,
+{
+    if changed < 64 && observed < 64 && changed != observed {
+        let changed64: u64 = changed as u64;
+        let observed64: u64 = observed as u64;
+        proof {
+            __thermite_u64_bit_mask_shift_lemma(changed);
+            __thermite_u64_bit_mask_shift_lemma(observed);
+            assert(changed64 < 64u64);
+            assert(observed64 < 64u64);
+            assert(changed64 != observed64);
+            assert(
+                ((word | (1u64 << changed64)) & (1u64 << observed64) != 0u64)
+                    == (word & (1u64 << observed64) != 0u64)
+            ) by(bit_vector) requires
+                changed64 < 64u64,
+                observed64 < 64u64,
+                changed64 != observed64;
+        }
+        true
+    } else {
+        false
+    }
+}
+
+pub fn __thermite_u64_bit_clear_preserves_other(
+    word: u64,
+    changed: usize,
+    observed: usize,
+) -> (result: bool)
+    ensures
+        result == __thermite_u64_bit_clear_preserves_other_spec(word, changed, observed),
+        changed < 64 && observed < 64 && changed != observed ==> result,
+{
+    if changed < 64 && observed < 64 && changed != observed {
+        let changed64: u64 = changed as u64;
+        let observed64: u64 = observed as u64;
+        proof {
+            __thermite_u64_bit_mask_shift_lemma(changed);
+            __thermite_u64_bit_mask_shift_lemma(observed);
+            assert(changed64 < 64u64);
+            assert(observed64 < 64u64);
+            assert(changed64 != observed64);
+            assert(
+                ((word & !(1u64 << changed64)) & (1u64 << observed64) != 0u64)
+                    == (word & (1u64 << observed64) != 0u64)
+            ) by(bit_vector) requires
+                changed64 < 64u64,
+                observed64 < 64u64,
+                changed64 != observed64;
+        }
+        true
+    } else {
+        false
+    }
+}
+"#,
+    );
 
     out.push_str(
         "\npub fn __thermite_u64_bit_set(word: u64, offset: usize) -> (result: u64)\n\
@@ -8505,6 +8648,20 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
                 };
                 let mode = if ctx.is_spec() { "_spec" } else { "" };
                 return Ok(format!("__thermite_u64_{suffix}{mode}({r}, {index})"));
+            }
+            if args.len() == 2
+                && matches!(
+                    name.as_str(),
+                    "bit_set_preserves_other" | "bit_clear_preserves_other"
+                )
+            {
+                let changed = lower_expr(&args[0], ctx, d, span)?;
+                let observed = lower_expr(&args[1], ctx, d, span)?;
+                let suffix = name.trim_start_matches("bit_");
+                let mode = if ctx.is_spec() { "_spec" } else { "" };
+                return Ok(format!(
+                    "__thermite_u64_bit_{suffix}{mode}({r}, {changed}, {observed})"
+                ));
             }
             // Cluster C4 (`.design/basis/07-strings.md` REQ-8, issue #94): the
             // `u64`→decimal-`String` method `n.to_string()` lowers to a call of the

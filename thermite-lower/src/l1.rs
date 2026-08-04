@@ -1601,6 +1601,23 @@ pub(crate) fn lower_expr_exec(
                     _ => unreachable!("the method guard fixed the bit helper"),
                 });
             }
+            if args.len() == 2
+                && matches!(
+                    name.as_str(),
+                    "bit_set_preserves_other" | "bit_clear_preserves_other"
+                )
+            {
+                let changed = lower_expr_exec(&args[0], d, span, variants)?;
+                let observed = lower_expr_exec(&args[1], d, span, variants)?;
+                let update = if name == "bit_set_preserves_other" {
+                    "__thermite_word | __thermite_changed_mask"
+                } else {
+                    "__thermite_word & !__thermite_changed_mask"
+                };
+                return Ok(format!(
+                    "({{ let __thermite_word: u64 = {r}; let __thermite_changed: usize = {changed}; let __thermite_observed: usize = {observed}; if __thermite_changed < 64usize && __thermite_observed < 64usize && __thermite_changed != __thermite_observed {{ let __thermite_changed_mask: u64 = 1u64 << __thermite_changed; let __thermite_observed_mask: u64 = 1u64 << __thermite_observed; ((({update}) & __thermite_observed_mask) != 0u64) == ((__thermite_word & __thermite_observed_mask) != 0u64) }} else {{ false }} }})"
+                ));
+            }
             // Cluster C4 (`.design/basis/07-strings.md` REQ-8, issue #94): the
             // `u64`→decimal-`String` method `n.to_string()` lowers to a call of the
             // generated free fn `u64_to_string(n)` (emitted by

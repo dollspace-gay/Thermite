@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: 83ade57be36c7e2c69ad98422c7a8b79b9ed215179d653ad9e0793393d252354 (re-pinned 2026-08-04 after synchronization skill documentation; existing behavior remains regression-covered)
+audited-content-sha256: f5b7c2b8e512689d4196430ee282d3c6e1bedd5cb3235e0ac4c264914e514fc0 (re-pinned 2026-08-04 after documenting the expanded synchronization package; existing option/result behavior remains regression-covered)
 governs: thermite-syntax/src/ast.rs
 governs: thermite-syntax/src/parser.rs
 governs: thermite-spec/src/validator.rs

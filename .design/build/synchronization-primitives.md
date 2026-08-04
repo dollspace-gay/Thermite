@@ -3,13 +3,16 @@
 <!--
 tier: 3-component
 status: partial
-decision: Thermite ships explicit bounded-wait and ticket-lock state mechanics in .th plus frozen pause, blocking-wait, and terminal-halt declarations; actual atomic and machine implementations remain consumer-refined boundaries
+decision: Thermite ships explicit bounded-wait, ticket-lock, once, reference-count, and seqlock mechanics in .th plus frozen pause, blocking-wait, and terminal-halt declarations; actual atomic and machine implementations remain consumer-refined boundaries
 governs:
   - stdlib/kernel-primitives/synchronization.thpkg.json
+  - stdlib/kernel-primitives/synchronization/once.th
+  - stdlib/kernel-primitives/synchronization/refcount.th
+  - stdlib/kernel-primitives/synchronization/seqlock.th
   - stdlib/kernel-primitives/synchronization/ticket_lock.th
   - stdlib/kernel-primitives/synchronization/wait.th
   - forge/tests/synchronization_primitives.rs
-audited-content-sha256: 31cccdc383df7500e8ec3ecd23fd6e7a67f1d502fad0ccf762a89e2590aa1677
+audited-content-sha256: 5bdefa0526b945fe68bb624151286a5f9c688600075f987a8ebc1fccf7e7f55c (re-pinned 2026-08-04 after the once, reference-count, and seqlock primitive checkpoint)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/sealed-atomics.md
@@ -28,7 +31,7 @@ consumer kernels. This repository does not choose which threads block, how a
 scheduler parks them, what protected data means, or which architecture executes
 pause and halt instructions.
 
-`stdlib/kernel-primitives/synchronization.thpkg.json` is a canonical two-root
+`stdlib/kernel-primitives/synchronization.thpkg.json` is a canonical five-root
 package containing only Thermite source. It has no Rust or assembly runtime
 implementation and no kernel policy.
 
@@ -68,21 +71,63 @@ transitions with the sealed atomic operations and directly refined machine
 implementations; this increment does not claim mutual exclusion from a
 sequential pure model alone.
 
+## Once initialization
+
+`OnceState64` separates uninitialized, running, complete, and poisoned phases.
+Beginning initialization rotates a nonwrapping generation and returns its token;
+a second begin reports busy. Completion and poisoning accept only the live token,
+so a stale initializer cannot publish or poison a later generation. Complete and
+poisoned states are terminal, and generation exhaustion fails closed.
+
+The probes establish one-winner completion, stale-token rejection followed by a
+valid completion, poison persistence, and exhaustion without wraparound. The
+module does not choose initialization contents or recovery policy.
+
+## Reference counting
+
+`RefCountState64` starts with one live reference. Acquire increments unless the
+count is retired or exhausted. Release distinguishes an ordinary decrement from
+the last reference, which atomically enters a retired zero-count state at the
+model level. No acquire can resurrect that state, and another release reports
+retirement rather than underflowing.
+
+The lifecycle probe composes acquire, ordinary release, last release, and a
+rejected resurrection. A separate probe proves saturation at `u64::MAX`.
+Destruction, reclamation epochs, and what a reference owns remain consumer
+policy.
+
+## Seqlock versioning
+
+`SeqLockState64` ties writer activity to odd sequence numbers. An inactive even
+state can begin a writer only when two increments remain; writer begin returns
+the odd token, readers retry while it is active, and matching finish advances to
+an inactive even version. Read validation accepts only an unchanged inactive
+stamp. Mismatched writer tokens and both begin/finish exhaustion paths fail
+closed.
+
+The probes show that a reader captured before a write becomes stale, a fresh
+post-write read validates, and the counter never wraps. The module governs
+version mechanics only; copying protected payload data and the atomic load/store
+realization remain consumer composition obligations.
+
 ## Assurance and remaining work
 
-`forge check --level l3` proves all 31 in-language items at L3. The three frozen
-declarations remain L1 boundaries, so the package contains 34 source items in
-total. Executable contracts kill 62 of 65 generated mutants.
+`forge check --level l3` proves all 78 in-language items at L3. The three frozen
+declarations remain L1 boundaries, so the package contains 81 source items in
+total. Executable contracts kill 208 of 219 generated mutants.
 
 `forge/tests/synchronization_primitives.rs` additionally:
 
 - pins the exact L3/L1 split and all three boundary targets;
 - requires the halt declaration to retain its explicit `diverge` effect;
-- pins wait mutation at 21/22 and ticket mutation at 41/43;
+- pins wait mutation at 21/22, ticket mutation at 41/43, once mutation at
+  65/68, reference-count mutation at 32/34, and seqlock mutation at 49/52;
 - rejects a false claim that an unchanged trace reports a change;
 - rejects a false claim that the second ticket may bypass the first;
+- rejects false second-once-winner, retired-reference-resurrection, and stale
+  seqlock-read claims;
 - builds and replays `ticket_lock_can_issue` as a strict freestanding scalar
-  export while binding both original modules into the receipt; and
+  export while binding all five original modules into the receipt; and
 - tampers with the bound wait source and requires validation to fail.
 
 The strict export is scalar because current body TV cannot independently frame
@@ -91,19 +136,20 @@ receipt-bound, and every in-language aggregate transition has its individual
 L3 certificate.
 
 Remaining synchronization work includes atomic integration, named progress and
-fairness assumptions in the registry, once cells, barriers, reference counts,
-seqlocks, bounded concurrent queues, and work-stealing deque mechanics.
+fairness assumptions in the registry, participant-aware barriers, bounded
+concurrent queues, work-stealing deque mechanics, and richer reader/writer
+coordination.
 
 ## Auditable metrics
 
 | Metric | Value |
 |---|---:|
-| Physical Thermite LOC | 488 |
-| Nonblank Thermite LOC | 455 |
-| Thermite functions | 23 (17 executable, 3 specification, 3 frozen declarations) |
-| In-language L3 items | 31 |
+| Physical Thermite LOC | 1,322 |
+| Nonblank Thermite LOC | 1,245 |
+| Thermite functions | 59 (50 executable, 6 specification, 3 frozen declarations) |
+| In-language L3 items | 78 |
 | Frozen boundary declarations | 3 at L1 |
-| Executable mutants killed | 62/65 |
+| Executable mutants killed | 208/219 |
 | Bodyful Rust/assembly synchronization implementations | 0 |
 | Ordinary Rust kernel-policy/algorithm LOC | 0 |
 | Direct-Verus TPL LOC shipped by this package | 0 |

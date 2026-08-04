@@ -1,0 +1,328 @@
+struct OnceState64 {
+  phase: u8,
+  generation: u64,
+}
+
+enum OnceBegin64 {
+  OnceStarted64 {
+    state: OnceState64,
+    token: u64,
+  },
+  OnceBusy64 {
+    state: OnceState64,
+  },
+  OnceAlreadyComplete64 {
+    state: OnceState64,
+  },
+  OnceAlreadyPoisoned64 {
+    state: OnceState64,
+  },
+  OnceGenerationExhausted64 {
+    state: OnceState64,
+  },
+}
+
+enum OnceComplete64 {
+  OnceCompleted64 {
+    state: OnceState64,
+  },
+  OnceCompleteRejected64 {
+    state: OnceState64,
+    token: u64,
+  },
+}
+
+enum OncePoison64 {
+  OncePoisoned64 {
+    state: OnceState64,
+  },
+  OncePoisonRejected64 {
+    state: OnceState64,
+    token: u64,
+  },
+}
+
+spec fn once_wf_spec(state: &OnceState64) -> bool
+  dec state.phase
+{
+  state.phase <= 3
+}
+
+fn once_wf(state: &OnceState64) -> bool
+  req true
+  ens result == once_wf_spec(state)
+  fx pure
+{
+  state.phase <= 3
+}
+
+fn once_empty() -> OnceState64
+  req true
+  ens once_wf_spec(&result)
+  ens result.phase == 0 && result.generation == 0
+  fx pure
+{
+  OnceState64 {
+    phase: 0,
+    generation: 0,
+  }
+}
+
+fn once_begin(state: OnceState64) -> OnceBegin64
+  req once_wf_spec(&state)
+  ens match result {
+    OnceBegin64::OnceStarted64 { state: next, token } =>
+      state.phase == 0
+        && state.generation < u64::MAX
+        && once_wf_spec(&next)
+        && next.phase == 1
+        && next.generation == state.generation + 1
+        && token == next.generation,
+    OnceBegin64::OnceBusy64 { state: next } =>
+      state.phase == 1
+        && next.phase == state.phase
+        && next.generation == state.generation,
+    OnceBegin64::OnceAlreadyComplete64 { state: next } =>
+      state.phase == 2
+        && next.phase == state.phase
+        && next.generation == state.generation,
+    OnceBegin64::OnceAlreadyPoisoned64 { state: next } =>
+      state.phase == 3
+        && next.phase == state.phase
+        && next.generation == state.generation,
+    OnceBegin64::OnceGenerationExhausted64 { state: next } =>
+      state.phase == 0
+        && state.generation == u64::MAX
+        && next.phase == state.phase
+        && next.generation == state.generation,
+  }
+  fx pure
+{
+  if state.phase == 0 {
+    if state.generation == u64::MAX {
+      OnceBegin64::OnceGenerationExhausted64 { state: state }
+    } else {
+      let generation: u64 = state.generation + 1;
+      OnceBegin64::OnceStarted64 {
+        state: OnceState64 {
+          phase: 1,
+          generation: generation,
+        },
+        token: generation,
+      }
+    }
+  } else {
+    if state.phase == 1 {
+      OnceBegin64::OnceBusy64 { state: state }
+    } else {
+      if state.phase == 2 {
+        OnceBegin64::OnceAlreadyComplete64 { state: state }
+      } else {
+        OnceBegin64::OnceAlreadyPoisoned64 { state: state }
+      }
+    }
+  }
+}
+
+fn once_complete(state: OnceState64, token: u64) -> OnceComplete64
+  req once_wf_spec(&state)
+  ens match result {
+    OnceComplete64::OnceCompleted64 { state: next } =>
+      state.phase == 1
+        && token == state.generation
+        && once_wf_spec(&next)
+        && next.phase == 2
+        && next.generation == state.generation,
+    OnceComplete64::OnceCompleteRejected64 { state: next, token: returned } =>
+      (state.phase != 1 || token != state.generation)
+        && once_wf_spec(&next)
+        && next.phase == state.phase
+        && next.generation == state.generation
+        && returned == token,
+  }
+  fx pure
+{
+  if state.phase == 1 && token == state.generation {
+    OnceComplete64::OnceCompleted64 {
+      state: OnceState64 {
+        phase: 2,
+        generation: state.generation,
+      },
+    }
+  } else {
+    OnceComplete64::OnceCompleteRejected64 {
+      state: state,
+      token: token,
+    }
+  }
+}
+
+fn once_poison(state: OnceState64, token: u64) -> OncePoison64
+  req once_wf_spec(&state)
+  ens match result {
+    OncePoison64::OncePoisoned64 { state: next } =>
+      state.phase == 1
+        && token == state.generation
+        && once_wf_spec(&next)
+        && next.phase == 3
+        && next.generation == state.generation,
+    OncePoison64::OncePoisonRejected64 { state: next, token: returned } =>
+      (state.phase != 1 || token != state.generation)
+        && once_wf_spec(&next)
+        && next.phase == state.phase
+        && next.generation == state.generation
+        && returned == token,
+  }
+  fx pure
+{
+  if state.phase == 1 && token == state.generation {
+    OncePoison64::OncePoisoned64 {
+      state: OnceState64 {
+        phase: 3,
+        generation: state.generation,
+      },
+    }
+  } else {
+    OncePoison64::OncePoisonRejected64 {
+      state: state,
+      token: token,
+    }
+  }
+}
+
+fn once_is_complete(state: &OnceState64) -> bool
+  req once_wf_spec(state)
+  ens result == (state.phase == 2)
+  fx pure
+{
+  state.phase == 2
+}
+
+fn once_finish_after_start(state: OnceState64, token: u64) -> bool
+  req once_wf_spec(&state)
+    && state.phase == 1
+    && token == state.generation
+  ens result
+  fx pure
+{
+  match once_begin(state) {
+    OnceBegin64::OnceStarted64 { state: _, token: _ } => false,
+    OnceBegin64::OnceBusy64 { state: busy } =>
+      match once_complete(busy, token) {
+        OnceComplete64::OnceCompleted64 { state: complete } =>
+          once_is_complete(&complete),
+        OnceComplete64::OnceCompleteRejected64 { state: _, token: _ } => false,
+      },
+    OnceBegin64::OnceAlreadyComplete64 { state: _ } => false,
+    OnceBegin64::OnceAlreadyPoisoned64 { state: _ } => false,
+    OnceBegin64::OnceGenerationExhausted64 { state: _ } => false,
+  }
+}
+
+fn once_single_winner_probe() -> bool
+  req true
+  ens result
+  fx pure
+{
+  let empty: OnceState64 = once_empty();
+  match once_begin(empty) {
+    OnceBegin64::OnceStarted64 { state, token } =>
+      once_finish_after_start(state, token),
+    OnceBegin64::OnceBusy64 { state: _ } => false,
+    OnceBegin64::OnceAlreadyComplete64 { state: _ } => false,
+    OnceBegin64::OnceAlreadyPoisoned64 { state: _ } => false,
+    OnceBegin64::OnceGenerationExhausted64 { state: _ } => false,
+  }
+}
+
+fn once_stale_token_after_start(state: OnceState64, token: u64) -> bool
+  req once_wf_spec(&state)
+    && state.phase == 1
+    && token == state.generation
+    && token > 0
+  ens result
+  fx pure
+{
+  match once_complete(state, token - 1) {
+    OnceComplete64::OnceCompleted64 { state: _ } => false,
+    OnceComplete64::OnceCompleteRejected64 { state: running, token: returned } =>
+      returned == token - 1
+        && match once_complete(running, token) {
+          OnceComplete64::OnceCompleted64 { state: complete } =>
+            once_is_complete(&complete),
+          OnceComplete64::OnceCompleteRejected64 { state: _, token: _ } => false,
+        },
+  }
+}
+
+fn once_stale_token_probe() -> bool
+  req true
+  ens result
+  fx pure
+{
+  let empty: OnceState64 = once_empty();
+  match once_begin(empty) {
+    OnceBegin64::OnceStarted64 { state, token } =>
+      once_stale_token_after_start(state, token),
+    OnceBegin64::OnceBusy64 { state: _ } => false,
+    OnceBegin64::OnceAlreadyComplete64 { state: _ } => false,
+    OnceBegin64::OnceAlreadyPoisoned64 { state: _ } => false,
+    OnceBegin64::OnceGenerationExhausted64 { state: _ } => false,
+  }
+}
+
+fn once_poison_after_start(state: OnceState64, token: u64) -> bool
+  req once_wf_spec(&state)
+    && state.phase == 1
+    && token == state.generation
+  ens result
+  fx pure
+{
+  match once_poison(state, token) {
+    OncePoison64::OncePoisoned64 { state: poisoned } =>
+      match once_begin(poisoned) {
+        OnceBegin64::OnceStarted64 { state: _, token: _ } => false,
+        OnceBegin64::OnceBusy64 { state: _ } => false,
+        OnceBegin64::OnceAlreadyComplete64 { state: _ } => false,
+        OnceBegin64::OnceAlreadyPoisoned64 { state } =>
+          state.phase == 3,
+        OnceBegin64::OnceGenerationExhausted64 { state: _ } => false,
+      },
+    OncePoison64::OncePoisonRejected64 { state: _, token: _ } => false,
+  }
+}
+
+fn once_poison_probe() -> bool
+  req true
+  ens result
+  fx pure
+{
+  let empty: OnceState64 = once_empty();
+  match once_begin(empty) {
+    OnceBegin64::OnceStarted64 { state, token } =>
+      once_poison_after_start(state, token),
+    OnceBegin64::OnceBusy64 { state: _ } => false,
+    OnceBegin64::OnceAlreadyComplete64 { state: _ } => false,
+    OnceBegin64::OnceAlreadyPoisoned64 { state: _ } => false,
+    OnceBegin64::OnceGenerationExhausted64 { state: _ } => false,
+  }
+}
+
+fn once_exhaustion_probe() -> bool
+  req true
+  ens result
+  fx pure
+{
+  let exhausted: OnceState64 = OnceState64 {
+    phase: 0,
+    generation: u64::MAX,
+  };
+  match once_begin(exhausted) {
+    OnceBegin64::OnceStarted64 { state: _, token: _ } => false,
+    OnceBegin64::OnceBusy64 { state: _ } => false,
+    OnceBegin64::OnceAlreadyComplete64 { state: _ } => false,
+    OnceBegin64::OnceAlreadyPoisoned64 { state: _ } => false,
+    OnceBegin64::OnceGenerationExhausted64 { state } =>
+      state.phase == 0 && state.generation == u64::MAX,
+  }
+}

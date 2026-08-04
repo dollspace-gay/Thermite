@@ -2,10 +2,28 @@
   "schema": "thermite.package.v1",
   "name": "thermite_synchronization_primitives",
   "roots": [
+    "once",
+    "refcount",
+    "seqlock",
     "ticket_lock",
     "wait"
   ],
   "modules": [
+    {
+      "name": "once",
+      "path": "synchronization/once.th",
+      "imports": []
+    },
+    {
+      "name": "refcount",
+      "path": "synchronization/refcount.th",
+      "imports": []
+    },
+    {
+      "name": "seqlock",
+      "path": "synchronization/seqlock.th",
+      "imports": []
+    },
     {
       "name": "ticket_lock",
       "path": "synchronization/ticket_lock.th",

@@ -1518,6 +1518,24 @@ reference = []
 conformance_ops = ["ticket-lock-fifo", "ticket-lock-stale", "ticket-lock-exhaustion"]
 
 [[route]]
+crate_pattern = "stdlib/kernel-primitives/synchronization/once.th"
+design = ".design/build/synchronization-primitives.md"
+reference = []
+conformance_ops = ["once-single-winner", "once-stale-token", "once-poison", "once-exhaustion"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/synchronization/refcount.th"
+design = ".design/build/synchronization-primitives.md"
+reference = []
+conformance_ops = ["refcount-last-release", "refcount-no-resurrection", "refcount-exhaustion"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/synchronization/seqlock.th"
+design = ".design/build/synchronization-primitives.md"
+reference = []
+conformance_ops = ["seqlock-writer-epoch", "seqlock-stale-read", "seqlock-exhaustion"]
+
+[[route]]
 crate_pattern = "stdlib/kernel-primitives/synchronization/wait.th"
 design = ".design/build/synchronization-primitives.md"
 reference = []

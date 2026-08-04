@@ -1,8 +1,9 @@
-//! Primitive-only acceptance for bounded waiting and ticket-lock mechanics.
+//! Primitive-only acceptance for bounded waiting and synchronization mechanics.
 //!
 //! In-language algorithms prove at L3. The three machine-facing wait operations
 //! remain explicit L1 boundaries for a consumer platform to directly refine.
-//! No kernel scheduler, lock policy, Rust runtime, or machine body is bundled.
+//! No kernel scheduler, lock policy, protected-data policy, Rust runtime, or
+//! machine body is bundled.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -97,6 +98,9 @@ fn assert_false_claim_rejected(source: &str, name: &str, temp: &TempDir) {
 #[test]
 fn synchronization_mechanics_are_receipt_bound_and_fail_closed() {
     let wait_source = "stdlib/kernel-primitives/synchronization/wait.th";
+    let once_source = "stdlib/kernel-primitives/synchronization/once.th";
+    let refcount_source = "stdlib/kernel-primitives/synchronization/refcount.th";
+    let seqlock_source = "stdlib/kernel-primitives/synchronization/seqlock.th";
     let ticket_source = "stdlib/kernel-primitives/synchronization/ticket_lock.th";
     let temp = TempDir::new("package");
 
@@ -169,6 +173,66 @@ fn synchronization_mechanics_are_receipt_bound_and_fail_closed() {
     }
     assert_eq!(mutation_total(&ticket_rows), (41, 43));
 
+    let once_rows = checked_rows(once_source);
+    assert_eq!(once_rows.len(), 18);
+    assert!(once_rows.iter().all(|row| row["level"] == "L3"));
+    assert!(once_rows.iter().all(|row| row["boundary"] == false));
+    for name in [
+        "once_begin",
+        "once_complete",
+        "once_poison",
+        "once_single_winner_probe",
+        "once_stale_token_probe",
+        "once_poison_probe",
+        "once_exhaustion_probe",
+    ] {
+        let row = once_rows
+            .iter()
+            .find(|row| row["item"] == name)
+            .unwrap_or_else(|| panic!("missing once certificate `{name}`"));
+        assert_ne!(row["contract_quality"]["mutants_killed"], "0/0");
+    }
+    assert_eq!(mutation_total(&once_rows), (65, 68));
+
+    let refcount_rows = checked_rows(refcount_source);
+    assert_eq!(refcount_rows.len(), 11);
+    assert!(refcount_rows.iter().all(|row| row["level"] == "L3"));
+    assert!(refcount_rows.iter().all(|row| row["boundary"] == false));
+    for name in [
+        "refcount_acquire",
+        "refcount_release",
+        "refcount_lifecycle_probe",
+        "refcount_exhaustion_probe",
+    ] {
+        let row = refcount_rows
+            .iter()
+            .find(|row| row["item"] == name)
+            .unwrap_or_else(|| panic!("missing refcount certificate `{name}`"));
+        assert_ne!(row["contract_quality"]["mutants_killed"], "0/0");
+    }
+    assert_eq!(mutation_total(&refcount_rows), (32, 34));
+
+    let seqlock_rows = checked_rows(seqlock_source);
+    assert_eq!(seqlock_rows.len(), 18);
+    assert!(seqlock_rows.iter().all(|row| row["level"] == "L3"));
+    assert!(seqlock_rows.iter().all(|row| row["boundary"] == false));
+    for name in [
+        "seqlock_begin_write",
+        "seqlock_finish_write",
+        "seqlock_read_begin",
+        "seqlock_read_validate",
+        "seqlock_stale_read_probe",
+        "seqlock_begin_exhaustion_probe",
+        "seqlock_finish_exhaustion_probe",
+    ] {
+        let row = seqlock_rows
+            .iter()
+            .find(|row| row["item"] == name)
+            .unwrap_or_else(|| panic!("missing seqlock certificate `{name}`"));
+        assert_ne!(row["contract_quality"]["mutants_killed"], "0/0");
+    }
+    assert_eq!(mutation_total(&seqlock_rows), (49, 52));
+
     let mut false_wait = fs::read_to_string(root().join(wait_source)).unwrap();
     false_wait.push_str(
         r#"
@@ -213,6 +277,67 @@ fn ticket_lock_false_lifo_claim() -> bool
     );
     assert_false_claim_rejected(&false_ticket, "ticket_lock_false_lifo_claim", &temp);
 
+    let mut false_once = fs::read_to_string(root().join(once_source)).unwrap();
+    false_once.push_str(
+        r#"
+fn once_false_second_winner_claim() -> bool
+  req true
+  ens result
+  fx pure
+{
+  let running: OnceState64 = OnceState64 {
+    phase: 1,
+    generation: 1,
+  };
+  match once_begin(running) {
+    OnceBegin64::OnceStarted64 { state: _, token: _ } => true,
+    OnceBegin64::OnceBusy64 { state: _ } => false,
+    OnceBegin64::OnceAlreadyComplete64 { state: _ } => false,
+    OnceBegin64::OnceAlreadyPoisoned64 { state: _ } => false,
+    OnceBegin64::OnceGenerationExhausted64 { state: _ } => false,
+  }
+}
+"#,
+    );
+    assert_false_claim_rejected(&false_once, "once_false_second_winner_claim", &temp);
+
+    let mut false_refcount = fs::read_to_string(root().join(refcount_source)).unwrap();
+    false_refcount.push_str(
+        r#"
+fn refcount_false_resurrection_claim() -> bool
+  req true
+  ens result
+  fx pure
+{
+  let retired: RefCountState64 = RefCountState64 {
+    count: 0,
+    retired: true,
+  };
+  match refcount_acquire(retired) {
+    RefCountAcquire64::RefCountAcquired64 { state: _ } => true,
+    RefCountAcquire64::RefCountRetired64 { state: _ } => false,
+    RefCountAcquire64::RefCountExhausted64 { state: _ } => false,
+  }
+}
+"#,
+    );
+    assert_false_claim_rejected(&false_refcount, "refcount_false_resurrection_claim", &temp);
+
+    let mut false_seqlock = fs::read_to_string(root().join(seqlock_source)).unwrap();
+    false_seqlock.push_str(
+        r#"
+fn seqlock_false_stale_read_claim() -> bool
+  req true
+  ens result
+  fx pure
+{
+  let advanced: SeqLockState64 = seqlock_from_even(2);
+  seqlock_read_validate(&advanced, 0)
+}
+"#,
+    );
+    assert_false_claim_rejected(&false_seqlock, "seqlock_false_stale_read_claim", &temp);
+
     let bundle = temp.0.join("synchronization.verified");
     let bundle_s = bundle.to_string_lossy().to_string();
     assert_success(&forge(&[
@@ -233,6 +358,9 @@ fn ticket_lock_false_lifo_claim() -> bool
     for relative in [
         "evidence/thermite-package/manifest.json",
         "evidence/thermite-package/source-map.json",
+        "evidence/thermite-package/source/synchronization/once.th",
+        "evidence/thermite-package/source/synchronization/refcount.th",
+        "evidence/thermite-package/source/synchronization/seqlock.th",
         "evidence/thermite-package/source/synchronization/ticket_lock.th",
         "evidence/thermite-package/source/synchronization/wait.th",
     ] {

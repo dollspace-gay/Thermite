@@ -462,7 +462,9 @@ fn is_verified_builtin(name: &str, variants: &BTreeSet<String>) -> bool {
         || variants.contains(name)
         || matches!(
             name,
-            "Some"
+            "old"
+                | "final"
+                | "Some"
                 | "None"
                 | "Ok"
                 | "Err"
@@ -1079,6 +1081,28 @@ fn h(x: u32) -> u32 req x < 100 ens result == x fx pure { g(x) }";
         assert!(matches!(
             verified_closure(&indirect, &["root".to_string()]),
             Err(VerifiedClosureError::IndirectCall { .. })
+        ));
+    }
+
+    #[test]
+    fn verified_closure_accepts_only_the_frozen_state_view_calls() {
+        let program = parse(
+            "fn write(data: &mut [u64], at: usize, value: u64) -> u64 \
+             req at < data.len() ens final(data)[at] == value \
+             fx platform(memory) { data[at] = value; value }",
+        );
+        let closure = verified_closure(&program, &["write".to_string()]).unwrap();
+        assert_eq!(closure.functions, BTreeSet::from(["write".to_string()]));
+        assert!(closure.edges.is_empty());
+
+        let misspelled = parse(
+            "fn write(data: &mut [u64], at: usize, value: u64) -> u64 \
+             req at < data.len() ens finale(data)[at] == value \
+             fx platform(memory) { data[at] = value; value }",
+        );
+        assert!(matches!(
+            verified_closure(&misspelled, &["write".to_string()]),
+            Err(VerifiedClosureError::UnresolvedCall { callee, .. }) if callee == "finale"
         ));
     }
 }

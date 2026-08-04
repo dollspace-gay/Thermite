@@ -98,3 +98,41 @@ fn parses_mutable_byte_slice_write_and_final_state_contract() {
     );
     assert_eq!(function.contract.ens.len(), 2);
 }
+
+#[test]
+fn distinguishes_borrowed_fixed_arrays_from_slices_of_arrays() {
+    let parsed = parse(
+        "fn storage_refs(array: &mut [u64; 4], rows: &mut [[u64; 2]]) -> u64\n\
+         req true ens result == 0 fx platform(memory) { 0 }\n",
+    );
+    assert!(parsed.is_clean(), "borrowed storage: {:?}", parsed.errors);
+    let Item::Fn(function) = &parsed.program.items[0] else {
+        panic!("expected storage_refs function");
+    };
+    assert_eq!(
+        function.params[0].ty,
+        Type::Ref {
+            mutable: true,
+            inner: Box::new(Type::Array {
+                elem: Box::new(Type::Prim(PrimType::U64)),
+                len: thermite_syntax::ArrayLen::Literal {
+                    value: 4,
+                    raw: "4".to_string(),
+                },
+            }),
+        }
+    );
+    assert_eq!(
+        function.params[1].ty,
+        Type::Ref {
+            mutable: true,
+            inner: Box::new(Type::Slice(Box::new(Type::Array {
+                elem: Box::new(Type::Prim(PrimType::U64)),
+                len: thermite_syntax::ArrayLen::Literal {
+                    value: 2,
+                    raw: "2".to_string(),
+                },
+            }))),
+        }
+    );
+}

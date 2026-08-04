@@ -19,16 +19,23 @@ governs:
   - thermite-lower/tests/kernel_mutable_slice.rs
   - thermite-lower/tests/effects_verified.rs
   - thermite-verified/src/lib.rs
+  - thermite-tv/src/exec_stmt_encode.rs
+  - thermite-tv/src/obligation.rs
+  - thermite-tv/tests/fixed_array_tv.rs
   - lean/Thermite/Ast.lean
   - lean/Thermite/Denote.lean
   - lean/Thermite/RefEncode.lean
   - forge/src/build.rs
+  - forge/src/body_tv.rs
+  - forge/src/contract_tv.rs
+  - forge/src/exec_tv.rs
   - forge/src/verified_build.rs
   - forge/src/verified_build/composition.rs
   - forge/src/thermite_package.rs
   - forge/tests/verified_build.rs
   - conformance/kernel_primitives.th
-audited-content-sha256: cc033ceb3e9ab60fa3753b31eae05aafddea88d953ba1d3785fc8207245cc2e9
+  - conformance/verified-build/aggregate_storage.th
+audited-content-sha256: 3aa33a5b7cfecc83717ede2cc75fdefd1096ea2891ae00c72a9b6d6b67fd6217
 extends:
   - .design/build/kernel-target.md
   - .design/build/l3-rich-composition.md
@@ -117,16 +124,19 @@ The kernel profile needs:
   exposed only through sealed ownership.
 
 The current implementation has the integer widths, core ADTs/control flow,
-sealed structs, mutable byte-slice assignment, a `final(slice)` proof view, and
-the first-class fixed-array syntax, validation, native L3/L2/L1 lowering, and
-independent exact initialization/read/indexed-write/length translation validation
-described below. The strict L3 fixture binds and replays those proof rows.
+sealed structs, mutable borrowed-slice and borrowed-array assignment (including
+slices whose elements are nested primitive arrays), exact `old(...)`/`final(...)`
+content views, and the first-class fixed-array syntax, validation, native
+L3/L2/L1 lowering, and independent exact initialization/read/indexed-write/length
+translation validation described below. The strict L3 fixtures bind and replay
+those contract, executable-guard, body-state, and wrapper proof rows, and record
+shared/exclusive borrow ownership in the public ABI receipt.
 Repeat initialization rejects non-copy element types before lowering.
 `.array_eq(other)` now provides allocation-free extensional equality for every
 primitive-scalar array through a const-generic scan whose exact generated body is
 verified by Verus and independently translation-validated. Static ownership,
-aggregate-borrow framing, aggregate-element equality, and the allocation-free
-collection library remain.
+borrows of general named aggregates, aggregate-element equality, and the
+allocation-free collection library remain.
 
 #### Fixed-array surface lock
 
@@ -173,7 +183,12 @@ finite sequence view with length `N`; indexed assignment proves an exact update
 and preservation of every other index. `old(...)` and `final(...)` retain their
 existing state-transition meaning for mutable array borrows. Independent
 translation validation compares initialization, reads, writes, equality, and
-the finite view; changing a capacity, index, or assigned value must be detected.
+the finite view; changing a capacity, index, assigned value, or pre/post-state
+selection must be detected. Contract TV reifies `old(...)` and `final(...)` as
+independent symbolic snapshots, so postconditions are checked over arbitrary
+transitions instead of a synthetic no-op state. Body TV observes the complete
+final sequence and proves the exact chained update, including every unchanged
+index.
 
 ### Modules, packages, and receipts
 
@@ -374,7 +389,7 @@ Source: `.design/reqs/registry.toml`
 |---|---|---|---|---|
 | REQ-KPRIM-1 | shipped | `.design/build/kernel-primitives.md` | Kernel scalar and effect surface |  |
 | REQ-KPRIM-10 | not_started | `.design/build/kernel-primitives.md` | Primitive-only adversarial suite | Add package, fixed-storage, atomic, waiting, registry, refinement, receipt-tamper, freestanding-consumer, and no-concrete-kernel gates. |
-| REQ-KPRIM-2 | partial | `.design/build/kernel-primitives.md` | Exact mutable and fixed storage | Mutable byte-slice assignment with final(slice), native fixed arrays, copy-safe repetition, primitive-scalar extensional equality, and exact initialization/read/indexed-write/length/equality TV are shipped. Add static storage, aggregate borrows and final views, aggregate-element equality, and verified fixed-capacity vector/map/bitmap/ring libraries. |
+| REQ-KPRIM-2 | partial | `.design/build/kernel-primitives.md` | Exact mutable and fixed storage | Mutable borrowed slices/arrays (including nested primitive-array elements), arbitrary old/final snapshot framing, native fixed arrays, copy-safe repetition, primitive-scalar extensional equality, strict public-borrow ABI receipts, and exact initialization/read/indexed-write/length/equality TV are shipped. Add static storage, general named-aggregate borrows, aggregate-element equality, and verified fixed-capacity vector/map/bitmap/ring libraries. |
 | REQ-KPRIM-3 | partial | `.design/build/kernel-primitives.md` | Receipt-bound packages and modules | Independent parsing, module-local identity, direct-import/root-export enforcement, rooted graph validation, source allowlisting, L3 build/composition, complete receipt binding, validation, and replay are shipped. Extend the remaining source-oriented Forge commands (check, audit, TV, goal/edit/fill) to operate on packages without losing module-local diagnostics. |
 | REQ-KPRIM-4 | partial | `.design/build/kernel-primitives.md` | Sealed authority and ownership | The sealed-construction barrier is shipped. Add affine-style consumption or a verified generation discipline that rejects stale copies, double release, and rights escalation. |
 | REQ-KPRIM-5 | not_started | `.design/build/kernel-primitives.md` | Sealed atomics and ordering model | Add the Thermite surface, legality validation, happens-before model, direct-refinement interface, and adversarial tests without adding a kernel implementation. |

@@ -391,6 +391,65 @@ fn fixed_array_logic_is_compiled_and_bound_by_all_strict_l3_gates() {
 }
 
 #[test]
+fn aggregate_mutable_storage_is_exported_replayed_and_exactly_validated() {
+    let temp = TempDir::new("aggregate-storage");
+    let bundle = temp.0.join("aggregate-storage.verified");
+    let bundle_s = bundle.to_string_lossy().to_string();
+    assert_success(&forge(&[
+        "build",
+        "conformance/verified-build/aggregate_storage.th",
+        "--level",
+        "l3",
+        "--export",
+        "write_row",
+        "--crate-name",
+        "aggregate_storage",
+        "--out",
+        &bundle_s,
+        "--json",
+    ]));
+    assert_success(&forge(&["verify-build", &bundle_s, "--replay", "--json"]));
+
+    let source = fs::read_to_string(bundle.join("evidence/source.verus.rs")).unwrap();
+    assert!(source.contains("data: &mut [[u64; 2]]"), "{source}");
+    assert!(source.contains("data[at] = [value, value];"), "{source}");
+    assert!(
+        source.contains("final(data)@[at as int]@[0 as int] == value"),
+        "{source}"
+    );
+
+    let receipt: serde_json::Value =
+        serde_json::from_slice(&fs::read(bundle.join("receipt.json")).unwrap()).unwrap();
+    let export = &receipt["binding"]["exports"][0];
+    assert_eq!(
+        export["parameter_types"],
+        serde_json::json!(["&mut [[u64;2]]", "usize", "u64"])
+    );
+    assert_eq!(
+        export["ownership"],
+        serde_json::json!(["exclusive_borrow", "by_value", "by_value"])
+    );
+
+    let tv: serde_json::Value = serde_json::from_slice(
+        &fs::read(bundle.join("evidence/translation-validation.json")).unwrap(),
+    )
+    .unwrap();
+    let rows = tv["rows"].as_array().unwrap();
+    assert!(rows.iter().any(|row| {
+        row["phase"] == "contract"
+            && row["label"] == "write_row.ens#2"
+            && row["verdict"] == "faithful"
+    }));
+    assert!(rows.iter().any(|row| {
+        row["phase"] == "body" && row["label"] == "write_row" && row["verdict"] == "faithful"
+    }));
+    assert!(
+        rows.iter().all(|row| row["verdict"] == "faithful"),
+        "every mutable-storage contract/expression/body/wrapper row must be faithful: {tv}"
+    );
+}
+
+#[test]
 fn total_wrapper_returns_ok_or_precondition_without_calling_invalid_body() {
     let temp = TempDir::new("wrapper");
     let bundle = temp.0.join("wrapper.verified");

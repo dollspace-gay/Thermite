@@ -48,7 +48,9 @@ use std::process::Command;
 
 use thermite_syntax::ast::{Clause, Expr, FnItem, Item, PrimType, Stmt, Type};
 
-use thermite_tv::obligation::{equivalence_obligation, ObligationFrame, ParamDecl};
+use thermite_tv::obligation::{
+    equivalence_obligation, ObligationFrame, ParamDecl, StateViewDecl, StateViewKind,
+};
 
 use crate::check::{unique_scratch_dir, ScratchDir, DEFAULT_RLIMIT, DEFAULT_SOLVER_SEED};
 use crate::cli::ForgeError;
@@ -479,10 +481,24 @@ fn tv_clause(
         }
     };
 
-    // The frame for this clause: the signature params + any `old(_)` params it uses.
+    // The frame for this clause: the signature params plus arbitrary snapshot
+    // values for every `old(param)` / `final(param)` state view. The snapshot
+    // values make pre/post states independent in the pure equivalence proof.
     let mut frame = base_frame.clone();
-    for (name, ty_str) in old_params(&clause.expr, f) {
-        frame.params.push(ParamDecl::new(name, ty_str));
+    for snapshot in state_view_params(&clause.expr, f) {
+        if snapshot.decl.sequence_view {
+            frame.seq_params.push(snapshot.decl.binding_name.clone());
+        }
+        if snapshot.fixed_array {
+            frame
+                .fixed_array_params
+                .push(snapshot.decl.binding_name.clone());
+        }
+        frame.params.push(ParamDecl::new(
+            snapshot.decl.binding_name.clone(),
+            snapshot.type_str,
+        ));
+        frame.state_views.push(snapshot.decl);
     }
 
     // Build the obligation (the reference encoding is computed inside, independent
@@ -615,6 +631,7 @@ fn generated_frame(preamble: &[String]) -> ObligationFrame {
         string_params: vec!["t".to_string()],
         map_params: vec![],
         fixed_array_params: vec![],
+        state_views: vec![],
     }
 }
 
@@ -858,6 +875,7 @@ fn signature_frame(f: &FnItem, preamble: &[String]) -> Option<ObligationFrame> {
         string_params,
         map_params,
         fixed_array_params,
+        state_views: vec![],
     })
 }
 
@@ -1026,14 +1044,7 @@ fn spec_type_of(ty: &Type) -> Option<SpecType> {
 /// The Verus element spelling for a `Seq` element type (only the bounded prims —
 /// a nested slice/struct element is unframed).
 fn elem_spelling(ty: &Type) -> Option<String> {
-    match ty {
-        Type::Prim(PrimType::U8) => Some("u8".to_string()),
-        Type::Prim(PrimType::U16) => Some("u16".to_string()),
-        Type::Prim(PrimType::U32) => Some("u32".to_string()),
-        Type::Prim(PrimType::U64) => Some("u64".to_string()),
-        Type::Prim(PrimType::Usize) => Some("usize".to_string()),
-        _ => None,
-    }
+    verus_type_spelling(ty)
 }
 
 /// The full Verus spelling of a framable inner type for an `Option`/`Result`/`Map`
@@ -1090,60 +1101,187 @@ fn nat_fn_names(_f: &FnItem) -> Vec<&'static str> {
     vec!["spec_sum", "count_where"]
 }
 
-/// The `old(<name>)` references in a clause, paired with the matching fn param's
-/// Verus-spec type (REQ-2 — `old(acc)` is bound as a distinct `old_acc` param).
-/// v0.1 corpus ensures are over `result` + params (no `old(_)`), so this is
-/// typically empty; it is here so a clause that does use `old(_)` frames correctly.
-fn old_params(expr: &Expr, f: &FnItem) -> Vec<(String, String)> {
+#[derive(Debug)]
+struct StateSnapshotParam {
+    decl: StateViewDecl,
+    type_str: String,
+    fixed_array: bool,
+}
+
+/// Reify every source `old(param)` / `final(param)` as an independent symbolic
+/// value in the contract-TV proof. For borrowed slices the symbol is the `Seq`
+/// view; fixed arrays remain native finite arrays.
+fn state_view_params(expr: &Expr, f: &FnItem) -> Vec<StateSnapshotParam> {
     let mut found = Vec::new();
-    collect_old(expr, f, &mut found);
+    collect_state_views(expr, f, &mut found);
     found
 }
 
-fn collect_old(expr: &Expr, f: &FnItem, out: &mut Vec<(String, String)>) {
+fn collect_state_views(expr: &Expr, f: &FnItem, out: &mut Vec<StateSnapshotParam>) {
     match expr {
         Expr::Call { callee, args } => {
             if let Expr::Path(segs) = callee.as_ref() {
-                if segs.len() == 1 && segs[0] == "old" {
+                if segs.len() == 1 && matches!(segs[0].as_str(), "old" | "final") {
                     if let [Expr::Path(inner)] = args.as_slice() {
                         if inner.len() == 1 {
-                            let name = format!("old_{}", inner[0]);
-                            let ty = f
+                            let source_name = inner[0].clone();
+                            let Some(spec_ty) = f
                                 .params
                                 .iter()
-                                .find(|p| p.name == inner[0])
+                                .find(|p| p.name == source_name)
                                 .and_then(|p| spec_type_of(&p.ty))
-                                .map(|t| t.verus_spelling())
-                                .unwrap_or_else(|| "u64".to_string());
-                            if !out.iter().any(|(n, _)| n == &name) {
-                                out.push((name, ty));
+                            else {
+                                return;
+                            };
+                            let kind = if segs[0] == "old" {
+                                StateViewKind::Old
+                            } else {
+                                StateViewKind::Final
+                            };
+                            let prefix = if kind == StateViewKind::Old {
+                                "old"
+                            } else {
+                                "final"
+                            };
+                            let mut binding_name = format!("{prefix}_{source_name}");
+                            while binding_name == "result"
+                                || f.params.iter().any(|param| param.name == binding_name)
+                                || out
+                                    .iter()
+                                    .any(|snapshot| snapshot.decl.binding_name == binding_name)
+                            {
+                                binding_name.push('_');
+                            }
+                            if !out.iter().any(|snapshot| {
+                                snapshot.decl.kind == kind
+                                    && snapshot.decl.source_name == source_name
+                            }) {
+                                out.push(StateSnapshotParam {
+                                    decl: StateViewDecl::new(
+                                        kind,
+                                        source_name,
+                                        binding_name,
+                                        matches!(spec_ty, SpecType::Seq(_)),
+                                    ),
+                                    type_str: spec_ty.verus_spelling(),
+                                    fixed_array: matches!(spec_ty, SpecType::Array(_, _)),
+                                });
                             }
                             return;
                         }
                     }
                 }
             }
-            collect_old(callee, f, out);
+            collect_state_views(callee, f, out);
             for a in args {
-                collect_old(a, f, out);
+                collect_state_views(a, f, out);
             }
         }
         Expr::Binary { lhs, rhs, .. } => {
-            collect_old(lhs, f, out);
-            collect_old(rhs, f, out);
+            collect_state_views(lhs, f, out);
+            collect_state_views(rhs, f, out);
         }
-        Expr::Unary { expr, .. } => collect_old(expr, f, out),
-        Expr::MethodCall { receiver, args, .. } => {
-            collect_old(receiver, f, out);
-            for a in args {
-                collect_old(a, f, out);
+        Expr::Unary { expr, .. }
+        | Expr::Cast { expr, .. }
+        | Expr::Ref { expr, .. }
+        | Expr::Deref(expr)
+        | Expr::TupleProj { receiver: expr, .. } => collect_state_views(expr, f, out),
+        Expr::Array(items) | Expr::Tuple(items) => {
+            for item in items {
+                collect_state_views(item, f, out);
             }
         }
-        Expr::Field { receiver, .. } => collect_old(receiver, f, out),
-        Expr::Index { base, .. } => collect_old(base, f, out),
-        Expr::Cast { expr, .. } => collect_old(expr, f, out),
-        Expr::Closure { body, .. } => collect_old(body, f, out),
-        _ => {}
+        Expr::ArrayRepeat { value, .. } => collect_state_views(value, f, out),
+        Expr::MethodCall { receiver, args, .. } => {
+            collect_state_views(receiver, f, out);
+            for a in args {
+                collect_state_views(a, f, out);
+            }
+        }
+        Expr::Field { receiver, .. } => collect_state_views(receiver, f, out),
+        Expr::Index { base, index } => {
+            collect_state_views(base, f, out);
+            match index {
+                thermite_syntax::ast::IndexArg::Single(index)
+                | thermite_syntax::ast::IndexArg::RangeTo(index)
+                | thermite_syntax::ast::IndexArg::RangeFrom(index) => {
+                    collect_state_views(index, f, out)
+                }
+                thermite_syntax::ast::IndexArg::Range(start, end) => {
+                    collect_state_views(start, f, out);
+                    collect_state_views(end, f, out);
+                }
+            }
+        }
+        Expr::Closure { body, .. } => collect_state_views(body, f, out),
+        Expr::Match { scrutinee, arms } => {
+            collect_state_views(scrutinee, f, out);
+            for arm in arms {
+                if let Some(guard) = &arm.guard {
+                    collect_state_views(guard, f, out);
+                }
+                collect_state_views(&arm.body, f, out);
+            }
+        }
+        Expr::If { cond, then, else_ } => {
+            collect_state_views(cond, f, out);
+            collect_state_views_block(then, f, out);
+            collect_state_views_block(else_, f, out);
+        }
+        Expr::StructLit { fields, .. } => {
+            for (_, value) in fields {
+                collect_state_views(value, f, out);
+            }
+        }
+        Expr::Is { scrutinee, .. } => collect_state_views(scrutinee, f, out),
+        Expr::Quantifier { domain, body, .. } => {
+            collect_state_views(domain, f, out);
+            collect_state_views(body, f, out);
+        }
+        Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::StrLit(_) | Expr::Path(_) => {}
+    }
+}
+
+fn collect_state_views_block(
+    block: &thermite_syntax::ast::Block,
+    f: &FnItem,
+    out: &mut Vec<StateSnapshotParam>,
+) {
+    for stmt in &block.stmts {
+        match stmt {
+            Stmt::Let { init, .. } => collect_state_views(init, f, out),
+            Stmt::Assign { target, value } => {
+                collect_state_views(target, f, out);
+                collect_state_views(value, f, out);
+            }
+            Stmt::Return(value) => {
+                if let Some(value) = value {
+                    collect_state_views(value, f, out);
+                }
+            }
+            Stmt::If { cond, then, else_ } => {
+                collect_state_views(cond, f, out);
+                collect_state_views_block(then, f, out);
+                if let Some(else_) = else_ {
+                    collect_state_views_block(else_, f, out);
+                }
+            }
+            Stmt::Loop(loop_node) => {
+                if let thermite_syntax::ast::LoopKind::While(cond) = &loop_node.kind {
+                    collect_state_views(cond, f, out);
+                }
+                for invariant in &loop_node.invs {
+                    collect_state_views(&invariant.expr, f, out);
+                }
+                collect_state_views(&loop_node.dec.expr, f, out);
+                collect_state_views_block(&loop_node.body, f, out);
+            }
+            Stmt::Expr(expr) => collect_state_views(expr, f, out),
+            Stmt::Break | Stmt::Continue => {}
+        }
+    }
+    if let Some(tail) = &block.tail {
+        collect_state_views(tail, f, out);
     }
 }
 

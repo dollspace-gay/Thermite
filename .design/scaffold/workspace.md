@@ -3,7 +3,7 @@
 tier: 3-component
 status: draft
 audited-sha: 5ae0816c042debb01c70eb9b89c775837f0c0f24 (content-sha256 re-pinned 2026-06-23 for stage-3 REQ-7 (#349), the Rust→Lean obligation exporter: the change to this doc's governed lib roots is additive — `mod lean_smt_export;` in forge/src/main.rs (the SMT-tactic obligation exporter module); the workspace/crate structure is otherwise unchanged. The legacy commit pin stays at the 5ae0816c stable-main ancestor; only the active content-sha256 digest moves. prior: 2026-06-20 stage-2 REQ-4 / AC-4 (#326) `pub mod classifier;` + `mod strat_tv;`; 2026-06-17 umbrella REQ-7 / AC-12 §6 metrics dashboard `mod metrics;`; stage-1 REQ-10/AC-14 G1 gate seven-verdict test module)
-audited-content-sha256: 24c02f73a28106417bf2af2eb628e746761b717a7099a091342dfe22faa78777 (re-pinned 2026-08-03 after adding the package parser module; existing behavior remains regression-covered)
+audited-content-sha256: f3833d8967c57295df989ba69d75d9a225d273cdc8d8aa8b1ab4cffdb1f42493 (re-pinned 2026-08-03 after adding the package parser module; existing behavior remains regression-covered)
 governs:
   - Cargo.toml (virtual workspace manifest)
   - rust-toolchain.toml

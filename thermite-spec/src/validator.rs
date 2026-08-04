@@ -1198,7 +1198,7 @@ impl Validator {
             Type::Array { elem, len } => {
                 let len = self.resolve_array_len(len, span)?;
                 let inner = self.validate_type(elem, span)?;
-                let elements = len.checked_mul(inner).unwrap_or(u128::MAX);
+                let elements = len.saturating_mul(inner);
                 if elements > MAX_FIXED_ARRAY_ELEMENTS {
                     self.errors.push(SpecError::ArrayExpandedSizeTooLarge {
                         elements,

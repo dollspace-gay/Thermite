@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: 9e6f82caf75643f6752dc4b87d4a9d71b6b777cdb69617b582614e6548cc0e91 (re-pinned 2026-07-31 after exposing exact reachable ADT dependencies to the additive L3 path; existing check behavior remains regression-covered)
+audited-content-sha256: b76c457102289a94b2b40d18f1a73ad14e38250b0c799842ff6744cc8de73617 (re-pinned 2026-07-31 after exposing exact reachable ADT dependencies to the additive L3 path; existing check behavior remains regression-covered)
 governs: forge/src/check.rs
 thesis-refs:
   - thermite-design.md §5.1

@@ -220,6 +220,43 @@ fn faithful_straight_line_body_is_faithful() {
     );
 }
 
+#[test]
+fn exclusive_aggregate_storage_writes_are_faithful() {
+    if !verus_present() {
+        eprintln!(
+            "SKIP: verus not available — exclusive aggregate-storage body-TV not discharged."
+        );
+        return;
+    }
+    let src = concat!(
+        "fn write_slice(data: &mut [[u64; 2]], at: usize, value: u64) -> u64\n",
+        "  req at < data.len()\n",
+        "  ens result == value\n",
+        "  ens final(data)[at][0] == value\n",
+        "  fx platform(memory)\n",
+        "{\n",
+        "  data[at] = [value, value];\n",
+        "  value\n",
+        "}\n",
+        "fn write_array(data: &mut [u64; 4], at: usize, value: u64) -> u64\n",
+        "  req at < 4\n",
+        "  ens result == value\n",
+        "  ens final(data)[at] == value\n",
+        "  fx platform(memory)\n",
+        "{\n",
+        "  data[at] = value;\n",
+        "  value\n",
+        "}\n",
+    );
+    let file = write_th("exclusive_aggregate_storage", src);
+    let report = run_body_tv_json(&file);
+    let counts = &report["counts"];
+    assert_eq!(counts["faithful"].as_u64(), Some(2), "{report}");
+    assert_eq!(counts["divergent"].as_u64(), Some(0), "{report}");
+    assert_eq!(counts["unverifiable"].as_u64(), Some(0), "{report}");
+    assert_eq!(counts["skipped"].as_u64(), Some(0), "{report}");
+}
+
 // ---- 2. a faithful v1 while-loop body → Faithful (all three obligations) ----
 
 /// loop-tv REQ-5 (the loop arm): a faithful v1-subset `while lo < n inv lo <= n dec

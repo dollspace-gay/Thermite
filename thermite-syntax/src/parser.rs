@@ -3289,11 +3289,25 @@ impl<'a> Parser<'a> {
                 let mutable = self.eat(&TokKind::Mut);
                 if self.check(&TokKind::LBracket) {
                     self.bump();
-                    let inner = self.parse_type()?;
-                    self.consume(&TokKind::RBracket, "`]`")?;
+                    let elem = self.parse_type()?;
+                    // A borrowed bracketed type can denote either a dynamic
+                    // slice (`&[T]`) or a native fixed array (`&[T; N]`). Parse
+                    // the shared element prefix once, then discriminate on the
+                    // semicolon instead of forcing every borrow to be a slice.
+                    let inner = if self.eat(&TokKind::Semi) {
+                        let len = self.parse_array_len()?;
+                        self.consume(&TokKind::RBracket, "`]` to close the array type")?;
+                        Type::Array {
+                            elem: Box::new(elem),
+                            len,
+                        }
+                    } else {
+                        self.consume(&TokKind::RBracket, "`]` to close the slice type")?;
+                        Type::Slice(Box::new(elem))
+                    };
                     Ok(Type::Ref {
                         mutable,
-                        inner: Box::new(Type::Slice(Box::new(inner))),
+                        inner: Box::new(inner),
                     })
                 } else {
                     let inner = self.parse_type()?;

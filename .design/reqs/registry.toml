@@ -17395,14 +17395,24 @@ owner = ".design/build/kernel-primitives.md"
 status = "partial"
 scope = "verified"
 summary = "Thermite provides executable/specification mutation over slices and allocation-free fixed storage and collections."
-remaining_scope = "Mutable byte-slice assignment with final(slice) is shipped. First-class fixed arrays, static storage, mutable aggregate slices, and verified fixed-capacity vector/map/bitmap/ring libraries remain."
-contributors = [".design/build/kernel-byte-slice.md", "thermite-lower/src/lower.rs"]
+remaining_scope = "Mutable borrowed slices/arrays (including nested primitive-array elements), arbitrary old/final snapshot framing, native fixed arrays, copy-safe repetition, primitive-scalar extensional equality, strict public-borrow ABI receipts, and exact initialization/read/indexed-write/length/equality TV are shipped. Add static storage, general named-aggregate borrows, aggregate-element equality, and verified fixed-capacity vector/map/bitmap/ring libraries."
+contributors = [".design/build/kernel-byte-slice.md", "thermite-syntax/src/parser.rs", "thermite-lower/src/lower.rs", "thermite-tv/src/exec_stmt_encode.rs", "thermite-tv/src/obligation.rs", "forge/src/body_tv.rs", "forge/src/contract_tv.rs", "forge/src/verified_build.rs"]
 generated_to = ["status", "forge-kernel-primitives-status"]
 
 [[requirement.evidence]]
 kind = "test"
 target = "thermite-lower/tests/kernel_mutable_slice.rs"
 note = "Pins executable mutable byte-slice lowering and the final(slice) content view."
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-tv/tests/fixed_array_tv.rs"
+note = "Proves faithful aggregate-slice updates and arbitrary final-state contract snapshots while rejecting wrong-value, dropped-write, and current-state mutants."
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/verified_build.rs"
+note = "Builds and replays the strict L3 aggregate-storage fixture with exact contract/body/wrapper TV and exclusive-borrow ABI evidence."
 
 [[requirement]]
 id = "REQ-KPRIM-3"

@@ -131,6 +131,10 @@ pub struct BodyRefCtx {
     /// value `xs[i as int]` (delegated to [`exec_ref_value`] via the [`ExecRefCtx`]
     /// this ctx builds). Empty for the scalar-only B1-B4 bodies.
     slice_bound: BTreeSet<String>,
+    /// Slice or fixed-array parameters held through an exclusive borrow. Their
+    /// indexed writes are modeled as exact finite-sequence updates from
+    /// `old(param)@` to `final(param)@`.
+    mutable_indexed_bound: BTreeSet<String>,
     fixed_array_bound: BTreeSet<String>,
     result_is_fixed_array: bool,
 }
@@ -144,9 +148,21 @@ impl BodyRefCtx {
     {
         BodyRefCtx {
             slice_bound: names.into_iter().map(Into::into).collect(),
+            mutable_indexed_bound: BTreeSet::new(),
             fixed_array_bound: BTreeSet::new(),
             result_is_fixed_array: false,
         }
+    }
+
+    /// Add the exclusive slice/fixed-array borrows whose indexed writes are part
+    /// of the observable body state.
+    pub fn with_mutable_indexed_bound<I, S>(mut self, names: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.mutable_indexed_bound = names.into_iter().map(Into::into).collect();
+        self
     }
 
     /// Add native fixed-array inputs to the body frame.
@@ -171,6 +187,10 @@ impl BodyRefCtx {
     fn exec_ref_ctx(&self) -> ExecRefCtx {
         ExecRefCtx::with_slice_bound(self.slice_bound.iter().cloned())
             .with_fixed_array_bound(self.fixed_array_bound.iter().cloned())
+    }
+
+    fn is_mutable_indexed_bound(&self, name: &str) -> bool {
+        self.mutable_indexed_bound.contains(name)
     }
 }
 
@@ -257,6 +277,7 @@ pub fn body_ref_state_ensures(
     result_name: &str,
     ctx: &BodyRefCtx,
 ) -> Result<String, RefEncodeError> {
+    let mut conjuncts = Vec::new();
     // A multi-cell body is one whose tail is a tuple (the final state spans cells).
     // Each cell is encoded under the body's final env (the same threading), then
     // compared to the matching `result.<i>` projection at the bounded type.
@@ -264,25 +285,275 @@ pub fn body_ref_state_ensures(
         if let Expr::Tuple(elems) = tail.as_ref() {
             let mut env: Env = Env::new();
             for stmt in &block.stmts {
-                thread_stmt(stmt, &mut env)?;
+                thread_stmt(stmt, &mut env, ctx)?;
             }
-            let conjuncts = elems
-                .iter()
-                .enumerate()
-                .map(|(i, e)| {
-                    let cell = encode_value(e, &env, ctx)?;
-                    Ok(format!("{result_name}.{i} == {cell}"))
-                })
-                .collect::<Result<Vec<_>, RefEncodeError>>()?;
-            return Ok(conjuncts.join(" && "));
+            conjuncts.extend(
+                elems
+                    .iter()
+                    .enumerate()
+                    .map(|(i, e)| {
+                        let cell = encode_value(e, &env, ctx)?;
+                        Ok(format!("{result_name}.{i} == {cell}"))
+                    })
+                    .collect::<Result<Vec<_>, RefEncodeError>>()?,
+            );
         }
     }
-    // The single-cell (scalar / bool / if-tail) body: the plain scalar equality.
-    let reference = body_ref_state(block, ctx)?;
-    if ctx.result_is_fixed_array {
-        return Ok(format!("{result_name}@ == ({reference})@"));
+    if conjuncts.is_empty() {
+        // The single-cell (scalar / bool / if-tail) body: the plain scalar equality.
+        let reference = body_ref_state(block, ctx)?;
+        if ctx.result_is_fixed_array {
+            conjuncts.push(format!("{result_name}@ == ({reference})@"));
+        } else {
+            conjuncts.push(format!("{result_name} == {reference}"));
+        }
     }
-    Ok(format!("{result_name} == {reference}"))
+    conjuncts.extend(indexed_write_ensures(block, ctx)?);
+    Ok(conjuncts.join(" && "))
+}
+
+/// Independently denote direct indexed writes through exclusive slice or
+/// fixed-array borrows. Each parameter begins at `old(name)@`; every source
+/// assignment appends one exact `Seq::update`, and the obligation equates that
+/// complete sequence with `final(name)@`. This observes every element, so a
+/// dropped, reordered, wrong-index, wrong-value, or collateral write diverges.
+///
+/// The first frozen effect subset is deliberately straight-line. An index or
+/// value that reads an exclusively borrowed sequence, or a write nested under
+/// control flow, is rejected rather than conflating its pre- and post-state.
+fn indexed_write_ensures(block: &Block, ctx: &BodyRefCtx) -> Result<Vec<String>, RefEncodeError> {
+    if ctx.mutable_indexed_bound.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut scalar_env = Env::new();
+    let mut states: BTreeMap<String, String> = ctx
+        .mutable_indexed_bound
+        .iter()
+        .map(|name| (name.clone(), format!("old({name})@")))
+        .collect();
+    let mut changed = BTreeSet::new();
+
+    for stmt in &block.stmts {
+        if let Stmt::Assign {
+            target:
+                Expr::Index {
+                    base,
+                    index: IndexArg::Single(index),
+                },
+            value,
+        } = stmt
+        {
+            let Expr::Path(segments) = base.as_ref() else {
+                return Err(unsupported_indexed_write());
+            };
+            if segments.len() != 1 || !ctx.is_mutable_indexed_bound(&segments[0]) {
+                return Err(unsupported_indexed_write());
+            }
+
+            let name = &segments[0];
+            let index = substitute(index, &scalar_env)?;
+            let value = substitute(value, &scalar_env)?;
+            if expr_references_mutable_indexed(&index, ctx)
+                || expr_references_mutable_indexed(&value, ctx)
+            {
+                return Err(RefEncodeError::Unsupported(
+                    "an exclusive-storage write index/value reads an exclusively \
+                     borrowed sequence; the frozen effect subset does not conflate \
+                     its pre-write and final views"
+                        .to_string(),
+                ));
+            }
+
+            let index_is_literal = matches!(index, Expr::IntLit { .. });
+            let index = exec_ref_value(&index, &ctx.exec_ref_ctx())?;
+            let index = if index_is_literal {
+                index
+            } else {
+                format!("({index}) as int")
+            };
+            let value = exec_ref_value(&value, &ctx.exec_ref_ctx())?;
+            let previous = states
+                .get(name)
+                .cloned()
+                .ok_or_else(unsupported_indexed_write)?;
+            states.insert(
+                name.clone(),
+                format!("({previous}).update({index}, {value})"),
+            );
+            changed.insert(name.clone());
+            continue;
+        }
+
+        if stmt_contains_indexed_assignment(stmt) {
+            return Err(RefEncodeError::Unsupported(
+                "exclusive-storage assignment nested under control flow is outside \
+                 the frozen straight-line effect subset"
+                    .to_string(),
+            ));
+        }
+        if !changed.is_empty() && stmt_references_mutable_indexed(stmt, ctx) {
+            return Err(RefEncodeError::Unsupported(
+                "a straight-line statement reads exclusive storage after it was +                 changed; post-write reads require explicit sequence-state +                 substitution and are outside the frozen effect subset"
+                    .to_string(),
+            ));
+        }
+        thread_stmt(stmt, &mut scalar_env, ctx)?;
+    }
+
+    if !changed.is_empty()
+        && block
+            .tail
+            .as_deref()
+            .is_some_and(|tail| expr_references_mutable_indexed(tail, ctx))
+    {
+        return Err(RefEncodeError::Unsupported(
+            "the body tail reads exclusive storage after it was changed; +             post-write reads require explicit sequence-state substitution and +             are outside the frozen effect subset"
+                .to_string(),
+        ));
+    }
+
+    states
+        .into_iter()
+        .map(|(name, state)| Ok(format!("final({name})@ == {state}")))
+        .collect()
+}
+
+fn unsupported_indexed_write() -> RefEncodeError {
+    RefEncodeError::Unsupported(
+        "indexed assignment is outside the exact exclusive-storage subset (the \
+         admitted target is a direct `&mut [T]` or `&mut [T; N]` parameter)"
+            .to_string(),
+    )
+}
+
+fn stmt_contains_indexed_assignment(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Assign {
+            target: Expr::Index { .. },
+            ..
+        } => true,
+        Stmt::If { then, else_, .. } => {
+            then.stmts.iter().any(stmt_contains_indexed_assignment)
+                || else_
+                    .as_ref()
+                    .is_some_and(|block| block.stmts.iter().any(stmt_contains_indexed_assignment))
+        }
+        Stmt::Loop(loop_node) => loop_node
+            .body
+            .stmts
+            .iter()
+            .any(stmt_contains_indexed_assignment),
+        _ => false,
+    }
+}
+
+/// Whether an expression reads any sequence whose post-state is being modeled.
+/// Unsupported value forms are still traversed here; the subsequent independent
+/// value encoder remains responsible for rejecting nodes outside its own subset.
+fn expr_references_mutable_indexed(expr: &Expr, ctx: &BodyRefCtx) -> bool {
+    let any = |items: &[Expr]| {
+        items
+            .iter()
+            .any(|item| expr_references_mutable_indexed(item, ctx))
+    };
+    match expr {
+        Expr::Path(segments) => segments.len() == 1 && ctx.is_mutable_indexed_bound(&segments[0]),
+        Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::StrLit(_) => false,
+        Expr::Array(items) | Expr::Tuple(items) => any(items),
+        Expr::ArrayRepeat { value, .. }
+        | Expr::Unary { expr: value, .. }
+        | Expr::Cast { expr: value, .. }
+        | Expr::Ref { expr: value, .. }
+        | Expr::Deref(value)
+        | Expr::TupleProj {
+            receiver: value, ..
+        } => expr_references_mutable_indexed(value, ctx),
+        Expr::Binary { lhs, rhs, .. } => {
+            expr_references_mutable_indexed(lhs, ctx) || expr_references_mutable_indexed(rhs, ctx)
+        }
+        Expr::Call { callee, args } => expr_references_mutable_indexed(callee, ctx) || any(args),
+        Expr::MethodCall { receiver, args, .. } => {
+            expr_references_mutable_indexed(receiver, ctx) || any(args)
+        }
+        Expr::Field { receiver, .. } => expr_references_mutable_indexed(receiver, ctx),
+        Expr::Closure { body, .. } => expr_references_mutable_indexed(body, ctx),
+        Expr::Match { scrutinee, arms } => {
+            expr_references_mutable_indexed(scrutinee, ctx)
+                || arms.iter().any(|arm| {
+                    arm.guard
+                        .as_ref()
+                        .is_some_and(|guard| expr_references_mutable_indexed(guard, ctx))
+                        || expr_references_mutable_indexed(&arm.body, ctx)
+                })
+        }
+        Expr::If { cond, then, else_ } => {
+            expr_references_mutable_indexed(cond, ctx)
+                || block_references_mutable_indexed(then, ctx)
+                || block_references_mutable_indexed(else_, ctx)
+        }
+        Expr::Index { base, index } => {
+            expr_references_mutable_indexed(base, ctx)
+                || match index {
+                    IndexArg::Single(index)
+                    | IndexArg::RangeTo(index)
+                    | IndexArg::RangeFrom(index) => expr_references_mutable_indexed(index, ctx),
+                    IndexArg::Range(start, end) => {
+                        expr_references_mutable_indexed(start, ctx)
+                            || expr_references_mutable_indexed(end, ctx)
+                    }
+                }
+        }
+        Expr::StructLit { fields, .. } => fields
+            .iter()
+            .any(|(_, value)| expr_references_mutable_indexed(value, ctx)),
+        Expr::Is { scrutinee, .. } => expr_references_mutable_indexed(scrutinee, ctx),
+        Expr::Quantifier { domain, body, .. } => {
+            expr_references_mutable_indexed(domain, ctx)
+                || expr_references_mutable_indexed(body, ctx)
+        }
+    }
+}
+
+fn block_references_mutable_indexed(block: &Block, ctx: &BodyRefCtx) -> bool {
+    block
+        .stmts
+        .iter()
+        .any(|stmt| stmt_references_mutable_indexed(stmt, ctx))
+        || block
+            .tail
+            .as_deref()
+            .is_some_and(|tail| expr_references_mutable_indexed(tail, ctx))
+}
+
+fn stmt_references_mutable_indexed(stmt: &Stmt, ctx: &BodyRefCtx) -> bool {
+    match stmt {
+        Stmt::Let { init, .. } => expr_references_mutable_indexed(init, ctx),
+        Stmt::Assign { target, value } => {
+            expr_references_mutable_indexed(target, ctx)
+                || expr_references_mutable_indexed(value, ctx)
+        }
+        Stmt::Return(value) => value
+            .as_ref()
+            .is_some_and(|value| expr_references_mutable_indexed(value, ctx)),
+        Stmt::If { cond, then, else_ } => {
+            expr_references_mutable_indexed(cond, ctx)
+                || block_references_mutable_indexed(then, ctx)
+                || else_
+                    .as_ref()
+                    .is_some_and(|block| block_references_mutable_indexed(block, ctx))
+        }
+        Stmt::Loop(loop_node) => {
+            if let LoopKind::While(cond) = &loop_node.kind {
+                if expr_references_mutable_indexed(cond, ctx) {
+                    return true;
+                }
+            }
+            block_references_mutable_indexed(&loop_node.body, ctx)
+        }
+        Stmt::Expr(expr) => expr_references_mutable_indexed(expr, ctx),
+        Stmt::Break | Stmt::Continue => false,
+    }
 }
 
 // =============================================================================
@@ -353,7 +624,7 @@ pub fn loop_ref_obligations(
     block: &Block,
     ctx: &BodyRefCtx,
 ) -> Result<LoopObligations, RefEncodeError> {
-    let (prefix, loop_node) = recognize_v1_loop(block)?;
+    let (prefix, loop_node) = recognize_v1_loop(block, ctx)?;
     let cond_expr = match &loop_node.kind {
         LoopKind::While(c) => c.as_ref(),
         LoopKind::Loop => {
@@ -405,7 +676,7 @@ pub fn loop_ref_obligations(
     // Return Err otherwise.
     let mut entry_env: Env = Env::new();
     for stmt in prefix {
-        thread_stmt(stmt, &mut entry_env)?;
+        thread_stmt(stmt, &mut entry_env, ctx)?;
     }
     for cell in &cells {
         if !entry_env.contains_key(cell) {
@@ -427,7 +698,7 @@ pub fn loop_ref_obligations(
         step_env.insert(cell.clone(), Expr::Path(vec![cell.clone()]));
     }
     for stmt in &loop_node.body.stmts {
-        thread_stmt(stmt, &mut step_env)?;
+        thread_stmt(stmt, &mut step_env, ctx)?;
     }
     // The per-cell stepped closed form (in the entry cells) + the cell→stepped-form
     // substitution env — both read from `step_env`, where every `cell` is present (it
@@ -471,7 +742,10 @@ pub fn loop_ref_obligations(
 /// Returns the pre-loop prefix statements + the loop node, or an
 /// [`RefEncodeError::Unsupported`] naming the out-of-v1 reason (Skipped, never
 /// silently Faithful — R-HONEST-3).
-fn recognize_v1_loop(block: &Block) -> Result<(&[Stmt], &LoopNode), RefEncodeError> {
+fn recognize_v1_loop<'a>(
+    block: &'a Block,
+    ctx: &BodyRefCtx,
+) -> Result<(&'a [Stmt], &'a LoopNode), RefEncodeError> {
     let Some((last, prefix)) = block.stmts.split_last() else {
         return Err(RefEncodeError::Unsupported(
             "no loop statement (the v1 loop arm requires a `while` loop as the last \
@@ -491,7 +765,7 @@ fn recognize_v1_loop(block: &Block) -> Result<(&[Stmt], &LoopNode), RefEncodeErr
     // mid-body return) — reuse the shipped thread_stmt rejection by threading it.
     let mut probe: Env = Env::new();
     for stmt in prefix {
-        thread_stmt(stmt, &mut probe)?;
+        thread_stmt(stmt, &mut probe, ctx)?;
     }
     if !matches!(loop_node.kind, LoopKind::While(_)) {
         return Err(RefEncodeError::Unsupported(
@@ -667,7 +941,7 @@ fn encode_block_tail(
     ctx: &BodyRefCtx,
 ) -> Result<String, RefEncodeError> {
     for stmt in &block.stmts {
-        thread_stmt(stmt, env)?;
+        thread_stmt(stmt, env, ctx)?;
     }
     match &block.tail {
         Some(tail) => encode_value(tail, env, ctx),
@@ -727,7 +1001,7 @@ fn contextualize_array_element(expr: Expr, elem: &thermite_syntax::Type) -> Expr
 /// [`encode_value`] / the tail), so an `If`/`Return` in non-tail (statement)
 /// position — a mid-body branch / early return — is out of v1 (the multi-exit CPS
 /// form) and an `Err`. A `Loop`/`Break`/`Continue` is step 2.2.2.
-fn thread_stmt(stmt: &Stmt, env: &mut Env) -> Result<(), RefEncodeError> {
+fn thread_stmt(stmt: &Stmt, env: &mut Env, ctx: &BodyRefCtx) -> Result<(), RefEncodeError> {
     match stmt {
         Stmt::Let { name, init, ty, .. } => {
             // A re-shadow `let x = ..; let x = ..` in the same block is out of v1
@@ -764,6 +1038,14 @@ fn thread_stmt(stmt: &Stmt, env: &mut Env) -> Result<(), RefEncodeError> {
                         "fixed-array assignment target with a non-name base".to_string(),
                     ));
                 };
+                // Writes through an exclusive parameter borrow are observable
+                // effects, not local value rebinding. The complete sequence
+                // transition is added by `indexed_write_ensures`; keep the scalar
+                // environment unchanged here so the body's return value is still
+                // denoted independently.
+                if segments.len() == 1 && ctx.is_mutable_indexed_bound(&segments[0]) {
+                    return Ok(());
+                }
                 if segments.len() != 1 || !env.is_fixed_array(&segments[0]) {
                     return Err(RefEncodeError::Unsupported(
                         "indexed assignment to a value not declared as a fixed array".to_string(),
@@ -853,10 +1135,10 @@ fn thread_stmt(stmt: &Stmt, env: &mut Env) -> Result<(), RefEncodeError> {
             // mutation subset — an `Err` (the state-denotation only composes a
             // branch that mutates cells, never a discarded branch value).
             let mut then_env = env.clone();
-            thread_branch(then, &mut then_env)?;
+            thread_branch(then, &mut then_env, ctx)?;
             let mut else_env = env.clone();
             if let Some(else_block) = else_ {
-                thread_branch(else_block, &mut else_env)?;
+                thread_branch(else_block, &mut else_env, ctx)?;
             }
 
             // For each cell already in scope before the `if` (a branch-local `let`
@@ -925,9 +1207,9 @@ fn thread_stmt(stmt: &Stmt, env: &mut Env) -> Result<(), RefEncodeError> {
 /// cells via `Stmt::Assign`, it does not produce a discarded value. A branch with a
 /// tail value (`if c { ..; v }` as a statement) is out of the v1 mutation subset — an
 /// [`RefEncodeError::Unsupported`], never a silent discard.
-fn thread_branch(branch: &Block, env: &mut Env) -> Result<(), RefEncodeError> {
+fn thread_branch(branch: &Block, env: &mut Env, ctx: &BodyRefCtx) -> Result<(), RefEncodeError> {
     for stmt in &branch.stmts {
-        thread_stmt(stmt, env)?;
+        thread_stmt(stmt, env, ctx)?;
     }
     match &branch.tail {
         None => Ok(()),
@@ -1018,8 +1300,8 @@ fn encode_value(expr: &Expr, env: &Env, ctx: &BodyRefCtx) -> Result<String, RefE
             // comparison coerces fine). When both arms are arithmetic (the grounded
             // AC-4 `(x + 1)`/`(x + 2)`, B3 `(x + 1)`/`(x - 1)`) no coercion is applied —
             // the pinned reference form is preserved.
-            let t_int = branch_is_int_typed(then, env)?;
-            let e_int = branch_is_int_typed(else_, env)?;
+            let t_int = branch_is_int_typed(then, env, ctx)?;
+            let e_int = branch_is_int_typed(else_, env, ctx)?;
             let (t, e) = match (t_int, e_int) {
                 (true, false) => (t, format!("({e} as int)")),
                 (false, true) => (format!("({t} as int)"), e),
@@ -1054,10 +1336,10 @@ fn encode_value(expr: &Expr, env: &Env, ctx: &BodyRefCtx) -> Result<String, RefE
 /// everything else (a bare path cell, a literal, a cast, an index, a call) is the
 /// bounded type (not `int`). A branch with no tail value would already be an `Err`
 /// from [`encode_block_tail`]; here an absent tail is conservatively not-`int`.
-fn branch_is_int_typed(block: &Block, env: &Env) -> Result<bool, RefEncodeError> {
+fn branch_is_int_typed(block: &Block, env: &Env, ctx: &BodyRefCtx) -> Result<bool, RefEncodeError> {
     let mut branch_env = env.clone();
     for stmt in &block.stmts {
-        thread_stmt(stmt, &mut branch_env)?;
+        thread_stmt(stmt, &mut branch_env, ctx)?;
     }
     let Some(tail) = &block.tail else {
         return Ok(false);
@@ -1195,6 +1477,18 @@ mod tests {
             value,
         }
     }
+    fn index(base: &str, at: Expr) -> Expr {
+        Expr::Index {
+            base: Box::new(path(base)),
+            index: IndexArg::Single(Box::new(at)),
+        }
+    }
+    fn index_assign(base: &str, at: Expr, value: Expr) -> Stmt {
+        Stmt::Assign {
+            target: index(base, at),
+            value,
+        }
+    }
 
     /// B1 reference: `{ let a = x + 1; let b = a * 2; b }` -> the threaded closed
     /// form `((x + 1) * 2)` (the let-chain substitution).
@@ -1290,6 +1584,32 @@ mod tests {
             body_ref_state(&block, &BodyRefCtx::default()).unwrap(),
             "((x + 1), (y + (x + 1)))"
         );
+    }
+
+    #[test]
+    fn untouched_exclusive_storage_is_framed_as_unchanged() {
+        let block = Block {
+            stmts: vec![],
+            tail: Some(Box::new(path("value"))),
+        };
+        let ctx = BodyRefCtx::default().with_mutable_indexed_bound(["data"]);
+        assert_eq!(
+            body_ref_state_ensures(&block, "result", &ctx).unwrap(),
+            "result == value && final(data)@ == old(data)@"
+        );
+    }
+
+    #[test]
+    fn post_write_storage_read_is_honestly_outside_the_frozen_subset() {
+        let block = Block {
+            stmts: vec![index_assign("data", path("at"), path("value"))],
+            tail: Some(Box::new(index("data", path("at")))),
+        };
+        let ctx = BodyRefCtx::with_slice_bound(["data"]).with_mutable_indexed_bound(["data"]);
+        assert!(matches!(
+            body_ref_state_ensures(&block, "result", &ctx),
+            Err(RefEncodeError::Unsupported(reason)) if reason.contains("post-write reads")
+        ));
     }
 
     /// A loop body is out of the frozen 2.2.1 subset -> an `Err`, never a

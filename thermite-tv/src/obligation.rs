@@ -87,6 +87,7 @@ use crate::exec_encode::{exec_ref_value, ExecRefCtx, RefEncodeError as ExecRefEn
 use crate::exec_stmt_encode::{
     body_ref_state_ensures, loop_ref_obligations, negate_condition, BodyRefCtx,
 };
+pub use crate::ref_encode::StateViewKind;
 use crate::ref_encode::{ref_contract_pred, RefCtx, RefEncodeError};
 
 /// One obligation parameter declaration: a Verus `name: type` binding for a
@@ -103,6 +104,44 @@ pub struct ParamDecl {
     pub name: String,
     /// The Verus type spelling (`u64` / `Seq<u32>` / `int` / …).
     pub type_str: String,
+}
+
+/// A source state-view call reified as an ordinary, universally quantified
+/// obligation parameter. Contract TV runs in a `proof fn`, where Verus's
+/// `old(..)`/`final(..)` operators are not available; binding the snapshots
+/// independently also checks the predicate for every possible transition rather
+/// than only for the no-op transition of a synthetic executable body.
+/// This declaration identifies one exact source state view and its symbolic
+/// obligation binding.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StateViewDecl {
+    /// `old` or `final`.
+    pub kind: StateViewKind,
+    /// The source parameter named inside the state-view call.
+    pub source_name: String,
+    /// The fresh parameter name used in the proof obligation.
+    pub binding_name: String,
+    /// Whether the binding is a `Seq<T>` standing for a borrowed slice's `@`
+    /// view. In that case the production `old(x)@`/`final(x)@` spelling is
+    /// reified to the bare sequence binding.
+    pub sequence_view: bool,
+}
+
+impl StateViewDecl {
+    /// Construct one state-view binding.
+    pub fn new(
+        kind: StateViewKind,
+        source_name: impl Into<String>,
+        binding_name: impl Into<String>,
+        sequence_view: bool,
+    ) -> Self {
+        Self {
+            kind,
+            source_name: source_name.into(),
+            binding_name: binding_name.into(),
+            sequence_view,
+        }
+    }
 }
 
 impl ParamDecl {
@@ -164,6 +203,12 @@ pub struct ObligationFrame {
     /// Native fixed-array parameters/results whose specification meaning exposes
     /// the finite `@` view for the independently encoded length operation.
     pub fixed_array_params: Vec<String>,
+    /// Arbitrary pre/post-state snapshots used to reify `old(..)` and
+    /// `final(..)` outside an executable Verus postcondition. The production
+    /// predicate is rewritten only at exact emitted state-view calls; the
+    /// independent reference encoder resolves the source AST through the same
+    /// symbolic bindings.
+    pub state_views: Vec<StateViewDecl>,
 }
 
 impl ObligationFrame {
@@ -179,6 +224,13 @@ impl ObligationFrame {
             .with_string_bound(self.string_params.iter().cloned())
             .with_map_bound(self.map_params.iter().cloned())
             .with_fixed_array_bound(self.fixed_array_params.iter().cloned())
+            .with_state_views(self.state_views.iter().map(|view| {
+                (
+                    view.kind,
+                    view.source_name.clone(),
+                    view.binding_name.clone(),
+                )
+            }))
     }
 
     /// The Verus parameter list `name: type, …`.
@@ -200,7 +252,9 @@ impl ObligationFrame {
 ///
 /// Returns the obligation program text (`thermite-tv` does not run verus — the
 /// negative test and forge plug-in discharge it). Returns [`RefEncodeError`] if the
-/// source clause is outside the frozen contract sublanguage (an error,
+/// State-view calls in that exact production text are reified to the arbitrary
+/// snapshot bindings declared by the frame; all other production text remains
+/// unchanged. Returns [`RefEncodeError`] if the source clause is outside the frozen contract sublanguage (an error,
 /// never a panic / silent wrong encoding).
 pub fn equivalence_obligation(
     source: &Expr,
@@ -208,6 +262,7 @@ pub fn equivalence_obligation(
     frame: &ObligationFrame,
 ) -> Result<String, RefEncodeError> {
     let p_reference = ref_contract_pred(source, &frame.ref_ctx())?;
+    let p_production = reify_production_state_views(p_production, &frame.state_views);
 
     let mut out = String::new();
     out.push_str("use vstd::prelude::*;\n");
@@ -239,6 +294,25 @@ pub fn equivalence_obligation(
 
     out.push_str("\n}\nfn main() {}\n");
     Ok(out)
+}
+
+/// Replace only the canonical state-view calls emitted by the production
+/// lowerer with their arbitrary snapshot parameters. A wrong operator, argument,
+/// or view shape therefore remains different (or ill-typed) in the obligation.
+fn reify_production_state_views(production: &str, views: &[StateViewDecl]) -> String {
+    let mut reified = production.to_string();
+    for view in views {
+        let operator = match view.kind {
+            StateViewKind::Old => "old",
+            StateViewKind::Final => "final",
+        };
+        let call = format!("{operator}({})", view.source_name);
+        if view.sequence_view {
+            reified = reified.replace(&format!("{call}@"), &view.binding_name);
+        }
+        reified = reified.replace(&call, &view.binding_name);
+    }
+    reified
 }
 
 /// One exec-obligation parameter declaration: a Verus `name: type` binding for a
@@ -473,6 +547,9 @@ pub struct BodyObligationFrame {
     /// encodes to the spec-view element value (`xs[i as int]`) in the reference
     /// state-denotation. Read by [`BodyRefCtx::with_slice_bound`].
     pub slice_params: Vec<String>,
+    /// Parameters borrowed exclusively as `&mut [T]` or `&mut [T; N]`.
+    /// Body TV observes their complete post-state through `final(param)@`.
+    pub mutable_indexed_params: Vec<String>,
     /// Native fixed-array parameters, indexed through their finite `@` views.
     pub fixed_array_params: Vec<String>,
     /// Whether the result type is a native fixed array. Array results are
@@ -485,6 +562,7 @@ impl BodyObligationFrame {
     /// the `slice_params` are the names indexed as the spec-view element value.
     fn body_ref_ctx(&self) -> BodyRefCtx {
         BodyRefCtx::with_slice_bound(self.slice_params.iter().cloned())
+            .with_mutable_indexed_bound(self.mutable_indexed_params.iter().cloned())
             .with_fixed_array_bound(self.fixed_array_params.iter().cloned())
             .with_fixed_array_result(self.result_is_fixed_array)
     }

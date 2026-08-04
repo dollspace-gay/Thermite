@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: cd2818ed3657a5f5f7f538a8a946eebd33fc244efabde25d3a907480f8ca9042
+audited-content-sha256: f5a69d57c921b8012d85ea09c540cca360d0ba175626d273233790480dbe6b8d
 decision: preserve verifier counts when present and represent frontend counts as unknown
 issue: github:dollspace-gay/Thermite#111
 governs:

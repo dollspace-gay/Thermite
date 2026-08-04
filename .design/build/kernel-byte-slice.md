@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: 4bc1a01606e1791a2390d765fb65a425716e070bb0c84bc0d0e5e83e0a2a2a4e
+audited-content-sha256: bb92a56786edb4f6c81f8acac40c1183b8896ac11fbde8e3ef8cd84a9af373d0
 decision: explicit pinned vstd proof-model import plus deterministic no_std erased link metadata
 issue: github:dollspace-gay/Thermite#108
 governs:
@@ -34,6 +34,11 @@ slice indexing. The imported VIR is the semantic authority. The small rlib has
 no allocator or hosted implementation and contributes no executable slice
 adapter: the checked body still executes Rust's native `&[u8]::len` and
 indexing directly.
+
+The same receipt-bound Rust ABI mechanism also preserves `&mut` for mutable
+primitive/array-element slices and records it as an exclusive borrow. That is a
+generic finite-storage export primitive; this document's imported `vstd` model
+continues to describe the slice view and does not add an executable adapter.
 
 ## Why the builtins-only profile is insufficient
 

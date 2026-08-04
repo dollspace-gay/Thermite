@@ -5,7 +5,7 @@ use thermite_syntax::Item;
 use thermite_tv::obligation::{
     body_equivalence_obligation, equivalence_obligation, exec_equivalence_obligation,
     BodyObligationFrame, BodyParamDecl, ExecObligationFrame, ExecParamDecl, ObligationFrame,
-    ParamDecl,
+    ParamDecl, StateViewDecl, StateViewKind,
 };
 
 const SOURCE: &str = "const SLOTS: usize = 4;\n\
@@ -98,8 +98,9 @@ fn assert_verus(name: &str, program: &str, should_pass: bool) {
     );
     if !should_pass {
         assert!(
-            output.contains("postcondition not satisfied"),
-            "negative fixed-array TV must fail at the extensional result postcondition:\n{output}"
+            output.contains("postcondition not satisfied") || output.contains("assertion failed"),
+            "negative fixed-array TV must fail at the extensional result postcondition or \
+             predicate-equivalence assertion:\n{output}"
         );
     }
 }
@@ -253,6 +254,7 @@ pub fn __thermite_array_eq_u64(
     assert(left@ =~= right@);
     true
 }
+
 "#
     .to_string();
     let exec_frame = ExecObligationFrame {
@@ -265,7 +267,7 @@ pub fn __thermite_array_eq_u64(
         fixed_array_params: vec!["left".to_string(), "right".to_string()],
         ..Default::default()
     };
-    let exec_program = exec_equivalence_obligation(tail, &production, &exec_frame)
+    let exec_program = exec_equivalence_obligation(tail, production, &exec_frame)
         .expect("array equality exec obligation must build");
     assert!(
         exec_program.contains("result == ((left)@ =~= (right)@)"),
@@ -294,4 +296,97 @@ pub fn __thermite_array_eq_u64(
     )
     .expect("array equality contract obligation must build");
     assert_verus("array_eq_contract", &contract_program, true);
+}
+
+#[test]
+fn exclusive_aggregate_slice_write_has_an_exact_post_state() {
+    let source = "fn write_pair(data: &mut [[u64; 2]], at: usize, value: u64) -> u64\n\
+req at < data.len()\n\
+ens result == value\n\
+ens final(data)[at][0] == value\n\
+fx platform(memory)\n\
+{ data[at] = [value, value]; value }\n";
+    let parsed = thermite_syntax::parse(source);
+    assert!(parsed.is_clean(), "parse errors: {:?}", parsed.errors);
+    let Item::Fn(function) = &parsed.program.items[0] else {
+        panic!("expected write_pair function");
+    };
+    let body = function.body.as_ref().expect("write_pair body");
+    let frame = BodyObligationFrame {
+        params: vec![
+            BodyParamDecl::new("data", "&mut [[u64; 2]]"),
+            BodyParamDecl::new("at", "usize"),
+            BodyParamDecl::new("value", "u64"),
+        ],
+        ret_type: "u64".to_string(),
+        req: Some("at < data.len()".to_string()),
+        slice_params: vec!["data".to_string()],
+        mutable_indexed_params: vec!["data".to_string()],
+        ..Default::default()
+    };
+
+    let faithful =
+        body_equivalence_obligation(body, "    data[at] = [value, value];\n    value\n", &frame)
+            .expect("aggregate-slice body obligation must build");
+    assert!(
+        faithful.contains("final(data)@ == (old(data)@).update((at) as int, [value, value])"),
+        "{faithful}"
+    );
+    assert_verus("aggregate_slice_faithful", &faithful, true);
+
+    let wrong_value =
+        body_equivalence_obligation(body, "    data[at] = [0, value];\n    value\n", &frame)
+            .expect("wrong aggregate-slice production must still build");
+    assert_verus("aggregate_slice_wrong_value", &wrong_value, false);
+
+    let dropped_write = body_equivalence_obligation(body, "    value\n", &frame)
+        .expect("dropped aggregate-slice write must still build");
+    assert_verus("aggregate_slice_dropped_write", &dropped_write, false);
+}
+
+#[test]
+fn contract_tv_quantifies_mutable_slice_post_state_independently() {
+    let source = "fn observe(data: &mut [[u64; 2]], at: usize, value: u64) -> u64\n\
+req at < data.len()\n\
+ens final(data)[at][0] == value\n\
+fx platform(memory)\n\
+{ value }\n";
+    let parsed = thermite_syntax::parse(source);
+    assert!(parsed.is_clean(), "parse errors: {:?}", parsed.errors);
+    let Item::Fn(function) = &parsed.program.items[0] else {
+        panic!("expected observe function");
+    };
+    let frame = ObligationFrame {
+        params: vec![
+            ParamDecl::new("data", "&[[u64; 2]]"),
+            ParamDecl::new("at", "usize"),
+            ParamDecl::new("value", "u64"),
+            ParamDecl::new("result", "u64"),
+            ParamDecl::new("final_data", "Seq<[u64; 2]>"),
+        ],
+        req: Some("at < data.len()".to_string()),
+        seq_params: vec!["final_data".to_string()],
+        state_views: vec![StateViewDecl::new(
+            StateViewKind::Final,
+            "data",
+            "final_data",
+            true,
+        )],
+        ..Default::default()
+    };
+    let clause = &function.contract.ens[0].expr;
+    let faithful = equivalence_obligation(
+        clause,
+        "final(data)@[at as int]@[0 as int] == value",
+        &frame,
+    )
+    .expect("state-view contract obligation must build");
+    assert!(faithful.contains("final_data[at as int]@[0 as int]"));
+    assert!(!faithful.contains("final(data)"));
+    assert_verus("aggregate_contract_final", &faithful, true);
+
+    let current_state =
+        equivalence_obligation(clause, "data@[at as int]@[0 as int] == value", &frame)
+            .expect("current-state mutant obligation must build");
+    assert_verus("aggregate_contract_current_mutant", &current_state, false);
 }

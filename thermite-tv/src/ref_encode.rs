@@ -38,7 +38,7 @@
 //! | REQ-TV-CONTRACT-REF-ENCODER | shipped | `thermite-tv/src/ref_encode.rs` | Contract-TV independent reference encoder |  |
 //! <!-- /generated:reqs -->
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use thermite_syntax::ast::{ArrayLen, BinOp, Expr, IndexArg, MatchArm, Pattern, UnaryOp};
@@ -59,6 +59,15 @@ pub enum RefEncodeError {
     /// encode. (A non-registry path callee IS encodable as a plain spec-fn call;
     /// this fires only for a shape the encoder cannot represent.)
     UnknownCallee(String),
+}
+
+/// Which Verus state view a symbolic contract-TV snapshot represents.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StateViewKind {
+    /// The pre-state selected by `old(parameter)`.
+    Old,
+    /// The post-state selected by `final(parameter)`.
+    Final,
 }
 
 impl fmt::Display for RefEncodeError {
@@ -125,6 +134,10 @@ pub struct RefCtx {
     /// (rather than importing production's rule) keeps independence: a
     /// production coercion bug would still be caught.
     nat_coerce: BTreeSet<String>,
+    /// Source `old(x)` bindings reified as arbitrary proof parameters.
+    old_state_views: BTreeMap<String, String>,
+    /// Source `final(x)` bindings reified as arbitrary proof parameters.
+    final_state_views: BTreeMap<String, String>,
 }
 
 impl RefCtx {
@@ -142,7 +155,26 @@ impl RefCtx {
             map_bound: BTreeSet::new(),
             fixed_array_bound: BTreeSet::new(),
             nat_coerce: BTreeSet::new(),
+            old_state_views: BTreeMap::new(),
+            final_state_views: BTreeMap::new(),
         }
+    }
+
+    /// Bind source state-view calls to arbitrary obligation snapshot values.
+    pub fn with_state_views<I, S, B>(mut self, views: I) -> Self
+    where
+        I: IntoIterator<Item = (StateViewKind, S, B)>,
+        S: Into<String>,
+        B: Into<String>,
+    {
+        for (kind, source, binding) in views {
+            let target = match kind {
+                StateViewKind::Old => &mut self.old_state_views,
+                StateViewKind::Final => &mut self.final_state_views,
+            };
+            target.insert(source.into(), binding.into());
+        }
+        self
     }
 
     /// Declare native fixed-array bindings for finite-view length.
@@ -210,6 +242,15 @@ impl RefCtx {
 
     fn needs_nat_coerce(&self, name: &str) -> bool {
         self.nat_coerce.contains(name)
+    }
+
+    fn state_view_binding(&self, kind: &str, source: &str) -> Option<&str> {
+        match kind {
+            "old" => self.old_state_views.get(source),
+            "final" => self.final_state_views.get(source),
+            _ => None,
+        }
+        .map(String::as_str)
     }
 }
 
@@ -486,6 +527,13 @@ fn encode_call(callee: &Expr, args: &[Expr], ctx: &RefCtx) -> Result<String, Ref
                 args.len()
             )));
         };
+        if let Expr::Path(path) = arg {
+            if path.len() == 1 {
+                if let Some(binding) = ctx.state_view_binding("final", &path[0]) {
+                    return Ok(binding.to_string());
+                }
+            }
+        }
         let inner = encode(arg, ctx)?;
         return Ok(format!("final({inner})"));
     }
@@ -497,6 +545,13 @@ fn encode_call(callee: &Expr, args: &[Expr], ctx: &RefCtx) -> Result<String, Ref
                 "old/{} (expected exactly 1 arg)",
                 args.len()
             )));
+        }
+        if let Expr::Path(path) = &args[0] {
+            if path.len() == 1 {
+                if let Some(binding) = ctx.state_view_binding("old", &path[0]) {
+                    return Ok(binding.to_string());
+                }
+            }
         }
         let inner = encode(&args[0], ctx)?;
         // The prev-state value is bound as a distinct param `old_<name>`; a bare
@@ -965,6 +1020,21 @@ fn encode_receiver(receiver: &Expr, ctx: &RefCtx) -> Result<String, RefEncodeErr
     if let Expr::Path(segments) = receiver {
         if segments.len() == 1 && !ctx.is_seq_bound(&segments[0]) {
             return Ok(format!("{}@", segments[0]));
+        }
+    }
+    if let Expr::Call { callee, args } = receiver {
+        if let Expr::Path(operator) = callee.as_ref() {
+            if let ([kind], [Expr::Path(source)]) = (operator.as_slice(), args.as_slice()) {
+                if source.len() == 1 {
+                    if let Some(binding) = ctx.state_view_binding(kind, &source[0]) {
+                        return if ctx.is_seq_bound(binding) {
+                            Ok(binding.to_string())
+                        } else {
+                            Ok(format!("{binding}@"))
+                        };
+                    }
+                }
+            }
         }
     }
     if matches!(receiver, Expr::Call { callee, .. } if matches!(callee.as_ref(), Expr::Path(segs) if segs.as_slice() == ["final"]))

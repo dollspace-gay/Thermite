@@ -155,8 +155,8 @@ impl ExecRefCtx {
 /// - indexing ([`Expr::Index`] single-element over a slice param → `xs[i as int]`,
 ///   the bounded element value).
 ///
-/// Anything else (a method call other than native fixed-array `.len()` or
-/// `.array_eq(other)`, a Vec/String accessor, a struct literal, an `if`/`match`, a closure, …) is an
+/// Anything else (a method call other than borrowed-slice/fixed-array `.len()` or
+/// fixed-array `.array_eq(other)`, a Vec/String accessor, a struct literal, an `if`/`match`, a closure, …) is an
 /// [`RefEncodeError::Unsupported`] (never a panic, never a silent wrong encoding —
 /// #154/#156 territory).
 pub fn exec_ref_value(expr: &Expr, ctx: &ExecRefCtx) -> Result<String, RefEncodeError> {
@@ -208,8 +208,16 @@ fn encode_method_call(
                 if path.join("::") == "vstd::array::spec_array_update"));
         is_bound_array || is_array_value
     };
+    let is_slice_value = |expr: &Expr| {
+        matches!(expr, Expr::Path(segments)
+            if segments.len() == 1 && ctx.is_slice_bound(&segments[0]))
+    };
 
     match name {
+        "len" if args.is_empty() && is_slice_value(receiver) => {
+            let slice = encode(receiver, ctx)?;
+            Ok(format!("({slice}@.len() as usize)"))
+        }
         "len" if args.is_empty() && is_fixed_array_value(receiver) => {
             let array = encode(receiver, ctx)?;
             Ok(format!("({array}@.len() as usize)"))
@@ -224,8 +232,9 @@ fn encode_method_call(
             Ok(format!("(({left})@ =~= ({right})@)"))
         }
         _ => Err(RefEncodeError::Unsupported(format!(
-            "exec method `.{name}()` outside the native fixed-array `.len()` / \
-             `.array_eq(other)` subset, or with a non-array operand"
+            "exec method `.{name}()` outside the borrowed-slice/fixed-array \
+             `.len()` / fixed-array `.array_eq(other)` subset, or with an \
+             unsupported operand"
         ))),
     }
 }
@@ -575,7 +584,20 @@ mod tests {
         assert_eq!(exec_ref_value(&e, &ctx).unwrap(), "xs[i as int]");
     }
 
-    /// A method call (exec / Vec-String accessor) is out of scope for step 2.1 →
+    /// A borrowed slice's executable length is related directly to the length of
+    /// its mathematical sequence view (used by total export guards).
+    #[test]
+    fn borrowed_slice_len_uses_finite_view() {
+        let e = Expr::MethodCall {
+            receiver: Box::new(path("xs")),
+            name: "len".to_string(),
+            args: vec![],
+        };
+        let ctx = ExecRefCtx::with_slice_bound(["xs"]);
+        assert_eq!(exec_ref_value(&e, &ctx).unwrap(), "(xs@.len() as usize)");
+    }
+
+    /// An unclassified method call (exec / Vec-String accessor) is out of scope →
     /// an `Err`, never a silent wrong encoding (REQ-1 / R-CODE-2).
     #[test]
     fn method_call_is_unsupported_not_panic() {

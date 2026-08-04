@@ -1857,11 +1857,16 @@ fn plan_exports(
         let Some(function) = function else {
             return Err(format!("unknown executable export `{name}`"));
         };
-        if !function.params.iter().all(|p| supported_public_type(&p.ty))
-            || !supported_public_type(&function.ret)
+        if !function
+            .params
+            .iter()
+            .all(|p| supported_public_param_type(&p.ty))
+            || !supported_public_return_type(&function.ret)
         {
             return Err(format!(
-                "export `{name}` has a type outside the v1 verified public ABI (primitive scalars and unit only)"
+                "export `{name}` has a type outside the verified public Rust ABI \
+                 (owned primitive/fixed-array returns and primitive/fixed-array \
+                 values or shared/exclusive borrows are supported)"
             ));
         }
         let wrapped = !matches!(function.contract.req.expr, Expr::BoolLit(true));
@@ -1896,7 +1901,7 @@ fn plan_exports(
         let ownership = function
             .params
             .iter()
-            .map(|_| "by_value".to_string())
+            .map(|param| abi_ownership(&param.ty).to_string())
             .collect::<Vec<_>>();
         let postcondition_ids = function
             .contract
@@ -1935,8 +1940,35 @@ fn plan_exports(
     Ok(rows)
 }
 
-fn supported_public_type(ty: &Type) -> bool {
+fn supported_public_param_type(ty: &Type) -> bool {
+    match ty {
+        Type::Prim(_) | Type::Unit => true,
+        Type::Array { elem, .. } => supported_public_storage_element(elem),
+        Type::Ref { inner, .. } => match inner.as_ref() {
+            Type::Slice(elem) | Type::Array { elem, .. } => supported_public_storage_element(elem),
+            Type::Prim(_) => true,
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+fn supported_public_return_type(ty: &Type) -> bool {
     matches!(ty, Type::Prim(_) | Type::Unit)
+        || matches!(ty, Type::Array { elem, .. } if supported_public_storage_element(elem))
+}
+
+fn supported_public_storage_element(ty: &Type) -> bool {
+    matches!(ty, Type::Prim(_))
+        || matches!(ty, Type::Array { elem, .. } if supported_public_storage_element(elem))
+}
+
+fn abi_ownership(ty: &Type) -> &'static str {
+    match ty {
+        Type::Ref { mutable: true, .. } => "exclusive_borrow",
+        Type::Ref { mutable: false, .. } => "shared_borrow",
+        _ => "by_value",
+    }
 }
 
 fn abi_type(ty: &Type) -> String {
@@ -1948,6 +1980,19 @@ fn abi_type(ty: &Type) -> String {
         Type::Prim(PrimType::Usize) => "usize".to_string(),
         Type::Prim(PrimType::Bool) => "bool".to_string(),
         Type::Unit => "()".to_string(),
+        Type::Array { elem, len } => format!(
+            "[{};{}]",
+            abi_type(elem),
+            match len {
+                thermite_syntax::ArrayLen::Literal { value, .. } => value.to_string(),
+                thermite_syntax::ArrayLen::Const(name) => name.clone(),
+            }
+        ),
+        Type::Ref { mutable, inner } => {
+            let borrow = if *mutable { "&mut " } else { "&" };
+            format!("{borrow}{}", abi_type(inner))
+        }
+        Type::Slice(elem) => format!("[{}]", abi_type(elem)),
         other => format!("unsupported:{other:?}"),
     }
 }
@@ -1959,6 +2004,11 @@ fn executable_precondition(expr: &Expr) -> bool {
             executable_precondition(lhs) && executable_precondition(rhs)
         }
         Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => executable_precondition(expr),
+        Expr::MethodCall {
+            receiver,
+            name,
+            args,
+        } if name == "len" && args.is_empty() => executable_precondition(receiver),
         _ => false,
     }
 }

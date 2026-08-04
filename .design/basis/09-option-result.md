@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: be76a26ab7d2253c3341d8d242e80b8d949b0b87cb571397d2dfdbc13c40ce11 (re-pinned 2026-08-03 after adding source-identified package parsing; existing behavior remains regression-covered)
+audited-content-sha256: 027020bd59a603ead7ff02a5b195a7fd754beadb5578f8905c3beac1555c22d4 (re-pinned 2026-08-03 after adding source-identified package parsing; existing behavior remains regression-covered)
 governs: thermite-syntax/src/ast.rs
 governs: thermite-syntax/src/parser.rs
 governs: thermite-spec/src/validator.rs

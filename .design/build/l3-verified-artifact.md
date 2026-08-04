@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: 7d173c48b6f91ac2349c828cc23e0b60c58bd0f249644786b14db84706739b23
+audited-content-sha256: c1c18a76524a3220bde35f103834d93d27ca6a6f695711501875f0e055815a06
 decision: Option A — compile the canonical Verus executable body that was verified
 issue: github:dollspace-gay/Thermite#101, github:dollspace-gay/Thermite#103, github:dollspace-gay/Thermite#104, github:dollspace-gay/Thermite#108, github:dollspace-gay/Thermite#111
 governs:
@@ -408,6 +408,13 @@ Each receipt export row records:
 Duplicate exports, overloaded names without a unique semantic address, generic
 exports without a closed monomorphization, or unsupported public types are
 rejected.
+
+The v1 Rust export subset admits by-value primitives and recursively primitive
+fixed arrays, plus shared or exclusive borrows of primitives, slices, and such
+arrays. Returns remain owned primitive/unit/fixed-array values: borrowed returns
+are rejected because the public lifetime relation is not yet represented in the
+receipt. Each parameter records `by_value`, `shared_borrow`, or
+`exclusive_borrow`; those ownership modes participate in the ABI fingerprint.
 
 ### Preconditions at an unverified caller boundary
 

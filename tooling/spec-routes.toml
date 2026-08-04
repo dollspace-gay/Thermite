@@ -1297,7 +1297,61 @@ conformance_ops = ["package-manifest", "package-closure", "package-allowlist", "
 crate_pattern = "forge/tests/verified_build.rs"
 design = ".design/build/kernel-primitives.md"
 reference = []
-conformance_ops = ["package-build", "package-receipt", "package-replay", "package-tamper"]
+conformance_ops = ["package-build", "package-receipt", "package-replay", "package-tamper", "aggregate-storage"]
+
+[[route]]
+crate_pattern = "thermite-spec/src/validator.rs"
+design = ".design/build/kernel-primitives.md"
+reference = ["conformance/verified-build/aggregate_storage.th"]
+conformance_ops = ["fixed-capacity-bound"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/exec_stmt_encode.rs"
+design = ".design/build/kernel-primitives.md"
+reference = ["conformance/verified-build/aggregate_storage.th"]
+conformance_ops = ["aggregate-storage"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/obligation.rs"
+design = ".design/build/kernel-primitives.md"
+reference = ["conformance/verified-build/aggregate_storage.th"]
+conformance_ops = ["aggregate-storage"]
+
+[[route]]
+crate_pattern = "thermite-tv/tests/fixed_array_tv.rs"
+design = ".design/build/kernel-primitives.md"
+reference = ["conformance/verified-build/aggregate_storage.th"]
+conformance_ops = ["fixed-array-tv", "aggregate-storage-tv"]
+
+[[route]]
+crate_pattern = "forge/src/body_tv.rs"
+design = ".design/build/kernel-primitives.md"
+reference = ["conformance/verified-build/aggregate_storage.th"]
+conformance_ops = ["aggregate-storage"]
+
+[[route]]
+crate_pattern = "forge/src/contract_tv.rs"
+design = ".design/build/kernel-primitives.md"
+reference = ["conformance/verified-build/aggregate_storage.th"]
+conformance_ops = ["aggregate-state-view"]
+
+[[route]]
+crate_pattern = "forge/src/exec_tv.rs"
+design = ".design/build/kernel-primitives.md"
+reference = ["conformance/verified-build/aggregate_storage.th"]
+conformance_ops = ["aggregate-export-guard"]
+
+[[route]]
+crate_pattern = "forge/src/verified_build.rs"
+design = ".design/build/kernel-primitives.md"
+reference = ["conformance/verified-build/aggregate_storage.th"]
+conformance_ops = ["aggregate-storage-abi", "aggregate-storage-replay"]
+
+[[route]]
+crate_pattern = "conformance/verified-build/aggregate_storage.th"
+design = ".design/build/kernel-primitives.md"
+reference = []
+conformance_ops = ["aggregate-storage"]
 
 [[route]]
 crate_pattern = "THERMITE.skill.md"

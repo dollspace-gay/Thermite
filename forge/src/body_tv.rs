@@ -322,6 +322,7 @@ pub(crate) fn body_tv_support(
         };
         let mut params = Vec::new();
         let mut slices = Vec::new();
+        let mut mutable_indexed = Vec::new();
         let mut arrays = Vec::new();
         for param in &dep.params {
             let Some((ty, is_slice)) = exec_type_spelling(&param.ty) else {
@@ -333,7 +334,10 @@ pub(crate) fn body_tv_support(
             if is_slice {
                 slices.push(param.name.clone());
             }
-            if matches!(param.ty, Type::Array { .. }) {
+            if is_mutable_indexed_borrow(&param.ty) {
+                mutable_indexed.push(param.name.clone());
+            }
+            if is_fixed_array_binding(&param.ty) {
                 arrays.push(param.name.clone());
             }
             params.push(format!("{}: {ty}", param.name));
@@ -347,6 +351,7 @@ pub(crate) fn body_tv_support(
         let reference = thermite_tv::body_ref_state(
             body,
             &BodyRefCtx::with_slice_bound(slices)
+                .with_mutable_indexed_bound(mutable_indexed)
                 .with_fixed_array_bound(arrays)
                 .with_fixed_array_result(matches!(dep.ret, Type::Array { .. })),
         )
@@ -422,6 +427,7 @@ fn straight_line_body_tv(
     // non-derivable → Skip (never a guessed binding).
     let mut params: Vec<BodyParamDecl> = Vec::new();
     let mut slice_params: Vec<String> = Vec::new();
+    let mut mutable_indexed_params: Vec<String> = Vec::new();
     let mut fixed_array_params: Vec<String> = Vec::new();
     for p in &f.params {
         match exec_type_spelling(&p.ty) {
@@ -429,7 +435,10 @@ fn straight_line_body_tv(
                 if is_slice {
                     slice_params.push(p.name.clone());
                 }
-                if matches!(p.ty, Type::Array { .. }) {
+                if is_mutable_indexed_borrow(&p.ty) {
+                    mutable_indexed_params.push(p.name.clone());
+                }
+                if is_fixed_array_binding(&p.ty) {
                     fixed_array_params.push(p.name.clone());
                 }
                 params.push(BodyParamDecl::new(p.name.clone(), ty_str));
@@ -513,6 +522,7 @@ fn straight_line_body_tv(
         ret_type: ret_ty,
         req: corpus_req(f),
         slice_params,
+        mutable_indexed_params,
         fixed_array_params,
         result_is_fixed_array: matches!(f.ret, Type::Array { .. }),
     };
@@ -862,20 +872,39 @@ fn exec_type_spelling(ty: &Type) -> Option<(String, bool)> {
             };
             Some((format!("[{elem}; {len}]"), false))
         }
-        Type::Ref { inner, .. } => match inner.as_ref() {
-            // `&[u32]` → the exec slice binding (indexed element-wise as `xs[i as
-            // int]` in the reference). Only a `u32` element slice is framed.
-            Type::Slice(elem) => {
-                exec_type_spelling(elem).map(|(spelling, _)| (format!("&[{spelling}]"), true))
-            }
-            // A `&u64`/`&usize` borrow frames as the inner scalar.
-            other => exec_type_spelling(other),
+        Type::Ref { mutable, inner } => match inner.as_ref() {
+            // Preserve exclusivity in the obligation signature. Losing `mut`
+            // makes the production write ill-typed and silently turns a semantic
+            // check into a frame abort.
+            Type::Slice(elem) => exec_type_spelling(elem).map(|(spelling, _)| {
+                let borrow = if *mutable { "&mut" } else { "&" };
+                (format!("{borrow} [{spelling}]"), true)
+            }),
+            other => exec_type_spelling(other).map(|(spelling, is_slice)| {
+                let borrow = if *mutable { "&mut" } else { "&" };
+                (format!("{borrow} {spelling}"), is_slice)
+            }),
         },
         Type::Slice(elem) => {
             exec_type_spelling(elem).map(|(spelling, _)| (format!("&[{spelling}]"), true))
         }
         _ => None,
     }
+}
+
+fn is_mutable_indexed_borrow(ty: &Type) -> bool {
+    matches!(
+        ty,
+        Type::Ref {
+            mutable: true,
+            inner,
+        } if matches!(inner.as_ref(), Type::Slice(_) | Type::Array { .. })
+    )
+}
+
+fn is_fixed_array_binding(ty: &Type) -> bool {
+    matches!(ty, Type::Array { .. })
+        || matches!(ty, Type::Ref { inner, .. } if matches!(inner.as_ref(), Type::Array { .. }))
 }
 
 // ---- verus discharge (mirrors exec_tv::discharge) --------------------------

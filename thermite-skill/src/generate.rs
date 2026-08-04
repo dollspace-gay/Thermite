@@ -1370,8 +1370,8 @@ Kernel libraries: `forge build` accepts receipt-bound `*.thpkg.json` manifests.
 `atomics.thpkg.json` supplies sealed bool/u32/u64/usize atomics, order/history
 models, and literal-order legality; `ownership.thpkg.json` supplies generation
 mechanics; `collections.thpkg.json` supplies fixed bitset/vector/FIFO/direct-map;
-`synchronization.thpkg.json` supplies wait/ticket/once/refcount/seqlock mechanics
-plus frozen pause/block/halt declarations. No package supplies a kernel or
+`synchronization.thpkg.json` supplies wait/ticket/barrier/once/refcount/seqlock
+mechanics plus frozen pause/block/halt declarations. No package supplies a kernel or
 machine body. Consumers directly refine boundaries; registry v1 accepts only
 sequential safe-Rust. Opacity, aggregate TV, and machine refinement remain.
 

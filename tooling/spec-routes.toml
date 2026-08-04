@@ -1518,6 +1518,12 @@ reference = []
 conformance_ops = ["ticket-lock-fifo", "ticket-lock-stale", "ticket-lock-exhaustion"]
 
 [[route]]
+crate_pattern = "stdlib/kernel-primitives/synchronization/barrier.th"
+design = ".design/build/synchronization-primitives.md"
+reference = []
+conformance_ops = ["barrier-membership-freeze", "barrier-stale-generation", "barrier-exhaustion"]
+
+[[route]]
 crate_pattern = "stdlib/kernel-primitives/synchronization/once.th"
 design = ".design/build/synchronization-primitives.md"
 reference = []

@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: f5b7c2b8e512689d4196430ee282d3c6e1bedd5cb3235e0ac4c264914e514fc0 (re-pinned 2026-08-04 after documenting the expanded synchronization package; existing option/result behavior remains regression-covered)
+audited-content-sha256: c29c9cf09693a8f2c30be776781523e5cf77fcc41aef9c6f8282990a134501de (re-pinned 2026-08-04 after closing checked-ADT nested-type weaving and documenting barrier support; existing option/result behavior remains regression-covered)
 governs: thermite-syntax/src/ast.rs
 governs: thermite-syntax/src/parser.rs
 governs: thermite-spec/src/validator.rs

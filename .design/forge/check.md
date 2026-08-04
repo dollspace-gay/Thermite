@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: b76c457102289a94b2b40d18f1a73ad14e38250b0c799842ff6744cc8de73617 (re-pinned 2026-07-31 after exposing exact reachable ADT dependencies to the additive L3 path; existing check behavior remains regression-covered)
+audited-content-sha256: f518c981387e0913ddbc971112a9194d7e89122ef1c1e34eec9da8c101532ff9 (re-pinned 2026-08-04 after checked declarations began seeding their own nested ADT dependency graph)
 governs: forge/src/check.rs
 thesis-refs:
   - thermite-design.md §5.1
@@ -104,6 +104,19 @@ REQ status table).
 > `<stem>.rs`-inside-`forge_<stem>_<pid>_<n>/` scheme and the AC-4 no-`.` crate-stem
 > property are both unchanged — only the source of `<stem>` moved. Pin:
 > `forge/tests/divergence_harness_names_checked_item.rs`.
+
+> **Amendment 2026-08-04 (checked-ADT nested-type root closure).** The #92
+> correction included ADTs reached by woven spec functions, but a checked
+> `struct`/`enum` still did not seed the closure from its own field types. An
+> enum containing a struct therefore emitted that enum without the struct and
+> failed closed at `E0425` unless an unrelated spec function happened to mention
+> the nested type. `collect_item_adt_refs` now sends checked ADTs through
+> `collect_decl_field_adt_refs`; `reachable_adt_deps` then performs the existing
+> transitive fixed-point walk and `item_subprogram` emits dependencies before the
+> checked declaration. The direct regression
+> `checked_adt_seeds_its_own_nested_type_graph` pins both membership and source
+> order. This closes an under-approximated proof-input dependency class; it does
+> not change REQ-5's level rule.
 
 > **Amendment 2026-07-29 (Gate G4 automatic reconstruction).**
 > The normal CLI path selects `EngineSelection::Auto`. After the ordinary

@@ -98,6 +98,7 @@ fn assert_false_claim_rejected(source: &str, name: &str, temp: &TempDir) {
 #[test]
 fn synchronization_mechanics_are_receipt_bound_and_fail_closed() {
     let wait_source = "stdlib/kernel-primitives/synchronization/wait.th";
+    let barrier_source = "stdlib/kernel-primitives/synchronization/barrier.th";
     let once_source = "stdlib/kernel-primitives/synchronization/once.th";
     let refcount_source = "stdlib/kernel-primitives/synchronization/refcount.th";
     let seqlock_source = "stdlib/kernel-primitives/synchronization/seqlock.th";
@@ -150,6 +151,31 @@ fn synchronization_mechanics_are_receipt_bound_and_fail_closed() {
         .unwrap()
         .iter()
         .any(|effect| effect == "diverge"));
+
+    let barrier_rows = checked_rows(barrier_source);
+    assert_eq!(barrier_rows.len(), 18);
+    assert!(barrier_rows.iter().all(|row| row["level"] == "L3"));
+    assert!(barrier_rows.iter().all(|row| row["boundary"] == false));
+    for name in [
+        "barrier_membership_mask_valid",
+        "barrier_wf",
+        "barrier_register",
+        "barrier_unregister",
+        "barrier_arrive",
+        "barrier_stale_generation_probe",
+        "barrier_membership_freeze_probe",
+        "barrier_arrival_classify",
+        "barrier_classification_probe",
+        "barrier_generation_next",
+        "barrier_generation_exhaustion_probe",
+    ] {
+        let row = barrier_rows
+            .iter()
+            .find(|row| row["item"] == name)
+            .unwrap_or_else(|| panic!("missing barrier certificate `{name}`"));
+        assert_ne!(row["contract_quality"]["mutants_killed"], "0/0");
+    }
+    assert_eq!(mutation_total(&barrier_rows), (141, 149));
 
     let ticket_rows = checked_rows(ticket_source);
     assert_eq!(ticket_rows.len(), 18);
@@ -253,6 +279,24 @@ fn bounded_wait_false_change_claim(expected: usize) -> bool
 "#,
     );
     assert_false_claim_rejected(&false_wait, "bounded_wait_false_change_claim", &temp);
+
+    let mut false_barrier = fs::read_to_string(root().join(barrier_source)).unwrap();
+    false_barrier.push_str(
+        r#"
+fn barrier_false_duplicate_advances_claim() -> bool
+  req true
+  ens result
+  fx pure
+{
+  barrier_arrival_classify(true, true, true, true, true) == 4
+}
+"#,
+    );
+    assert_false_claim_rejected(
+        &false_barrier,
+        "barrier_false_duplicate_advances_claim",
+        &temp,
+    );
 
     let mut false_ticket = fs::read_to_string(root().join(ticket_source)).unwrap();
     false_ticket.push_str(
@@ -358,6 +402,7 @@ fn seqlock_false_stale_read_claim() -> bool
     for relative in [
         "evidence/thermite-package/manifest.json",
         "evidence/thermite-package/source-map.json",
+        "evidence/thermite-package/source/synchronization/barrier.th",
         "evidence/thermite-package/source/synchronization/once.th",
         "evidence/thermite-package/source/synchronization/refcount.th",
         "evidence/thermite-package/source/synchronization/seqlock.th",

@@ -9297,6 +9297,16 @@ kind = "test"
 target = "forge/tests/check_conformance.rs"
 note = "check pipeline conformance"
 
+[[requirement.evidence]]
+kind = "symbol"
+target = "reachable_adt_deps"
+note = "Per-item ADT closure, including a checked declaration's own nested field-type graph."
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/src/check.rs::tests::checked_adt_seeds_its_own_nested_type_graph"
+note = "Pins direct nested-ADT weaving without relying on an unrelated spec-function reference."
+
 [[requirement]]
 id = "REQ-FORGE-CHECK-VERUS-SCRATCH"
 title = "Verus invocation scratch discipline"
@@ -17544,14 +17554,14 @@ owner = ".design/build/kernel-primitives.md"
 status = "partial"
 scope = "verified"
 summary = "Thermite distinguishes bounded waiting, blocking progress assumptions, and terminal divergence, then implements synchronization structures as verified Thermite libraries."
-remaining_scope = "A receipt-bound bounded-wait trace scan, frozen pause/block/terminal-halt declarations, and fail-closed ticket-lock/once/reference-count/seqlock mechanics are shipped with L3 proofs, adversarial claims, strict replay, and tamper rejection. Add registry-level fairness/progress semantics, directly refined wait bodies, atomic integration and machine concurrency composition, then participant-aware barriers, bounded queues, deques, and richer reader/writer coordination in .th."
+remaining_scope = "A receipt-bound bounded-wait trace scan, frozen pause/block/terminal-halt declarations, and fail-closed ticket-lock/barrier/once/reference-count/seqlock mechanics are shipped with L3 proofs, adversarial claims, strict replay, and tamper rejection. Add registry-level fairness/progress semantics, directly refined wait bodies, atomic integration and machine concurrency composition, then bounded queues, deques, and richer reader/writer coordination in .th."
 contributors = [".design/build/synchronization-primitives.md"]
 generated_to = ["status", "forge-kernel-primitives-status"]
 
 [[requirement.evidence]]
 kind = "file"
 target = "stdlib/kernel-primitives/synchronization.thpkg.json"
-note = "Canonical five-root package for bounded waiting, frozen wait operations, ticket locks, once initialization, reference counting, and seqlock mechanics."
+note = "Canonical six-root package for bounded waiting, frozen wait operations, ticket locks, participant-aware barriers, once initialization, reference counting, and seqlock mechanics."
 
 [[requirement.evidence]]
 kind = "file"
@@ -17562,6 +17572,11 @@ note = "Bounded first-change/timeout scan plus frozen pause, block, and divergen
 kind = "file"
 target = "stdlib/kernel-primitives/synchronization/ticket_lock.th"
 note = "No-wrap ticket issue, enter/wait/stale/unknown classification, guarded release, and FIFO/stale/exhaustion probes in Thermite."
+
+[[requirement.evidence]]
+kind = "file"
+target = "stdlib/kernel-primitives/synchronization/barrier.th"
+note = "Membership-mask registration, frozen in-round membership, exact arrival classification, stale-generation rejection, and nonwrapping round mechanics."
 
 [[requirement.evidence]]
 kind = "file"
@@ -17581,7 +17596,7 @@ note = "Odd/even writer epochs, reader retry/validation, stale-read rejection, a
 [[requirement.evidence]]
 kind = "test"
 target = "forge/tests/synchronization_primitives.rs"
-note = "Pins the L3/L1 assurance split and mutation scores, rejects false wait/LIFO/once/refcount/seqlock claims, replays the strict receipt, and detects source tampering."
+note = "Pins the L3/L1 assurance split and mutation scores, rejects false wait/LIFO/barrier/once/refcount/seqlock claims, replays the strict receipt, and detects source tampering."
 
 [[requirement]]
 id = "REQ-KPRIM-7"

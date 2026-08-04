@@ -678,9 +678,9 @@ pub fn check_file_with_options(
         //
         // Before #92 the seed was `[item] + fn_deps`, a strict subset of what is
         // woven, which surfaced three ways:
-        //   - a checked `struct`/`enum`: `collect_item_adt_refs` is inert on an ADT
-        //     decl (its own field types are followed by the type-graph fixed point
-        //     instead), so `adt_deps` came out empty for every ADT item, while the
+        //   - a checked `struct`/`enum`: `collect_item_adt_refs` was inert on an ADT
+        //     decl (it now seeds the declaration's own field types), so `adt_deps`
+        //     came out empty for every ADT item, while the
         //     ADT arm weaves the file's whole `spec_items`. A spec fn naming a
         //     second ADT dangled, so the item landed L0 and the project verdict
         //     FAILED. A single-ADT file hid this: the only ADT is the checked item,
@@ -5483,11 +5483,18 @@ fn collect_item_adt_refs(
             collect_expr_adt_refs(&s.dec.expr, adt_decls, out);
             collect_block_adt_refs(&s.body, adt_decls, out);
         }
-        // A struct/enum decl's own field types are followed by the type-graph
-        // fixed point (`collect_decl_field_adt_refs`), not here.
+        // A checked struct/enum is itself a root of the ADT type graph. Seed its
+        // direct field types here; the fixed-point walk then follows those
+        // declarations transitively. Without this root an enum containing a
+        // struct certified only when some unrelated woven spec fn happened to
+        // mention the struct, leaving the enum's isolated sub-program with an
+        // undefined field type.
         // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 ADT-ref consumer yet
         // (increments 2b-3); references no in-file ADT here, mirroring the ADT-decl arm.
-        Item::Const(_) | Item::Struct(_) | Item::Enum(_) | Item::Forge(_) => {}
+        Item::Struct(_) | Item::Enum(_) => {
+            collect_decl_field_adt_refs(item, adt_decls, out);
+        }
+        Item::Const(_) | Item::Forge(_) => {}
     }
 }
 
@@ -7204,6 +7211,33 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
             assert_eq!(profile.total_instantiations, 14);
             assert_eq!(profile.quantifiers[0].instantiations, 10);
         }
+    }
+
+    #[test]
+    fn checked_adt_seeds_its_own_nested_type_graph() {
+        let parsed = thermite_syntax::parse(
+            "struct Inner { value: u64 }\n\
+             enum Outer { Wrapped { inner: Inner }, Empty }\n",
+        );
+        assert!(parsed.is_clean(), "fixture must parse: {:?}", parsed.errors);
+        let outer = parsed
+            .program
+            .items
+            .iter()
+            .find(|item| item.name() == "Outer")
+            .expect("Outer item");
+        let deps = reachable_adt_deps(&parsed.program, &[outer]);
+        let names: Vec<&str> = deps.iter().map(Item::name).collect();
+        assert_eq!(names, vec!["Inner"]);
+
+        let sub = item_subprogram(outer, &[], &[], &[], &deps);
+        let lowered = thermite_lower::lower(&sub).expect("nested ADT sub-program lowers");
+        let inner_pos = lowered.find("pub struct Inner").expect("Inner woven");
+        let outer_pos = lowered.find("pub enum Outer").expect("Outer retained");
+        assert!(
+            inner_pos < outer_pos,
+            "dependency must precede its referrer"
+        );
     }
 
     // #8 proof-cache AC-3 (locality) + AC-4 (determinism), exercised over the

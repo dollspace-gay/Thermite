@@ -3,16 +3,17 @@
 <!--
 tier: 3-component
 status: partial
-decision: Thermite ships explicit bounded-wait, ticket-lock, once, reference-count, and seqlock mechanics in .th plus frozen pause, blocking-wait, and terminal-halt declarations; actual atomic and machine implementations remain consumer-refined boundaries
+decision: Thermite ships explicit bounded-wait, ticket-lock, barrier, once, reference-count, and seqlock mechanics in .th plus frozen pause, blocking-wait, and terminal-halt declarations; actual atomic and machine implementations remain consumer-refined boundaries
 governs:
   - stdlib/kernel-primitives/synchronization.thpkg.json
+  - stdlib/kernel-primitives/synchronization/barrier.th
   - stdlib/kernel-primitives/synchronization/once.th
   - stdlib/kernel-primitives/synchronization/refcount.th
   - stdlib/kernel-primitives/synchronization/seqlock.th
   - stdlib/kernel-primitives/synchronization/ticket_lock.th
   - stdlib/kernel-primitives/synchronization/wait.th
   - forge/tests/synchronization_primitives.rs
-audited-content-sha256: 5bdefa0526b945fe68bb624151286a5f9c688600075f987a8ebc1fccf7e7f55c (re-pinned 2026-08-04 after the once, reference-count, and seqlock primitive checkpoint)
+audited-content-sha256: 5d68e1a8bfb52985712a453289083faef992e21606e955412e2162c591c156c5 (re-pinned 2026-08-04 after the participant-aware barrier primitive checkpoint)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/sealed-atomics.md
@@ -31,7 +32,7 @@ consumer kernels. This repository does not choose which threads block, how a
 scheduler parks them, what protected data means, or which architecture executes
 pause and halt instructions.
 
-`stdlib/kernel-primitives/synchronization.thpkg.json` is a canonical five-root
+`stdlib/kernel-primitives/synchronization.thpkg.json` is a canonical six-root
 package containing only Thermite source. It has no Rust or assembly runtime
 implementation and no kernel policy.
 
@@ -70,6 +71,24 @@ ticket-state algorithm. A concurrent consumer still has to realize the
 transitions with the sealed atomic operations and directly refined machine
 implementations; this increment does not claim mutual exclusion from a
 sequential pure model alone.
+
+## Participant-aware barriers
+
+`BarrierState64` uses `u64` membership and arrival masks plus a nonwrapping
+generation. A normal participant is one bit; a caller may deliberately use a
+disjoint nonempty cohort mask as one arrival unit. Registration and
+unregistration are accepted only at a clean round boundary, so membership
+cannot change after the first arrival. Arrival distinguishes stale generation,
+inactive membership, duplicate arrival, exhausted generation, waiting, and the
+last arrival that advances the round and clears the arrival mask.
+
+The exact state transitions, classification priority, stale-generation probe,
+membership-freeze probe, and generation exhaustion mechanics prove at L3. The
+`barrier_wf` inspector states the arrived-subset-of-registered mask invariant.
+Thermite structs are not yet opaque, so arbitrary literal construction is not
+excluded by the type system; consumers should construct through the supplied
+operations and explicitly check externally supplied state. Atomic realization,
+parking, wakeup, and barrier participation policy remain consumer obligations.
 
 ## Once initialization
 
@@ -112,22 +131,24 @@ realization remain consumer composition obligations.
 
 ## Assurance and remaining work
 
-`forge check --level l3` proves all 78 in-language items at L3. The three frozen
-declarations remain L1 boundaries, so the package contains 81 source items in
-total. Executable contracts kill 208 of 219 generated mutants.
+`forge check --level l3` proves all 96 in-language items at L3. The three frozen
+declarations remain L1 boundaries, so the package contains 99 source items in
+total. Executable contracts kill 349 of 368 generated mutants.
 
 `forge/tests/synchronization_primitives.rs` additionally:
 
 - pins the exact L3/L1 split and all three boundary targets;
 - requires the halt declaration to retain its explicit `diverge` effect;
-- pins wait mutation at 21/22, ticket mutation at 41/43, once mutation at
-  65/68, reference-count mutation at 32/34, and seqlock mutation at 49/52;
+- pins wait mutation at 21/22, barrier mutation at 141/149, ticket mutation at
+  41/43, once mutation at 65/68, reference-count mutation at 32/34, and seqlock
+  mutation at 49/52;
 - rejects a false claim that an unchanged trace reports a change;
 - rejects a false claim that the second ticket may bypass the first;
+- rejects a false claim that a duplicate barrier arrival advances the round;
 - rejects false second-once-winner, retired-reference-resurrection, and stale
   seqlock-read claims;
 - builds and replays `ticket_lock_can_issue` as a strict freestanding scalar
-  export while binding all five original modules into the receipt; and
+  export while binding all six original modules into the receipt; and
 - tampers with the bound wait source and requires validation to fail.
 
 The strict export is scalar because current body TV cannot independently frame
@@ -136,20 +157,19 @@ receipt-bound, and every in-language aggregate transition has its individual
 L3 certificate.
 
 Remaining synchronization work includes atomic integration, named progress and
-fairness assumptions in the registry, participant-aware barriers, bounded
-concurrent queues, work-stealing deque mechanics, and richer reader/writer
-coordination.
+fairness assumptions in the registry, bounded concurrent queues, work-stealing
+deque mechanics, and richer reader/writer coordination.
 
 ## Auditable metrics
 
 | Metric | Value |
 |---|---:|
-| Physical Thermite LOC | 1,322 |
-| Nonblank Thermite LOC | 1,245 |
-| Thermite functions | 59 (50 executable, 6 specification, 3 frozen declarations) |
-| In-language L3 items | 78 |
+| Physical Thermite LOC | 1,837 |
+| Nonblank Thermite LOC | 1,743 |
+| Thermite functions | 73 (64 executable, 6 specification, 3 frozen declarations) |
+| In-language L3 items | 96 |
 | Frozen boundary declarations | 3 at L1 |
-| Executable mutants killed | 208/219 |
+| Executable mutants killed | 349/368 |
 | Bodyful Rust/assembly synchronization implementations | 0 |
 | Ordinary Rust kernel-policy/algorithm LOC | 0 |
 | Direct-Verus TPL LOC shipped by this package | 0 |

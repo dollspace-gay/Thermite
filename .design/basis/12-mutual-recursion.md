@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: 401dd6dc08a5df7ebaf21cd5350991b1d8ba8235e197b724b8c9e0187e92eb01 (re-pinned 2026-08-04 after sealed-atomic and fixed-array lowering changes; existing behavior remains regression-covered)
+audited-content-sha256: c593c85986f029f747c8c7350e230284a43a8f2c2065fca47073d8e8125c3f13 (re-pinned 2026-08-04 after the additive checked-ADT dependency-closure fix; mutual-recursion behavior remains regression-covered)
 governs: forge/src/check.rs
 governs: thermite-lower/src/lower.rs
 thesis-refs:

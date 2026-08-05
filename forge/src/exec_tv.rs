@@ -269,6 +269,7 @@ fn clause_frame(clause: &thermite_tv::ExecClause) -> ExecObligationFrame {
         slice_params: clause.slice_params.clone(),
         fixed_array_params: Vec::new(),
         fixed_array_fields: Vec::new(),
+        mutable_records: Vec::new(),
         result_is_fixed_array: false,
         result_record: None,
     }
@@ -332,6 +333,15 @@ pub fn exec_tv_export_guard(
         ..Default::default()
     };
     env.fixed_array_fields = crate::body_tv::fixed_array_field_bindings(program, f);
+    env.mutable_records = match crate::body_tv::mutable_record_frames(program, f) {
+        Ok(records) => records,
+        Err(reason) => {
+            return ExecResult {
+                label,
+                verdict: ExecVerdict::Skipped { reason },
+            }
+        }
+    };
     for param in &f.params {
         let Some((ty, slice)) = exec_type_spelling(&param.ty) else {
             return ExecResult {
@@ -354,7 +364,7 @@ pub fn exec_tv_export_guard(
         bv: None,
     };
     let support_defs = match crate::body_tv::body_tv_support(program, f) {
-        Ok((defs, _)) => defs,
+        Ok((defs, _, _)) => defs,
         Err(reason) => {
             return ExecResult {
                 label,
@@ -393,6 +403,7 @@ struct ExecEnv {
     slice_params: Vec<String>,
     fixed_array_params: Vec<String>,
     fixed_array_fields: Vec<String>,
+    mutable_records: Vec<thermite_tv::MutableRecordFrame>,
     constant_names: Vec<String>,
 }
 
@@ -454,7 +465,7 @@ fn exec_tv_fn(
     }
 
     let support_defs = match crate::body_tv::body_tv_support(program, f) {
-        Ok((defs, _)) => defs,
+        Ok((defs, _, _)) => defs,
         Err(reason) => {
             report.results.push(ExecResult {
                 label: f.name.clone(),
@@ -479,6 +490,16 @@ fn exec_tv_fn(
         ..Default::default()
     };
     env.fixed_array_fields = crate::body_tv::fixed_array_field_bindings(program, f);
+    env.mutable_records = match crate::body_tv::mutable_record_frames(program, f) {
+        Ok(records) => records,
+        Err(reason) => {
+            report.results.push(ExecResult {
+                label: f.name.clone(),
+                verdict: ExecVerdict::Skipped { reason },
+            });
+            return;
+        }
+    };
     for p in &f.params {
         if let Some((ty_str, is_slice)) = exec_type_spelling(&p.ty) {
             env.bind(&p.name, ty_str, is_slice);
@@ -836,6 +857,12 @@ fn check_corpus_expr(
             .cloned()
             .collect(),
         fixed_array_fields: env.fixed_array_fields.clone(),
+        mutable_records: env
+            .mutable_records
+            .iter()
+            .filter(|record| needed.iter().any(|name| name == &record.name))
+            .cloned()
+            .collect(),
         result_is_fixed_array: ret_ty.starts_with('[') && ret_ty.contains(';'),
         result_record: crate::body_tv::named_record_frames(program)
             .into_iter()
@@ -995,12 +1022,23 @@ fn exec_type_spelling(ty: &Type) -> Option<(String, bool)> {
             };
             Some((format!("[{elem}; {len}]"), false))
         }
-        Type::Ref { inner, .. } => match inner.as_ref() {
+        Type::Ref { mutable, inner } => match inner.as_ref() {
             // `&[u32]` → the exec slice binding (indexed element-wise as `xs[i as
             // int]` in the reference, AC-5). Only a `u32` element slice is framed.
             Type::Slice(elem) => {
                 exec_type_spelling(elem).map(|(spelling, _)| (format!("&[{spelling}]"), true))
             }
+            // Keep named-record borrows as borrows. In particular, Verus only
+            // permits `final(record)` in a postcondition when the obligation
+            // parameter retains its exact `&mut Record` type.
+            Type::Named(name) => Some((
+                if *mutable {
+                    format!("&mut {name}")
+                } else {
+                    format!("&{name}")
+                },
+                false,
+            )),
             // A `&u64`/`&usize` borrow frames as the inner scalar.
             other => exec_type_spelling(other),
         },
@@ -1309,6 +1347,25 @@ mod divergent_teeth {
             req: Some("a + b <= 0xFFFF".to_string()),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn named_record_borrows_keep_their_exact_exec_frame_type() {
+        let named = Type::Named("State".to_string());
+        assert_eq!(
+            exec_type_spelling(&Type::Ref {
+                mutable: false,
+                inner: Box::new(named.clone()),
+            }),
+            Some(("&State".to_string(), false))
+        );
+        assert_eq!(
+            exec_type_spelling(&Type::Ref {
+                mutable: true,
+                inner: Box::new(named),
+            }),
+            Some(("&mut State".to_string(), false))
+        );
     }
 
     /// Positive control: a faithful production (`a + b`, the lowering of the source)

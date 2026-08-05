@@ -123,11 +123,11 @@ requires every recorded translation-validation row to be faithful.
 The complete generation-ledger lifecycle is not yet claimed as a strict receipt
 export. Strict body TV now independently frames direct and nested writes through
 exclusive finite named-record borrows, typed owned-record local mutation/pure
-value-call composition, and user-ADT match/results. This package additionally
-threads those values through mutable-reference callee chains. That call-effect
-form is still rejected as `skipped`, rather than silently promoted from the
-per-item L3 proof. Closing the remaining lifecycle gap requires exact mutable
-callee-effect composition.
+value-call composition, user-ADT match/results, and exact direct finite-record
+mutable-call effects. This package's lifecycle uses owned ADT transitions rather
+than `&mut` calls, so the new call-effect primitive does not by itself close the
+receipt: the root still reaches the bodyless authority mint and needs an exact
+consumer implementation plus direct refinement.
 
 Likewise, the frozen authority mint is only a declaration in this package. A
 consumer must bind it to an exact implementation and direct refinement. The
@@ -139,10 +139,10 @@ fits that assurance class; this package does not claim a machine operation.
 This increment strengthens REQ-KPRIM-4 but does not complete it. The remaining
 work is explicit:
 
-1. extend the shipped aggregate/ADT value TV through mutable-reference callee
-   effects, then strictly build/replay the full generation lifecycle;
-2. directly refine the authority-mint implementation supplied by a synthetic
+1. directly refine the authority-mint implementation supplied by a synthetic
    consumer platform;
+2. strictly build, replay, and execute the full owned-ADT generation lifecycle
+   through that refined mint;
 3. add a complete affine/linear rule if consumers require uniqueness beyond
    the current sealed-root, move-check, generation, and construction barriers;
 4. bind generation ownership into sealed atomic initialization slots; and

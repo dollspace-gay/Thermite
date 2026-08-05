@@ -1,0 +1,63 @@
+#[opaque] struct MutableCallState {
+  value: u64,
+  guard: u64,
+}
+
+spec fn mutable_call_value_spec(state: MutableCallState) -> u64
+  dec 0
+{
+  state.value
+}
+
+spec fn mutable_call_guard_spec(state: MutableCallState) -> u64
+  dec 0
+{
+  state.guard
+}
+
+fn mutable_call_new(value: u64, guard: u64) -> MutableCallState
+  req true
+  ens mutable_call_value_spec(result) == value
+  ens mutable_call_guard_spec(result) == guard
+  fx pure
+{
+  MutableCallState { value: value, guard: guard }
+}
+
+fn mutable_call_value(state: &MutableCallState) -> u64
+  req true
+  ens result == mutable_call_value_spec(*state)
+  fx pure
+{
+  state.value
+}
+
+fn mutable_call_guard(state: &MutableCallState) -> u64
+  req true
+  ens result == mutable_call_guard_spec(*state)
+  fx pure
+{
+  state.guard
+}
+
+fn mutable_call_set(state: &mut MutableCallState, next: u64) -> u64
+  req true
+  ens result == next
+  ens mutable_call_value_spec(*final(state)) == next
+  ens mutable_call_guard_spec(*final(state)) == mutable_call_guard_spec(*old(state))
+  fx pure
+{
+  state.value = next;
+  next
+}
+
+fn mutable_call_pipeline(state: &mut MutableCallState, seed: u64) -> ()
+  req seed < 1000
+  ens mutable_call_value_spec(*final(state)) == seed + 1
+  ens mutable_call_guard_spec(*final(state)) == mutable_call_guard_spec(*old(state))
+  fx pure
+{
+  mutable_call_set(state, seed + 1);
+  let next: u64 = state.value;
+  mutable_call_set(state, next);
+}

@@ -64,6 +64,7 @@ fn frame() -> BodyObligationFrame {
                 RecordFieldFrame::new("occupied", false),
             ],
         )],
+        mutable_call_effects: Vec::new(),
         ..Default::default()
     }
 }
@@ -95,6 +96,7 @@ fn dependent_frame() -> BodyObligationFrame {
                 RecordFieldFrame::new("second", false),
             ],
         )],
+        mutable_call_effects: Vec::new(),
         ..Default::default()
     }
 }

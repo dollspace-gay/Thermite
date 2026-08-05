@@ -197,6 +197,7 @@ fn nested_borrowed_frame() -> BodyObligationFrame {
         req: Some("index < SLOTS && next < 1000".to_string()),
         fixed_array_fields: vec!["state.slots".to_string()],
         mutable_records: vec![MutableRecordFrame::new("state", nested.fields.clone())],
+        mutable_call_effects: Vec::new(),
         named_records: vec![inner, nested],
         ..Default::default()
     }

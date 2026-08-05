@@ -4,7 +4,7 @@
 tier: 3-component
 status: draft
 audited-sha: 92396428567edc6940a9e2845217f5ff4c2ea3c6 (re-pinned 2026-06-16, user-authorized: the only change to this doc's governed files since the prior pin is the additive stage-1 forge-tier increment 2a — the new Item::Forge surface + inert Item::Forge match arms, verified net-additive with no substantive removal of existing v1 logic (git log <main>..HEAD = the 8 forge commits); the v1 behavior this doc governs is unchanged, and the new forge-tier surface is specified in .design/stage1-forge-tier.md / REQ-S1-3)
-audited-content-sha256: 1f6ce5e8d8f204bf0165c881313a3225fc63cf4a7132833e9e3944847b31ec72 (re-pinned 2026-08-04 after exact user-ADT match state threading; no kernel implementation is present)
+audited-content-sha256: 425ce9560474ca3c40f1b3faded3a952aa21a7b840cbea3b55720e8e4084416c (re-pinned 2026-08-04 after exact direct finite-record mutable-call state threading and alias rejection; no kernel implementation is present)
 governs: thermite-tv/src/exec_stmt_encode.rs, thermite-tv/src/obligation.rs, thermite-lower/src/lower.rs, forge/src/body_tv.rs, forge/src/tv_signal.rs
 thesis-refs:
   - thermite-design.md §1 (trust relocated: code → spec → spec-intent)
@@ -111,6 +111,9 @@ subset admits a direct `root.field` read/write when `root: &mut Name`, `Name` is
 finite and non-sealed, and every declared direct field joins the independent
 final-state frame. Opaque roots use this subset only inside their defining
 Thermite module and expose public state through closed specifications/observers.
+A statement-position call may additionally thread one or more pairwise-distinct
+direct `&mut Name` roots through an exact reachable in-language callee body as
+specified by `.design/build/mutable-call-effects.md`.
 
 **OUT (explicitly NOT in kernel exec subset v1 — honest boundary):**
 
@@ -123,12 +126,14 @@ Thermite module and expose public state through closed specifications/observers.
   framed not designed). The state-denotation (REQ-2) is the SINGLE-EXIT final-state function.
 - **`match` as a statement / `match`-bound state.** Exec `match` (C7 Option/Result payload) is exec-
   expression territory (`exec-tv.md`); a `match` that MUTATES per-arm is OUT of v1.
-- **Heap-backed, enum, aliased, or call-effect aggregate mutation.** Direct
+- **Heap-backed, enum, or wider alias/call-effect aggregate mutation.** Direct
   indexed mutation, typed returned finite-record locals, exact nested fields,
-  terminal record-array indices, and sole-cell record-state loops now have
-  independent theories. `Vec::push`, `Map::insert`, String mutation, mutable enum
-  payloads, index-then-field aliases, and calls that mutate named state remain
-  OUT and are HONESTLY SKIPPED.
+  terminal record-array indices, sole-cell record-state loops, and exact
+  statement-position calls over pairwise-distinct direct finite-record roots now
+  have independent theories. `Vec::push`, `Map::insert`, String mutation, mutable
+  enum payloads, index-then-field/projected aliases, mixed shared/mutable
+  formals, mutable slice/array calls, consumed mutable-call results, and
+  recursive effect cycles remain OUT and are HONESTLY SKIPPED.
 - **Recursion-as-statement / nested-fn definitions.** No fn definitions inside a body; a recursive call
   is an exec-EXPRESSION (step 2.1 checks its value), not a statement form.
 - **Shadowing edge cases.** v1 assumes each `let` introduces a distinct name (no `let x = ..; let x =
@@ -148,6 +153,12 @@ borrows, and one exact cell per declared direct field of each framed exclusive
 named-record parameter. For a straight-line body the denotation is a **big-step** evaluation
 threading an initial environment (the fn params) through the statement sequence to a FINAL environment,
 and the body's value is the tail expression evaluated in that final environment.
+
+For an admitted mutable call, the state additionally carries the reachable
+callee's parsed formal order, nominal record frames, and source body. The
+denotation copies every caller field into its exact formal root, recursively
+threads the body, and copies every post-field back. Direct actual roots must be
+pairwise distinct and recursive effect cycles are rejected.
 
 `thermite_tv::exec_stmt_encode::body_ref_state(block: &Block, &BodyRefCtx) -> Result<String>` maps a
 straight-line `Block` to a Verus **spec-fn state-denotation**: the final state (and hence the tail
@@ -466,8 +477,8 @@ contract:
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-1 (frozen kernel exec-statement subset v1) | SHIPPED | the IN/OUT construct set is PINNED IN CODE: `thermite_tv::exec_stmt_encode::body_ref_state` admits `Stmt::Let`/`Assign`/`If`/`Expr`/tail-`Return` + sequencing/tail, including direct indexed mutation of native fixed arrays/mutable borrowed storage and direct one-level field mutation through a finite `&mut Name`. State substitution descends through supported method receivers/arguments, including total `u64` bit operations. It honestly rejects out-of-v1 loop/control-flow shapes, heap-backed/nested/enum/local-record/call-effect aggregate mutation, mixed state theories, and re-shadowing. Verified by body teeth, fixed-array/packed-bit/aggregate-storage tests, and the named-record lifecycle suite. |
-| REQ-2 (operational-semantics reference state-denotation) | SHIPPED | `pub fn body_ref_state` (+ `body_ref_state_ensures`, `BodyRefCtx`) in `thermite-tv/src/exec_stmt_encode.rs` is the independent big-step state transformer: ordered scalar/array substitution, branch composition, multi-cell projection, exact chained `Seq::update` state for mutable indexed borrows, and one complete ordered field frame for each mutable record. Non-test consumer: `body_equivalence_obligation`; the `thermite-tv` dependency graph contains no production lowerer. Real-Verus mutants catch reordered/dropped/wrong-index/wrong-field/wrong-value/collateral writes and old/final swaps. |
+| REQ-1 (frozen kernel exec-statement subset v1) | SHIPPED | the IN/OUT construct set is PINNED IN CODE: `thermite_tv::exec_stmt_encode::body_ref_state` admits `Stmt::Let`/`Assign`/`If`/`Expr`/tail-`Return` + sequencing/tail, including direct indexed mutation of native fixed arrays/mutable borrowed storage, exact nested finite-record fields, and statement-position calls over pairwise-distinct direct finite-record roots. State substitution descends through supported method receivers/arguments, including total `u64` bit operations. It honestly rejects out-of-v1 loop/control-flow shapes, heap-backed/enum/projected-alias mutation, mutable slice/array calls, consumed mutable-call results, recursive effect cycles, mixed state theories, and re-shadowing. Verified by body teeth, fixed-array/packed-bit/aggregate-storage, named/nested-record, and mutable-call lifecycle suites. |
+| REQ-2 (operational-semantics reference state-denotation) | SHIPPED | `pub fn body_ref_state` (+ `body_ref_state_ensures`, `BodyRefCtx`) in `thermite-tv/src/exec_stmt_encode.rs` is the independent big-step state transformer: ordered scalar/array substitution, branch composition, multi-cell projection, exact chained `Seq::update` state for mutable indexed borrows, complete recursive record frames, and exact source-body interpretation/copy-in/copy-out for reachable mutable callees. Non-test consumer: `body_equivalence_obligation`; the `thermite-tv` dependency graph contains no production lowerer. Real-Verus mutants catch reordered/dropped/wrong-index/wrong-field/wrong-value/collateral calls and writes, duplicate exclusive aliases, recursive effect cycles, and old/final swaps. |
 | REQ-3 (step-2.2.1 straight-line body state-refinement obligation + discharge) | SHIPPED | `body_equivalence_obligation` + `BodyObligationFrame` emits an exec wrapper whose ensures compare the returned value, every framed mutable indexed borrow's complete final sequence, and every framed record's complete final direct-field state against independent update chains from `old(param)`. The production side remains `thermite_lower::lower_exec_body`. Scalar B1–B4, aggregate-storage, and opaque named-record constructor/observer/mutator cases verify faithfully and reject their mutations under real Verus. |
 | REQ-4 (step-2.2.2 loops — harder horizon) | SHIPPED | #163, OWNED + evidenced in `.design/verified/loop-tv.md` (its REQ-1..REQ-5 are all SHIPPED) — corrected from NOT-STARTED at the #262 re-audit. The chosen variant of (a) is BUILT: the three per-run loop obligations `pub fn loop_entry_obligation`/`loop_preservation_obligation`/`loop_exit_obligation` + `LoopObligationFrame` in `thermite-tv/src/obligation.rs` (reusing the SHIPPED `body_ref_state` single-iteration step), the Lean partial-correctness WHILE-RULE `theorem while_rule`/`tv_meta_loop` in `lean/Thermite/Exec/Loop.lean` (no `sorry`; termination stays the per-run Verus `decreases` residual), and the forge wiring `loop_body_tv`/`discharge_loop` in `forge/src/body_tv.rs` (v1 = a single frozen-subset `while` as the body's last statement; out-of-v1 loops `Skipped`-with-reason). Verified: `thermite-tv/tests/loop_teeth.rs` L1–L4 + `forge/tests/body_tv.rs` (faithful v1 `while` → Faithful all three; `binary_search.th`'s `loop`-kind body → Skipped) under real verus. Bounded unrolling (b) DROPPED for v1 (the future v0.2 L2 fallback). |
-| REQ-5 (forge `body_tv` plug-in point) | SHIPPED | `forge::body_tv` walks each function body, derives scalar/fixed-array/slice and finite named-record frames from its signature, runs production body lowering against the independent state obligation, and reports the four verdicts distinctly. Mutable slice/array and direct named-record parameters are framed automatically; unsupported nested/alias-sensitive/local-record/call-effect writes remain `Skipped` with a reason. `forge/tests/body_tv.rs` proves faithful scalar, loop, fixed-array, mutable aggregate-storage, and opaque named-record cases under real Verus. |
+| REQ-5 (forge `body_tv` plug-in point) | SHIPPED | `forge::body_tv` walks each function body, derives scalar/fixed-array/slice, finite named-record, and reachable bodyful mutable-callee frames from the validated source closure, runs production body lowering against the independent state obligation, and reports the four verdicts distinctly. Mutable slice/array state and direct named-record parameters are framed automatically; unsupported projected/alias-sensitive/local-record/wider call-effect writes remain `Skipped` with a reason. `forge/tests/body_tv.rs` proves faithful scalar, loop, fixed-array, mutable aggregate-storage, opaque named-record, and exact mutable-call cases under real Verus. |

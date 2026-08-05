@@ -153,13 +153,14 @@ scores stay above the configured floor.
 - tampers with the bound direct-map source and requires validation to fail.
 
 The strict export is intentionally scalar. Body TV now frames direct and nested
-finite-record mutation plus user-ADT match/results, but complete collection
-transitions still traverse mutable-reference callee chains and quantified
-aggregate frames. Those call-effect/quantified forms remain outside the strict
-body denotation, so this increment does not claim that the whole ring lifecycle
-is a strict public receipt export. The complete package source is bound by the
-scalar receipt, while aggregate operations retain their individual L3
-certificates and the generic fixed-array TV evidence.
+finite-record mutation, user-ADT match/results, and exact statement-position
+mutable calls over direct finite-record roots. The collection package itself uses
+owned state transitions; complete collection exports remain gated by quantified
+aggregate framing and a dedicated strict aggregate receipt/runtime fixture. This
+increment therefore does not yet claim that the whole ring lifecycle is a strict
+public receipt export. The complete package source is bound by the scalar receipt,
+while aggregate operations retain their individual L3 certificates and the
+generic fixed-array TV evidence.
 
 ## Remaining collection closure
 
@@ -170,8 +171,7 @@ This is a substantial REQ-KPRIM-2 increment, not completion. Remaining work is:
 3. capacity/type parameterization that does not rely on privileged generated
    policy types;
 4. quantified framing and equality for aggregate collection states;
-5. mutable-reference callee-effect and quantified aggregate body TV so complete
-   transitions can be strict exports;
+5. quantified aggregate body TV and strict aggregate receipt/runtime fixtures;
 6. static-storage ownership and initialization; and
 7. atomic integration for concurrent containers; pure bounded MPSC and
    work-stealing deque state mechanics are supplied by the synchronization

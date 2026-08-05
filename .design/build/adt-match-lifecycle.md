@@ -16,7 +16,7 @@ governs:
   - forge/src/verified_build.rs
   - forge/tests/verified_composition.rs
   - conformance/verified-composition/probe.th
-audited-content-sha256: 40417c2dfa51d1e0241084738b6a407378c842c0336af8aea738601584376fce (pinned 2026-08-04 for exact user-ADT match/result translation validation; no kernel was added)
+audited-content-sha256: 311da10695c7a1126d7e7c8775c98ae6f62529e30fd43e39b25e9ca172c1037d (re-pinned 2026-08-04 after the additive exact mutable-call lifecycle extension; no kernel was added)
 extends:
   - .design/build/owned-aggregate-lifecycle.md
   - .design/build/nested-aggregate-lifecycle.md
@@ -109,10 +109,12 @@ parallel implementation producing an expected marker.
 
 ## Residual boundary
 
-This increment does not add enum-payload lvalue mutation, slice-pattern execution,
-mutable-reference callee effect composition, or new aliasing rules. Record-state
-loop fixpoints are supplied separately by `.design/build/record-state-loops.md`.
-The other forms remain separate aggregate-lifecycle increments. It also
+This increment does not add enum-payload lvalue mutation or slice-pattern
+execution. Record-state loop fixpoints are supplied separately by
+`.design/build/record-state-loops.md`; exact direct finite-record mutable-call
+effects and their pairwise-distinct alias rule are supplied by
+`.design/build/mutable-call-effects.md`. Wider alias and mutable-call forms remain
+separate aggregate-lifecycle increments. It also
 does not add an allocator, scheduler, IPC policy, boot image, firmware path,
 architecture implementation, or any other kernel.
 

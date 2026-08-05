@@ -15,7 +15,7 @@ governs:
   - forge/src/body_tv.rs
   - forge/tests/verified_build.rs
   - conformance/verified-build/record_state_loop.th
-audited-content-sha256: 6b15b0c85c928682457781941284a8cde4cae203cd9604b2d0c6cc2e97a18267 (pinned 2026-08-04 for exact L3 record-state loop lifecycle primitives; no kernel was added)
+audited-content-sha256: 7b05e2fa5b624b387700679531cc536ed44b66e9290178e4bde1f5878fd75f49 (re-pinned 2026-08-04 after the adjacent straight-line mutable-call lifecycle extension; loop semantics remain regression-covered and no kernel was added)
 extends:
   - .design/verified/loop-tv.md
   - .design/build/nested-aggregate-lifecycle.md
@@ -99,8 +99,9 @@ bodyless boundary declaration and therefore no new L1 exception.
 ## Residual boundary
 
 The frozen subset still excludes multiple record cells in one loop result,
-record mutation through a mutable-reference callee, loops over exclusive borrowed
-records, a loop followed by additional stateful statements, enum-payload lvalues,
+record mutation through a mutable-reference callee inside the loop theory, loops
+over exclusive borrowed records, a loop followed by additional stateful
+statements, enum-payload lvalues,
 index-then-field aliases, multi-exit `break`/`continue`/early-return control, and a
 quantified closed-form summary for dynamically updated fixed arrays. Those remain
 separate aggregate-effect, aliasing, and quantified-framing increments.

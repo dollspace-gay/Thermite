@@ -87,7 +87,7 @@ use thermite_syntax::ast::{Block, Expr, Type};
 use crate::exec_encode::{exec_ref_value, ExecRefCtx, RefEncodeError as ExecRefEncodeError};
 use crate::exec_stmt_encode::{
     body_ref_state_ensures, loop_ref_obligations, negate_condition, BodyRefCtx, EnumVariantFrame,
-    MutableRecordFrame, NamedRecordFrame,
+    MutableCallEffectFrame, MutableRecordFrame, NamedRecordFrame,
 };
 pub use crate::ref_encode::StateViewKind;
 use crate::ref_encode::{ref_contract_pred, RefCtx, RefEncodeError};
@@ -361,7 +361,10 @@ impl ExecParamDecl {
 ///
 /// This is the exec dual of [`ObligationFrame`] (which frames the contract
 /// predicate obligation). It carries no `nat_coerce`/`@`-view sets: the exec
-/// obligation is bounded-typed.
+/// obligation is bounded-typed. Mutable finite-record inputs are named
+/// explicitly so a field read in the reference postcondition selects the
+/// Verus post-state (`final(root).field`) rather than accidentally denoting the
+/// pre-state spelling used in the executable body.
 #[derive(Debug, Clone, Default)]
 pub struct ExecObligationFrame {
     /// The Verus `spec fn` definitions the body / its `requires` depend on,
@@ -390,6 +393,11 @@ pub struct ExecObligationFrame {
     pub fixed_array_params: Vec<String>,
     /// Direct `root.field` paths whose parsed field type is a fixed array.
     pub fixed_array_fields: Vec<String>,
+    /// Exact finite named-record parameters borrowed mutably by the enclosing
+    /// function. Every direct field is selected from `final(root)` in the
+    /// independent exec reference; the production expression still reads the
+    /// ordinary executable `root.field` at wrapper entry.
+    pub mutable_records: Vec<MutableRecordFrame>,
     /// Whether the result is a native fixed array and therefore compared
     /// extensionally through its `@` view.
     pub result_is_fixed_array: bool,
@@ -406,6 +414,14 @@ impl ExecObligationFrame {
         ExecRefCtx::with_slice_bound(self.slice_params.iter().cloned())
             .with_fixed_array_bound(self.fixed_array_params.iter().cloned())
             .with_fixed_array_fields(self.fixed_array_fields.iter().cloned())
+            .with_field_bindings(self.mutable_records.iter().flat_map(|record| {
+                record.fields.iter().map(|field| {
+                    (
+                        format!("{}.{}", record.name, field.name),
+                        format!("final({}).{}", record.name, field.name),
+                    )
+                })
+            }))
     }
 
     /// The Verus parameter list `name: type, …`.
@@ -596,6 +612,9 @@ pub struct BodyObligationFrame {
     pub result_is_unit: bool,
     /// Complete direct-field frames for exclusive named-record parameters.
     pub mutable_records: Vec<MutableRecordFrame>,
+    /// Reachable in-language mutable-reference callee bodies and their exact
+    /// formal record frames. Used only by the independent state denotation.
+    pub mutable_call_effects: Vec<MutableCallEffectFrame>,
     /// Exact finite named-record declarations available to typed owned locals.
     pub named_records: Vec<NamedRecordFrame>,
     /// All parsed record declarations used only for constructor typing. Unlike
@@ -618,6 +637,7 @@ impl BodyObligationFrame {
             .with_fixed_array_result(self.result_is_fixed_array)
             .with_unit_result(self.result_is_unit)
             .with_mutable_records(self.mutable_records.clone())
+            .with_mutable_call_effects(self.mutable_call_effects.clone())
             .with_named_records(self.named_records.clone())
             .with_constructor_records(self.constructor_records.clone())
             .with_enum_variants(self.enum_variants.clone())

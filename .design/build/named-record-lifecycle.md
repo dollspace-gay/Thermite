@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: 31c8e960acbea898e01d4d8ea51f060af8857fa1a7e8ddc4527a8902844d122d (re-pinned 2026-08-04 after additive ADT frame metadata; direct borrowed-record semantics remain regression-covered)
+audited-content-sha256: da28ceb38e9278b298abe9e6e4682540261138d6a5da51bb602eed55701809ad (re-pinned 2026-08-04 after exact mutable-call and post-field selector coverage; direct borrowed-record semantics remain regression-covered)
 decision: direct mutation through an exclusive borrow of finite non-sealed named record state is admitted only when validator, L3, independent contract/exec/body TV, strict ABI, receipt replay, and representation ownership all describe the same field-exact transition
 governs:
   - thermite-spec/src/validator.rs
@@ -232,6 +232,9 @@ Nested mutable projections and record-state loops are now supplied by
 `.design/build/nested-aggregate-lifecycle.md` and
 `.design/build/record-state-loops.md`. Mutable enum payloads, heap-backed record
 fields, an affine type system, static global ownership, concurrent record access,
-atomic-object machine refinement, mutable-reference call-effect TV, and separate
-Rust/assembly TPL refinement remain explicit later primitive increments. It also
-does not add any kernel policy or kernel artifact.
+atomic-object machine refinement, mixed shared/mutable, mutable slice/array, or
+projected-root call effects, and separate Rust/assembly TPL refinement remain
+explicit later primitive increments. Exact statement-position calls over
+pairwise-distinct direct finite-record roots are supplied by
+`.design/build/mutable-call-effects.md`. It also does not add any kernel policy
+or kernel artifact.

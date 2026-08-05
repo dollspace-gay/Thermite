@@ -1953,6 +1953,69 @@ design = ".design/build/record-state-loops.md"
 reference = []
 conformance_ops = ["record-state-loop-lifecycle"]
 
+# Exact bodyful mutable-reference call composition for pairwise-distinct direct
+# finite-record roots. Production executes the generated calls; the independent
+# state denotation recursively interprets the receipt-bound source bodies.
+[[route]]
+crate_pattern = "thermite-tv/src/exec_encode.rs"
+design = ".design/build/mutable-call-effects.md"
+reference = ["conformance/verified-build/mutable_call_effect.th"]
+conformance_ops = ["mutable-post-state-field-selector"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/exec_stmt_encode.rs"
+design = ".design/build/mutable-call-effects.md"
+reference = ["conformance/verified-build/mutable_call_effect.th"]
+conformance_ops = ["mutable-call-state-composition", "exclusive-alias-rejection"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/obligation.rs"
+design = ".design/build/mutable-call-effects.md"
+reference = ["conformance/verified-build/mutable_call_effect.th"]
+conformance_ops = ["mutable-call-obligation-frame"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/lib.rs"
+design = ".design/build/mutable-call-effects.md"
+reference = ["conformance/verified-build/mutable_call_effect.th"]
+conformance_ops = ["mutable-call-frame-api"]
+
+[[route]]
+crate_pattern = "thermite-tv/tests/mutable_call_effect_tv.rs"
+design = ".design/build/mutable-call-effects.md"
+reference = ["conformance/verified-build/mutable_call_effect.th"]
+conformance_ops = ["mutable-call-real-verus", "mutable-call-mutants"]
+
+[[route]]
+crate_pattern = "forge/src/body_tv.rs"
+design = ".design/build/mutable-call-effects.md"
+reference = ["conformance/verified-build/mutable_call_effect.th"]
+conformance_ops = ["reachable-mutable-effect-derivation"]
+
+[[route]]
+crate_pattern = "forge/src/exec_tv.rs"
+design = ".design/build/mutable-call-effects.md"
+reference = ["conformance/verified-build/mutable_call_effect.th"]
+conformance_ops = ["mutable-record-exec-frame"]
+
+[[route]]
+crate_pattern = "forge/tests/body_tv.rs"
+design = ".design/build/mutable-call-effects.md"
+reference = ["conformance/verified-build/mutable_call_effect.th"]
+conformance_ops = ["derived-mutable-call-effect"]
+
+[[route]]
+crate_pattern = "forge/tests/verified_build.rs"
+design = ".design/build/mutable-call-effects.md"
+reference = ["conformance/verified-build/mutable_call_effect.th"]
+conformance_ops = ["mutable-call-strict-l3", "mutable-call-replay", "mutable-call-runtime", "mutable-call-tamper"]
+
+[[route]]
+crate_pattern = "conformance/verified-build/mutable_call_effect.th"
+design = ".design/build/mutable-call-effects.md"
+reference = []
+conformance_ops = ["mutable-call-effect-lifecycle"]
+
 # Primitive-only sealed atomic declarations and proof vocabulary. These routes
 # intentionally cover no machine implementation: registry v1 must refuse that
 # assurance class until the separate object/machine refinement increment.

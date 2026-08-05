@@ -24,7 +24,7 @@ governs:
   - forge/tests/exec_tv_conformance.rs
   - forge/tests/verified_build.rs
   - conformance/verified-build/aggregate_array_relations.th
-audited-content-sha256: 7f682cf765bdd5eb31e0f08f9c59468dff287e7066336aea6f0c4818e59da271 (re-pinned 2026-08-04 after the control-value body-TV handoff; array relation semantics are unchanged)
+audited-content-sha256: 7f5bbced7a7283df7e3d06a5e68bb0eed435c6eb03980f4c901af4c802d8cea2 (re-pinned 2026-08-04 after additive mutable-call TV coverage in shared Forge sources; array relation semantics are unchanged)
 extends:
   - .design/build/kernel-primitives.md
   - .design/verified/exec-tv.md

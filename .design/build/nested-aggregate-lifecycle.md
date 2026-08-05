@@ -14,7 +14,7 @@ governs:
   - forge/tests/body_tv.rs
   - forge/tests/verified_build.rs
   - conformance/verified-build/nested_aggregate_lifecycle.th
-audited-content-sha256: f84b8ef94f65238b02a70565a11a35e7f90a400913de0cbbdbee1cd782f9cadd (re-pinned 2026-08-04 after the adjacent ADT lifecycle extension; no kernel policy or implementation was added)
+audited-content-sha256: fd35e77e8dd57200dbb9def9c39e92350a7562d59469a846d199d3612bf62726 (re-pinned 2026-08-04 after the adjacent exact mutable-call lifecycle extension; no kernel policy or implementation was added)
 extends:
   - .design/build/owned-aggregate-lifecycle.md
   - .design/build/named-record-lifecycle.md

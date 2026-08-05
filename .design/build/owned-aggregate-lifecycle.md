@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-decision: a typed mutable local of a finite non-sealed record may be updated and returned only when the independent body semantics reconstruct every field exactly, while calls compose only through independently derived pure value specifications and mutable-reference callees remain fail-closed
+decision: a typed mutable local of a finite non-sealed record may be updated and returned only when the independent body semantics reconstruct every field exactly; pure value calls compose through independently derived specifications, while the separate mutable-call extension composes exact direct finite-record effects
 governs:
   - thermite-tv/src/exec_encode.rs
   - thermite-tv/src/exec_stmt_encode.rs
@@ -15,7 +15,7 @@ governs:
   - forge/tests/body_tv.rs
   - forge/tests/verified_build.rs
   - conformance/verified-build/owned_aggregate_lifecycle.th
-audited-content-sha256: 427067d58ef53d8924bd6ec5afb95e377668207873a3e290d88487493168c6fe (re-pinned 2026-08-04 after the exact ADT match/result lifecycle extension)
+audited-content-sha256: 286010ea70d663571551ce3d74db368781e07ea9ecc920bfeccb5f4559c8aabe (re-pinned 2026-08-04 after the exact mutable-reference call-effect lifecycle extension)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/named-record-lifecycle.md
@@ -136,12 +136,13 @@ finite records and to contain owned local-record updates. A caller then composes
 through the callee's independently derived value specification rather than
 inlining production code or trusting the source contract alone.
 
-This composition is deliberately limited to value effects. A dependency with
-any mutable-reference parameter is rejected before an obligation is emitted,
-including mutable slices, arrays, and named records. Its post-state is not a
-return value and requires a separate exact call-effect frame. Bodyless boundary
-functions, platform effects, allocation, unresolved calls, recursion outside the
-existing closed proof surface, and other non-value effects remain fail-closed.
+This increment's original composition is deliberately limited to value effects.
+`.design/build/mutable-call-effects.md` now supplies the separate exact frame for
+statement-position bodyful calls over pairwise-distinct direct finite-record
+roots. Mixed shared/mutable formals, mutable slices/arrays, projected actual
+roots, returned-value consumption, bodyless boundary functions, platform
+effects, allocation, unresolved calls, recursive effect cycles, and other
+non-admitted effects remain fail-closed.
 
 ## Strict build, receipt, and execution
 
@@ -196,8 +197,8 @@ This increment is shipped only when all of the following hold:
    specification;
 5. dropped, wrong-field, wrong-value, reordered, collateral, stale-read, and
    wrong-callee production mutants fail an independent obligation;
-6. every mutable-reference callee remains explicitly rejected until exact effect
-   composition exists;
+6. exact direct finite-record mutable callees compose through the separate
+   source-derived effect frame, while wider mutable/alias forms remain rejected;
 7. a strict freestanding L3/L4-only build, receipt replay, ABI/source tamper
    checks, and a downstream compiled execution test all pass, with no skipped or
    sub-L3 proof row; and
@@ -210,7 +211,8 @@ This increment is shipped only when all of the following hold:
 The exact typed nested-field and terminal fixed-array projection subset is now
 shipped by `.design/build/nested-aggregate-lifecycle.md`; exact record-state
 loops are supplied by `.design/build/record-state-loops.md`. This increment still
-does not claim mutable enum payloads, index-then-field aliasing,
-mutable-reference call effects, static global
-ownership, affine uniqueness, concurrent record access, atomic object/machine
-refinement, or Rust/assembly TPL refinement. It does not add or package a kernel.
+does not claim mutable enum payloads, index-then-field aliasing, mixed
+shared/mutable, projected-root, or mutable slice/array call effects, returned
+mutable-call values, static global ownership, affine uniqueness, concurrent
+record access, atomic object/machine refinement, or Rust/assembly TPL refinement.
+It does not add or package a kernel.

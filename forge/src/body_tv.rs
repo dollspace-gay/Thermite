@@ -79,8 +79,8 @@ use thermite_tv::obligation::{
     LoopObligationFrame, LoopParamDecl,
 };
 use thermite_tv::{
-    loop_ref_obligations, BodyRefCtx, EnumVariantFrame, EnumVariantShapeFrame, MutableRecordFrame,
-    NamedRecordFrame, RecordFieldFrame,
+    loop_ref_obligations, BodyRefCtx, EnumVariantFrame, EnumVariantShapeFrame,
+    MutableCallEffectFrame, MutableRecordFrame, NamedRecordFrame, RecordFieldFrame,
 };
 
 use crate::check::{unique_scratch_dir, ScratchDir, DEFAULT_RLIMIT, DEFAULT_SOLVER_SEED};
@@ -222,7 +222,7 @@ fn body_tv_fn(
         return;
     }
 
-    let (support_defs, support_names) = match body_tv_support(program, f) {
+    let (support_defs, support_names, mutable_call_effects) = match body_tv_support(program, f) {
         Ok(support) => support,
         Err(reason) => {
             report.results.push(BodyResult {
@@ -249,6 +249,7 @@ fn body_tv_fn(
             body,
             &support_defs,
             &support_names,
+            &mutable_call_effects,
             seed,
             rlimit,
             report,
@@ -262,16 +263,18 @@ fn body_tv_fn(
 /// ordinary verified definitions available to both production and reference
 /// expressions. This closes the call-frame hole without replacing the
 /// independent state denotation.
+pub(crate) type BodyTvSupport = (Vec<String>, BTreeSet<String>, Vec<MutableCallEffectFrame>);
+
 pub(crate) fn body_tv_support(
     program: &thermite_syntax::Program,
     f: &FnItem,
-) -> Result<(Vec<String>, BTreeSet<String>), String> {
+) -> Result<BodyTvSupport, String> {
     let closure = match crate::closure::verified_closure(program, std::slice::from_ref(&f.name)) {
         Ok(closure) => closure,
         // The verified-build closure gate owns fail-closed unresolved-call
         // diagnostics. Preserve the standalone body-TV four-way behavior here;
         // the resulting obligation will classify the missing frame honestly.
-        Err(_) => return Ok((Vec::new(), BTreeSet::new())),
+        Err(_) => return Ok((Vec::new(), BTreeSet::new(), Vec::new())),
     };
     let mut support_names: BTreeSet<String> = closure
         .functions
@@ -329,6 +332,7 @@ pub(crate) fn body_tv_support(
     let named_records = named_record_frames(program);
     let constructor_records = constructor_record_frames(program);
     let enum_variants = enum_variant_frames(program)?;
+    let mut mutable_call_effects = Vec::new();
     for item in &support.items {
         let Item::Fn(dep) = item else {
             continue;
@@ -367,15 +371,40 @@ pub(crate) fn body_tv_support(
                 dep.name
             ));
         };
-        if dep
+        let has_mutable_reference = dep
             .params
             .iter()
-            .any(|param| matches!(param.ty, Type::Ref { mutable: true, .. }))
-        {
-            return Err(format!(
-                "body-TV dependency `{}` has a mutable-reference parameter; exact call-effect lifecycle composition is not part of the owned-value increment",
-                dep.name
+            .any(|param| matches!(param.ty, Type::Ref { mutable: true, .. }));
+        if has_mutable_reference {
+            if dep
+                .params
+                .iter()
+                .any(|param| matches!(param.ty, Type::Ref { mutable: false, .. }))
+            {
+                return Err(format!(
+                    "body-TV mutable-reference dependency `{}` also has a shared-reference formal; exact shared/exclusive alias framing is outside the first call-effect subset",
+                    dep.name
+                ));
+            }
+            let records = mutable_record_frames(program, dep)?;
+            let mutable_count = dep
+                .params
+                .iter()
+                .filter(|param| matches!(param.ty, Type::Ref { mutable: true, .. }))
+                .count();
+            if records.len() != mutable_count {
+                return Err(format!(
+                    "body-TV mutable-reference dependency `{}` contains a mutable slice, array, or non-finite record outside the first exact call-effect subset",
+                    dep.name
+                ));
+            }
+            mutable_call_effects.push(MutableCallEffectFrame::new(
+                dep.name.clone(),
+                dep.params.iter().map(|param| param.name.clone()).collect(),
+                records,
+                body.clone(),
             ));
+            continue;
         }
         let reference = thermite_tv::body_ref_state(
             body,
@@ -416,7 +445,7 @@ pub(crate) fn body_tv_support(
         inner = inner.replacen(&needle, &replacement, 1);
     }
     reference_defs.push_str(&inner);
-    Ok((vec![reference_defs], support_names))
+    Ok((vec![reference_defs], support_names, mutable_call_effects))
 }
 
 // ---- the straight-line body arm (exec-stmt-tv REQ-5) -----------------------
@@ -439,6 +468,7 @@ fn straight_line_body_tv(
     body: &Block,
     support_defs: &[String],
     support_names: &BTreeSet<String>,
+    mutable_call_effects: &[MutableCallEffectFrame],
     seed: u64,
     rlimit: f64,
     report: &mut BodyTvReport,
@@ -601,6 +631,7 @@ fn straight_line_body_tv(
         result_is_fixed_array: matches!(f.ret, Type::Array { .. }),
         result_is_unit: matches!(f.ret, Type::Unit),
         mutable_records,
+        mutable_call_effects: mutable_call_effects.to_vec(),
         named_records,
         constructor_records,
         enum_variants,
@@ -1072,7 +1103,7 @@ pub(crate) fn extend_fixed_array_equality_defs(
     Ok(())
 }
 
-fn mutable_record_frames(
+pub(crate) fn mutable_record_frames(
     program: &thermite_syntax::Program,
     function: &FnItem,
 ) -> Result<Vec<MutableRecordFrame>, String> {
@@ -1104,8 +1135,9 @@ fn mutable_record_frames(
                 param.name
             ));
         };
-        records.push(MutableRecordFrame::new(
+        records.push(MutableRecordFrame::typed(
             param.name.clone(),
+            name.clone(),
             structure
                 .fields
                 .iter()

@@ -150,7 +150,25 @@ impl RecordFieldFrame {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MutableRecordFrame {
     pub name: String,
+    /// Exact nominal source type when the frame comes from a parsed function
+    /// signature. Historical hand-built tests may leave it absent; mutable-call
+    /// composition requires it on both formal and actual roots.
+    pub type_name: Option<String>,
     pub fields: Vec<RecordFieldFrame>,
+}
+
+/// One independently parsed in-language callee whose body may transform one or
+/// more exclusive finite-record parameters. The reference side interprets this
+/// source body directly; production continues to call the ordinary generated
+/// function, so changing either column is observable.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MutableCallEffectFrame {
+    pub name: String,
+    /// All formal parameter names in signature order. Mutable-record formals
+    /// are identified by `mutable_records`; the rest are value inputs.
+    pub params: Vec<String>,
+    pub mutable_records: Vec<MutableRecordFrame>,
+    pub body: Block,
 }
 
 /// One finite named-record type available to owned-local body state
@@ -206,7 +224,36 @@ impl MutableRecordFrame {
     pub fn new(name: impl Into<String>, fields: Vec<RecordFieldFrame>) -> Self {
         Self {
             name: name.into(),
+            type_name: None,
             fields,
+        }
+    }
+
+    pub fn typed(
+        name: impl Into<String>,
+        type_name: impl Into<String>,
+        fields: Vec<RecordFieldFrame>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            type_name: Some(type_name.into()),
+            fields,
+        }
+    }
+}
+
+impl MutableCallEffectFrame {
+    pub fn new(
+        name: impl Into<String>,
+        params: Vec<String>,
+        mutable_records: Vec<MutableRecordFrame>,
+        body: Block,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            params,
+            mutable_records,
+            body,
         }
     }
 }
@@ -240,6 +287,9 @@ pub struct BodyRefCtx {
     result_is_fixed_array: bool,
     result_is_unit: bool,
     mutable_records: Vec<MutableRecordFrame>,
+    /// Exact source bodies and formal frames for reachable in-language
+    /// mutable-reference callees. Boundary declarations never enter this map.
+    mutable_call_effects: BTreeMap<String, MutableCallEffectFrame>,
     named_records: BTreeMap<String, NamedRecordFrame>,
     constructor_records: BTreeMap<String, NamedRecordFrame>,
     enum_variants: BTreeMap<String, EnumVariantFrame>,
@@ -261,6 +311,7 @@ impl BodyRefCtx {
             result_is_fixed_array: false,
             result_is_unit: false,
             mutable_records: Vec::new(),
+            mutable_call_effects: BTreeMap::new(),
             named_records: BTreeMap::new(),
             constructor_records: BTreeMap::new(),
             enum_variants: BTreeMap::new(),
@@ -316,6 +367,17 @@ impl BodyRefCtx {
     /// Add complete direct-field frames for exclusive named-record borrows.
     pub fn with_mutable_records(mut self, records: Vec<MutableRecordFrame>) -> Self {
         self.mutable_records = records;
+        self
+    }
+
+    /// Add reachable in-language mutable-reference callees. Forge supplies these
+    /// from the already validated unique function namespace of the reachable
+    /// source closure.
+    pub fn with_mutable_call_effects(mut self, effects: Vec<MutableCallEffectFrame>) -> Self {
+        self.mutable_call_effects = effects
+            .into_iter()
+            .map(|effect| (effect.name.clone(), effect))
+            .collect();
         self
     }
 
@@ -418,6 +480,10 @@ impl BodyRefCtx {
         self.mutable_records
             .iter()
             .find(|record| record.name == name)
+    }
+
+    fn mutable_call_effect(&self, name: &str) -> Option<&MutableCallEffectFrame> {
+        self.mutable_call_effects.get(name)
     }
 
     fn qualify_pattern_path(&self, path: &[String]) -> String {
@@ -950,6 +1016,7 @@ impl LifecycleCell {
 #[derive(Clone, Default)]
 struct LifecycleState {
     locals: BTreeMap<String, LifecycleCell>,
+    readonly_inputs: BTreeSet<String>,
     fields: BTreeMap<String, LifecycleCell>,
 }
 
@@ -968,7 +1035,7 @@ fn record_lifecycle_ensures(
             );
         }
     }
-    thread_lifecycle_block(block, &mut state, ctx, false)?;
+    thread_lifecycle_block(block, &mut state, ctx, false, &mut Vec::new())?;
 
     let result = match &block.tail {
         Some(tail) => encode_lifecycle_expr(tail, &state, ctx)?,
@@ -1014,9 +1081,10 @@ fn thread_lifecycle_block(
     state: &mut LifecycleState,
     ctx: &BodyRefCtx,
     branch: bool,
+    active_calls: &mut Vec<String>,
 ) -> Result<(), RefEncodeError> {
     for statement in &block.stmts {
-        thread_lifecycle_stmt(statement, state, ctx)?;
+        thread_lifecycle_stmt(statement, state, ctx, active_calls)?;
     }
     if branch && block.tail.is_some() {
         return Err(RefEncodeError::Unsupported(
@@ -1031,6 +1099,7 @@ fn thread_lifecycle_stmt(
     statement: &Stmt,
     state: &mut LifecycleState,
     ctx: &BodyRefCtx,
+    active_calls: &mut Vec<String>,
 ) -> Result<(), RefEncodeError> {
     match statement {
         Stmt::Let { name, init, .. } => {
@@ -1047,6 +1116,12 @@ fn thread_lifecycle_stmt(
             let value = encode_lifecycle_expr(value, state, ctx)?;
             match target {
                 Expr::Path(path) if path.len() == 1 && state.locals.contains_key(&path[0]) => {
+                    if state.readonly_inputs.contains(&path[0]) {
+                        return Err(RefEncodeError::Unsupported(format!(
+                            "mutable-call callee assigns immutable value parameter `{}`",
+                            path[0]
+                        )));
+                    }
                     state.locals.insert(path[0].clone(), value);
                     Ok(())
                 }
@@ -1135,10 +1210,10 @@ fn thread_lifecycle_stmt(
             let condition = encode_lifecycle_expr(cond, state, ctx)?.text;
             let before = state.clone();
             let mut then_state = before.clone();
-            thread_lifecycle_block(then, &mut then_state, ctx, true)?;
+            thread_lifecycle_block(then, &mut then_state, ctx, true, active_calls)?;
             let mut else_state = before.clone();
             if let Some(else_) = else_ {
-                thread_lifecycle_block(else_, &mut else_state, ctx, true)?;
+                thread_lifecycle_block(else_, &mut else_state, ctx, true, active_calls)?;
             }
 
             for (key, prior) in &before.locals {
@@ -1162,6 +1237,21 @@ fn thread_lifecycle_stmt(
             Ok(())
         }
         Stmt::Expr(expr) => {
+            if let Expr::Call { callee, args } = expr {
+                if let Expr::Path(path) = callee.as_ref() {
+                    if let [name] = path.as_slice() {
+                        if ctx.mutable_call_effect(name).is_some() {
+                            return apply_mutable_call_effect(
+                                name,
+                                args,
+                                state,
+                                ctx,
+                                active_calls,
+                            );
+                        }
+                    }
+                }
+            }
             let _ = encode_lifecycle_expr(expr, state, ctx)?;
             Ok(())
         }
@@ -1173,6 +1263,170 @@ fn thread_lifecycle_stmt(
                 .to_string(),
         )),
     }
+}
+
+/// Apply one reachable in-language mutable-reference call to the independent
+/// lifecycle state. Actual exclusive roots must be direct, nominally exact, and
+/// pairwise distinct. The callee source body is interpreted recursively with its
+/// formal names rebound to the caller's pre-call values; production still executes
+/// the ordinary lowered call and is never replaced by this model.
+fn apply_mutable_call_effect(
+    name: &str,
+    args: &[Expr],
+    state: &mut LifecycleState,
+    ctx: &BodyRefCtx,
+    active_calls: &mut Vec<String>,
+) -> Result<(), RefEncodeError> {
+    if active_calls.iter().any(|active| active == name) {
+        return Err(RefEncodeError::Unsupported(format!(
+            "recursive mutable-reference effect cycle reaches `{name}`"
+        )));
+    }
+    let effect = ctx.mutable_call_effect(name).cloned().ok_or_else(|| {
+        RefEncodeError::Unsupported(format!(
+            "mutable-reference call `{name}` has no exact in-language effect frame"
+        ))
+    })?;
+    if effect.params.len() != args.len() {
+        return Err(RefEncodeError::Unsupported(format!(
+            "mutable-reference call `{name}` has {} actual arguments but {} exact formals",
+            args.len(),
+            effect.params.len()
+        )));
+    }
+    if effect.mutable_records.is_empty() {
+        return Err(RefEncodeError::Unsupported(format!(
+            "mutable-reference call `{name}` has no admitted finite-record formal"
+        )));
+    }
+    let formal_positions = effect
+        .params
+        .iter()
+        .enumerate()
+        .map(|(index, formal)| (formal.as_str(), index))
+        .collect::<BTreeMap<_, _>>();
+    let mut actual_roots = BTreeMap::<String, String>::new();
+    let mut used_roots = BTreeSet::new();
+    for formal in &effect.mutable_records {
+        let position = formal_positions.get(formal.name.as_str()).ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "mutable-reference callee `{name}` lost formal `{}`",
+                formal.name
+            ))
+        })?;
+        let root = match &args[*position] {
+            Expr::Path(path) if path.len() == 1 => path[0].clone(),
+            _ => {
+                return Err(RefEncodeError::Unsupported(format!(
+                    "mutable-reference actual for `{name}::{}` must be one direct exclusive root",
+                    formal.name
+                )));
+            }
+        };
+        if !used_roots.insert(root.clone()) {
+            return Err(RefEncodeError::Unsupported(format!(
+                "mutable-reference call `{name}` aliases exclusive root `{root}` through multiple formals"
+            )));
+        }
+        let actual = ctx.mutable_record(&root).ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "mutable-reference actual `{root}` for `{name}` is not an independently framed exclusive record"
+            ))
+        })?;
+        match (&formal.type_name, &actual.type_name) {
+            (Some(expected), Some(found)) if expected == found => {}
+            (Some(expected), Some(found)) => {
+                return Err(RefEncodeError::Unsupported(format!(
+                    "mutable-reference call `{name}` expects `{expected}` for `{}` but actual root `{root}` has `{found}`",
+                    formal.name
+                )));
+            }
+            _ => {
+                return Err(RefEncodeError::Unsupported(format!(
+                    "mutable-reference call `{name}` lacks exact nominal type metadata for formal `{}` or actual `{root}`",
+                    formal.name
+                )));
+            }
+        }
+        actual_roots.insert(formal.name.clone(), root);
+    }
+
+    let mut callee_state = LifecycleState::default();
+    for (position, formal_name) in effect.params.iter().enumerate() {
+        if effect
+            .mutable_records
+            .iter()
+            .any(|record| record.name == *formal_name)
+        {
+            continue;
+        }
+        let value = encode_lifecycle_expr(&args[position], state, ctx)?;
+        callee_state.locals.insert(formal_name.clone(), value);
+        callee_state.readonly_inputs.insert(formal_name.clone());
+    }
+    for formal in &effect.mutable_records {
+        let actual_root = actual_roots.get(&formal.name).ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "mutable-reference callee `{name}` lost actual root for formal `{}`",
+                formal.name
+            ))
+        })?;
+        for field in &formal.fields {
+            let actual_key = format!("{actual_root}.{}", field.name);
+            let value = state.fields.get(&actual_key).cloned().ok_or_else(|| {
+                RefEncodeError::Unsupported(format!(
+                    "mutable-reference call `{name}` cannot observe exact caller field `{actual_key}`"
+                ))
+            })?;
+            callee_state
+                .fields
+                .insert(format!("{}.{}", formal.name, field.name), value);
+        }
+    }
+
+    let mut callee_ctx = ctx.clone();
+    callee_ctx.mutable_records = effect.mutable_records.clone();
+    active_calls.push(name.to_string());
+    let interpreted = thread_lifecycle_block(
+        &effect.body,
+        &mut callee_state,
+        &callee_ctx,
+        false,
+        active_calls,
+    );
+    active_calls.pop();
+    interpreted?;
+    // This frozen call form appears as a statement, so the return value is
+    // intentionally discarded. Still encode the source tail under the exact
+    // post-state so an unsupported or effectful tail cannot disappear silently.
+    if let Some(tail) = &effect.body.tail {
+        let _ = encode_lifecycle_expr(tail, &callee_state, &callee_ctx)?;
+    }
+
+    for formal in &effect.mutable_records {
+        let actual_root = actual_roots.get(&formal.name).ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "mutable-reference callee `{name}` lost actual root for formal `{}`",
+                formal.name
+            ))
+        })?;
+        for field in &formal.fields {
+            let formal_key = format!("{}.{}", formal.name, field.name);
+            let value = callee_state
+                .fields
+                .get(&formal_key)
+                .cloned()
+                .ok_or_else(|| {
+                    RefEncodeError::Unsupported(format!(
+                    "mutable-reference callee `{name}` lost exact post-state field `{formal_key}`"
+                ))
+                })?;
+            state
+                .fields
+                .insert(format!("{actual_root}.{}", field.name), value);
+        }
+    }
+    Ok(())
 }
 
 fn merge_lifecycle_cells(

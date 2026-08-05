@@ -1091,6 +1091,137 @@ fn main() {
 }
 
 #[test]
+fn mutable_call_effect_is_strict_freestanding_l3_and_executes_generated_calls() {
+    let temp = TempDir::new("mutable-call-effect");
+    let bundle = temp.0.join("mutable-call-effect.verified");
+    let bundle_s = bundle.to_string_lossy().to_string();
+    assert_success(&forge(&[
+        "build",
+        "conformance/verified-build/mutable_call_effect.th",
+        "--level",
+        "l3",
+        "--export",
+        "mutable_call_pipeline",
+        "--export",
+        "mutable_call_new",
+        "--export",
+        "mutable_call_value",
+        "--export",
+        "mutable_call_guard",
+        "--crate-name",
+        "mutable_call_effect",
+        "--target",
+        "kernel",
+        "--out",
+        &bundle_s,
+        "--json",
+    ]));
+    assert_success(&forge(&["verify-build", &bundle_s, "--replay", "--json"]));
+
+    let source = fs::read_to_string(bundle.join("evidence/source.verus.rs")).unwrap();
+    assert!(source.starts_with("#![no_std]\n"), "{source}");
+    assert!(
+        source.contains("mutable_call_set(state, seed + 1);")
+            && source.contains("mutable_call_set(state, next);"),
+        "{source}"
+    );
+    assert!(source.contains("let next: u64 = state.value;"), "{source}");
+    assert!(!source.contains("external_body"), "{source}");
+
+    let consumer_source = temp.0.join("mutable-call-effect-consumer.rs");
+    fs::write(
+        &consumer_source,
+        r#"
+use mutable_call_effect::{
+    mutable_call_guard, mutable_call_new, mutable_call_value,
+    thermite_export_mutable_call_pipeline_v1,
+};
+
+fn main() {
+    let mut state = mutable_call_new(3, 77);
+    match thermite_export_mutable_call_pipeline_v1(&mut state, 40) {
+        Ok(()) => {}
+        Err(_) => panic!("valid mutable-call pipeline input was rejected"),
+    }
+    assert_eq!(mutable_call_value(&state), 41);
+    assert_eq!(mutable_call_guard(&state), 77);
+}
+"#,
+    )
+    .unwrap();
+    let consumer = temp.0.join("mutable-call-effect-consumer");
+    let link = codegen_rustc(&bundle)
+        .current_dir(root())
+        .arg("--edition=2021")
+        .arg(&consumer_source)
+        .arg("--extern")
+        .arg(format!(
+            "mutable_call_effect={}",
+            bundle
+                .join("artifact/libmutable_call_effect.rlib")
+                .display()
+        ))
+        .arg("-L")
+        .arg(format!(
+            "dependency={}",
+            bundle.join("artifact/deps").display()
+        ))
+        .args(["-C", "panic=abort"])
+        .arg("-o")
+        .arg(&consumer)
+        .output()
+        .unwrap();
+    assert_success(&link);
+    assert_success(&Command::new(&consumer).output().unwrap());
+
+    let receipt: serde_json::Value =
+        serde_json::from_slice(&fs::read(bundle.join("receipt.json")).unwrap()).unwrap();
+    assert_eq!(receipt["binding"]["assurance"], "L3");
+    assert_eq!(receipt["binding"]["target"], "kernel");
+    assert!(receipt["binding"]["assurance_aggregate"]["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|member| member["achieved"] == "L3"));
+
+    let tv: serde_json::Value = serde_json::from_slice(
+        &fs::read(bundle.join("evidence/translation-validation.json")).unwrap(),
+    )
+    .unwrap();
+    let rows = tv["rows"].as_array().unwrap();
+    assert!(
+        rows.iter().all(|row| row["verdict"] == "faithful"),
+        "strict mutable-call lifecycle admitted a non-faithful row: {tv}"
+    );
+    assert!(
+        rows.iter().any(|row| {
+            row["phase"] == "body"
+                && row["label"] == "mutable_call_pipeline"
+                && row["verdict"] == "faithful"
+        }),
+        "missing exact mutable-call body row: {tv}"
+    );
+
+    let tampered = temp.0.join("mutable-call-effect-tampered.verified");
+    copy_tree(&bundle, &tampered);
+    let input = tampered.join("evidence/input.th");
+    let original = fs::read_to_string(&input).unwrap();
+    let changed = original.replacen(
+        "mutable_call_set(state, next)",
+        "mutable_call_set(state, seed)",
+        1,
+    );
+    assert_ne!(changed, original);
+    fs::write(&input, changed).unwrap();
+    assert!(
+        !forge(&["verify-build", tampered.to_string_lossy().as_ref()])
+            .status
+            .success(),
+        "changing the bound mutable-call effect must invalidate the receipt"
+    );
+}
+
+#[test]
 fn aggregate_mutable_storage_is_exported_replayed_and_exactly_validated() {
     let temp = TempDir::new("aggregate-storage");
     let bundle = temp.0.join("aggregate-storage.verified");

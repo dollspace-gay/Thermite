@@ -28,7 +28,9 @@ semantics, Lean WHILE-RULE, and Forge four-way discharge seam are implemented.
 The 2026 record-state extension additionally admits a sole recursively finite
 record cell, compares every one-step leaf independently, and executes the full
 production loop under an exact result obligation. Multi-exit control, nested
-loops, and mutable-reference callee effects remain outside the frozen subset.
+loops, and mutable-reference callee effects *inside the loop theory* remain
+outside the frozen subset; straight-line direct finite-record calls are supplied
+separately by `.design/build/mutable-call-effects.md`.
 
 ## Trust model (unchanged — N-version differential validation + the verified-validator meta-theorem)
 

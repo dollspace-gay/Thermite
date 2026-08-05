@@ -581,36 +581,75 @@ fn nested_aggregate_fixture_is_entirely_l3_body_faithful() {
 }
 
 #[test]
-fn mutable_reference_callee_effects_remain_fail_closed() {
+fn mutable_reference_callee_effects_are_exact_and_faithful() {
     let source = r#"
-struct State { value: u64 }
+struct State { value: u64, guard: u64 }
 fn mutate(state: &mut State, value: u64) -> ()
   req true
   ens final(state).value == value
+  ens final(state).guard == old(state).guard
   fx pure
 {
   state.value = value;
 }
 fn call_mutate(state: &mut State, value: u64) -> ()
-  req true
-  ens final(state).value == value
+  req value < 1000
+  ens final(state).value == value + 1
+  ens final(state).guard == old(state).guard
   fx pure
 {
   mutate(state, value);
+  let next: u64 = state.value + 1;
+  mutate(state, next);
 }
 "#;
     let file = write_th("mutable_reference_callee", source);
+    let report = run_body_tv_json(&file);
+    assert_eq!(report["counts"]["checked"].as_u64(), Some(2), "{report}");
+    assert_eq!(report["counts"]["faithful"].as_u64(), Some(2), "{report}");
+    assert_eq!(report["counts"]["divergent"].as_u64(), Some(0), "{report}");
+    assert_eq!(report["counts"]["skipped"].as_u64(), Some(0), "{report}");
+    for name in ["mutate", "call_mutate"] {
+        assert!(
+            report["bodies"].as_array().unwrap().iter().any(|body| {
+                body["body"].as_str() == Some(name) && body["verdict"].as_str() == Some("faithful")
+            }),
+            "{name}: {report}"
+        );
+    }
+}
+
+#[test]
+fn mixed_shared_and_mutable_callee_aliasing_remains_fail_closed() {
+    let source = r#"
+struct State { value: u64 }
+fn copy_from(left: &mut State, right: &State) -> ()
+  req true
+  ens final(left).value == right.value
+  fx pure
+{
+  left.value = right.value;
+}
+fn call_copy(left: &mut State, right: &State) -> ()
+  req true
+  ens final(left).value == right.value
+  fx pure
+{
+  copy_from(left, right);
+}
+"#;
+    let file = write_th("mixed_shared_mutable_callee", source);
     let report = run_body_tv_json(&file);
     let caller = report["bodies"]
         .as_array()
         .unwrap()
         .iter()
-        .find(|body| body["body"].as_str() == Some("call_mutate"))
-        .unwrap_or_else(|| panic!("missing caller body: {report}"));
+        .find(|body| body["body"].as_str() == Some("call_copy"))
+        .unwrap_or_else(|| panic!("missing mixed-alias caller body: {report}"));
     assert_eq!(caller["verdict"].as_str(), Some("skipped"), "{report}");
     let detail = caller["detail"].as_str().unwrap_or_default();
     assert!(
-        detail.contains("mutable-reference") && detail.contains("call-effect"),
+        detail.contains("shared-reference") && detail.contains("alias"),
         "{detail}"
     );
 }

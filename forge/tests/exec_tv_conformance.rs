@@ -199,13 +199,18 @@ fn fixed_array_read_expression_is_faithful() {
         "  ens result == left.array_same_except(right, at)\n",
         "  fx pure\n",
         "{ left.array_same_except(right, at) }\n",
+        "fn arrays_same_except_two(left: [u64; SLOTS], right: [u64; SLOTS], first: usize, second: usize) -> bool\n",
+        "  req true\n",
+        "  ens result == left.array_same_except_two(right, first, second)\n",
+        "  fx pure\n",
+        "{ left.array_same_except_two(right, first, second) }\n",
     );
     let path = std::env::temp_dir().join("thermite_exec_tv_fixed_array.th");
     std::fs::write(&path, source).expect("write fixed-array exec-TV fixture");
     let report = run_exec_tv_json(&path, None);
     let counts = &report["corpus"]["counts"];
-    assert_eq!(counts["checked"].as_u64(), Some(4), "{report}");
-    assert_eq!(counts["faithful"].as_u64(), Some(4), "{report}");
+    assert_eq!(counts["checked"].as_u64(), Some(5), "{report}");
+    assert_eq!(counts["faithful"].as_u64(), Some(5), "{report}");
     assert_eq!(counts["divergent"].as_u64(), Some(0), "{report}");
     assert!(report["corpus"]["exprs"]
         .as_array()
@@ -237,6 +242,14 @@ fn fixed_array_read_expression_is_faithful() {
         .iter()
         .any(|expr| {
             expr["expr"].as_str() == Some("arrays_same_except.tail")
+                && expr["verdict"].as_str() == Some("faithful")
+        }));
+    assert!(report["corpus"]["exprs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|expr| {
+            expr["expr"].as_str() == Some("arrays_same_except_two.tail")
                 && expr["verdict"].as_str() == Some("faithful")
         }));
 }

@@ -1885,6 +1885,35 @@ fn lower_inv_expr(
                     "({r}).__thermite_fixed_array_same_except_spec(&({right}), {except})"
                 ));
             }
+            if name == "array_same_except_two" && args.len() == 3 {
+                let right = lower_inv_expr(
+                    &args[0],
+                    field_names,
+                    string_fields,
+                    spec_fn_param_types,
+                    d,
+                    span,
+                )?;
+                let first = lower_inv_expr(
+                    &args[1],
+                    field_names,
+                    string_fields,
+                    spec_fn_param_types,
+                    d,
+                    span,
+                )?;
+                let second = lower_inv_expr(
+                    &args[2],
+                    field_names,
+                    string_fields,
+                    spec_fn_param_types,
+                    d,
+                    span,
+                )?;
+                return Ok(format!(
+                    "({r}).__thermite_fixed_array_same_except_two_spec(&({right}), {first}, {second})"
+                ));
+            }
             if args.len() == 1 && matches!(name.as_str(), "bit_test" | "bit_set" | "bit_clear") {
                 let index = lower_inv_expr(
                     &args[0],
@@ -5293,7 +5322,8 @@ fn lower_array_len(len: &ArrayLen) -> String {
 pub fn expr_uses_fixed_array_equality(expr: &Expr) -> bool {
     if matches!(expr, Expr::MethodCall { name, args, .. }
         if (name == "array_eq" && args.len() == 1)
-            || (name == "array_same_except" && args.len() == 2))
+            || (name == "array_same_except" && args.len() == 2)
+            || (name == "array_same_except_two" && args.len() == 3))
     {
         return true;
     }
@@ -5444,8 +5474,10 @@ pub fn fixed_array_equality_defs() -> String {
     let mut out = String::from(
         "\npub trait __thermite_FixedArrayEq {\n\
          \x20   spec fn __thermite_fixed_array_same_except_spec(&self, right: &Self, except: usize) -> bool;\n\
+         \x20   spec fn __thermite_fixed_array_same_except_two_spec(&self, right: &Self, first: usize, second: usize) -> bool;\n\
          \x20   fn __thermite_fixed_array_eq(&self, right: &Self) -> (result: bool);\n\
          \x20   fn __thermite_fixed_array_same_except(&self, right: &Self, except: usize) -> (result: bool);\n\
+         \x20   fn __thermite_fixed_array_same_except_two(&self, right: &Self, first: usize, second: usize) -> (result: bool);\n\
          }\n",
     );
     for primitive in PRIMITIVES {
@@ -5461,6 +5493,15 @@ pub fn fixed_array_equality_defs() -> String {
         .ok();
         out.push_str(
             "        forall|j: int| 0 <= j < N && j != except as int ==> self@[j] == right@[j]\n",
+        );
+        out.push_str("    }\n");
+        writeln!(
+            out,
+            "    open spec fn __thermite_fixed_array_same_except_two_spec(&self, right: &[{primitive}; N], first: usize, second: usize) -> bool {{"
+        )
+        .ok();
+        out.push_str(
+            "        forall|j: int| 0 <= j < N && j != first as int && j != second as int ==> self@[j] == right@[j]\n",
         );
         out.push_str("    }\n");
         writeln!(
@@ -5504,6 +5545,31 @@ pub fn fixed_array_equality_defs() -> String {
         out.push_str("        {\n");
         out.push_str("            if i != except && self[i] != right[i] {\n");
         out.push_str("                assert(i as int != except as int);\n");
+        out.push_str("                assert(self@[i as int] != right@[i as int]);\n");
+        out.push_str("                return false;\n");
+        out.push_str("            }\n");
+        out.push_str("            i = i + 1;\n");
+        out.push_str("        }\n");
+        out.push_str("        true\n");
+        out.push_str("    }\n");
+        writeln!(
+            out,
+            "    fn __thermite_fixed_array_same_except_two(&self, right: &[{primitive}; N], first: usize, second: usize) -> (result: bool)"
+        )
+        .ok();
+        out.push_str("        ensures\n");
+        out.push_str("            result <==> self.__thermite_fixed_array_same_except_two_spec(right, first, second),\n");
+        out.push_str("    {\n");
+        out.push_str("        let mut i: usize = 0;\n");
+        out.push_str("        while i < N\n");
+        out.push_str("            invariant\n");
+        out.push_str("                i <= N,\n");
+        out.push_str("                forall|j: int| 0 <= j < i && j != first as int && j != second as int ==> self@[j] == right@[j],\n");
+        out.push_str("            decreases N - i,\n");
+        out.push_str("        {\n");
+        out.push_str("            if i != first && i != second && self[i] != right[i] {\n");
+        out.push_str("                assert(i as int != first as int);\n");
+        out.push_str("                assert(i as int != second as int);\n");
         out.push_str("                assert(self@[i as int] != right@[i as int]);\n");
         out.push_str("                return false;\n");
         out.push_str("            }\n");
@@ -5941,6 +6007,15 @@ fn emit_structural_array_impl(ty: &Type, out: &mut String) -> Result<(), LowerEr
     );
     writeln!(
         out,
+        "    open spec fn __thermite_fixed_array_same_except_two_spec(&self, right: &[{spelling}; N], first: usize, second: usize) -> bool {{"
+    )
+    .ok();
+    out.push_str(
+        "        forall|j: int| 0 <= j < N && j != first as int && j != second as int ==> self@[j] == right@[j]\n\
+         \x20   }\n",
+    );
+    writeln!(
+        out,
         "    fn __thermite_fixed_array_eq(&self, right: &[{spelling}; N]) -> (result: bool)"
     )
     .ok();
@@ -5987,6 +6062,39 @@ fn emit_structural_array_impl(ty: &Type, out: &mut String) -> Result<(), LowerEr
     writeln!(out, "            if i != except && !({compare}) {{").ok();
     out.push_str(
         "                assert(i as int != except as int);\n\
+         \x20               assert(self@[i as int] != right@[i as int]);\n\
+         \x20               return false;\n\
+         \x20           }\n\
+         \x20           i = i + 1;\n\
+         \x20       }\n\
+         \x20       true\n\
+         \x20   }\n",
+    );
+    writeln!(
+        out,
+        "    fn __thermite_fixed_array_same_except_two(&self, right: &[{spelling}; N], first: usize, second: usize) -> (result: bool)"
+    )
+    .ok();
+    out.push_str(
+        "        ensures\n\
+         \x20           result <==> self.__thermite_fixed_array_same_except_two_spec(right, first, second),\n\
+         \x20   {\n\
+         \x20       let mut i: usize = 0;\n\
+         \x20       while i < N\n\
+         \x20           invariant\n\
+         \x20               i <= N,\n\
+         \x20               forall|j: int| 0 <= j < i && j != first as int && j != second as int ==> self@[j] == right@[j],\n\
+         \x20           decreases N - i,\n\
+         \x20       {\n",
+    );
+    writeln!(
+        out,
+        "            if i != first && i != second && !({compare}) {{"
+    )
+    .ok();
+    out.push_str(
+        "                assert(i as int != first as int);\n\
+         \x20               assert(i as int != second as int);\n\
          \x20               assert(self@[i as int] != right@[i as int]);\n\
          \x20               return false;\n\
          \x20           }\n\
@@ -9498,6 +9606,19 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
                 }
                 return Ok(format!(
                     "({r}).__thermite_fixed_array_same_except(&({right}), {except})"
+                ));
+            }
+            if name == "array_same_except_two" && args.len() == 3 {
+                let right = lower_expr(&args[0], ctx, d, span)?;
+                let first = lower_expr(&args[1], ctx, d, span)?;
+                let second = lower_expr(&args[2], ctx, d, span)?;
+                if ctx.is_spec() {
+                    return Ok(format!(
+                        "({r}).__thermite_fixed_array_same_except_two_spec(&({right}), {first}, {second})"
+                    ));
+                }
+                return Ok(format!(
+                    "({r}).__thermite_fixed_array_same_except_two(&({right}), {first}, {second})"
                 ));
             }
             if args.len() == 1 && matches!(name.as_str(), "bit_test" | "bit_set" | "bit_clear") {

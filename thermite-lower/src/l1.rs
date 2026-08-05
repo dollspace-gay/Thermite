@@ -1597,6 +1597,14 @@ pub(crate) fn lower_expr_exec(
                     "({{ let __thermite_left = &({r}); let __thermite_right = &({right}); let __thermite_except: usize = {except}; let mut __thermite_i: usize = 0; let mut __thermite_same: bool = true; while __thermite_i < __thermite_left.len() {{ if __thermite_i != __thermite_except && __thermite_left[__thermite_i] != __thermite_right[__thermite_i] {{ __thermite_same = false; break; }} __thermite_i += 1; }} __thermite_same }})"
                 ));
             }
+            if name == "array_same_except_two" && args.len() == 3 {
+                let right = lower_expr_exec(&args[0], d, span, variants)?;
+                let first = lower_expr_exec(&args[1], d, span, variants)?;
+                let second = lower_expr_exec(&args[2], d, span, variants)?;
+                return Ok(format!(
+                    "({{ let __thermite_left = &({r}); let __thermite_right = &({right}); let __thermite_first: usize = {first}; let __thermite_second: usize = {second}; let mut __thermite_i: usize = 0; let mut __thermite_same: bool = true; while __thermite_i < __thermite_left.len() {{ if __thermite_i != __thermite_first && __thermite_i != __thermite_second && __thermite_left[__thermite_i] != __thermite_right[__thermite_i] {{ __thermite_same = false; break; }} __thermite_i += 1; }} __thermite_same }})"
+                ));
+            }
             if args.len() == 1 && matches!(name.as_str(), "bit_test" | "bit_set" | "bit_clear") {
                 let index = lower_expr_exec(&args[0], d, span, variants)?;
                 return Ok(match name.as_str() {

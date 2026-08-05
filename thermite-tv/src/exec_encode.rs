@@ -403,6 +403,19 @@ fn encode_method_call(
                 "(forall|__thermite_i: int| 0 <= __thermite_i < ({left})@.len() && __thermite_i != ({except}) as int ==> ({left})@[__thermite_i] == ({right})@[__thermite_i])"
             ))
         }
+        "array_same_except_two"
+            if args.len() == 3
+                && is_fixed_array_value(receiver)
+                && is_fixed_array_value(&args[0]) =>
+        {
+            let left = encode(receiver, ctx)?;
+            let right = encode(&args[0], ctx)?;
+            let first = encode(&args[1], ctx)?;
+            let second = encode(&args[2], ctx)?;
+            Ok(format!(
+                "(forall|__thermite_i: int| 0 <= __thermite_i < ({left})@.len() && __thermite_i != ({first}) as int && __thermite_i != ({second}) as int ==> ({left})@[__thermite_i] == ({right})@[__thermite_i])"
+            ))
+        }
         _ => Err(RefEncodeError::Unsupported(format!(
             "exec method `.{name}()` outside the borrowed-slice/fixed-array \
              `.len()` / fixed-array relation subset, or with an \

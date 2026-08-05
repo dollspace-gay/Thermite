@@ -242,6 +242,7 @@ const BUILTIN_METHODS: &[&str] = &[
     // const-generic scan and maps contract occurrences to finite-view equality.
     "array_eq",
     "array_same_except",
+    "array_same_except_two",
     // Total `u64` packed-bit operations. An index at least 64 leaves a word
     // unchanged for updates and observes `false`; the directly verified L3
     // helpers supply the ordinary contract bridge and distinct-bit framing
@@ -383,9 +384,10 @@ pub enum SpecError {
     /// opaque user ADTs here would either fail only in a backend or silently
     /// change ownership semantics.
     ArrayRepeatRequiresCopy { span: Span },
-    /// `.array_eq(other)` and `.array_same_except(other, index)` require two
-    /// equally typed fixed arrays whose element has a finite structural equality
-    /// derivation. Primitive scalars, unit, nested fixed arrays/tuples, and
+    /// `.array_eq(other)`, `.array_same_except(other, index)`, and
+    /// `.array_same_except_two(other, first, second)` require two equally typed
+    /// fixed arrays whose element has a finite structural equality derivation.
+    /// Primitive scalars, unit, nested fixed arrays/tuples, and
     /// non-sealed/non-opaque acyclic structs are admitted. Authority-bearing,
     /// recursive, enum, reference, and heap-backed shapes fail closed.
     ArrayEqualityRequiresStructuralArrays { detail: String, span: Span },
@@ -1594,7 +1596,12 @@ impl Validator {
         args: &[Expr],
         span: Span,
     ) {
-        let expected_arity = if name == "array_eq" { 1 } else { 2 };
+        let expected_arity = match name {
+            "array_eq" => 1,
+            "array_same_except" => 2,
+            "array_same_except_two" => 3,
+            _ => return,
+        };
         let valid = if args.len() == expected_arity {
             let right = &args[0];
             match (
@@ -2081,7 +2088,10 @@ impl Validator {
                 name,
                 args,
             } => {
-                if name == "array_eq" || name == "array_same_except" {
+                if matches!(
+                    name.as_str(),
+                    "array_eq" | "array_same_except" | "array_same_except_two"
+                ) {
                     self.check_array_relation_call(name, receiver, args, span);
                 }
                 self.check_u64_bit_method_call(name, args, span);
@@ -2279,7 +2289,10 @@ impl Validator {
                 name,
                 args,
             } => {
-                if name == "array_eq" || name == "array_same_except" {
+                if matches!(
+                    name.as_str(),
+                    "array_eq" | "array_same_except" | "array_same_except_two"
+                ) {
                     self.check_array_relation_call(name, receiver, args, span);
                 }
                 self.check_u64_bit_method_call(name, args, span);

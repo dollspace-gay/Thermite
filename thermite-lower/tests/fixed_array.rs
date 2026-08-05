@@ -25,7 +25,12 @@ fn same_except(left: [u64; SLOTS], right: [u64; SLOTS], at: usize) -> bool\n\
 req true\n\
 ens result == left.array_same_except(right, at)\n\
 fx pure\n\
-{ left.array_same_except(right, at) }\n";
+{ left.array_same_except(right, at) }\n\
+fn same_except_two(left: [u64; SLOTS], right: [u64; SLOTS], first: usize, second: usize) -> bool\n\
+req true\n\
+ens result == left.array_same_except_two(right, first, second)\n\
+fx pure\n\
+{ left.array_same_except_two(right, first, second) }\n";
 
 fn program() -> thermite_syntax::Program {
     let parsed = parse(SOURCE);
@@ -63,6 +68,14 @@ fn l3_uses_native_fixed_arrays_and_preserves_mutation() {
         emitted.contains(".__thermite_fixed_array_same_except_spec(&(right), at)"),
         "{emitted}"
     );
+    assert!(
+        emitted.contains(".__thermite_fixed_array_same_except_two(&(right), first, second)"),
+        "{emitted}"
+    );
+    assert!(
+        emitted.contains(".__thermite_fixed_array_same_except_two_spec(&(right), first, second)"),
+        "{emitted}"
+    );
 }
 
 #[test]
@@ -75,6 +88,8 @@ fn runtime_and_bounded_backends_keep_exact_capacity() {
     assert!(l1.contains("slots[at] = value;"), "{l1}");
     assert!(l1.contains("(left) == (right)"), "{l1}");
     assert!(l1.contains("__thermite_except: usize = at"), "{l1}");
+    assert!(l1.contains("__thermite_first: usize = first"), "{l1}");
+    assert!(l1.contains("__thermite_second: usize = second"), "{l1}");
 
     let l2 = lower_l2(&program).expect("L2 fixed-array lowering must succeed");
     assert!(l2.contains("const SLOTS: usize = 4;"), "{l2}");
@@ -82,4 +97,6 @@ fn runtime_and_bounded_backends_keep_exact_capacity() {
     assert!(l2.contains("[0; SLOTS]"), "{l2}");
     assert!(l2.contains("(left) == (right)"), "{l2}");
     assert!(l2.contains("__thermite_except: usize = at"), "{l2}");
+    assert!(l2.contains("__thermite_first: usize = first"), "{l2}");
+    assert!(l2.contains("__thermite_second: usize = second"), "{l2}");
 }

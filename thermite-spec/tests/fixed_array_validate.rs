@@ -251,4 +251,26 @@ fn array_same_except_requires_matching_structural_arrays() {
         error,
         SpecError::ArrayEqualityRequiresStructuralArrays { .. }
     )));
+
+    assert!(validate_src(
+        "fn same_except_two(left: [u64; 4], right: [u64; 4], first: usize, second: usize) -> bool\n\
+         req true\n\
+         ens result == left.array_same_except_two(right, first, second)\n\
+         fx pure\n\
+         { left.array_same_except_two(right, first, second) }"
+    )
+    .is_ok());
+
+    for source in [
+        "fn bad(left: [u64; 2], right: [u64; 3], first: usize, second: usize) -> bool\n\
+         req true ens true fx pure { left.array_same_except_two(right, first, second) }",
+        "fn bad(left: [u64; 2], right: [u64; 2], first: usize) -> bool\n\
+         req true ens true fx pure { left.array_same_except_two(right, first) }",
+    ] {
+        let errors = validate_src(source).expect_err("two-index framing must fail closed");
+        assert!(errors.iter().any(|error| matches!(
+            error,
+            SpecError::ArrayEqualityRequiresStructuralArrays { .. }
+        )));
+    }
 }

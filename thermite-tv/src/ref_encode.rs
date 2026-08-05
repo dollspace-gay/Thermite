@@ -873,6 +873,15 @@ fn encode_method_call(
                 "(forall|__thermite_i: int| 0 <= __thermite_i < ({left})@.len() && __thermite_i != ({except}) as int ==> ({left})@[__thermite_i] == ({right})@[__thermite_i])"
             ));
         }
+        if name == "array_same_except_two" && args.len() == 3 && is_fixed_array_value(&args[0]) {
+            let left = encode(receiver, ctx)?;
+            let right = encode(&args[0], ctx)?;
+            let first = encode(&args[1], ctx)?;
+            let second = encode(&args[2], ctx)?;
+            return Ok(format!(
+                "(forall|__thermite_i: int| 0 <= __thermite_i < ({left})@.len() && __thermite_i != ({first}) as int && __thermite_i != ({second}) as int ==> ({left})@[__thermite_i] == ({right})@[__thermite_i])"
+            ));
+        }
         return Err(RefEncodeError::Unsupported(format!(
             "spec method `.{name}()` on a fixed array (only `.len()` and the \
              fixed-array relations are frozen)"

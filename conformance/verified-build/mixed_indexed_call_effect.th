@@ -1,0 +1,33 @@
+const MIXED_INDEXED_SLOTS: usize = 2;
+
+fn mixed_indexed_copy(
+  left: &mut [u64; MIXED_INDEXED_SLOTS],
+  right: &[u64; MIXED_INDEXED_SLOTS],
+) -> u64
+  req true
+  ens result == right[1]
+  ens final(left)[0] == right[1]
+  ens final(left)[1] == old(left)[1]
+  fx pure
+{
+  left[0] = right[1];
+  left[0]
+}
+
+fn mixed_indexed_pipeline(
+  left: &mut [u64; MIXED_INDEXED_SLOTS],
+  right: &mut [u64; MIXED_INDEXED_SLOTS],
+  value: u64,
+) -> u64
+  req true
+  ens result == value
+  ens final(left)[0] == value
+  ens final(left)[1] == old(left)[1]
+  ens final(right)[0] == old(right)[0]
+  ens final(right)[1] == value
+  fx pure
+{
+  right[1] = value;
+  let observed: u64 = mixed_indexed_copy(left, right);
+  observed
+}

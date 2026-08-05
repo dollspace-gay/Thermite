@@ -15,7 +15,7 @@ governs:
   - forge/tests/body_tv.rs
   - forge/tests/verified_build.rs
   - conformance/verified-build/owned_aggregate_lifecycle.th
-audited-content-sha256: b5f0ff42b2283f9492985d0dda66cbb04712119373c4818c46e0524e17dfade0 (re-pinned 2026-08-05 after exact mutable-indexed call-state composition joined owned lifecycle TV)
+audited-content-sha256: 2eac114edc773cd2559548247058feef822df85540150318e19a161b501b778c (re-pinned 2026-08-05 after exact shared-indexed snapshots joined owned lifecycle TV)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/named-record-lifecycle.md
@@ -143,9 +143,10 @@ This increment's original composition is deliberately limited to value effects.
 statement-position bodyful calls and direct typed let-bound results over
 pairwise-distinct direct finite-record, mutable-slice, and mutable-fixed-array
 roots, including nominally exact direct shared finite-record snapshots that do
-not overlap an exclusive actual. Complete indexed sequence state is threaded
-through callee writes, later reads, result binding, and copy-back. Shared
-slices/arrays, projected actual roots, nested/general returned-value
+not overlap an exclusive actual and exact direct shared slice/fixed-array
+snapshots with the same rule. Complete indexed sequence state is threaded
+through callee writes, later reads, shared snapshots, result binding, and
+copy-back. Projected actual roots, nested/general returned-value
 expressions, bodyless boundary functions, platform
 effects, allocation, unresolved calls, recursive effect cycles, and other
 non-admitted effects remain fail-closed.
@@ -220,7 +221,7 @@ The exact typed nested-field and terminal fixed-array projection subset is now
 shipped by `.design/build/nested-aggregate-lifecycle.md`; exact record-state
 loops are supplied by `.design/build/record-state-loops.md`. This increment still
 does not claim mutable enum payloads, index-then-field aliasing, projected-root
-or shared slice/array call effects, nested or
+call effects, nested or
 general mutable-call result expressions, static global ownership, affine uniqueness, concurrent
 record access, atomic object/machine refinement, or Rust/assembly TPL refinement.
 It does not add or package a kernel.

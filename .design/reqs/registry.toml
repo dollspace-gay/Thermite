@@ -17405,7 +17405,7 @@ owner = ".design/build/kernel-primitives.md"
 status = "partial"
 scope = "verified"
 summary = "Thermite provides executable/specification mutation over slices and allocation-free fixed storage and collections."
-remaining_scope = "Mutable borrowed slices/arrays, arbitrary old/final snapshot framing, native fixed arrays, scalar and recursively finite plain-aggregate equality plus exact one- and two-index quantified frames, defining-module opaque state transitions, exact typed root.field(.field)* mutation with an optional final fixed-array index, owned/value-call composition, exact user-ADT result/match contract and body TV with arm scoping, exact record-state loop entry/leaf-preservation/exit/full-result TV, statement-position and direct typed let-bound result mutable-call composition over pairwise-distinct direct finite-record, mutable-slice, and mutable-fixed-array roots plus nonoverlapping nominally exact direct shared finite-record snapshots, strict freestanding L3 record/rich-state receipts, digest-bound freestanding fixed-array views and repeat construction, total directly proved u64 bit methods, a receipt-bound packed bitmap with population count/set-bit search/bulk set operations, u64 vector, u64 FIFO ring, collision-explicit direct map, opaque collision-resolving open-addressed map, a generation-safe opaque slab, a duplicate-safe opaque freelist, opaque intrusive doubly linked metadata with arbitrary-live-node unlink and tail relink, and a receipt-bound generation-owned static-storage claim/fill/commit/release protocol are shipped. Add index-then-field aliasing if required, shared slice/array and projected-root call effects, nested/general mutable-call result expressions, enum-payload lvalue mutation, arbitrary-position intrusive insertion/relink if required, chained maps where required, quantified aggregate loops/state framing, and generic library capacities/types."
+remaining_scope = "Mutable borrowed slices/arrays, arbitrary old/final snapshot framing, native fixed arrays, scalar and recursively finite plain-aggregate equality plus exact one- and two-index quantified frames, defining-module opaque state transitions, exact typed root.field(.field)* mutation with an optional final fixed-array index, owned/value-call composition, exact user-ADT result/match contract and body TV with arm scoping, exact record-state loop entry/leaf-preservation/exit/full-result TV, statement-position and direct typed let-bound result mutable-call composition over pairwise-distinct direct finite-record, mutable-slice, and mutable-fixed-array roots plus nonoverlapping nominally/structurally exact direct shared finite-record, slice, and fixed-array snapshots, strict freestanding L3 record/rich-state receipts, digest-bound freestanding fixed-array views and repeat construction, total directly proved u64 bit methods, a receipt-bound packed bitmap with population count/set-bit search/bulk set operations, u64 vector, u64 FIFO ring, collision-explicit direct map, opaque collision-resolving open-addressed map, a generation-safe opaque slab, a duplicate-safe opaque freelist, opaque intrusive doubly linked metadata with arbitrary-live-node unlink and tail relink, and a receipt-bound generation-owned static-storage claim/fill/commit/release protocol are shipped. Add index-then-field aliasing if required, projected-root call effects, nested/general mutable-call result expressions, enum-payload lvalue mutation, arbitrary-position intrusive insertion/relink if required, chained maps where required, quantified aggregate loops/state framing, and generic library capacities/types."
 contributors = [".design/build/kernel-byte-slice.md", ".design/build/fixed-collections.md", ".design/build/static-storage.md", ".design/build/aggregate-array-relations.md", ".design/build/named-record-lifecycle.md", ".design/build/owned-aggregate-lifecycle.md", ".design/build/nested-aggregate-lifecycle.md", ".design/build/adt-match-lifecycle.md", ".design/build/record-state-loops.md", ".design/build/mutable-call-effects.md", "thermite-syntax/src/parser.rs", "thermite-spec/src/validator.rs", "thermite-lower/src/lower.rs", "thermite-tv/src/ref_encode.rs", "thermite-tv/src/exec_stmt_encode.rs", "thermite-tv/src/obligation.rs", "forge/src/body_tv.rs", "forge/src/contract_tv.rs", "forge/src/exec_tv.rs", "forge/src/verified_build.rs"]
 generated_to = ["status", "forge-kernel-primitives-status"]
 
@@ -17592,7 +17592,7 @@ note = "Discharges exact dependent mutable-record calls, direct let-bound result
 [[requirement.evidence]]
 kind = "test"
 target = "thermite-tv/tests/mutable_indexed_call_effect_tv.rs"
-note = "Discharges exact mutable-slice and mutable-fixed-array call results plus complete sequence post-state through real Verus while rejecting a dropped call, duplicate exclusive indexed aliases, and exact element/capacity mismatch."
+note = "Discharges exact mutable-slice/fixed-array call results, complete sequence post-state, direct shared sequence snapshots, and a separately mutable peer's current snapshot through real Verus while rejecting a dropped call, duplicate/overlapping exclusive aliases, and exact element/capacity mismatch."
 
 [[requirement.evidence]]
 kind = "test"
@@ -17615,6 +17615,21 @@ target = "forge/tests/body_tv.rs::mutable_slice_callee_effects_are_exact_and_fai
 note = "Derives an exact mutable-slice callee effect and proves its independently reconstructed complete sequence predicate against the lowered callee before caller reuse."
 
 [[requirement.evidence]]
+kind = "test"
+target = "forge/tests/body_tv.rs::mixed_shared_and_mutable_fixed_array_effects_are_exact_and_faithful"
+note = "Derives exact shared/mutable fixed-array frames, including a mutable peer's current shared snapshot, from ordinary Thermite source."
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/body_tv.rs::mixed_shared_and_mutable_slice_effects_are_exact_and_faithful"
+note = "Derives exact shared/mutable slice frames and proves complete-sequence caller composition through real Verus."
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/body_tv.rs::mixed_shared_and_mutable_indexed_aliasing_remains_fail_closed"
+note = "Rejects a shared indexed actual that overlaps an exclusive actual before an obligation can be labelled faithful."
+
+[[requirement.evidence]]
 kind = "file"
 target = "conformance/verified-build/mutable_call_effect.th"
 note = "Policy-free opaque record pipeline that copies from a nonoverlapping shared source and consumes the generated mixed-borrow call result in a second generated mutable call."
@@ -17625,6 +17640,11 @@ target = "conformance/verified-build/mutable_indexed_call_effect.th"
 note = "Policy-free fixed-array pipeline whose generated call result and complete post-state are compiled into the strict freestanding artifact."
 
 [[requirement.evidence]]
+kind = "file"
+target = "conformance/verified-build/mixed_indexed_call_effect.th"
+note = "Policy-free fixed-array pipeline that snapshots a distinct mutable peer's current sequence through a shared callee formal."
+
+[[requirement.evidence]]
 kind = "test"
 target = "forge/tests/verified_build.rs::mutable_call_effect_is_strict_freestanding_l3_and_executes_generated_calls"
 note = "Builds and replays the all-L3 freestanding mixed-borrow receipt, returns and executes the composed generated result from a downstream consumer, checks the shared source remains unchanged, routes stateful initializers exclusively through exact body TV while retaining surrounding pure exec TV, and rejects source tampering."
@@ -17633,6 +17653,11 @@ note = "Builds and replays the all-L3 freestanding mixed-borrow receipt, returns
 kind = "test"
 target = "forge/tests/verified_build.rs::mutable_indexed_call_effect_is_strict_l3_replayed_and_executed"
 note = "Builds and replays the all-L3 freestanding indexed-call receipt, executes the generated fixed-array transition from a linked consumer, requires a faithful TV inventory, and rejects source tampering."
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/verified_build.rs::mixed_indexed_call_effect_is_strict_l3_replayed_and_executed"
+note = "Builds and replays the all-L3 mixed-indexed receipt, executes both generated transitions from a linked consumer, requires a faithful TV inventory, and rejects bound shared-root tampering."
 
 [[requirement]]
 id = "REQ-KPRIM-3"

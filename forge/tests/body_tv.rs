@@ -848,6 +848,127 @@ fn slice_call_pipeline(data: &mut [u64], value: u64) -> u64
 }
 
 #[test]
+fn mixed_shared_and_mutable_fixed_array_effects_are_exact_and_faithful() {
+    let source = r#"
+const SLOTS: usize = 2;
+fn copy_array(left: &mut [u64; SLOTS], right: &[u64; SLOTS]) -> u64
+  req true
+  ens result == right[1]
+  ens final(left)[0] == right[1]
+  ens final(left)[1] == old(left)[1]
+  fx pure
+{
+  left[0] = right[1];
+  left[0]
+}
+fn mixed_array_pipeline(left: &mut [u64; SLOTS], right: &[u64; SLOTS]) -> u64
+  req true
+  ens result == right[1]
+  ens final(left)[0] == right[1]
+  ens final(left)[1] == old(left)[1]
+  fx pure
+{
+  let observed: u64 = copy_array(left, right);
+  observed
+}
+fn current_array_peer(
+  left: &mut [u64; SLOTS],
+  peer: &mut [u64; SLOTS],
+  value: u64,
+) -> u64
+  req true
+  ens result == value
+  ens final(left)[0] == value
+  ens final(left)[1] == old(left)[1]
+  ens final(peer)[0] == old(peer)[0]
+  ens final(peer)[1] == value
+  fx pure
+{
+  peer[1] = value;
+  let observed: u64 = copy_array(left, peer);
+  observed
+}
+"#;
+    let file = write_th("mixed_shared_mutable_fixed_array_callee", source);
+    let report = run_body_tv_json(&file);
+    assert_eq!(report["counts"]["checked"].as_u64(), Some(3), "{report}");
+    assert_eq!(report["counts"]["faithful"].as_u64(), Some(3), "{report}");
+    assert_eq!(report["counts"]["divergent"].as_u64(), Some(0), "{report}");
+    assert_eq!(report["counts"]["skipped"].as_u64(), Some(0), "{report}");
+}
+
+#[test]
+fn mixed_shared_and_mutable_slice_effects_are_exact_and_faithful() {
+    let source = r#"
+fn copy_slice(left: &mut [u64], right: &[u64]) -> u64
+  req left.len() == 2 && right.len() == 2 && left[1] == 77
+  ens result == right[1]
+  ens final(left)[0] == right[1]
+  ens final(left)[1] == 77
+  fx pure
+{
+  left[0] = right[1];
+  left[0]
+}
+fn mixed_slice_pipeline(left: &mut [u64], right: &[u64]) -> u64
+  req left.len() == 2 && right.len() == 2 && left[1] == 77
+  ens result == right[1]
+  ens final(left)[0] == right[1]
+  ens final(left)[1] == 77
+  fx pure
+{
+  let observed: u64 = copy_slice(left, right);
+  observed
+}
+"#;
+    let file = write_th("mixed_shared_mutable_slice_callee", source);
+    let report = run_body_tv_json(&file);
+    assert_eq!(report["counts"]["checked"].as_u64(), Some(2), "{report}");
+    assert_eq!(report["counts"]["faithful"].as_u64(), Some(2), "{report}");
+    assert_eq!(report["counts"]["divergent"].as_u64(), Some(0), "{report}");
+    assert_eq!(report["counts"]["skipped"].as_u64(), Some(0), "{report}");
+}
+
+#[test]
+fn mixed_shared_and_mutable_indexed_aliasing_remains_fail_closed() {
+    let source = r#"
+const SLOTS: usize = 2;
+fn copy_array(left: &mut [u64; SLOTS], right: &[u64; SLOTS]) -> u64
+  req true
+  ens result == right[1]
+  fx pure
+{
+  left[0] = right[1];
+  left[0]
+}
+fn alias(data: &mut [u64; SLOTS]) -> u64
+  req true
+  ens true
+  fx pure
+{
+  let observed: u64 = copy_array(data, data);
+  observed
+}
+"#;
+    let file = write_th("mixed_shared_mutable_indexed_alias", source);
+    let report = run_body_tv_json(&file);
+    let caller = report["bodies"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|body| body["body"].as_str() == Some("alias"))
+        .unwrap_or_else(|| panic!("missing mixed-indexed-alias caller body: {report}"));
+    assert_eq!(caller["verdict"].as_str(), Some("skipped"), "{report}");
+    assert!(
+        caller["detail"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("aliases exclusive root `data` through shared indexed formal `right`"),
+        "{report}"
+    );
+}
+
+#[test]
 fn aggregate_array_relations_are_faithful() {
     if !verus_present() {
         eprintln!("SKIP: verus not available — aggregate-array body-TV not discharged.");

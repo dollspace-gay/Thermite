@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-decision: a statement-position call or direct typed let-bound result call through pairwise-distinct direct mutable finite-record, slice, or fixed-array roots and nonoverlapping direct shared finite-record roots composes by independently interpreting the reachable in-language callee body, shared snapshots, result, and every complete post-state field or sequence
+decision: a statement-position call or direct typed let-bound result call through pairwise-distinct direct mutable finite-record, slice, or fixed-array roots and nonoverlapping direct shared finite-record, slice, or fixed-array roots composes by independently interpreting the reachable in-language callee body, shared snapshots, result, and every complete post-state field or sequence
 governs:
   - thermite-tv/src/exec_encode.rs
   - thermite-tv/src/exec_stmt_encode.rs
@@ -17,7 +17,8 @@ governs:
   - forge/tests/verified_build.rs
   - conformance/verified-build/mutable_call_effect.th
   - conformance/verified-build/mutable_indexed_call_effect.th
-audited-content-sha256: b4258f6a6d8dd6575d0191ac080f90763fead9bb46a98d499c140f3030f58b83 (re-pinned 2026-08-05 after exact mutable-slice/fixed-array call composition, alias/type rejection, and strict L3 runtime evidence)
+  - conformance/verified-build/mixed_indexed_call_effect.th
+audited-content-sha256: b64775da6fadf3524da956f2813670becae8298c3e7495946bfc6f6fcdb01dac (re-pinned 2026-08-05 after exact shared slice/fixed-array snapshots, overlap/type rejection, and strict L3 runtime evidence)
 extends:
   - .design/build/nested-aggregate-lifecycle.md
   - .design/build/owned-aggregate-lifecycle.md
@@ -40,14 +41,15 @@ closure:
 - every corresponding actual is one direct caller root with the same nominal
   record type or exact parsed element/capacity type; and
 - mutable actual roots are pairwise distinct across record and indexed formals;
-- every shared formal is `&Name` over the same finite structural closure and its
-  actual is a direct, nominally exact caller shared or exclusive record root; and
+- every shared formal is `&Name` over the same finite structural closure,
+  `&[T]`, or `&[T; N]`, and its actual is a direct caller shared or exclusive
+  root with the same nominal record type or exact parsed element/capacity type;
+  and
 - no shared actual overlaps any mutable actual in the same call. Shared/shared
   aliasing is harmless and remains admitted.
 
-Other formals are by-value inputs. Shared slices/arrays, projected roots, and
-non-finite records remain rejected rather than receiving an inferred alias or
-snapshot relation.
+Other formals are by-value inputs. Projected roots and non-finite records remain
+rejected rather than receiving an inferred alias or snapshot relation.
 
 Every unsupported form is rejected before an obligation can be labelled
 faithful. The first subset does not infer aliasing, summarize a foreign body, or
@@ -64,8 +66,8 @@ lifecycle semantics applies a call as follows:
    it as a read-only formal value;
 2. copy every direct field of each exclusive record root and the complete
    current finite sequence of each exclusive slice/array root into the matching
-   mutable formal, and snapshot every shared formal from the caller's current
-   lifecycle state;
+   mutable formal, and snapshot every shared record or complete shared
+   slice/array sequence from the caller's current lifecycle state;
 3. interpret the callee source body through the independent statement semantics,
    recursively applying any further acyclic mutable-call effects;
 4. encode the callee tail under the exact post-state, either discarding it for a
@@ -84,9 +86,9 @@ reads and subsequent calls observe the program-point sequence rather than the
 entry or final view. A repeated actual root, shared/exclusive overlap, nominal or
 indexed pointee/capacity mismatch, missing field/state, unsupported body form,
 or recursive effect cycle returns `Unsupported`; none can silently become a
-no-op effect. A mutable peer may be reborrowed as the shared actual when it is a
-different root; the snapshot observes any preceding caller mutation rather than
-the peer's entry state.
+no-op effect. A mutable record, slice, or array peer may be reborrowed as the
+shared actual when it is a different root; the snapshot observes any preceding
+caller mutation rather than the peer's entry state.
 
 ## Production and expression fidelity
 
@@ -117,7 +119,7 @@ program-point state; using the unselected mutable name is an adversarial failure
 The focused real-Verus suites prove two dependent mutable-record calls, direct
 let-bound result flow with exact post-state, a distinct two-root call, fixed-
 array and mutable-slice result calls with complete sequence post-state, and mixed
-shared/mutable snapshot-result composition, then
+shared/mutable record and indexed snapshot-result composition, then
 rejects a wrong/discarded result, nested result use, dropped second call, wrong
 argument, missing collateral callee frame, duplicate exclusive alias, recursive
 effect cycle, shared/exclusive overlap, exact array capacity/type mismatch, and
@@ -142,13 +144,19 @@ replays the receipt, and rejects source tampering. Forge corpus tests derive
 both fixed-array and slice frames from ordinary Thermite signatures rather than
 accepting hand-authored metadata.
 
+The `mixed_indexed_call_effect.th` fixture writes one mutable array, then
+reborrows that current state as a nonoverlapping shared input to update another
+array. Its linked consumer checks both complete generated transitions; every
+reachable row is L3/faithful, replay succeeds, and bound-source tampering is
+rejected. Shared/shared sequence aliases remain harmless, while an
+exclusive/shared overlap rejects before Verus.
+
 This is reusable language and proof machinery. It adds no scheduler, allocator,
 boot path, firmware runtime, architecture implementation, or kernel artifact.
 
 ## Residual boundary
 
-The frozen subset still excludes shared slices or arrays, an actual such as
-`outer.inner` or `slots[i]`, nested
+The frozen subset still excludes an actual such as `outer.inner` or `slots[i]`, nested
 result use inside arithmetic/conditions/arguments/assignments/tails, untyped
 result bindings, recursive mutable effects, mutable enum payloads, calls inside
 the record-loop theory, dynamically quantified aggregate frames, and concurrent

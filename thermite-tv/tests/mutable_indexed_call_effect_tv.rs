@@ -4,7 +4,7 @@ use std::process::Command;
 use thermite_syntax::ast::{ArrayLen, Block, PrimType, Type};
 use thermite_syntax::Item;
 use thermite_tv::obligation::{body_equivalence_obligation, BodyObligationFrame, BodyParamDecl};
-use thermite_tv::{MutableCallEffectFrame, MutableIndexedFrame};
+use thermite_tv::{MutableCallEffectFrame, MutableIndexedFrame, SharedIndexedFrame};
 
 const ARRAY_SOURCE: &str = r#"
 const SLOTS: usize = 4;
@@ -71,6 +71,97 @@ fn write_slice(data: &mut [u64], at: usize, value: u64) -> (result: u64)
 {
     data[at] = value;
     data[at]
+}
+"#;
+
+const MIXED_ARRAY_SOURCE: &str = r#"
+const SLOTS: usize = 4;
+fn copy_array(left: &mut [u64; SLOTS], right: &[u64; SLOTS], at: usize) -> u64
+  req at < SLOTS
+  ens result == right[at]
+  ens final(left)[0] == right[at]
+  fx pure
+{
+  left[0] = right[at];
+  left[0]
+}
+fn mixed_array_pipeline(
+  left: &mut [u64; SLOTS],
+  right: &[u64; SLOTS],
+  at: usize,
+) -> u64
+  req at < SLOTS
+  ens result == right[at]
+  ens final(left)[0] == right[at]
+  fx pure
+{
+  let observed: u64 = copy_array(left, right, at);
+  observed
+}
+fn current_peer_pipeline(
+  left: &mut [u64; SLOTS],
+  peer: &mut [u64; SLOTS],
+  value: u64,
+) -> u64
+  req true
+  ens result == value
+  ens final(left)[0] == value
+  ens final(peer)[1] == value
+  fx pure
+{
+  peer[1] = value;
+  let observed: u64 = copy_array(left, peer, 1);
+  observed
+}
+"#;
+
+const MIXED_SLICE_SOURCE: &str = r#"
+fn copy_slice(left: &mut [u64], right: &[u64], at: usize) -> u64
+  req at < left.len() && at < right.len()
+  ens result == right[at]
+  ens final(left)[0] == right[at]
+  fx pure
+{
+  left[0] = right[at];
+  left[0]
+}
+fn mixed_slice_pipeline(left: &mut [u64], right: &[u64], at: usize) -> u64
+  req 0 < left.len() && at < left.len() && at < right.len()
+  ens result == right[at]
+  ens final(left)[0] == right[at]
+  fx pure
+{
+  let observed: u64 = copy_slice(left, right, at);
+  observed
+}
+"#;
+
+const MIXED_ARRAY_DEFINITION: &str = r#"
+pub const SLOTS: usize = 4;
+fn copy_array(
+    left: &mut [u64; SLOTS],
+    right: &[u64; SLOTS],
+    at: usize,
+) -> (result: u64)
+    requires at < SLOTS,
+    ensures
+        result == right@[at as int],
+        final(left)@ == (old(left)@).update(0, right@[at as int]),
+{
+    left[0] = right[at];
+    left[0]
+}
+"#;
+
+const MIXED_SLICE_DEFINITION: &str = r#"
+fn copy_slice(left: &mut [u64], right: &[u64], at: usize) -> (result: u64)
+    requires 0 < left.len() && at < left.len() && at < right.len(),
+    ensures
+        result == right@[at as int],
+        final(left)@ == (old(left)@).update(0, right@[at as int]),
+{
+    left[0] = right[at];
+    left[0]
 }
 "#;
 
@@ -143,6 +234,86 @@ fn slice_frame() -> BodyObligationFrame {
             function_body(SLICE_SOURCE, "write_slice"),
         )
         .with_mutable_indexed(vec![MutableIndexedFrame::new("data", slice_type())])],
+        ..Default::default()
+    }
+}
+
+fn mixed_array_frame(function: &str) -> BodyObligationFrame {
+    let peer = function == "current_peer_pipeline";
+    BodyObligationFrame {
+        spec_defs: vec![MIXED_ARRAY_DEFINITION.to_string()],
+        params: if peer {
+            vec![
+                BodyParamDecl::new("left", "&mut [u64; SLOTS]"),
+                BodyParamDecl::new("peer", "&mut [u64; SLOTS]"),
+                BodyParamDecl::new("value", "u64"),
+            ]
+        } else {
+            vec![
+                BodyParamDecl::new("left", "&mut [u64; SLOTS]"),
+                BodyParamDecl::new("right", "&[u64; SLOTS]"),
+                BodyParamDecl::new("at", "usize"),
+            ]
+        },
+        ret_type: "u64".to_string(),
+        req: (!peer).then(|| "at < SLOTS".to_string()),
+        mutable_indexed_params: if peer {
+            vec!["left".to_string(), "peer".to_string()]
+        } else {
+            vec!["left".to_string()]
+        },
+        fixed_array_params: if peer {
+            vec!["left".to_string(), "peer".to_string()]
+        } else {
+            vec!["left".to_string(), "right".to_string()]
+        },
+        mutable_indexed: if peer {
+            vec![
+                MutableIndexedFrame::new("left", array_type()),
+                MutableIndexedFrame::new("peer", array_type()),
+            ]
+        } else {
+            vec![MutableIndexedFrame::new("left", array_type())]
+        },
+        shared_indexed: if peer {
+            Vec::new()
+        } else {
+            vec![SharedIndexedFrame::new("right", array_type())]
+        },
+        mutable_call_effects: vec![MutableCallEffectFrame::new(
+            "copy_array",
+            vec!["left".to_string(), "right".to_string(), "at".to_string()],
+            Vec::new(),
+            function_body(MIXED_ARRAY_SOURCE, "copy_array"),
+        )
+        .with_mutable_indexed(vec![MutableIndexedFrame::new("left", array_type())])
+        .with_shared_indexed(vec![SharedIndexedFrame::new("right", array_type())])],
+        ..Default::default()
+    }
+}
+
+fn mixed_slice_frame() -> BodyObligationFrame {
+    BodyObligationFrame {
+        spec_defs: vec![MIXED_SLICE_DEFINITION.to_string()],
+        params: vec![
+            BodyParamDecl::new("left", "&mut [u64]"),
+            BodyParamDecl::new("right", "&[u64]"),
+            BodyParamDecl::new("at", "usize"),
+        ],
+        ret_type: "u64".to_string(),
+        req: Some("0 < left.len() && at < left.len() && at < right.len()".to_string()),
+        slice_params: vec!["left".to_string(), "right".to_string()],
+        mutable_indexed_params: vec!["left".to_string()],
+        mutable_indexed: vec![MutableIndexedFrame::new("left", slice_type())],
+        shared_indexed: vec![SharedIndexedFrame::new("right", slice_type())],
+        mutable_call_effects: vec![MutableCallEffectFrame::new(
+            "copy_slice",
+            vec!["left".to_string(), "right".to_string(), "at".to_string()],
+            Vec::new(),
+            function_body(MIXED_SLICE_SOURCE, "copy_slice"),
+        )
+        .with_mutable_indexed(vec![MutableIndexedFrame::new("left", slice_type())])
+        .with_shared_indexed(vec![SharedIndexedFrame::new("right", slice_type())])],
         ..Default::default()
     }
 }
@@ -286,6 +457,109 @@ fn alias(data: &mut [u64; SLOTS], value: u64) -> ()
         &mismatch,
     )
     .expect_err("indexed pointee mismatch must fail closed");
+    assert!(
+        error.to_string().contains("pointee-type mismatch"),
+        "{error}"
+    );
+}
+
+#[test]
+fn shared_fixed_array_snapshot_and_current_mutable_peer_compose() {
+    let source = function_body(MIXED_ARRAY_SOURCE, "mixed_array_pipeline");
+    let production = "    let observed: u64 = copy_array(left, right, at);\n    observed\n";
+    let obligation = body_equivalence_obligation(
+        &source,
+        production,
+        &mixed_array_frame("mixed_array_pipeline"),
+    )
+    .expect("mixed fixed-array call-effect obligation");
+    assert!(obligation.contains("(right@)[(at) as int]"), "{obligation}");
+    assert!(obligation.contains("final(left)@ =="), "{obligation}");
+    assert_verus("shared_fixed_array_call", &obligation, true);
+
+    let peer_source = function_body(MIXED_ARRAY_SOURCE, "current_peer_pipeline");
+    let peer_production =
+        "    peer[1] = value;\n    let observed: u64 = copy_array(left, peer, 1);\n    observed\n";
+    let peer_obligation = body_equivalence_obligation(
+        &peer_source,
+        peer_production,
+        &mixed_array_frame("current_peer_pipeline"),
+    )
+    .expect("current mutable-peer snapshot obligation");
+    assert!(
+        peer_obligation.contains("(old(peer)@).update(1, value)"),
+        "{peer_obligation}"
+    );
+    assert_verus("current_mutable_peer_snapshot", &peer_obligation, true);
+}
+
+#[test]
+fn shared_mutable_slice_snapshot_composes() {
+    let source = function_body(MIXED_SLICE_SOURCE, "mixed_slice_pipeline");
+    let production = "    let observed: u64 = copy_slice(left, right, at);\n    observed\n";
+    let obligation = body_equivalence_obligation(&source, production, &mixed_slice_frame())
+        .expect("mixed mutable-slice call-effect obligation");
+    assert!(obligation.contains("(right@)[(at) as int]"), "{obligation}");
+    assert_verus("shared_mutable_slice_call", &obligation, true);
+}
+
+#[test]
+fn shared_indexed_overlap_and_type_mismatch_fail_closed() {
+    let alias_source = r#"
+const SLOTS: usize = 4;
+fn copy_array(left: &mut [u64; SLOTS], right: &[u64; SLOTS], at: usize) -> u64
+  req at < SLOTS
+  ens result == right[at]
+  fx pure
+{
+  left[0] = right[at];
+  left[0]
+}
+fn alias(data: &mut [u64; SLOTS], at: usize) -> u64
+  req at < SLOTS
+  ens true
+  fx pure
+{
+  let observed: u64 = copy_array(data, data, at);
+  observed
+}
+"#;
+    let mut alias_frame = mixed_array_frame("mixed_array_pipeline");
+    alias_frame.params = vec![
+        BodyParamDecl::new("data", "&mut [u64; SLOTS]"),
+        BodyParamDecl::new("at", "usize"),
+    ];
+    alias_frame.mutable_indexed_params = vec!["data".to_string()];
+    alias_frame.fixed_array_params = vec!["data".to_string()];
+    alias_frame.mutable_indexed = vec![MutableIndexedFrame::new("data", array_type())];
+    alias_frame.shared_indexed.clear();
+    let error =
+        body_equivalence_obligation(&function_body(alias_source, "alias"), "", &alias_frame)
+            .expect_err("shared indexed actual may not overlap an exclusive actual");
+    assert!(
+        error
+            .to_string()
+            .contains("aliases exclusive root `data` through shared indexed formal `right`"),
+        "{error}"
+    );
+
+    let mut mismatch = mixed_array_frame("mixed_array_pipeline");
+    mismatch.shared_indexed = vec![SharedIndexedFrame::new(
+        "right",
+        Type::Array {
+            elem: Box::new(Type::Prim(PrimType::U64)),
+            len: ArrayLen::Literal {
+                value: 8,
+                raw: "8".to_string(),
+            },
+        },
+    )];
+    let error = body_equivalence_obligation(
+        &function_body(MIXED_ARRAY_SOURCE, "mixed_array_pipeline"),
+        "",
+        &mismatch,
+    )
+    .expect_err("shared indexed capacity mismatch must fail closed");
     assert!(
         error.to_string().contains("pointee-type mismatch"),
         "{error}"

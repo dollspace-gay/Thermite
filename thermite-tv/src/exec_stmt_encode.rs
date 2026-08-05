@@ -177,6 +177,15 @@ pub struct MutableIndexedFrame {
     pub pointee: Type,
 }
 
+/// One immutably borrowed slice or fixed-array root with its exact parsed
+/// pointee type. Shared formals snapshot the caller's current complete sequence;
+/// they never contribute a copy-back state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SharedIndexedFrame {
+    pub name: String,
+    pub pointee: Type,
+}
+
 /// One independently parsed in-language callee whose body may transform one or
 /// more exclusive finite-record, slice, or fixed-array parameters. The
 /// reference side interprets this source body directly; production continues to
@@ -186,8 +195,8 @@ pub struct MutableIndexedFrame {
 pub struct MutableCallEffectFrame {
     pub name: String,
     /// All formal parameter names in signature order. Borrowed formals are
-    /// identified by `mutable_records`, `mutable_indexed`, or `shared_records`;
-    /// the rest are value inputs.
+    /// identified by `mutable_records`, `mutable_indexed`, `shared_records`, or
+    /// `shared_indexed`; the rest are value inputs.
     pub params: Vec<String>,
     pub mutable_records: Vec<MutableRecordFrame>,
     /// Exact exclusive slice/fixed-array formals whose complete sequence state
@@ -197,6 +206,10 @@ pub struct MutableCallEffectFrame {
     /// the caller's current lifecycle state and remain read-only while the callee
     /// source body is interpreted.
     pub shared_records: Vec<SharedRecordFrame>,
+    /// Exact shared slice/fixed-array formals snapshotted from the current
+    /// caller state. Shared/shared aliases are admitted; overlap with an
+    /// exclusive actual in the same call is rejected.
+    pub shared_indexed: Vec<SharedIndexedFrame>,
     pub body: Block,
 }
 
@@ -294,6 +307,15 @@ impl MutableIndexedFrame {
     }
 }
 
+impl SharedIndexedFrame {
+    pub fn new(name: impl Into<String>, pointee: Type) -> Self {
+        Self {
+            name: name.into(),
+            pointee,
+        }
+    }
+}
+
 impl MutableCallEffectFrame {
     pub fn new(
         name: impl Into<String>,
@@ -307,6 +329,7 @@ impl MutableCallEffectFrame {
             mutable_records,
             mutable_indexed: Vec::new(),
             shared_records: Vec::new(),
+            shared_indexed: Vec::new(),
             body,
         }
     }
@@ -320,6 +343,12 @@ impl MutableCallEffectFrame {
     /// Add exact exclusive slice/fixed-array formals to this call-effect frame.
     pub fn with_mutable_indexed(mut self, indexed: Vec<MutableIndexedFrame>) -> Self {
         self.mutable_indexed = indexed;
+        self
+    }
+
+    /// Add exact shared slice/fixed-array formals to this call-effect frame.
+    pub fn with_shared_indexed(mut self, indexed: Vec<SharedIndexedFrame>) -> Self {
+        self.shared_indexed = indexed;
         self
     }
 }
@@ -355,6 +384,7 @@ pub struct BodyRefCtx {
     mutable_records: Vec<MutableRecordFrame>,
     mutable_indexed: Vec<MutableIndexedFrame>,
     shared_records: Vec<SharedRecordFrame>,
+    shared_indexed: Vec<SharedIndexedFrame>,
     /// Exact source bodies and record/indexed formal frames for reachable
     /// in-language mutable-reference callees. Boundary declarations never enter
     /// this map.
@@ -382,6 +412,7 @@ impl BodyRefCtx {
             mutable_records: Vec::new(),
             mutable_indexed: Vec::new(),
             shared_records: Vec::new(),
+            shared_indexed: Vec::new(),
             mutable_call_effects: BTreeMap::new(),
             named_records: BTreeMap::new(),
             constructor_records: BTreeMap::new(),
@@ -452,6 +483,14 @@ impl BodyRefCtx {
     /// Add complete direct-field frames for immutably borrowed named records.
     pub fn with_shared_records(mut self, records: Vec<SharedRecordFrame>) -> Self {
         self.shared_records = records;
+        self
+    }
+
+    /// Add exact shared slice/fixed-array root metadata. These roots are
+    /// immutable snapshots but may be supplied to a mutable callee as shared
+    /// actuals when they do not overlap an exclusive actual.
+    pub fn with_shared_indexed(mut self, indexed: Vec<SharedIndexedFrame>) -> Self {
+        self.shared_indexed = indexed;
         self
     }
 
@@ -575,6 +614,12 @@ impl BodyRefCtx {
 
     fn mutable_indexed(&self, name: &str) -> Option<&MutableIndexedFrame> {
         self.mutable_indexed
+            .iter()
+            .find(|indexed| indexed.name == name)
+    }
+
+    fn shared_indexed(&self, name: &str) -> Option<&SharedIndexedFrame> {
+        self.shared_indexed
             .iter()
             .find(|indexed| indexed.name == name)
     }
@@ -1176,6 +1221,12 @@ fn aggregate_lifecycle_ensures(
             );
         }
     }
+    for indexed in &ctx.shared_indexed {
+        state.indexed.insert(
+            indexed.name.clone(),
+            LifecycleCell::bounded(format!("{}@", indexed.name)),
+        );
+    }
     for name in &ctx.mutable_indexed_bound {
         state.indexed.insert(
             name.clone(),
@@ -1650,6 +1701,47 @@ fn apply_mutable_call_effect(
         shared_actual_roots.insert(formal.name.clone(), root);
     }
 
+    let mut shared_indexed_actual_roots = BTreeMap::<String, String>::new();
+    for formal in &effect.shared_indexed {
+        let position = formal_positions.get(formal.name.as_str()).ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "mixed-reference callee `{name}` lost shared indexed formal `{}`",
+                formal.name
+            ))
+        })?;
+        let root = match &args[*position] {
+            Expr::Path(path) if path.len() == 1 => path[0].clone(),
+            _ => {
+                return Err(RefEncodeError::Unsupported(format!(
+                    "shared indexed actual for `{name}::{}` must be one direct slice or fixed-array root",
+                    formal.name
+                )));
+            }
+        };
+        if used_mutable_roots.contains(&root) {
+            return Err(RefEncodeError::Unsupported(format!(
+                "mixed-reference call `{name}` aliases exclusive root `{root}` through shared indexed formal `{}`",
+                formal.name
+            )));
+        }
+        let found = if let Some(actual) = ctx.shared_indexed(&root) {
+            &actual.pointee
+        } else if let Some(actual) = ctx.mutable_indexed(&root) {
+            &actual.pointee
+        } else {
+            return Err(RefEncodeError::Unsupported(format!(
+                "shared indexed actual `{root}` for `{name}` is not an independently framed slice or fixed array"
+            )));
+        };
+        if formal.pointee != *found {
+            return Err(RefEncodeError::Unsupported(format!(
+                "shared indexed call `{name}` has an exact pointee-type mismatch for formal `{}` and actual `{root}`",
+                formal.name
+            )));
+        }
+        shared_indexed_actual_roots.insert(formal.name.clone(), root);
+    }
+
     let mut callee_state = LifecycleState::default();
     for (position, formal_name) in effect.params.iter().enumerate() {
         if effect
@@ -1658,6 +1750,14 @@ fn apply_mutable_call_effect(
             .any(|record| record.name == *formal_name)
             || effect
                 .mutable_indexed
+                .iter()
+                .any(|indexed| indexed.name == *formal_name)
+            || effect
+                .shared_records
+                .iter()
+                .any(|record| record.name == *formal_name)
+            || effect
+                .shared_indexed
                 .iter()
                 .any(|indexed| indexed.name == *formal_name)
         {
@@ -1719,6 +1819,22 @@ fn apply_mutable_call_effect(
         })?;
         callee_state.indexed.insert(formal.name.clone(), value);
     }
+    for formal in &effect.shared_indexed {
+        let actual_root = shared_indexed_actual_roots
+            .get(&formal.name)
+            .ok_or_else(|| {
+                RefEncodeError::Unsupported(format!(
+                    "mixed-reference callee `{name}` lost actual shared indexed root for formal `{}`",
+                    formal.name
+                ))
+            })?;
+        let value = state.indexed.get(actual_root).cloned().ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "mixed-reference call `{name}` cannot snapshot exact caller sequence `{actual_root}`"
+            ))
+        })?;
+        callee_state.indexed.insert(formal.name.clone(), value);
+    }
 
     let mut callee_ctx = ctx.clone();
     callee_ctx.mutable_records = effect.mutable_records.clone();
@@ -1728,17 +1844,32 @@ fn apply_mutable_call_effect(
         .iter()
         .map(|indexed| indexed.name.clone())
         .collect();
+    callee_ctx.shared_indexed = effect.shared_indexed.clone();
     callee_ctx.slice_bound = effect
         .mutable_indexed
         .iter()
-        .filter(|indexed| matches!(indexed.pointee, Type::Slice(_)))
-        .map(|indexed| indexed.name.clone())
+        .map(|indexed| (&indexed.name, &indexed.pointee))
+        .chain(
+            effect
+                .shared_indexed
+                .iter()
+                .map(|indexed| (&indexed.name, &indexed.pointee)),
+        )
+        .filter(|(_, pointee)| matches!(pointee, Type::Slice(_)))
+        .map(|(name, _)| name.clone())
         .collect();
     callee_ctx.fixed_array_bound = effect
         .mutable_indexed
         .iter()
-        .filter(|indexed| matches!(indexed.pointee, Type::Array { .. }))
-        .map(|indexed| indexed.name.clone())
+        .map(|indexed| (&indexed.name, &indexed.pointee))
+        .chain(
+            effect
+                .shared_indexed
+                .iter()
+                .map(|indexed| (&indexed.name, &indexed.pointee)),
+        )
+        .filter(|(_, pointee)| matches!(pointee, Type::Array { .. }))
+        .map(|(name, _)| name.clone())
         .collect();
     callee_ctx.shared_records = effect.shared_records.clone();
     active_calls.push(name.to_string());

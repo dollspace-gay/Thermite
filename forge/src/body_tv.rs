@@ -83,7 +83,7 @@ use thermite_tv::ref_encode::{ref_contract_pred, RefCtx, StateViewKind};
 use thermite_tv::{
     loop_ref_obligations, BodyRefCtx, EnumVariantFrame, EnumVariantShapeFrame,
     MutableCallEffectFrame, MutableIndexedFrame, MutableRecordFrame, NamedRecordFrame,
-    RecordFieldFrame, SharedRecordFrame,
+    RecordFieldFrame, SharedIndexedFrame, SharedRecordFrame,
 };
 
 use crate::check::{unique_scratch_dir, ScratchDir, DEFAULT_RLIMIT, DEFAULT_SOLVER_SEED};
@@ -417,6 +417,7 @@ pub(crate) fn body_tv_support(
                     .with_mutable_records(effect.mutable_records.clone())
                     .with_mutable_indexed(effect.mutable_indexed.clone())
                     .with_shared_records(effect.shared_records.clone())
+                    .with_shared_indexed(effect.shared_indexed.clone())
                     .with_mutable_call_effects(mutable_call_effects.clone())
                     .with_named_records(named_records.clone())
                     .with_constructor_records(constructor_records.clone())
@@ -749,6 +750,7 @@ fn straight_line_body_tv(
     };
     let shared_records = shared_record_frames(program, f);
     let mutable_indexed = mutable_indexed_frames(f);
+    let shared_indexed = shared_indexed_frames(f);
     let named_records = named_record_frames(program);
     let constructor_records = constructor_record_frames(program);
     let enum_variants = match enum_variant_frames(program) {
@@ -786,6 +788,7 @@ fn straight_line_body_tv(
         mutable_records,
         mutable_indexed,
         shared_records,
+        shared_indexed,
         mutable_call_effects: mutable_call_effects.to_vec(),
         named_records,
         constructor_records,
@@ -1382,9 +1385,10 @@ pub(crate) fn mutable_record_frames(
 }
 
 /// Exact finite named-record declarations for shared-reference parameters. A
-/// wider shared borrow remains usable by ordinary expression TV, but it cannot
+/// wider shared record remains usable by ordinary expression TV, but it cannot
 /// enter mixed mutable-call composition unless it appears in this independently
-/// derived structural inventory.
+/// derived structural inventory. Shared slices/arrays use the separate exact
+/// indexed inventory below.
 pub(crate) fn shared_record_frames(
     program: &thermite_syntax::Program,
     function: &FnItem,
@@ -1445,11 +1449,32 @@ pub(crate) fn mutable_indexed_frames(function: &FnItem) -> Vec<MutableIndexedFra
         .collect()
 }
 
+/// Exact pointee types for shared slice and fixed-array parameters. These are
+/// immutable sequence snapshots, but retaining the parsed type prevents a
+/// mixed-borrow call from conflating element types or fixed capacities.
+pub(crate) fn shared_indexed_frames(function: &FnItem) -> Vec<SharedIndexedFrame> {
+    function
+        .params
+        .iter()
+        .filter_map(|param| {
+            let Type::Ref {
+                mutable: false,
+                inner,
+            } = &param.ty
+            else {
+                return None;
+            };
+            matches!(inner.as_ref(), Type::Slice(_) | Type::Array { .. })
+                .then(|| SharedIndexedFrame::new(param.name.clone(), inner.as_ref().clone()))
+        })
+        .collect()
+}
+
 /// Derive one complete mutable-callee frame from the validated source AST.
 /// Mutable records and indexed storage share one exclusive-root inventory, so
 /// every mutable formal must be represented exactly before callers may compose
-/// its effect. Shared formals are likewise restricted to finite named records
-/// until exact shared sequence snapshots are added deliberately.
+/// its effect. Every shared formal must likewise be either a finite named record
+/// or an exact shared slice/fixed-array sequence frame.
 fn mutable_call_effect_frame(
     program: &thermite_syntax::Program,
     function: &FnItem,
@@ -1474,14 +1499,15 @@ fn mutable_call_effect_frame(
     }
 
     let shared_records = shared_record_frames(program, function);
+    let shared_indexed = shared_indexed_frames(function);
     let shared_count = function
         .params
         .iter()
         .filter(|param| matches!(param.ty, Type::Ref { mutable: false, .. }))
         .count();
-    if shared_records.len() != shared_count {
+    if shared_records.len() + shared_indexed.len() != shared_count {
         return Err(format!(
-            "body-TV mutable-reference dependency `{}` contains a shared slice, array, or non-finite record outside the exact mixed-borrow call-effect subset",
+            "body-TV mutable-reference dependency `{}` contains a shared non-finite record outside the exact mixed-borrow call-effect subset",
             function.name
         ));
     }
@@ -1498,7 +1524,8 @@ fn mutable_call_effect_frame(
             body.clone(),
         )
         .with_mutable_indexed(indexed)
-        .with_shared_records(shared_records),
+        .with_shared_records(shared_records)
+        .with_shared_indexed(shared_indexed),
     ))
 }
 

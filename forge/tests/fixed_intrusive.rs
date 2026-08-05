@@ -1,8 +1,8 @@
 //! Primitive-only acceptance for allocation-free intrusive-list metadata.
 //!
-//! Link storage, fail-closed push/pop transitions, and FIFO policy-free mechanics
-//! are authored in Thermite. Every bodyful item must certify at L3; this package
-//! has no platform boundary and no parallel Rust implementation.
+//! Link storage, fail-closed push/pop/unlink transitions, and policy-free list
+//! mechanics are authored in Thermite. Every bodyful item must certify at L3;
+//! this package has no platform boundary and no parallel Rust implementation.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -77,7 +77,7 @@ fn mutation_total(rows: &[serde_json::Value]) -> (u64, u64) {
 }
 
 #[test]
-fn fixed_intrusive_is_l3_fifo_fail_closed_receipt_bound_and_executable() {
+fn fixed_intrusive_is_l3_fail_closed_receipt_bound_and_executable() {
     let source = "stdlib/kernel-primitives/collections/intrusive.th";
     let temp = TempDir::new("acceptance");
 
@@ -85,13 +85,13 @@ fn fixed_intrusive_is_l3_fifo_fail_closed_receipt_bound_and_executable() {
     assert_success(&checked);
     let rows: serde_json::Value = serde_json::from_slice(&checked.stdout).unwrap();
     let rows = rows.as_array().unwrap();
-    assert_eq!(rows.len(), 28);
+    assert_eq!(rows.len(), 39);
     assert!(
         rows.iter()
             .all(|row| row["level"] == "L3" && row["boundary"] == false),
         "an intrusive-metadata item fell below boundary-free L3: {rows:?}",
     );
-    assert_eq!(mutation_total(rows), (166, 171));
+    assert_eq!(mutation_total(rows), (271, 281));
     for name in [
         "fixed_intrusive_empty",
         "fixed_intrusive_link_reason",
@@ -102,7 +102,11 @@ fn fixed_intrusive_is_l3_fifo_fail_closed_receipt_bound_and_executable() {
         "fixed_intrusive_pop_last",
         "fixed_intrusive_pop_more",
         "fixed_intrusive_pop_front",
+        "fixed_intrusive_unlink_reason",
+        "fixed_intrusive_unlink_live",
+        "fixed_intrusive_unlink",
         "fixed_intrusive_fifo_probe",
+        "fixed_intrusive_unlink_middle_probe",
         "fixed_intrusive_endpoints_probe",
         "fixed_intrusive_duplicate_probe",
     ] {
@@ -189,6 +193,29 @@ fn fixed_intrusive_clone_state_rejected(list: FixedIntrusiveList64) -> bool
   let duplicate: FixedIntrusiveList64 = list.clone();
   duplicate.intrusive_len == list.intrusive_len
 }
+
+fn fixed_intrusive_false_unlink_preserves_present_claim(
+  list: FixedIntrusiveList64,
+  node: usize,
+) -> bool
+  req fixed_intrusive_unlink_reason_spec(&list, node) == 0
+  ens result
+  fx pure
+{
+  match fixed_intrusive_unlink(list, node) {
+    FixedIntrusiveUnlink64::IntrusiveUnlinked64 {
+      list: next,
+      node: _,
+    } => fixed_intrusive_contains(&next, node),
+    FixedIntrusiveUnlink64::IntrusiveNotLinked64 { list: _, node: _ } => false,
+    FixedIntrusiveUnlink64::IntrusiveUnlinkOutOfRange64 {
+      list: _, node: _,
+    } => false,
+    FixedIntrusiveUnlink64::IntrusiveUnlinkCorrupt64 {
+      list: _, node: _, reason: _,
+    } => false,
+  }
+}
 "#,
     );
     let hostile_path = temp.0.join("hostile-intrusive.th");
@@ -197,13 +224,14 @@ fn fixed_intrusive_clone_state_rejected(list: FixedIntrusiveList64) -> bool
     let rejected = forge(&["check", &hostile_path_s, "--level", "l3", "--json"]);
     assert!(
         !rejected.status.success(),
-        "LIFO/duplicate/clone claims unexpectedly certified",
+        "LIFO/duplicate/clone/unlink claims unexpectedly certified",
     );
     let rejected_rows: serde_json::Value = serde_json::from_slice(&rejected.stdout).unwrap();
     for name in [
         "fixed_intrusive_false_lifo_claim",
         "fixed_intrusive_false_duplicate_accept_claim",
         "fixed_intrusive_clone_state_rejected",
+        "fixed_intrusive_false_unlink_preserves_present_claim",
     ] {
         let row = rejected_rows
             .as_array()
@@ -225,7 +253,7 @@ fn fixed_intrusive_clone_state_rejected(list: FixedIntrusiveList64) -> bool
         "--level",
         "l3",
         "--export",
-        "fixed_intrusive_fifo_probe",
+        "fixed_intrusive_unlink_middle_probe",
         "--target",
         "kernel",
         "--out",
@@ -247,7 +275,7 @@ fn fixed_intrusive_clone_state_rejected(list: FixedIntrusiveList64) -> bool
     assert_eq!(plan["package"]["name"], "thermite_fixed_intrusive");
     assert_eq!(
         plan["exports"][0]["thermite_name"],
-        "fixed_intrusive_fifo_probe",
+        "fixed_intrusive_unlink_middle_probe",
     );
 
     let tv: serde_json::Value = serde_json::from_slice(
@@ -255,17 +283,19 @@ fn fixed_intrusive_clone_state_rejected(list: FixedIntrusiveList64) -> bool
     )
     .unwrap();
     let tv_rows = tv["rows"].as_array().unwrap();
-    assert_eq!(tv_rows.len(), 49);
+    assert_eq!(tv_rows.len(), 72);
     assert!(
         tv_rows.iter().all(|row| row["verdict"] == "faithful"),
         "intrusive bundle contains non-faithful TV rows: {tv}",
     );
     for (phase, label) in [
-        ("body", "fixed_intrusive_fifo_probe"),
+        ("body", "fixed_intrusive_unlink_middle_probe"),
         ("contract", "fixed_intrusive_push_back.ens#1"),
         ("contract", "fixed_intrusive_pop_front.ens#1"),
+        ("contract", "fixed_intrusive_unlink.ens#1"),
         ("exec", "fixed_intrusive_push_back.let#1"),
         ("exec", "fixed_intrusive_pop_front.let#1"),
+        ("exec", "fixed_intrusive_unlink.let#1"),
     ] {
         assert!(
             tv_rows
@@ -279,10 +309,10 @@ fn fixed_intrusive_clone_state_rejected(list: FixedIntrusiveList64) -> bool
     fs::write(
         &consumer_source,
         r#"fn main() {
-    use thermite_fixed_intrusive::thermite_export_fixed_intrusive_fifo_probe_v1;
-    match thermite_export_fixed_intrusive_fifo_probe_v1(5, 9) {
+    use thermite_fixed_intrusive::thermite_export_fixed_intrusive_unlink_middle_probe_v1;
+    match thermite_export_fixed_intrusive_unlink_middle_probe_v1(5, 9, 13) {
         Ok(value) => assert!(value),
-        Err(_) => panic!("valid distinct slots rejected"),
+        Err(_) => panic!("valid distinct unlink slots rejected"),
     }
 }
 "#,

@@ -4,7 +4,7 @@
 tier: 3-component
 status: draft
 audited-sha: 92396428567edc6940a9e2845217f5ff4c2ea3c6 (re-pinned 2026-06-16, user-authorized: the only change to this doc's governed files since the prior pin is the additive stage-1 forge-tier increment 2a — the new Item::Forge surface + inert Item::Forge match arms, verified net-additive with no substantive removal of existing v1 logic (git log <main>..HEAD = the 8 forge commits); the v1 behavior this doc governs is unchanged, and the new forge-tier surface is specified in .design/stage1-forge-tier.md / REQ-S1-3)
-audited-content-sha256: 50924da9c03959d09a73a94737e242cea758e4a8930f7ec43ccfbe41612cb066 (re-pinned 2026-08-05 after exact dependency return and entry-state precondition grounding; no kernel implementation is present)
+audited-content-sha256: 275d53cdac72447d6d39a7f3bf3b02bf702c822d33e3c4b4d66286fbc9f5c3ed (re-pinned 2026-08-05 after exact constructor-field if state closure; no kernel implementation is present)
 governs: thermite-tv/src/exec_stmt_encode.rs, thermite-tv/src/obligation.rs, thermite-lower/src/lower.rs, forge/src/body_tv.rs, forge/src/tv_signal.rs
 thesis-refs:
   - thermite-design.md §1 (trust relocated: code → spec → spec-intent)
@@ -104,9 +104,10 @@ The RHS expression sublanguage of every IN statement is the step-2.1 pure-exec s
 native fixed-array construction and finite-storage operations. Local state may be scalar or a native
 fixed array. A function may directly assign one index of a mutable borrowed slice or borrowed fixed
 array whose recursively nested elements are primitive arrays; its exact final sequence is part of the
-body obligation. Pure `.array_eq`/`.array_same_except` expressions additionally carry finite plain
-record, tuple, and nested-array declarations through the body-TV frame, without admitting named-field
-mutation or a general aggregate lifecycle. The additive named-record lifecycle
+body obligation. Pure `.array_eq`/`.array_same_except`/
+`.array_same_except_two` expressions additionally carry finite plain record,
+tuple, and nested-array declarations through the body-TV frame, without
+admitting named-field mutation or a general aggregate lifecycle. The additive named-record lifecycle
 subset admits a direct `root.field` read/write when `root: &mut Name`, `Name` is
 finite and non-sealed, and every declared direct field joins the independent
 final-state frame. Opaque roots use this subset only inside their defining
@@ -170,6 +171,12 @@ body returns), e.g. for `{ let a = x + 1; let b = a * 2; b }` the denotation is
 (the threading), the tail returned. Mutation (`s = s + 1; s = s * 2`) is the same SUBSTITUTION at the
 mutated cell, ORDER-SENSITIVE (a reorder changes the substitution chain → a different closed form). An
 `if` denotes a Verus `if`-expression over the two branch state-transformers.
+When a statement-free `if` is nested directly in an aggregate constructor field,
+the denotation closes its condition and both arms over the exact prior local
+environment before emitting the constructor. This prevents an earlier local
+binding from leaking as an unbound name after intervening aggregate writes. A
+nested constructor-field `if` with branch statements remains fail-closed until
+those branch effects have an exact outer-state transformer.
 When a typed `let` initializer returns a bounded integer through `if` or `match`,
 the reference denotation propagates that exact parsed result type into every arm
 and casts bare integer leaves. This preserves the source's `u8`/`u16`/`u32`/

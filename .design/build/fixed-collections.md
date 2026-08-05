@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: partial
-decision: Thermite ships policy-free packed bitmap, vector, FIFO-ring, direct-map, open-addressed map, generation-safe slab, duplicate-safe freelist, and intrusive FIFO metadata mechanics in .th; generic capacities and quantified aggregate framing remain
+decision: Thermite ships policy-free packed bitmap, vector, FIFO-ring, direct-map, open-addressed map, generation-safe slab, duplicate-safe freelist, and intrusive doubly linked metadata with arbitrary-node unlink in .th; generic capacities and quantified aggregate-state framing remain
 governs:
   - stdlib/kernel-primitives/collections.thpkg.json
   - stdlib/kernel-primitives/collections/bitmap.th
@@ -21,7 +21,7 @@ governs:
   - forge/tests/fixed_freelist.rs
   - forge/tests/fixed_intrusive.rs
   - forge/tests/fixed_slab.rs
-audited-content-sha256: b9efb3e86a77b3daa30ee7954eeb159927bee17c0facd412cb689a246ec03c82 (re-pinned 2026-08-05 after the strict L3 intrusive FIFO metadata increment)
+audited-content-sha256: f2be4629ea3aa24ddfc8e5ff404ed2d6c384dcadf698e3e7d02908e417c92221 (re-pinned 2026-08-05 after the strict L3 arbitrary-node intrusive unlink increment)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/l3-verified-artifact.md
@@ -41,7 +41,7 @@ block. Those are consumer policies.
 
 `stdlib/kernel-primitives/collections.thpkg.json` is the canonical five-module
 collection package. The generation-safe slab, duplicate-safe freelist, and
-intrusive FIFO metadata also have focused
+intrusive doubly linked metadata also have focused
 `stdlib/kernel-primitives/{slab,freelist,intrusive}.thpkg.json` receipt roots
 so their aggregate public transitions can be built, replayed, and attacked
 independently. None of these packages contains a Rust runtime implementation,
@@ -207,27 +207,32 @@ and release/reuse of an index. The focused package exports the LIFO probe as a
 strict kernel-target L3 receipt with faithful contract, expression, body, and
 wrapper TV. The state is not clonable, and there is no parallel Rust freelist.
 
-## Intrusive FIFO metadata
+## Intrusive list metadata
 
 `FixedIntrusiveList64` is opaque metadata for a doubly linked FIFO over 64
 consumer-owned slot identities. It stores only presence, predecessor, successor,
 head, tail, and length metadata; it neither allocates nodes nor assigns meaning to
-them. Push-at-tail and pop-at-head are total, fail closed on malformed endpoints,
-and return the owned state in every success or rejection variant.
+them. Push-at-tail, pop-at-head, and arbitrary-live-node unlink are total, fail
+closed on malformed local links/endpoints, and return the owned state in every
+success or rejection variant.
 
 Successful transitions pin the exact changed presence bit and link slots using
-fixed-array equality or same-except frames. Empty insertion, nonempty insertion,
-last-node removal, and multi-node removal are separate L3 helpers, while the public
-operations expose their complete conditional frames without unsupported contract
-control flow. Source probes prove FIFO order, exact forward/reverse endpoints, and
-duplicate rejection. The focused package executes the generated FIFO proof from a
-downstream consumer and contains no Rust list implementation.
+fixed-array equality, one-index frames, or the exact quantified two-index
+`.array_same_except_two` relation. Empty insertion, nonempty insertion, last-node
+removal, head removal, and arbitrary-node unlink are separate L3 helpers, while the
+public operations expose complete conditional frames without unsupported contract
+control flow. Source probes prove FIFO order, exact forward/reverse endpoints,
+duplicate rejection, and removal of the middle node from a three-node list while
+preserving the surrounding order. The released identity may be linked again at the
+tail through the ordinary duplicate-safe push transition. The focused package
+executes the generated middle-unlink proof from a downstream consumer and contains
+no Rust list implementation.
 
 ## Assurance and adversarial evidence
 
-`forge check --level l3` proves all 223 source items across the collection, slab,
+`forge check --level l3` proves all 234 source items across the collection, slab,
 freelist, and intrusive modules at L3. There are no boundaries. Executable
-contract mutation kills 627 of 669 generated mutants; the surviving mutants
+contract mutation kills 732 of 779 generated mutants; the surviving mutants
 remain counted and the per-function scores stay above the configured floor.
 
 `forge/tests/fixed_collections.rs` additionally:
@@ -269,29 +274,34 @@ remain counted and the per-function scores stay above the configured floor.
 
 `forge/tests/fixed_intrusive.rs` separately:
 
-- requires all 28 intrusive-metadata items to be boundary-free L3 and pins the
-  executable mutation score at 166/171;
-- rejects false LIFO, duplicate-acceptance, and state-cloning claims;
-- builds and replays the FIFO probe under the kernel target;
-- requires all 49 reachable translation-validation rows to be faithful;
-- executes the generated FIFO logic from a codegen-pinned downstream consumer;
+- requires all 39 intrusive-metadata items to be boundary-free L3 and pins the
+  executable mutation score at 271/281;
+- rejects false LIFO, duplicate-acceptance, state-cloning, and false
+  unlinked-node-presence claims;
+- builds and replays the arbitrary middle-unlink probe under the kernel target;
+- requires all 72 reachable translation-validation rows to be faithful;
+- executes the generated middle-unlink logic from a codegen-pinned downstream
+  consumer;
   and
 - removes the bound opacity marker and requires replay to fail.
 
 The canonical five-root package retains a scalar ring export, while the focused
 slab, freelist, and intrusive packages supply strict aggregate receipt fixtures.
-Body TV frames direct and nested finite-record mutation, user-ADT match/results, exact
-statement-position mutable calls over direct finite-record roots, and the slab,
-freelist, and intrusive fixed-array states. Quantified all-index aggregate framing remains
-open, so these increments do not generalize the focused results into a claim that
-every collection lifecycle is already a strict public export.
+Body TV frames direct and nested finite-record mutation, user-ADT match/results,
+exact statement-position mutable calls over direct finite-record roots, and the
+slab, freelist, and intrusive fixed-array states. It closes statement-free
+constructor-field conditionals over prior locals, which keeps the independent
+unlink reference well scoped after multiple array writes. Quantified all-index
+aggregate-state framing remains open, so these increments do not generalize the
+focused results into a claim that every collection lifecycle is already a strict
+public export.
 
 ## Remaining collection closure
 
 This is a substantial REQ-KPRIM-2 increment, not completion. Remaining work is:
 
-1. arbitrary-node intrusive unlink/relink once exact two-index array framing is
-   available; the shipped FIFO surface changes only one index per metadata array;
+1. arbitrary-position insertion/relink if consumer workloads need more than the
+   shipped arbitrary unlink plus tail relink;
 2. a chained-map variant where consumer workloads require it;
 3. capacity/type parameterization that does not rely on privileged generated
    policy types;
@@ -312,12 +322,12 @@ At this increment:
 
 | Metric | Value |
 |---|---:|
-| Physical Thermite LOC | 4,893 |
-| Nonblank Thermite LOC | 4,671 |
-| Thermite functions | 193 (120 executable, 73 specification) |
-| In-language L3 items | 223 |
+| Physical Thermite LOC | 5,378 |
+| Nonblank Thermite LOC | 5,145 |
+| Thermite functions | 203 (126 executable, 77 specification) |
+| In-language L3 items | 234 |
 | Frozen boundary declarations | 0 |
-| Executable mutants killed | 627/669 |
+| Executable mutants killed | 732/779 |
 | Bodyful Rust/assembly collection implementations | 0 |
 | Ordinary Rust kernel-policy/algorithm LOC | 0 |
 | Direct-Verus TPL LOC shipped by this package | 0 |

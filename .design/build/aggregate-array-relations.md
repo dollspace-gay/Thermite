@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-decision: array_eq and array_same_except derive exact structural equality for finite plain record elements without granting equality to sealed or opaque authority
+decision: array_eq, array_same_except, and array_same_except_two derive exact structural equality and quantified one/two-index frames for finite plain record elements without granting equality to sealed or opaque authority
 governs:
   - thermite-spec/src/lib.rs
   - thermite-spec/src/validator.rs
@@ -24,7 +24,7 @@ governs:
   - forge/tests/exec_tv_conformance.rs
   - forge/tests/verified_build.rs
   - conformance/verified-build/aggregate_array_relations.th
-audited-content-sha256: 02619cd9b3cd6ff7c493007fd285f2c1ce6bac53794db65c740a694875e704af (re-pinned 2026-08-05 after exec-TV compile-diagnostic hardening; aggregate-array semantics remain regression-covered)
+audited-content-sha256: 95246236351bf4a6fc53e3cd8c62125605916ae7607a7a53208c293986134991 (re-pinned 2026-08-05 after exact two-index quantified framing and independent TV coverage)
 extends:
   - .design/build/kernel-primitives.md
   - .design/verified/exec-tv.md
@@ -37,7 +37,8 @@ extends:
 Kernel data structures routinely contain fixed tables of records rather than
 only tables of integers. Thermite's native fixed arrays already provide exact
 initialization, indexing, mutation, scalar extensional equality, and the
-`array_same_except` frame relation. This increment extends the two relations to
+`array_same_except` frame relation. The relation family also provides
+`array_same_except_two` for exact two-write frames. These primitives extend to
 plain, finite record elements so a consuming project can verify descriptor,
 slot, queue-entry, and capability-record tables without replacing them with
 parallel scalar arrays or writing one equality scan per record type.
@@ -70,12 +71,28 @@ fx pure
 {
   left.array_same_except(right, changed)
 }
+
+fn framed_two(
+  left: [Slot; 64],
+  right: [Slot; 64],
+  first: usize,
+  second: usize,
+) -> bool
+req true
+ens result == left.array_same_except_two(right, first, second)
+fx pure
+{
+  left.array_same_except_two(right, first, second)
+}
 ```
 
 `array_eq` returns true exactly when every element agrees structurally.
 `array_same_except` returns true exactly when every in-bounds element other
 than the supplied index agrees structurally. An out-of-bounds exception means
 full equality, preserving the existing scalar semantics.
+`array_same_except_two` excludes exactly `first` and `second`; equal exceptions
+collapse to the one-index relation, and either out-of-bounds exception excludes
+no in-bounds element.
 
 The first aggregate derivation admits a finite structural closure built from:
 
@@ -110,7 +127,7 @@ sealed nor opaque and all of its fields are already comparable. The monotone
 fixed point admits declaration-order-independent nesting and rejects recursive
 cycles.
 
-Both relation operands must still be named arrays (or direct references/derefs
+Every relation operand must still be a named array (or direct reference/deref
 of them) with exactly the same element type and capacity. The array element
 must be in the structural-comparison closure. Invalid arity, scalar receivers,
 capacity mismatch, hidden authority, recursive records, and unsupported fields
@@ -137,7 +154,9 @@ assumed lemma, native `PartialEq` proof shortcut, or trusted implementation.
 The array scan retains its exact contracts:
 
 - `result <==> self@ =~= right@`; and
-- `result <==> forall j, 0 <= j < N && j != except ==> self@[j] == right@[j]`.
+- `result <==> forall j, 0 <= j < N && j != except ==> self@[j] == right@[j]`;
+  and
+- `result <==> forall j, 0 <= j < N && j != first && j != second ==> self@[j] == right@[j]`.
 
 The generated helper closure is deterministic and appears only when a program
 uses one of the fixed-array relations. Emitting the finite declaration closure,
@@ -166,7 +185,8 @@ view meaning independently of the production helper generator. Their frames
 must carry the exact required struct declarations and native aggregate-array
 types. A production comparator that drops a field, swaps a field, skips an
 element, or mishandles the exception index must fail the corresponding real-
-Verus obligation.
+Verus obligation. The two-index path additionally rejects a reference that uses
+the first exception twice or otherwise drops the second exception.
 
 ## Evidence and residual work
 

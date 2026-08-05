@@ -97,7 +97,7 @@ governs:
   - conformance/verified-composition/frozen_primitive.th
   - conformance/verified-composition/frozen_primitive_shell.rs
   - conformance/verified-composition/frozen_primitive_registry.json
-audited-content-sha256: d836b84f465b248c8bbc88a66cfc435a5804fb94d7ef98e5b2475606f3284555 (re-pinned 2026-08-05 after the strict L3 intrusive FIFO metadata increment; no kernel policy or implementation was added)
+audited-content-sha256: 693e27529ffa71b66665e9848d7c56c6e8079794ec0fdb175df0f46cb027d835 (re-pinned 2026-08-05 after the strict L3 arbitrary-node intrusive unlink increment; no kernel policy or implementation was added)
 extends:
   - .design/build/kernel-target.md
   - .design/build/l3-rich-composition.md
@@ -233,8 +233,10 @@ Repeat initialization rejects non-copy element types before lowering.
 `.array_eq(other)` now provides allocation-free extensional equality for arrays
 of scalars and recursively finite plain records, tuples, and fixed arrays, while
 `.array_same_except(other, index)` proves exact frame preservation around one
-updated index. Sealed, opaque, recursive, reference-bearing, enum, and
-heap-backed elements fail closed. Both relations use program-shaped
+updated index, and `.array_same_except_two(other, first, second)` preserves every
+element outside two explicitly named indices. Sealed, opaque, recursive,
+reference-bearing, enum, and heap-backed elements fail closed. All three
+relations use program-shaped
 const-generic scans whose exact generated bodies are verified by Verus and
 independently translation-validated through contract, expression, and body TV.
 Total `u64.bit_test`, `.bit_set`, and `.bit_clear`
@@ -256,11 +258,11 @@ transition composition through those remaining forms persist. The
 allocation-free collection packages now supply a packed 256-bit `[u64; 4]`
 bitmap, 64-entry `u64` vector, FIFO ring, collision-explicit direct map, opaque
 linear-probing map, generation-safe slab, duplicate-safe freelist, and opaque
-intrusive FIFO metadata in Thermite. Arbitrary-node intrusive unlink/relink,
-workload-driven chained maps, quantified aggregate framing, and generic library
-capacities/types remain. See
-`.design/build/named-record-lifecycle.md` for the exact admitted record subset
-and adversarial proof boundary.
+intrusive doubly linked metadata with arbitrary-node unlink and tail relink in
+Thermite. Arbitrary-position insertion/relink, workload-driven chained maps,
+quantified aggregate-state framing, and generic library capacities/types remain.
+See `.design/build/named-record-lifecycle.md` for the exact admitted record
+subset and adversarial proof boundary.
 
 #### Fixed-array surface lock
 
@@ -302,10 +304,13 @@ every element and returns exactly finite-view extensional equality. Sealed and
 opaque authority never receive an ambient derived comparator.
 `.array_same_except(other, index)` returns true exactly when every in-bounds
 element other than `index` agrees; an out-of-bounds exception therefore means
-full equality. This combines with an exact indexed postcondition to frame an
-owned array update compositionally. Arrays nest, may
-appear in plain structs/enums/tuples, and may be borrowed as immutable or mutable
-arrays.
+full equality. `.array_same_except_two(other, first, second)` uses the same
+allocation-free, quantified semantics while excluding two positions; either
+exception may be out of bounds or equal to the other without weakening the
+remaining-index equality. These relations combine with exact indexed
+postconditions to frame one- and two-write owned array updates compositionally.
+Arrays nest, may appear in plain structs/enums/tuples, and may be borrowed as
+immutable or mutable arrays.
 
 The executable representation is the target's native `[T; N]`, not `Vec<T>` and
 not a generated per-capacity Rust policy type. Specification lowering exposes a
@@ -333,18 +338,20 @@ insert, replacement, and removal while reporting key collisions and invalid
 counts as explicit result variants. `FixedOpenMap64` adds opaque linear probing,
 collision traversal, and tombstone reuse. Focused sibling packages add an opaque
 generation-tagged 64-slot slab, a duplicate-safe freelist, and doubly linked
-intrusive FIFO metadata. All 223 collection source items prove at L3 with no
-boundary or runtime implementation; their executable contracts kill 627/669
-generated mutants.
+intrusive metadata with arbitrary-live-node unlink. All 234 collection source
+items prove at L3 with no boundary or runtime implementation; their executable
+contracts kill 732/779 generated mutants.
 
 The canonical package builds and replays as a strict freestanding receipt rooted
 at the scalar ring-index transition, binding all five roots and rejecting
 receipt-source tampering. The slab, freelist, and intrusive packages separately
 build and replay aggregate kernel-target exports; the intrusive fixture also
-executes the generated FIFO logic from a downstream consumer. Typed mutable local records, pure value calls, exact
-direct finite-record mutable calls, and user-ADT match/results now have strict L3
-composition. Full collection exports remain gated by quantified aggregate
-framing and dedicated aggregate receipt/runtime coverage. The packed
+executes the generated middle-unlink logic from a downstream consumer and binds
+72 faithful reachable translation-validation rows. Typed mutable local records,
+pure value calls, exact direct finite-record mutable calls, and user-ADT
+match/results now have strict L3 composition. Full collection exports remain
+gated by quantified aggregate-state framing and dedicated aggregate
+receipt/runtime coverage. The packed
 bitmap's finite dynamic-bit bridge is
 directly proved and independently translation-validated. Exact claims and
 residual work are in `.design/build/fixed-collections.md`.
@@ -654,7 +661,7 @@ Source: `.design/reqs/registry.toml`
 |---|---|---|---|---|
 | REQ-KPRIM-1 | shipped | `.design/build/kernel-primitives.md` | Kernel scalar and effect surface |  |
 | REQ-KPRIM-10 | not_started | `.design/build/kernel-primitives.md` | Primitive-only adversarial suite | Add package, fixed-storage, atomic, waiting, registry, refinement, receipt-tamper, freestanding-consumer, and no-concrete-kernel gates. |
-| REQ-KPRIM-2 | partial | `.design/build/kernel-primitives.md` | Exact mutable and fixed storage | Mutable borrowed slices/arrays, arbitrary old/final snapshot framing, native fixed arrays, scalar and recursively finite plain-aggregate relations, defining-module opaque state transitions, exact typed root.field(.field)* mutation with an optional final fixed-array index, owned/value-call composition, exact user-ADT result/match contract and body TV with arm scoping, exact record-state loop entry/leaf-preservation/exit/full-result TV, statement-position mutable-call composition over pairwise-distinct direct finite-record roots, strict freestanding L3 record/rich-state receipts, digest-bound freestanding fixed-array views and repeat construction, total directly proved u64 bit methods, a receipt-bound packed bitmap with population count/set-bit search/bulk set operations, u64 vector, u64 FIFO ring, collision-explicit direct map, opaque collision-resolving open-addressed map, a generation-safe opaque slab, a duplicate-safe opaque freelist, opaque intrusive FIFO metadata, and a receipt-bound generation-owned static-storage claim/fill/commit/release protocol are shipped. Add index-then-field aliasing if required, mixed shared/mutable, mutable slice/array, and projected-root call effects, consumed mutable-call return values, enum-payload lvalue mutation, arbitrary-node intrusive unlink/relink, chained maps where required, quantified aggregate loops, and generic library capacities/types. |
+| REQ-KPRIM-2 | partial | `.design/build/kernel-primitives.md` | Exact mutable and fixed storage | Mutable borrowed slices/arrays, arbitrary old/final snapshot framing, native fixed arrays, scalar and recursively finite plain-aggregate equality plus exact one- and two-index quantified frames, defining-module opaque state transitions, exact typed root.field(.field)* mutation with an optional final fixed-array index, owned/value-call composition, exact user-ADT result/match contract and body TV with arm scoping, exact record-state loop entry/leaf-preservation/exit/full-result TV, statement-position mutable-call composition over pairwise-distinct direct finite-record roots, strict freestanding L3 record/rich-state receipts, digest-bound freestanding fixed-array views and repeat construction, total directly proved u64 bit methods, a receipt-bound packed bitmap with population count/set-bit search/bulk set operations, u64 vector, u64 FIFO ring, collision-explicit direct map, opaque collision-resolving open-addressed map, a generation-safe opaque slab, a duplicate-safe opaque freelist, opaque intrusive doubly linked metadata with arbitrary-live-node unlink and tail relink, and a receipt-bound generation-owned static-storage claim/fill/commit/release protocol are shipped. Add index-then-field aliasing if required, mixed shared/mutable, mutable slice/array, and projected-root call effects, consumed mutable-call return values, enum-payload lvalue mutation, arbitrary-position intrusive insertion/relink if required, chained maps where required, quantified aggregate loops/state framing, and generic library capacities/types. |
 | REQ-KPRIM-3 | partial | `.design/build/kernel-primitives.md` | Receipt-bound packages and modules | Independent parsing, module-local identity, direct-import/root-export enforcement, rooted graph validation, opaque construction/read/write ownership, source allowlisting, L3 build/composition, complete receipt binding, validation, and replay are shipped. Extend the remaining source-oriented Forge commands (check, audit, TV, goal/edit/fill) to operate on packages without losing module-local diagnostics. |
 | REQ-KPRIM-4 | partial | `.design/build/kernel-primitives.md` | Sealed authority and ownership | The sealed-construction barrier, direct and nested opaque lifecycle receipts, typed owned-record local/value-call L3 receipts, exact user-ADT result/match TV, exact direct finite-record mutable-call effects, an opaque receipt-bound 64-slot generation ledger, a generation-bound 64-slot static-storage lease/region protocol, and typed opaque single-use atomic-init slots prove acquisition/renewal/release, stale-token-after-reuse rejection, double-release rejection, monotonic rights, L3 move/clone refusal, initialization-witness matching, committed-region consumption, exact authority/slot/generation transfer, duplicate-init refusal, and foreign-module construction/read/write rejection. Add a complete affine rule if stronger general-purpose uniqueness is required, strictly compose the full owned-ADT lifecycles through exactly refined authority/memory/atomic doors, and add concurrent synchronization consumers that rotate generations through exact atomic transitions. |
 | REQ-KPRIM-5 | partial | `.design/build/kernel-primitives.md` | Sealed atomics and ordering model | The five-module receipt-bound package, typed generation-bound storage-to-slot conversion, enforceable single-use initialization, compound atomic identity, 50 atomic boundary declarations, exact ordering matrix, pre-codegen legality gate, bounded history relations, strict kernel ordering/storage proofs, strict hosted history proof, replay, runtime generated-logic execution, and adversarial tests are present. Add a kernel-target finite-history proof surface, exact atomic object/machine refinement, positive machine-aware lifecycle composition, and verified synchronization consumers. |

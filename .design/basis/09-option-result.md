@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: a75967adff473a6d48abc3bba897187c003c508185c18a8a350cc3e581447858 (re-pinned 2026-08-05 after the freestanding fixed-array/slab proof increment; option/result behavior remains regression-covered)
+audited-content-sha256: b665eaa43df821cfd31936c4dff2623f411e3c9ab84e66e35befdd17de5c7034 (re-pinned 2026-08-05 after exact two-index framing and body-TV closure; option/result behavior remains regression-covered)
 governs: thermite-syntax/src/ast.rs
 governs: thermite-syntax/src/parser.rs
 governs: thermite-spec/src/validator.rs

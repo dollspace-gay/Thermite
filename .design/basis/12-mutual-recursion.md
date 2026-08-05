@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: 945fcc7f83cc16e15a8f28052ef10c1ba8e91cdcc81cbb858db99a004ac0a650 (re-pinned 2026-08-05 after the freestanding fixed-array/slab proof increment; recursive record equality remains rejected)
+audited-content-sha256: b0eabd6b7023af8048c3eaa4883ad8e7a3199d7bccf72d75eac1f6a9ab283383 (re-pinned 2026-08-05 after exact two-index fixed-array framing; recursive record equality remains rejected)
 governs: forge/src/check.rs
 governs: thermite-lower/src/lower.rs
 thesis-refs:

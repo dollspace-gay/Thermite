@@ -2889,7 +2889,7 @@ fn substitute(expr: &Expr, env: &Env) -> Result<Expr, RefEncodeError> {
             path: path.clone(),
             fields: fields
                 .iter()
-                .map(|(name, value)| Ok((name.clone(), substitute(value, env)?)))
+                .map(|(name, value)| Ok((name.clone(), substitute_constructor_field(value, env)?)))
                 .collect::<Result<Vec<_>, RefEncodeError>>()?,
         }),
         Expr::Ref {
@@ -2921,10 +2921,45 @@ fn substitute(expr: &Expr, env: &Env) -> Result<Expr, RefEncodeError> {
         }),
         // An out-of-subset value node (a closure) is passed through unchanged so
         // [`exec_ref_value`] rejects it with the precise node tag. `Expr::If` is
-        // interpreted by `encode_value`, which threads each branch under the
-        // current environment.
+        // interpreted by `encode_value`; a statement-free if nested directly in a
+        // constructor field is closed by `substitute_constructor_field` above.
         other => Ok(other.clone()),
     }
+}
+
+/// Close a constructor-field value over the current body environment. A
+/// statement-free `if` nested below the constructor is a pure value, but it does
+/// not pass through the top-level [`encode_value`] dispatcher. Substitute its
+/// condition and both value arms here so no body-local binding leaks into the
+/// independently generated reference obligation. Statement-bearing arms remain
+/// fail-closed until their outer-state effects can be threaded exactly.
+fn substitute_constructor_field(expr: &Expr, env: &Env) -> Result<Expr, RefEncodeError> {
+    let Expr::If { cond, then, else_ } = expr else {
+        return substitute(expr, env);
+    };
+    if !then.stmts.is_empty() || !else_.stmts.is_empty() {
+        return Err(RefEncodeError::Unsupported(
+            "a nested if value with branch statements requires exact outer-state threading"
+                .to_string(),
+        ));
+    }
+    let then_tail = then.tail.as_deref().ok_or_else(|| {
+        RefEncodeError::Unsupported("nested if then-branch has no value".to_string())
+    })?;
+    let else_tail = else_.tail.as_deref().ok_or_else(|| {
+        RefEncodeError::Unsupported("nested if else-branch has no value".to_string())
+    })?;
+    Ok(Expr::If {
+        cond: Box::new(substitute(cond, env)?),
+        then: Block {
+            stmts: Vec::new(),
+            tail: Some(Box::new(substitute_constructor_field(then_tail, env)?)),
+        },
+        else_: Block {
+            stmts: Vec::new(),
+            tail: Some(Box::new(substitute_constructor_field(else_tail, env)?)),
+        },
+    })
 }
 
 #[cfg(test)]
@@ -3115,6 +3150,71 @@ mod tests {
             body_ref_state(&block, &BodyRefCtx::default()).unwrap(),
             "if c { 1 as u8 } else { if d { 2 as u8 } else { 3 as u8 } }"
         );
+    }
+
+    #[test]
+    fn nested_constructor_if_closes_over_prior_bindings() {
+        let block = Block {
+            stmts: vec![
+                let_(false, "old_head", path("head")),
+                let_(false, "successor", path("next")),
+            ],
+            tail: Some(Box::new(Expr::StructLit {
+                path: vec!["State".to_string()],
+                fields: vec![(
+                    "head".to_string(),
+                    Expr::If {
+                        cond: Box::new(bin(BinOp::Eq, path("node"), path("old_head"))),
+                        then: Block {
+                            stmts: vec![],
+                            tail: Some(Box::new(path("successor"))),
+                        },
+                        else_: Block {
+                            stmts: vec![],
+                            tail: Some(Box::new(path("old_head"))),
+                        },
+                    },
+                )],
+            })),
+        };
+
+        let encoded = body_ref_state(&block, &BodyRefCtx::default()).unwrap();
+        assert!(!encoded.contains("old_head"), "{encoded}");
+        assert!(!encoded.contains("successor"), "{encoded}");
+        assert!(
+            encoded.contains("head: if (node == head) { next } else { head }"),
+            "{encoded}",
+        );
+    }
+
+    #[test]
+    fn nested_constructor_if_with_branch_statements_fails_closed() {
+        let block = Block {
+            stmts: vec![let_(false, "old_head", path("head"))],
+            tail: Some(Box::new(Expr::StructLit {
+                path: vec!["State".to_string()],
+                fields: vec![(
+                    "head".to_string(),
+                    Expr::If {
+                        cond: Box::new(path("choose")),
+                        then: Block {
+                            stmts: vec![let_(false, "branch", path("next"))],
+                            tail: Some(Box::new(path("branch"))),
+                        },
+                        else_: Block {
+                            stmts: vec![],
+                            tail: Some(Box::new(path("old_head"))),
+                        },
+                    },
+                )],
+            })),
+        };
+
+        assert!(matches!(
+            body_ref_state(&block, &BodyRefCtx::default()),
+            Err(RefEncodeError::Unsupported(reason))
+                if reason.contains("nested if value with branch statements")
+        ));
     }
 
     /// B4 reference (the multi-cell tuple — the design's least-confident #1): the

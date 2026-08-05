@@ -51,6 +51,43 @@ fn hosted_library_has_only_explicit_public_exports_and_total_wrappers() {
 }
 
 #[test]
+fn total_wrapper_result_binding_does_not_shadow_a_value_parameter() {
+    let program = parse(
+        "struct Snapshot { slot: u64 } \
+         fn guarded(value: u64) -> Snapshot \
+           req value < 100 ens result.slot == value fx pure \
+         { Snapshot { slot: value } }",
+    );
+    let exports = [L3Export {
+        source_name: "guarded".to_string(),
+        public_name: "thermite_export_guarded_v1".to_string(),
+        wrapped: true,
+        visibility: L3ExportVisibility::Public,
+    }];
+    let source = lower_l3_library(&program, &exports, L3LibraryTarget::Std).unwrap();
+
+    assert!(
+        source.contains("Ok(__thermite_export_value) => (__thermite_export_value.slot == value)"),
+        "{source}"
+    );
+    assert!(!source.contains("Ok(value) =>"), "{source}");
+
+    let program = parse(
+        "fn guarded(__thermite_export_value: u64) -> u64 \
+           req __thermite_export_value < 100 \
+           ens result == __thermite_export_value fx pure \
+         { __thermite_export_value }",
+    );
+    let source = lower_l3_library(&program, &exports, L3LibraryTarget::Std).unwrap();
+    assert!(
+        source.contains(
+            "Ok(__thermite_export_value_1) => (__thermite_export_value_1 == __thermite_export_value)"
+        ),
+        "{source}"
+    );
+}
+
+#[test]
 fn kernel_library_is_no_std_and_adds_alloc_only_when_needed() {
     let scalar = parse("fn id(x: u64) -> u64 req true ens result == x fx pure { x }");
     let scalar_export = [L3Export {

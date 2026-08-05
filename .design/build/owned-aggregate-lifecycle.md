@@ -15,7 +15,7 @@ governs:
   - forge/tests/body_tv.rs
   - forge/tests/verified_build.rs
   - conformance/verified-build/owned_aggregate_lifecycle.th
-audited-content-sha256: 622e90f193198bb31883a1f969b0ca16fc6e686bd9aab2ee37f478fd1ace0bcd (re-pinned 2026-08-05 after leafwise final record results over indexed state joined owned lifecycle TV)
+audited-content-sha256: 3dd50056647484e3ed66887a790d75efef2735f211b6dc0d635e676508a09a11 (re-pinned 2026-08-05 after typed intermediate records over indexed state joined owned lifecycle TV)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/named-record-lifecycle.md
@@ -150,11 +150,14 @@ snapshots with the same rule. Complete indexed sequence state is threaded
 through callee writes, later reads, shared snapshots, result binding, and
 copy-back, including leafwise rebasing through a later direct/projected mutable
 record call or shared record snapshot. A final finite-record constructor or exact
-record access path after such an overlay is now framed leafwise: native scalar
+record access path after such an overlay is framed leafwise: native scalar
 leaves compare directly and array leaves compare through their complete current
-logical views, without a reverse sequence-to-array conversion. Array-element-root
-actuals, intermediate/general whole-record by-value materialization after a
-descendant sequence overlay, nested/general returned-value
+logical views, without a reverse sequence-to-array conversion. Explicitly typed
+intermediate finite-record constructor/access-path bindings now snapshot that
+same state by copying native fields and rebasing logical array leaves; typed
+rebinding, local field/index mutation, and a final leafwise result remain exact.
+Array-element-root actuals, arbitrary native aggregate materialization or
+by-value call/match use after a descendant sequence overlay, nested/general returned-value
 expressions, bodyless boundary functions, platform
 effects, allocation, unresolved calls, recursive effect cycles, and other
 non-admitted effects remain fail-closed.
@@ -229,8 +232,8 @@ The exact typed nested-field and terminal fixed-array projection subset is now
 shipped by `.design/build/nested-aggregate-lifecycle.md`; exact record-state
 loops are supplied by `.design/build/record-state-loops.md`. This increment still
 does not claim mutable enum payloads, index-then-field aliasing,
-array-element-root call effects, intermediate/general whole-record by-value
-materialization after a descendant sequence overlay, nested or
+array-element-root call effects, arbitrary native aggregate materialization or
+by-value call/match use after a descendant sequence overlay, nested or
 general mutable-call result expressions, static global ownership, affine uniqueness, concurrent
 record access, atomic object/machine refinement, or Rust/assembly TPL refinement.
 It does not add or package a kernel.

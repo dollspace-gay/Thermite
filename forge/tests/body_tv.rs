@@ -1124,11 +1124,39 @@ fn snapshot_after_array(outer: &mut ArrayOuter, value: u64) -> Bank
   let written: u64 = write_array(&mut outer.left.slots, value);
   Bank { slots: outer.left.slots, guard: outer.left.guard }
 }
+fn staged_snapshot_after_array(
+  outer: &mut ArrayOuter,
+  value: u64,
+  next_guard: u64,
+) -> Bank
+  req value < 1000 && next_guard < 1000
+  ens result.slots[0] == value
+  ens result.slots[1] == next_guard + 1
+  ens result.guard == next_guard
+  ens final(outer).left.slots[0] == value
+  ens final(outer).left.slots[1] == old(outer).left.slots[1]
+  ens final(outer).left.guard == old(outer).left.guard
+  ens final(outer).right.slots[0] == old(outer).right.slots[0]
+  ens final(outer).right.slots[1] == old(outer).right.slots[1]
+  ens final(outer).right.guard == old(outer).right.guard
+  ens final(outer).tag == old(outer).tag
+  fx pure
+{
+  let written: u64 = write_array(&mut outer.left.slots, value);
+  let snapshot: Bank = Bank {
+    slots: outer.left.slots,
+    guard: outer.left.guard,
+  };
+  let mut staged: Bank = snapshot;
+  staged.slots[1] = next_guard + 1;
+  staged.guard = next_guard;
+  staged
+}
 "#;
     let file = write_th("record_after_projected_indexed", source);
     let report = run_body_tv_json(&file);
-    assert_eq!(report["counts"]["checked"].as_u64(), Some(8), "{report}");
-    assert_eq!(report["counts"]["faithful"].as_u64(), Some(8), "{report}");
+    assert_eq!(report["counts"]["checked"].as_u64(), Some(9), "{report}");
+    assert_eq!(report["counts"]["faithful"].as_u64(), Some(9), "{report}");
     assert_eq!(report["counts"]["divergent"].as_u64(), Some(0), "{report}");
     assert_eq!(report["counts"]["skipped"].as_u64(), Some(0), "{report}");
     for name in [
@@ -1140,6 +1168,7 @@ fn snapshot_after_array(outer: &mut ArrayOuter, value: u64) -> Bank
         "record_replaces_projected_array",
         "record_after_array_pipeline",
         "snapshot_after_array",
+        "staged_snapshot_after_array",
     ] {
         assert!(
             report["bodies"].as_array().unwrap().iter().any(|body| {

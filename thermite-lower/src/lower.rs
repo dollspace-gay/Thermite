@@ -3996,6 +3996,12 @@ fn lower_l3_export_wrapper(
 ) -> Result<String, LowerError> {
     let mut out = String::new();
     let ret = lower_type(&f.ret)?;
+    let mut ok_value = "__thermite_export_value".to_string();
+    let mut suffix = 0usize;
+    while f.params.iter().any(|param| param.name == ok_value) {
+        suffix += 1;
+        ok_value = format!("__thermite_export_value_{suffix}");
+    }
     write!(out, "pub fn {public_name}(").ok();
     emit_params(&mut out, &f.params, Pos::Exec)?;
     writeln!(out, ") -> (result: Result<{ret}, ThermiteContractError>)").ok();
@@ -4013,7 +4019,7 @@ fn lower_l3_export_wrapper(
     let mut ensured = Vec::new();
     for ens in &f.contract.ens {
         let lowered = lower_expr(&ens.expr, spec, 0, f.span)?;
-        ensured.push(replace_ident(&lowered, "result", "value"));
+        ensured.push(replace_ident(&lowered, "result", &ok_value));
     }
     let ok_claim = if ensured.is_empty() {
         "true".to_string()
@@ -4026,7 +4032,7 @@ fn lower_l3_export_wrapper(
     };
     out.push_str("    ensures\n");
     writeln!(out, "        match result {{").ok();
-    writeln!(out, "            Ok(value) => {ok_claim},").ok();
+    writeln!(out, "            Ok({ok_value}) => {ok_claim},").ok();
     out.push_str("            Err(_) => true,\n");
     out.push_str("        },\n");
 

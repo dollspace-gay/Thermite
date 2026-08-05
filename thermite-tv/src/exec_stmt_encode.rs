@@ -1189,9 +1189,16 @@ impl LifecycleCell {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LifecycleRecordLocal {
+    type_name: String,
+    mutable: bool,
+}
+
 #[derive(Clone, Default)]
 struct LifecycleState {
     locals: BTreeMap<String, LifecycleCell>,
+    record_locals: BTreeMap<String, LifecycleRecordLocal>,
     readonly_inputs: BTreeSet<String>,
     fields: BTreeMap<String, LifecycleCell>,
     indexed: BTreeMap<String, LifecycleCell>,
@@ -1210,6 +1217,108 @@ fn remove_indexed_at_or_below(state: &mut LifecycleState, segments: &[String]) {
                 .zip(indexed.iter())
                 .all(|(expected, found)| expected == found))
     });
+}
+
+fn indexed_at_or_below(state: &LifecycleState, path: &[String]) -> bool {
+    state.indexed.keys().any(|candidate| {
+        let candidate = dotted_path_segments(candidate);
+        candidate.len() >= path.len()
+            && path
+                .iter()
+                .zip(candidate.iter())
+                .all(|(expected, found)| expected == found)
+    })
+}
+
+fn lifecycle_mutable_record_fields(
+    root: &str,
+    state: &LifecycleState,
+    ctx: &BodyRefCtx,
+) -> Result<Vec<RecordFieldFrame>, RefEncodeError> {
+    if let Some(record) = ctx.mutable_record(root) {
+        return Ok(record.fields.clone());
+    }
+    if let Some(local) = state.record_locals.get(root) {
+        if !local.mutable {
+            return Err(RefEncodeError::Unsupported(format!(
+                "logical record local `{root}` is immutable"
+            )));
+        }
+        return ctx
+            .named_record(&local.type_name)
+            .map(|record| record.fields.clone())
+            .ok_or_else(|| {
+                RefEncodeError::Unsupported(format!(
+                    "logical record local `{root}` lost finite type `{}`",
+                    local.type_name
+                ))
+            });
+    }
+    Err(RefEncodeError::Unsupported(format!(
+        "named-record assignment root `{root}` is not an independently framed exclusive parameter or typed mutable local"
+    )))
+}
+
+fn lifecycle_record_path_type(
+    root: &str,
+    fields: &[String],
+    state: &LifecycleState,
+    ctx: &BodyRefCtx,
+) -> Result<Type, RefEncodeError> {
+    let mut record_fields = lifecycle_mutable_record_fields(root, state, ctx)?;
+    let mut current = None;
+    for (position, name) in fields.iter().enumerate() {
+        let ty = record_fields
+            .iter()
+            .find(|field| field.name == *name)
+            .and_then(|field| field.ty.clone())
+            .ok_or_else(|| {
+                RefEncodeError::Unsupported(format!(
+                    "logical record path `{root}.{}` has no exact field type",
+                    fields[..=position].join(".")
+                ))
+            })?;
+        if position + 1 < fields.len() {
+            let Type::Named(type_name) = &ty else {
+                return Err(RefEncodeError::Unsupported(format!(
+                    "logical record path `{root}.{}` descends through a non-record field",
+                    fields[..=position].join(".")
+                )));
+            };
+            record_fields = ctx
+                .named_record(type_name)
+                .map(|record| record.fields.clone())
+                .ok_or_else(|| {
+                    RefEncodeError::Unsupported(format!(
+                        "logical record path `{root}.{}` lost finite type `{type_name}`",
+                        fields[..=position].join(".")
+                    ))
+                })?;
+        }
+        current = Some(ty);
+    }
+    current.ok_or_else(|| {
+        RefEncodeError::Unsupported(format!(
+            "logical record path `{root}` has no projected field"
+        ))
+    })
+}
+
+fn lifecycle_assignment_text(value: &LifecycleCell, target_ty: &Type) -> String {
+    if value.spec_int {
+        let target = match target_ty {
+            Type::Prim(thermite_syntax::PrimType::U8) => Some("u8"),
+            Type::Prim(thermite_syntax::PrimType::U16) => Some("u16"),
+            Type::Prim(thermite_syntax::PrimType::U32) => Some("u32"),
+            Type::Prim(thermite_syntax::PrimType::U64) => Some("u64"),
+            Type::Prim(thermite_syntax::PrimType::Usize) => Some("usize"),
+            _ => None,
+        };
+        if let Some(target) = target {
+            return format!("({}) as {target}", value.text);
+        }
+    }
+    value.text.clone()
 }
 
 fn rebased_indexed_descendants(
@@ -1288,6 +1397,17 @@ fn lifecycle_value_frame(
         return Ok(());
     }
 
+    if !matches!(ty, Type::Named(_)) {
+        if let Some(field) = state.fields.get(&dotted) {
+            if matches!(ty, Type::Array { .. } | Type::Slice(_)) {
+                ensures.push(format!("{final_value}@ == ({})@", field.text));
+            } else {
+                ensures.push(format!("{final_value} == {}", field.text));
+            }
+            return Ok(());
+        }
+    }
+
     let has_overlay_below = state.indexed.keys().any(|candidate| {
         let candidate = dotted_path_segments(candidate);
         candidate.len() > path.len()
@@ -1349,6 +1469,340 @@ fn lifecycle_field_path(expr: &Expr) -> Option<Vec<String>> {
             Some(path)
         }
         _ => None,
+    }
+}
+
+fn lifecycle_record_field_source(
+    type_name: &str,
+    source: &Expr,
+    field_name: &str,
+) -> Result<Expr, RefEncodeError> {
+    match source {
+        Expr::StructLit { path, fields } => {
+            if path.last().map(String::as_str) != Some(type_name) {
+                return Err(RefEncodeError::Unsupported(format!(
+                    "logical record constructor `{}` does not match `{type_name}`",
+                    path.join("::")
+                )));
+            }
+            fields
+                .iter()
+                .find_map(|(name, value)| (name == field_name).then(|| value.clone()))
+                .ok_or_else(|| {
+                    RefEncodeError::Unsupported(format!(
+                        "logical record constructor `{type_name}` omits field `{field_name}`"
+                    ))
+                })
+        }
+        _ if lifecycle_field_path(source).is_some() => Ok(Expr::Field {
+            receiver: Box::new(source.clone()),
+            name: field_name.to_string(),
+        }),
+        _ => Err(RefEncodeError::Unsupported(format!(
+            "logical record value `{type_name}` requires an exact constructor or access path"
+        ))),
+    }
+}
+
+fn lifecycle_value_has_overlay(
+    source: &Expr,
+    ty: &Type,
+    state: &LifecycleState,
+    ctx: &BodyRefCtx,
+) -> Result<bool, RefEncodeError> {
+    if matches!(ty, Type::Array { .. } | Type::Slice(_)) {
+        return Ok(lifecycle_field_path(source)
+            .is_some_and(|path| state.indexed.contains_key(&path.join("."))));
+    }
+    if let Type::Named(type_name) = ty {
+        if let Some(path) = lifecycle_field_path(source) {
+            return Ok(indexed_at_or_below(state, &path));
+        }
+        if matches!(source, Expr::StructLit { .. }) {
+            let record = ctx.named_record(type_name).ok_or_else(|| {
+                RefEncodeError::Unsupported(format!(
+                    "logical record type `{type_name}` has no finite field frame"
+                ))
+            })?;
+            for field in &record.fields {
+                let field_ty = field.ty.as_ref().ok_or_else(|| {
+                    RefEncodeError::Unsupported(format!(
+                        "logical record field `{type_name}.{}` has no exact source type",
+                        field.name
+                    ))
+                })?;
+                let field_source = lifecycle_record_field_source(type_name, source, &field.name)?;
+                if lifecycle_value_has_overlay(&field_source, field_ty, state, ctx)? {
+                    return Ok(true);
+                }
+            }
+        }
+    }
+    if let (Type::Tuple(types), Expr::Tuple(values)) = (ty, source) {
+        if values.len() != types.len() {
+            return Err(RefEncodeError::Unsupported(
+                "logical tuple value has the wrong exact arity".to_string(),
+            ));
+        }
+        for (value, value_ty) in values.iter().zip(types) {
+            if lifecycle_value_has_overlay(value, value_ty, state, ctx)? {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+fn collect_lifecycle_record_binding(
+    target_root: &mut Vec<String>,
+    type_name: &str,
+    source: &Expr,
+    state: &LifecycleState,
+    ctx: &BodyRefCtx,
+    direct_fields: &mut Vec<(String, LifecycleCell)>,
+    indexed: &mut Vec<(String, LifecycleCell)>,
+) -> Result<(), RefEncodeError> {
+    let record = ctx.named_record(type_name).ok_or_else(|| {
+        RefEncodeError::Unsupported(format!(
+            "logical record type `{type_name}` has no finite field frame"
+        ))
+    })?;
+    for field in &record.fields {
+        let field_ty = field.ty.as_ref().ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "logical record field `{type_name}.{}` has no exact source type",
+                field.name
+            ))
+        })?;
+        let field_source = lifecycle_record_field_source(type_name, source, &field.name)?;
+        target_root.push(field.name.clone());
+        if target_root.len() == 2 {
+            direct_fields.push((
+                target_root.join("."),
+                encode_lifecycle_expr_raw(&field_source, state, ctx)?,
+            ));
+        }
+        if lifecycle_value_has_overlay(&field_source, field_ty, state, ctx)? {
+            match field_ty {
+                Type::Array { .. } | Type::Slice(_) => {
+                    let source_path = lifecycle_field_path(&field_source).ok_or_else(|| {
+                        RefEncodeError::Unsupported(format!(
+                            "logical indexed field `{type_name}.{}` is not an exact access path",
+                            field.name
+                        ))
+                    })?;
+                    let sequence = state
+                        .indexed
+                        .get(&source_path.join("."))
+                        .cloned()
+                        .ok_or_else(|| {
+                            RefEncodeError::Unsupported(format!(
+                                "logical indexed field `{}` lost its current sequence overlay",
+                                source_path.join(".")
+                            ))
+                        })?;
+                    indexed.push((target_root.join("."), sequence));
+                }
+                Type::Named(nested) => collect_lifecycle_record_binding(
+                    target_root,
+                    nested,
+                    &field_source,
+                    state,
+                    ctx,
+                    direct_fields,
+                    indexed,
+                )?,
+                _ => {
+                    return Err(RefEncodeError::Unsupported(format!(
+                        "logical record overlay descends through unsupported field `{type_name}.{}`",
+                        field.name
+                    )));
+                }
+            }
+        }
+        target_root.pop();
+    }
+    Ok(())
+}
+
+fn bind_lifecycle_record_local(
+    name: &str,
+    type_name: &str,
+    mutable: bool,
+    source: &Expr,
+    state: &mut LifecycleState,
+    ctx: &BodyRefCtx,
+) -> Result<LifecycleCell, RefEncodeError> {
+    if expr_contains_mutable_call(source, ctx) {
+        return Err(RefEncodeError::Unsupported(
+            "a logical record constructor/access-path binding may not hide a mutable-reference call"
+                .to_string(),
+        ));
+    }
+    if !matches!(source, Expr::StructLit { .. }) && lifecycle_field_path(source).is_none() {
+        return Err(RefEncodeError::Unsupported(format!(
+            "typed logical record binding `{name}: {type_name}` requires an exact constructor or access path"
+        )));
+    }
+    let whole = encode_lifecycle_expr_raw(source, state, ctx)?;
+    let mut direct_fields = Vec::new();
+    let mut indexed = Vec::new();
+    collect_lifecycle_record_binding(
+        &mut vec![name.to_string()],
+        type_name,
+        source,
+        state,
+        ctx,
+        &mut direct_fields,
+        &mut indexed,
+    )?;
+
+    state
+        .fields
+        .retain(|path, _| !path.starts_with(&format!("{name}.")));
+    remove_indexed_at_or_below(state, &[name.to_string()]);
+    state.fields.extend(direct_fields);
+    state.indexed.extend(indexed);
+    state.record_locals.insert(
+        name.to_string(),
+        LifecycleRecordLocal {
+            type_name: type_name.to_string(),
+            mutable,
+        },
+    );
+    Ok(whole)
+}
+
+fn expression_materializes_indexed_overlay(expr: &Expr, state: &LifecycleState) -> Option<String> {
+    if let Some(path) = lifecycle_field_path(expr) {
+        return indexed_at_or_below(state, &path).then(|| path.join("."));
+    }
+    let any = |items: &[Expr]| {
+        items
+            .iter()
+            .find_map(|item| expression_materializes_indexed_overlay(item, state))
+    };
+    match expr {
+        Expr::Path(_) | Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::StrLit(_) => None,
+        Expr::Array(items) | Expr::Tuple(items) => any(items),
+        Expr::ArrayRepeat { value, .. }
+        | Expr::Unary { expr: value, .. }
+        | Expr::Cast { expr: value, .. }
+        | Expr::Ref { expr: value, .. }
+        | Expr::Deref(value)
+        | Expr::TupleProj {
+            receiver: value, ..
+        }
+        | Expr::Closure { body: value, .. }
+        | Expr::Is {
+            scrutinee: value, ..
+        } => expression_materializes_indexed_overlay(value, state),
+        Expr::Field { receiver, .. } => expression_materializes_indexed_overlay(receiver, state),
+        Expr::Binary { lhs, rhs, .. } => expression_materializes_indexed_overlay(lhs, state)
+            .or_else(|| expression_materializes_indexed_overlay(rhs, state)),
+        Expr::Call { callee, args } => {
+            expression_materializes_indexed_overlay(callee, state).or_else(|| any(args))
+        }
+        Expr::MethodCall { receiver, args, .. } => {
+            expression_materializes_indexed_overlay(receiver, state).or_else(|| any(args))
+        }
+        Expr::Match { scrutinee, arms } => {
+            expression_materializes_indexed_overlay(scrutinee, state).or_else(|| {
+                arms.iter().find_map(|arm| {
+                    arm.guard
+                        .as_ref()
+                        .and_then(|guard| expression_materializes_indexed_overlay(guard, state))
+                        .or_else(|| expression_materializes_indexed_overlay(&arm.body, state))
+                })
+            })
+        }
+        Expr::If { cond, then, else_ } => expression_materializes_indexed_overlay(cond, state)
+            .or_else(|| {
+                then.stmts
+                    .iter()
+                    .find_map(|statement| statement_materializes_indexed_overlay(statement, state))
+            })
+            .or_else(|| {
+                then.tail
+                    .as_deref()
+                    .and_then(|tail| expression_materializes_indexed_overlay(tail, state))
+            })
+            .or_else(|| {
+                else_
+                    .stmts
+                    .iter()
+                    .find_map(|statement| statement_materializes_indexed_overlay(statement, state))
+                    .or_else(|| {
+                        else_
+                            .tail
+                            .as_deref()
+                            .and_then(|tail| expression_materializes_indexed_overlay(tail, state))
+                    })
+            }),
+        Expr::Index { base, index } => {
+            let base_use = lifecycle_field_path(base)
+                .is_none()
+                .then(|| expression_materializes_indexed_overlay(base, state));
+            base_use.flatten().or_else(|| match index {
+                IndexArg::Single(index) | IndexArg::RangeTo(index) | IndexArg::RangeFrom(index) => {
+                    expression_materializes_indexed_overlay(index, state)
+                }
+                IndexArg::Range(start, end) => {
+                    expression_materializes_indexed_overlay(start, state)
+                        .or_else(|| expression_materializes_indexed_overlay(end, state))
+                }
+            })
+        }
+        Expr::StructLit { fields, .. } => fields
+            .iter()
+            .find_map(|(_, value)| expression_materializes_indexed_overlay(value, state)),
+        Expr::Quantifier { domain, body, .. } => {
+            expression_materializes_indexed_overlay(domain, state)
+                .or_else(|| expression_materializes_indexed_overlay(body, state))
+        }
+    }
+}
+
+fn statement_materializes_indexed_overlay(
+    statement: &Stmt,
+    state: &LifecycleState,
+) -> Option<String> {
+    match statement {
+        Stmt::Let { init, .. } | Stmt::Expr(init) => {
+            expression_materializes_indexed_overlay(init, state)
+        }
+        Stmt::Assign { target, value } => expression_materializes_indexed_overlay(target, state)
+            .or_else(|| expression_materializes_indexed_overlay(value, state)),
+        Stmt::Return(value) => value
+            .as_ref()
+            .and_then(|value| expression_materializes_indexed_overlay(value, state)),
+        Stmt::If { cond, then, else_ } => expression_materializes_indexed_overlay(cond, state)
+            .or_else(|| {
+                then.stmts
+                    .iter()
+                    .find_map(|statement| statement_materializes_indexed_overlay(statement, state))
+            })
+            .or_else(|| {
+                then.tail
+                    .as_deref()
+                    .and_then(|tail| expression_materializes_indexed_overlay(tail, state))
+            })
+            .or_else(|| {
+                else_.as_ref().and_then(|block| {
+                    block
+                        .stmts
+                        .iter()
+                        .find_map(|statement| {
+                            statement_materializes_indexed_overlay(statement, state)
+                        })
+                        .or_else(|| {
+                            block.tail.as_deref().and_then(|tail| {
+                                expression_materializes_indexed_overlay(tail, state)
+                            })
+                        })
+                })
+            }),
+        Stmt::Loop(_) | Stmt::Break | Stmt::Continue => None,
     }
 }
 
@@ -1418,7 +1872,7 @@ fn lifecycle_result_frame(
             return Ok(());
         }
 
-        let current = encode_lifecycle_expr(source, state, ctx)?;
+        let current = encode_lifecycle_expr_raw(source, state, ctx)?;
         let mut path = lifecycle_field_path(source)
             .unwrap_or_else(|| vec!["__thermite_result_value".to_string()]);
         return lifecycle_value_frame(
@@ -1594,7 +2048,12 @@ fn thread_lifecycle_stmt(
     active_calls: &mut Vec<String>,
 ) -> Result<(), RefEncodeError> {
     match statement {
-        Stmt::Let { name, init, ty, .. } => {
+        Stmt::Let {
+            mutable,
+            name,
+            init,
+            ty,
+        } => {
             if state.locals.contains_key(name) {
                 return Err(RefEncodeError::Unsupported(format!(
                     "re-shadowed lifecycle binding `{name}`"
@@ -1608,6 +2067,15 @@ fn thread_lifecycle_stmt(
                     ));
                 }
                 apply_mutable_call_effect(callee, args, state, ctx, active_calls)?
+            } else if let Some(Type::Named(type_name)) = ty {
+                if ctx.named_record(type_name).is_some()
+                    && (matches!(init, Expr::StructLit { .. })
+                        || lifecycle_field_path(init).is_some())
+                {
+                    bind_lifecycle_record_local(name, type_name, *mutable, init, state, ctx)?
+                } else {
+                    encode_lifecycle_expr(init, state, ctx)?
+                }
             } else {
                 encode_lifecycle_expr(init, state, ctx)?
             };
@@ -1615,6 +2083,27 @@ fn thread_lifecycle_stmt(
             Ok(())
         }
         Stmt::Assign { target, value } => {
+            if let Expr::Path(path) = target {
+                if let [root] = path.as_slice() {
+                    if let Some(local) = state.record_locals.get(root).cloned() {
+                        if !local.mutable {
+                            return Err(RefEncodeError::Unsupported(format!(
+                                "logical record local `{root}` is immutable"
+                            )));
+                        }
+                        let value = bind_lifecycle_record_local(
+                            root,
+                            &local.type_name,
+                            true,
+                            value,
+                            state,
+                            ctx,
+                        )?;
+                        state.locals.insert(root.clone(), value);
+                        return Ok(());
+                    }
+                }
+            }
             let value = encode_lifecycle_expr(value, state, ctx)?;
             match target {
                 Expr::Path(path) if path.len() == 1 && state.locals.contains_key(&path[0]) => {
@@ -1644,20 +2133,33 @@ fn thread_lifecycle_stmt(
                                 }
                                 let dotted = projected_path.join(".");
                                 if let Some(current) = state.indexed.get(&dotted) {
-                                    if ctx.mutable_record(&root).is_none() {
-                                        return Err(RefEncodeError::Unsupported(format!(
-                                            "projected indexed lifecycle cannot assign through non-exclusive record root `{root}`"
-                                        )));
-                                    }
+                                    lifecycle_mutable_record_fields(&root, state, ctx)?;
+                                    let storage_ty = lifecycle_record_path_type(
+                                        &root,
+                                        &projected_path[1..],
+                                        state,
+                                        ctx,
+                                    )?;
+                                    let elem_ty = match &storage_ty {
+                                        Type::Array { elem, .. } | Type::Slice(elem) => {
+                                            elem.as_ref()
+                                        }
+                                        _ => {
+                                            return Err(RefEncodeError::Unsupported(format!(
+                                                "projected indexed lifecycle path `{dotted}` has non-indexed type"
+                                            )));
+                                        }
+                                    };
                                     let encoded_index = encode_lifecycle_expr(index, state, ctx)?;
                                     let index = if matches!(index, Expr::IntLit { .. }) {
                                         encoded_index.text
                                     } else {
                                         format!("({}) as int", encoded_index.text)
                                     };
+                                    let assigned = lifecycle_assignment_text(&value, elem_ty);
                                     let next = LifecycleCell::bounded(format!(
                                         "({}).update({index}, {})",
-                                        current.text, value.text
+                                        current.text, assigned
                                     ));
                                     state.indexed.insert(dotted, next);
                                     return Ok(());
@@ -1672,13 +2174,8 @@ fn thread_lifecycle_stmt(
                                 .to_string(),
                         ));
                     };
-                    let record = ctx.mutable_record(&root).ok_or_else(|| {
-                        RefEncodeError::Unsupported(format!(
-                            "named-record assignment root `{root}` is not an independently framed exclusive parameter"
-                        ))
-                    })?;
-                    let field = record
-                        .fields
+                    let record_fields = lifecycle_mutable_record_fields(&root, state, ctx)?;
+                    let field = record_fields
                         .iter()
                         .find(|field| field.name == *direct_field)
                         .ok_or_else(|| {
@@ -1774,11 +2271,27 @@ fn thread_lifecycle_stmt(
                             "exclusive indexed lifecycle lost the current sequence `{root}`"
                         ))
                     })?;
+                    let assigned = match ctx.mutable_indexed(root).map(|frame| &frame.pointee) {
+                        Some(Type::Array { elem, .. } | Type::Slice(elem)) => {
+                            lifecycle_assignment_text(&value, elem)
+                        }
+                        Some(_) => {
+                            return Err(RefEncodeError::Unsupported(format!(
+                                "exclusive indexed lifecycle root `{root}` has non-indexed metadata"
+                            )));
+                        }
+                        None if value.spec_int => {
+                            return Err(RefEncodeError::Unsupported(format!(
+                                "exclusive indexed lifecycle root `{root}` lacks an exact element type for bounded arithmetic"
+                            )));
+                        }
+                        None => value.text.clone(),
+                    };
                     state.indexed.insert(
                         root.clone(),
                         LifecycleCell::bounded(format!(
                             "({}).update({index}, {})",
-                            current.text, value.text
+                            current.text, assigned
                         )),
                     );
                     Ok(())
@@ -2857,9 +3370,22 @@ fn encode_lifecycle_expr(
     if expr_contains_mutable_call(expr, ctx) {
         return Err(RefEncodeError::Unsupported(
             "a mutable-reference call result may only be consumed as one direct `let` initializer; nested expression, condition, argument, assignment, and tail uses require a wider evaluation-order and alias frame"
-                .to_string(),
+            .to_string(),
         ));
     }
+    if let Some(path) = expression_materializes_indexed_overlay(expr, state) {
+        return Err(RefEncodeError::Unsupported(format!(
+            "expression materializes logical indexed state at `{path}` as a native aggregate; use exact field/index projections or a typed finite-record constructor/access-path binding"
+        )));
+    }
+    encode_lifecycle_expr_raw(expr, state, ctx)
+}
+
+fn encode_lifecycle_expr_raw(
+    expr: &Expr,
+    state: &LifecycleState,
+    ctx: &BodyRefCtx,
+) -> Result<LifecycleCell, RefEncodeError> {
     let exec = ctx
         .exec_ref_ctx()
         .with_value_bindings(

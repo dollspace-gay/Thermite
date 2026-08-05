@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: bc09880dc7bfed4bcfc126bc3a0acbb6d451f1418481d34ad51083e0bb1af469 (re-pinned 2026-08-05 after composition receipts learned the explicit machine-residual scope)
+audited-content-sha256: d4ee64987aeb725bd7b91e7072f16f91b8d65490490dd52f512328b634612618 (re-pinned 2026-08-05 after total export wrappers gained hygienic result binding)
 decision: Option A — compile the canonical Verus executable body that was verified
 issue: github:dollspace-gay/Thermite#101, github:dollspace-gay/Thermite#103, github:dollspace-gay/Thermite#104, github:dollspace-gay/Thermite#108, github:dollspace-gay/Thermite#111
 governs:
@@ -13,6 +13,7 @@ governs:
   - forge/src/closure.rs
   - forge/src/manifest.rs
   - thermite-lower/src/lower.rs
+  - thermite-lower/tests/l3_library.rs
 thesis-refs:
   - thermite-design.md §3
   - thermite-design.md §5.3
@@ -451,6 +452,11 @@ Err(Precondition) => the implementation was not called
 Verus proves that the successful guard establishes the implementation's
 precondition. Contract TV covers the executable guard. The wrapper itself is
 part of the closure, final whole-crate proof, compiled source and receipt.
+Its successful-result pattern uses a compiler-reserved fresh identifier that is
+checked against every source parameter before emission. Postconditions replace
+the Thermite `result` binder with only that fresh identifier; a user parameter
+named `value` or even the preferred internal spelling therefore cannot capture
+the result or change the proved wrapper contract.
 
 If a precondition cannot be evaluated faithfully at runtime—for example, its
 quantifier or ghost dependency has no admitted executable translation—the

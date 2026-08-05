@@ -9,7 +9,7 @@ governs:
   - stdlib/kernel-primitives/storage/static_storage.th
   - thermite-tv/src/exec_stmt_encode.rs
   - forge/tests/static_storage_primitives.rs
-audited-content-sha256: 0efd0d79e48e9386622841e7a797c0fea72a4f8d87513558e5f2411b9935a359 (re-pinned 2026-08-05 after leafwise final record results joined the aggregate lifecycle engine; static-storage semantics remain regression-covered)
+audited-content-sha256: 0e3393ad3babe5b5475cd950988c33e1d828766d36aa559f08ee5cfefc50a507 (re-pinned 2026-08-05 after logical-record snapshots joined the aggregate lifecycle engine; static-storage semantics remain regression-covered)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/generation-ownership.md

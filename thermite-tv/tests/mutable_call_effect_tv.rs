@@ -270,6 +270,80 @@ fn snapshot_after_array(outer: &mut ArrayOuter, value: u64) -> Bank
   let written: u64 = write_array(&mut outer.left.slots, value);
   Bank { slots: outer.left.slots, guard: outer.left.guard }
 }
+fn staged_snapshot_after_array(
+  outer: &mut ArrayOuter,
+  value: u64,
+  next_guard: u64,
+) -> Bank
+  req value < 1000 && next_guard < 1000
+  ens result.slots[0] == value
+  ens result.slots[1] == next_guard + 1
+  ens result.guard == next_guard
+  ens final(outer).left.slots[0] == value
+  ens final(outer).left.slots[1] == old(outer).left.slots[1]
+  ens final(outer).left.guard == old(outer).left.guard
+  ens final(outer).right.slots[0] == old(outer).right.slots[0]
+  ens final(outer).right.slots[1] == old(outer).right.slots[1]
+  ens final(outer).right.guard == old(outer).right.guard
+  ens final(outer).tag == old(outer).tag
+  fx pure
+{
+  let written: u64 = write_array(&mut outer.left.slots, value);
+  let snapshot: Bank = Bank {
+    slots: outer.left.slots,
+    guard: outer.left.guard,
+  };
+  let mut staged: Bank = snapshot;
+  staged.slots[1] = next_guard + 1;
+  staged.guard = next_guard;
+  staged
+}
+fn reassigned_snapshot_after_array(
+  outer: &mut ArrayOuter,
+  value: u64,
+  next_guard: u64,
+) -> Bank
+  req value < 1000 && next_guard < 1000
+  ens result.slots[0] == value
+  ens result.slots[1] == old(outer).left.slots[1]
+  ens result.guard == next_guard
+  ens final(outer).left.slots[0] == value
+  ens final(outer).left.slots[1] == old(outer).left.slots[1]
+  ens final(outer).left.guard == old(outer).left.guard
+  ens final(outer).right.slots[0] == old(outer).right.slots[0]
+  ens final(outer).right.slots[1] == old(outer).right.slots[1]
+  ens final(outer).right.guard == old(outer).right.guard
+  ens final(outer).tag == old(outer).tag
+  fx pure
+{
+  let written: u64 = write_array(&mut outer.left.slots, value);
+  let mut staged: Bank = Bank {
+    slots: outer.left.slots,
+    guard: outer.left.guard,
+  };
+  staged = Bank { slots: staged.slots, guard: next_guard };
+  staged
+}
+fn native_array_after_staged_snapshot(outer: &mut ArrayOuter, value: u64) -> u64
+  req value < 1000
+  ens result == value
+  ens final(outer).left.slots[0] == value
+  ens final(outer).left.slots[1] == old(outer).left.slots[1]
+  ens final(outer).left.guard == old(outer).left.guard
+  ens final(outer).right.slots[0] == old(outer).right.slots[0]
+  ens final(outer).right.slots[1] == old(outer).right.slots[1]
+  ens final(outer).right.guard == old(outer).right.guard
+  ens final(outer).tag == old(outer).tag
+  fx pure
+{
+  let written: u64 = write_array(&mut outer.left.slots, value);
+  let snapshot: Bank = Bank {
+    slots: outer.left.slots,
+    guard: outer.left.guard,
+  };
+  let native: [u64; SLOTS] = snapshot.slots;
+  native[0]
+}
 "#;
 
 const PROJECTED_INDEXED_DEFINITIONS: &str = r#"
@@ -893,6 +967,146 @@ fn record_results_materialize_projected_sequence_state_leafwise_at_l3() {
         "record_result_after_projected_sequence_mutant",
         &mutant,
         false,
+    );
+}
+
+#[test]
+fn intermediate_record_values_snapshot_and_mutate_projected_sequence_state_at_l3() {
+    let body = function_body_in(PROJECTED_INDEXED_SOURCE, "staged_snapshot_after_array");
+    let mut frame = projected_indexed_frame();
+    frame.params.push(BodyParamDecl::new("next_guard", "u64"));
+    frame.ret_type = "Bank".to_string();
+    frame.req = Some("value < 1000 && next_guard < 1000".to_string());
+    frame.result_record = frame
+        .named_records
+        .iter()
+        .find(|record| record.type_name == "Bank")
+        .cloned();
+    let production = r#"    let written: u64 = write_array(&mut outer.left.slots, value);
+    let snapshot: Bank = Bank {
+        slots: outer.left.slots,
+        guard: outer.left.guard,
+    };
+    let mut staged: Bank = snapshot;
+    staged.slots[1] = next_guard + 1;
+    staged.guard = next_guard;
+    staged
+"#;
+    let obligation = body_equivalence_obligation(&body, production, &frame)
+        .expect("intermediate record snapshot after projected sequence state");
+    assert!(obligation.contains("result.slots@ =="), "{obligation}");
+    assert!(obligation.contains(".update(0, value)"), "{obligation}");
+    assert!(obligation.contains(".update(1,"), "{obligation}");
+    assert!(
+        obligation.contains("result.guard == next_guard"),
+        "{obligation}"
+    );
+    assert_verus(
+        "intermediate_record_after_projected_sequence",
+        &obligation,
+        true,
+    );
+
+    let mutant = body_equivalence_obligation(
+        &body,
+        r#"    let snapshot: Bank = Bank {
+        slots: outer.left.slots,
+        guard: outer.left.guard,
+    };
+    let mut staged: Bank = snapshot;
+    staged.slots[1] = next_guard + 1;
+    staged.guard = next_guard;
+    staged
+"#,
+        &frame,
+    )
+    .expect("intermediate record snapshot mutant obligation");
+    assert_verus(
+        "intermediate_record_after_projected_sequence_mutant",
+        &mutant,
+        false,
+    );
+}
+
+#[test]
+fn intermediate_record_whole_reassignment_rebases_projected_sequence_state_at_l3() {
+    let body = function_body_in(PROJECTED_INDEXED_SOURCE, "reassigned_snapshot_after_array");
+    let mut frame = projected_indexed_frame();
+    frame.params.push(BodyParamDecl::new("next_guard", "u64"));
+    frame.ret_type = "Bank".to_string();
+    frame.req = Some("value < 1000 && next_guard < 1000".to_string());
+    frame.result_record = frame
+        .named_records
+        .iter()
+        .find(|record| record.type_name == "Bank")
+        .cloned();
+    let production = r#"    let written: u64 = write_array(&mut outer.left.slots, value);
+    let mut staged: Bank = Bank {
+        slots: outer.left.slots,
+        guard: outer.left.guard,
+    };
+    staged = Bank { slots: staged.slots, guard: next_guard };
+    staged
+"#;
+    let obligation = body_equivalence_obligation(&body, production, &frame)
+        .expect("whole logical record reassignment after projected sequence state");
+    assert!(obligation.contains("result.slots@ =="), "{obligation}");
+    assert!(obligation.contains(".update(0, value)"), "{obligation}");
+    assert!(
+        obligation.contains("result.guard == next_guard"),
+        "{obligation}"
+    );
+    assert_verus(
+        "reassigned_record_after_projected_sequence",
+        &obligation,
+        true,
+    );
+
+    let mutant = body_equivalence_obligation(
+        &body,
+        r#"    let written: u64 = write_array(&mut outer.left.slots, value);
+    let mut staged: Bank = Bank {
+        slots: outer.left.slots,
+        guard: outer.left.guard,
+    };
+    staged = Bank { slots: staged.slots, guard: next_guard + 1 };
+    staged
+"#,
+        &frame,
+    )
+    .expect("whole logical record reassignment mutant obligation");
+    assert_verus(
+        "reassigned_record_after_projected_sequence_mutant",
+        &mutant,
+        false,
+    );
+}
+
+#[test]
+fn native_array_materialization_from_logical_record_remains_fail_closed() {
+    let body = function_body_in(
+        PROJECTED_INDEXED_SOURCE,
+        "native_array_after_staged_snapshot",
+    );
+    let frame = projected_indexed_frame();
+    let error = body_equivalence_obligation(
+        &body,
+        r#"    let written: u64 = write_array(&mut outer.left.slots, value);
+    let snapshot: Bank = Bank {
+        slots: outer.left.slots,
+        guard: outer.left.guard,
+    };
+    let native: [u64; SLOTS] = snapshot.slots;
+    native[0]
+"#,
+        &frame,
+    )
+    .expect_err("a logical sequence may not be fabricated into a native array");
+    assert!(
+        error
+            .to_string()
+            .contains("materializes logical indexed state at `snapshot.slots`"),
+        "{error}"
     );
 }
 

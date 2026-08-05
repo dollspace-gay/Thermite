@@ -52,6 +52,7 @@
 //! | REQ-TV-EXEC-FORGE-PLUGIN | shipped | `forge/src/exec_tv.rs` | Exec-TV forge plug-in point |  |
 //! <!-- /generated:reqs -->
 
+use std::collections::BTreeSet;
 use std::path::Path;
 use std::process::Command;
 
@@ -340,6 +341,48 @@ pub(crate) fn is_direct_mutable_call(program: &thermite_syntax::Program, expr: &
     })
 }
 
+/// Whether `expr` is one direct call that consumes an admitted finite named
+/// record by value. An isolated exec-expression obligation does not carry the
+/// caller's leafwise lifecycle overlays, so body TV owns this call together
+/// with the surrounding record state. The callee's ordinary native-record body
+/// remains independently expression/body validated in its own frame.
+pub(crate) fn is_direct_record_value_call(program: &thermite_syntax::Program, expr: &Expr) -> bool {
+    let Expr::Call { callee, .. } = expr else {
+        return false;
+    };
+    let Expr::Path(path) = callee.as_ref() else {
+        return false;
+    };
+    let [name] = path.as_slice() else {
+        return false;
+    };
+    let admitted: BTreeSet<String> = crate::body_tv::named_record_frames(program)
+        .into_iter()
+        .map(|record| record.type_name)
+        .collect();
+    program.items.iter().any(|item| {
+        match item {
+        Item::Fn(function)
+            if function.name == *name
+                && function.body.is_some()
+                && function.boundary.is_none()
+                && function.slag.is_none() =>
+        {
+            function.params.iter().any(|parameter| {
+                matches!(&parameter.ty, Type::Named(type_name) if admitted.contains(type_name))
+            })
+        }
+        _ => false,
+    }
+    })
+}
+
+/// Calls whose value cannot be isolated from the complete caller lifecycle are
+/// validated by body TV instead of the pure leaf-expression TV pass.
+pub(crate) fn is_direct_body_state_call(program: &thermite_syntax::Program, expr: &Expr) -> bool {
+    is_direct_mutable_call(program, expr) || is_direct_record_value_call(program, expr)
+}
+
 /// Translation-validate the exact executable guard used by an L3 total export
 /// wrapper. The guard is checked over the full input domain: the synthetic
 /// frame's `req true` intentionally does not assume the guard being validated.
@@ -588,12 +631,13 @@ fn exec_tv_fn(
             } => {
                 let_no += 1;
                 let label = format!("{}.let#{}", f.name, let_no);
-                let stateful_call = is_direct_mutable_call(program, init);
-                if stateful_call {
-                    // The exact callee source result and complete mutable
+                let body_owned_call = is_direct_body_state_call(program, init);
+                if body_owned_call {
+                    // The exact callee source result and any complete mutable
                     // post-state are interpreted by body TV. A pure exec-TV
                     // obligation cannot call an exec-mode `&mut` function from
-                    // its `ensures` clause.
+                    // its `ensures` clause or reconstruct a logical record
+                    // overlay in an isolated expression frame.
                 } else if let Some((ret_ty, _is_slice)) = exec_type_spelling(ty) {
                     check_corpus_expr(
                         program,
@@ -622,7 +666,7 @@ fn exec_tv_fn(
                 }
                 // Bind the local so a later expr referencing it frames.
                 if let Some((ty_str, is_slice)) = exec_type_spelling(ty) {
-                    if !stateful_call {
+                    if !body_owned_call {
                         env.bind_local_relation(name, &ty_str, init);
                     }
                     env.bind(name, ty_str, is_slice);
@@ -644,18 +688,20 @@ fn exec_tv_fn(
             }
             Stmt::Return(Some(e)) => {
                 let label = format!("{}.return", f.name);
-                check_return_like(
-                    program,
-                    e,
-                    &label,
-                    &f.ret,
-                    &env,
-                    f,
-                    &support_defs,
-                    seed,
-                    rlimit,
-                    report,
-                );
+                if !is_direct_body_state_call(program, e) {
+                    check_return_like(
+                        program,
+                        e,
+                        &label,
+                        &f.ret,
+                        &env,
+                        f,
+                        &support_defs,
+                        seed,
+                        rlimit,
+                        report,
+                    );
+                }
             }
             // A loop / if / assignment / break / continue / bare-expr statement is
             // out of scope for step 2.1 (statements/loops/mutation are step 2.2)
@@ -688,18 +734,20 @@ fn exec_tv_fn(
     // The body tail expr (the fn's value — `sum`'s final `acc`).
     if let Some(tail) = &body.tail {
         let label = format!("{}.tail", f.name);
-        check_return_like(
-            program,
-            tail,
-            &label,
-            &f.ret,
-            &env,
-            f,
-            &support_defs,
-            seed,
-            rlimit,
-            report,
-        );
+        if !is_direct_body_state_call(program, tail) {
+            check_return_like(
+                program,
+                tail,
+                &label,
+                &f.ret,
+                &env,
+                f,
+                &support_defs,
+                seed,
+                rlimit,
+                report,
+            );
+        }
     }
 }
 
@@ -1499,6 +1547,59 @@ fn caller(state: &mut State, value: u64) -> u64
         assert!(
             !is_direct_mutable_call(&parsed.program, &nested),
             "nested effectful expressions must not be removed from pure exec TV as if they were the admitted direct initializer"
+        );
+    }
+
+    #[test]
+    fn direct_finite_record_value_call_is_owned_by_body_tv_not_frameless_exec_tv() {
+        let parsed = thermite_syntax::parse(
+            r#"
+struct State { value: u64 }
+fn observe(state: State) -> u64
+  req true
+  ens result == state.value
+  fx pure
+{
+  state.value
+}
+fn caller(state: State) -> u64
+  req true
+  ens result == state.value
+  fx pure
+{
+  let observed: u64 = observe(state);
+  observed
+}
+"#,
+        );
+        assert!(parsed.is_clean(), "parse errors: {:?}", parsed.errors);
+        let init = parsed
+            .program
+            .items
+            .iter()
+            .find_map(|item| match item {
+                Item::Fn(function) if function.name == "caller" => function
+                    .body
+                    .as_ref()
+                    .and_then(|body| body.stmts.first())
+                    .and_then(|statement| match statement {
+                        Stmt::Let { init, .. } => Some(init),
+                        _ => None,
+                    }),
+                _ => None,
+            })
+            .expect("caller let initializer");
+        assert!(is_direct_record_value_call(&parsed.program, init));
+        assert!(is_direct_body_state_call(&parsed.program, init));
+
+        let nested = Expr::Binary {
+            op: BinOp::Add,
+            lhs: Box::new(init.clone()),
+            rhs: Box::new(int(1)),
+        };
+        assert!(
+            !is_direct_record_value_call(&parsed.program, &nested),
+            "nested aggregate calls must remain visible to the fail-closed expression/body paths"
         );
     }
 

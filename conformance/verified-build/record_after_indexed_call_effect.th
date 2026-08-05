@@ -137,6 +137,40 @@ fn record_after_indexed_staged_snapshot(
   staged
 }
 
+fn record_after_indexed_observe_bank(bank: RecordAfterIndexedBank) -> u64
+  req bank.slots[0] < 1000 && bank.guard < 1000
+  ens result == bank.slots[0] + bank.guard
+  fx pure
+{
+  bank.slots[0] + bank.guard
+}
+
+fn record_after_indexed_observe_snapshot(
+  outer: &mut RecordAfterIndexedOuter,
+  value: u64,
+  next_guard: u64,
+) -> u64
+  req value < 1000 && next_guard < 1000
+  ens result == value + next_guard
+  ens final(outer).left.slots[0] == value
+  ens final(outer).left.slots[1] == old(outer).left.slots[1]
+  ens final(outer).left.guard == old(outer).left.guard
+  ens final(outer).right.slots[0] == old(outer).right.slots[0]
+  ens final(outer).right.slots[1] == old(outer).right.slots[1]
+  ens final(outer).right.guard == old(outer).right.guard
+  ens final(outer).tag == old(outer).tag
+  fx pure
+{
+  let written: u64 = record_after_indexed_write(&mut outer.left.slots, value);
+  let mut snapshot: RecordAfterIndexedBank = RecordAfterIndexedBank {
+    slots: outer.left.slots,
+    guard: outer.left.guard,
+  };
+  snapshot.guard = next_guard;
+  let observed: u64 = record_after_indexed_observe_bank(snapshot);
+  observed
+}
+
 fn record_after_indexed_left_zero(outer: &RecordAfterIndexedOuter) -> u64
   req true
   ens result == outer.left.slots[0]

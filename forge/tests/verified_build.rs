@@ -1577,6 +1577,8 @@ fn record_after_indexed_call_effect_is_strict_l3_replayed_and_executed() {
         "--export",
         "record_after_indexed_staged_snapshot",
         "--export",
+        "record_after_indexed_observe_snapshot",
+        "--export",
         "record_after_indexed_left_zero",
         "--export",
         "record_after_indexed_left_one",
@@ -1608,6 +1610,8 @@ fn record_after_indexed_call_effect_is_strict_l3_replayed_and_executed() {
             && source.contains("record_after_indexed_copy(&mut outer.right, &outer.left)")
             && source.contains("pub fn record_after_indexed_snapshot")
             && source.contains("pub fn thermite_export_record_after_indexed_staged_snapshot_v1",)
+            && source.contains("record_after_indexed_observe_bank(snapshot)")
+            && source.contains("pub fn thermite_export_record_after_indexed_observe_snapshot_v1",)
             && source.contains("Ok(__thermite_export_value)"),
         "{source}"
     );
@@ -1622,8 +1626,9 @@ use record_after_indexed_call_effect::{
     record_after_indexed_left_zero, record_after_indexed_pipeline,
     record_after_indexed_right_guard, record_after_indexed_right_one,
     record_after_indexed_right_zero, record_after_indexed_snapshot,
-    record_after_indexed_tag, thermite_export_record_after_indexed_staged_snapshot_v1,
-    RecordAfterIndexedBank, RecordAfterIndexedOuter,
+    record_after_indexed_tag, thermite_export_record_after_indexed_observe_snapshot_v1,
+    thermite_export_record_after_indexed_staged_snapshot_v1, RecordAfterIndexedBank,
+    RecordAfterIndexedOuter,
 };
 
 fn main() {
@@ -1661,6 +1666,22 @@ fn main() {
     assert_eq!(staged.slots, [63, 78]);
     assert_eq!(staged.guard, 77);
     assert_eq!(record_after_indexed_left_zero(&outer), 63);
+    assert_eq!(record_after_indexed_left_one(&outer), 41);
+    assert_eq!(record_after_indexed_left_guard(&outer), 55);
+    assert_eq!(record_after_indexed_right_zero(&outer), 41);
+    assert_eq!(record_after_indexed_right_one(&outer), 7);
+    assert_eq!(record_after_indexed_right_guard(&outer), 8);
+    assert_eq!(record_after_indexed_tag(&outer), 9);
+    let observed = match thermite_export_record_after_indexed_observe_snapshot_v1(
+        &mut outer,
+        64,
+        88,
+    ) {
+        Ok(value) => value,
+        Err(_) => panic!("valid value-observer inputs were rejected"),
+    };
+    assert_eq!(observed, 152);
+    assert_eq!(record_after_indexed_left_zero(&outer), 64);
     assert_eq!(record_after_indexed_left_one(&outer), 41);
     assert_eq!(record_after_indexed_left_guard(&outer), 55);
     assert_eq!(record_after_indexed_right_zero(&outer), 41);
@@ -1711,7 +1732,7 @@ fn main() {
     )
     .unwrap();
     let rows = tv["rows"].as_array().unwrap();
-    assert_eq!(rows.len(), 88, "{tv}");
+    assert_eq!(rows.len(), 105, "{tv}");
     assert!(
         rows.iter().all(|row| row["verdict"] == "faithful"),
         "record-after-indexed lifecycle admitted a non-faithful row: {tv}"
@@ -1731,16 +1752,28 @@ fn main() {
             && row["label"] == "record_after_indexed_staged_snapshot"
             && row["verdict"] == "faithful"
     }));
-    for effectful_let in [
+    assert!(rows.iter().any(|row| {
+        row["phase"] == "body"
+            && row["label"] == "record_after_indexed_observe_bank"
+            && row["verdict"] == "faithful"
+    }));
+    assert!(rows.iter().any(|row| {
+        row["phase"] == "body"
+            && row["label"] == "record_after_indexed_observe_snapshot"
+            && row["verdict"] == "faithful"
+    }));
+    for body_owned_let in [
         "record_after_indexed_pipeline.let#1",
         "record_after_indexed_pipeline.let#2",
         "record_after_indexed_pipeline.let#3",
         "record_after_indexed_snapshot.let#1",
         "record_after_indexed_staged_snapshot.let#1",
+        "record_after_indexed_observe_snapshot.let#1",
+        "record_after_indexed_observe_snapshot.let#3",
     ] {
         assert!(!rows
             .iter()
-            .any(|row| row["phase"] == "exec" && row["label"] == effectful_let));
+            .any(|row| row["phase"] == "exec" && row["label"] == body_owned_let));
     }
 
     let tampered = temp

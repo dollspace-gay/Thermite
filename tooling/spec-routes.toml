@@ -2009,7 +2009,8 @@ conformance_ops = ["record-state-loop-lifecycle"]
 
 # Exact bodyful mutable-reference call composition for structurally disjoint
 # direct/projected finite-record and mutable-slice/fixed-array actuals,
-# and nonoverlapping exact shared record/indexed snapshots.
+# nonoverlapping exact shared record/indexed snapshots, and direct pure
+# scalar/unit observers consuming logical finite-record value snapshots.
 # Production executes the generated calls; the independent state denotation
 # recursively interprets the receipt-bound source bodies.
 [[route]]
@@ -2022,7 +2023,7 @@ conformance_ops = ["mutable-post-state-field-selector", "mutable-post-state-sequ
 crate_pattern = "thermite-tv/src/exec_stmt_encode.rs"
 design = ".design/build/mutable-call-effects.md"
 reference = ["conformance/verified-build/mutable_call_effect.th", "conformance/verified-build/mutable_indexed_call_effect.th", "conformance/verified-build/mixed_indexed_call_effect.th", "conformance/verified-build/projected_record_call_effect.th", "conformance/verified-build/projected_indexed_call_effect.th", "conformance/verified-build/record_after_indexed_call_effect.th"]
-conformance_ops = ["mutable-call-state-composition", "mutable-call-result-composition", "mutable-indexed-sequence-composition", "mixed-borrow-snapshot-composition", "shared-indexed-snapshot-composition", "projected-record-copy-in", "projected-record-copy-back", "projected-indexed-copy-in", "projected-indexed-sequence-overlay", "projected-indexed-leaf-frame", "record-overlay-rebase-copy-in", "record-overlay-rebase-copy-back", "logical-record-overlay-binding", "logical-record-overlay-rebinding", "logical-record-local-field-mutation", "logical-record-local-indexed-mutation", "leafwise-record-lifecycle-frame", "leafwise-record-result-after-overlay", "no-sequence-native-materialization", "record-overlay-invalidation", "structural-access-path-aliasing", "exclusive-alias-rejection", "indexed-pointee-rejection", "shared-exclusive-alias-rejection", "nested-result-rejection"]
+conformance_ops = ["mutable-call-state-composition", "mutable-call-result-composition", "mutable-indexed-sequence-composition", "mixed-borrow-snapshot-composition", "shared-indexed-snapshot-composition", "projected-record-copy-in", "projected-record-copy-back", "projected-indexed-copy-in", "projected-indexed-sequence-overlay", "projected-indexed-leaf-frame", "record-overlay-rebase-copy-in", "record-overlay-rebase-copy-back", "logical-record-overlay-binding", "logical-record-overlay-rebinding", "logical-record-local-field-mutation", "logical-record-local-indexed-mutation", "logical-record-value-formal-snapshot", "logical-record-value-observer", "logical-record-value-cycle-rejection", "leafwise-record-lifecycle-frame", "leafwise-record-result-after-overlay", "no-sequence-native-materialization", "record-overlay-invalidation", "structural-access-path-aliasing", "exclusive-alias-rejection", "indexed-pointee-rejection", "shared-exclusive-alias-rejection", "nested-result-rejection"]
 
 [[route]]
 crate_pattern = "thermite-tv/src/obligation.rs"
@@ -2034,13 +2035,13 @@ conformance_ops = ["mutable-call-obligation-frame", "mutable-indexed-obligation-
 crate_pattern = "thermite-tv/src/lib.rs"
 design = ".design/build/mutable-call-effects.md"
 reference = ["conformance/verified-build/mutable_call_effect.th", "conformance/verified-build/mutable_indexed_call_effect.th", "conformance/verified-build/mixed_indexed_call_effect.th", "conformance/verified-build/projected_record_call_effect.th", "conformance/verified-build/projected_indexed_call_effect.th", "conformance/verified-build/record_after_indexed_call_effect.th"]
-conformance_ops = ["mutable-call-frame-api", "mutable-indexed-frame-api", "shared-indexed-frame-api"]
+conformance_ops = ["mutable-call-frame-api", "mutable-indexed-frame-api", "shared-indexed-frame-api", "value-record-frame-api"]
 
 [[route]]
 crate_pattern = "thermite-tv/tests/mutable_call_effect_tv.rs"
 design = ".design/build/mutable-call-effects.md"
 reference = ["conformance/verified-build/mutable_call_effect.th", "conformance/verified-build/projected_record_call_effect.th", "conformance/verified-build/projected_indexed_call_effect.th", "conformance/verified-build/record_after_indexed_call_effect.th"]
-conformance_ops = ["mutable-call-real-verus", "mutable-call-result-and-state", "mixed-borrow-result-and-state", "projected-record-real-verus", "projected-record-mutant", "projected-indexed-real-verus", "projected-indexed-mutant", "projected-indexed-branch-overlay-lifecycle", "record-after-indexed-real-verus", "record-after-indexed-mutant", "record-result-after-indexed-real-verus", "record-result-after-indexed-mutant", "intermediate-record-after-indexed-real-verus", "intermediate-record-after-indexed-mutant", "intermediate-record-whole-reassignment-real-verus", "intermediate-record-whole-reassignment-mutant", "native-array-after-overlay-rejection", "projected-type-and-borrow-rejection", "mutable-call-mutants"]
+conformance_ops = ["mutable-call-real-verus", "mutable-call-result-and-state", "mixed-borrow-result-and-state", "projected-record-real-verus", "projected-record-mutant", "projected-indexed-real-verus", "projected-indexed-mutant", "projected-indexed-branch-overlay-lifecycle", "record-after-indexed-real-verus", "record-after-indexed-mutant", "record-result-after-indexed-real-verus", "record-result-after-indexed-mutant", "intermediate-record-after-indexed-real-verus", "intermediate-record-after-indexed-mutant", "intermediate-record-whole-reassignment-real-verus", "intermediate-record-whole-reassignment-mutant", "logical-record-value-observer-real-verus", "logical-record-value-observer-mutant", "nested-logical-record-value-call-rejection", "native-array-after-overlay-rejection", "projected-type-and-borrow-rejection", "mutable-call-mutants"]
 
 [[route]]
 crate_pattern = "thermite-tv/tests/mutable_indexed_call_effect_tv.rs"
@@ -2052,25 +2053,31 @@ conformance_ops = ["mutable-indexed-call-real-verus", "mutable-indexed-result-an
 crate_pattern = "forge/src/body_tv.rs"
 design = ".design/build/mutable-call-effects.md"
 reference = ["conformance/verified-build/mutable_call_effect.th", "conformance/verified-build/mutable_indexed_call_effect.th", "conformance/verified-build/mixed_indexed_call_effect.th", "conformance/verified-build/projected_record_call_effect.th", "conformance/verified-build/projected_indexed_call_effect.th", "conformance/verified-build/record_after_indexed_call_effect.th"]
-conformance_ops = ["reachable-mutable-effect-derivation", "reachable-indexed-effect-derivation", "reachable-shared-indexed-frame-derivation", "proved-callee-state-predicate", "mixed-borrow-frame-derivation", "projected-record-frame-derivation", "projected-indexed-frame-derivation", "record-formal-overlay-rebasing", "nested-fixed-array-path-derivation"]
+conformance_ops = ["reachable-mutable-effect-derivation", "reachable-indexed-effect-derivation", "reachable-shared-indexed-frame-derivation", "reachable-value-record-frame-derivation", "proved-callee-state-predicate", "mixed-borrow-frame-derivation", "projected-record-frame-derivation", "projected-indexed-frame-derivation", "record-formal-overlay-rebasing", "logical-record-value-observer-composition", "nested-fixed-array-path-derivation"]
 
 [[route]]
 crate_pattern = "forge/src/exec_tv.rs"
 design = ".design/build/mutable-call-effects.md"
-reference = ["conformance/verified-build/mutable_call_effect.th"]
-conformance_ops = ["mutable-record-exec-frame", "stateful-initializer-body-tv-routing"]
+reference = ["conformance/verified-build/mutable_call_effect.th", "conformance/verified-build/record_after_indexed_call_effect.th"]
+conformance_ops = ["mutable-record-exec-frame", "stateful-initializer-body-tv-routing", "logical-record-value-call-body-tv-routing"]
 
 [[route]]
 crate_pattern = "forge/tests/body_tv.rs"
 design = ".design/build/mutable-call-effects.md"
 reference = ["conformance/verified-build/mutable_call_effect.th", "conformance/verified-build/mutable_indexed_call_effect.th", "conformance/verified-build/mixed_indexed_call_effect.th", "conformance/verified-build/projected_record_call_effect.th", "conformance/verified-build/projected_indexed_call_effect.th", "conformance/verified-build/record_after_indexed_call_effect.th"]
-conformance_ops = ["derived-mutable-call-effect", "derived-mutable-indexed-effect", "derived-shared-indexed-effect", "derived-mixed-borrow-effect", "derived-projected-record-effect", "derived-projected-indexed-effect", "projected-indexed-current-snapshot", "derived-record-after-indexed-effect", "derived-record-result-after-indexed", "derived-intermediate-record-after-indexed", "record-overlay-replacement", "structural-prefix-alias-rejection", "shared-exclusive-overlap-rejection"]
+conformance_ops = ["derived-mutable-call-effect", "derived-mutable-indexed-effect", "derived-shared-indexed-effect", "derived-mixed-borrow-effect", "derived-projected-record-effect", "derived-projected-indexed-effect", "projected-indexed-current-snapshot", "derived-record-after-indexed-effect", "derived-record-result-after-indexed", "derived-intermediate-record-after-indexed", "derived-logical-record-value-observer", "record-overlay-replacement", "structural-prefix-alias-rejection", "shared-exclusive-overlap-rejection"]
+
+[[route]]
+crate_pattern = "forge/src/verified_build.rs"
+design = ".design/build/mutable-call-effects.md"
+reference = ["conformance/verified-build/record_after_indexed_call_effect.th"]
+conformance_ops = ["logical-record-value-call-tv-inventory"]
 
 [[route]]
 crate_pattern = "forge/tests/verified_build.rs"
 design = ".design/build/mutable-call-effects.md"
 reference = ["conformance/verified-build/mutable_call_effect.th", "conformance/verified-build/mutable_indexed_call_effect.th", "conformance/verified-build/mixed_indexed_call_effect.th", "conformance/verified-build/projected_record_call_effect.th", "conformance/verified-build/projected_indexed_call_effect.th", "conformance/verified-build/record_after_indexed_call_effect.th"]
-conformance_ops = ["mutable-call-strict-l3", "mutable-indexed-call-strict-l3", "shared-indexed-call-strict-l3", "projected-record-call-strict-l3", "projected-indexed-call-strict-l3", "record-after-indexed-call-strict-l3", "mixed-borrow-result-runtime", "mutable-indexed-result-runtime", "shared-indexed-current-snapshot-runtime", "projected-record-runtime", "projected-indexed-runtime", "record-after-indexed-runtime", "record-result-after-indexed-runtime", "intermediate-record-after-indexed-runtime", "total-export-result-binding-hygiene", "shared-source-preservation-runtime", "mutable-call-tv-inventory", "mutable-call-replay", "mutable-call-tamper"]
+conformance_ops = ["mutable-call-strict-l3", "mutable-indexed-call-strict-l3", "shared-indexed-call-strict-l3", "projected-record-call-strict-l3", "projected-indexed-call-strict-l3", "record-after-indexed-call-strict-l3", "mixed-borrow-result-runtime", "mutable-indexed-result-runtime", "shared-indexed-current-snapshot-runtime", "projected-record-runtime", "projected-indexed-runtime", "record-after-indexed-runtime", "record-result-after-indexed-runtime", "intermediate-record-after-indexed-runtime", "logical-record-value-observer-runtime", "total-export-result-binding-hygiene", "shared-source-preservation-runtime", "mutable-call-tv-inventory", "mutable-call-replay", "mutable-call-tamper"]
 
 [[route]]
 crate_pattern = "conformance/verified-build/mutable_call_effect.th"
@@ -2106,13 +2113,13 @@ conformance_ops = ["projected-indexed-call-effect-lifecycle"]
 crate_pattern = "conformance/verified-build/record_after_indexed_call_effect.th"
 design = ".design/build/mutable-call-effects.md"
 reference = []
-conformance_ops = ["record-after-indexed-call-effect-lifecycle", "record-result-after-indexed-lifecycle", "intermediate-record-after-indexed-lifecycle"]
+conformance_ops = ["record-after-indexed-call-effect-lifecycle", "record-result-after-indexed-lifecycle", "intermediate-record-after-indexed-lifecycle", "logical-record-value-observer-lifecycle"]
 
 [[route]]
 crate_pattern = "conformance/verified-build/record_after_indexed_call_effect.th"
 design = ".design/build/kernel-primitives.md"
 reference = []
-conformance_ops = ["record-after-indexed-aggregate-lifecycle", "leafwise-record-result-materialization", "logical-intermediate-record-snapshot"]
+conformance_ops = ["record-after-indexed-aggregate-lifecycle", "leafwise-record-result-materialization", "logical-intermediate-record-snapshot", "logical-record-value-observer"]
 
 # Policy-free frozen platform declarations. The 74 bodyless machine doors are
 # the explicit consumer-owned exception; every other package row is L3.

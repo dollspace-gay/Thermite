@@ -9,7 +9,7 @@ use thermite_tv::obligation::{
 };
 use thermite_tv::{
     MutableCallEffectFrame, MutableIndexedFrame, MutableRecordFrame, NamedRecordFrame,
-    RecordFieldFrame, SharedIndexedFrame, SharedRecordFrame,
+    RecordFieldFrame, SharedIndexedFrame, SharedRecordFrame, ValueRecordFrame,
 };
 
 const SOURCE: &str = r#"
@@ -270,6 +270,38 @@ fn snapshot_after_array(outer: &mut ArrayOuter, value: u64) -> Bank
   let written: u64 = write_array(&mut outer.left.slots, value);
   Bank { slots: outer.left.slots, guard: outer.left.guard }
 }
+fn observe_bank(bank: Bank) -> u64
+  req bank.slots[0] < 1000 && bank.guard < 1000
+  ens result == bank.slots[0] + bank.guard
+  fx pure
+{
+  bank.slots[0] + bank.guard
+}
+fn observe_snapshot_after_array(
+  outer: &mut ArrayOuter,
+  value: u64,
+  next_guard: u64,
+) -> u64
+  req value < 1000 && next_guard < 1000
+  ens result == value + next_guard
+  ens final(outer).left.slots[0] == value
+  ens final(outer).left.slots[1] == old(outer).left.slots[1]
+  ens final(outer).left.guard == old(outer).left.guard
+  ens final(outer).right.slots[0] == old(outer).right.slots[0]
+  ens final(outer).right.slots[1] == old(outer).right.slots[1]
+  ens final(outer).right.guard == old(outer).right.guard
+  ens final(outer).tag == old(outer).tag
+  fx pure
+{
+  let written: u64 = write_array(&mut outer.left.slots, value);
+  let mut snapshot: Bank = Bank {
+    slots: outer.left.slots,
+    guard: outer.left.guard,
+  };
+  snapshot.guard = next_guard;
+  let observed: u64 = observe_bank(snapshot);
+  observed
+}
 fn staged_snapshot_after_array(
   outer: &mut ArrayOuter,
   value: u64,
@@ -371,6 +403,16 @@ fn copy_array(destination: &mut [u64; SLOTS], source: &[u64; SLOTS]) -> (result:
 {
     destination[0] = source[0];
     destination[0]
+}
+
+fn observe_bank(bank: Bank) -> (result: u64)
+    requires
+        bank.slots@[0] < 1000,
+        bank.guard < 1000,
+    ensures
+        result == bank.slots@[0] + bank.guard,
+{
+    bank.slots[0] + bank.guard
 }
 
 fn advance_bank(bank: &mut Bank, next_guard: u64) -> (result: u64)
@@ -608,6 +650,19 @@ fn projected_indexed_frame() -> BodyObligationFrame {
                 "Bank",
                 bank_fields.clone(),
             )]),
+            MutableCallEffectFrame::new(
+                "observe_bank",
+                vec!["bank".to_string()],
+                vec![],
+                function_body_in(PROJECTED_INDEXED_SOURCE, "observe_bank"),
+            )
+            .with_param_types(vec![Type::Named("Bank".to_string())])
+            .with_value_records(vec![ValueRecordFrame::typed(
+                "bank",
+                "Bank",
+                bank_fields.clone(),
+            )])
+            .with_result_type(Type::Prim(PrimType::U64)),
         ],
         named_records: vec![
             NamedRecordFrame::new("Bank", bank_fields),
@@ -967,6 +1022,103 @@ fn record_results_materialize_projected_sequence_state_leafwise_at_l3() {
         "record_result_after_projected_sequence_mutant",
         &mutant,
         false,
+    );
+}
+
+#[test]
+fn logical_record_snapshot_flows_into_source_derived_value_observer_at_l3() {
+    let body = function_body_in(PROJECTED_INDEXED_SOURCE, "observe_snapshot_after_array");
+    let mut frame = projected_indexed_frame();
+    frame.params.push(BodyParamDecl::new("next_guard", "u64"));
+    frame.req = Some("value < 1000 && next_guard < 1000".to_string());
+    let production = r#"    let written: u64 = write_array(&mut outer.left.slots, value);
+    let mut snapshot: Bank = Bank {
+        slots: outer.left.slots,
+        guard: outer.left.guard,
+    };
+    snapshot.guard = next_guard;
+    let observed: u64 = observe_bank(snapshot);
+    observed
+"#;
+    let obligation = body_equivalence_obligation(&body, production, &frame)
+        .expect("logical record snapshot passed to a source-derived value observer");
+    assert!(obligation.contains(".update(0, value)"), "{obligation}");
+    assert!(obligation.contains("result =="), "{obligation}");
+    assert_verus("logical_record_value_observer", &obligation, true);
+
+    let mutant = body_equivalence_obligation(
+        &body,
+        r#"    let mut snapshot: Bank = Bank {
+        slots: outer.left.slots,
+        guard: outer.left.guard,
+    };
+    snapshot.guard = next_guard;
+    let observed: u64 = observe_bank(snapshot);
+    observed
+"#,
+        &frame,
+    )
+    .expect("logical record value-observer mutant obligation");
+    assert_verus("logical_record_value_observer_mutant", &mutant, false);
+}
+
+#[test]
+fn nested_logical_record_value_call_remains_fail_closed() {
+    let source = format!(
+        r#"{PROJECTED_INDEXED_SOURCE}
+fn nested_observe_snapshot_after_array(
+  outer: &mut ArrayOuter,
+  value: u64,
+  next_guard: u64,
+) -> u64
+  req value < 999 && next_guard < 1000
+  ens result == value + next_guard + 1
+  fx pure
+{{
+  let written: u64 = write_array(&mut outer.left.slots, value);
+  let snapshot: Bank = Bank {{
+    slots: outer.left.slots,
+    guard: next_guard,
+  }};
+  let observed: u64 = observe_bank(snapshot) + 1;
+  observed
+}}
+"#
+    );
+    let parsed = thermite_syntax::parse(&source);
+    assert!(parsed.is_clean(), "parse errors: {:?}", parsed.errors);
+    let body = parsed
+        .program
+        .items
+        .iter()
+        .find_map(|item| match item {
+            Item::Fn(function) if function.name == "nested_observe_snapshot_after_array" => {
+                function.body.clone()
+            }
+            _ => None,
+        })
+        .expect("nested logical value-call body");
+    let mut frame = projected_indexed_frame();
+    frame.params.push(BodyParamDecl::new("next_guard", "u64"));
+    frame.req = Some("value < 999 && next_guard < 1000".to_string());
+    let error = body_equivalence_obligation(
+        &body,
+        r#"    let written: u64 = write_array(&mut outer.left.slots, value);
+    let snapshot: Bank = Bank {
+        slots: outer.left.slots,
+        guard: next_guard,
+    };
+    let observed: u64 = observe_bank(snapshot) + 1;
+    observed
+"#,
+        &frame,
+    )
+    .expect_err("nested logical value-call expressions require a wider evaluation frame");
+    assert!(
+        error
+            .to_string()
+            .contains("materializes logical indexed state at `snapshot`"),
+        "{error}"
     );
 }
 

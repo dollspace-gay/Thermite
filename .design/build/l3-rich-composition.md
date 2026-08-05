@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: 5b677af98dc841b56598dabfb0785384d3b2c19023c73665522ed27b734924e7 (re-pinned 2026-08-05 after registry-v3 added explicit machine-residual composition scope)
+audited-content-sha256: 7df343d0e18ce519af98360081a0af67542226f02435120f15502c7cbce8b502 (re-pinned 2026-08-05 after orthogonal logical-record value-observer composition changes)
 decision: one canonical caller crate with crate-visible rich Thermite roots, public shell exports, and optionally exact separately verified primitive crates
 issue: github:dollspace-gay/Thermite#104
 governs:

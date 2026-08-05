@@ -83,7 +83,7 @@ use thermite_tv::ref_encode::{ref_contract_pred, RefCtx, StateViewKind};
 use thermite_tv::{
     loop_ref_obligations, BodyRefCtx, EnumVariantFrame, EnumVariantShapeFrame,
     MutableCallEffectFrame, MutableIndexedFrame, MutableRecordFrame, NamedRecordFrame,
-    RecordFieldFrame, SharedIndexedFrame, SharedRecordFrame,
+    RecordFieldFrame, SharedIndexedFrame, SharedRecordFrame, ValueRecordFrame,
 };
 
 use crate::check::{unique_scratch_dir, ScratchDir, DEFAULT_RLIMIT, DEFAULT_SOLVER_SEED};
@@ -1485,7 +1485,8 @@ fn mutable_call_effect_frame(
         .iter()
         .filter(|param| matches!(param.ty, Type::Ref { mutable: true, .. }))
         .count();
-    if mutable_count == 0 {
+    let value_records = value_record_frames(program, function);
+    if mutable_count == 0 && value_records.is_empty() {
         return Ok(None);
     }
 
@@ -1523,10 +1524,49 @@ fn mutable_call_effect_frame(
             records,
             body.clone(),
         )
+        .with_param_types(
+            function
+                .params
+                .iter()
+                .map(|param| param.ty.clone())
+                .collect(),
+        )
+        .with_value_records(value_records)
         .with_mutable_indexed(indexed)
         .with_shared_records(shared_records)
-        .with_shared_indexed(shared_indexed),
+        .with_shared_indexed(shared_indexed)
+        .with_result_type(function.ret.clone()),
     ))
+}
+
+/// Exact finite named-record parameters passed by value. This metadata is used
+/// only when a caller's independent lifecycle state contains a descendant
+/// sequence overlay and therefore cannot materialize the record as a native
+/// aggregate merely to invoke an observer.
+fn value_record_frames(
+    program: &thermite_syntax::Program,
+    function: &FnItem,
+) -> Vec<ValueRecordFrame> {
+    let records = named_record_frames(program);
+    function
+        .params
+        .iter()
+        .filter_map(|param| {
+            let Type::Named(type_name) = &param.ty else {
+                return None;
+            };
+            records
+                .iter()
+                .find(|record| record.type_name == *type_name)
+                .map(|record| {
+                    ValueRecordFrame::typed(
+                        param.name.clone(),
+                        type_name.clone(),
+                        record.fields.clone(),
+                    )
+                })
+        })
+        .collect()
 }
 
 /// Exact finite named-record declarations available to owned local-state TV.

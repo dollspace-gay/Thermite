@@ -3,19 +3,21 @@
 <!--
 tier: 3-component
 status: shipped
-decision: a typed mutable local of a finite non-sealed record may be updated and returned only when the independent body semantics reconstruct every field exactly; pure value calls compose through independently derived specifications, while the separate mutable-call extension composes exact direct finite-record and indexed-storage effects
+decision: a typed mutable local of a finite non-sealed record may be updated and returned only when the independent body semantics reconstruct every field exactly; pure value calls compose through independently derived specifications, including direct scalar/unit observers of logical record snapshots, while the separate mutable-call extension composes exact direct finite-record and indexed-storage effects
 governs:
   - thermite-tv/src/exec_encode.rs
   - thermite-tv/src/exec_stmt_encode.rs
   - thermite-tv/src/lib.rs
   - thermite-tv/src/obligation.rs
   - thermite-tv/tests/owned_aggregate_lifecycle_tv.rs
+  - thermite-tv/tests/mutable_call_effect_tv.rs
   - forge/src/body_tv.rs
   - forge/src/exec_tv.rs
   - forge/tests/body_tv.rs
   - forge/tests/verified_build.rs
   - conformance/verified-build/owned_aggregate_lifecycle.th
-audited-content-sha256: 3dd50056647484e3ed66887a790d75efef2735f211b6dc0d635e676508a09a11 (re-pinned 2026-08-05 after typed intermediate records over indexed state joined owned lifecycle TV)
+  - conformance/verified-build/record_after_indexed_call_effect.th
+audited-content-sha256: 5cf4978ce6973b64e06c6eda3f12239907e12970bd62bb21f2577c299f477740 (re-pinned 2026-08-05 after direct scalar observers consumed logical record snapshots at L3)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/named-record-lifecycle.md
@@ -156,9 +158,21 @@ logical views, without a reverse sequence-to-array conversion. Explicitly typed
 intermediate finite-record constructor/access-path bindings now snapshot that
 same state by copying native fields and rebasing logical array leaves; typed
 rebinding, local field/index mutation, and a final leafwise result remain exact.
-Array-element-root actuals, arbitrary native aggregate materialization or
-by-value call/match use after a descendant sequence overlay, nested/general returned-value
-expressions, bodyless boundary functions, platform
+One direct bodyful pure call may consume such a finite record by value when
+Forge derives the exact formal type, field inventory, result type, and callee
+body from the reachable source closure. The independent lifecycle interpreter
+copies every scalar and logical sequence leaf into a fresh read-only formal,
+interprets the callee source body, and admits only scalar or unit results. The
+production side still executes the ordinary generated call, so a wrong callee,
+argument, or observer body fails the all-input equality proof. Isolated exec TV
+does not fabricate a frameless native record for that state-dependent call;
+the exact whole-body row owns it, while the observer's native-record body keeps
+its own independent contract, expression, and body rows.
+
+Array-element-root actuals, arbitrary native aggregate materialization,
+aggregate-returning or nested/general by-value call use after a descendant
+sequence overlay, native aggregate matching, general returned-value expressions,
+bodyless boundary functions, platform
 effects, allocation, unresolved calls, recursive effect cycles, and other
 non-admitted effects remain fail-closed.
 
@@ -166,12 +180,12 @@ non-admitted effects remain fail-closed.
 
 A policy-free freestanding conformance fixture constructs a scalar-field record
 inside an owned pipeline and exports the pipeline, owned record transitions,
-and observers. Fixed-array record fields are exercised in a separate real-Verus
-body-equivalence battery because the current `--target kernel` no-vstd profile
-literally lacks the array `View` operation needed by their proof statements;
-that target split remains incomplete rather than being relabeled. Strict L3
-must require faithful contract, executable-expression, body-state, and wrapper
-rows for the exported scalar-record path and its reachable definitions. The
+and observers. The record-after-indexed fixture additionally mutates a projected
+fixed array, snapshots the enclosing record leafwise, passes that logical value
+to a generated Thermite observer, and executes the scalar result from a linked
+consumer. Its 105 reachable contract, expression, body-state, and wrapper rows
+are all faithful L3 rows; the state-dependent observer initializer is owned by
+the whole-body proof rather than an inadequate isolated expression frame. The
 artifact receipt binds the Thermite source, exact ordered record layout,
 generated Verus/Rust, translation-validation evidence, toolchain identity, and
 replay inputs.
@@ -219,10 +233,14 @@ This increment is shipped only when all of the following hold:
    compose statement calls and direct typed let-bound results through the
    separate source-derived result/effect frame, while wider
    shared/alias/expression forms remain rejected;
-7. a strict freestanding L3/L4-only build, receipt replay, ABI/source tamper
+7. a direct source-derived scalar/unit observer may consume an exact logical
+   finite-record snapshot after a descendant sequence overlay, while a dropped
+   state transition or wrong observer production fails and nested use remains
+   fail-closed;
+8. a strict freestanding L3/L4-only build, receipt replay, ABI/source tamper
    checks, and a downstream compiled execution test all pass, with no skipped or
    sub-L3 proof row; and
-8. workspace formatting, lint, focused/broad tests, requirement registry,
+9. workspace formatting, lint, focused/broad tests, requirement registry,
    documentation drift, canonical-source, and primitive-only scope audits remain
    green.
 
@@ -232,8 +250,9 @@ The exact typed nested-field and terminal fixed-array projection subset is now
 shipped by `.design/build/nested-aggregate-lifecycle.md`; exact record-state
 loops are supplied by `.design/build/record-state-loops.md`. This increment still
 does not claim mutable enum payloads, index-then-field aliasing,
-array-element-root call effects, arbitrary native aggregate materialization or
-by-value call/match use after a descendant sequence overlay, nested or
+array-element-root call effects, arbitrary native aggregate materialization,
+aggregate-returning or nested/general by-value call use after a descendant
+sequence overlay, native aggregate matching, nested or
 general mutable-call result expressions, static global ownership, affine uniqueness, concurrent
 record access, atomic object/machine refinement, or Rust/assembly TPL refinement.
 It does not add or package a kernel.

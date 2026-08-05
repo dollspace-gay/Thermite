@@ -168,6 +168,17 @@ pub struct SharedRecordFrame {
     pub fields: Vec<RecordFieldFrame>,
 }
 
+/// One finite named-record parameter passed by value. Logical sequence overlays
+/// cannot be converted back into a native fixed array merely to invoke such a
+/// callee, so the independent lifecycle interpreter snapshots the parameter
+/// leafwise and interprets the reachable source body directly.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ValueRecordFrame {
+    pub name: String,
+    pub type_name: String,
+    pub fields: Vec<RecordFieldFrame>,
+}
+
 /// One exclusively borrowed slice or fixed-array root with its exact parsed
 /// pointee type.  Call-effect composition compares this type structurally and
 /// threads the complete finite sequence from `old(root)@` to `final(root)@`.
@@ -186,19 +197,26 @@ pub struct SharedIndexedFrame {
     pub pointee: Type,
 }
 
-/// One independently parsed in-language callee whose body may transform one or
-/// more exclusive finite-record, slice, or fixed-array parameters. The
-/// reference side interprets this source body directly; production continues to
-/// call the ordinary generated function, so changing either column is
-/// observable.
+/// One independently parsed in-language callee whose body may transform
+/// exclusive finite-record/indexed parameters or consume a finite record by
+/// value. The reference side interprets this source body directly; production
+/// continues to call the ordinary generated function, so changing either column
+/// is observable.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MutableCallEffectFrame {
     pub name: String,
     /// All formal parameter names in signature order. Borrowed formals are
-    /// identified by `mutable_records`, `mutable_indexed`, `shared_records`, or
-    /// `shared_indexed`; the rest are value inputs.
+    /// identified by `mutable_records`, `mutable_indexed`, `shared_records`,
+    /// `shared_indexed`, or `value_records`; the rest are scalar/value inputs.
     pub params: Vec<String>,
+    /// Exact parsed formal types when this frame is source-derived. Historical
+    /// hand-built mutable-effect tests may omit them; logical by-value calls may
+    /// not.
+    pub param_types: Vec<Type>,
     pub mutable_records: Vec<MutableRecordFrame>,
+    /// Exact finite-record formals passed by value. These are independent
+    /// snapshots and never contribute copy-back state.
+    pub value_records: Vec<ValueRecordFrame>,
     /// Exact exclusive slice/fixed-array formals whose complete sequence state
     /// is interpreted and copied back with the record post-state.
     pub mutable_indexed: Vec<MutableIndexedFrame>,
@@ -210,6 +228,10 @@ pub struct MutableCallEffectFrame {
     /// caller state. Shared/shared aliases are admitted; overlap with an
     /// exclusive actual in the same call is rejected.
     pub shared_indexed: Vec<SharedIndexedFrame>,
+    /// Exact parsed result type when this frame is derived from source. Logical
+    /// by-value call interpretation currently admits bounded scalar/unit results;
+    /// wider results remain fail-closed rather than losing aggregate state.
+    pub result_type: Option<Type>,
     pub body: Block,
 }
 
@@ -298,6 +320,20 @@ impl SharedRecordFrame {
     }
 }
 
+impl ValueRecordFrame {
+    pub fn typed(
+        name: impl Into<String>,
+        type_name: impl Into<String>,
+        fields: Vec<RecordFieldFrame>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            type_name: type_name.into(),
+            fields,
+        }
+    }
+}
+
 impl MutableIndexedFrame {
     pub fn new(name: impl Into<String>, pointee: Type) -> Self {
         Self {
@@ -326,12 +362,37 @@ impl MutableCallEffectFrame {
         Self {
             name: name.into(),
             params,
+            param_types: Vec::new(),
             mutable_records,
+            value_records: Vec::new(),
             mutable_indexed: Vec::new(),
             shared_records: Vec::new(),
             shared_indexed: Vec::new(),
+            result_type: None,
             body,
         }
+    }
+
+    /// Add exact finite-record by-value formals to this source call frame.
+    pub fn with_value_records(mut self, records: Vec<ValueRecordFrame>) -> Self {
+        self.value_records = records;
+        self
+    }
+
+    /// Bind exact parsed formal types in signature order.
+    pub fn with_param_types(mut self, param_types: Vec<Type>) -> Self {
+        self.param_types = param_types;
+        self
+    }
+
+    /// Bind the exact parsed result type used to gate logical by-value calls.
+    pub fn with_result_type(mut self, result_type: Type) -> Self {
+        self.result_type = Some(result_type);
+        self
+    }
+
+    fn has_mutable_effect(&self) -> bool {
+        !self.mutable_records.is_empty() || !self.mutable_indexed.is_empty()
     }
 
     /// Add exact shared finite-record formals to a mutable call-effect frame.
@@ -625,7 +686,32 @@ impl BodyRefCtx {
     }
 
     fn mutable_call_effect(&self, name: &str) -> Option<&MutableCallEffectFrame> {
-        self.mutable_call_effects.get(name)
+        self.mutable_call_effects
+            .get(name)
+            .filter(|effect| effect.has_mutable_effect())
+    }
+
+    fn logical_value_call_effect(&self, name: &str) -> Option<&MutableCallEffectFrame> {
+        self.mutable_call_effects.get(name).filter(|effect| {
+            !effect.has_mutable_effect()
+                && !effect.value_records.is_empty()
+                && effect.shared_records.is_empty()
+                && effect.shared_indexed.is_empty()
+                && effect.params.len() == effect.param_types.len()
+                && effect
+                    .params
+                    .iter()
+                    .zip(&effect.param_types)
+                    .all(|(param, ty)| match ty {
+                        Type::Prim(_) | Type::Unit => true,
+                        Type::Named(type_name) => effect
+                            .value_records
+                            .iter()
+                            .any(|record| record.name == *param && record.type_name == *type_name),
+                        _ => false,
+                    })
+                && matches!(effect.result_type, Some(Type::Prim(_)) | Some(Type::Unit))
+        })
     }
 
     fn qualify_pattern_path(&self, path: &[String]) -> String {
@@ -1199,6 +1285,7 @@ struct LifecycleRecordLocal {
 struct LifecycleState {
     locals: BTreeMap<String, LifecycleCell>,
     record_locals: BTreeMap<String, LifecycleRecordLocal>,
+    active_value_calls: Vec<String>,
     readonly_inputs: BTreeSet<String>,
     fields: BTreeMap<String, LifecycleCell>,
     indexed: BTreeMap<String, LifecycleCell>,
@@ -1625,14 +1712,20 @@ fn collect_lifecycle_record_binding(
     Ok(())
 }
 
-fn bind_lifecycle_record_local(
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LifecycleRecordBinding {
+    whole: LifecycleCell,
+    direct_fields: Vec<(String, LifecycleCell)>,
+    indexed: Vec<(String, LifecycleCell)>,
+}
+
+fn lifecycle_record_binding(
     name: &str,
     type_name: &str,
-    mutable: bool,
     source: &Expr,
-    state: &mut LifecycleState,
+    state: &LifecycleState,
     ctx: &BodyRefCtx,
-) -> Result<LifecycleCell, RefEncodeError> {
+) -> Result<LifecycleRecordBinding, RefEncodeError> {
     if expr_contains_mutable_call(source, ctx) {
         return Err(RefEncodeError::Unsupported(
             "a logical record constructor/access-path binding may not hide a mutable-reference call"
@@ -1656,13 +1749,29 @@ fn bind_lifecycle_record_local(
         &mut direct_fields,
         &mut indexed,
     )?;
+    Ok(LifecycleRecordBinding {
+        whole,
+        direct_fields,
+        indexed,
+    })
+}
+
+fn bind_lifecycle_record_local(
+    name: &str,
+    type_name: &str,
+    mutable: bool,
+    source: &Expr,
+    state: &mut LifecycleState,
+    ctx: &BodyRefCtx,
+) -> Result<LifecycleCell, RefEncodeError> {
+    let binding = lifecycle_record_binding(name, type_name, source, state, ctx)?;
 
     state
         .fields
         .retain(|path, _| !path.starts_with(&format!("{name}.")));
     remove_indexed_at_or_below(state, &[name.to_string()]);
-    state.fields.extend(direct_fields);
-    state.indexed.extend(indexed);
+    state.fields.extend(binding.direct_fields);
+    state.indexed.extend(binding.indexed);
     state.record_locals.insert(
         name.to_string(),
         LifecycleRecordLocal {
@@ -1670,7 +1779,7 @@ fn bind_lifecycle_record_local(
             mutable,
         },
     );
-    Ok(whole)
+    Ok(binding.whole)
 }
 
 fn expression_materializes_indexed_overlay(expr: &Expr, state: &LifecycleState) -> Option<String> {
@@ -3346,6 +3455,159 @@ fn direct_mutable_call<'a>(expr: &'a Expr, ctx: &BodyRefCtx) -> Option<(&'a str,
         .then_some((name.as_str(), args.as_slice()))
 }
 
+/// Interpret one direct pure call whose finite-record by-value argument contains
+/// a logical sequence overlay. Production still executes the ordinary generated
+/// call. The reference side copies every native field and sequence leaf into the
+/// exact formal frame and interprets the reachable source body, avoiding an
+/// unsound `Seq<T>`-to-`[T; N]` reconstruction.
+fn apply_logical_value_call(
+    name: &str,
+    args: &[Expr],
+    state: &LifecycleState,
+    ctx: &BodyRefCtx,
+) -> Result<LifecycleCell, RefEncodeError> {
+    if state.active_value_calls.iter().any(|active| active == name) {
+        return Err(RefEncodeError::Unsupported(format!(
+            "recursive logical by-value call cycle reaches `{name}`"
+        )));
+    }
+    let effect = ctx
+        .logical_value_call_effect(name)
+        .cloned()
+        .ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "logical by-value call `{name}` has no exact scalar-result finite-record source frame"
+            ))
+        })?;
+    if effect.params.len() != args.len() {
+        return Err(RefEncodeError::Unsupported(format!(
+            "logical by-value call `{name}` has {} actual arguments but {} exact formals",
+            args.len(),
+            effect.params.len()
+        )));
+    }
+
+    let mut callee_state = LifecycleState {
+        active_value_calls: {
+            let mut active = state.active_value_calls.clone();
+            active.push(name.to_string());
+            active
+        },
+        ..LifecycleState::default()
+    };
+    for (position, formal_name) in effect.params.iter().enumerate() {
+        if let Some(record) = effect
+            .value_records
+            .iter()
+            .find(|record| record.name == *formal_name)
+        {
+            let binding = lifecycle_record_binding(
+                formal_name,
+                &record.type_name,
+                &args[position],
+                state,
+                ctx,
+            )?;
+            callee_state
+                .locals
+                .insert(formal_name.clone(), binding.whole);
+            callee_state.fields.extend(binding.direct_fields);
+            callee_state.indexed.extend(binding.indexed);
+            callee_state.record_locals.insert(
+                formal_name.clone(),
+                LifecycleRecordLocal {
+                    type_name: record.type_name.clone(),
+                    mutable: false,
+                },
+            );
+        } else {
+            let value = encode_lifecycle_expr(&args[position], state, ctx)?;
+            callee_state.locals.insert(formal_name.clone(), value);
+        }
+        callee_state.readonly_inputs.insert(formal_name.clone());
+    }
+
+    let mut callee_ctx = ctx.clone();
+    callee_ctx.mutable_records.clear();
+    callee_ctx.mutable_indexed.clear();
+    callee_ctx.mutable_indexed_bound.clear();
+    callee_ctx.shared_records.clear();
+    callee_ctx.shared_indexed.clear();
+    callee_ctx.slice_bound.clear();
+    callee_ctx.fixed_array_bound.clear();
+    callee_ctx.fixed_array_fields.clear();
+    callee_ctx.result_is_fixed_array = false;
+    callee_ctx.result_is_unit = matches!(effect.result_type, Some(Type::Unit));
+    callee_ctx.result_record = None;
+    for record in &effect.value_records {
+        collect_fixed_array_record_paths(
+            &record.name,
+            &record.type_name,
+            ctx,
+            &mut BTreeSet::new(),
+            &mut callee_ctx.fixed_array_fields,
+        );
+        callee_ctx.enum_variants.remove(&record.name);
+    }
+    for formal_name in &effect.params {
+        callee_ctx.enum_variants.remove(formal_name);
+    }
+
+    let mut active_mutable_calls = Vec::new();
+    thread_lifecycle_block(
+        &effect.body,
+        &mut callee_state,
+        &callee_ctx,
+        false,
+        &mut active_mutable_calls,
+    )?;
+    match &effect.body.tail {
+        Some(tail) => {
+            let value = encode_lifecycle_expr(tail, &callee_state, &callee_ctx)?;
+            let result_type = effect.result_type.as_ref().ok_or_else(|| {
+                RefEncodeError::Unsupported(format!(
+                    "logical by-value call `{name}` lost its exact result type"
+                ))
+            })?;
+            Ok(LifecycleCell::bounded(lifecycle_assignment_text(
+                &value,
+                result_type,
+            )))
+        }
+        None if matches!(effect.result_type, Some(Type::Unit)) => Ok(LifecycleCell::bounded("()")),
+        None => Err(RefEncodeError::Unsupported(format!(
+            "logical by-value call `{name}` has no exact source result"
+        ))),
+    }
+}
+
+fn direct_logical_value_call<'a>(
+    expr: &'a Expr,
+    state: &LifecycleState,
+    ctx: &BodyRefCtx,
+) -> Option<(&'a str, &'a [Expr])> {
+    let Expr::Call { callee, args } = expr else {
+        return None;
+    };
+    let Expr::Path(path) = callee.as_ref() else {
+        return None;
+    };
+    let [name] = path.as_slice() else {
+        return None;
+    };
+    let effect = ctx.logical_value_call_effect(name)?;
+    args.iter()
+        .zip(&effect.params)
+        .any(|(actual, formal)| {
+            effect
+                .value_records
+                .iter()
+                .any(|record| record.name == *formal)
+                && expression_materializes_indexed_overlay(actual, state).is_some()
+        })
+        .then_some((name.as_str(), args.as_slice()))
+}
+
 fn merge_lifecycle_cells(
     condition: &str,
     left: &LifecycleCell,
@@ -3372,6 +3634,9 @@ fn encode_lifecycle_expr(
             "a mutable-reference call result may only be consumed as one direct `let` initializer; nested expression, condition, argument, assignment, and tail uses require a wider evaluation-order and alias frame"
             .to_string(),
         ));
+    }
+    if let Some((name, args)) = direct_logical_value_call(expr, state, ctx) {
+        return apply_logical_value_call(name, args, state, ctx);
     }
     if let Some(path) = expression_materializes_indexed_overlay(expr, state) {
         return Err(RefEncodeError::Unsupported(format!(

@@ -4113,7 +4113,7 @@ fn expected_tv_inventory(
                     Stmt::Let {
                         ty: Some(_), init, ..
                     } if !crate::exec_tv::expr_contains_body_control(init)
-                        && !crate::exec_tv::is_direct_mutable_call(program, init) =>
+                        && !crate::exec_tv::is_direct_body_state_call(program, init) =>
                     {
                         let_index += 1;
                         expect_tv(
@@ -4128,18 +4128,18 @@ fn expected_tv_inventory(
                         let_index += 1;
                     }
                     Stmt::Return(Some(value))
-                        if !crate::exec_tv::expr_contains_body_control(value) =>
+                        if !crate::exec_tv::expr_contains_body_control(value)
+                            && !crate::exec_tv::is_direct_body_state_call(program, value) =>
                     {
                         expect_tv(&mut expected, "exec", format!("{}.return", function.name))
                     }
                     _ => {}
                 }
             }
-            if body
-                .tail
-                .as_deref()
-                .is_some_and(|tail| !crate::exec_tv::expr_contains_body_control(tail))
-            {
+            if body.tail.as_deref().is_some_and(|tail| {
+                !crate::exec_tv::expr_contains_body_control(tail)
+                    && !crate::exec_tv::is_direct_body_state_call(program, tail)
+            }) {
                 expect_tv(&mut expected, "exec", format!("{}.tail", function.name));
             }
             let body_label = if matches!(body.stmts.last(), Some(Stmt::Loop(_))) {

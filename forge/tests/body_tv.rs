@@ -769,9 +769,182 @@ fn alias(state: &mut State) -> ()
         caller["detail"]
             .as_str()
             .unwrap_or_default()
-            .contains("aliases exclusive root `state` through shared formal `right`"),
+            .contains("aliases exclusive access path `state` through shared actual `state`"),
         "{report}"
     );
+}
+
+#[test]
+fn projected_record_callee_effects_are_exact_structural_and_faithful() {
+    let source = r#"
+struct Leaf { value: u64, guard: u64 }
+struct Pair { left: Leaf, right: Leaf }
+struct Outer { pair: Pair, tag: u64 }
+
+fn set_leaf(leaf: &mut Leaf, value: u64) -> u64
+  req true
+  ens result == value
+  ens final(leaf).value == value
+  ens final(leaf).guard == old(leaf).guard
+  fx pure
+{
+  leaf.value = value;
+  leaf.value
+}
+
+fn copy_leaf(destination: &mut Leaf, source: &Leaf) -> u64
+  req true
+  ens result == source.value
+  ens final(destination).value == source.value
+  ens final(destination).guard == old(destination).guard
+  fx pure
+{
+  destination.value = source.value;
+  destination.value
+}
+
+fn projected_pipeline(outer: &mut Outer, value: u64) -> u64
+  req true
+  ens result == value
+  ens final(outer).pair.left.value == value
+  ens final(outer).pair.left.guard == old(outer).pair.left.guard
+  ens final(outer).pair.right.value == value
+  ens final(outer).pair.right.guard == old(outer).pair.right.guard
+  ens final(outer).tag == old(outer).tag
+  fx pure
+{
+  let written: u64 = set_leaf(&mut outer.pair.left, value);
+  let observed: u64 = copy_leaf(&mut outer.pair.right, &outer.pair.left);
+  observed
+}
+
+fn projected_from_shared(destination: &mut Leaf, outer: &Outer) -> u64
+  req true
+  ens result == outer.pair.left.value
+  ens final(destination).value == outer.pair.left.value
+  ens final(destination).guard == old(destination).guard
+  fx pure
+{
+  let observed: u64 = copy_leaf(destination, &outer.pair.left);
+  observed
+}
+
+fn copy_with_two_shared(
+  destination: &mut Leaf,
+  first: &Leaf,
+  second: &Leaf,
+) -> u64
+  req true
+  ens result == first.value
+  ens final(destination).value == first.value
+  ens final(destination).guard == old(destination).guard
+  fx pure
+{
+  destination.value = first.value;
+  first.value
+}
+
+fn projected_shared_alias(destination: &mut Leaf, outer: &Outer) -> u64
+  req true
+  ens result == outer.pair.left.value
+  ens final(destination).value == outer.pair.left.value
+  ens final(destination).guard == old(destination).guard
+  fx pure
+{
+  let observed: u64 = copy_with_two_shared(
+    destination,
+    &outer.pair.left,
+    &outer.pair.left,
+  );
+  observed
+}
+"#;
+    let file = write_th("projected_record_callee", source);
+    let report = run_body_tv_json(&file);
+    assert_eq!(report["counts"]["checked"].as_u64(), Some(6), "{report}");
+    assert_eq!(report["counts"]["faithful"].as_u64(), Some(6), "{report}");
+    assert_eq!(report["counts"]["divergent"].as_u64(), Some(0), "{report}");
+    assert_eq!(report["counts"]["skipped"].as_u64(), Some(0), "{report}");
+    for name in [
+        "set_leaf",
+        "copy_leaf",
+        "projected_pipeline",
+        "projected_from_shared",
+        "copy_with_two_shared",
+        "projected_shared_alias",
+    ] {
+        assert!(
+            report["bodies"].as_array().unwrap().iter().any(|body| {
+                body["body"].as_str() == Some(name) && body["verdict"].as_str() == Some("faithful")
+            }),
+            "{name}: {report}"
+        );
+    }
+}
+
+#[test]
+fn projected_record_ancestor_and_shared_overlap_remain_fail_closed() {
+    let source = r#"
+struct Leaf { value: u64 }
+struct Pair { left: Leaf, right: Leaf }
+struct Outer { pair: Pair }
+
+fn overlap_pair(pair: &mut Pair, leaf: &mut Leaf) -> ()
+  req true
+  ens true
+  fx pure
+{
+  pair.left.value = leaf.value;
+}
+
+fn copy_leaf(destination: &mut Leaf, source: &Leaf) -> ()
+  req true
+  ens true
+  fx pure
+{
+  destination.value = source.value;
+}
+
+fn ancestor_alias(outer: &mut Outer) -> ()
+  req true
+  ens true
+  fx pure
+{
+  overlap_pair(&mut outer.pair, &mut outer.pair.left);
+}
+
+fn shared_alias(outer: &mut Outer) -> ()
+  req true
+  ens true
+  fx pure
+{
+  copy_leaf(&mut outer.pair.left, &outer.pair.left);
+}
+"#;
+    let file = write_th("projected_record_alias", source);
+    let report = run_body_tv_json(&file);
+    for (caller, expected) in [
+        ("ancestor_alias", "`outer.pair` and `outer.pair.left`"),
+        (
+            "shared_alias",
+            "exclusive access path `outer.pair.left` through shared actual `outer.pair.left`",
+        ),
+    ] {
+        let body = report["bodies"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|body| body["body"].as_str() == Some(caller))
+            .unwrap_or_else(|| panic!("missing projected-alias caller `{caller}`: {report}"));
+        assert_eq!(body["verdict"].as_str(), Some("skipped"), "{report}");
+        assert!(
+            body["detail"]
+                .as_str()
+                .unwrap_or_default()
+                .contains(expected),
+            "{report}"
+        );
+    }
 }
 
 #[test]
@@ -963,7 +1136,7 @@ fn alias(data: &mut [u64; SLOTS]) -> u64
         caller["detail"]
             .as_str()
             .unwrap_or_default()
-            .contains("aliases exclusive root `data` through shared indexed formal `right`"),
+            .contains("aliases exclusive access path `data` through shared indexed root `data`"),
         "{report}"
     );
 }

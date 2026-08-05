@@ -1267,6 +1267,145 @@ fn main() {
 }
 
 #[test]
+fn projected_record_call_effect_is_strict_l3_replayed_and_executed() {
+    let temp = TempDir::new("projected-record-call-effect");
+    let bundle = temp.0.join("projected-record-call-effect.verified");
+    let bundle_s = bundle.to_string_lossy().to_string();
+    assert_success(&forge(&[
+        "build",
+        "conformance/verified-build/projected_record_call_effect.th",
+        "--level",
+        "l3",
+        "--export",
+        "projected_call_pipeline",
+        "--export",
+        "projected_call_new",
+        "--export",
+        "projected_call_left_value",
+        "--export",
+        "projected_call_left_guard",
+        "--export",
+        "projected_call_right_value",
+        "--export",
+        "projected_call_right_guard",
+        "--export",
+        "projected_call_tag",
+        "--crate-name",
+        "projected_record_call_effect",
+        "--target",
+        "kernel",
+        "--out",
+        &bundle_s,
+        "--json",
+    ]));
+    assert_success(&forge(&["verify-build", &bundle_s, "--replay", "--json"]));
+
+    let source = fs::read_to_string(bundle.join("evidence/source.verus.rs")).unwrap();
+    assert!(source.starts_with("#![no_std]\n"), "{source}");
+    assert!(
+        source.contains("let written: u64 = projected_call_set(&mut outer.pair.left, value);")
+            && source.contains("projected_call_copy(&mut outer.pair.right, &outer.pair.left)"),
+        "{source}"
+    );
+    assert!(!source.contains("external_body"), "{source}");
+
+    let consumer_source = temp.0.join("projected-record-call-effect-consumer.rs");
+    fs::write(
+        &consumer_source,
+        r#"
+use projected_record_call_effect::{
+    projected_call_left_guard, projected_call_left_value, projected_call_new,
+    projected_call_pipeline, projected_call_right_guard, projected_call_right_value,
+    projected_call_tag,
+};
+
+fn main() {
+    let mut outer = projected_call_new(3, 4, 5, 6, 7);
+    assert_eq!(projected_call_pipeline(&mut outer, 41), 41);
+    assert_eq!(projected_call_left_value(&outer), 41);
+    assert_eq!(projected_call_left_guard(&outer), 4);
+    assert_eq!(projected_call_right_value(&outer), 41);
+    assert_eq!(projected_call_right_guard(&outer), 6);
+    assert_eq!(projected_call_tag(&outer), 7);
+}
+"#,
+    )
+    .unwrap();
+    let consumer = temp.0.join("projected-record-call-effect-consumer");
+    let link = codegen_rustc(&bundle)
+        .current_dir(root())
+        .arg("--edition=2021")
+        .arg(&consumer_source)
+        .arg("--extern")
+        .arg(format!(
+            "projected_record_call_effect={}",
+            bundle
+                .join("artifact/libprojected_record_call_effect.rlib")
+                .display()
+        ))
+        .arg("-L")
+        .arg(format!(
+            "dependency={}",
+            bundle.join("artifact/deps").display()
+        ))
+        .args(["-C", "panic=abort"])
+        .arg("-o")
+        .arg(&consumer)
+        .output()
+        .unwrap();
+    assert_success(&link);
+    assert_success(&Command::new(&consumer).output().unwrap());
+
+    let receipt: serde_json::Value =
+        serde_json::from_slice(&fs::read(bundle.join("receipt.json")).unwrap()).unwrap();
+    assert_eq!(receipt["binding"]["assurance"], "L3");
+    assert_eq!(receipt["binding"]["target"], "kernel");
+    assert!(receipt["binding"]["assurance_aggregate"]["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|member| member["achieved"] == "L3"));
+
+    let tv: serde_json::Value = serde_json::from_slice(
+        &fs::read(bundle.join("evidence/translation-validation.json")).unwrap(),
+    )
+    .unwrap();
+    let rows = tv["rows"].as_array().unwrap();
+    assert!(
+        rows.iter().all(|row| row["verdict"] == "faithful"),
+        "strict projected-record call lifecycle admitted a non-faithful row: {tv}"
+    );
+    assert!(rows.iter().any(|row| {
+        row["phase"] == "body"
+            && row["label"] == "projected_call_pipeline"
+            && row["verdict"] == "faithful"
+    }));
+    assert!(!rows
+        .iter()
+        .any(|row| { row["phase"] == "exec" && row["label"] == "projected_call_pipeline.let#1" }));
+
+    let tampered = temp
+        .0
+        .join("projected-record-call-effect-tampered.verified");
+    copy_tree(&bundle, &tampered);
+    let input = tampered.join("evidence/input.th");
+    let original = fs::read_to_string(&input).unwrap();
+    let changed = original.replacen(
+        "projected_call_copy(&mut outer.pair.right, &outer.pair.left)",
+        "projected_call_copy(&mut outer.pair.right, &outer.pair.right)",
+        1,
+    );
+    assert_ne!(changed, original);
+    fs::write(&input, changed).unwrap();
+    assert!(
+        !forge(&["verify-build", tampered.to_string_lossy().as_ref()])
+            .status
+            .success(),
+        "changing the bound projected-record borrow must invalidate the receipt"
+    );
+}
+
+#[test]
 fn mutable_indexed_call_effect_is_strict_l3_replayed_and_executed() {
     let temp = TempDir::new("mutable-indexed-call-effect");
     let bundle = temp.0.join("mutable-indexed-call-effect.verified");

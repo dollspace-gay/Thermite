@@ -111,8 +111,76 @@ fn copy_from(left: &mut State, right: &State) -> (result: u64)
 }
 "#;
 
+const PROJECTED_SOURCE: &str = r#"
+struct Leaf { value: u64, guard: u64 }
+struct Pair { left: Leaf, right: Leaf }
+struct Outer { pair: Pair, tag: u64 }
+fn set_leaf(leaf: &mut Leaf, value: u64) -> u64
+  req true
+  ens result == value
+  ens final(leaf).value == value
+  ens final(leaf).guard == old(leaf).guard
+  fx pure
+{
+  leaf.value = value;
+  leaf.value
+}
+fn copy_leaf(destination: &mut Leaf, source: &Leaf) -> u64
+  req true
+  ens result == source.value
+  ens final(destination).value == source.value
+  ens final(destination).guard == old(destination).guard
+  fx pure
+{
+  destination.value = source.value;
+  destination.value
+}
+fn projected_pipeline(outer: &mut Outer, value: u64) -> u64
+  req value < 1000
+  ens result == value
+  ens final(outer).pair.left.value == value
+  ens final(outer).pair.right.value == value
+  ens final(outer).tag == old(outer).tag
+  fx pure
+{
+  let written: u64 = set_leaf(&mut outer.pair.left, value);
+  let observed: u64 = copy_leaf(&mut outer.pair.right, &outer.pair.left);
+  observed
+}
+"#;
+
+const PROJECTED_DEFINITIONS: &str = r#"
+pub struct Leaf { pub value: u64, pub guard: u64 }
+pub struct Pair { pub left: Leaf, pub right: Leaf }
+pub struct Outer { pub pair: Pair, pub tag: u64 }
+
+fn set_leaf(leaf: &mut Leaf, value: u64) -> (result: u64)
+    ensures
+        result == value,
+        final(leaf).value == value,
+        final(leaf).guard == old(leaf).guard,
+{
+    leaf.value = value;
+    leaf.value
+}
+
+fn copy_leaf(destination: &mut Leaf, source: &Leaf) -> (result: u64)
+    ensures
+        result == source.value,
+        final(destination).value == source.value,
+        final(destination).guard == old(destination).guard,
+{
+    destination.value = source.value;
+    destination.value
+}
+"#;
+
 fn function_body(name: &str) -> Block {
-    let parsed = thermite_syntax::parse(SOURCE);
+    function_body_in(SOURCE, name)
+}
+
+fn function_body_in(source: &str, name: &str) -> Block {
+    let parsed = thermite_syntax::parse(source);
     assert!(parsed.is_clean(), "parse errors: {:?}", parsed.errors);
     parsed
         .program
@@ -123,6 +191,69 @@ fn function_body(name: &str) -> Block {
             _ => None,
         })
         .unwrap_or_else(|| panic!("missing function `{name}`"))
+}
+
+fn leaf_fields() -> Vec<RecordFieldFrame> {
+    vec![
+        RecordFieldFrame::typed("value", Type::Prim(PrimType::U64)),
+        RecordFieldFrame::typed("guard", Type::Prim(PrimType::U64)),
+    ]
+}
+
+fn pair_fields() -> Vec<RecordFieldFrame> {
+    vec![
+        RecordFieldFrame::typed("left", Type::Named("Leaf".to_string())),
+        RecordFieldFrame::typed("right", Type::Named("Leaf".to_string())),
+    ]
+}
+
+fn outer_fields() -> Vec<RecordFieldFrame> {
+    vec![
+        RecordFieldFrame::typed("pair", Type::Named("Pair".to_string())),
+        RecordFieldFrame::typed("tag", Type::Prim(PrimType::U64)),
+    ]
+}
+
+fn projected_frame() -> BodyObligationFrame {
+    BodyObligationFrame {
+        spec_defs: vec![PROJECTED_DEFINITIONS.to_string()],
+        params: vec![
+            BodyParamDecl::new("outer", "&mut Outer"),
+            BodyParamDecl::new("value", "u64"),
+        ],
+        ret_type: "u64".to_string(),
+        req: Some("value < 1000".to_string()),
+        mutable_records: vec![MutableRecordFrame::typed("outer", "Outer", outer_fields())],
+        mutable_call_effects: vec![
+            MutableCallEffectFrame::new(
+                "set_leaf",
+                vec!["leaf".to_string(), "value".to_string()],
+                vec![MutableRecordFrame::typed("leaf", "Leaf", leaf_fields())],
+                function_body_in(PROJECTED_SOURCE, "set_leaf"),
+            ),
+            MutableCallEffectFrame::new(
+                "copy_leaf",
+                vec!["destination".to_string(), "source".to_string()],
+                vec![MutableRecordFrame::typed(
+                    "destination",
+                    "Leaf",
+                    leaf_fields(),
+                )],
+                function_body_in(PROJECTED_SOURCE, "copy_leaf"),
+            )
+            .with_shared_records(vec![SharedRecordFrame::typed(
+                "source",
+                "Leaf",
+                leaf_fields(),
+            )]),
+        ],
+        named_records: vec![
+            NamedRecordFrame::new("Leaf", leaf_fields()),
+            NamedRecordFrame::new("Pair", pair_fields()),
+            NamedRecordFrame::new("Outer", outer_fields()),
+        ],
+        ..Default::default()
+    }
 }
 
 fn fields() -> Vec<RecordFieldFrame> {
@@ -350,6 +481,77 @@ fn mixed_shared_and_mutable_records_compose_snapshot_result_and_post_state() {
 }
 
 #[test]
+fn projected_record_calls_compose_current_sibling_state_at_l3() {
+    let body = function_body_in(PROJECTED_SOURCE, "projected_pipeline");
+    let obligation = body_equivalence_obligation(
+        &body,
+        r#"    let written: u64 = set_leaf(&mut outer.pair.left, value);
+    let observed: u64 = copy_leaf(&mut outer.pair.right, &outer.pair.left);
+    observed
+"#,
+        &projected_frame(),
+    )
+    .expect("nested projected-record call obligation");
+    assert_verus("projected_record_calls", &obligation, true);
+
+    let mutant = body_equivalence_obligation(
+        &body,
+        r#"    let written: u64 = set_leaf(&mut outer.pair.left, value + 1);
+    let observed: u64 = copy_leaf(&mut outer.pair.right, &outer.pair.left);
+    observed
+"#,
+        &projected_frame(),
+    )
+    .expect("projected-record mutant obligation");
+    assert_verus("projected_record_calls_mutant", &mutant, false);
+}
+
+#[test]
+fn projected_record_type_and_borrow_mode_mismatches_fail_closed() {
+    for (name, call, expected) in [
+        (
+            "wrong_projected_type",
+            "set_leaf(&mut outer.pair, value);",
+            "expects `Leaf`",
+        ),
+        (
+            "wrong_projected_borrow",
+            "set_leaf(&outer.pair.left, value);",
+            "exclusive record formal `set_leaf::leaf` received a shared projected borrow",
+        ),
+    ] {
+        let parsed = thermite_syntax::parse(&format!(
+            r#"
+fn {name}(outer: &mut Outer, value: u64) -> ()
+  req true
+  ens true
+  fx pure
+{{
+  {call}
+}}
+"#
+        ));
+        assert!(parsed.is_clean(), "parse errors: {:?}", parsed.errors);
+        let body = parsed
+            .program
+            .items
+            .iter()
+            .find_map(|item| match item {
+                Item::Fn(function) if function.name == name => function.body.clone(),
+                _ => None,
+            })
+            .expect("projected mismatch body");
+        let mut frame = projected_frame();
+        frame.ret_type = "()".to_string();
+        frame.result_is_unit = true;
+        frame.req = None;
+        let error = body_equivalence_obligation(&body, "", &frame)
+            .expect_err("invalid projected record actual must fail closed");
+        assert!(error.to_string().contains(expected), "{error}");
+    }
+}
+
+#[test]
 fn shared_actual_may_not_overlap_an_exclusive_actual() {
     let parsed = thermite_syntax::parse(
         r#"
@@ -382,7 +584,7 @@ fn alias(state: &mut State) -> u64
     assert!(
         error
             .to_string()
-            .contains("aliases exclusive root `state` through shared formal `right`"),
+            .contains("aliases exclusive access path `state` through shared actual `state`"),
         "{error}"
     );
 }
@@ -631,7 +833,7 @@ fn touch_two(left: &mut State, right: &mut State, value: u64) -> (result: ())
     let error = body_equivalence_obligation(&alias, "", &alias_frame)
         .expect_err("two mutable formals may not alias one root");
     assert!(
-        error.to_string().contains("aliases exclusive root"),
+        error.to_string().contains("aliases exclusive access paths"),
         "{error}"
     );
 

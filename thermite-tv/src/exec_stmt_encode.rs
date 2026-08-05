@@ -1533,12 +1533,367 @@ fn thread_lifecycle_stmt(
 }
 
 /// Apply one reachable in-language mutable-reference call to the independent
-/// lifecycle state. Actual roots must be direct and nominally exact. Exclusive
-/// roots are pairwise distinct and may not overlap a shared actual; shared/shared
+/// lifecycle state. Direct actuals retain their existing implicit-reference
+/// spelling (`callee(root)` where `root: &mut T`/`&T`). A projected finite-record
+/// actual is an explicit source borrow (`callee(&mut outer.inner)` or
+/// `callee(&outer.inner)`). Exclusive access paths are pairwise structurally
+/// disjoint and may not overlap a shared actual: equal paths and every
+/// ancestor/descendant pair overlap, while sibling fields do not. Shared/shared
 /// aliasing is harmless and admitted. The callee source body is interpreted
-/// recursively with its formal names rebound to the caller's pre-call values;
+/// recursively with its formal names rebound to the caller's current values;
 /// production still executes the ordinary lowered call and is never replaced by
 /// this model.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RecordCallActual {
+    /// Root parameter followed by zero or more finite-record field projections.
+    segments: Vec<String>,
+    /// Exact nominal type at the root and after every projection. Therefore this
+    /// has the same length as `segments` and its last item is the actual pointee.
+    types: Vec<String>,
+}
+
+impl RecordCallActual {
+    fn root(&self) -> &str {
+        &self.segments[0]
+    }
+
+    fn type_name(&self) -> &str {
+        self.types
+            .last()
+            .expect("a resolved record actual always has one type")
+    }
+
+    fn is_direct(&self) -> bool {
+        self.segments.len() == 1
+    }
+
+    fn display(&self) -> String {
+        self.segments.join(".")
+    }
+}
+
+fn access_paths_overlap(left: &[String], right: &[String]) -> bool {
+    left.iter()
+        .zip(right)
+        .all(|(left_segment, right_segment)| left_segment == right_segment)
+}
+
+fn record_actual_segments(
+    argument: &Expr,
+    mutable: bool,
+    callee: &str,
+    formal: &str,
+) -> Result<Vec<String>, RefEncodeError> {
+    if let Expr::Path(path) = argument {
+        if path.len() == 1 {
+            return Ok(path.clone());
+        }
+    }
+
+    let Expr::Ref {
+        mutable: actual_mutable,
+        expr,
+    } = argument
+    else {
+        let borrow = if mutable { "&mut" } else { "&" };
+        return Err(RefEncodeError::Unsupported(format!(
+            "{} record actual for `{callee}::{formal}` must be one direct borrowed root or an explicit `{borrow} root.field(.field)*` projection",
+            if mutable { "exclusive" } else { "shared" },
+        )));
+    };
+    if *actual_mutable != mutable {
+        return Err(RefEncodeError::Unsupported(format!(
+            "{} record formal `{callee}::{formal}` received a {} projected borrow",
+            if mutable { "exclusive" } else { "shared" },
+            if *actual_mutable { "mutable" } else { "shared" }
+        )));
+    }
+    let (root, steps) = nested_lvalue_path(expr)?;
+    if steps.is_empty() {
+        return Err(RefEncodeError::Unsupported(format!(
+            "direct record actual `{root}` for `{callee}::{formal}` is already borrowed; an explicit reference would change its type"
+        )));
+    }
+    let mut segments = vec![root];
+    for step in steps {
+        match step {
+            NestedLvalueStep::Field(field) => segments.push(field),
+            NestedLvalueStep::Index(_) => {
+                return Err(RefEncodeError::Unsupported(format!(
+                    "projected record actual for `{callee}::{formal}` may contain only finite-record fields"
+                )));
+            }
+        }
+    }
+    Ok(segments)
+}
+
+fn resolve_record_call_actual(
+    argument: &Expr,
+    mutable: bool,
+    callee: &str,
+    formal: &str,
+    ctx: &BodyRefCtx,
+) -> Result<RecordCallActual, RefEncodeError> {
+    let segments = record_actual_segments(argument, mutable, callee, formal)?;
+    let root = &segments[0];
+    let root_type = if mutable {
+        ctx.mutable_record(root)
+            .and_then(|record| record.type_name.as_deref())
+    } else if let Some(record) = ctx.shared_record(root) {
+        Some(record.type_name.as_str())
+    } else {
+        ctx.mutable_record(root)
+            .and_then(|record| record.type_name.as_deref())
+    }
+    .ok_or_else(|| {
+        RefEncodeError::Unsupported(format!(
+            "{} record actual root `{root}` for `{callee}::{formal}` has no exact independently framed nominal type",
+            if mutable { "exclusive" } else { "shared" }
+        ))
+    })?;
+
+    let mut types = vec![root_type.to_string()];
+    let mut current_type = root_type;
+    for field_name in &segments[1..] {
+        let record = ctx.named_record(current_type).ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "projected record actual `{}` for `{callee}::{formal}` crosses non-finite record `{current_type}`",
+                segments.join(".")
+            ))
+        })?;
+        let field = record
+            .fields
+            .iter()
+            .find(|field| field.name == *field_name)
+            .ok_or_else(|| {
+                RefEncodeError::Unsupported(format!(
+                    "projected record actual `{}` for `{callee}::{formal}` names unknown field `{current_type}.{field_name}`",
+                    segments.join(".")
+                ))
+            })?;
+        let Some(Type::Named(next_type)) = field.ty.as_ref() else {
+            return Err(RefEncodeError::Unsupported(format!(
+                "projected record actual `{}` for `{callee}::{formal}` ends or crosses non-record field `{current_type}.{field_name}`",
+                segments.join(".")
+            )));
+        };
+        types.push(next_type.clone());
+        current_type = next_type;
+    }
+
+    Ok(RecordCallActual { segments, types })
+}
+
+fn projected_record_value(
+    actual: &RecordCallActual,
+    state: &LifecycleState,
+    callee: &str,
+) -> Result<LifecycleCell, RefEncodeError> {
+    debug_assert!(!actual.is_direct());
+    let top_key = format!("{}.{}", actual.root(), actual.segments[1]);
+    let mut value = state.fields.get(&top_key).cloned().ok_or_else(|| {
+        RefEncodeError::Unsupported(format!(
+            "mutable-reference call `{callee}` cannot observe exact caller projection `{top_key}`"
+        ))
+    })?;
+    for field in &actual.segments[2..] {
+        value = LifecycleCell::bounded(format!("({}).{field}", value.text));
+    }
+    Ok(value)
+}
+
+fn snapshot_record_actual(
+    formal: &MutableRecordFrame,
+    actual: &RecordCallActual,
+    state: &LifecycleState,
+    callee: &str,
+) -> Result<Vec<(String, LifecycleCell)>, RefEncodeError> {
+    if actual.is_direct() {
+        return formal
+            .fields
+            .iter()
+            .map(|field| {
+                let actual_key = format!("{}.{}", actual.root(), field.name);
+                state
+                    .fields
+                    .get(&actual_key)
+                    .cloned()
+                    .map(|value| (field.name.clone(), value))
+                    .ok_or_else(|| {
+                        RefEncodeError::Unsupported(format!(
+                            "mutable-reference call `{callee}` cannot observe exact caller field `{actual_key}`"
+                        ))
+                    })
+            })
+            .collect();
+    }
+
+    let record = projected_record_value(actual, state, callee)?;
+    Ok(formal
+        .fields
+        .iter()
+        .map(|field| {
+            (
+                field.name.clone(),
+                LifecycleCell::bounded(format!("({}).{}", record.text, field.name)),
+            )
+        })
+        .collect())
+}
+
+fn snapshot_shared_record_actual(
+    formal: &SharedRecordFrame,
+    actual: &RecordCallActual,
+    state: &LifecycleState,
+    callee: &str,
+) -> Result<Vec<(String, LifecycleCell)>, RefEncodeError> {
+    let mutable = MutableRecordFrame::typed(
+        formal.name.clone(),
+        formal.type_name.clone(),
+        formal.fields.clone(),
+    );
+    snapshot_record_actual(&mutable, actual, state, callee)
+}
+
+fn record_post_value(
+    formal: &MutableRecordFrame,
+    callee_state: &LifecycleState,
+    callee: &str,
+) -> Result<String, RefEncodeError> {
+    let type_name = formal.type_name.as_deref().ok_or_else(|| {
+        RefEncodeError::Unsupported(format!(
+            "mutable-reference callee `{callee}` lost the exact nominal type of `{}`",
+            formal.name
+        ))
+    })?;
+    let fields = formal
+        .fields
+        .iter()
+        .map(|field| {
+            let formal_key = format!("{}.{}", formal.name, field.name);
+            callee_state
+                .fields
+                .get(&formal_key)
+                .map(|value| format!("{}: {}", field.name, value.text))
+                .ok_or_else(|| {
+                    RefEncodeError::Unsupported(format!(
+                        "mutable-reference callee `{callee}` lost exact post-state field `{formal_key}`"
+                    ))
+                })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(format!("{type_name} {{ {} }}", fields.join(", ")))
+}
+
+fn rebuild_projected_record_text(
+    current: String,
+    current_type: &str,
+    fields: &[String],
+    replacement: &str,
+    ctx: &BodyRefCtx,
+) -> Result<String, RefEncodeError> {
+    let Some((changed_field, rest)) = fields.split_first() else {
+        return Ok(replacement.to_string());
+    };
+    let record = ctx.named_record(current_type).ok_or_else(|| {
+        RefEncodeError::Unsupported(format!(
+            "projected call copy-back lost finite record declaration `{current_type}`"
+        ))
+    })?;
+    let changed = record
+        .fields
+        .iter()
+        .find(|field| field.name == *changed_field)
+        .ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "projected call copy-back lost field `{current_type}.{changed_field}`"
+            ))
+        })?;
+    let next = if rest.is_empty() {
+        replacement.to_string()
+    } else {
+        let Some(Type::Named(next_type)) = changed.ty.as_ref() else {
+            return Err(RefEncodeError::Unsupported(format!(
+                "projected call copy-back crosses non-record field `{current_type}.{changed_field}`"
+            )));
+        };
+        rebuild_projected_record_text(
+            format!("({current}).{changed_field}"),
+            next_type,
+            rest,
+            replacement,
+            ctx,
+        )?
+    };
+    Ok(format!(
+        "{current_type} {{ {} }}",
+        record
+            .fields
+            .iter()
+            .map(|field| {
+                if field.name == *changed_field {
+                    format!("{}: {next}", field.name)
+                } else {
+                    format!("{}: ({current}).{}", field.name, field.name)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    ))
+}
+
+fn copy_back_record_actual(
+    formal: &MutableRecordFrame,
+    actual: &RecordCallActual,
+    callee_state: &LifecycleState,
+    state: &mut LifecycleState,
+    callee: &str,
+    ctx: &BodyRefCtx,
+) -> Result<(), RefEncodeError> {
+    if actual.is_direct() {
+        for field in &formal.fields {
+            let formal_key = format!("{}.{}", formal.name, field.name);
+            let value = callee_state
+                .fields
+                .get(&formal_key)
+                .cloned()
+                .ok_or_else(|| {
+                    RefEncodeError::Unsupported(format!(
+                        "mutable-reference callee `{callee}` lost exact post-state field `{formal_key}`"
+                    ))
+                })?;
+            state
+                .fields
+                .insert(format!("{}.{}", actual.root(), field.name), value);
+        }
+        return Ok(());
+    }
+
+    let replacement = record_post_value(formal, callee_state, callee)?;
+    let top_key = format!("{}.{}", actual.root(), actual.segments[1]);
+    let current = state.fields.get(&top_key).cloned().ok_or_else(|| {
+        RefEncodeError::Unsupported(format!(
+            "projected call copy-back cannot observe enclosing caller field `{top_key}`"
+        ))
+    })?;
+    let rebuilt = if actual.segments.len() == 2 {
+        replacement
+    } else {
+        rebuild_projected_record_text(
+            current.text,
+            &actual.types[1],
+            &actual.segments[2..],
+            &replacement,
+            ctx,
+        )?
+    };
+    state
+        .fields
+        .insert(top_key, LifecycleCell::bounded(format!("({rebuilt})")));
+    Ok(())
+}
+
 fn apply_mutable_call_effect(
     name: &str,
     args: &[Expr],
@@ -1574,8 +1929,8 @@ fn apply_mutable_call_effect(
         .enumerate()
         .map(|(index, formal)| (formal.as_str(), index))
         .collect::<BTreeMap<_, _>>();
-    let mut mutable_actual_roots = BTreeMap::<String, String>::new();
-    let mut used_mutable_roots = BTreeSet::new();
+    let mut mutable_actual_roots = BTreeMap::<String, RecordCallActual>::new();
+    let mut exclusive_paths = Vec::<Vec<String>>::new();
     for formal in &effect.mutable_records {
         let position = formal_positions.get(formal.name.as_str()).ok_or_else(|| {
             RefEncodeError::Unsupported(format!(
@@ -1583,41 +1938,36 @@ fn apply_mutable_call_effect(
                 formal.name
             ))
         })?;
-        let root = match &args[*position] {
-            Expr::Path(path) if path.len() == 1 => path[0].clone(),
-            _ => {
-                return Err(RefEncodeError::Unsupported(format!(
-                    "mutable-reference actual for `{name}::{}` must be one direct exclusive root",
-                    formal.name
-                )));
-            }
-        };
-        if !used_mutable_roots.insert(root.clone()) {
+        let actual = resolve_record_call_actual(&args[*position], true, name, &formal.name, ctx)?;
+        if let Some(overlap) = exclusive_paths
+            .iter()
+            .find(|path| access_paths_overlap(path, &actual.segments))
+        {
             return Err(RefEncodeError::Unsupported(format!(
-                "mutable-reference call `{name}` aliases exclusive root `{root}` through multiple formals"
+                "mutable-reference call `{name}` aliases exclusive access paths `{}` and `{}`",
+                overlap.join("."),
+                actual.display()
             )));
         }
-        let actual = ctx.mutable_record(&root).ok_or_else(|| {
-            RefEncodeError::Unsupported(format!(
-                "mutable-reference actual `{root}` for `{name}` is not an independently framed exclusive record"
-            ))
-        })?;
-        match (&formal.type_name, &actual.type_name) {
-            (Some(expected), Some(found)) if expected == found => {}
-            (Some(expected), Some(found)) => {
+        exclusive_paths.push(actual.segments.clone());
+        match &formal.type_name {
+            Some(expected) if expected == actual.type_name() => {}
+            Some(expected) => {
                 return Err(RefEncodeError::Unsupported(format!(
-                    "mutable-reference call `{name}` expects `{expected}` for `{}` but actual root `{root}` has `{found}`",
-                    formal.name
+                    "mutable-reference call `{name}` expects `{expected}` for `{}` but actual `{}` has `{}`",
+                    formal.name,
+                    actual.display(),
+                    actual.type_name()
                 )));
             }
-            _ => {
+            None => {
                 return Err(RefEncodeError::Unsupported(format!(
-                    "mutable-reference call `{name}` lacks exact nominal type metadata for formal `{}` or actual `{root}`",
+                    "mutable-reference call `{name}` lacks exact nominal type metadata for formal `{}`",
                     formal.name
                 )));
             }
         }
-        mutable_actual_roots.insert(formal.name.clone(), root);
+        mutable_actual_roots.insert(formal.name.clone(), actual);
     }
 
     let mut indexed_actual_roots = BTreeMap::<String, String>::new();
@@ -1637,11 +1987,17 @@ fn apply_mutable_call_effect(
                 )));
             }
         };
-        if !used_mutable_roots.insert(root.clone()) {
+        let path = vec![root.clone()];
+        if let Some(overlap) = exclusive_paths
+            .iter()
+            .find(|existing| access_paths_overlap(existing, &path))
+        {
             return Err(RefEncodeError::Unsupported(format!(
-                "mutable-reference call `{name}` aliases exclusive root `{root}` across record/indexed formals"
+                "mutable-reference call `{name}` aliases exclusive access paths `{}` and `{root}` across record/indexed formals",
+                overlap.join(".")
             )));
         }
+        exclusive_paths.push(path);
         let actual = ctx.mutable_indexed(&root).ok_or_else(|| {
             RefEncodeError::Unsupported(format!(
                 "mutable indexed actual `{root}` for `{name}` is not an independently framed exclusive slice or fixed array"
@@ -1656,7 +2012,7 @@ fn apply_mutable_call_effect(
         indexed_actual_roots.insert(formal.name.clone(), root);
     }
 
-    let mut shared_actual_roots = BTreeMap::<String, String>::new();
+    let mut shared_actual_roots = BTreeMap::<String, RecordCallActual>::new();
     for formal in &effect.shared_records {
         let position = formal_positions.get(formal.name.as_str()).ok_or_else(|| {
             RefEncodeError::Unsupported(format!(
@@ -1664,41 +2020,28 @@ fn apply_mutable_call_effect(
                 formal.name
             ))
         })?;
-        let root = match &args[*position] {
-            Expr::Path(path) if path.len() == 1 => path[0].clone(),
-            _ => {
-                return Err(RefEncodeError::Unsupported(format!(
-                    "shared-reference actual for `{name}::{}` must be one direct finite-record root",
-                    formal.name
-                )));
-            }
-        };
-        if used_mutable_roots.contains(&root) {
+        let actual = resolve_record_call_actual(&args[*position], false, name, &formal.name, ctx)?;
+        if let Some(overlap) = exclusive_paths
+            .iter()
+            .find(|path| access_paths_overlap(path, &actual.segments))
+        {
             return Err(RefEncodeError::Unsupported(format!(
-                "mixed-reference call `{name}` aliases exclusive root `{root}` through shared formal `{}`",
-                formal.name
+                "mixed-reference call `{name}` aliases exclusive access path `{}` through shared actual `{}` for formal `{}`",
+                overlap.join("."),
+                actual.display(),
+                formal.name,
             )));
         }
-        let found_type = if let Some(actual) = ctx.shared_record(&root) {
-            actual.type_name.as_str()
-        } else if let Some(actual) = ctx.mutable_record(&root) {
-            actual.type_name.as_deref().ok_or_else(|| {
-                RefEncodeError::Unsupported(format!(
-                    "shared-reference actual `{root}` for `{name}` lacks exact nominal type metadata"
-                ))
-            })?
-        } else {
+        if formal.type_name != actual.type_name() {
             return Err(RefEncodeError::Unsupported(format!(
-                "shared-reference actual `{root}` for `{name}` is not an independently framed finite record"
-            )));
-        };
-        if formal.type_name != found_type {
-            return Err(RefEncodeError::Unsupported(format!(
-                "shared-reference call `{name}` expects `{}` for `{}` but actual root `{root}` has `{found_type}`",
-                formal.type_name, formal.name
+                "shared-reference call `{name}` expects `{}` for `{}` but actual `{}` has `{}`",
+                formal.type_name,
+                formal.name,
+                actual.display(),
+                actual.type_name(),
             )));
         }
-        shared_actual_roots.insert(formal.name.clone(), root);
+        shared_actual_roots.insert(formal.name.clone(), actual);
     }
 
     let mut shared_indexed_actual_roots = BTreeMap::<String, String>::new();
@@ -1718,10 +2061,15 @@ fn apply_mutable_call_effect(
                 )));
             }
         };
-        if used_mutable_roots.contains(&root) {
+        let path = vec![root.clone()];
+        if let Some(overlap) = exclusive_paths
+            .iter()
+            .find(|existing| access_paths_overlap(existing, &path))
+        {
             return Err(RefEncodeError::Unsupported(format!(
-                "mixed-reference call `{name}` aliases exclusive root `{root}` through shared indexed formal `{}`",
-                formal.name
+                "mixed-reference call `{name}` aliases exclusive access path `{}` through shared indexed root `{root}` for formal `{}`",
+                overlap.join("."),
+                formal.name,
             )));
         }
         let found = if let Some(actual) = ctx.shared_indexed(&root) {
@@ -1768,41 +2116,29 @@ fn apply_mutable_call_effect(
         callee_state.readonly_inputs.insert(formal_name.clone());
     }
     for formal in &effect.mutable_records {
-        let actual_root = mutable_actual_roots.get(&formal.name).ok_or_else(|| {
+        let actual = mutable_actual_roots.get(&formal.name).ok_or_else(|| {
             RefEncodeError::Unsupported(format!(
                 "mutable-reference callee `{name}` lost actual root for formal `{}`",
                 formal.name
             ))
         })?;
-        for field in &formal.fields {
-            let actual_key = format!("{actual_root}.{}", field.name);
-            let value = state.fields.get(&actual_key).cloned().ok_or_else(|| {
-                RefEncodeError::Unsupported(format!(
-                    "mutable-reference call `{name}` cannot observe exact caller field `{actual_key}`"
-                ))
-            })?;
+        for (field, value) in snapshot_record_actual(formal, actual, state, name)? {
             callee_state
                 .fields
-                .insert(format!("{}.{}", formal.name, field.name), value);
+                .insert(format!("{}.{}", formal.name, field), value);
         }
     }
     for formal in &effect.shared_records {
-        let actual_root = shared_actual_roots.get(&formal.name).ok_or_else(|| {
+        let actual = shared_actual_roots.get(&formal.name).ok_or_else(|| {
             RefEncodeError::Unsupported(format!(
                 "mixed-reference callee `{name}` lost actual shared root for formal `{}`",
                 formal.name
             ))
         })?;
-        for field in &formal.fields {
-            let actual_key = format!("{actual_root}.{}", field.name);
-            let value = state.fields.get(&actual_key).cloned().ok_or_else(|| {
-                RefEncodeError::Unsupported(format!(
-                    "mixed-reference call `{name}` cannot snapshot exact caller field `{actual_key}`"
-                ))
-            })?;
+        for (field, value) in snapshot_shared_record_actual(formal, actual, state, name)? {
             callee_state
                 .fields
-                .insert(format!("{}.{}", formal.name, field.name), value);
+                .insert(format!("{}.{}", formal.name, field), value);
         }
     }
     for formal in &effect.mutable_indexed {
@@ -1891,27 +2227,13 @@ fn apply_mutable_call_effect(
     };
 
     for formal in &effect.mutable_records {
-        let actual_root = mutable_actual_roots.get(&formal.name).ok_or_else(|| {
+        let actual = mutable_actual_roots.get(&formal.name).ok_or_else(|| {
             RefEncodeError::Unsupported(format!(
                 "mutable-reference callee `{name}` lost actual root for formal `{}`",
                 formal.name
             ))
         })?;
-        for field in &formal.fields {
-            let formal_key = format!("{}.{}", formal.name, field.name);
-            let value = callee_state
-                .fields
-                .get(&formal_key)
-                .cloned()
-                .ok_or_else(|| {
-                    RefEncodeError::Unsupported(format!(
-                    "mutable-reference callee `{name}` lost exact post-state field `{formal_key}`"
-                ))
-                })?;
-            state
-                .fields
-                .insert(format!("{actual_root}.{}", field.name), value);
-        }
+        copy_back_record_actual(formal, actual, &callee_state, state, name, ctx)?;
     }
     for formal in &effect.mutable_indexed {
         let actual_root = indexed_actual_roots.get(&formal.name).ok_or_else(|| {

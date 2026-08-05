@@ -436,7 +436,7 @@ fn alias(data: &mut [u64; SLOTS], value: u64) -> ()
     assert!(
         error
             .to_string()
-            .contains("aliases exclusive root `data` across record/indexed formals"),
+            .contains("aliases exclusive access paths `data` and `data`"),
         "{error}"
     );
 
@@ -539,7 +539,7 @@ fn alias(data: &mut [u64; SLOTS], at: usize) -> u64
     assert!(
         error
             .to_string()
-            .contains("aliases exclusive root `data` through shared indexed formal `right`"),
+            .contains("aliases exclusive access path `data` through shared indexed root `data`"),
         "{error}"
     );
 

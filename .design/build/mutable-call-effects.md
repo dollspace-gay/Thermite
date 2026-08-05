@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-decision: a statement-position call or direct typed let-bound result call through pairwise-distinct direct mutable finite-record, slice, or fixed-array roots and nonoverlapping direct shared finite-record, slice, or fixed-array roots composes by independently interpreting the reachable in-language callee body, shared snapshots, result, and every complete post-state field or sequence
+decision: a statement-position call or direct typed let-bound result call through structurally disjoint direct or explicitly borrowed projected finite-record actuals and pairwise-distinct direct slice/fixed-array roots composes by independently interpreting the reachable in-language callee body, shared snapshots, result, and every complete post-state field or sequence
 governs:
   - thermite-tv/src/exec_encode.rs
   - thermite-tv/src/exec_stmt_encode.rs
@@ -18,7 +18,8 @@ governs:
   - conformance/verified-build/mutable_call_effect.th
   - conformance/verified-build/mutable_indexed_call_effect.th
   - conformance/verified-build/mixed_indexed_call_effect.th
-audited-content-sha256: b64775da6fadf3524da956f2813670becae8298c3e7495946bfc6f6fcdb01dac (re-pinned 2026-08-05 after exact shared slice/fixed-array snapshots, overlap/type rejection, and strict L3 runtime evidence)
+  - conformance/verified-build/projected_record_call_effect.th
+audited-content-sha256: c2fdad7d89141d2dadd87b3abe976495a865cbc93a28f3d7fffdf5bf4bda5889 (re-pinned 2026-08-05 after exact projected-record copy-in/copy-back, structural aliasing, and strict L3 runtime evidence)
 extends:
   - .design/build/nested-aggregate-lifecycle.md
   - .design/build/owned-aggregate-lifecycle.md
@@ -38,18 +39,26 @@ closure:
 - every mutable formal is either `&mut Name`, where `Name` belongs to the
   recursively finite structural-record closure, `&mut [T]`, or
   `&mut [T; N]`;
-- every corresponding actual is one direct caller root with the same nominal
-  record type or exact parsed element/capacity type; and
-- mutable actual roots are pairwise distinct across record and indexed formals;
+- every corresponding record actual is either one direct caller root or an
+  explicit `&mut root.field(.field)*` borrow whose entire projection chain lies
+  in the finite structural-record closure and ends at the same nominal type;
+  indexed actuals remain direct roots with the exact parsed element/capacity
+  type;
+- mutable access paths are structurally disjoint across record and indexed
+  formals: equal and ancestor/descendant paths overlap, while sibling record
+  fields do not;
 - every shared formal is `&Name` over the same finite structural closure,
-  `&[T]`, or `&[T; N]`, and its actual is a direct caller shared or exclusive
-  root with the same nominal record type or exact parsed element/capacity type;
+  `&[T]`, or `&[T; N]`; a record actual may be a direct root or an explicit
+  `&root.field(.field)*` borrow with the same exact finite nominal type, while an
+  indexed actual remains a direct root with the exact parsed element/capacity
+  type; and
   and
 - no shared actual overlaps any mutable actual in the same call. Shared/shared
   aliasing is harmless and remains admitted.
 
-Other formals are by-value inputs. Projected roots and non-finite records remain
-rejected rather than receiving an inferred alias or snapshot relation.
+Other formals are by-value inputs. Indexed projections, array-element roots,
+implicit field borrowing, and non-finite records remain rejected rather than
+receiving an inferred alias, representation conversion, or snapshot relation.
 
 Every unsupported form is rejected before an obligation can be labelled
 faithful. The first subset does not infer aliasing, summarize a foreign body, or
@@ -64,7 +73,9 @@ lifecycle semantics applies a call as follows:
 
 1. encode every non-mutable actual against the caller's pre-call state and bind
    it as a read-only formal value;
-2. copy every direct field of each exclusive record root and the complete
+2. copy every direct field of each exclusive record root, or project every field
+   of an explicitly borrowed nested record from the caller's current enclosing
+   value, and copy the complete
    current finite sequence of each exclusive slice/array root into the matching
    mutable formal, and snapshot every shared record or complete shared
    slice/array sequence from the caller's current lifecycle state;
@@ -73,7 +84,8 @@ lifecycle semantics applies a call as follows:
 4. encode the callee tail under the exact post-state, either discarding it for a
    statement call or binding it to the typed caller local; and
 5. copy every formal post-state field or complete sequence back to its caller
-   root.
+   root; projected record copy-back reconstructs each enclosing nominal record
+   and frames every sibling from the program-point value.
 
 The return cell and field copy-back are one transition. A later call can consume
 the bound return value, and body TV relates that data flow to the callee's
@@ -86,7 +98,9 @@ reads and subsequent calls observe the program-point sequence rather than the
 entry or final view. A repeated actual root, shared/exclusive overlap, nominal or
 indexed pointee/capacity mismatch, missing field/state, unsupported body form,
 or recursive effect cycle returns `Unsupported`; none can silently become a
-no-op effect. A mutable record, slice, or array peer may be reborrowed as the
+no-op effect. Access-path aliasing uses a structural prefix rule, so
+`outer.left` and `outer.right` may coexist while `outer`, `outer.left`, and
+`outer.left.child` overlap pairwise. A mutable record, slice, or array peer may be reborrowed as the
 shared actual when it is a different root; the snapshot observes any preceding
 caller mutation rather than the peer's entry state.
 
@@ -119,11 +133,16 @@ program-point state; using the unselected mutable name is an adversarial failure
 The focused real-Verus suites prove two dependent mutable-record calls, direct
 let-bound result flow with exact post-state, a distinct two-root call, fixed-
 array and mutable-slice result calls with complete sequence post-state, and mixed
-shared/mutable record and indexed snapshot-result composition, then
+shared/mutable record and indexed snapshot-result composition. They additionally
+prove an arbitrary-depth projected mutable call followed by a shared/mutable
+sibling call over the caller's current reconstructed state, then
 rejects a wrong/discarded result, nested result use, dropped second call, wrong
 argument, missing collateral callee frame, duplicate exclusive alias, recursive
 effect cycle, shared/exclusive overlap, exact array capacity/type mismatch, and
-missing `final` field selector.
+missing `final` field selector. Projected tests reject wrong nominal types,
+wrong borrow modes, equal-path overlap, and ancestor/descendant overlap before
+Verus, while admitting disjoint siblings, a projected root beneath an
+independently shared outer record, and repeated shared/shared projections.
 Forge's corpus body-TV test derives the effect from source rather than accepting
 a hand-authored model, proves both a shared caller input and the current snapshot
 of a separately mutable peer, and rejects overlap before invoking Verus.
@@ -151,13 +170,22 @@ reachable row is L3/faithful, replay succeeds, and bound-source tampering is
 rejected. Shared/shared sequence aliases remain harmless, while an
 exclusive/shared overlap rejects before Verus.
 
+The `projected_record_call_effect.th` fixture performs a generated write through
+`&mut outer.pair.left`, then snapshots that current state through
+`&outer.pair.left` while mutating the disjoint sibling
+`&mut outer.pair.right`. Its strict freestanding receipt contains only L3
+members, replay succeeds, the generated code is linked and executed by a
+downstream consumer, all enclosing guards and tags are preserved, and changing
+the bound projected borrow invalidates verification.
+
 This is reusable language and proof machinery. It adds no scheduler, allocator,
 boot path, firmware runtime, architecture implementation, or kernel artifact.
 
 ## Residual boundary
 
-The frozen subset still excludes an actual such as `outer.inner` or `slots[i]`, nested
-result use inside arithmetic/conditions/arguments/assignments/tails, untyped
+The frozen subset still excludes implicit field borrowing, an indexed actual
+such as `slots[i]` or `&mut outer.array`, nested result use inside
+arithmetic/conditions/arguments/assignments/tails, untyped
 result bindings, recursive mutable effects, mutable enum payloads, calls inside
 the record-loop theory, dynamically quantified aggregate frames, and concurrent
 or atomic machine effects. Those require separate alias, evaluation-order,

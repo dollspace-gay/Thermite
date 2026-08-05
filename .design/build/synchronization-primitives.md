@@ -257,8 +257,8 @@ total. Executable contracts kill 756 of 834 generated mutants.
 - tampers with the bound wait source and requires validation to fail.
 
 The strict export remains scalar. Body TV now independently frames user-ADT
-match/results, exact record-state loops, and direct finite-record mutable-call
-effects including typed let-bound results. These synchronization modules use owned pure state transitions; their
+match/results, exact record-state loops, and direct/projected finite-record mutable-call
+effects including typed let-bound results and structural alias rejection. These synchronization modules use owned pure state transitions; their
 remaining end-to-end gap is atomic composition and machine concurrency proof,
 not an unmodelled Rust implementation. The complete package source is
 receipt-bound, and every in-language aggregate transition has its individual L3

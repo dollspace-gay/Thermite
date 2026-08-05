@@ -1,9 +1,9 @@
 //! Basis Stage 6 — the `#[sealed]` abstraction-barrier attribute parses onto a
-//! `struct` (`.design/basis/06-provenance-and-sinks.md` REQ-8). A `#[sealed]`
-//! `struct` sets `StructItem.sealed: true`, mirroring the `#[slag]`/`#[boundary]`
-//! attribute precedent; an ordinary `struct` is `sealed: false`; and `#[sealed]`
-//! is rejected anywhere but a `struct` (it is a clean-type-only barrier). Expected
-//! shapes are hand-derived from REQ-8 (R-CHAR-3), never copied from parser output.
+//! `struct` (`.design/basis/06-provenance-and-sinks.md` REQ-8). A bare
+//! `#[sealed]` remains boundary-only mintable; `#[sealed("factory")]` authorizes
+//! exactly one named, bodyful Thermite factory; and both forms are rejected
+//! anywhere but a `struct`. Expected shapes are hand-derived from REQ-8
+//! (R-CHAR-3), never copied from parser output.
 
 use thermite_syntax::{parse, Item};
 
@@ -20,6 +20,7 @@ fn sealed_attribute_sets_the_flag_on_a_struct() {
         s.sealed,
         "`#[sealed]` sets StructItem.sealed = true (REQ-8)"
     );
+    assert_eq!(s.sealed_factory, None);
     // The seal does not disturb the field surface (REQ-1 unchanged).
     assert_eq!(s.fields.len(), 1);
     assert_eq!(s.fields[0].name, "stmt");
@@ -37,6 +38,34 @@ fn a_plain_struct_is_not_sealed() {
         !s.sealed,
         "a struct WITHOUT `#[sealed]` is sealed = false (REQ-8 — the seal is opt-in)"
     );
+    assert_eq!(s.sealed_factory, None);
+}
+
+#[test]
+fn sealed_factory_name_is_preserved_exactly() {
+    let r = parse("#[sealed(\"mint_cap\")] struct Cap { raw: u64 }\n");
+    assert!(r.is_clean(), "must parse clean, got {:?}", r.errors);
+    let s = match &r.program.items[0] {
+        Item::Struct(s) => s,
+        other => panic!("item[0] must be Item::Struct, got {other:?}"),
+    };
+    assert!(s.sealed);
+    assert_eq!(s.sealed_factory.as_deref(), Some("mint_cap"));
+}
+
+#[test]
+fn sealed_factory_requires_exactly_one_string_name() {
+    for src in [
+        "#[sealed()] struct Cap { raw: u64 }\n",
+        "#[sealed(mint_cap)] struct Cap { raw: u64 }\n",
+        "#[sealed(\"mint_cap\", \"other\")] struct Cap { raw: u64 }\n",
+    ] {
+        let r = parse(src);
+        assert!(
+            !r.is_clean(),
+            "malformed sealed factory parsed clean: {src}"
+        );
+    }
 }
 
 #[test]

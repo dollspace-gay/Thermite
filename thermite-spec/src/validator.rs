@@ -534,15 +534,22 @@ pub enum SpecError {
     InvalidVariantCasing { name: String, span: Span },
     /// An `Expr::StructLit` constructing a `#[sealed]` clean/capability type
     /// (`.design/basis/06-provenance-and-sinks.md` REQ-8). A `#[sealed]` struct
-    /// is the abstraction barrier for an IFC clean type (`Sql`/`Public`/
-    /// `Authorized`): it is obtainable only as a `#[boundary]` door's return
-    /// value (the door body is foreign/`external_body`, with no in-language
-    /// `StructLit`), never minted directly. Minting one with a struct literal
-    /// would launder a marked value into a clean type outside its door,
+    /// is boundary-only by default. The explicit `#[sealed("factory")]` form
+    /// authorizes exactly its named bodyful checked Thermite function; every
+    /// other literal is rejected. Minting outside that exact authority would
+    /// launder a marked value into a clean type outside its door or factory,
     /// defeating the IFC guarantee (the #77 SQLi/secret/capability bypass). The
     /// un-doored mark-change is a compile-time rejection, not a silent
     /// `L3`. `name` is the sealed struct.
     SealedConstruction { name: String, span: Span },
+    /// A `#[sealed("factory")]` declaration whose named factory is absent,
+    /// bodyless, effect-exempt, or does not return the sealed type exactly.
+    InvalidSealedFactory {
+        name: String,
+        factory: String,
+        detail: String,
+        span: Span,
+    },
     /// A recursive exec `fn` (one whose body calls itself directly) that carries
     /// no `dec` termination clause and is not `fx diverge`
     /// (`.design/basis/10-recursion-tuples.md` REQ-2, C9-A). Termination is proved
@@ -596,6 +603,7 @@ impl SpecError {
             | SpecError::SchemeStepShape { span, .. }
             | SpecError::InvalidVariantCasing { span, .. }
             | SpecError::SealedConstruction { span, .. }
+            | SpecError::InvalidSealedFactory { span, .. }
             | SpecError::MissingDecreases { span, .. }
             | SpecError::ReservedName { span, .. } => *span,
         }
@@ -741,8 +749,18 @@ impl fmt::Display for SpecError {
                 f,
                 "`{name}` is a `#[sealed]` type and cannot be constructed with a struct literal — \
                  a sealed clean/capability type is obtainable ONLY through its `#[boundary]` door \
+                 or its explicitly named checked `#[sealed(\"factory\")]` factory \
                  (the abstraction barrier; `.design/basis/06-provenance-and-sinks.md` REQ-8); \
                  minting it directly would launder a marked value past its door"
+            ),
+            SpecError::InvalidSealedFactory {
+                name,
+                factory,
+                detail,
+                ..
+            } => write!(
+                f,
+                "sealed type `{name}` names invalid verified factory `{factory}`: {detail}"
             ),
             SpecError::MissingDecreases { name, .. } => write!(
                 f,
@@ -1014,6 +1032,11 @@ fn classify_atomic_boundary(target: &str) -> Option<AtomicOperation> {
     }
 }
 
+fn canonical_atomic_app_name(target: &str) -> Option<String> {
+    let suffix = target.strip_prefix("thermite::atomic::")?;
+    Some(format!("atomic_{}", suffix.replace("::", "_")))
+}
+
 /// The walk state: the declared `spec fn` name set, the current recursion depth,
 /// the accumulated diagnostics, and the "caged-flat" mode flag (REQ-6).
 struct Validator {
@@ -1049,6 +1072,12 @@ struct Validator {
     /// mintable. Inert when no `#[sealed]` struct is declared (the non-IFC corpus
     /// is unchanged), like `struct_fields`.
     sealed_structs: HashSet<String>,
+    /// Exact sealed type -> sole verified in-language constructor authorized by
+    /// `#[sealed("factory")]`. Bare `#[sealed]` types have no entry and retain
+    /// the original boundary-only minting rule.
+    sealed_factories: HashMap<String, String>,
+    /// Set only while walking an authorized bodyful factory body.
+    active_function: Option<String>,
     /// Least fixed point of ordinary acyclic struct declarations whose fields
     /// all have finite structural equality. Used only by the explicit fixed-
     /// array relation built-ins; it grants no ambient equality operation.
@@ -1122,6 +1151,14 @@ impl Validator {
             spec_fns.insert((*name).to_string());
         }
 
+        let declared_functions: HashSet<&str> = program
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Fn(function) => Some(function.name.as_str()),
+                _ => None,
+            })
+            .collect();
         let atomic_functions: HashMap<String, AtomicOperation> = program
             .items
             .iter()
@@ -1130,8 +1167,15 @@ impl Validator {
                     return None;
                 };
                 let boundary = function.boundary.as_ref()?;
-                classify_atomic_boundary(&boundary.target)
-                    .map(|operation| (function.name.clone(), operation))
+                let operation = classify_atomic_boundary(&boundary.target)?;
+                if function.name.starts_with("atomic_machine_") {
+                    let app_name = canonical_atomic_app_name(&boundary.target)?;
+                    declared_functions
+                        .contains(app_name.as_str())
+                        .then_some((app_name, operation))
+                } else {
+                    Some((function.name.clone(), operation))
+                }
             })
             .collect();
 
@@ -1150,6 +1194,7 @@ impl Validator {
         // the same pre-pass as `struct_fields` so a forward reference (`fn
         // f() { Sql { … } }` before `#[sealed] struct Sql`) is seen.
         let mut sealed_structs: HashSet<String> = HashSet::new();
+        let mut sealed_factories: HashMap<String, String> = HashMap::new();
         // `.design/basis/01-adts.md` REQ-2: every `enum` variant name must be
         // UpperCamelCase (uppercase-initial). A lowercase-initial variant is
         // rejected here, at the declaration pre-pass, before any
@@ -1224,12 +1269,53 @@ impl Validator {
                     // set — its name will reject any `StructLit` mint.
                     if s.sealed {
                         sealed_structs.insert(s.name.clone());
+                        if let Some(factory) = &s.sealed_factory {
+                            sealed_factories.insert(s.name.clone(), factory.clone());
+                        }
                     }
                 }
                 Item::Fn(_) | Item::SpecFn(_) => {}
                 // A forge-tier item (`.design/stage1-forge-tier.md` REQ-3) declares
                 // no enum/struct, so it raises no variant-casing concern here.
                 Item::Forge(_) => {}
+            }
+        }
+
+        for (name, factory) in &sealed_factories {
+            let candidate = program.items.iter().find_map(|item| match item {
+                Item::Fn(function) if function.name == *factory => Some(function),
+                _ => None,
+            });
+            let detail = match candidate {
+                None => Some("the named function is not declared".to_string()),
+                Some(function) if function.body.is_none() => {
+                    Some("the named function has no checked Thermite body".to_string())
+                }
+                Some(function) if function.boundary.is_some() || function.slag.is_some() => Some(
+                    "the named function is boundary/slag exempt instead of an ordinary checked function"
+                        .to_string(),
+                ),
+                Some(function) if function.ret != Type::Named(name.clone()) => Some(format!(
+                    "the named function returns `{:?}` instead of `{name}`",
+                    function.ret
+                )),
+                Some(_) => None,
+            };
+            if let Some(detail) = detail {
+                let span = program
+                    .items
+                    .iter()
+                    .find_map(|item| match item {
+                        Item::Struct(structure) if structure.name == *name => Some(structure.span),
+                        _ => None,
+                    })
+                    .unwrap_or_else(|| Span::new(0, 0));
+                prepass_errors.push(SpecError::InvalidSealedFactory {
+                    name: name.clone(),
+                    factory: factory.clone(),
+                    detail,
+                    span,
+                });
             }
         }
 
@@ -1273,6 +1359,8 @@ impl Validator {
             variant_to_enum,
             struct_fields,
             sealed_structs,
+            sealed_factories,
+            active_function: None,
             array_equality_structs: structural_array_equality_structs(program),
             record_field_types,
             record_mutation_structs: structural_record_mutation_structs(program),
@@ -1349,7 +1437,9 @@ impl Validator {
                     // are still fully caged. An in-language fn's body is scanned
                     // structurally as before.
                     if let Some(body) = &f.body {
+                        self.active_function = Some(f.name.clone());
                         self.scan_block_for_loops(body, f.span);
+                        self.active_function = None;
                         if let Some(tail) = &body.tail {
                             self.validate_array_initializer(&f.ret, tail, f.span);
                         }
@@ -2593,7 +2683,8 @@ impl Validator {
 
     /// REQ-8 abstraction barrier (`.design/basis/06-provenance-and-sinks.md`): a
     /// `StructLit` whose constructed type is a `#[sealed]` clean/capability type
-    /// is rejected (`SealedConstruction`); a sealed type is door-only-mintable.
+    /// is rejected (`SealedConstruction`) unless the active function is the
+    /// exact valid factory named by `#[sealed("factory")]`.
     /// `path` is the literal's path; the constructed type is its last segment
     /// (`Sql` in `Sql { … }`). Inert when no `#[sealed]` struct is declared (the
     /// non-IFC corpus is unchanged). The `#[boundary]` door is unaffected: its
@@ -2601,7 +2692,11 @@ impl Validator {
     /// safe path `query(parameterize(input))` carries no sealed literal.
     fn check_sealed_construction(&mut self, path: &[String], span: Span) {
         if let Some(name) = path.last() {
-            if self.sealed_structs.contains(name) {
+            let authorized = self
+                .sealed_factories
+                .get(name)
+                .is_some_and(|factory| self.active_function.as_ref() == Some(factory));
+            if self.sealed_structs.contains(name) && !authorized {
                 self.errors.push(SpecError::SealedConstruction {
                     name: name.clone(),
                     span,

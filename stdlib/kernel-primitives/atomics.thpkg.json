@@ -11,6 +11,7 @@
       "path": "src/api.th",
       "imports": [
         "init",
+        "machine",
         "model"
       ]
     },
@@ -30,6 +31,13 @@
       "imports": [
         "model",
         "static_storage"
+      ]
+    },
+    {
+      "name": "machine",
+      "path": "src/machine.th",
+      "imports": [
+        "model"
       ]
     },
     {

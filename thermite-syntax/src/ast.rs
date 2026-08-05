@@ -398,12 +398,14 @@ pub struct Falsify {
 /// predicate.
 ///
 /// `sealed` carries the `#[sealed]` abstraction-barrier attribute
-/// (`.design/basis/06-provenance-and-sinks.md` REQ-8): a `#[sealed]` struct is a
-/// door-only-mintable clean/capability type. The validator rejects any
-/// `Expr::StructLit` of a sealed struct (`SpecError::SealedConstruction`), so the
-/// only way to obtain one is through its `#[boundary]` door's return value (the
-/// door body is foreign/`external_body`, with no in-language `StructLit`). It is
-/// `false` for an ordinary struct (the parser sets it `true` only on `#[sealed]`).
+/// (`.design/basis/06-provenance-and-sinks.md` REQ-8): a bare `#[sealed]` struct
+/// is door-only-mintable. The validator rejects every `Expr::StructLit` of that
+/// type, so it is obtainable only through a boundary return. It is `false` for
+/// an ordinary struct (the parser sets it only for a sealed attribute).
+/// `sealed_factory` is `Some(name)` only for `#[sealed("name")]`: that form
+/// authorizes exactly one bodyful Thermite function to construct the sealed
+/// representation. The validator rejects every other literal and requires the
+/// named function to return this exact type.
 ///
 /// `opaque` carries the `#[opaque]` package-construction barrier used by
 /// reusable state libraries. Unlike `sealed`, the defining Thermite module may
@@ -417,6 +419,7 @@ pub struct StructItem {
     pub fields: Vec<FieldDef>,
     pub inv: Option<Clause>,
     pub sealed: bool,
+    pub sealed_factory: Option<Ident>,
     pub opaque: bool,
     pub span: Span,
 }

@@ -1006,6 +1006,7 @@ fn item_inventory() -> Vec<Item> {
             fields: Vec::new(),
             inv: None,
             sealed: false,
+            sealed_factory: None,
             opaque: false,
             span,
         }),
@@ -1235,13 +1236,13 @@ fn render_grammar() -> String {
         "\
 ## 1. Surface grammar
 
-Every `fn` is contract-first, body-second. v0.1 has four top-level item forms —
-`fn`, `spec fn`, `struct`, `enum`, plus function attributes and the `#[sealed]` /
-`#[opaque]` struct attributes (no `impl`/`trait`/`use`/`mod`/macros).
+Every `fn` is contract-first, body-second. Top-level items are `fn`, `spec fn`,
+`struct`, and `enum`; attributes include `#[sealed]` and `#[opaque]`. There are no
+`impl`/`trait`/`use`/`mod`/macros.
 
-`#[sealed] struct` is boundary-only. `#[opaque] struct` is library state: only its
-declaring package module constructs it; foreign modules call verified functions
-and external safe Rust cannot access its fields. Opacity is NOT affine/linear.
+Bare `#[sealed] struct` is boundary-only; `#[sealed(\"f\")]` names its sole bodyful
+checked constructor. `#[opaque] struct` is defining-module state exposed through
+verified functions. Opacity is NOT affine/linear; neither is sealing.
 
 A `fn` signature is followed by mandatory clauses in this exact order (absence of any
 is a parse error, never an implicit default):

@@ -2090,7 +2090,7 @@ conformance_ops = ["platform-l3-floor", "platform-machine-exception", "platform-
 [[route]]
 crate_pattern = "stdlib/kernel-primitives/atomics.thpkg.json"
 design = ".design/build/sealed-atomics.md"
-reference = ["stdlib/kernel-primitives/src/model.th", "stdlib/kernel-primitives/src/init.th", "stdlib/kernel-primitives/src/api.th", "stdlib/kernel-primitives/src/atomic_storage.th", "stdlib/kernel-primitives/storage/static_storage.th"]
+reference = ["stdlib/kernel-primitives/src/model.th", "stdlib/kernel-primitives/src/init.th", "stdlib/kernel-primitives/src/machine.th", "stdlib/kernel-primitives/src/api.th", "stdlib/kernel-primitives/src/atomic_storage.th", "stdlib/kernel-primitives/storage/static_storage.th"]
 conformance_ops = ["atomic-package-closure", "generation-bound-atomic-storage"]
 
 [[route]]
@@ -2102,8 +2102,14 @@ conformance_ops = ["atomic-ordering-model", "atomic-history-model"]
 [[route]]
 crate_pattern = "stdlib/kernel-primitives/src/api.th"
 design = ".design/build/sealed-atomics.md"
-reference = ["stdlib/kernel-primitives/src/model.th", "stdlib/kernel-primitives/src/init.th"]
-conformance_ops = ["sealed-atomic-api", "atomic-ordering-probe", "atomic-history-probe"]
+reference = ["stdlib/kernel-primitives/src/model.th", "stdlib/kernel-primitives/src/init.th", "stdlib/kernel-primitives/src/machine.th"]
+conformance_ops = ["sealed-atomic-l3-api", "atomic-ordering-probe", "atomic-history-probe"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/src/machine.th"
+design = ".design/build/sealed-atomics.md"
+reference = ["stdlib/kernel-primitives/src/model.th"]
+conformance_ops = ["atomic-machine-door-inventory", "atomic-ordering-code-preconditions", "atomic-handle-identity-echo"]
 
 [[route]]
 crate_pattern = "stdlib/kernel-primitives/src/init.th"

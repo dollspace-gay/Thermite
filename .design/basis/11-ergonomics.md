@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: 168d30914b25f6e5554f51ab307202d4a874869d9beb352aecfbc1505011f8d7 (re-pinned 2026-08-05 after shortening the generated registry-v3 note to meet its hard token budget; existing ergonomics behavior remains regression-covered)
+audited-content-sha256: dc37bcca0de1cfd6cb68525850f92206595db47dc631010c90220d36bf7bef31 (re-pinned 2026-08-05 after shortening the generated registry-v3 note to meet its hard token budget; existing ergonomics behavior remains regression-covered)
 governs: thermite-syntax/src/parser.rs
 governs: thermite-syntax/src/ast.rs
 governs: thermite-lower/src/lower.rs

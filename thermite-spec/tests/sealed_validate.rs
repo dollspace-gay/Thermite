@@ -1,12 +1,10 @@
 //! Basis Stage 6 — the `#[sealed]` ABSTRACTION-BARRIER validator rule
 //! (`.design/basis/06-provenance-and-sinks.md` REQ-8; blocker #77). A `#[sealed]`
-//! clean/capability type is door-only-mintable: the validator rejects any
-//! `Expr::StructLit` of a `#[sealed]` struct with `SpecError::SealedConstruction`,
-//! anywhere in Thermite code. The `#[boundary]` door is unaffected (its body is
-//! foreign/`external_body`, with no in-language `StructLit`), so the safe doored
-//! path validates clean. A plain (non-`#[sealed]`) struct's `StructLit` is
-//! accepted as before (no regression). Expectations are hand-derived from
-//! REQ-8/AC-7 (R-CHAR-3), never read back from the validator's own output.
+//! clean/capability type is boundary-only-mintable by default. The explicit
+//! `#[sealed("factory")]` form authorizes exactly one named, bodyful, checked
+//! Thermite function to construct it while every other literal remains rejected.
+//! A plain struct's literal is accepted as before. Expectations are hand-derived
+//! from REQ-8/AC-7 (R-CHAR-3), never read back from validator output.
 
 use thermite_spec::{validate, SpecError};
 use thermite_syntax::parse;
@@ -125,4 +123,114 @@ fn build(x: u64) -> u64
         validate_src(src).is_ok(),
         "without a #[sealed] declaration the rule is inert — a plain Sql literal is fine (AC-6)"
     );
+}
+
+#[test]
+fn an_explicit_checked_factory_may_construct_its_sealed_type() {
+    let src = r#"
+#[sealed("mint_cap")] struct Cap { raw: u64 }
+
+fn mint_cap(raw: u64) -> Cap
+  req true
+  ens result.raw == raw
+  fx pure
+{
+  Cap { raw: raw }
+}
+
+fn use_factory(raw: u64) -> u64
+  req true
+  ens result == raw
+  fx pure
+{
+  mint_cap(raw).raw
+}
+"#;
+    assert!(
+        validate_src(src).is_ok(),
+        "the exact named bodyful Thermite factory must be allowed to construct the seal"
+    );
+}
+
+#[test]
+fn a_second_function_cannot_launder_through_the_factory_exception() {
+    let src = r#"
+#[sealed("mint_cap")] struct Cap { raw: u64 }
+
+fn mint_cap(raw: u64) -> Cap
+  req true
+  ens result.raw == raw
+  fx pure
+{
+  Cap { raw: raw }
+}
+
+fn counterfeit(raw: u64) -> Cap
+  req true
+  ens result.raw == raw
+  fx pure
+{
+  Cap { raw: raw }
+}
+"#;
+    let errs = validate_src(src).expect_err("a non-factory sealed literal must be rejected");
+    assert!(
+        errs.iter().any(|e| matches!(
+            e,
+            SpecError::SealedConstruction { name, .. } if name == "Cap"
+        )),
+        "expected the foreign construction to be rejected, got {errs:?}"
+    );
+}
+
+#[test]
+fn a_missing_sealed_factory_is_rejected() {
+    let src = "#[sealed(\"mint_cap\")] struct Cap { raw: u64 }\n";
+    let errs = validate_src(src).expect_err("an absent factory must reject the program");
+    assert!(errs.iter().any(|e| matches!(
+        e,
+        SpecError::InvalidSealedFactory { name, factory, .. }
+            if name == "Cap" && factory == "mint_cap"
+    )));
+}
+
+#[test]
+fn a_boundary_cannot_masquerade_as_a_checked_sealed_factory() {
+    let src = r#"
+#[sealed("mint_cap")] struct Cap { raw: u64 }
+
+#[boundary("machine::mint_cap")]
+fn mint_cap(raw: u64) -> Cap
+  req true
+  ens result.raw == raw
+  fx platform(memory)
+  ;
+"#;
+    let errs = validate_src(src).expect_err("a bodyless boundary is not a checked factory");
+    assert!(errs.iter().any(|e| matches!(
+        e,
+        SpecError::InvalidSealedFactory { name, factory, .. }
+            if name == "Cap" && factory == "mint_cap"
+    )));
+}
+
+#[test]
+fn a_factory_returning_another_type_is_rejected() {
+    let src = r#"
+#[sealed("mint_cap")] struct Cap { raw: u64 }
+
+fn mint_cap(raw: u64) -> u64
+  req true
+  ens result == raw
+  fx pure
+{
+  raw
+}
+"#;
+    let errs = validate_src(src).expect_err("factory return type must match the seal exactly");
+    assert!(errs.iter().any(|e| matches!(
+        e,
+        SpecError::InvalidSealedFactory { name, factory, .. }
+            if name == "Cap" && factory == "mint_cap"
+    )));
 }

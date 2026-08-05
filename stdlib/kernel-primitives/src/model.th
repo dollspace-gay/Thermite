@@ -63,6 +63,18 @@ fn atomic_identity_matches_values(
     && identity.generation == generation
 }
 
+fn atomic_identity_copy(identity: &AtomicIdentity) -> AtomicIdentity
+  req true
+  ens atomic_identity_eq_spec(&result, identity)
+  fx pure
+{
+  AtomicIdentity {
+    authority: identity.authority,
+    slot: identity.slot,
+    generation: identity.generation,
+  }
+}
+
 enum AtomicOrdering {
   Relaxed,
   Acquire,
@@ -92,6 +104,20 @@ spec fn atomic_order_from_code(code: u8) -> AtomicOrdering
     2 => AtomicOrdering::Release,
     3 => AtomicOrdering::AcqRel,
     _ => AtomicOrdering::SeqCst,
+  }
+}
+
+fn atomic_order_to_code(order: &AtomicOrdering) -> u8
+  req true
+  ens result == atomic_order_code(*order)
+  fx pure
+{
+  match *order {
+    AtomicOrdering::Relaxed => 0,
+    AtomicOrdering::Acquire => 1,
+    AtomicOrdering::Release => 2,
+    AtomicOrdering::AcqRel => 3,
+    AtomicOrdering::SeqCst => 4,
   }
 }
 
@@ -424,6 +450,78 @@ spec fn atomic_usize_wrapping_add(left: usize, right: usize) -> usize
 
 spec fn atomic_usize_wrapping_sub(left: usize, right: usize) -> usize
   dec left
+{
+  if right <= left {
+    left - right
+  } else {
+    usize::MAX - (right - left - 1)
+  }
+}
+
+fn atomic_u32_wrapping_add_exec(left: u32, right: u32) -> u32
+  req true
+  ens result == atomic_u32_wrapping_add(left, right)
+  fx pure
+{
+  if right <= u32::MAX - left {
+    left + right
+  } else {
+    right - (u32::MAX - left) - 1
+  }
+}
+
+fn atomic_u32_wrapping_sub_exec(left: u32, right: u32) -> u32
+  req true
+  ens result == atomic_u32_wrapping_sub(left, right)
+  fx pure
+{
+  if right <= left {
+    left - right
+  } else {
+    u32::MAX - (right - left - 1)
+  }
+}
+
+fn atomic_u64_wrapping_add_exec(left: u64, right: u64) -> u64
+  req true
+  ens result == atomic_u64_wrapping_add(left, right)
+  fx pure
+{
+  if right <= u64::MAX - left {
+    left + right
+  } else {
+    right - (u64::MAX - left) - 1
+  }
+}
+
+fn atomic_u64_wrapping_sub_exec(left: u64, right: u64) -> u64
+  req true
+  ens result == atomic_u64_wrapping_sub(left, right)
+  fx pure
+{
+  if right <= left {
+    left - right
+  } else {
+    u64::MAX - (right - left - 1)
+  }
+}
+
+fn atomic_usize_wrapping_add_exec(left: usize, right: usize) -> usize
+  req true
+  ens result == atomic_usize_wrapping_add(left, right)
+  fx pure
+{
+  if right <= usize::MAX - left {
+    left + right
+  } else {
+    right - (usize::MAX - left) - 1
+  }
+}
+
+fn atomic_usize_wrapping_sub_exec(left: usize, right: usize) -> usize
+  req true
+  ens result == atomic_usize_wrapping_sub(left, right)
+  fx pure
 {
   if right <= left {
     left - right

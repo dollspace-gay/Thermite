@@ -3,7 +3,7 @@
 tier: 3-component
 status: draft
 audited-sha: 92396428567edc6940a9e2845217f5ff4c2ea3c6 (re-pinned 2026-06-16, user-authorized: the only change to this doc's governed files since the prior pin is the additive stage-1 forge-tier increment 2a — the new Item::Forge surface + inert Item::Forge match arms, verified net-additive with no substantive removal of existing v1 logic (git log <main>..HEAD = the 8 forge commits); the v1 behavior this doc governs is unchanged, and the new forge-tier surface is specified in .design/stage1-forge-tier.md / REQ-S1-3)
-audited-content-sha256: 1dae277b767656d9db49c55fd4eda8441527ad0223afc93be517f22299a17238
+audited-content-sha256: 512628492425befe254de8f9b74cba56580dbeacc1c8e74e062a654b1d53a5f6
 governs: thermite-syntax/src/ast.rs
 thesis-refs:
   - thermite-design.md §4.1
@@ -38,9 +38,10 @@ This doc's REQs are SHIPPED (`thermite-syntax/src/ast.rs`, issue #3 + the
 >   (+ `FieldDef`/`VariantDef`/`VariantShape`, the `#[sealed]` and `#[opaque]`
 >   flags) — `.design/basis/01-adts.md` /
 >   `.design/basis/06-provenance-and-sinks.md` /
->   `.design/build/opaque-library-state.md`. `sealed` is door-only minting;
->   `opaque` permits construction only in the declaring package module. The
->   parser makes the flags mutually exclusive.
+>   `.design/build/opaque-library-state.md`. A bare `sealed` is boundary-only;
+>   `sealed_factory: Some(name)` authorizes exactly one named bodyful checked
+>   Thermite constructor; `opaque` permits construction only in the declaring
+>   package module. The parser makes the sealed/opaque flags mutually exclusive.
 >   `FnItem` gained `boundary: Option<BoundaryAttr>` + `body: Option<Block>`
 >   (a boundary fn is `boundary: Some`, `body: None` —
 >   `.design/boundary/ffi-boundary.md` REQ-2), `dec: Option<Clause>` (the

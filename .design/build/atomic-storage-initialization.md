@@ -8,11 +8,12 @@ governs:
   - stdlib/kernel-primitives/atomics.thpkg.json
   - stdlib/kernel-primitives/src/model.th
   - stdlib/kernel-primitives/src/init.th
+  - stdlib/kernel-primitives/src/machine.th
   - stdlib/kernel-primitives/src/api.th
   - stdlib/kernel-primitives/src/atomic_storage.th
   - stdlib/kernel-primitives/storage/static_storage.th
   - forge/tests/verified_build.rs
-audited-content-sha256: ddffe38b3fd9916d3f938128e581b6b469ad80d516841e4dc57bc730bdb04739
+audited-content-sha256: 35bace9cfe0cadf18e7293cc4bb9619e7ab92ef6432b1ad688580b9d4c864967
 extends:
   - .design/build/static-storage.md
   - .design/build/generation-ownership.md
@@ -31,26 +32,29 @@ opaque initialization slots:
 - `AtomicU64Slot`; or
 - `AtomicUsizeSlot`.
 
-The conversion, capacity policy, generation identity transfer, and lifecycle
-orchestration are ordinary bodyful Thermite and must certify at L3. The slot is
-then consumed by the existing bodyless machine initialization declaration. No
-Rust storage policy, Rust slot ledger, or parallel atomic implementation is
-present in this repository.
+The conversion, capacity policy, generation identity transfer, initialization
+factory, and lifecycle orchestration are ordinary bodyful Thermite and certify
+at L3. The application initialization function consumes the slot, calls the
+scalar/tuple machine initialization door, checks its echoed identity through
+the door contract, and constructs the sealed cell as its exact named verified
+factory. No Rust storage policy, Rust slot ledger, or parallel atomic
+implementation is present in this repository.
 
 ## Receipt-bound package graph
 
-`stdlib/kernel-primitives/atomics.thpkg.json` binds five modules:
+`stdlib/kernel-primitives/atomics.thpkg.json` binds six modules:
 
 ```text
 atomic_storage -> api -> init -> static_storage
        |           |      `-> model
-       |           `--------> model
-       `--------------------> model
+       |           |-> machine -> model
+       |           `-----------> model
+       `-----------------------> model
 ```
 
 The manifest has `api` and `atomic_storage` roots. Direct imports are explicit,
 the complete graph is source-mapped into every receipt, and replay revalidates
-all five exact files. The standalone static-storage package remains usable by a
+all six exact files. The standalone static-storage package remains usable by a
 consumer that does not need atomics.
 
 ## Identity and capacity
@@ -119,10 +123,11 @@ narrow mechanism used here.
 
 ## Assurance split
 
-All bodyful application/library functions in this package are L3. The only L1
-rows are the exact 50 atomic declarations and the two static-storage machine
-doors. Those 52 operations are bodyless because their implementations depend on
-consumer-selected memory and machine atomic operations.
+All bodyful application/library functions in this package are L3, including the
+50 atomic application operations. The only L1 rows are the matching 50 atomic
+machine doors and the two static-storage machine doors. Those 52 declarations
+are bodyless because their implementations depend on consumer-selected memory
+and machine atomic operations.
 
 `atomic_storage_capacity_probe` is a strict kernel-target L3 export with no
 reachable boundary. Its receipt compiles and executes the generated Thermite
@@ -135,15 +140,17 @@ registry binds and directly refines the exact consumer objects.
 
 `atomic_primitive_package_keeps_every_in_language_item_at_l3` requires:
 
-- every non-boundary certificate in the five-module projection to be L3;
+- all 202 non-boundary certificates in the six-module projection to be L3;
 - exactly 52 named bodyless L1 boundaries;
+- every one of the 50 atomic machine doors to have a matching bodyful L3
+  application operation;
 - nonzero mutation teeth for every new identity, conversion, and lifecycle
   function;
 - duplicate slot use to fail L3 certification;
 - foreign opaque slot construction to fail at package validation;
 - strict kernel ordering and storage receipts plus the hosted finite-history
   receipt to build and replay;
-- every receipt to bind all five package sources;
+- every receipt to bind all six package sources, including `machine.th`;
 - every reachable translation-validation row to be faithful;
 - generated storage-capacity logic to compile and execute in a separate Rust
   consumer; and
@@ -155,13 +162,13 @@ The complete atomic package source closure now has:
 
 | Metric | Value |
 |---|---:|
-| Physical Thermite LOC | 2,646 |
-| Nonblank Thermite LOC | 2,450 |
-| Thermite functions | 171 (112 executable, 59 specification) |
-| Bodyful executable Thermite functions | 60 |
-| In-language L3 certificate rows | 149 |
+| Physical Thermite LOC | 3,413 |
+| Nonblank Thermite LOC | 3,152 |
+| Thermite functions | 237 (178 executable, 59 specification) |
+| Bodyful executable Thermite functions | 126 |
+| In-language L3 certificate rows | 202 |
+| Bodyful L3 atomic application operations | 50 |
 | Frozen boundary declarations | 52 at L1 |
-| Executable mutants killed | 272/279 |
 | Ordinary Rust kernel-policy/algorithm LOC | 0 |
 | Bundled Rust/assembly machine implementations | 0 |
 

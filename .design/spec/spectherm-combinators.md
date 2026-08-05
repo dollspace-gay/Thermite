@@ -3,7 +3,7 @@
 tier: 3-component
 status: draft
 audited-sha: 92396428567edc6940a9e2845217f5ff4c2ea3c6 (re-pinned 2026-06-16, user-authorized: the only change to this doc's governed files since the prior pin is the additive stage-1 forge-tier increment 2a — the new Item::Forge surface + inert Item::Forge match arms, verified net-additive with no substantive removal of existing v1 logic (git log <main>..HEAD = the 8 forge commits); the v1 behavior this doc governs is unchanged, and the new forge-tier surface is specified in .design/stage1-forge-tier.md / REQ-S1-3)
-audited-content-sha256: c7793c128cbe7abc69cd1492e95fea307141ce2d7279be1caa9848d201272b49 (re-pinned 2026-08-05 after exact two-index relation validation; combinator semantics are unchanged)
+audited-content-sha256: 0911551398ee827fb4d80ad744a7262ddbab60bcad7107945ea5e0cff5057bf6 (re-pinned 2026-08-05 after exact two-index relation validation; combinator semantics are unchanged)
 governs: thermite-spec/src/combinators.rs, thermite-spec/src/validator.rs
 thesis-refs:
   - thermite-design.md §4.1
@@ -39,8 +39,10 @@ This doc's REQs are SHIPPED: the registry (`combinators.rs`) + the validator
 > exhaustiveness (`.design/basis/01-adts.md`), the recursion-SCHEME flat-step
 > cage (`SpecError::NestedScheme`, `.design/basis/02-recursion-schemes.md`),
 > the `BUILTIN_METHODS` cage admissions for Vec/String/Option/Result/Map
-> (04-collections / 07-strings / 09-option-result / 13-map), the `#[sealed]`
-> barrier (`SpecError::SealedConstruction`, 06-provenance-and-sinks), and the
+> (04-collections / 07-strings / 09-option-result / 13-map), the bare
+> `#[sealed]` barrier plus exact bodyful verified-factory form
+> (`SpecError::SealedConstruction` / `InvalidSealedFactory`,
+> 06-provenance-and-sinks), and the
 > C10 guarded-arm exhaustiveness rule (11-ergonomics) — each owned by its
 > `.design/basis/*.md` and contracted in `validator.rs`'s module-doc REQ
 > tables, NOT re-owned here. This doc continues to govern the combinator

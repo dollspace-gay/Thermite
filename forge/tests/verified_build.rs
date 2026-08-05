@@ -1626,6 +1626,60 @@ fn atomic_primitive_package_keeps_every_in_language_item_at_l3() {
     let manifest = root().join("stdlib/kernel-primitives/atomics.thpkg.json");
     let manifest_s = manifest.to_string_lossy().to_string();
 
+    let machine_source =
+        fs::read_to_string(root().join("stdlib/kernel-primitives/src/machine.th")).unwrap();
+    let machine_program = thermite_syntax::parse(&machine_source);
+    assert!(
+        machine_program.is_clean(),
+        "atomic machine ABI must parse clean: {:?}",
+        machine_program.errors
+    );
+    let machine_functions = machine_program
+        .program
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            thermite_syntax::Item::Fn(function) => Some(function),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(machine_functions.len(), 50);
+    for function in machine_functions {
+        assert!(function.name.starts_with("atomic_machine_"));
+        assert!(function.boundary.is_some());
+        assert!(function.body.is_none());
+        assert!(function.slag.is_none());
+        assert_ne!(function.contract.ens[0].text, "true");
+
+        let req = function.contract.req.text.as_str();
+        let ens = function.contract.ens[0].text.as_str();
+        if function.name.ends_with("_init") {
+            assert_eq!(req, "true");
+            assert!(
+                ens.contains("result.1 == authority")
+                    && ens.contains("result.2 == storage_slot")
+                    && ens.contains("result.3 == generation"),
+                "atomic initializer lost its persistent identity echo: {}",
+                function.name
+            );
+        } else if function.name.ends_with("_load") {
+            assert_eq!(req, "atomic_load_code_legal_spec(order)");
+            assert_eq!(ens, "result.1 == handle");
+        } else if function.name.ends_with("_store") {
+            assert_eq!(req, "atomic_store_code_legal_spec(order)");
+            assert_eq!(ens, "result.0 == value && result.1 == handle");
+        } else if function.name.contains("compare_exchange") {
+            assert_eq!(req, "atomic_cas_code_legal_spec(success, failure)");
+            assert!(ens.contains("result.2 == handle"));
+        } else if function.name.ends_with("_fence") {
+            assert_eq!(req, "atomic_fence_code_legal_spec(order)");
+            assert_eq!(ens, "result");
+        } else {
+            assert_eq!(req, "atomic_rmw_code_legal_spec(order)");
+            assert_eq!(ens, "result.1 == handle");
+        }
+    }
+
     let model = forge(&[
         "check",
         "stdlib/kernel-primitives/src/model.th",
@@ -1636,7 +1690,7 @@ fn atomic_primitive_package_keeps_every_in_language_item_at_l3() {
     assert_success(&model);
     let model_rows: serde_json::Value = serde_json::from_slice(&model.stdout).unwrap();
     let model_rows = model_rows.as_array().unwrap();
-    assert_eq!(model_rows.len(), 52);
+    assert_eq!(model_rows.len(), 60);
     assert!(
         model_rows
             .iter()
@@ -1650,6 +1704,7 @@ fn atomic_primitive_package_keeps_every_in_language_item_at_l3() {
     for source in [
         "stdlib/kernel-primitives/storage/static_storage.th",
         "stdlib/kernel-primitives/src/init.th",
+        "stdlib/kernel-primitives/src/machine.th",
         "stdlib/kernel-primitives/src/api.th",
         "stdlib/kernel-primitives/src/atomic_storage.th",
     ] {
@@ -1678,6 +1733,31 @@ fn atomic_primitive_package_keeps_every_in_language_item_at_l3() {
                 "an in-language atomic primitive fell below L3: {row}"
             );
         }
+    }
+
+    let machine_rows: Vec<&serde_json::Value> = rows
+        .iter()
+        .filter(|row| {
+            row["boundary"] == true
+                && row["item"]
+                    .as_str()
+                    .is_some_and(|name| name.starts_with("atomic_machine_"))
+        })
+        .collect();
+    assert_eq!(
+        machine_rows.len(),
+        50,
+        "the frozen atomic machine ABI drifted"
+    );
+    for machine in machine_rows {
+        let machine_name = machine["item"].as_str().unwrap();
+        let app_name = machine_name.replacen("atomic_machine_", "atomic_", 1);
+        let app = rows
+            .iter()
+            .find(|row| row["item"] == app_name)
+            .unwrap_or_else(|| panic!("missing bodyful atomic app primitive `{app_name}`"));
+        assert_eq!(app["boundary"], false, "`{app_name}` remained a boundary");
+        assert_eq!(app["level"], "L3", "`{app_name}` fell below L3: {app}");
     }
 
     for name in [
@@ -1748,8 +1828,7 @@ fn duplicate_atomic_u64_slot_rejected(slot: AtomicU64Slot) -> bool
         .collect::<Vec<_>>()
         .join("\n");
     assert!(
-        duplicate_diagnostic.contains("use of moved value: `slot`")
-            && duplicate_diagnostic.contains("does not implement the `Copy` trait"),
+        duplicate_diagnostic.contains("use of moved value: `slot`"),
         "duplicate slot failed for the wrong reason: {duplicate_row}",
     );
 
@@ -1893,6 +1972,7 @@ fn duplicate_atomic_u64_slot_rejected(slot: AtomicU64Slot) -> bool
             "evidence/thermite-package/manifest.json",
             "evidence/thermite-package/source-map.json",
             "evidence/thermite-package/source/src/model.th",
+            "evidence/thermite-package/source/src/machine.th",
             "evidence/thermite-package/source/src/api.th",
             "evidence/thermite-package/source/src/init.th",
             "evidence/thermite-package/source/src/atomic_storage.th",

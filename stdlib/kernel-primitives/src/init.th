@@ -152,6 +152,62 @@ spec fn atomic_usize_slot_matches_values_spec(
   ) && slot.atomic_slot_bytes == capacity
 }
 
+fn atomic_bool_slot_identity_values(slot: &AtomicBoolSlot) -> (usize, usize, u64)
+  req true
+  ens result.0 == slot.atomic_slot_identity.authority
+    && result.1 == slot.atomic_slot_identity.slot
+    && result.2 == slot.atomic_slot_identity.generation
+  fx pure
+{
+  (
+    slot.atomic_slot_identity.authority,
+    slot.atomic_slot_identity.slot,
+    slot.atomic_slot_identity.generation,
+  )
+}
+
+fn atomic_u32_slot_identity_values(slot: &AtomicU32Slot) -> (usize, usize, u64)
+  req true
+  ens result.0 == slot.atomic_slot_identity.authority
+    && result.1 == slot.atomic_slot_identity.slot
+    && result.2 == slot.atomic_slot_identity.generation
+  fx pure
+{
+  (
+    slot.atomic_slot_identity.authority,
+    slot.atomic_slot_identity.slot,
+    slot.atomic_slot_identity.generation,
+  )
+}
+
+fn atomic_u64_slot_identity_values(slot: &AtomicU64Slot) -> (usize, usize, u64)
+  req true
+  ens result.0 == slot.atomic_slot_identity.authority
+    && result.1 == slot.atomic_slot_identity.slot
+    && result.2 == slot.atomic_slot_identity.generation
+  fx pure
+{
+  (
+    slot.atomic_slot_identity.authority,
+    slot.atomic_slot_identity.slot,
+    slot.atomic_slot_identity.generation,
+  )
+}
+
+fn atomic_usize_slot_identity_values(slot: &AtomicUsizeSlot) -> (usize, usize, u64)
+  req true
+  ens result.0 == slot.atomic_slot_identity.authority
+    && result.1 == slot.atomic_slot_identity.slot
+    && result.2 == slot.atomic_slot_identity.generation
+  fx pure
+{
+  (
+    slot.atomic_slot_identity.authority,
+    slot.atomic_slot_identity.slot,
+    slot.atomic_slot_identity.generation,
+  )
+}
+
 fn atomic_init_capacity_legal(
   width: u8,
   capacity: usize,

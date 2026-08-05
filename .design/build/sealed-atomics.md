@@ -8,6 +8,7 @@ governs:
   - stdlib/kernel-primitives/atomics.thpkg.json
   - stdlib/kernel-primitives/src/model.th
   - stdlib/kernel-primitives/src/init.th
+  - stdlib/kernel-primitives/src/machine.th
   - stdlib/kernel-primitives/src/api.th
   - stdlib/kernel-primitives/src/atomic_storage.th
   - stdlib/kernel-primitives/storage/static_storage.th
@@ -15,7 +16,7 @@ governs:
   - thermite-spec/tests/atomic_ordering_validate.rs
   - forge/src/verified_build/primitive_registry.rs
   - forge/tests/verified_build.rs
-audited-content-sha256: 73d3aa7e0c4ccfbdc8e3c1806745bd3934c0e13683d451e94fd25b82fd650d98 (re-pinned 2026-08-05 after making shared registry diagnostics version-neutral; atomic semantics unchanged)
+audited-content-sha256: 0d289dd985c6d8e23ed02786abbe5a2ceb488535cdbe382008231a4930191c91 (re-pinned 2026-08-05 after making shared registry diagnostics version-neutral; atomic semantics unchanged)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/frozen-primitive-registry.md
@@ -35,11 +36,11 @@ choose a scheduler or synchronization policy, boot a machine, or claim that a
 host proof refines a target instruction.
 
 The package is `stdlib/kernel-primitives/atomics.thpkg.json`. Its `api` and
-`atomic_storage` roots bind the atomic model, typed initialization policy,
-static-storage ownership protocol, machine declarations, and lifecycle
-composition through the ordinary receipt-bound package mechanism. Every
-consumer therefore receives the same source identities and transitive closure
-rather than copying declarations into a private kernel tree.
+`atomic_storage` roots bind six modules: the atomic model, typed initialization
+policy, static-storage ownership protocol, scalar/tuple machine declarations,
+application API, and lifecycle composition. Every consumer therefore receives
+the same source identities and transitive closure rather than copying
+declarations into a private kernel tree.
 
 ## Source surface
 
@@ -57,13 +58,16 @@ enum AtomicOrdering {
 
 There are opaque initialization-slot and sealed cell-handle types for `bool`,
 `u32`, `u64`, and `usize`. Ordinary foreign Thermite code cannot construct a
-slot or cell. An L3 converter consumes a generation-bound committed
-`StaticStorageRegion` to produce a typed slot, and initialization consumes that
-slot by value to return the corresponding cell. Duplicate use and foreign slot
-construction are pinned negative tests. The exact protocol is specified in
-`.design/build/atomic-storage-initialization.md`.
+slot or cell. Each cell uses `#[sealed("atomic_*_init")]`: exactly its named,
+bodyful L3 initialization function may construct the representation, while the
+bare `#[sealed]` form remains boundary-only. An L3 converter consumes a
+generation-bound committed `StaticStorageRegion` to produce a typed slot, and
+initialization consumes that slot by value to return the corresponding cell.
+Duplicate use, a second construction function, invalid factory declarations,
+and foreign slot construction are pinned negative tests. The exact protocol is
+specified in `.design/build/atomic-storage-initialization.md`.
 
-The 50 frozen declarations are:
+The 50 application operations are:
 
 - four initialization operations;
 - four loads, four stores, and four swaps;
@@ -73,9 +77,17 @@ The 50 frozen declarations are:
 - `u32`, `u64`, and `usize` fetch-and/or/xor/min/max; and
 - compiler and hardware fences.
 
-Every declaration is bodyless, has `fx platform(atomic)`, and names an exact
-`thermite::atomic::*` boundary target. The package intentionally contains no
-parallel Rust implementation.
+Every application operation is a bodyful Thermite function proved at L3. The
+application functions validate ordering, consume or borrow the sealed handle,
+call one irreducible machine door, and construct the observation, transition,
+write, or fence receipt in Thermite. A separate `machine.th` module contains
+exactly 50 bodyless L1 declarations with `fx platform(atomic)` and exact
+`thermite::atomic::*` targets. Those doors expose only scalar/tuple ABI values:
+initialization returns a handle while echoing authority/slot/generation; cell
+operations echo the handle; stores echo the written value; CAS returns its
+observed value and success flag; and fences acknowledge completion. Each door
+requires the exact legal ordering code. The package intentionally contains no
+parallel Rust or assembly implementation.
 
 Operations return explicit observation, transition, write, or fence values.
 These values expose the observed/next value, cell identity, success state, and
@@ -104,9 +116,11 @@ Compare-exchange is the exact success/failure relation below:
 | `AcqRel` | `Relaxed`, `Acquire` |
 | `SeqCst` | `Relaxed`, `Acquire`, `SeqCst` |
 
-The validator discovers ordering-sensitive calls from the callee declaration's
-exact boundary target, not from a source-name prefix. This keeps the rule inert
-for unrelated user functions. For a recognized call it rejects, before
+The validator derives each canonical application name from the machine
+declaration's exact boundary target, not from a source-name prefix. Application
+calls therefore retain the pre-codegen enum-ordering gate, while the internal
+machine door receives the L3-proved `u8` code. This keeps the rule inert for
+unrelated user functions. For a recognized application call it rejects, before
 lowering:
 
 - a nonliteral or dynamically selected order;
@@ -153,13 +167,14 @@ boundary.
 
 ## Verification and target split
 
-The assurance-floor gate checks the dependency-first five-module projection as
-one program. It requires every non-boundary certificate row to be L3 and
-requires exactly 52 boundary rows, all at L1: the 50 atomic declarations plus
-the two static-storage machine doors. The standalone model has 52 certificate
-rows and every one must remain non-boundary L3. This is a whole-source
-assertion: adding an unproved bodyful helper fails the gate even if the public
-receipt probes still pass.
+The assurance-floor gate checks the dependency-first six-module projection as
+one program. It requires all 202 non-boundary certificate rows to be L3 and
+requires exactly 52 boundary rows, all at L1: the 50 atomic machine doors plus
+the two static-storage machine doors. It also pairs every `atomic_machine_*`
+door with the corresponding bodyful `atomic_*` L3 application operation. The
+standalone model has 60 certificate rows and every one must remain non-boundary
+L3. This is a whole-source assertion: adding an unproved bodyful helper fails
+the gate even if the public receipt probes still pass.
 
 The package currently has three strict receipt proof surfaces:
 
@@ -173,7 +188,7 @@ The package currently has three strict receipt proof surfaces:
    This proves and executes the typed storage-capacity policy without reaching
    a machine boundary.
 
-All three bundles bind and replay the package manifest, source map, five-module
+All three bundles bind and replay the package manifest, source map, six-module
 source closure, generated Verus source, translation-validation inventory,
 toolchain, and artifact. The integration test requires assurance L3 for every
 reachable receipt member and requires every recorded TV row to be `faithful`.
@@ -236,15 +251,15 @@ The checked-in package currently has:
 
 | Metric | Value |
 |---|---:|
-| Thermite physical LOC | 2,646 |
-| Thermite nonblank LOC | 2,450 |
-| Thermite functions | 171 |
-| executable functions | 112 |
+| Thermite physical LOC | 3,413 |
+| Thermite nonblank LOC | 3,152 |
+| Thermite functions | 237 |
+| executable functions | 178 |
 | specification functions | 59 |
-| bodyful executable functions | 60 |
-| in-language L3 certificate rows | 149 |
+| bodyful executable functions | 126 |
+| in-language L3 certificate rows | 202 |
+| bodyful L3 atomic application operations | 50 |
 | frozen boundary declarations | 52 (50 atomic, 2 static storage) |
-| executable mutants killed | 272/279 |
 | ordinary Rust kernel-policy LOC | 0 |
 | bundled Rust/assembly atomic implementations | 0 |
 | reachable boundaries in either pure proof bundle | 0 |
@@ -252,7 +267,7 @@ The checked-in package currently has:
 These metrics describe the reusable primitive package only. They are not kernel
 metrics and do not imply that any machine boundary is implemented. Function and
 boundary counts are mechanically recoverable with anchored searches over the
-five package modules; LOC is the ordinary line count of those exact
+six package modules; LOC is the ordinary line count of those exact
 receipt-bound files.
 
 ## Remaining work
@@ -260,8 +275,8 @@ receipt-bound files.
 REQ-KPRIM-5 remains partial. Completion still requires:
 
 - a kernel-target proof surface for the finite history model;
-- persistent shared ABI types plus exact object/model refinement across the
-  complete consumer-supplied atomic operation and ordering matrix;
+- exact object/model refinement of the persistent scalar/tuple machine ABI
+  across the complete consumer-supplied atomic operation and ordering matrix;
 - positive composition evidence from the sealed atomic lifecycle through that
   expanded machine-aware registry; and
 - verified synchronization libraries that consume these operations without

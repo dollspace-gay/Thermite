@@ -1,0 +1,199 @@
+#[boundary("thermite::atomic::bool::init")]
+fn atomic_machine_bool_init(authority: usize, storage_slot: usize, generation: u64, initial: bool) -> (usize, usize, usize, u64)
+  req true ens result.1 == authority && result.2 == storage_slot && result.3 == generation fx platform(atomic);
+
+#[boundary("thermite::atomic::u32::init")]
+fn atomic_machine_u32_init(authority: usize, storage_slot: usize, generation: u64, initial: u32) -> (usize, usize, usize, u64)
+  req true ens result.1 == authority && result.2 == storage_slot && result.3 == generation fx platform(atomic);
+
+#[boundary("thermite::atomic::u64::init")]
+fn atomic_machine_u64_init(authority: usize, storage_slot: usize, generation: u64, initial: u64) -> (usize, usize, usize, u64)
+  req true ens result.1 == authority && result.2 == storage_slot && result.3 == generation fx platform(atomic);
+
+#[boundary("thermite::atomic::usize::init")]
+fn atomic_machine_usize_init(authority: usize, storage_slot: usize, generation: u64, initial: usize) -> (usize, usize, usize, u64)
+  req true ens result.1 == authority && result.2 == storage_slot && result.3 == generation fx platform(atomic);
+
+#[boundary("thermite::atomic::bool::load")]
+fn atomic_machine_bool_load(handle: usize, order: u8) -> (bool, usize)
+  req atomic_load_code_legal_spec(order) ens result.1 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::u32::load")]
+fn atomic_machine_u32_load(handle: usize, order: u8) -> (u32, usize)
+  req atomic_load_code_legal_spec(order) ens result.1 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::u64::load")]
+fn atomic_machine_u64_load(handle: usize, order: u8) -> (u64, usize)
+  req atomic_load_code_legal_spec(order) ens result.1 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::usize::load")]
+fn atomic_machine_usize_load(handle: usize, order: u8) -> (usize, usize)
+  req atomic_load_code_legal_spec(order) ens result.1 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::bool::store")]
+fn atomic_machine_bool_store(handle: usize, value: bool, order: u8) -> (bool, usize)
+  req atomic_store_code_legal_spec(order) ens result.0 == value && result.1 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::u32::store")]
+fn atomic_machine_u32_store(handle: usize, value: u32, order: u8) -> (u32, usize)
+  req atomic_store_code_legal_spec(order) ens result.0 == value && result.1 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::u64::store")]
+fn atomic_machine_u64_store(handle: usize, value: u64, order: u8) -> (u64, usize)
+  req atomic_store_code_legal_spec(order) ens result.0 == value && result.1 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::usize::store")]
+fn atomic_machine_usize_store(handle: usize, value: usize, order: u8) -> (usize, usize)
+  req atomic_store_code_legal_spec(order) ens result.0 == value && result.1 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::bool::swap")]
+fn atomic_machine_bool_swap(handle: usize, value: bool, order: u8) -> (bool, usize)
+  req atomic_rmw_code_legal_spec(order) ens result.1 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::u32::swap")]
+fn atomic_machine_u32_swap(handle: usize, value: u32, order: u8) -> (u32, usize)
+  req atomic_rmw_code_legal_spec(order) ens result.1 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::u64::swap")]
+fn atomic_machine_u64_swap(handle: usize, value: u64, order: u8) -> (u64, usize)
+  req atomic_rmw_code_legal_spec(order) ens result.1 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::usize::swap")]
+fn atomic_machine_usize_swap(handle: usize, value: usize, order: u8) -> (usize, usize)
+  req atomic_rmw_code_legal_spec(order) ens result.1 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::bool::compare_exchange")]
+fn atomic_machine_bool_compare_exchange(handle: usize, current: bool, value: bool, success: u8, failure: u8) -> (bool, bool, usize)
+  req atomic_cas_code_legal_spec(success, failure) ens result.1 == (result.0 == current) && result.2 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::u32::compare_exchange")]
+fn atomic_machine_u32_compare_exchange(handle: usize, current: u32, value: u32, success: u8, failure: u8) -> (u32, bool, usize)
+  req atomic_cas_code_legal_spec(success, failure) ens result.1 == (result.0 == current) && result.2 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::u64::compare_exchange")]
+fn atomic_machine_u64_compare_exchange(handle: usize, current: u64, value: u64, success: u8, failure: u8) -> (u64, bool, usize)
+  req atomic_cas_code_legal_spec(success, failure) ens result.1 == (result.0 == current) && result.2 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::usize::compare_exchange")]
+fn atomic_machine_usize_compare_exchange(handle: usize, current: usize, value: usize, success: u8, failure: u8) -> (usize, bool, usize)
+  req atomic_cas_code_legal_spec(success, failure) ens result.1 == (result.0 == current) && result.2 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::bool::compare_exchange_weak")]
+fn atomic_machine_bool_compare_exchange_weak(handle: usize, current: bool, value: bool, success: u8, failure: u8) -> (bool, bool, usize)
+  req atomic_cas_code_legal_spec(success, failure) ens (!result.1 || result.0 == current) && result.2 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::u32::compare_exchange_weak")]
+fn atomic_machine_u32_compare_exchange_weak(handle: usize, current: u32, value: u32, success: u8, failure: u8) -> (u32, bool, usize)
+  req atomic_cas_code_legal_spec(success, failure) ens (!result.1 || result.0 == current) && result.2 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::u64::compare_exchange_weak")]
+fn atomic_machine_u64_compare_exchange_weak(handle: usize, current: u64, value: u64, success: u8, failure: u8) -> (u64, bool, usize)
+  req atomic_cas_code_legal_spec(success, failure) ens (!result.1 || result.0 == current) && result.2 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::usize::compare_exchange_weak")]
+fn atomic_machine_usize_compare_exchange_weak(handle: usize, current: usize, value: usize, success: u8, failure: u8) -> (usize, bool, usize)
+  req atomic_cas_code_legal_spec(success, failure) ens (!result.1 || result.0 == current) && result.2 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::bool::fetch_and")]
+fn atomic_machine_bool_fetch_and(handle: usize, value: bool, order: u8) -> (bool, usize)
+  req atomic_rmw_code_legal_spec(order) ens result.1 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::bool::fetch_or")]
+fn atomic_machine_bool_fetch_or(handle: usize, value: bool, order: u8) -> (bool, usize)
+  req atomic_rmw_code_legal_spec(order) ens result.1 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::bool::fetch_xor")]
+fn atomic_machine_bool_fetch_xor(handle: usize, value: bool, order: u8) -> (bool, usize)
+  req atomic_rmw_code_legal_spec(order) ens result.1 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::u32::fetch_add")]
+fn atomic_machine_u32_fetch_add(handle: usize, value: u32, order: u8) -> (u32, usize)
+  req atomic_rmw_code_legal_spec(order) ens result.1 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::u32::fetch_sub")]
+fn atomic_machine_u32_fetch_sub(handle: usize, value: u32, order: u8) -> (u32, usize)
+  req atomic_rmw_code_legal_spec(order) ens result.1 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::u64::fetch_add")]
+fn atomic_machine_u64_fetch_add(handle: usize, value: u64, order: u8) -> (u64, usize)
+  req atomic_rmw_code_legal_spec(order) ens result.1 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::u64::fetch_sub")]
+fn atomic_machine_u64_fetch_sub(handle: usize, value: u64, order: u8) -> (u64, usize)
+  req atomic_rmw_code_legal_spec(order) ens result.1 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::usize::fetch_add")]
+fn atomic_machine_usize_fetch_add(handle: usize, value: usize, order: u8) -> (usize, usize)
+  req atomic_rmw_code_legal_spec(order) ens result.1 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::usize::fetch_sub")]
+fn atomic_machine_usize_fetch_sub(handle: usize, value: usize, order: u8) -> (usize, usize)
+  req atomic_rmw_code_legal_spec(order) ens result.1 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::u32::fetch_and")]
+fn atomic_machine_u32_fetch_and(handle: usize, value: u32, order: u8) -> (u32, usize)
+  req atomic_rmw_code_legal_spec(order) ens result.1 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::u32::fetch_or")]
+fn atomic_machine_u32_fetch_or(handle: usize, value: u32, order: u8) -> (u32, usize)
+  req atomic_rmw_code_legal_spec(order) ens result.1 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::u32::fetch_xor")]
+fn atomic_machine_u32_fetch_xor(handle: usize, value: u32, order: u8) -> (u32, usize)
+  req atomic_rmw_code_legal_spec(order) ens result.1 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::u64::fetch_and")]
+fn atomic_machine_u64_fetch_and(handle: usize, value: u64, order: u8) -> (u64, usize)
+  req atomic_rmw_code_legal_spec(order) ens result.1 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::u64::fetch_or")]
+fn atomic_machine_u64_fetch_or(handle: usize, value: u64, order: u8) -> (u64, usize)
+  req atomic_rmw_code_legal_spec(order) ens result.1 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::u64::fetch_xor")]
+fn atomic_machine_u64_fetch_xor(handle: usize, value: u64, order: u8) -> (u64, usize)
+  req atomic_rmw_code_legal_spec(order) ens result.1 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::usize::fetch_and")]
+fn atomic_machine_usize_fetch_and(handle: usize, value: usize, order: u8) -> (usize, usize)
+  req atomic_rmw_code_legal_spec(order) ens result.1 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::usize::fetch_or")]
+fn atomic_machine_usize_fetch_or(handle: usize, value: usize, order: u8) -> (usize, usize)
+  req atomic_rmw_code_legal_spec(order) ens result.1 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::usize::fetch_xor")]
+fn atomic_machine_usize_fetch_xor(handle: usize, value: usize, order: u8) -> (usize, usize)
+  req atomic_rmw_code_legal_spec(order) ens result.1 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::u32::fetch_min")]
+fn atomic_machine_u32_fetch_min(handle: usize, value: u32, order: u8) -> (u32, usize)
+  req atomic_rmw_code_legal_spec(order) ens result.1 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::u32::fetch_max")]
+fn atomic_machine_u32_fetch_max(handle: usize, value: u32, order: u8) -> (u32, usize)
+  req atomic_rmw_code_legal_spec(order) ens result.1 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::u64::fetch_min")]
+fn atomic_machine_u64_fetch_min(handle: usize, value: u64, order: u8) -> (u64, usize)
+  req atomic_rmw_code_legal_spec(order) ens result.1 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::u64::fetch_max")]
+fn atomic_machine_u64_fetch_max(handle: usize, value: u64, order: u8) -> (u64, usize)
+  req atomic_rmw_code_legal_spec(order) ens result.1 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::usize::fetch_min")]
+fn atomic_machine_usize_fetch_min(handle: usize, value: usize, order: u8) -> (usize, usize)
+  req atomic_rmw_code_legal_spec(order) ens result.1 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::usize::fetch_max")]
+fn atomic_machine_usize_fetch_max(handle: usize, value: usize, order: u8) -> (usize, usize)
+  req atomic_rmw_code_legal_spec(order) ens result.1 == handle fx platform(atomic);
+
+#[boundary("thermite::atomic::compiler_fence")]
+fn atomic_machine_compiler_fence(order: u8) -> bool
+  req atomic_fence_code_legal_spec(order) ens result fx platform(atomic);
+
+#[boundary("thermite::atomic::hardware_fence")]
+fn atomic_machine_hardware_fence(order: u8) -> bool
+  req atomic_fence_code_legal_spec(order) ens result fx platform(atomic);

@@ -15,7 +15,7 @@ governs:
   - forge/tests/body_tv.rs
   - forge/tests/verified_build.rs
   - conformance/verified-build/owned_aggregate_lifecycle.th
-audited-content-sha256: ccff7bd45ade692844ac70f14f8f0ded5b4214cf2ec2e9abe239617ed28254f9 (re-pinned 2026-08-05 after exact projected-indexed calls joined owned lifecycle TV)
+audited-content-sha256: d97b3b61c3b6d8c64d0cd66fb8aef2fff8842f7c1c15a1bacc843659860c4812 (re-pinned 2026-08-05 after leafwise record-after-indexed calls joined owned lifecycle TV and legacy nested evidence was updated)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/named-record-lifecycle.md
@@ -148,8 +148,9 @@ nominally exact direct/projected shared finite-record snapshots that do not
 overlap an exclusive access path and exact direct/projected shared slice/fixed-array
 snapshots with the same rule. Complete indexed sequence state is threaded
 through callee writes, later reads, shared snapshots, result binding, and
-copy-back. Array-element-root actuals, native record materialization after a
-descendant sequence overlay, nested/general returned-value
+copy-back, including leafwise rebasing through a later direct/projected mutable
+record call or shared record snapshot. Array-element-root actuals, general
+whole-record value/result materialization after a descendant sequence overlay, nested/general returned-value
 expressions, bodyless boundary functions, platform
 effects, allocation, unresolved calls, recursive effect cycles, and other
 non-admitted effects remain fail-closed.
@@ -224,8 +225,8 @@ The exact typed nested-field and terminal fixed-array projection subset is now
 shipped by `.design/build/nested-aggregate-lifecycle.md`; exact record-state
 loops are supplied by `.design/build/record-state-loops.md`. This increment still
 does not claim mutable enum payloads, index-then-field aliasing,
-array-element-root call effects, native record materialization after a
-descendant sequence overlay, nested or
+array-element-root call effects, general whole-record value/result
+materialization after a descendant sequence overlay, nested or
 general mutable-call result expressions, static global ownership, affine uniqueness, concurrent
 record access, atomic object/machine refinement, or Rust/assembly TPL refinement.
 It does not add or package a kernel.

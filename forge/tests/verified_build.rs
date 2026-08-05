@@ -1561,6 +1561,163 @@ fn main() {
 }
 
 #[test]
+fn record_after_indexed_call_effect_is_strict_l3_replayed_and_executed() {
+    let temp = TempDir::new("record-after-indexed-call-effect");
+    let bundle = temp.0.join("record-after-indexed-call-effect.verified");
+    let bundle_s = bundle.to_string_lossy().to_string();
+    assert_success(&forge(&[
+        "build",
+        "conformance/verified-build/record_after_indexed_call_effect.th",
+        "--level",
+        "l3",
+        "--export",
+        "record_after_indexed_pipeline",
+        "--export",
+        "record_after_indexed_left_zero",
+        "--export",
+        "record_after_indexed_left_one",
+        "--export",
+        "record_after_indexed_left_guard",
+        "--export",
+        "record_after_indexed_right_zero",
+        "--export",
+        "record_after_indexed_right_one",
+        "--export",
+        "record_after_indexed_right_guard",
+        "--export",
+        "record_after_indexed_tag",
+        "--crate-name",
+        "record_after_indexed_call_effect",
+        "--target",
+        "kernel",
+        "--out",
+        &bundle_s,
+        "--json",
+    ]));
+    assert_success(&forge(&["verify-build", &bundle_s, "--replay", "--json"]));
+
+    let source = fs::read_to_string(bundle.join("evidence/source.verus.rs")).unwrap();
+    assert!(source.starts_with("#![no_std]\n"), "{source}");
+    assert!(
+        source.contains("record_after_indexed_write(&mut outer.left.slots, value)")
+            && source.contains("record_after_indexed_advance(&mut outer.left, next_guard)",)
+            && source.contains("record_after_indexed_copy(&mut outer.right, &outer.left)"),
+        "{source}"
+    );
+    assert!(!source.contains("external_body"), "{source}");
+
+    let consumer_source = temp.0.join("record-after-indexed-call-effect-consumer.rs");
+    fs::write(
+        &consumer_source,
+        r#"
+use record_after_indexed_call_effect::{
+    record_after_indexed_left_guard, record_after_indexed_left_one,
+    record_after_indexed_left_zero, record_after_indexed_pipeline,
+    record_after_indexed_right_guard, record_after_indexed_right_one,
+    record_after_indexed_right_zero, record_after_indexed_tag,
+    RecordAfterIndexedBank, RecordAfterIndexedOuter,
+};
+
+fn main() {
+    let mut outer = RecordAfterIndexedOuter {
+        left: RecordAfterIndexedBank { slots: [3, 4], guard: 5 },
+        right: RecordAfterIndexedBank { slots: [6, 7], guard: 8 },
+        tag: 9,
+    };
+    assert_eq!(record_after_indexed_pipeline(&mut outer, 41, 55), 41);
+    assert_eq!(record_after_indexed_left_zero(&outer), 41);
+    assert_eq!(record_after_indexed_left_one(&outer), 41);
+    assert_eq!(record_after_indexed_left_guard(&outer), 55);
+    assert_eq!(record_after_indexed_right_zero(&outer), 41);
+    assert_eq!(record_after_indexed_right_one(&outer), 7);
+    assert_eq!(record_after_indexed_right_guard(&outer), 8);
+    assert_eq!(record_after_indexed_tag(&outer), 9);
+}
+"#,
+    )
+    .unwrap();
+    let consumer = temp.0.join("record-after-indexed-call-effect-consumer");
+    let link = codegen_rustc(&bundle)
+        .current_dir(root())
+        .arg("--edition=2021")
+        .arg(&consumer_source)
+        .arg("--extern")
+        .arg(format!(
+            "record_after_indexed_call_effect={}",
+            bundle
+                .join("artifact/librecord_after_indexed_call_effect.rlib")
+                .display()
+        ))
+        .arg("-L")
+        .arg(format!(
+            "dependency={}",
+            bundle.join("artifact/deps").display()
+        ))
+        .args(["-C", "panic=abort"])
+        .arg("-o")
+        .arg(&consumer)
+        .output()
+        .unwrap();
+    assert_success(&link);
+    assert_success(&Command::new(&consumer).output().unwrap());
+
+    let receipt: serde_json::Value =
+        serde_json::from_slice(&fs::read(bundle.join("receipt.json")).unwrap()).unwrap();
+    assert_eq!(receipt["binding"]["assurance"], "L3");
+    assert_eq!(receipt["binding"]["target"], "kernel");
+    assert!(receipt["binding"]["assurance_aggregate"]["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|member| member["achieved"] == "L3"));
+
+    let tv: serde_json::Value = serde_json::from_slice(
+        &fs::read(bundle.join("evidence/translation-validation.json")).unwrap(),
+    )
+    .unwrap();
+    let rows = tv["rows"].as_array().unwrap();
+    assert_eq!(rows.len(), 59, "{tv}");
+    assert!(
+        rows.iter().all(|row| row["verdict"] == "faithful"),
+        "record-after-indexed lifecycle admitted a non-faithful row: {tv}"
+    );
+    assert!(rows.iter().any(|row| {
+        row["phase"] == "body"
+            && row["label"] == "record_after_indexed_pipeline"
+            && row["verdict"] == "faithful"
+    }));
+    for effectful_let in [
+        "record_after_indexed_pipeline.let#1",
+        "record_after_indexed_pipeline.let#2",
+        "record_after_indexed_pipeline.let#3",
+    ] {
+        assert!(!rows
+            .iter()
+            .any(|row| row["phase"] == "exec" && row["label"] == effectful_let));
+    }
+
+    let tampered = temp
+        .0
+        .join("record-after-indexed-call-effect-tampered.verified");
+    copy_tree(&bundle, &tampered);
+    let input = tampered.join("evidence/input.th");
+    let original = fs::read_to_string(&input).unwrap();
+    let changed = original.replacen(
+        "&mut outer.left,\n    next_guard",
+        "&mut outer.right,\n    next_guard",
+        1,
+    );
+    assert_ne!(changed, original);
+    fs::write(&input, changed).unwrap();
+    assert!(
+        !forge(&["verify-build", tampered.to_string_lossy().as_ref()])
+            .status
+            .success(),
+        "changing the record actual after indexed state must invalidate the receipt"
+    );
+}
+
+#[test]
 fn mutable_indexed_call_effect_is_strict_l3_replayed_and_executed() {
     let temp = TempDir::new("mutable-indexed-call-effect");
     let bundle = temp.0.join("mutable-indexed-call-effect.verified");

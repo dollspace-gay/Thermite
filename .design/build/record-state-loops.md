@@ -15,7 +15,7 @@ governs:
   - forge/src/body_tv.rs
   - forge/tests/verified_build.rs
   - conformance/verified-build/record_state_loop.th
-audited-content-sha256: d0c9cd5a23b32a99bd75444f1d4fc589bad36e8e64ca1e9e963b6ce732e65a08 (re-pinned 2026-08-05 after orthogonal projected-indexed state framing; loop semantics remain regression-covered)
+audited-content-sha256: 159ca4c3197d8afc5e5b8b5a8695c2e040e4bfe7bcf2f305339bb05b95100325 (re-pinned 2026-08-05 after orthogonal record-formal overlay framing; loop semantics remain regression-covered)
 extends:
   - .design/verified/loop-tv.md
   - .design/build/nested-aggregate-lifecycle.md

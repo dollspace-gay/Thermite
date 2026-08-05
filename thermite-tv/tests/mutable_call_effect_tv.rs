@@ -199,6 +199,29 @@ fn copy_array(destination: &mut [u64; SLOTS], source: &[u64; SLOTS]) -> u64
   destination[0] = source[0];
   destination[0]
 }
+fn advance_bank(bank: &mut Bank, next_guard: u64) -> u64
+  req true
+  ens result == old(bank).slots[0]
+  ens final(bank).slots[0] == old(bank).slots[0]
+  ens final(bank).slots[1] == old(bank).slots[0]
+  ens final(bank).guard == next_guard
+  fx pure
+{
+  bank.slots[1] = bank.slots[0];
+  bank.guard = next_guard;
+  bank.slots[1]
+}
+fn copy_bank(destination: &mut Bank, source: &Bank) -> u64
+  req true
+  ens result == source.slots[0]
+  ens final(destination).slots[0] == source.slots[0]
+  ens final(destination).slots[1] == old(destination).slots[1]
+  ens final(destination).guard == old(destination).guard
+  fx pure
+{
+  destination.slots[0] = source.slots[0];
+  destination.slots[0]
+}
 fn projected_array_pipeline(outer: &mut ArrayOuter, value: u64) -> u64
   req value < 1000
   ens result == value
@@ -213,6 +236,23 @@ fn projected_array_pipeline(outer: &mut ArrayOuter, value: u64) -> u64
   let observed: u64 = copy_array(&mut outer.right.slots, &outer.left.slots);
   observed
 }
+fn record_after_array_pipeline(outer: &mut ArrayOuter, value: u64, next_guard: u64) -> u64
+  req value < 1000
+  ens result == value
+  ens final(outer).left.slots[0] == value
+  ens final(outer).left.slots[1] == value
+  ens final(outer).left.guard == next_guard
+  ens final(outer).right.slots[0] == value
+  ens final(outer).right.slots[1] == old(outer).right.slots[1]
+  ens final(outer).right.guard == old(outer).right.guard
+  ens final(outer).tag == old(outer).tag
+  fx pure
+{
+  let written: u64 = write_array(&mut outer.left.slots, value);
+  let advanced: u64 = advance_bank(&mut outer.left, next_guard);
+  let copied: u64 = copy_bank(&mut outer.right, &outer.left);
+  copied
+}
 "#;
 
 const PROJECTED_INDEXED_DEFINITIONS: &str = r#"
@@ -223,6 +263,7 @@ pub struct ArrayOuter { pub left: Bank, pub right: Bank, pub tag: u64 }
 fn write_array(data: &mut [u64; SLOTS], value: u64) -> (result: u64)
     ensures
         result == value,
+        final(data)@ == old(data)@.update(0, value),
         final(data)@[0] == value,
         final(data)@[1] == old(data)@[1],
 {
@@ -233,11 +274,45 @@ fn write_array(data: &mut [u64; SLOTS], value: u64) -> (result: u64)
 fn copy_array(destination: &mut [u64; SLOTS], source: &[u64; SLOTS]) -> (result: u64)
     ensures
         result == source@[0],
+        final(destination)@ == old(destination)@.update(0, source@[0]),
         final(destination)@[0] == source@[0],
         final(destination)@[1] == old(destination)@[1],
 {
     destination[0] = source[0];
     destination[0]
+}
+
+fn advance_bank(bank: &mut Bank, next_guard: u64) -> (result: u64)
+    ensures
+        result == old(bank).slots@[0],
+        final(bank).slots@ == old(bank).slots@.update(1, old(bank).slots@[0]),
+        final(bank).slots@[0] == old(bank).slots@[0],
+        final(bank).slots@[1] == old(bank).slots@[0],
+        final(bank).guard == next_guard,
+{
+    bank.slots[1] = bank.slots[0];
+    bank.guard = next_guard;
+    bank.slots[1]
+}
+
+fn copy_bank(destination: &mut Bank, source: &Bank) -> (result: u64)
+    ensures
+        result == source.slots@[0],
+        *final(destination) == (Bank {
+            slots: vstd::array::spec_array_update(
+                old(destination).slots,
+                0,
+                source.slots@[0],
+            ),
+            guard: old(destination).guard,
+        }),
+        final(destination).slots@ == old(destination).slots@.update(0, source.slots@[0]),
+        final(destination).slots@[0] == source.slots@[0],
+        final(destination).slots@[1] == old(destination).slots@[1],
+        final(destination).guard == old(destination).guard,
+{
+    destination.slots[0] = source.slots[0];
+    destination.slots[0]
 }
 "#;
 
@@ -389,6 +464,9 @@ fn projected_indexed_frame() -> BodyObligationFrame {
         fixed_array_fields: vec![
             "outer.left.slots".to_string(),
             "outer.right.slots".to_string(),
+            "bank.slots".to_string(),
+            "destination.slots".to_string(),
+            "source.slots".to_string(),
         ],
         mutable_records: vec![MutableRecordFrame::typed(
             "outer",
@@ -414,6 +492,31 @@ fn projected_indexed_frame() -> BodyObligationFrame {
                 slots_type.clone(),
             )])
             .with_shared_indexed(vec![SharedIndexedFrame::new("source", slots_type)]),
+            MutableCallEffectFrame::new(
+                "advance_bank",
+                vec!["bank".to_string(), "next_guard".to_string()],
+                vec![MutableRecordFrame::typed(
+                    "bank",
+                    "Bank",
+                    bank_fields.clone(),
+                )],
+                function_body_in(PROJECTED_INDEXED_SOURCE, "advance_bank"),
+            ),
+            MutableCallEffectFrame::new(
+                "copy_bank",
+                vec!["destination".to_string(), "source".to_string()],
+                vec![MutableRecordFrame::typed(
+                    "destination",
+                    "Bank",
+                    bank_fields.clone(),
+                )],
+                function_body_in(PROJECTED_INDEXED_SOURCE, "copy_bank"),
+            )
+            .with_shared_records(vec![SharedRecordFrame::typed(
+                "source",
+                "Bank",
+                bank_fields.clone(),
+            )]),
         ],
         named_records: vec![
             NamedRecordFrame::new("Bank", bank_fields),
@@ -706,6 +809,41 @@ fn projected_indexed_calls_compose_nested_sequence_state_at_l3() {
     )
     .expect("projected-indexed mutant obligation");
     assert_verus("projected_indexed_calls_mutant", &mutant, false);
+}
+
+#[test]
+fn record_calls_consume_and_copy_back_projected_sequence_state_at_l3() {
+    let body = function_body_in(PROJECTED_INDEXED_SOURCE, "record_after_array_pipeline");
+    let mut frame = projected_indexed_frame();
+    frame.params.push(BodyParamDecl::new("next_guard", "u64"));
+    let production = r#"    let written: u64 = write_array(&mut outer.left.slots, value);
+    let advanced: u64 = advance_bank(&mut outer.left, next_guard);
+    let copied: u64 = copy_bank(&mut outer.right, &outer.left);
+    copied
+"#;
+    let obligation = body_equivalence_obligation(&body, production, &frame)
+        .expect("record calls after projected sequence state");
+    assert!(
+        obligation.contains("final(outer).left.slots@ =="),
+        "{obligation}"
+    );
+    assert!(obligation.contains("guard: next_guard"), "{obligation}");
+    assert!(
+        obligation.contains("final(outer).right.slots@ =="),
+        "{obligation}"
+    );
+    assert_verus("record_after_projected_sequence", &obligation, true);
+
+    let mutant = body_equivalence_obligation(
+        &body,
+        r#"    let written: u64 = write_array(&mut outer.left.slots, value);
+    let copied: u64 = copy_bank(&mut outer.right, &outer.left);
+    copied
+"#,
+        &frame,
+    )
+    .expect("record-after-sequence mutant obligation");
+    assert_verus("record_after_projected_sequence_mutant", &mutant, false);
 }
 
 #[test]

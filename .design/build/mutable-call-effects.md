@@ -20,7 +20,8 @@ governs:
   - conformance/verified-build/mixed_indexed_call_effect.th
   - conformance/verified-build/projected_record_call_effect.th
   - conformance/verified-build/projected_indexed_call_effect.th
-audited-content-sha256: f8c0f124a921d07d89ab36743db16796ba60c0f863c309a06527c49fe8817b9f (re-pinned 2026-08-05 after projected indexed-storage copy-in/copy-back, leaf framing, structural aliasing, and strict L3 runtime evidence)
+  - conformance/verified-build/record_after_indexed_call_effect.th
+audited-content-sha256: 326286d6913c53fe8e5c07e115696398db47ddf5acf820373a0a707fad494ecf (leafwise record-call composition after projected indexed state and strict L3 runtime evidence added 2026-08-05)
 extends:
   - .design/build/nested-aggregate-lifecycle.md
   - .design/build/owned-aggregate-lifecycle.md
@@ -87,7 +88,10 @@ lifecycle semantics applies a call as follows:
 5. copy every formal post-state field or complete sequence back to its caller
    path; projected record copy-back reconstructs each enclosing nominal record,
    while projected indexed copy-back stores an exact path-keyed sequence overlay
-   and emits recursive leaf equations for every enclosing record sibling.
+   and emits recursive leaf equations for every enclosing record sibling. If a
+   later record call consumes a path with descendant overlays, those overlays
+   are structurally rebased onto the record formal and then back onto the caller
+   path after the callee transition.
 
 The return cell and field copy-back are one transition. A later call can consume
 the bound return value, and body TV relates that data flow to the callee's
@@ -115,10 +119,16 @@ or terminal indexed assignment consults the overlay. Replacing the array or an
 enclosing record invalidates overlays at or below that path. When both arms of
 a conditional invalidate the same overlay, their exact native values merge;
 one-arm-only creation or invalidation fails closed instead of retaining a stale
-pre-branch sequence. A record call that
-would require materializing a native record after an indexed overlay remains
-fail-closed until leaf-wise record-call state is generalized; no stale native
-record is substituted.
+pre-branch sequence. A later direct or projected record call snapshots every
+native scalar/record field while independently rebasing descendant overlays
+onto its mutable or shared record formals. Indexed reads and writes inside the
+callee therefore observe the exact program-point sequence, and mutable
+copy-back replaces only the actual record subtree's overlays. If the callee
+replaces an array or enclosing record, the corresponding overlay is removed and
+the exact native replacement becomes authoritative. This is leafwise state
+composition, not a fabricated `Seq<T>`-to-`[T; N]` conversion. General
+whole-record value/result use that would require such a conversion remains
+fail-closed.
 
 ## Production and expression fidelity
 
@@ -203,14 +213,22 @@ freestanding receipt has 51 faithful translation-validation rows and only L3
 reachable members. Replay, linked downstream execution, untouched array slots,
 guard/tag preservation, and projected-borrow tamper rejection are mandatory.
 
+The `record_after_indexed_call_effect.th` fixture mutates a projected fixed
+array, passes the enclosing record through a generated mutable record call,
+then snapshots that current record through a generated shared record call while
+mutating a disjoint sibling. Its strict freestanding receipt has 59 faithful
+translation-validation rows and only L3 reachable members. Replay, linked
+downstream execution, both sequence transitions, scalar sibling framing, and
+record-actual tamper rejection are mandatory.
+
 This is reusable language and proof machinery. It adds no scheduler, allocator,
 boot path, firmware runtime, architecture implementation, or kernel artifact.
 
 ## Residual boundary
 
 The frozen subset still excludes implicit field borrowing, an array-element
-actual such as `&mut slots[i]`, native record materialization after a descendant
-sequence overlay, nested result use inside
+actual such as `&mut slots[i]`, general whole-record value/result materialization
+after a descendant sequence overlay, nested result use inside
 arithmetic/conditions/arguments/assignments/tails, untyped
 result bindings, recursive mutable effects, mutable enum payloads, calls inside
 the record-loop theory, dynamically quantified aggregate frames, and concurrent

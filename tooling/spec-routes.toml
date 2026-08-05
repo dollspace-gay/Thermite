@@ -2009,32 +2009,32 @@ conformance_ops = ["record-state-loop-lifecycle"]
 [[route]]
 crate_pattern = "thermite-tv/src/exec_encode.rs"
 design = ".design/build/mutable-call-effects.md"
-reference = ["conformance/verified-build/mutable_call_effect.th", "conformance/verified-build/mutable_indexed_call_effect.th", "conformance/verified-build/mixed_indexed_call_effect.th", "conformance/verified-build/projected_record_call_effect.th", "conformance/verified-build/projected_indexed_call_effect.th"]
+reference = ["conformance/verified-build/mutable_call_effect.th", "conformance/verified-build/mutable_indexed_call_effect.th", "conformance/verified-build/mixed_indexed_call_effect.th", "conformance/verified-build/projected_record_call_effect.th", "conformance/verified-build/projected_indexed_call_effect.th", "conformance/verified-build/record_after_indexed_call_effect.th"]
 conformance_ops = ["mutable-post-state-field-selector", "mutable-post-state-sequence-selector"]
 
 [[route]]
 crate_pattern = "thermite-tv/src/exec_stmt_encode.rs"
 design = ".design/build/mutable-call-effects.md"
-reference = ["conformance/verified-build/mutable_call_effect.th", "conformance/verified-build/mutable_indexed_call_effect.th", "conformance/verified-build/mixed_indexed_call_effect.th", "conformance/verified-build/projected_record_call_effect.th", "conformance/verified-build/projected_indexed_call_effect.th"]
-conformance_ops = ["mutable-call-state-composition", "mutable-call-result-composition", "mutable-indexed-sequence-composition", "mixed-borrow-snapshot-composition", "shared-indexed-snapshot-composition", "projected-record-copy-in", "projected-record-copy-back", "projected-indexed-copy-in", "projected-indexed-sequence-overlay", "projected-indexed-leaf-frame", "structural-access-path-aliasing", "exclusive-alias-rejection", "indexed-pointee-rejection", "shared-exclusive-alias-rejection", "nested-result-rejection"]
+reference = ["conformance/verified-build/mutable_call_effect.th", "conformance/verified-build/mutable_indexed_call_effect.th", "conformance/verified-build/mixed_indexed_call_effect.th", "conformance/verified-build/projected_record_call_effect.th", "conformance/verified-build/projected_indexed_call_effect.th", "conformance/verified-build/record_after_indexed_call_effect.th"]
+conformance_ops = ["mutable-call-state-composition", "mutable-call-result-composition", "mutable-indexed-sequence-composition", "mixed-borrow-snapshot-composition", "shared-indexed-snapshot-composition", "projected-record-copy-in", "projected-record-copy-back", "projected-indexed-copy-in", "projected-indexed-sequence-overlay", "projected-indexed-leaf-frame", "record-overlay-rebase-copy-in", "record-overlay-rebase-copy-back", "leafwise-record-lifecycle-frame", "record-overlay-invalidation", "structural-access-path-aliasing", "exclusive-alias-rejection", "indexed-pointee-rejection", "shared-exclusive-alias-rejection", "nested-result-rejection"]
 
 [[route]]
 crate_pattern = "thermite-tv/src/obligation.rs"
 design = ".design/build/mutable-call-effects.md"
-reference = ["conformance/verified-build/mutable_call_effect.th", "conformance/verified-build/mutable_indexed_call_effect.th", "conformance/verified-build/mixed_indexed_call_effect.th", "conformance/verified-build/projected_record_call_effect.th", "conformance/verified-build/projected_indexed_call_effect.th"]
+reference = ["conformance/verified-build/mutable_call_effect.th", "conformance/verified-build/mutable_indexed_call_effect.th", "conformance/verified-build/mixed_indexed_call_effect.th", "conformance/verified-build/projected_record_call_effect.th", "conformance/verified-build/projected_indexed_call_effect.th", "conformance/verified-build/record_after_indexed_call_effect.th"]
 conformance_ops = ["mutable-call-obligation-frame", "mutable-indexed-obligation-frame", "shared-indexed-obligation-frame"]
 
 [[route]]
 crate_pattern = "thermite-tv/src/lib.rs"
 design = ".design/build/mutable-call-effects.md"
-reference = ["conformance/verified-build/mutable_call_effect.th", "conformance/verified-build/mutable_indexed_call_effect.th", "conformance/verified-build/mixed_indexed_call_effect.th", "conformance/verified-build/projected_record_call_effect.th", "conformance/verified-build/projected_indexed_call_effect.th"]
+reference = ["conformance/verified-build/mutable_call_effect.th", "conformance/verified-build/mutable_indexed_call_effect.th", "conformance/verified-build/mixed_indexed_call_effect.th", "conformance/verified-build/projected_record_call_effect.th", "conformance/verified-build/projected_indexed_call_effect.th", "conformance/verified-build/record_after_indexed_call_effect.th"]
 conformance_ops = ["mutable-call-frame-api", "mutable-indexed-frame-api", "shared-indexed-frame-api"]
 
 [[route]]
 crate_pattern = "thermite-tv/tests/mutable_call_effect_tv.rs"
 design = ".design/build/mutable-call-effects.md"
-reference = ["conformance/verified-build/mutable_call_effect.th", "conformance/verified-build/projected_record_call_effect.th", "conformance/verified-build/projected_indexed_call_effect.th"]
-conformance_ops = ["mutable-call-real-verus", "mutable-call-result-and-state", "mixed-borrow-result-and-state", "projected-record-real-verus", "projected-record-mutant", "projected-indexed-real-verus", "projected-indexed-mutant", "projected-indexed-branch-overlay-lifecycle", "projected-type-and-borrow-rejection", "mutable-call-mutants"]
+reference = ["conformance/verified-build/mutable_call_effect.th", "conformance/verified-build/projected_record_call_effect.th", "conformance/verified-build/projected_indexed_call_effect.th", "conformance/verified-build/record_after_indexed_call_effect.th"]
+conformance_ops = ["mutable-call-real-verus", "mutable-call-result-and-state", "mixed-borrow-result-and-state", "projected-record-real-verus", "projected-record-mutant", "projected-indexed-real-verus", "projected-indexed-mutant", "projected-indexed-branch-overlay-lifecycle", "record-after-indexed-real-verus", "record-after-indexed-mutant", "projected-type-and-borrow-rejection", "mutable-call-mutants"]
 
 [[route]]
 crate_pattern = "thermite-tv/tests/mutable_indexed_call_effect_tv.rs"
@@ -2045,8 +2045,8 @@ conformance_ops = ["mutable-indexed-call-real-verus", "mutable-indexed-result-an
 [[route]]
 crate_pattern = "forge/src/body_tv.rs"
 design = ".design/build/mutable-call-effects.md"
-reference = ["conformance/verified-build/mutable_call_effect.th", "conformance/verified-build/mutable_indexed_call_effect.th", "conformance/verified-build/mixed_indexed_call_effect.th", "conformance/verified-build/projected_record_call_effect.th", "conformance/verified-build/projected_indexed_call_effect.th"]
-conformance_ops = ["reachable-mutable-effect-derivation", "reachable-indexed-effect-derivation", "reachable-shared-indexed-frame-derivation", "proved-callee-state-predicate", "mixed-borrow-frame-derivation", "projected-record-frame-derivation", "projected-indexed-frame-derivation", "nested-fixed-array-path-derivation"]
+reference = ["conformance/verified-build/mutable_call_effect.th", "conformance/verified-build/mutable_indexed_call_effect.th", "conformance/verified-build/mixed_indexed_call_effect.th", "conformance/verified-build/projected_record_call_effect.th", "conformance/verified-build/projected_indexed_call_effect.th", "conformance/verified-build/record_after_indexed_call_effect.th"]
+conformance_ops = ["reachable-mutable-effect-derivation", "reachable-indexed-effect-derivation", "reachable-shared-indexed-frame-derivation", "proved-callee-state-predicate", "mixed-borrow-frame-derivation", "projected-record-frame-derivation", "projected-indexed-frame-derivation", "record-formal-overlay-rebasing", "nested-fixed-array-path-derivation"]
 
 [[route]]
 crate_pattern = "forge/src/exec_tv.rs"
@@ -2057,14 +2057,14 @@ conformance_ops = ["mutable-record-exec-frame", "stateful-initializer-body-tv-ro
 [[route]]
 crate_pattern = "forge/tests/body_tv.rs"
 design = ".design/build/mutable-call-effects.md"
-reference = ["conformance/verified-build/mutable_call_effect.th", "conformance/verified-build/mutable_indexed_call_effect.th", "conformance/verified-build/mixed_indexed_call_effect.th", "conformance/verified-build/projected_record_call_effect.th", "conformance/verified-build/projected_indexed_call_effect.th"]
-conformance_ops = ["derived-mutable-call-effect", "derived-mutable-indexed-effect", "derived-shared-indexed-effect", "derived-mixed-borrow-effect", "derived-projected-record-effect", "derived-projected-indexed-effect", "projected-indexed-current-snapshot", "structural-prefix-alias-rejection", "shared-exclusive-overlap-rejection"]
+reference = ["conformance/verified-build/mutable_call_effect.th", "conformance/verified-build/mutable_indexed_call_effect.th", "conformance/verified-build/mixed_indexed_call_effect.th", "conformance/verified-build/projected_record_call_effect.th", "conformance/verified-build/projected_indexed_call_effect.th", "conformance/verified-build/record_after_indexed_call_effect.th"]
+conformance_ops = ["derived-mutable-call-effect", "derived-mutable-indexed-effect", "derived-shared-indexed-effect", "derived-mixed-borrow-effect", "derived-projected-record-effect", "derived-projected-indexed-effect", "projected-indexed-current-snapshot", "derived-record-after-indexed-effect", "record-overlay-replacement", "structural-prefix-alias-rejection", "shared-exclusive-overlap-rejection"]
 
 [[route]]
 crate_pattern = "forge/tests/verified_build.rs"
 design = ".design/build/mutable-call-effects.md"
-reference = ["conformance/verified-build/mutable_call_effect.th", "conformance/verified-build/mutable_indexed_call_effect.th", "conformance/verified-build/mixed_indexed_call_effect.th", "conformance/verified-build/projected_record_call_effect.th", "conformance/verified-build/projected_indexed_call_effect.th"]
-conformance_ops = ["mutable-call-strict-l3", "mutable-indexed-call-strict-l3", "shared-indexed-call-strict-l3", "projected-record-call-strict-l3", "projected-indexed-call-strict-l3", "mixed-borrow-result-runtime", "mutable-indexed-result-runtime", "shared-indexed-current-snapshot-runtime", "projected-record-runtime", "projected-indexed-runtime", "shared-source-preservation-runtime", "mutable-call-tv-inventory", "mutable-call-replay", "mutable-call-tamper"]
+reference = ["conformance/verified-build/mutable_call_effect.th", "conformance/verified-build/mutable_indexed_call_effect.th", "conformance/verified-build/mixed_indexed_call_effect.th", "conformance/verified-build/projected_record_call_effect.th", "conformance/verified-build/projected_indexed_call_effect.th", "conformance/verified-build/record_after_indexed_call_effect.th"]
+conformance_ops = ["mutable-call-strict-l3", "mutable-indexed-call-strict-l3", "shared-indexed-call-strict-l3", "projected-record-call-strict-l3", "projected-indexed-call-strict-l3", "record-after-indexed-call-strict-l3", "mixed-borrow-result-runtime", "mutable-indexed-result-runtime", "shared-indexed-current-snapshot-runtime", "projected-record-runtime", "projected-indexed-runtime", "record-after-indexed-runtime", "shared-source-preservation-runtime", "mutable-call-tv-inventory", "mutable-call-replay", "mutable-call-tamper"]
 
 [[route]]
 crate_pattern = "conformance/verified-build/mutable_call_effect.th"
@@ -2095,6 +2095,18 @@ crate_pattern = "conformance/verified-build/projected_indexed_call_effect.th"
 design = ".design/build/mutable-call-effects.md"
 reference = []
 conformance_ops = ["projected-indexed-call-effect-lifecycle"]
+
+[[route]]
+crate_pattern = "conformance/verified-build/record_after_indexed_call_effect.th"
+design = ".design/build/mutable-call-effects.md"
+reference = []
+conformance_ops = ["record-after-indexed-call-effect-lifecycle"]
+
+[[route]]
+crate_pattern = "conformance/verified-build/record_after_indexed_call_effect.th"
+design = ".design/build/kernel-primitives.md"
+reference = []
+conformance_ops = ["record-after-indexed-aggregate-lifecycle"]
 
 # Policy-free frozen platform declarations. The 74 bodyless machine doors are
 # the explicit consumer-owned exception; every other package row is L3.

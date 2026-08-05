@@ -1201,18 +1201,6 @@ fn dotted_path_segments(path: &str) -> Vec<&str> {
     path.split('.').collect()
 }
 
-fn indexed_descendant<'a>(state: &'a LifecycleState, segments: &[String]) -> Option<&'a str> {
-    state.indexed.keys().find_map(|path| {
-        let indexed = dotted_path_segments(path);
-        (indexed.len() > segments.len()
-            && segments
-                .iter()
-                .zip(indexed.iter())
-                .all(|(expected, found)| expected == found))
-        .then_some(path.as_str())
-    })
-}
-
 fn remove_indexed_at_or_below(state: &mut LifecycleState, segments: &[String]) {
     state.indexed.retain(|path, _| {
         let indexed = dotted_path_segments(path);
@@ -1222,6 +1210,62 @@ fn remove_indexed_at_or_below(state: &mut LifecycleState, segments: &[String]) {
                 .zip(indexed.iter())
                 .all(|(expected, found)| expected == found))
     });
+}
+
+fn rebased_indexed_descendants(
+    state: &LifecycleState,
+    from: &[String],
+    to: &[String],
+) -> Vec<(String, LifecycleCell)> {
+    state
+        .indexed
+        .iter()
+        .filter_map(|(path, value)| {
+            let candidate = dotted_path_segments(path);
+            if candidate.len() <= from.len()
+                || !from
+                    .iter()
+                    .zip(candidate.iter())
+                    .all(|(expected, found)| expected == found)
+            {
+                return None;
+            }
+            let mut rebased = to.to_vec();
+            rebased.extend(
+                candidate[from.len()..]
+                    .iter()
+                    .map(|segment| (*segment).to_string()),
+            );
+            Some((rebased.join("."), value.clone()))
+        })
+        .collect()
+}
+
+fn collect_fixed_array_record_paths(
+    root: &str,
+    type_name: &str,
+    ctx: &BodyRefCtx,
+    active: &mut BTreeSet<String>,
+    paths: &mut BTreeSet<String>,
+) {
+    if !active.insert(type_name.to_string()) {
+        return;
+    }
+    if let Some(record) = ctx.named_record(type_name) {
+        for field in &record.fields {
+            let path = format!("{root}.{}", field.name);
+            match field.ty.as_ref() {
+                Some(Type::Array { .. }) => {
+                    paths.insert(path);
+                }
+                Some(Type::Named(nested)) => {
+                    collect_fixed_array_record_paths(&path, nested, ctx, active, paths);
+                }
+                _ => {}
+            }
+        }
+    }
+    active.remove(type_name);
 }
 
 fn lifecycle_value_frame(
@@ -1252,43 +1296,39 @@ fn lifecycle_value_frame(
                 .zip(candidate.iter())
                 .all(|(expected, found)| expected == found)
     });
-    if !has_overlay_below {
-        if matches!(ty, Type::Array { .. } | Type::Slice(_)) {
-            ensures.push(format!("{final_value}@ == ({current_value})@"));
-        } else {
-            ensures.push(format!("{final_value} == {current_value}"));
+    if let Type::Named(type_name) = ty {
+        if let Some(record) = ctx.named_record(type_name) {
+            for field in &record.fields {
+                let field_ty = field.ty.as_ref().ok_or_else(|| {
+                    RefEncodeError::Unsupported(format!(
+                        "projected indexed lifecycle field `{type_name}.{}` has no exact source type",
+                        field.name
+                    ))
+                })?;
+                path.push(field.name.clone());
+                lifecycle_value_frame(
+                    &format!("{final_value}.{}", field.name),
+                    &format!("({current_value}).{}", field.name),
+                    field_ty,
+                    path,
+                    state,
+                    ctx,
+                    ensures,
+                )?;
+                path.pop();
+            }
+            return Ok(());
         }
-        return Ok(());
     }
-
-    let Type::Named(type_name) = ty else {
+    if has_overlay_below {
         return Err(RefEncodeError::Unsupported(format!(
             "projected indexed lifecycle overlay descends through non-record path `{dotted}`"
         )));
-    };
-    let record = ctx.named_record(type_name).ok_or_else(|| {
-        RefEncodeError::Unsupported(format!(
-            "projected indexed lifecycle lost finite record declaration `{type_name}` below `{dotted}`"
-        ))
-    })?;
-    for field in &record.fields {
-        let field_ty = field.ty.as_ref().ok_or_else(|| {
-            RefEncodeError::Unsupported(format!(
-                "projected indexed lifecycle field `{type_name}.{}` has no exact source type",
-                field.name
-            ))
-        })?;
-        path.push(field.name.clone());
-        lifecycle_value_frame(
-            &format!("{final_value}.{}", field.name),
-            &format!("({current_value}).{}", field.name),
-            field_ty,
-            path,
-            state,
-            ctx,
-            ensures,
-        )?;
-        path.pop();
+    }
+    if matches!(ty, Type::Array { .. } | Type::Slice(_)) {
+        ensures.push(format!("{final_value}@ == ({current_value})@"));
+    } else {
+        ensures.push(format!("{final_value} == {current_value}"));
     }
     Ok(())
 }
@@ -1464,6 +1504,11 @@ fn thread_lifecycle_stmt(
                                 }
                                 let dotted = projected_path.join(".");
                                 if let Some(current) = state.indexed.get(&dotted) {
+                                    if ctx.mutable_record(&root).is_none() {
+                                        return Err(RefEncodeError::Unsupported(format!(
+                                            "projected indexed lifecycle cannot assign through non-exclusive record root `{root}`"
+                                        )));
+                                    }
                                     let encoded_index = encode_lifecycle_expr(index, state, ctx)?;
                                     let index = if matches!(index, Expr::IntLit { .. }) {
                                         encoded_index.text
@@ -1730,6 +1775,12 @@ struct RecordCallActual {
 struct IndexedCallActual {
     segments: Vec<String>,
     pointee: Type,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RecordCallSnapshot {
+    fields: Vec<(String, LifecycleCell)>,
+    indexed: Vec<(String, LifecycleCell)>,
 }
 
 impl IndexedCallActual {
@@ -2065,15 +2116,9 @@ fn snapshot_record_actual(
     actual: &RecordCallActual,
     state: &LifecycleState,
     callee: &str,
-) -> Result<Vec<(String, LifecycleCell)>, RefEncodeError> {
-    if let Some(indexed) = indexed_descendant(state, &actual.segments) {
-        return Err(RefEncodeError::Unsupported(format!(
-            "mutable-reference call `{callee}` cannot materialize record actual `{}` after projected sequence state `{indexed}`; the exact leaf state remains framed but native aggregate reconstruction is unavailable",
-            actual.display()
-        )));
-    }
-    if actual.is_direct() {
-        return formal
+) -> Result<RecordCallSnapshot, RefEncodeError> {
+    let fields = if actual.is_direct() {
+        formal
             .fields
             .iter()
             .map(|field| {
@@ -2089,20 +2134,23 @@ fn snapshot_record_actual(
                         ))
                     })
             })
-            .collect();
-    }
-
-    let record = projected_record_value(actual, state, callee)?;
-    Ok(formal
-        .fields
-        .iter()
-        .map(|field| {
-            (
-                field.name.clone(),
-                LifecycleCell::bounded(format!("({}).{}", record.text, field.name)),
-            )
-        })
-        .collect())
+            .collect::<Result<Vec<_>, _>>()?
+    } else {
+        let record = projected_record_value(actual, state, callee)?;
+        formal
+            .fields
+            .iter()
+            .map(|field| {
+                (
+                    field.name.clone(),
+                    LifecycleCell::bounded(format!("({}).{}", record.text, field.name)),
+                )
+            })
+            .collect()
+    };
+    let indexed =
+        rebased_indexed_descendants(state, &actual.segments, std::slice::from_ref(&formal.name));
+    Ok(RecordCallSnapshot { fields, indexed })
 }
 
 fn snapshot_shared_record_actual(
@@ -2110,7 +2158,7 @@ fn snapshot_shared_record_actual(
     actual: &RecordCallActual,
     state: &LifecycleState,
     callee: &str,
-) -> Result<Vec<(String, LifecycleCell)>, RefEncodeError> {
+) -> Result<RecordCallSnapshot, RefEncodeError> {
     let mutable = MutableRecordFrame::typed(
         formal.name.clone(),
         formal.type_name.clone(),
@@ -2214,27 +2262,35 @@ fn copy_back_record_actual(
     callee: &str,
     ctx: &BodyRefCtx,
 ) -> Result<(), RefEncodeError> {
-    if let Some(indexed) = indexed_descendant(callee_state, std::slice::from_ref(&formal.name)) {
-        return Err(RefEncodeError::Unsupported(format!(
-            "mutable-reference callee `{callee}` leaves projected sequence state `{indexed}` below record formal `{}`; native aggregate copy-back is unavailable",
-            formal.name
-        )));
-    }
+    let indexed = rebased_indexed_descendants(
+        callee_state,
+        std::slice::from_ref(&formal.name),
+        &actual.segments,
+    );
     if actual.is_direct() {
-        for field in &formal.fields {
-            let formal_key = format!("{}.{}", formal.name, field.name);
-            let value = callee_state
-                .fields
-                .get(&formal_key)
-                .cloned()
-                .ok_or_else(|| {
-                    RefEncodeError::Unsupported(format!(
-                        "mutable-reference callee `{callee}` lost exact post-state field `{formal_key}`"
-                    ))
-                })?;
-            state
-                .fields
-                .insert(format!("{}.{}", actual.root(), field.name), value);
+        let fields = formal
+            .fields
+            .iter()
+            .map(|field| {
+                let formal_key = format!("{}.{}", formal.name, field.name);
+                callee_state
+                    .fields
+                    .get(&formal_key)
+                    .cloned()
+                    .map(|value| (format!("{}.{}", actual.root(), field.name), value))
+                    .ok_or_else(|| {
+                        RefEncodeError::Unsupported(format!(
+                            "mutable-reference callee `{callee}` lost exact post-state field `{formal_key}`"
+                        ))
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        remove_indexed_at_or_below(state, &actual.segments);
+        for (key, value) in fields {
+            state.fields.insert(key, value);
+        }
+        for (key, value) in indexed {
+            state.indexed.insert(key, value);
         }
         return Ok(());
     }
@@ -2257,9 +2313,13 @@ fn copy_back_record_actual(
             ctx,
         )?
     };
+    remove_indexed_at_or_below(state, &actual.segments);
     state
         .fields
         .insert(top_key, LifecycleCell::bounded(format!("({rebuilt})")));
+    for (key, value) in indexed {
+        state.indexed.insert(key, value);
+    }
     Ok(())
 }
 
@@ -2463,11 +2523,13 @@ fn apply_mutable_call_effect(
                 formal.name
             ))
         })?;
-        for (field, value) in snapshot_record_actual(formal, actual, state, name)? {
+        let snapshot = snapshot_record_actual(formal, actual, state, name)?;
+        for (field, value) in snapshot.fields {
             callee_state
                 .fields
                 .insert(format!("{}.{}", formal.name, field), value);
         }
+        callee_state.indexed.extend(snapshot.indexed);
     }
     for formal in &effect.shared_records {
         let actual = shared_actual_roots.get(&formal.name).ok_or_else(|| {
@@ -2476,11 +2538,13 @@ fn apply_mutable_call_effect(
                 formal.name
             ))
         })?;
-        for (field, value) in snapshot_shared_record_actual(formal, actual, state, name)? {
+        let snapshot = snapshot_shared_record_actual(formal, actual, state, name)?;
+        for (field, value) in snapshot.fields {
             callee_state
                 .fields
                 .insert(format!("{}.{}", formal.name, field), value);
         }
+        callee_state.indexed.extend(snapshot.indexed);
     }
     for formal in &effect.mutable_indexed {
         let actual = indexed_actual_roots.get(&formal.name).ok_or_else(|| {
@@ -2541,6 +2605,26 @@ fn apply_mutable_call_effect(
         .map(|(name, _)| name.clone())
         .collect();
     callee_ctx.shared_records = effect.shared_records.clone();
+    for record in &effect.mutable_records {
+        if let Some(type_name) = record.type_name.as_deref() {
+            collect_fixed_array_record_paths(
+                &record.name,
+                type_name,
+                ctx,
+                &mut BTreeSet::new(),
+                &mut callee_ctx.fixed_array_fields,
+            );
+        }
+    }
+    for record in &effect.shared_records {
+        collect_fixed_array_record_paths(
+            &record.name,
+            &record.type_name,
+            ctx,
+            &mut BTreeSet::new(),
+            &mut callee_ctx.fixed_array_fields,
+        );
+    }
     active_calls.push(name.to_string());
     let interpreted = thread_lifecycle_block(
         &effect.body,

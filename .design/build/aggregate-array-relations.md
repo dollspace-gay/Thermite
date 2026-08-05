@@ -24,7 +24,7 @@ governs:
   - forge/tests/exec_tv_conformance.rs
   - forge/tests/verified_build.rs
   - conformance/verified-build/aggregate_array_relations.th
-audited-content-sha256: 97b1fe51b22c5d8f3967e63c99a3c67d97ccfbda9da67ff17afdd1cac7f92c63 (re-pinned 2026-08-05 after projected-indexed strict evidence in shared TV/build files; aggregate relations remain regression-covered)
+audited-content-sha256: 003dd15e0605479c308357f129f557a95374cb20b36ac13dbf9bc3b45b765c22 (re-pinned 2026-08-05 after record-after-indexed strict evidence in shared TV/build files; aggregate relations remain regression-covered)
 extends:
   - .design/build/kernel-primitives.md
   - .design/verified/exec-tv.md

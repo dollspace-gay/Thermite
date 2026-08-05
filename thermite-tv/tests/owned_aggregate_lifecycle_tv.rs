@@ -418,7 +418,14 @@ fn exclusive_nested_record_and_array_writes_are_l3_faithful() {
          state.slots[index] = state.inner.value + 1;\n\
          state.inner.value",
     );
-    assert!(faithful.contains("final(state).inner =="), "{faithful}");
+    assert!(
+        faithful.contains("final(state).inner.value =="),
+        "{faithful}"
+    );
+    assert!(
+        faithful.contains("final(state).inner.guard =="),
+        "{faithful}"
+    );
     assert!(faithful.contains("final(state).slots@ =="), "{faithful}");
     assert_verus("nested_borrowed_faithful", &faithful, true);
 

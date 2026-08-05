@@ -1005,6 +1005,134 @@ fn projected_array_pipeline(outer: &mut ArrayOuter, value: u64) -> u64
 }
 
 #[test]
+fn record_calls_after_projected_indexed_state_are_leafwise_and_faithful() {
+    let source = r#"
+const SLOTS: usize = 2;
+struct Bank { slots: [u64; SLOTS], guard: u64 }
+struct ArrayOuter { left: Bank, right: Bank, tag: u64 }
+fn write_array(data: &mut [u64; SLOTS], value: u64) -> u64
+  req true
+  ens result == value
+  ens final(data)[0] == value
+  ens final(data)[1] == old(data)[1]
+  fx pure
+{
+  data[0] = value;
+  data[0]
+}
+fn advance_bank(bank: &mut Bank, next_guard: u64) -> u64
+  req true
+  ens result == old(bank).slots[0]
+  ens final(bank).slots[0] == old(bank).slots[0]
+  ens final(bank).slots[1] == old(bank).slots[0]
+  ens final(bank).guard == next_guard
+  fx pure
+{
+  bank.slots[1] = bank.slots[0];
+  bank.guard = next_guard;
+  bank.slots[1]
+}
+fn copy_bank(destination: &mut Bank, source: &Bank) -> u64
+  req true
+  ens result == source.slots[0]
+  ens final(destination).slots[0] == source.slots[0]
+  ens final(destination).slots[1] == old(destination).slots[1]
+  ens final(destination).guard == old(destination).guard
+  fx pure
+{
+  destination.slots[0] = source.slots[0];
+  destination.slots[0]
+}
+fn direct_record_after_array(
+  bank: &mut Bank,
+  value: u64,
+  next_guard: u64,
+) -> u64
+  req value < 1000
+  ens result == value
+  ens final(bank).slots[0] == value
+  ens final(bank).slots[1] == value
+  ens final(bank).guard == next_guard
+  fx pure
+{
+  let written: u64 = write_array(&mut bank.slots, value);
+  let advanced: u64 = advance_bank(bank, next_guard);
+  advanced
+}
+fn replace_bank_slots(bank: &mut Bank, value: u64) -> u64
+  req true
+  ens result == value
+  ens final(bank).slots[0] == value
+  ens final(bank).slots[1] == value
+  ens final(bank).guard == old(bank).guard
+  fx pure
+{
+  bank.slots = [value, value];
+  bank.slots[1]
+}
+fn record_replaces_projected_array(
+  bank: &mut Bank,
+  first: u64,
+  replacement: u64,
+) -> u64
+  req first < 1000
+  ens result == replacement
+  ens final(bank).slots[0] == replacement
+  ens final(bank).slots[1] == replacement
+  ens final(bank).guard == old(bank).guard
+  fx pure
+{
+  let written: u64 = write_array(&mut bank.slots, first);
+  let replaced: u64 = replace_bank_slots(bank, replacement);
+  bank.slots[0]
+}
+fn record_after_array_pipeline(
+  outer: &mut ArrayOuter,
+  value: u64,
+  next_guard: u64,
+) -> u64
+  req value < 1000
+  ens result == value
+  ens final(outer).left.slots[0] == value
+  ens final(outer).left.slots[1] == value
+  ens final(outer).left.guard == next_guard
+  ens final(outer).right.slots[0] == value
+  ens final(outer).right.slots[1] == old(outer).right.slots[1]
+  ens final(outer).right.guard == old(outer).right.guard
+  ens final(outer).tag == old(outer).tag
+  fx pure
+{
+  let written: u64 = write_array(&mut outer.left.slots, value);
+  let advanced: u64 = advance_bank(&mut outer.left, next_guard);
+  let copied: u64 = copy_bank(&mut outer.right, &outer.left);
+  copied
+}
+"#;
+    let file = write_th("record_after_projected_indexed", source);
+    let report = run_body_tv_json(&file);
+    assert_eq!(report["counts"]["checked"].as_u64(), Some(7), "{report}");
+    assert_eq!(report["counts"]["faithful"].as_u64(), Some(7), "{report}");
+    assert_eq!(report["counts"]["divergent"].as_u64(), Some(0), "{report}");
+    assert_eq!(report["counts"]["skipped"].as_u64(), Some(0), "{report}");
+    for name in [
+        "write_array",
+        "advance_bank",
+        "copy_bank",
+        "direct_record_after_array",
+        "replace_bank_slots",
+        "record_replaces_projected_array",
+        "record_after_array_pipeline",
+    ] {
+        assert!(
+            report["bodies"].as_array().unwrap().iter().any(|body| {
+                body["body"].as_str() == Some(name) && body["verdict"].as_str() == Some("faithful")
+            }),
+            "{name}: {report}"
+        );
+    }
+}
+
+#[test]
 fn projected_indexed_prefix_aliases_remain_fail_closed() {
     let source = r#"
 const SLOTS: usize = 2;

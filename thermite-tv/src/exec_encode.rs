@@ -707,10 +707,10 @@ fn encode_index(base: &Expr, index: &IndexArg, ctx: &ExecRefCtx) -> Result<Strin
         let idx = encode_index_value(i, ctx)?;
         return Ok(format!("({array})@[{idx}]"));
     }
+    let base_detail = field_access_path(base).unwrap_or_else(|| node_kind(base).to_string());
     Err(RefEncodeError::Unsupported(format!(
-        "index over a non-slice / non-fixed-array base ({}) — the frozen exec \
-         index subset is `xs[i]` over a slice or native fixed-array binding",
-        node_kind(base)
+        "index over a non-slice / non-fixed-array base `{base_detail}` — the frozen exec \
+         index subset is `xs[i]` over a slice or native fixed-array binding"
     )))
 }
 

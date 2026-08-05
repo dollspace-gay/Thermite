@@ -83,6 +83,7 @@ use thermite_tv::ref_encode::{ref_contract_pred, RefCtx, StateViewKind};
 use thermite_tv::{
     loop_ref_obligations, BodyRefCtx, EnumVariantFrame, EnumVariantShapeFrame,
     MutableCallEffectFrame, MutableRecordFrame, NamedRecordFrame, RecordFieldFrame,
+    SharedRecordFrame,
 };
 
 use crate::check::{unique_scratch_dir, ScratchDir, DEFAULT_RLIMIT, DEFAULT_SOLVER_SEED};
@@ -381,16 +382,6 @@ pub(crate) fn body_tv_support(
             .iter()
             .any(|param| matches!(param.ty, Type::Ref { mutable: true, .. }));
         if has_mutable_reference {
-            if dep
-                .params
-                .iter()
-                .any(|param| matches!(param.ty, Type::Ref { mutable: false, .. }))
-            {
-                return Err(format!(
-                    "body-TV mutable-reference dependency `{}` also has a shared-reference formal; exact shared/exclusive alias framing is outside the first call-effect subset",
-                    dep.name
-                ));
-            }
             let records = mutable_record_frames(program, dep)?;
             let mutable_count = dep
                 .params
@@ -403,12 +394,27 @@ pub(crate) fn body_tv_support(
                     dep.name
                 ));
             }
-            mutable_call_effects.push(MutableCallEffectFrame::new(
-                dep.name.clone(),
-                dep.params.iter().map(|param| param.name.clone()).collect(),
-                records,
-                body.clone(),
-            ));
+            let shared_records = shared_record_frames(program, dep);
+            let shared_count = dep
+                .params
+                .iter()
+                .filter(|param| matches!(param.ty, Type::Ref { mutable: false, .. }))
+                .count();
+            if shared_records.len() != shared_count {
+                return Err(format!(
+                    "body-TV mutable-reference dependency `{}` contains a shared slice, array, or non-finite record outside the exact mixed-borrow call-effect subset",
+                    dep.name
+                ));
+            }
+            mutable_call_effects.push(
+                MutableCallEffectFrame::new(
+                    dep.name.clone(),
+                    dep.params.iter().map(|param| param.name.clone()).collect(),
+                    records,
+                    body.clone(),
+                )
+                .with_shared_records(shared_records),
+            );
             continue;
         }
         let reference = thermite_tv::body_ref_state(
@@ -713,6 +719,7 @@ fn straight_line_body_tv(
             return;
         }
     };
+    let shared_records = shared_record_frames(program, f);
     let named_records = named_record_frames(program);
     let constructor_records = constructor_record_frames(program);
     let enum_variants = match enum_variant_frames(program) {
@@ -748,6 +755,7 @@ fn straight_line_body_tv(
         result_is_fixed_array: matches!(f.ret, Type::Array { .. }),
         result_is_unit: matches!(f.ret, Type::Unit),
         mutable_records,
+        shared_records,
         mutable_call_effects: mutable_call_effects.to_vec(),
         named_records,
         constructor_records,
@@ -1341,6 +1349,49 @@ pub(crate) fn mutable_record_frames(
         ));
     }
     Ok(records)
+}
+
+/// Exact finite named-record declarations for shared-reference parameters. A
+/// wider shared borrow remains usable by ordinary expression TV, but it cannot
+/// enter mixed mutable-call composition unless it appears in this independently
+/// derived structural inventory.
+pub(crate) fn shared_record_frames(
+    program: &thermite_syntax::Program,
+    function: &FnItem,
+) -> Vec<SharedRecordFrame> {
+    let admitted = thermite_spec::structural_record_mutation_structs(program);
+    function
+        .params
+        .iter()
+        .filter_map(|param| {
+            let Type::Ref {
+                mutable: false,
+                inner,
+            } = &param.ty
+            else {
+                return None;
+            };
+            let Type::Named(name) = inner.as_ref() else {
+                return None;
+            };
+            if !admitted.contains(name) {
+                return None;
+            }
+            let structure = program.items.iter().find_map(|item| match item {
+                Item::Struct(structure) if structure.name == *name => Some(structure),
+                _ => None,
+            })?;
+            Some(SharedRecordFrame::typed(
+                param.name.clone(),
+                name.clone(),
+                structure
+                    .fields
+                    .iter()
+                    .map(|field| RecordFieldFrame::typed(field.name.clone(), field.ty.clone()))
+                    .collect(),
+            ))
+        })
+        .collect()
 }
 
 /// Exact finite named-record declarations available to owned local-state TV.

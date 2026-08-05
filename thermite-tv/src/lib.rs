@@ -102,7 +102,7 @@ pub use exec_encode::{exec_ref_value, ExecRefCtx};
 pub use exec_stmt_encode::{
     body_ref_state, body_ref_state_ensures, loop_ref_obligations, negate_condition, BodyRefCtx,
     EnumVariantFrame, EnumVariantShapeFrame, LoopObligations, MutableCallEffectFrame,
-    MutableRecordFrame, NamedRecordFrame, RecordFieldFrame,
+    MutableRecordFrame, NamedRecordFrame, RecordFieldFrame, SharedRecordFrame,
 };
 pub use gen::{gen_exec_exprs, generate_clauses, ExecClause, Rng};
 pub use obligation::{

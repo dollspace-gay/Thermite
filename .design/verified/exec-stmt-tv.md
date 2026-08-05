@@ -4,7 +4,7 @@
 tier: 3-component
 status: draft
 audited-sha: 92396428567edc6940a9e2845217f5ff4c2ea3c6 (re-pinned 2026-06-16, user-authorized: the only change to this doc's governed files since the prior pin is the additive stage-1 forge-tier increment 2a — the new Item::Forge surface + inert Item::Forge match arms, verified net-additive with no substantive removal of existing v1 logic (git log <main>..HEAD = the 8 forge commits); the v1 behavior this doc governs is unchanged, and the new forge-tier surface is specified in .design/stage1-forge-tier.md / REQ-S1-3)
-audited-content-sha256: 944615dfe1f60b355a563d89ec0f361bbfe8c2441f209c5f1aa04a61c9ce0f08 (re-pinned 2026-08-05 after lint-only aggregate parameter iterator cleanup; TV semantics are unchanged)
+audited-content-sha256: 5d46ab39639fcfd5a39818a03beb30757a851b811bdc9c30ed232fedc56a896c (re-pinned 2026-08-05 after exact mixed shared/mutable call-state denotation)
 governs: thermite-tv/src/exec_stmt_encode.rs, thermite-tv/src/obligation.rs, thermite-lower/src/lower.rs, forge/src/body_tv.rs, forge/src/tv_signal.rs
 thesis-refs:
   - thermite-design.md §1 (trust relocated: code → spec → spec-intent)
@@ -132,10 +132,12 @@ reachable in-language callee body as specified by
   indexed mutation, typed returned finite-record locals, exact nested fields,
   terminal record-array indices, sole-cell record-state loops, and exact
   statement-position calls and direct typed let-bound mutable-call results over
-  pairwise-distinct direct finite-record roots now have independent theories.
+  pairwise-distinct direct finite-record roots now have independent theories,
+  including nominally exact direct shared roots that cannot overlap an exclusive
+  actual.
   `Vec::push`, `Map::insert`, String mutation, mutable
-  enum payloads, index-then-field/projected aliases, mixed shared/mutable
-  formals, mutable slice/array calls, nested/general mutable-call result expressions, and
+  enum payloads, index-then-field/projected aliases, shared or mutable slice/array
+  calls, nested/general mutable-call result expressions, and
   recursive effect cycles remain OUT and are HONESTLY SKIPPED.
 - **Recursion-as-statement / nested-fn definitions.** No fn definitions inside a body; a recursive call
   is an exec-EXPRESSION (step 2.1 checks its value), not a statement form.

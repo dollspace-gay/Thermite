@@ -2002,8 +2002,9 @@ reference = []
 conformance_ops = ["record-state-loop-lifecycle"]
 
 # Exact bodyful mutable-reference call composition for pairwise-distinct direct
-# finite-record roots. Production executes the generated calls; the independent
-# state denotation recursively interprets the receipt-bound source bodies.
+# finite-record roots and nonoverlapping nominal shared finite-record snapshots.
+# Production executes the generated calls; the independent state denotation
+# recursively interprets the receipt-bound source bodies.
 [[route]]
 crate_pattern = "thermite-tv/src/exec_encode.rs"
 design = ".design/build/mutable-call-effects.md"
@@ -2014,7 +2015,7 @@ conformance_ops = ["mutable-post-state-field-selector"]
 crate_pattern = "thermite-tv/src/exec_stmt_encode.rs"
 design = ".design/build/mutable-call-effects.md"
 reference = ["conformance/verified-build/mutable_call_effect.th"]
-conformance_ops = ["mutable-call-state-composition", "mutable-call-result-composition", "exclusive-alias-rejection", "nested-result-rejection"]
+conformance_ops = ["mutable-call-state-composition", "mutable-call-result-composition", "mixed-borrow-snapshot-composition", "exclusive-alias-rejection", "shared-exclusive-alias-rejection", "nested-result-rejection"]
 
 [[route]]
 crate_pattern = "thermite-tv/src/obligation.rs"
@@ -2032,13 +2033,13 @@ conformance_ops = ["mutable-call-frame-api"]
 crate_pattern = "thermite-tv/tests/mutable_call_effect_tv.rs"
 design = ".design/build/mutable-call-effects.md"
 reference = ["conformance/verified-build/mutable_call_effect.th"]
-conformance_ops = ["mutable-call-real-verus", "mutable-call-result-and-state", "mutable-call-mutants"]
+conformance_ops = ["mutable-call-real-verus", "mutable-call-result-and-state", "mixed-borrow-result-and-state", "mutable-call-mutants"]
 
 [[route]]
 crate_pattern = "forge/src/body_tv.rs"
 design = ".design/build/mutable-call-effects.md"
 reference = ["conformance/verified-build/mutable_call_effect.th"]
-conformance_ops = ["reachable-mutable-effect-derivation"]
+conformance_ops = ["reachable-mutable-effect-derivation", "mixed-borrow-frame-derivation"]
 
 [[route]]
 crate_pattern = "forge/src/exec_tv.rs"
@@ -2050,19 +2051,19 @@ conformance_ops = ["mutable-record-exec-frame", "stateful-initializer-body-tv-ro
 crate_pattern = "forge/tests/body_tv.rs"
 design = ".design/build/mutable-call-effects.md"
 reference = ["conformance/verified-build/mutable_call_effect.th"]
-conformance_ops = ["derived-mutable-call-effect"]
+conformance_ops = ["derived-mutable-call-effect", "derived-mixed-borrow-effect", "shared-exclusive-overlap-rejection"]
 
 [[route]]
 crate_pattern = "forge/tests/verified_build.rs"
 design = ".design/build/mutable-call-effects.md"
 reference = ["conformance/verified-build/mutable_call_effect.th"]
-conformance_ops = ["mutable-call-strict-l3", "mutable-call-result-runtime", "mutable-call-tv-inventory", "mutable-call-replay", "mutable-call-tamper"]
+conformance_ops = ["mutable-call-strict-l3", "mixed-borrow-result-runtime", "shared-source-preservation-runtime", "mutable-call-tv-inventory", "mutable-call-replay", "mutable-call-tamper"]
 
 [[route]]
 crate_pattern = "conformance/verified-build/mutable_call_effect.th"
 design = ".design/build/mutable-call-effects.md"
 reference = []
-conformance_ops = ["mutable-call-result-effect-lifecycle"]
+conformance_ops = ["mixed-borrow-result-effect-lifecycle"]
 
 # Policy-free frozen platform declarations. The 74 bodyless machine doors are
 # the explicit consumer-owned exception; every other package row is L3.

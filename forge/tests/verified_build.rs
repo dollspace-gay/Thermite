@@ -1151,8 +1151,8 @@ fn mutable_call_effect_is_strict_freestanding_l3_and_executes_generated_calls() 
     let source = fs::read_to_string(bundle.join("evidence/source.verus.rs")).unwrap();
     assert!(source.starts_with("#![no_std]\n"), "{source}");
     assert!(
-        source.contains("let initial: u64 = seed + 1;")
-            && source.contains("let first: u64 = mutable_call_set(state, initial);")
+        source.contains("let initial: u64 = mutable_call_value(source);")
+            && source.contains("let first: u64 = mutable_call_copy(state, source);")
             && source.contains("let final_value: u64 = mutable_call_set(state, first);"),
         "{source}"
     );
@@ -1163,18 +1163,17 @@ fn mutable_call_effect_is_strict_freestanding_l3_and_executes_generated_calls() 
         &consumer_source,
         r#"
 use mutable_call_effect::{
-    mutable_call_guard, mutable_call_new, mutable_call_value,
-    thermite_export_mutable_call_pipeline_v1,
+    mutable_call_guard, mutable_call_new, mutable_call_pipeline, mutable_call_value,
 };
 
 fn main() {
     let mut state = mutable_call_new(3, 77);
-    match thermite_export_mutable_call_pipeline_v1(&mut state, 40) {
-        Ok(value) => assert_eq!(value, 41),
-        Err(_) => panic!("valid mutable-call pipeline input was rejected"),
-    }
+    let source = mutable_call_new(41, 88);
+    assert_eq!(mutable_call_pipeline(&mut state, &source), 41);
     assert_eq!(mutable_call_value(&state), 41);
     assert_eq!(mutable_call_guard(&state), 77);
+    assert_eq!(mutable_call_value(&source), 41);
+    assert_eq!(mutable_call_guard(&source), 88);
 }
 "#,
     )
@@ -1254,7 +1253,7 @@ fn main() {
     let original = fs::read_to_string(&input).unwrap();
     let changed = original.replacen(
         "let final_value: u64 = mutable_call_set(state, first)",
-        "let final_value: u64 = mutable_call_set(state, seed)",
+        "let final_value: u64 = mutable_call_set(state, first + 1)",
         1,
     );
     assert_ne!(changed, original);
@@ -1460,7 +1459,11 @@ fn kernel_bundle_final_links_into_a_separate_no_std_consumer() {
     ]));
     let source = fs::read_to_string(bundle.join("evidence/source.verus.rs")).unwrap();
     assert!(source.starts_with("#![no_std]\n#![crate_type = \"rlib\"]"));
-    assert!(!source.contains("use vstd::"));
+    // Kernel verification intentionally imports Forge's digest-bound no_std
+    // vstd proof prelude. Specification code erases from the artifact; the
+    // executable crate remains no_std and links into the freestanding consumer.
+    assert_eq!(source.matches("use vstd::prelude::*;").count(), 1);
+    assert!(!source.contains("extern crate std"));
 
     let consumer = temp.0.join("kernel-consumer");
     let output = codegen_rustc(&bundle)

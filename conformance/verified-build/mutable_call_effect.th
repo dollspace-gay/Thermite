@@ -51,15 +51,26 @@ fn mutable_call_set(state: &mut MutableCallState, next: u64) -> u64
   next
 }
 
-fn mutable_call_pipeline(state: &mut MutableCallState, seed: u64) -> u64
-  req seed < 1000
-  ens result == seed + 1
+fn mutable_call_copy(state: &mut MutableCallState, source: &MutableCallState) -> u64
+  req true
+  ens result == mutable_call_value_spec(*source)
+  ens mutable_call_value_spec(*final(state)) == mutable_call_value_spec(*source)
+  ens mutable_call_guard_spec(*final(state)) == mutable_call_guard_spec(*old(state))
+  fx pure
+{
+  state.value = source.value;
+  source.value
+}
+
+fn mutable_call_pipeline(state: &mut MutableCallState, source: &MutableCallState) -> u64
+  req true
+  ens result == mutable_call_value_spec(*source)
   ens mutable_call_value_spec(*final(state)) == result
   ens mutable_call_guard_spec(*final(state)) == mutable_call_guard_spec(*old(state))
   fx pure
 {
-  let initial: u64 = seed + 1;
-  let first: u64 = mutable_call_set(state, initial);
+  let initial: u64 = mutable_call_value(source);
+  let first: u64 = mutable_call_copy(state, source);
   let final_value: u64 = mutable_call_set(state, first);
   final_value
 }

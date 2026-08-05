@@ -693,7 +693,7 @@ fn call_mutate(state: &mut State, value: u64) -> ()
 }
 
 #[test]
-fn mixed_shared_and_mutable_callee_aliasing_remains_fail_closed() {
+fn mixed_shared_and_mutable_callee_effects_are_exact_and_faithful() {
     let source = r#"
 struct State { value: u64 }
 fn copy_from(left: &mut State, right: &State) -> ()
@@ -710,20 +710,66 @@ fn call_copy(left: &mut State, right: &State) -> ()
 {
   copy_from(left, right);
 }
+fn call_copy_after_peer_update(left: &mut State, right: &mut State, value: u64) -> ()
+  req true
+  ens final(left).value == value
+  ens final(right).value == value
+  fx pure
+{
+  right.value = value;
+  copy_from(left, right);
+}
 "#;
     let file = write_th("mixed_shared_mutable_callee", source);
+    let report = run_body_tv_json(&file);
+    assert_eq!(report["counts"]["checked"].as_u64(), Some(3), "{report}");
+    assert_eq!(report["counts"]["faithful"].as_u64(), Some(3), "{report}");
+    assert_eq!(report["counts"]["divergent"].as_u64(), Some(0), "{report}");
+    assert_eq!(report["counts"]["skipped"].as_u64(), Some(0), "{report}");
+    for name in ["copy_from", "call_copy", "call_copy_after_peer_update"] {
+        assert!(
+            report["bodies"].as_array().unwrap().iter().any(|body| {
+                body["body"].as_str() == Some(name) && body["verdict"].as_str() == Some("faithful")
+            }),
+            "{name}: {report}"
+        );
+    }
+}
+
+#[test]
+fn mixed_shared_and_mutable_callee_aliasing_remains_fail_closed() {
+    let source = r#"
+struct State { value: u64 }
+fn copy_from(left: &mut State, right: &State) -> ()
+  req true
+  ens final(left).value == right.value
+  fx pure
+{
+  left.value = right.value;
+}
+fn alias(state: &mut State) -> ()
+  req true
+  ens true
+  fx pure
+{
+  copy_from(state, state);
+}
+"#;
+    let file = write_th("mixed_shared_mutable_alias", source);
     let report = run_body_tv_json(&file);
     let caller = report["bodies"]
         .as_array()
         .unwrap()
         .iter()
-        .find(|body| body["body"].as_str() == Some("call_copy"))
+        .find(|body| body["body"].as_str() == Some("alias"))
         .unwrap_or_else(|| panic!("missing mixed-alias caller body: {report}"));
     assert_eq!(caller["verdict"].as_str(), Some("skipped"), "{report}");
-    let detail = caller["detail"].as_str().unwrap_or_default();
     assert!(
-        detail.contains("shared-reference") && detail.contains("alias"),
-        "{detail}"
+        caller["detail"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("aliases exclusive root `state` through shared formal `right`"),
+        "{report}"
     );
 }
 

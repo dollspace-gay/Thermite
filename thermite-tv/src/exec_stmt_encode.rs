@@ -157,6 +157,17 @@ pub struct MutableRecordFrame {
     pub fields: Vec<RecordFieldFrame>,
 }
 
+/// One immutably borrowed finite named-record parameter and its complete ordered
+/// direct-field frame.  Keeping this distinct from [`MutableRecordFrame`] makes
+/// the alias rule explicit: a shared root may be observed by any number of shared
+/// formals, but it may not overlap any exclusive actual in the same call.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SharedRecordFrame {
+    pub name: String,
+    pub type_name: String,
+    pub fields: Vec<RecordFieldFrame>,
+}
+
 /// One independently parsed in-language callee whose body may transform one or
 /// more exclusive finite-record parameters. The reference side interprets this
 /// source body directly; production continues to call the ordinary generated
@@ -164,10 +175,15 @@ pub struct MutableRecordFrame {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MutableCallEffectFrame {
     pub name: String,
-    /// All formal parameter names in signature order. Mutable-record formals
-    /// are identified by `mutable_records`; the rest are value inputs.
+    /// All formal parameter names in signature order. Borrowed record formals
+    /// are identified by `mutable_records` or `shared_records`; the rest are
+    /// value inputs.
     pub params: Vec<String>,
     pub mutable_records: Vec<MutableRecordFrame>,
+    /// Exact finite-record shared-reference formals.  These are snapshotted from
+    /// the caller's current lifecycle state and remain read-only while the callee
+    /// source body is interpreted.
+    pub shared_records: Vec<SharedRecordFrame>,
     pub body: Block,
 }
 
@@ -242,6 +258,20 @@ impl MutableRecordFrame {
     }
 }
 
+impl SharedRecordFrame {
+    pub fn typed(
+        name: impl Into<String>,
+        type_name: impl Into<String>,
+        fields: Vec<RecordFieldFrame>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            type_name: type_name.into(),
+            fields,
+        }
+    }
+}
+
 impl MutableCallEffectFrame {
     pub fn new(
         name: impl Into<String>,
@@ -253,8 +283,15 @@ impl MutableCallEffectFrame {
             name: name.into(),
             params,
             mutable_records,
+            shared_records: Vec::new(),
             body,
         }
+    }
+
+    /// Add exact shared finite-record formals to a mutable call-effect frame.
+    pub fn with_shared_records(mut self, records: Vec<SharedRecordFrame>) -> Self {
+        self.shared_records = records;
+        self
     }
 }
 
@@ -287,6 +324,7 @@ pub struct BodyRefCtx {
     result_is_fixed_array: bool,
     result_is_unit: bool,
     mutable_records: Vec<MutableRecordFrame>,
+    shared_records: Vec<SharedRecordFrame>,
     /// Exact source bodies and formal frames for reachable in-language
     /// mutable-reference callees. Boundary declarations never enter this map.
     mutable_call_effects: BTreeMap<String, MutableCallEffectFrame>,
@@ -311,6 +349,7 @@ impl BodyRefCtx {
             result_is_fixed_array: false,
             result_is_unit: false,
             mutable_records: Vec::new(),
+            shared_records: Vec::new(),
             mutable_call_effects: BTreeMap::new(),
             named_records: BTreeMap::new(),
             constructor_records: BTreeMap::new(),
@@ -367,6 +406,12 @@ impl BodyRefCtx {
     /// Add complete direct-field frames for exclusive named-record borrows.
     pub fn with_mutable_records(mut self, records: Vec<MutableRecordFrame>) -> Self {
         self.mutable_records = records;
+        self
+    }
+
+    /// Add complete direct-field frames for immutably borrowed named records.
+    pub fn with_shared_records(mut self, records: Vec<SharedRecordFrame>) -> Self {
+        self.shared_records = records;
         self
     }
 
@@ -478,6 +523,12 @@ impl BodyRefCtx {
 
     fn mutable_record(&self, name: &str) -> Option<&MutableRecordFrame> {
         self.mutable_records
+            .iter()
+            .find(|record| record.name == name)
+    }
+
+    fn shared_record(&self, name: &str) -> Option<&SharedRecordFrame> {
+        self.shared_records
             .iter()
             .find(|record| record.name == name)
     }
@@ -1076,6 +1127,15 @@ fn record_lifecycle_ensures(
             );
         }
     }
+    for record in &ctx.shared_records {
+        for field in &record.fields {
+            let key = format!("{}.{}", record.name, field.name);
+            state.fields.insert(
+                key,
+                LifecycleCell::bounded(format!("{}.{}", record.name, field.name)),
+            );
+        }
+    }
     thread_lifecycle_block(block, &mut state, ctx, false, &mut Vec::new())?;
 
     let result = match &block.tail {
@@ -1318,10 +1378,12 @@ fn thread_lifecycle_stmt(
 }
 
 /// Apply one reachable in-language mutable-reference call to the independent
-/// lifecycle state. Actual exclusive roots must be direct, nominally exact, and
-/// pairwise distinct. The callee source body is interpreted recursively with its
-/// formal names rebound to the caller's pre-call values; production still executes
-/// the ordinary lowered call and is never replaced by this model.
+/// lifecycle state. Actual roots must be direct and nominally exact. Exclusive
+/// roots are pairwise distinct and may not overlap a shared actual; shared/shared
+/// aliasing is harmless and admitted. The callee source body is interpreted
+/// recursively with its formal names rebound to the caller's pre-call values;
+/// production still executes the ordinary lowered call and is never replaced by
+/// this model.
 fn apply_mutable_call_effect(
     name: &str,
     args: &[Expr],
@@ -1357,8 +1419,8 @@ fn apply_mutable_call_effect(
         .enumerate()
         .map(|(index, formal)| (formal.as_str(), index))
         .collect::<BTreeMap<_, _>>();
-    let mut actual_roots = BTreeMap::<String, String>::new();
-    let mut used_roots = BTreeSet::new();
+    let mut mutable_actual_roots = BTreeMap::<String, String>::new();
+    let mut used_mutable_roots = BTreeSet::new();
     for formal in &effect.mutable_records {
         let position = formal_positions.get(formal.name.as_str()).ok_or_else(|| {
             RefEncodeError::Unsupported(format!(
@@ -1375,7 +1437,7 @@ fn apply_mutable_call_effect(
                 )));
             }
         };
-        if !used_roots.insert(root.clone()) {
+        if !used_mutable_roots.insert(root.clone()) {
             return Err(RefEncodeError::Unsupported(format!(
                 "mutable-reference call `{name}` aliases exclusive root `{root}` through multiple formals"
             )));
@@ -1400,7 +1462,52 @@ fn apply_mutable_call_effect(
                 )));
             }
         }
-        actual_roots.insert(formal.name.clone(), root);
+        mutable_actual_roots.insert(formal.name.clone(), root);
+    }
+
+    let mut shared_actual_roots = BTreeMap::<String, String>::new();
+    for formal in &effect.shared_records {
+        let position = formal_positions.get(formal.name.as_str()).ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "mixed-reference callee `{name}` lost shared formal `{}`",
+                formal.name
+            ))
+        })?;
+        let root = match &args[*position] {
+            Expr::Path(path) if path.len() == 1 => path[0].clone(),
+            _ => {
+                return Err(RefEncodeError::Unsupported(format!(
+                    "shared-reference actual for `{name}::{}` must be one direct finite-record root",
+                    formal.name
+                )));
+            }
+        };
+        if used_mutable_roots.contains(&root) {
+            return Err(RefEncodeError::Unsupported(format!(
+                "mixed-reference call `{name}` aliases exclusive root `{root}` through shared formal `{}`",
+                formal.name
+            )));
+        }
+        let found_type = if let Some(actual) = ctx.shared_record(&root) {
+            actual.type_name.as_str()
+        } else if let Some(actual) = ctx.mutable_record(&root) {
+            actual.type_name.as_deref().ok_or_else(|| {
+                RefEncodeError::Unsupported(format!(
+                    "shared-reference actual `{root}` for `{name}` lacks exact nominal type metadata"
+                ))
+            })?
+        } else {
+            return Err(RefEncodeError::Unsupported(format!(
+                "shared-reference actual `{root}` for `{name}` is not an independently framed finite record"
+            )));
+        };
+        if formal.type_name != found_type {
+            return Err(RefEncodeError::Unsupported(format!(
+                "shared-reference call `{name}` expects `{}` for `{}` but actual root `{root}` has `{found_type}`",
+                formal.type_name, formal.name
+            )));
+        }
+        shared_actual_roots.insert(formal.name.clone(), root);
     }
 
     let mut callee_state = LifecycleState::default();
@@ -1417,7 +1524,7 @@ fn apply_mutable_call_effect(
         callee_state.readonly_inputs.insert(formal_name.clone());
     }
     for formal in &effect.mutable_records {
-        let actual_root = actual_roots.get(&formal.name).ok_or_else(|| {
+        let actual_root = mutable_actual_roots.get(&formal.name).ok_or_else(|| {
             RefEncodeError::Unsupported(format!(
                 "mutable-reference callee `{name}` lost actual root for formal `{}`",
                 formal.name
@@ -1435,9 +1542,29 @@ fn apply_mutable_call_effect(
                 .insert(format!("{}.{}", formal.name, field.name), value);
         }
     }
+    for formal in &effect.shared_records {
+        let actual_root = shared_actual_roots.get(&formal.name).ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "mixed-reference callee `{name}` lost actual shared root for formal `{}`",
+                formal.name
+            ))
+        })?;
+        for field in &formal.fields {
+            let actual_key = format!("{actual_root}.{}", field.name);
+            let value = state.fields.get(&actual_key).cloned().ok_or_else(|| {
+                RefEncodeError::Unsupported(format!(
+                    "mixed-reference call `{name}` cannot snapshot exact caller field `{actual_key}`"
+                ))
+            })?;
+            callee_state
+                .fields
+                .insert(format!("{}.{}", formal.name, field.name), value);
+        }
+    }
 
     let mut callee_ctx = ctx.clone();
     callee_ctx.mutable_records = effect.mutable_records.clone();
+    callee_ctx.shared_records = effect.shared_records.clone();
     active_calls.push(name.to_string());
     let interpreted = thread_lifecycle_block(
         &effect.body,
@@ -1457,7 +1584,7 @@ fn apply_mutable_call_effect(
     };
 
     for formal in &effect.mutable_records {
-        let actual_root = actual_roots.get(&formal.name).ok_or_else(|| {
+        let actual_root = mutable_actual_roots.get(&formal.name).ok_or_else(|| {
             RefEncodeError::Unsupported(format!(
                 "mutable-reference callee `{name}` lost actual root for formal `{}`",
                 formal.name

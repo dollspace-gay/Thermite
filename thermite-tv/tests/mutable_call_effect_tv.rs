@@ -7,7 +7,10 @@ use thermite_tv::obligation::{
     body_equivalence_obligation, exec_equivalence_obligation, BodyObligationFrame, BodyParamDecl,
     ExecObligationFrame, ExecParamDecl,
 };
-use thermite_tv::{MutableCallEffectFrame, MutableRecordFrame, NamedRecordFrame, RecordFieldFrame};
+use thermite_tv::{
+    MutableCallEffectFrame, MutableRecordFrame, NamedRecordFrame, RecordFieldFrame,
+    SharedRecordFrame,
+};
 
 const SOURCE: &str = r#"
 struct State { value: u64, guard: u64 }
@@ -51,6 +54,26 @@ fn result_pipeline(state: &mut State, value: u64) -> u64
   let final_value: u64 = mutate_returning(state, next);
   final_value
 }
+fn copy_from(left: &mut State, right: &State) -> u64
+  req true
+  ens result == right.guard
+  ens final(left).value == right.value
+  ens final(left).guard == old(left).guard
+  fx pure
+{
+  left.value = right.value;
+  right.guard
+}
+fn mixed_pipeline(left: &mut State, right: &State) -> u64
+  req true
+  ens result == right.guard
+  ens final(left).value == right.value
+  ens final(left).guard == old(left).guard
+  fx pure
+{
+  let observed: u64 = copy_from(left, right);
+  observed
+}
 "#;
 
 const DEFINITIONS: &str = r#"
@@ -75,6 +98,16 @@ fn mutate_returning(state: &mut State, value: u64) -> (result: u64)
 {
     state.value = value;
     value
+}
+
+fn copy_from(left: &mut State, right: &State) -> (result: u64)
+    ensures
+        result == right.guard,
+        final(left).value == right.value,
+        final(left).guard == old(left).guard,
+{
+    left.value = right.value;
+    right.guard
 }
 "#;
 
@@ -149,6 +182,28 @@ fn result_frame() -> BodyObligationFrame {
             &["state"],
             function_body("mutate_returning"),
         )],
+        named_records: vec![NamedRecordFrame::new("State", fields())],
+        ..Default::default()
+    }
+}
+
+fn mixed_frame() -> BodyObligationFrame {
+    BodyObligationFrame {
+        spec_defs: vec![DEFINITIONS.to_string()],
+        params: vec![
+            BodyParamDecl::new("left", "&mut State"),
+            BodyParamDecl::new("right", "&State"),
+        ],
+        ret_type: "u64".to_string(),
+        mutable_records: vec![MutableRecordFrame::typed("left", "State", fields())],
+        shared_records: vec![SharedRecordFrame::typed("right", "State", fields())],
+        mutable_call_effects: vec![MutableCallEffectFrame::new(
+            "copy_from",
+            vec!["left".to_string(), "right".to_string()],
+            vec![MutableRecordFrame::typed("left", "State", fields())],
+            function_body("copy_from"),
+        )
+        .with_shared_records(vec![SharedRecordFrame::typed("right", "State", fields())])],
         named_records: vec![NamedRecordFrame::new("State", fields())],
         ..Default::default()
     }
@@ -264,6 +319,72 @@ fn direct_let_bound_mutable_call_results_compose_with_exact_post_state() {
             .expect("result-consuming mutant obligation");
         assert_verus(name, &obligation, false);
     }
+}
+
+#[test]
+fn mixed_shared_and_mutable_records_compose_snapshot_result_and_post_state() {
+    let production = r#"    let observed: u64 = copy_from(left, right);
+    observed
+"#;
+    let obligation =
+        body_equivalence_obligation(&function_body("mixed_pipeline"), production, &mixed_frame())
+            .expect("mixed shared/mutable call obligation");
+    assert!(obligation.contains("result == right.guard"), "{obligation}");
+    assert!(
+        obligation.contains("final(left).value == right.value"),
+        "{obligation}"
+    );
+    assert!(
+        obligation.contains("final(left).guard == old(left).guard"),
+        "{obligation}"
+    );
+    assert_verus("mixed_shared_mutable", &obligation, true);
+
+    let wrong_result = body_equivalence_obligation(
+        &function_body("mixed_pipeline"),
+        "    let observed: u64 = copy_from(left, right);\n    left.guard\n",
+        &mixed_frame(),
+    )
+    .expect("mixed result mutant obligation");
+    assert_verus("mixed_wrong_shared_result", &wrong_result, false);
+}
+
+#[test]
+fn shared_actual_may_not_overlap_an_exclusive_actual() {
+    let parsed = thermite_syntax::parse(
+        r#"
+fn alias(state: &mut State) -> u64
+  req true
+  ens result == final(state).guard
+  fx pure
+{
+  let observed: u64 = copy_from(state, state);
+  observed
+}
+"#,
+    );
+    assert!(parsed.is_clean(), "parse errors: {:?}", parsed.errors);
+    let body = parsed
+        .program
+        .items
+        .iter()
+        .find_map(|item| match item {
+            Item::Fn(function) if function.name == "alias" => function.body.clone(),
+            _ => None,
+        })
+        .expect("alias body");
+    let mut frame = mixed_frame();
+    frame.params = vec![BodyParamDecl::new("state", "&mut State")];
+    frame.mutable_records = vec![MutableRecordFrame::typed("state", "State", fields())];
+    frame.shared_records.clear();
+    let error = body_equivalence_obligation(&body, "", &frame)
+        .expect_err("shared/exclusive overlap must fail before certification");
+    assert!(
+        error
+            .to_string()
+            .contains("aliases exclusive root `state` through shared formal `right`"),
+        "{error}"
+    );
 }
 
 #[test]

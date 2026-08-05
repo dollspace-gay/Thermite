@@ -87,7 +87,7 @@ use thermite_syntax::ast::{Block, Expr, Type};
 use crate::exec_encode::{exec_ref_value, ExecRefCtx, RefEncodeError as ExecRefEncodeError};
 use crate::exec_stmt_encode::{
     body_ref_state_ensures, loop_ref_obligations, negate_condition, BodyRefCtx, EnumVariantFrame,
-    MutableCallEffectFrame, MutableRecordFrame, NamedRecordFrame,
+    MutableCallEffectFrame, MutableRecordFrame, NamedRecordFrame, SharedRecordFrame,
 };
 pub use crate::ref_encode::StateViewKind;
 use crate::ref_encode::{ref_contract_pred, RefCtx, RefEncodeError};
@@ -616,6 +616,9 @@ pub struct BodyObligationFrame {
     pub result_is_unit: bool,
     /// Complete direct-field frames for exclusive named-record parameters.
     pub mutable_records: Vec<MutableRecordFrame>,
+    /// Complete direct-field frames for shared named-record parameters. These
+    /// supply immutable snapshots and exact nominal types for mixed-borrow calls.
+    pub shared_records: Vec<SharedRecordFrame>,
     /// Reachable in-language mutable-reference callee bodies and their exact
     /// formal record frames. Used only by the independent state denotation.
     pub mutable_call_effects: Vec<MutableCallEffectFrame>,
@@ -641,6 +644,7 @@ impl BodyObligationFrame {
             .with_fixed_array_result(self.result_is_fixed_array)
             .with_unit_result(self.result_is_unit)
             .with_mutable_records(self.mutable_records.clone())
+            .with_shared_records(self.shared_records.clone())
             .with_mutable_call_effects(self.mutable_call_effects.clone())
             .with_named_records(self.named_records.clone())
             .with_constructor_records(self.constructor_records.clone())

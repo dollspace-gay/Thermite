@@ -15,7 +15,7 @@ governs:
   - forge/tests/body_tv.rs
   - forge/tests/verified_build.rs
   - conformance/verified-build/owned_aggregate_lifecycle.th
-audited-content-sha256: 01a600c748ae7dc9302a238677c82186757030db37dec00b15f11d5e8ae39ab6 (re-pinned 2026-08-05 after target-feature binding and lint-only iterator cleanup; owned aggregate semantics remain regression-covered)
+audited-content-sha256: 49a1e8c1529ea52f8b349856909ba7f67715769a8598553a88f8e6b3011328cc (re-pinned 2026-08-05 after exact shared snapshots in mutable call composition and the no_std vstd-prelude assertion repair; owned aggregate semantics remain regression-covered)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/named-record-lifecycle.md
@@ -141,8 +141,9 @@ inlining production code or trusting the source contract alone.
 This increment's original composition is deliberately limited to value effects.
 `.design/build/mutable-call-effects.md` now supplies the separate exact frame for
 statement-position bodyful calls and direct typed let-bound results over
-pairwise-distinct direct finite-record roots. Mixed shared/mutable formals,
-mutable slices/arrays, projected actual roots, nested/general returned-value
+pairwise-distinct direct finite-record roots, including nominally exact direct
+shared finite-record snapshots that do not overlap an exclusive actual. Mutable
+slices/arrays, projected actual roots, nested/general returned-value
 expressions, bodyless boundary functions, platform
 effects, allocation, unresolved calls, recursive effect cycles, and other
 non-admitted effects remain fail-closed.
@@ -215,8 +216,8 @@ This increment is shipped only when all of the following hold:
 The exact typed nested-field and terminal fixed-array projection subset is now
 shipped by `.design/build/nested-aggregate-lifecycle.md`; exact record-state
 loops are supplied by `.design/build/record-state-loops.md`. This increment still
-does not claim mutable enum payloads, index-then-field aliasing, mixed
-shared/mutable, projected-root, or mutable slice/array call effects, nested or
+does not claim mutable enum payloads, index-then-field aliasing, projected-root
+or mutable slice/array call effects, nested or
 general mutable-call result expressions, static global ownership, affine uniqueness, concurrent
 record access, atomic object/machine refinement, or Rust/assembly TPL refinement.
 It does not add or package a kernel.

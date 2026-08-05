@@ -1378,7 +1378,8 @@ provides total bit operations and distinct-bit frames, all bridged to L3.
 Primitive manifests provide atomics, ownership, collections, synchronization,
 waits, and `platform.thpkg.json` declarations—never a kernel or machine body.
 Bodyful helpers are L3; bodyless machine doors are consumer refinement
-obligations. Full affinity, aggregate generality, and machine refinement remain.
+obligations. Registry v3 proves a SeqCst scalar adapter against pinned vstd but
+retains its L1 hardware cap; full machine refinement remains.
 
 ",
     );

@@ -39,6 +39,8 @@ const COMPOSITION_RECEIPT_SCHEMA: &str = "thermite.verified-composition-receipt.
 const SOURCE_DATE_EPOCH: &str = "0";
 const KERNEL_VSTD_LINK_SOURCE_NAME: &str = "kernel-vstd-link.rs";
 const KERNEL_VSTD_LINK_SOURCE: &str = include_str!("kernel_vstd_link.rs");
+const MACHINE_ATOMIC_MODEL_SOURCE_PATH: &str = "evidence/machine-models/pinned-vstd-atomic.rs";
+const MACHINE_VSTD_RLIB_PATH: &str = "artifact/deps/libvstd.rlib";
 const STRICT_GATES: &[&str] = &[
     "parse-spec-effects",
     "complete-end-to-end-closure",
@@ -71,6 +73,27 @@ const COMPOSITION_STRICT_GATES: &[&str] = &[
     "frozen-primitive-registry-closure",
     "exact-boundary-refinement",
     "whole-crate-no-cheating",
+    "verus-codegen",
+    "cryptographic-binding",
+];
+const MACHINE_COMPOSITION_STRICT_GATES: &[&str] = &[
+    "parse-spec-effects",
+    "complete-to-machine-boundary-closure",
+    "source-completeness",
+    "no-escape-hatches-in-checked-layers",
+    "termination",
+    "l3-application-function-certificates",
+    "contract-tv-complete",
+    "exec-tv-complete",
+    "body-loop-tv-complete",
+    "total-export-wrappers",
+    "rich-composition-visibility",
+    "direct-verus-source-policy",
+    "combined-source-inventory",
+    "frozen-primitive-registry-closure",
+    "exact-checked-wrapper-refinement",
+    "explicit-residual-machine-assumptions",
+    "whole-checked-crate-no-cheating",
     "verus-codegen",
     "cryptographic-binding",
 ];
@@ -222,6 +245,16 @@ pub struct PlannedPrimitiveEntryV1 {
     pub concurrency: String,
     pub memory_orderings: Vec<String>,
     pub failure: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub machine_family: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub machine_operation: Option<String>,
+    #[serde(default)]
+    pub residual_assumptions: Vec<String>,
+}
+
+fn default_primitive_proof_basis() -> String {
+    "verus_builtins".to_string()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -232,6 +265,8 @@ pub struct PlannedPrimitiveCrateV1 {
     pub authored_source_sha256: String,
     pub crate_source_path: String,
     pub crate_source_sha256: String,
+    #[serde(default = "default_primitive_proof_basis")]
+    pub proof_basis: String,
     pub items: Vec<PlannedShellItem>,
 }
 
@@ -518,6 +553,7 @@ impl ArtifactPlanV1 {
                         );
                         c.field("crate_source_path", &primitive_crate.crate_source_path);
                         c.field("crate_source_sha256", &primitive_crate.crate_source_sha256);
+                        c.field("proof_basis", &primitive_crate.proof_basis);
                         for item in &primitive_crate.items {
                             c.record("item", |c| {
                                 c.field("name", &item.name);
@@ -588,6 +624,17 @@ impl ArtifactPlanV1 {
                                     c.field("memory_ordering", ordering);
                                 }
                                 c.field("failure", &entry.failure);
+                                c.field(
+                                    "machine_family",
+                                    entry.machine_family.as_deref().unwrap_or(""),
+                                );
+                                c.field(
+                                    "machine_operation",
+                                    entry.machine_operation.as_deref().unwrap_or(""),
+                                );
+                                for assumption in &entry.residual_assumptions {
+                                    c.field("residual_assumption", assumption);
+                                }
                             });
                         }
                     });
@@ -669,6 +716,10 @@ pub struct KernelVstdModelEvidence {
     pub source_file_count: u64,
     pub source_total_bytes: u64,
     pub source_sha256: String,
+    pub atomic_source_path: String,
+    pub atomic_source_sha256: String,
+    pub full_rlib_path: String,
+    pub full_rlib_sha256: String,
     pub link_source_name: String,
     pub link_source_sha256: String,
     pub link_build_args: Vec<String>,
@@ -774,12 +825,47 @@ pub struct ToolchainDependency {
 struct CollectedToolchain {
     evidence: ToolchainEvidence,
     dependency_paths: BTreeMap<String, PathBuf>,
+    kernel_machine_vstd_rlib: Option<PathBuf>,
     _kernel_vstd_scratch: Option<ScratchTree>,
 }
 
 impl CollectedToolchain {
     fn dependency_path(&self, name: &str) -> Option<&Path> {
         self.dependency_paths.get(name).map(PathBuf::as_path)
+    }
+
+    fn activate_machine_vstd(&mut self) -> Result<(), ForgeError> {
+        let path =
+            self.kernel_machine_vstd_rlib
+                .as_ref()
+                .ok_or_else(|| ForgeError::VerusOutput {
+                    detail: "machine-aware build has no pinned full vstd rlib".to_string(),
+                })?;
+        let model =
+            self.evidence
+                .kernel_vstd_model
+                .as_ref()
+                .ok_or_else(|| ForgeError::VerusOutput {
+                    detail: "machine-aware build has no pinned kernel vstd model".to_string(),
+                })?;
+        if file_sha256(path)?.2 != model.full_rlib_sha256 {
+            return Err(ForgeError::VerusOutput {
+                detail: "pinned full vstd rlib drifted before machine-aware build".to_string(),
+            });
+        }
+        let dependency = self
+            .evidence
+            .link_dependencies
+            .iter_mut()
+            .find(|dependency| dependency.name == "libvstd.rlib")
+            .ok_or_else(|| ForgeError::VerusOutput {
+                detail: "machine-aware build has no vstd link dependency row".to_string(),
+            })?;
+        dependency.source_path = model.full_rlib_path.clone();
+        dependency.sha256 = model.full_rlib_sha256.clone();
+        self.dependency_paths
+            .insert("libvstd.rlib".to_string(), path.clone());
+        Ok(())
     }
 }
 
@@ -852,6 +938,8 @@ pub struct CompositionReceiptBindingV1 {
     pub reachable_primitive_count: u64,
     #[serde(default)]
     pub discharged_refinement_obligations: u64,
+    #[serde(default)]
+    pub residual_machine_assumptions: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1003,6 +1091,10 @@ impl ReceiptBindingV1 {
                 c.field(
                     "discharged_refinement_obligations",
                     &composition.discharged_refinement_obligations.to_string(),
+                );
+                c.field(
+                    "residual_machine_assumptions",
+                    &composition.residual_machine_assumptions.to_string(),
                 );
             });
         }
@@ -3706,6 +3798,7 @@ fn assurance_aggregate_with_registered_boundaries(
     closure: &VerifiedClosure,
     exports: &[PlannedExport],
     registered_boundaries: &BTreeSet<String>,
+    machine_boundaries: &BTreeSet<String>,
 ) -> Result<AssuranceAggregate, ForgeError> {
     let required: BTreeSet<&str> = closure
         .functions
@@ -3722,7 +3815,10 @@ fn assurance_aggregate_with_registered_boundaries(
             .ok_or_else(|| ForgeError::VerusOutput {
                 detail: format!("missing certificate while aggregating `{name}`"),
             })?;
-        let achieved = if registered_boundaries.contains(name) {
+        let achieved = if machine_boundaries.contains(name) {
+            minimum = minimum.min(Level::L1);
+            "L1-residual-machine-assumption".to_string()
+        } else if registered_boundaries.contains(name) {
             minimum = minimum.min(Level::L3);
             "L3-direct-refinement".to_string()
         } else {
@@ -3731,7 +3827,9 @@ fn assurance_aggregate_with_registered_boundaries(
         };
         members.push(AssuranceMember {
             name: name.to_string(),
-            kind: if registered_boundaries.contains(name) {
+            kind: if machine_boundaries.contains(name) {
+                "frozen_machine_boundary".to_string()
+            } else if registered_boundaries.contains(name) {
                 "frozen_primitive_boundary".to_string()
             } else if closure.functions.contains(name) {
                 "executable".to_string()
@@ -3740,6 +3838,13 @@ fn assurance_aggregate_with_registered_boundaries(
             },
             achieved,
         });
+        if machine_boundaries.contains(name) {
+            members.push(AssuranceMember {
+                name: format!("{name}::checked_wrapper"),
+                kind: "machine_refinement_wrapper".to_string(),
+                achieved: "L3-relative-to-pinned-machine-model".to_string(),
+            });
+        }
     }
     for export in exports.iter().filter(|export| export.wrapped) {
         minimum = minimum.min(Level::L3);
@@ -3751,16 +3856,35 @@ fn assurance_aggregate_with_registered_boundaries(
     }
     members.sort_by(|left, right| left.name.cmp(&right.name).then(left.kind.cmp(&right.kind)));
     let minimum_reachable = level_name(minimum).to_string();
-    if minimum < Level::L3 {
+    if machine_boundaries.is_empty() && minimum < Level::L3 {
         return Err(ForgeError::VerusOutput {
             detail: format!("verified artifact aggregate fell below L3 at {minimum_reachable}"),
         });
     }
+    if !machine_boundaries.is_empty() && minimum != Level::L1 {
+        return Err(ForgeError::VerusOutput {
+            detail: format!(
+                "machine-aware artifact must retain an L1 residual boundary, observed {minimum_reachable}"
+            ),
+        });
+    }
     Ok(AssuranceAggregate {
-        headline: "L3".to_string(),
-        cap: "L3".to_string(),
+        headline: if machine_boundaries.is_empty() {
+            "L3".to_string()
+        } else {
+            "L1".to_string()
+        },
+        cap: if machine_boundaries.is_empty() {
+            "L3".to_string()
+        } else {
+            "L1-machine-residual".to_string()
+        },
         minimum_reachable,
-        scope: "end_to_end".to_string(),
+        scope: if machine_boundaries.is_empty() {
+            "end_to_end".to_string()
+        } else {
+            "to_machine_boundary".to_string()
+        },
         members,
     })
 }
@@ -4125,6 +4249,7 @@ fn collect_toolchain(target: VerifiedTarget) -> Result<CollectedToolchain, Forge
     let mut dependency_paths = BTreeMap::new();
     let mut kernel_vstd_model = None;
     let mut kernel_vstd_scratch = None;
+    let mut kernel_machine_vstd_rlib = None;
     let verus_dir = verus.parent().ok_or_else(|| ForgeError::VerusOutput {
         detail: "the resolved Verus binary has no installation directory".to_string(),
     })?;
@@ -4134,6 +4259,7 @@ fn collect_toolchain(target: VerifiedTarget) -> Result<CollectedToolchain, Forge
         link_dependencies.push(dependency);
         kernel_vstd_model = Some(model);
         kernel_vstd_scratch = Some(scratch);
+        kernel_machine_vstd_rlib = Some(verus_dir.join("libvstd.rlib"));
     } else {
         let path = verus_dir.join("libvstd.rlib");
         if !path.is_file() {
@@ -4209,6 +4335,7 @@ fn collect_toolchain(target: VerifiedTarget) -> Result<CollectedToolchain, Forge
     Ok(CollectedToolchain {
         evidence,
         dependency_paths,
+        kernel_machine_vstd_rlib,
         _kernel_vstd_scratch: kernel_vstd_scratch,
     })
 }
@@ -4235,7 +4362,9 @@ fn build_kernel_vstd_link(
 ) -> Result<(ScratchTree, ToolchainDependency, KernelVstdModelEvidence), ForgeError> {
     let vir = verus_dir.join("vstd.vir");
     let source_root = verus_dir.join("vstd");
-    if !vir.is_file() || !source_root.is_dir() {
+    let atomic_source = source_root.join("atomic.rs");
+    let full_rlib = verus_dir.join("libvstd.rlib");
+    if !vir.is_file() || !source_root.is_dir() || !atomic_source.is_file() || !full_rlib.is_file() {
         return Err(ForgeError::VerusOutput {
             detail: format!(
                 "kernel slice model requires `{}` and `{}`",
@@ -4297,6 +4426,10 @@ fn build_kernel_vstd_link(
         source_file_count,
         source_total_bytes,
         source_sha256,
+        atomic_source_path: atomic_source.display().to_string(),
+        atomic_source_sha256: file_sha256(&atomic_source)?.2,
+        full_rlib_path: full_rlib.display().to_string(),
+        full_rlib_sha256: file_sha256(&full_rlib)?.2,
         link_source_name: KERNEL_VSTD_LINK_SOURCE_NAME.to_string(),
         link_source_sha256: sha256(KERNEL_VSTD_LINK_SOURCE.as_bytes()),
         link_build_args: kernel_vstd_link_build_args(),
@@ -5493,6 +5626,45 @@ fn stage_and_publish(input: StageInput<'_>) -> Result<VerifiedBuildReceiptV1, Fo
                 object_members: compiled_primitive.object_members.clone(),
             });
         }
+        if composition
+            .primitive_crates
+            .iter()
+            .any(|source| source.plan.proof_basis == "pinned_vstd_machine_model")
+        {
+            let model =
+                toolchain
+                    .kernel_vstd_model
+                    .as_ref()
+                    .ok_or_else(|| ForgeError::VerusOutput {
+                        detail: "machine primitive composition has no pinned kernel vstd model"
+                            .to_string(),
+                    })?;
+            let atomic_source =
+                fs::read(&model.atomic_source_path).map_err(|source| ForgeError::Io {
+                    path: model.atomic_source_path.clone(),
+                    source,
+                })?;
+            if sha256(&atomic_source) != model.atomic_source_sha256 {
+                return Err(ForgeError::VerusOutput {
+                    detail: "pinned vstd atomic source or full codegen rlib changed during machine composition"
+                        .to_string(),
+                });
+            }
+            fs::create_dir_all(stage.path.join("evidence/machine-models")).map_err(|source| {
+                ForgeError::Io {
+                    path: stage
+                        .path
+                        .join("evidence/machine-models")
+                        .display()
+                        .to_string(),
+                    source,
+                }
+            })?;
+            write_bytes(
+                &stage.path.join(MACHINE_ATOMIC_MODEL_SOURCE_PATH),
+                &atomic_source,
+            )?;
+        }
         if let Some(registry) = composition.primitive_registry {
             write_bytes(&stage.path.join(&registry.plan.path), &registry.bytes)?;
         }
@@ -5595,11 +5767,25 @@ fn stage_and_publish(input: StageInput<'_>) -> Result<VerifiedBuildReceiptV1, Fo
                 .collect()
         })
         .unwrap_or_default();
+    let machine_boundaries: BTreeSet<String> = plan
+        .composition
+        .as_ref()
+        .and_then(|composition| composition.primitive_registry.as_ref())
+        .map(|registry| {
+            registry
+                .entries
+                .iter()
+                .filter(|entry| entry.reachable && entry.machine_family.is_some())
+                .map(|entry| entry.thermite_name.clone())
+                .collect()
+        })
+        .unwrap_or_default();
     let assurance_aggregate = assurance_aggregate_with_registered_boundaries(
         certificates,
         &staged_closure,
         &plan.exports,
         &registered_boundaries,
+        &machine_boundaries,
     )?;
     let injected_mutation = match std::env::var("THERMITE_L3_TEST_FAULT").as_deref() {
         Ok("after-artifact-hash") if cfg!(debug_assertions) => Some(artifact_relative.as_str()),
@@ -5658,11 +5844,23 @@ fn stage_and_publish(input: StageInput<'_>) -> Result<VerifiedBuildReceiptV1, Fo
                             .sum()
                     })
                     .unwrap_or(0),
+                residual_machine_assumptions: composition
+                    .primitive_registry
+                    .as_ref()
+                    .map(|registry| {
+                        registry
+                            .entries
+                            .iter()
+                            .filter(|entry| entry.reachable)
+                            .map(|entry| entry.residual_assumptions.len() as u64)
+                            .sum()
+                    })
+                    .unwrap_or(0),
             });
     let binding = ReceiptBindingV1 {
         schema: receipt_schema.to_string(),
-        assurance: "L3".to_string(),
-        scope: "end_to_end".to_string(),
+        assurance: assurance_aggregate.headline.clone(),
+        scope: assurance_aggregate.scope.clone(),
         plan_sha256: plan_sha256.to_string(),
         raw_source_sha256: plan.raw_source_sha256.clone(),
         parsed_program_sha256: plan.parsed_program_sha256.clone(),
@@ -5834,7 +6032,12 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
             detail: "verified-build binding digest mismatch".to_string(),
         });
     }
-    let mandatory_policy = if composition_receipt {
+    let mandatory_policy = if composition_receipt
+        && receipt.binding.scope == "to_machine_boundary"
+        && receipt.binding.assurance == "L1"
+    {
+        MACHINE_COMPOSITION_STRICT_GATES
+    } else if composition_receipt {
         COMPOSITION_STRICT_GATES
     } else {
         STRICT_GATES
@@ -5954,6 +6157,19 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
                                 .sum()
                         })
                         .unwrap_or(0)
+                || binding.residual_machine_assumptions
+                    != composition
+                        .primitive_registry
+                        .as_ref()
+                        .map(|registry| {
+                            registry
+                                .entries
+                                .iter()
+                                .filter(|entry| entry.reachable)
+                                .map(|entry| entry.residual_assumptions.len() as u64)
+                                .sum()
+                        })
+                        .unwrap_or(0)
             {
                 return Err(ForgeError::VerusOutput {
                     detail: "composition receipt binding disagrees with its combined artifact plan"
@@ -5967,8 +6183,24 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
             })
         }
     }
-    if receipt.binding.assurance != "L3"
-        || receipt.binding.scope != "end_to_end"
+    let has_machine_boundaries = plan
+        .composition
+        .as_ref()
+        .and_then(|composition| composition.primitive_registry.as_ref())
+        .is_some_and(|registry| {
+            registry
+                .entries
+                .iter()
+                .any(|entry| entry.reachable && entry.machine_family.is_some())
+        });
+    let expected_assurance = if has_machine_boundaries { "L1" } else { "L3" };
+    let expected_scope = if has_machine_boundaries {
+        "to_machine_boundary"
+    } else {
+        "end_to_end"
+    };
+    if receipt.binding.assurance != expected_assurance
+        || receipt.binding.scope != expected_scope
         || receipt.binding.crate_name != plan.crate_name
         || receipt.binding.target != plan.target
     {
@@ -6195,6 +6427,19 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
                 .collect()
         })
         .unwrap_or_default();
+    let machine_boundaries: BTreeSet<String> = plan
+        .composition
+        .as_ref()
+        .and_then(|composition| composition.primitive_registry.as_ref())
+        .map(|registry| {
+            registry
+                .entries
+                .iter()
+                .filter(|entry| entry.reachable && entry.machine_family.is_some())
+                .map(|entry| entry.thermite_name.clone())
+                .collect()
+        })
+        .unwrap_or_default();
     if let Some(detail) = reject_certificates_with_registered_boundaries(
         &certificates,
         &closure,
@@ -6210,15 +6455,21 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
         &closure,
         &exports,
         &registered_boundaries,
+        &machine_boundaries,
     )?;
     if receipt.binding.assurance_aggregate != reconstructed_assurance
-        || reconstructed_assurance.headline != "L3"
-        || reconstructed_assurance.cap != "L3"
-        || reconstructed_assurance.scope != "end_to_end"
-        || !matches!(
-            reconstructed_assurance.minimum_reachable.as_str(),
-            "L3" | "L4"
-        )
+        || reconstructed_assurance.headline != expected_assurance
+        || reconstructed_assurance.scope != expected_scope
+        || if has_machine_boundaries {
+            reconstructed_assurance.cap != "L1-machine-residual"
+                || reconstructed_assurance.minimum_reachable != "L1"
+        } else {
+            reconstructed_assurance.cap != "L3"
+                || !matches!(
+                    reconstructed_assurance.minimum_reachable.as_str(),
+                    "L3" | "L4"
+                )
+        }
     {
         return Err(ForgeError::VerusOutput {
             detail: "receipt assurance aggregate is not the minimum of the complete L3 closure"
@@ -6419,12 +6670,23 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
             if model.link_source_name != KERNEL_VSTD_LINK_SOURCE_NAME
                 || model.link_source_sha256 != sha256(KERNEL_VSTD_LINK_SOURCE.as_bytes())
                 || model.link_build_args != kernel_vstd_link_build_args()
-                || model.link_rlib_sha256 != vstd_dependency.sha256
-                || vstd_dependency.source_path != "<forge-generated:kernel-vstd-link.rs>"
+                || if has_machine_boundaries {
+                    model.full_rlib_sha256 != vstd_dependency.sha256
+                        || vstd_dependency.source_path != model.full_rlib_path
+                } else {
+                    model.link_rlib_sha256 != vstd_dependency.sha256
+                        || vstd_dependency.source_path != "<forge-generated:kernel-vstd-link.rs>"
+                }
                 || model.source_file_count == 0
                 || model.source_total_bytes == 0
                 || model.source_sha256.len() != 64
                 || model.vir_sha256.len() != 64
+                || model.atomic_source_sha256.len() != 64
+                || model.full_rlib_sha256.len() != 64
+                || Path::new(&model.atomic_source_path).file_name()
+                    != Some(std::ffi::OsStr::new("atomic.rs"))
+                || Path::new(&model.full_rlib_path).file_name()
+                    != Some(std::ffi::OsStr::new("libvstd.rlib"))
             {
                 return Err(ForgeError::VerusOutput {
                     detail: "bound kernel vstd model identity is malformed or inconsistent"
@@ -6446,6 +6708,7 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
             });
         }
     }
+    validate_machine_model_bundle(bundle, &plan, &toolchain)?;
     let artifact_file = receipt
         .binding
         .files
@@ -6552,6 +6815,21 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
             .as_ref()
             .map(|composition| composition.primitive_crates.as_slice())
             .unwrap_or(&[]);
+        let replay_final_vstd_path = if planned_primitive_crates
+            .iter()
+            .any(|primitive| primitive.proof_basis == "pinned_vstd_machine_model")
+        {
+            Some(
+                current_verus
+                    .parent()
+                    .ok_or_else(|| ForgeError::VerusOutput {
+                        detail: "replay Verus binary has no installation directory".to_string(),
+                    })?
+                    .join("libvstd.rlib"),
+            )
+        } else {
+            replay_kernel_vstd_path.clone()
+        };
         let mut replayed_primitive_crates = Vec::new();
         for (planned, bound) in planned_primitive_crates.iter().zip(bound_primitive_crates) {
             let primitive_source =
@@ -6562,6 +6840,34 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
                             planned.name
                         ),
                     })?;
+            let machine_model = planned.proof_basis == "pinned_vstd_machine_model";
+            let primitive_vstd_path = if machine_model {
+                let path = current_verus
+                    .parent()
+                    .ok_or_else(|| ForgeError::VerusOutput {
+                        detail: "replay Verus binary has no installation directory".to_string(),
+                    })?
+                    .join("libvstd.rlib");
+                let expected = toolchain
+                    .kernel_vstd_model
+                    .as_ref()
+                    .map(|model| model.full_rlib_sha256.as_str())
+                    .ok_or_else(|| ForgeError::VerusOutput {
+                        detail: "replay machine primitive has no pinned vstd machine model"
+                            .to_string(),
+                    })?;
+                if file_sha256(&path)?.2 != expected {
+                    return Err(ForgeError::VerusOutput {
+                        detail: format!(
+                            "replay full vstd dependency for machine primitive crate `{}` drifted",
+                            planned.name
+                        ),
+                    });
+                }
+                Some(path)
+            } else {
+                replay_kernel_vstd_path.clone()
+            };
             let replayed = compile_verus_source(CompileVerusInput {
                 crate_name: &planned.name,
                 source: &primitive_source,
@@ -6569,11 +6875,11 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
                 verus_path: current_verus.to_string_lossy().as_ref(),
                 environment: &replay_environment,
                 codegen_toolchain_sha256: &current_codegen.canonical_identity_sha256(),
-                kernel_vstd_rlib: replay_kernel_vstd_path.as_deref(),
+                kernel_vstd_rlib: primitive_vstd_path.as_deref(),
                 target_features,
                 imports: &[],
                 export_vir: true,
-                kernel_vstd_model: false,
+                kernel_vstd_model: machine_model,
             })?;
             if !replayed.evidence.success
                 || sha256(&replayed.artifact) != bound.rlib_sha256
@@ -6609,7 +6915,7 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
             verus_path: current_verus.to_string_lossy().as_ref(),
             environment: &replay_environment,
             codegen_toolchain_sha256: &current_codegen.canonical_identity_sha256(),
-            kernel_vstd_rlib: replay_kernel_vstd_path.as_deref(),
+            kernel_vstd_rlib: replay_final_vstd_path.as_deref(),
             target_features,
             imports: &replay_imports,
             export_vir: false,
@@ -6628,6 +6934,59 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
         replayed: replay,
         artifact_sha256: artifact.sha256.clone(),
     })
+}
+
+fn validate_machine_model_bundle(
+    bundle: &Path,
+    plan: &ArtifactPlanV1,
+    toolchain: &ToolchainEvidence,
+) -> Result<(), ForgeError> {
+    let primitive_crates = plan
+        .composition
+        .as_ref()
+        .map(|composition| composition.primitive_crates.as_slice())
+        .unwrap_or(&[]);
+    if let Some(invalid) = primitive_crates.iter().find(|primitive| {
+        !matches!(
+            primitive.proof_basis.as_str(),
+            "verus_builtins" | "pinned_vstd_machine_model"
+        )
+    }) {
+        return Err(ForgeError::VerusOutput {
+            detail: format!(
+                "separate primitive crate `{}` has unknown proof basis `{}`",
+                invalid.name, invalid.proof_basis
+            ),
+        });
+    }
+    let required = primitive_crates
+        .iter()
+        .any(|primitive| primitive.proof_basis == "pinned_vstd_machine_model");
+    let source_path = bundle.join(MACHINE_ATOMIC_MODEL_SOURCE_PATH);
+    let rlib_path = bundle.join(MACHINE_VSTD_RLIB_PATH);
+    if !required {
+        if source_path.exists() {
+            return Err(ForgeError::VerusOutput {
+                detail: "bundle carries an unrequested machine-model source".to_string(),
+            });
+        }
+        return Ok(());
+    }
+    let model = toolchain
+        .kernel_vstd_model
+        .as_ref()
+        .ok_or_else(|| ForgeError::VerusOutput {
+            detail: "machine primitive bundle has no pinned kernel vstd model evidence".to_string(),
+        })?;
+    if file_sha256(&source_path)?.2 != model.atomic_source_sha256
+        || file_sha256(&rlib_path)?.2 != model.full_rlib_sha256
+    {
+        return Err(ForgeError::VerusOutput {
+            detail: "machine primitive bundle does not bind the exact pinned vstd atomic source and codegen rlib"
+                .to_string(),
+        });
+    }
+    Ok(())
 }
 
 fn validate_bound_primitive_crates(
@@ -6700,7 +7059,14 @@ fn validate_bound_primitive_crates(
         if !evidence.success
             || evidence.errors != Some(0)
             || evidence.args
-                != expected_verus_args(&planned.name, target, target_features, &[], true, false)
+                != expected_verus_args(
+                    &planned.name,
+                    target,
+                    target_features,
+                    &[],
+                    true,
+                    planned.proof_basis == "pinned_vstd_machine_model",
+                )
             || evidence.source_relative_path != format!("{}.rs", planned.name)
             || evidence.source_sha256_before != planned.crate_source_sha256
             || evidence.source_sha256_after != planned.crate_source_sha256

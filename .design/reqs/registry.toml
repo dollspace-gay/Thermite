@@ -17723,7 +17723,7 @@ owner = ".design/build/kernel-primitives.md"
 status = "partial"
 scope = "verified"
 summary = "Thermite exposes opaque single-use bool/u32/u64/usize initialization slots, sealed atomic cells, legal orderings, RMW/CAS/fence operations, and a concurrency proof model."
-remaining_scope = "The five-module receipt-bound package, typed generation-bound storage-to-slot conversion, enforceable single-use initialization, compound atomic identity, 50 atomic boundary declarations, exact ordering matrix, pre-codegen legality gate, bounded history relations, strict kernel ordering/storage proofs, strict hosted history proof, replay, runtime generated-logic execution, and adversarial tests are present. Add a kernel-target finite-history proof surface, exact atomic object/machine refinement, positive machine-aware lifecycle composition, and verified synchronization consumers."
+remaining_scope = "The five-module receipt-bound package, typed generation-bound storage-to-slot conversion, enforceable single-use initialization, compound atomic identity, 50 atomic boundary declarations, exact ordering matrix, pre-codegen legality gate, bounded history relations, strict kernel ordering/storage proofs, strict hosted history proof, replay, runtime generated-logic execution, and adversarial tests are present. Registry v3 additionally proves and executes a canonical PAtomicU64 SeqCst roundtrip adapter while retaining three explicit L1 machine assumptions. Add a kernel-target finite-history proof surface, persistent sealed-cell ABI refinement across the full atomic operation/ordering matrix, and verified synchronization consumers."
 contributors = [".design/build/sealed-atomics.md", ".design/build/atomic-storage-initialization.md", ".design/build/static-storage.md", ".design/build/frozen-primitive-registry.md"]
 generated_to = ["status", "forge-kernel-primitives-status"]
 
@@ -17764,8 +17764,13 @@ note = "Requires every bodyful item at L3, rejects duplicate slot use and foreig
 
 [[requirement.evidence]]
 kind = "test"
-target = "forge/src/verified_build/primitive_registry.rs::tests::registry_v1_refuses_machine_concurrency_assurance_claims"
-note = "Prevents safe-Rust registry v1 from overstating atomic, volatile, or privileged object/machine refinement."
+target = "forge/src/verified_build/primitive_registry.rs::tests::safe_registry_linkages_refuse_machine_concurrency_assurance_claims"
+note = "Prevents safe-Rust registry linkages from overstating atomic, volatile, or privileged object/machine refinement."
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/verified_composition.rs::machine_atomic_registry_keeps_the_hardware_residual_visible_and_replays_exactly"
+note = "Proves and executes the registry-v3 atomic adapter, binds and replays its source/interface/rlib/object plus pinned vstd atomic source/full rlib, reports L3 application and wrapper members separately from three L1 machine assumptions, and rejects model/rlib/object/safe-substitution tampering."
 
 [[requirement]]
 id = "REQ-KPRIM-6"
@@ -17840,7 +17845,7 @@ owner = ".design/build/kernel-primitives.md"
 status = "partial"
 scope = "forge"
 summary = "Consumer projects supply versioned platform registries whose exact declarations, implementations, effects, ownership, ABI, models, and evidence are closed from source reachability."
-remaining_scope = "Same-crate and separately emitted safe sequential direct-Verus Rust-ABI entries now close reachable boundaries exactly. The v2 path binds authored and generated sources, exported proof interface, rlib, every object-member digest, target features, two no-cheating proof/codegen layers, validation, runtime linking, and replay. A policy-free package now supplies 74 frozen declarations across boot/runtime, memory/provenance, MMIO/PIO, CPU, IRQ/trap, SMP, DMA, clock, entropy, and power while keeping all 55 non-machine rows at L3. Add assembly and unsafe/irreducible Rust source/object closure plus exact atomic, volatile, privileged, and concurrent machine-model refinement without adding an architecture operation table."
+remaining_scope = "Same-crate and separately emitted safe sequential direct-Verus Rust-ABI entries now close reachable boundaries exactly. The v2 path binds authored and generated sources, exported proof interface, rlib, every object-member digest, target features, two no-cheating proof/codegen layers, validation, runtime linking, and replay. Registry v3 adds an honestly capped atomic machine-model pilot with ten discharged wrapper obligations and three explicit residual assumptions. A policy-free package supplies 74 frozen declarations across boot/runtime, memory/provenance, MMIO/PIO, CPU, IRQ/trap, SMP, DMA, clock, entropy, and power while keeping all 55 non-machine rows at L3. Extend v3 to shared sealed ABIs, the full atomic matrix, assembly and unsafe/irreducible Rust source/object closure, volatile, privileged, and concurrent models without adding an architecture operation table."
 contributors = [".design/boundary/ffi-boundary.md", ".design/build/l3-rich-composition.md", ".design/build/frozen-primitive-registry.md", ".design/build/platform-primitives.md"]
 generated_to = ["status", "forge-kernel-primitives-status"]
 
@@ -17858,6 +17863,11 @@ note = "Builds and replays a synthetic primitive with a non-empty sse2 feature s
 kind = "test"
 target = "forge/tests/verified_composition.rs::separate_primitive_source_interface_rlib_and_object_are_exact_and_replayed"
 note = "Builds a freestanding registry-v2 primitive as a separate strict Verus crate, imports its checked interface, links and executes its exact rlib, binds every object member, replays both proof layers, and rejects source/interface/rlib drift."
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/verified_composition.rs::machine_atomic_registry_keeps_the_hardware_residual_visible_and_replays_exactly"
+note = "Exercises registry v3's exact machine-model closure and its non-laundered L1/to-machine-boundary assurance aggregate."
 
 [[requirement.evidence]]
 kind = "file"
@@ -17906,7 +17916,7 @@ owner = ".design/build/kernel-primitives.md"
 status = "partial"
 scope = "verified"
 summary = "Generated Thermite callers compose with consumer-supplied direct-Verus shells, and receipts distinguish exact refinement from boundary assumptions."
-remaining_scope = "Safe same-crate and separately emitted sequential direct-Verus operations now receive exact checked-wrapper/import refinement through their emitted Rust objects. Add direct machine-operation refinement tied to unsafe Rust/assembly objects and the atomic/concurrency model before every irreducible platform family is covered."
+remaining_scope = "Safe same-crate and separately emitted sequential direct-Verus operations receive exact checked-wrapper/import refinement through their emitted Rust objects. The registry-v3 atomic pilot proves an exact checked adapter relative to pinned vstd and binds the emitted object while exposing the literal hardware/codegen trust cap. Extend this honest split to persistent sealed atomic ABIs, unsafe Rust/assembly objects, volatile and privileged operations, and concurrency models before every irreducible platform family is covered."
 contributors = [".design/build/l3-rich-composition.md", ".design/build/frozen-primitive-registry.md"]
 generated_to = ["status", "forge-kernel-primitives-status"]
 

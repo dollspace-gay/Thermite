@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: 06ff236273fda15e31b95868c030750d0a3601bb7a06bae4dd13cfffbfe4cea8 (re-pinned 2026-08-05 after the generated skill documented the platform primitive package; existing ergonomics behavior remains regression-covered)
+audited-content-sha256: 168d30914b25f6e5554f51ab307202d4a874869d9beb352aecfbc1505011f8d7 (re-pinned 2026-08-05 after shortening the generated registry-v3 note to meet its hard token budget; existing ergonomics behavior remains regression-covered)
 governs: thermite-syntax/src/parser.rs
 governs: thermite-syntax/src/ast.rs
 governs: thermite-lower/src/lower.rs

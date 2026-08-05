@@ -15,7 +15,7 @@ governs:
   - thermite-spec/tests/atomic_ordering_validate.rs
   - forge/src/verified_build/primitive_registry.rs
   - forge/tests/verified_build.rs
-audited-content-sha256: 0f0146c2d6a01c73843cfd6c5bc08513d0e8aa19cb5e4c424107c0afaf268363 (re-pinned 2026-08-05 after safe registry-v2 object closure; atomic machine semantics remain unclaimed)
+audited-content-sha256: 73d3aa7e0c4ccfbdc8e3c1806745bd3934c0e13683d451e94fd25b82fd650d98 (re-pinned 2026-08-05 after making shared registry diagnostics version-neutral; atomic semantics unchanged)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/frozen-primitive-registry.md
@@ -208,7 +208,15 @@ machine-concurrency proof. Both therefore reject every entry whose concurrency
 is `atomic`, `volatile`, or `privileged`, even when its memory-ordering strings
 are otherwise well formed.
 
-A later registry schema may admit an atomic entry only when it binds all of:
+Registry v3 now admits one canonical machine-aware pilot: a `PAtomicU64`
+create-and-SeqCst-load adapter. Its bodyful adapter and Thermite caller prove at
+L3 relative to the pinned vstd permission model. The receipt binds the exact
+vstd atomic source/full rlib, adapter source/interface/rlib/object, target
+features, and replay of both proof layers. It also retains three explicit
+machine assumptions and therefore reports the complete artifact as
+`L1/to_machine_boundary`, not end-to-end L3.
+
+A broader registry operation may be admitted only when it binds all of:
 
 - exact Rust/assembly and generated source closure;
 - exact object bytes, ABI, symbol, features, and target;
@@ -218,9 +226,9 @@ A later registry schema may admit an atomic entry only when it binds all of:
 - whole-closure no-cheating evidence; and
 - replay that recomputes every binding.
 
-Until then, consumers may import the declarations and prove pure algorithms
-over the model, but a selected build that reaches a boundary cannot claim full
-end-to-end atomic assurance through registry v1.
+Consumers may import the declarations and prove pure algorithms over the model,
+but a selected build that reaches a real sealed atomic boundary cannot claim
+full end-to-end assurance merely from the v3 scalar pilot.
 
 ## Auditable metrics
 
@@ -252,9 +260,10 @@ receipt-bound files.
 REQ-KPRIM-5 remains partial. Completion still requires:
 
 - a kernel-target proof surface for the finite history model;
-- exact object/machine semantics and direct refinement for consumer-supplied
-  atomic implementations;
-- positive composition evidence using that future machine-aware registry; and
+- persistent shared ABI types plus exact object/model refinement across the
+  complete consumer-supplied atomic operation and ordering matrix;
+- positive composition evidence from the sealed atomic lifecycle through that
+  expanded machine-aware registry; and
 - verified synchronization libraries that consume these operations without
   introducing Rust policy.
 

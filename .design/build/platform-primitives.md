@@ -83,11 +83,13 @@ the same artifact. A false claim that width 3 is legal fails verification.
 ## Consumer refinement rule
 
 The declarations are ABI-neutral Thermite contracts, not implementations. A
-consumer selects the reachable operations and supplies registry rows. Until the
-machine-aware registry increment is complete, atomic, volatile, privileged,
-terminal, unsafe-Rust, and assembly implementations remain visibly unresolved.
-The safe sequential registry-v2 path must reject them rather than laundering
-their contracts through a safe Rust model.
+consumer selects the reachable operations and supplies registry rows. Registry
+v3 now demonstrates this split for one canonical `PAtomicU64` SeqCst
+create/load adapter: its wrapper is L3 relative to the pinned vstd model, while
+three machine facts remain visible and cap the artifact at L1. The real sealed
+atomic ABI, volatile, privileged, terminal, unsafe-Rust, and assembly
+implementations remain unresolved. The safe sequential registry-v2 path must
+reject them rather than laundering their contracts through a safe Rust model.
 
 For each reachable machine row the eventual receipt must bind:
 

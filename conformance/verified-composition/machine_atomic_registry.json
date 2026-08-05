@@ -1,0 +1,67 @@
+{
+  "schema": "thermite.frozen-primitive-registry.v3",
+  "target": {
+    "target_triple": "x86_64-unknown-linux-gnu",
+    "target_features": [
+      "sse2"
+    ]
+  },
+  "entries": [
+    {
+      "semantic_name": "synthetic::atomic.u64.seq_cst_roundtrip@v1",
+      "version": 1,
+      "required": true,
+      "thermite_name": "machine_atomic_roundtrip",
+      "boundary_target": "synthetic::atomic::u64::seq_cst_roundtrip",
+      "signature": "fn machine_atomic_roundtrip(value:u64)->u64",
+      "contract_sha256": "cce7ef04e71b1b3ea21ddeb6118df60cff67208c1b9d4c6d503849bfc2f5b5bb",
+      "effects_sha256": "ec80342182a67538eb261fe789d76c86711d30148115e9ca6e1b95300ee8ccfa",
+      "effects": [
+        "platform(atomic)"
+      ],
+      "ownership": {
+        "parameters": [
+          "by_value"
+        ],
+        "result": "by_value"
+      },
+      "implementation": {
+        "shell_module": "machine_atomic_impl",
+        "item": "atomic_roundtrip_impl",
+        "source_sha256": "7630e0bd604b47f4d83ed946314ebca201a2107e840cccccb3e5f57c86348098",
+        "linkage": "separate_verus_machine_crate",
+        "abi": "Rust",
+        "symbol": "machine_atomic_impl::atomic_roundtrip_impl",
+        "alignment": 8
+      },
+      "model": "pinned_vstd_atomic_permission",
+      "refinement": "separate_crate_verus_machine_import",
+      "proof_obligations": [
+        "atomic_permission_refinement",
+        "contract_refinement",
+        "exact_implementation_call",
+        "exported_verus_interface",
+        "imported_call_refinement",
+        "memory_ordering_refinement",
+        "pinned_machine_model",
+        "separate_object_identity",
+        "separate_source_identity",
+        "whole_crate_no_cheating"
+      ],
+      "concurrency": "atomic",
+      "memory_orderings": [
+        "seq_cst"
+      ],
+      "failure": "total",
+      "machine": {
+        "family": "atomic",
+        "operation": "p_atomic_u64_seq_cst_roundtrip",
+        "residual_assumptions": [
+          "hardware_atomic_semantics",
+          "pinned_vstd_external_body",
+          "rust_core_atomic_codegen"
+        ]
+      }
+    }
+  ]
+}

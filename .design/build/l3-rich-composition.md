@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: 2eb33345d82f653ed9349391282dd337ff47c1dd88f6d202063dcf084482aff5 (re-pinned 2026-08-05 after registry-v2 separate primitive proof/codegen, object inventory, and replay)
+audited-content-sha256: 522f691272fadd173ba3e8e2590d599e7ecd71d4f09fd9de2d92de1944ddd30c (re-pinned 2026-08-05 after registry-v3 added explicit machine-residual composition scope)
 decision: one canonical caller crate with crate-visible rich Thermite roots, public shell exports, and optionally exact separately verified primitive crates
 issue: github:dollspace-gay/Thermite#104
 governs:
@@ -41,6 +41,9 @@ caller invocation. A distinct
 `VerifiedCompositionReceiptV1`-schema receipt binds the Thermite input,
 canonical lowering, exact shell files, complete item/type inventory, combined
 source, proof evidence, artifact-codegen closure, and output rlib.
+Registry v3 uses the same two-proof shape for its canonical atomic pilot but
+retains a separate L1 machine residual in the assurance aggregate; only safe
+v1/v2 closures become end-to-end L3.
 
 ## User surface
 
@@ -93,9 +96,12 @@ kernel target, or any sub-L3 certificate reject the whole build.
 
 The sole boundary exception is an exact frozen-registry composition. Every
 reachable boundary must then resolve one-to-one to a checked direct-Verus
-same-crate function or registry-v2 separate crate function, and canonical
+same-crate function, registry-v2 separate crate function, or admitted
+registry-v3 machine adapter, and canonical
 lowering emits a real wrapper call rather than an `external_body`. Unregistered
-boundaries and every slag function still reject.
+boundaries and every slag function still reject. A v3 machine adapter proves
+the wrapper relative to its pinned model but does not upgrade the literal
+machine boundary above L1.
 
 For each composition export the plan records its semantic address, exact
 signature, parameter ownership (`by_value`, `shared_borrow`, or

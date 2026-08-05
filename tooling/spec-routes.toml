@@ -618,6 +618,12 @@ reference = []
 conformance_ops = ["synthetic-identity-primitive"]
 
 [[route]]
+crate_pattern = "conformance/verified-composition/machine_atomic*"
+design = ".design/build/frozen-primitive-registry.md"
+reference = []
+conformance_ops = ["machine-atomic-pilot", "residual-assurance-cap"]
+
+[[route]]
 crate_pattern = "stdlib/kernel-primitives/platform.thpkg.json"
 design = ".design/build/frozen-primitive-registry.md"
 reference = ["stdlib/kernel-primitives/platform/api.th"]

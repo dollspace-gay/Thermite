@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: partial
-audited-content-sha256: 0f5c1633fd4952e7525f0fab1691ca1f74a534996e97f47f01db4193f35f5be0 (re-pinned 2026-08-05 after binding the generic platform declaration inventory to the future machine-refinement scope)
+audited-content-sha256: a4a1c8898bcc5b562526ad44887dcaaaeecf58eb20ee2a16c05a4d7e97aef295 (re-pinned 2026-08-05 after making registry-wide Rust-ABI and borrowed-return diagnostics version-neutral; semantics unchanged)
 decision: consumer-owned registry entries close reachable Thermite boundaries through non-exempt same-crate or separately compiled/imported direct-Verus calls
 governs:
   - thermite-lower/src/lower.rs
@@ -20,6 +20,11 @@ governs:
   - conformance/verified-composition/separate_primitive_impl.rs
   - conformance/verified-composition/separate_primitive_shell.rs
   - conformance/verified-composition/separate_primitive_registry.json
+  - conformance/verified-composition/machine_atomic.th
+  - conformance/verified-composition/machine_atomic_impl.rs
+  - conformance/verified-composition/machine_atomic_shell.rs
+  - conformance/verified-composition/machine_atomic_registry.json
+  - conformance/verified-composition/machine_atomic_consumer.rs
   - stdlib/kernel-primitives/platform.thpkg.json
   - stdlib/kernel-primitives/platform/api.th
   - forge/tests/platform_primitives.rs
@@ -68,10 +73,21 @@ interface, links the exact emitted rlib into the generated caller, and records
 the hashes of every emitted object member. Canonical non-empty target-feature
 sets are bound into both proof/codegen invocations and their replay.
 
-Foreign ABIs, unsafe Rust, assembly, atomics, volatile access, and privileged
-instructions remain unsupported. Separate-crate byte closure is not a machine
-model and cannot be repurposed to claim those classes. They fail closed until a
-later registry schema supplies a direct object/machine refinement proof.
+Registry v3 adds the first machine-aware vertical slice: one canonical
+`PAtomicU64` create-and-SeqCst-load adapter. The adapter itself is an ordinary
+bodyful direct-Verus function proved at L3, while the exact pinned vstd atomic
+source, full codegen rlib, adapter source/interface/rlib, and every emitted
+adapter object are receipt-bound and replayed. Verus marks its own atomic
+implementation `external_body`, so the hardware crossing remains an explicit
+L1 residual assumption. A v3 bundle is consequently reported as
+`L1/to_machine_boundary`; it is never laundered into an end-to-end L3 artifact.
+
+Foreign ABIs, consumer unsafe Rust, assembly, volatile access, privileged
+instructions, persistent sealed-cell ABIs, and general concurrent execution
+remain unsupported. Separate-crate byte closure cannot be repurposed to claim
+those classes. They continue to fail closed until their exact implementation
+and honest residual/refinement evidence are represented by a later v3
+operation or successor schema.
 
 ## Schema v1
 
@@ -152,6 +168,45 @@ the freshly checked interface into the caller, and requires the final caller
 rlib to reproduce exactly. The original interface bytes remain individually
 bound and tamper-evident in the receipt.
 
+## Schema v3: machine-aware atomic pilot
+
+`thermite.frozen-primitive-registry.v3` retains the safe v1/v2 linkages and adds
+`separate_verus_machine_crate`. The initial admitted operation is deliberately
+narrow and canonical: `p_atomic_u64_seq_cst_roundtrip` accepts one `u64`, creates
+a `vstd::atomic::PAtomicU64`, and returns its SeqCst load under the matching
+tracked permission. Its authored adapter bytes must match the canonical checked
+body exactly. Returning the input directly, moving the atomic call into dead
+code, changing the type or ordering, or substituting a digest-updated safe model
+is rejected during planning.
+
+The entry must declare:
+
+- model `pinned_vstd_atomic_permission`, refinement
+  `separate_crate_verus_machine_import`, concurrency `atomic`, and exactly the
+  `seq_cst` ordering;
+- ten sorted discharged obligations covering the Thermite contract, exact
+  adapter call, permission and ordering refinement, exported/imported Verus
+  interface, source/object identity, pinned model, and both no-cheating layers;
+- the three sorted residual assumptions `hardware_atomic_semantics`,
+  `pinned_vstd_external_body`, and `rust_core_atomic_codegen`.
+
+Forge compiles the adapter against the full pinned no-std vstd rlib rather than
+the proof-only slice/array link shim. The final Thermite caller uses that same
+crate identity, preventing a different metadata crate from satisfying the
+machine adapter dependency. The receipt carries the full vstd rlib and the
+exact `vstd/atomic.rs` source in addition to the aggregate vstd source-tree and
+`vstd.vir` identities already present in toolchain evidence. Replay reconstructs
+both Verus invocations and requires the same adapter rlib and object members.
+
+This is a proof of the bodyful adapter relative to the pinned Verus atomic
+permission model, plus exact evidence for what machine code was emitted. It is
+not a proof that Verus's `external_body`, Rust/LLVM atomic codegen, or the target
+hardware memory model is correct. Those three facts are counted separately as
+residual assumptions, not discharged obligations. The boundary member remains
+`L1-residual-machine-assumption`; a distinct checked-wrapper member reports
+`L3-relative-to-pinned-machine-model`, and ordinary Thermite callers retain
+their own L3 certificate.
+
 ## Reachability closure
 
 Forge computes the union closure of every selected link and composition root.
@@ -184,16 +239,22 @@ The generated boundary function has a real body. It carries no
 the wrapper call and compile those same bytes. For `separate_verus_crate`, the
 first strict invocation verifies and emits the dependency, and the second
 strict invocation imports that checked interface and proves the generated
-wrapper's exact cross-crate call. A body returning the wrong value therefore
-fails before publication in either mode.
+wrapper's exact cross-crate call. Registry v3 uses the second shape but compiles
+the canonical adapter against its pinned machine model. A body returning the
+wrong value therefore fails before publication in every mode.
 
 The ordinary per-function certificate for the source boundary remains an honest
-L1 boundary declaration. The composition assurance aggregate upgrades that
-specific member to `L3-direct-refinement` only after registry closure and the
+L1 boundary declaration. The composition assurance aggregate upgrades a safe
+member to `L3-direct-refinement` only after registry closure and the
 whole-crate checked-wrapper proof succeed. Callers whose local certificates are
 `L3/to_boundary` become end-to-end members of the composed artifact because the
 named crossing is closed by that exact refinement. Unregistered crossings never
 receive this completion.
+
+A machine member is intentionally different. Its checked adapter is L3 relative
+to the pinned model, but the bodyless Thermite boundary remains L1 and caps the
+complete artifact at `L1/to_machine_boundary`. This split is encoded in the
+receipt aggregate rather than left to prose.
 
 Executable/body translation validation may initially report that a dependency
 has no in-language body. Forge completes only that exact refusal when the named
@@ -209,7 +270,10 @@ entries are reachable. The bundle stores the exact input at
 `evidence/frozen-primitive-registry.json`. The ordinary bound-file inventory,
 artifact plan digest, and receipt root cover those bytes. The composition
 binding additionally records the registry digest, reachable primitive count,
-and discharged refinement-obligation count.
+discharged refinement-obligation count, and residual-machine-assumption count.
+For a machine composition the exact pinned atomic model source and full vstd
+codegen rlib are ordinary bound files and cannot be replaced independently of
+the receipt.
 
 Validation re-parses the strict schema, re-resolves the source closure, rechecks
 every declaration/shell/digest/ownership fact, regenerates the bound wrappers
@@ -235,22 +299,30 @@ drift, or receipt drift rejects.
 - Registry tampering and a registry change after plan freeze publish nothing.
 - A digest-updated shell whose body violates the Thermite contract reaches the
   real whole-crate proof, fails there, and publishes nothing.
-- Otherwise well-formed `atomic`, `volatile`, and `privileged` entries reject
-  because this proof path has no object/machine semantics.
+- Otherwise well-formed machine classes reject through the safe v1/v2 linkages;
+  v3 admits only the exact canonical atomic roundtrip operation.
 - A registry-v2 synthetic primitive verifies and compiles as a separate
   freestanding crate, is called by the generated Thermite wrapper, links and
   executes from a downstream consumer, replays both proof layers, inventories
   at least one exact object member, and rejects source/interface/rlib tampering.
+- The v3 atomic pilot proves its Thermite caller and checked adapter, executes
+  from a downstream consumer, replays both proof layers, binds the exact pinned
+  atomic model source/full vstd rlib/adapter object, rejects all three forms of
+  tampering, and reports ten discharged obligations plus three visible residual
+  assumptions under an L1 machine cap.
 - Builds without a registry retain the previous strict policy and continue to
   reject reachable boundaries.
 
 ## Remaining work
 
-Registry v1 plus v2 now cover same-crate and separately emitted safe sequential
-Rust with exact source, proof-interface, rlib, and object identity. The sealed
+Registry v1 plus v2 cover same-crate and separately emitted safe sequential
+Rust with exact source, proof-interface, rlib, and object identity. Registry v3
+adds one honest atomic object/model vertical slice without upgrading its three
+literal machine assumptions. The sealed
 atomic declaration and finite proof-model package exists, and the generic
 platform package now supplies all requested non-atomic declaration families,
-but neither package can use v1/v2 to claim machine refinement. Completion still
-requires assembly and unsafe/irreducible Rust source/object closure, an atomic/
-volatile/privileged machine model with direct refinement, and concurrency/
-liveness composition. None of those are claimed here.
+but the real sealed atomic ABI is not yet wired through v3. Completion still
+requires persistent shared ABI types, the remaining atomic operation/order
+matrix, assembly and unsafe/irreducible Rust source/object closure, volatile and
+privileged models, and concurrent/liveness composition. None of those broader
+claims are made by the pilot.

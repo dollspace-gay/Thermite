@@ -92,8 +92,7 @@ pub(super) fn build_file(
         ));
     }
 
-    let collected_toolchain = collect_toolchain(target)?;
-    let toolchain = &collected_toolchain.evidence;
+    let mut collected_toolchain = collect_toolchain(target)?;
     let assembly = match assemble_from_paths(
         program,
         link_export_names,
@@ -101,11 +100,19 @@ pub(super) fn build_file(
         sources,
         &crate_name,
         target,
-        toolchain,
+        &collected_toolchain.evidence,
     ) {
         Ok(assembly) => assembly,
         Err(detail) => return Ok(reject("composition-plan", detail)),
     };
+    if !assembly
+        .primitive_crates
+        .iter()
+        .all(|primitive| primitive.plan.proof_basis == "verus_builtins")
+    {
+        collected_toolchain.activate_machine_vstd()?;
+    }
+    let toolchain = &collected_toolchain.evidence;
     let target_features = assembly
         .primitive_registry
         .as_ref()
@@ -183,6 +190,7 @@ pub(super) fn build_file(
     let mut certificates = check::check_file(&frozen_input_path)?;
     inject_certificate_fault(&mut certificates);
     let registered_boundaries = registered_boundaries(&assembly);
+    let machine_boundaries = machine_boundaries(&assembly);
     if let Some(detail) = reject_certificates_with_registered_boundaries(
         &certificates,
         &assembly.closure,
@@ -198,7 +206,13 @@ pub(super) fn build_file(
         &assembly.link_exports,
     )?;
     complete_rich_composition_tv(&mut tv, program, &assembly.closure);
-    complete_registered_boundary_tv(&mut tv, program, &assembly.closure, &registered_boundaries);
+    complete_registered_boundary_tv(
+        &mut tv,
+        program,
+        &assembly.closure,
+        &registered_boundaries,
+        &machine_boundaries,
+    );
     inject_tv_fault(&mut tv);
     if let Some(detail) =
         reject_translation_validation(&tv, program, &assembly.closure, &assembly.link_exports)
@@ -211,6 +225,37 @@ pub(super) fn build_file(
     }
     let mut compiled_primitive_crates = Vec::new();
     for primitive_crate in &fresh.primitive_crates {
+        let machine_model = primitive_crate.plan.proof_basis == "pinned_vstd_machine_model";
+        let primitive_vstd_rlib = if machine_model {
+            let path = collected_toolchain
+                .kernel_machine_vstd_rlib
+                .as_deref()
+                .ok_or_else(|| ForgeError::VerusOutput {
+                    detail: format!(
+                        "machine primitive crate `{}` has no pinned full vstd codegen dependency",
+                        primitive_crate.plan.name
+                    ),
+                })?;
+            let expected = toolchain
+                .kernel_vstd_model
+                .as_ref()
+                .map(|model| model.full_rlib_sha256.as_str())
+                .ok_or_else(|| ForgeError::VerusOutput {
+                    detail: "machine primitive crate has no pinned kernel vstd model".to_string(),
+                })?;
+            if file_sha256(path)?.2 != expected {
+                return Ok(reject(
+                    "binding",
+                    format!(
+                        "pinned full vstd codegen dependency for machine primitive crate `{}` drifted before proof/codegen",
+                        primitive_crate.plan.name
+                    ),
+                ));
+            }
+            Some(path)
+        } else {
+            collected_toolchain.dependency_path("libvstd.rlib")
+        };
         let compiled_primitive = compile_verus_source(CompileVerusInput {
             crate_name: &primitive_crate.plan.name,
             source: &primitive_crate.crate_source,
@@ -218,11 +263,11 @@ pub(super) fn build_file(
             verus_path: &toolchain.verus_path,
             environment: &toolchain.environment,
             codegen_toolchain_sha256: &toolchain.artifact_codegen.canonical_identity_sha256(),
-            kernel_vstd_rlib: collected_toolchain.dependency_path("libvstd.rlib"),
+            kernel_vstd_rlib: primitive_vstd_rlib,
             target_features,
             imports: &[],
             export_vir: true,
-            kernel_vstd_model: false,
+            kernel_vstd_model: machine_model,
         })?;
         if !compiled_primitive.evidence.success
             || compiled_primitive.evidence.errors != Some(0)
@@ -249,6 +294,23 @@ pub(super) fn build_file(
                 "binding",
                 format!(
                     "separate primitive crate `{}` changed before or during proof/codegen",
+                    primitive_crate.plan.name
+                ),
+            ));
+        }
+        if machine_model
+            && primitive_vstd_rlib.is_none_or(|path| {
+                toolchain.kernel_vstd_model.as_ref().is_none_or(|model| {
+                    file_sha256(path)
+                        .map(|(_, _, digest)| digest != model.full_rlib_sha256)
+                        .unwrap_or(true)
+                })
+            })
+        {
+            return Ok(reject(
+                "binding",
+                format!(
+                    "pinned full vstd codegen dependency for machine primitive crate `{}` changed during proof/codegen",
                     primitive_crate.plan.name
                 ),
             ));
@@ -404,6 +466,7 @@ fn complete_registered_boundary_tv(
     program: &Program,
     closure: &VerifiedClosure,
     registered_boundaries: &BTreeSet<String>,
+    machine_boundaries: &BTreeSet<String>,
 ) {
     if registered_boundaries.is_empty() {
         return;
@@ -423,9 +486,15 @@ fn complete_registered_boundary_tv(
             detail.contains(&format!("dependency `{boundary}` has no in-language body"))
         });
         if let Some(boundary) = registered_dependency {
-            let completion = format!(
-                "frozen primitive completion through `{boundary}`: the registry binds the exact Thermite contract and boundary target to an exact checked direct-Verus call target; the generated non-exempt wrapper calls that target and the mandatory same-crate or separately imported no-cheating proof closure checks the call and post-state"
-            );
+            let completion = if machine_boundaries.contains(boundary) {
+                format!(
+                    "machine primitive completion through `{boundary}`: the registry binds the exact Thermite contract and boundary target to an exact checked direct-Verus adapter and emitted object; the wrapper proof is L3 relative to its pinned machine model, while the receipt retains the explicit residual hardware assumptions and does not claim end-to-end L3"
+                )
+            } else {
+                format!(
+                    "frozen primitive completion through `{boundary}`: the registry binds the exact Thermite contract and boundary target to an exact checked direct-Verus call target; the generated non-exempt wrapper calls that target and the mandatory same-crate or separately imported no-cheating proof closure checks the call and post-state"
+                )
+            };
             if row.phase == "exec" && closure.functions.contains(&row.label) {
                 for ((phase, label), count) in &expected {
                     if phase == "exec"
@@ -608,10 +677,16 @@ fn assemble(
 
 fn attach_composition_plan(plan: &mut ArtifactPlanV1, assembly: &Assembly) {
     plan.schema = COMPOSITION_PLAN_SCHEMA.to_string();
-    plan.strict_gates = COMPOSITION_STRICT_GATES
-        .iter()
-        .map(|gate| (*gate).to_string())
-        .collect();
+    let gates = if assembly
+        .primitive_registry
+        .as_ref()
+        .is_some_and(|registry| !registry.machine_boundaries.is_empty())
+    {
+        MACHINE_COMPOSITION_STRICT_GATES
+    } else {
+        COMPOSITION_STRICT_GATES
+    };
+    plan.strict_gates = gates.iter().map(|gate| (*gate).to_string()).collect();
     let inventory = composition_inventory(plan, assembly);
     plan.composition = Some(CompositionPlanV1 {
         schema: "thermite.composition-plan.v1".to_string(),
@@ -649,6 +724,14 @@ fn registered_boundaries(assembly: &Assembly) -> BTreeSet<String> {
                 .map(|entry| entry.thermite_name.clone())
                 .collect()
         })
+        .unwrap_or_default()
+}
+
+fn machine_boundaries(assembly: &Assembly) -> BTreeSet<String> {
+    assembly
+        .primitive_registry
+        .as_ref()
+        .map(|registry| registry.machine_boundaries.clone())
         .unwrap_or_default()
 }
 
@@ -1269,15 +1352,26 @@ fn split_primitive_crates(
         .map(|registry| &registry.separate_crates)
         .cloned()
         .unwrap_or_default();
+    let machine = registry
+        .map(|registry| &registry.machine_crates)
+        .cloned()
+        .unwrap_or_default();
+    if !machine.is_empty() && !matches!(target, VerifiedTarget::Kernel) {
+        return Err(
+            "registry v3 machine crates currently require the freestanding kernel target"
+                .to_string(),
+        );
+    }
     let mut inline = Vec::new();
     let mut primitive_crates = Vec::new();
     for mut source in sources {
         if separate.contains(&source.plan.name) {
+            let machine_crate = machine.contains(&source.plan.name);
             let index = primitive_crates.len();
             let directory = format!("evidence/primitive-crates/{index:02}-{}", source.plan.name);
             let authored_source_path = format!("{directory}/authored.rs");
             let crate_source_path = format!("{directory}/crate.verus.rs");
-            let crate_source = primitive_crate_source(&source, target)?;
+            let crate_source = primitive_crate_source(&source, target, machine_crate)?;
             let plan = PlannedPrimitiveCrateV1 {
                 name: source.plan.name.clone(),
                 authored_source_path,
@@ -1285,6 +1379,11 @@ fn split_primitive_crates(
                 authored_source_sha256: source.plan.sha256.clone(),
                 crate_source_path,
                 crate_source_sha256: sha256(crate_source.as_bytes()),
+                proof_basis: if machine_crate {
+                    "pinned_vstd_machine_model".to_string()
+                } else {
+                    "verus_builtins".to_string()
+                },
                 items: source.plan.items.clone(),
             };
             primitive_crates.push(PrimitiveCrateSource {
@@ -1311,12 +1410,19 @@ fn split_primitive_crates(
                 .to_string(),
         );
     }
+    if !machine.is_subset(&found) {
+        return Err(
+            "frozen registry machine-crate set is not a subset of separate primitive crates"
+                .to_string(),
+        );
+    }
     Ok((inline, primitive_crates))
 }
 
 fn primitive_crate_source(
     source: &DirectVerusSource,
     target: VerifiedTarget,
+    machine_crate: bool,
 ) -> Result<String, String> {
     let authored = std::str::from_utf8(&source.bytes).map_err(|error| {
         format!(
@@ -1329,7 +1435,7 @@ fn primitive_crate_source(
         crate_source.push_str("#![no_std]\n");
     }
     crate_source.push_str("#![crate_type = \"rlib\"]\n");
-    if matches!(target, VerifiedTarget::Kernel) {
+    if matches!(target, VerifiedTarget::Kernel) && !machine_crate {
         crate_source.push_str("use verus_builtin::*;\n");
         crate_source.push_str("use verus_builtin_macros::*;\n");
     } else {

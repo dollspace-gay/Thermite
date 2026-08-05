@@ -484,6 +484,203 @@ fn separate_primitive_source_interface_rlib_and_object_are_exact_and_replayed() 
 }
 
 #[test]
+fn machine_atomic_registry_keeps_the_hardware_residual_visible_and_replays_exactly() {
+    let temp = TempDir::new("machine-atomic");
+    let bundle = temp.0.join("machine-atomic.verified");
+    let bundle_s = bundle.to_string_lossy().to_string();
+    let args = [
+        "build",
+        "conformance/verified-composition/machine_atomic.th",
+        "--level",
+        "l3",
+        "--compose-export",
+        "machine_atomic_observation",
+        "--compose-shell",
+        "conformance/verified-composition/machine_atomic_impl.rs",
+        "--compose-shell",
+        "conformance/verified-composition/machine_atomic_shell.rs",
+        "--primitive-registry",
+        "conformance/verified-composition/machine_atomic_registry.json",
+        "--crate-name",
+        "thermite_machine_atomic",
+        "--target",
+        "kernel",
+        "--out",
+        &bundle_s,
+    ];
+    assert_success(&forge(&args));
+    assert_success(&forge(&["verify-build", &bundle_s, "--replay"]));
+
+    let plan: serde_json::Value =
+        serde_json::from_slice(&fs::read(bundle.join("evidence/artifact-plan.v1")).unwrap())
+            .unwrap();
+    let registry = &plan["composition"]["primitive_registry"];
+    assert_eq!(registry["schema"], "thermite.frozen-primitive-registry.v3");
+    assert_eq!(
+        registry["entries"][0]["implementation_linkage"],
+        "separate_verus_machine_crate"
+    );
+    assert_eq!(
+        registry["entries"][0]["machine_operation"],
+        "p_atomic_u64_seq_cst_roundtrip"
+    );
+    assert_eq!(
+        plan["composition"]["primitive_crates"][0]["proof_basis"],
+        "pinned_vstd_machine_model"
+    );
+
+    let receipt: serde_json::Value =
+        serde_json::from_slice(&fs::read(bundle.join("receipt.json")).unwrap()).unwrap();
+    assert_eq!(receipt["binding"]["assurance"], "L1");
+    assert_eq!(receipt["binding"]["scope"], "to_machine_boundary");
+    let gates = receipt["binding"]["strict_gates"].as_array().unwrap();
+    assert!(gates.contains(&serde_json::json!("explicit-residual-machine-assumptions")));
+    assert!(!gates.contains(&serde_json::json!("complete-end-to-end-closure")));
+    assert_eq!(
+        receipt["binding"]["composition"]["discharged_refinement_obligations"],
+        10
+    );
+    assert_eq!(
+        receipt["binding"]["composition"]["residual_machine_assumptions"],
+        3
+    );
+    let members = receipt["binding"]["assurance_aggregate"]["members"]
+        .as_array()
+        .unwrap();
+    assert!(members.iter().any(|member| {
+        member["name"] == "machine_atomic_observation"
+            && member["kind"] == "executable"
+            && member["achieved"] == "L3"
+    }));
+    assert!(members.iter().any(|member| {
+        member["name"] == "machine_atomic_roundtrip"
+            && member["kind"] == "frozen_machine_boundary"
+            && member["achieved"] == "L1-residual-machine-assumption"
+    }));
+    assert!(members.iter().any(|member| {
+        member["name"] == "machine_atomic_roundtrip::checked_wrapper"
+            && member["kind"] == "machine_refinement_wrapper"
+            && member["achieved"] == "L3-relative-to-pinned-machine-model"
+    }));
+
+    let toolchain: serde_json::Value =
+        serde_json::from_slice(&fs::read(bundle.join("evidence/toolchain.json")).unwrap()).unwrap();
+    let model = &toolchain["kernel_vstd_model"];
+    assert_eq!(
+        digest(&fs::read(bundle.join("evidence/machine-models/pinned-vstd-atomic.rs")).unwrap()),
+        model["atomic_source_sha256"].as_str().unwrap()
+    );
+    assert_eq!(
+        digest(&fs::read(bundle.join("artifact/deps/libvstd.rlib")).unwrap()),
+        model["full_rlib_sha256"].as_str().unwrap()
+    );
+    let generated_primitive = fs::read_to_string(
+        bundle.join("evidence/primitive-crates/00-machine_atomic_impl/crate.verus.rs"),
+    )
+    .unwrap();
+    assert!(generated_primitive.contains("vstd::atomic::PAtomicU64::new(value)"));
+    assert!(generated_primitive.contains("atomic.load(Tracked(&permission))"));
+    assert!(!generated_primitive.contains("external_body"));
+
+    let consumer = temp.0.join("machine-atomic-consumer");
+    let linked = codegen_rustc(&bundle)
+        .current_dir(root())
+        .args([
+            "--edition=2021",
+            "conformance/verified-composition/machine_atomic_consumer.rs",
+        ])
+        .arg("--extern")
+        .arg(format!(
+            "thermite_machine_atomic={}",
+            bundle
+                .join("artifact/libthermite_machine_atomic.rlib")
+                .display()
+        ))
+        .arg("-L")
+        .arg(format!(
+            "dependency={}",
+            bundle.join("artifact/deps").display()
+        ))
+        .args(["-C", "panic=abort"])
+        .arg("-o")
+        .arg(&consumer)
+        .output()
+        .unwrap();
+    assert_success(&linked);
+    assert_success(&Command::new(&consumer).output().unwrap());
+
+    for (name, relative) in [
+        (
+            "machine-model",
+            "evidence/machine-models/pinned-vstd-atomic.rs",
+        ),
+        ("machine-rlib", "artifact/deps/libvstd.rlib"),
+        (
+            "machine-object",
+            "artifact/deps/libmachine_atomic_impl.rlib",
+        ),
+    ] {
+        let tampered = temp.0.join(format!("tampered-{name}.verified"));
+        copy_tree(&bundle, &tampered);
+        let path = tampered.join(relative);
+        let mut bytes = fs::read(&path).unwrap();
+        bytes.push(b' ');
+        fs::write(path, bytes).unwrap();
+        assert!(
+            !forge(&["verify-build", tampered.to_string_lossy().as_ref()])
+                .status
+                .success(),
+            "tampered machine evidence `{name}` was accepted"
+        );
+    }
+
+    let substituted_source =
+        b"pub fn atomic_roundtrip_impl(value: u64) -> (result: u64) ensures result == value, { value }\n";
+    let substituted_path = temp.0.join("substituted-machine.rs");
+    fs::write(&substituted_path, substituted_source).unwrap();
+    let mut substituted_registry: serde_json::Value = serde_json::from_slice(
+        &fs::read(root().join("conformance/verified-composition/machine_atomic_registry.json"))
+            .unwrap(),
+    )
+    .unwrap();
+    substituted_registry["entries"][0]["implementation"]["shell_module"] =
+        serde_json::json!("substituted_machine");
+    substituted_registry["entries"][0]["implementation"]["source_sha256"] =
+        serde_json::json!(digest(substituted_source));
+    substituted_registry["entries"][0]["implementation"]["symbol"] =
+        serde_json::json!("substituted_machine::atomic_roundtrip_impl");
+    let substituted_registry_path = temp.0.join("substituted-registry.json");
+    fs::write(
+        &substituted_registry_path,
+        serde_json::to_vec_pretty(&substituted_registry).unwrap(),
+    )
+    .unwrap();
+    let rejected_bundle = temp.0.join("substituted-must-not-publish.verified");
+    let rejected = forge(&[
+        "build",
+        "conformance/verified-composition/machine_atomic.th",
+        "--level",
+        "l3",
+        "--compose-export",
+        "machine_atomic_observation",
+        "--compose-shell",
+        substituted_path.to_string_lossy().as_ref(),
+        "--primitive-registry",
+        substituted_registry_path.to_string_lossy().as_ref(),
+        "--crate-name",
+        "thermite_substituted_machine_atomic",
+        "--target",
+        "kernel",
+        "--out",
+        rejected_bundle.to_string_lossy().as_ref(),
+        "--json",
+    ]);
+    assert_eq!(rejected.status.code(), Some(1));
+    assert!(!rejected_bundle.exists());
+    assert!(String::from_utf8_lossy(&rejected.stdout).contains("canonical pinned-vstd atomic"));
+}
+
+#[test]
 fn probe_state_composition_is_exact_private_linkable_and_reproducible() {
     let temp = TempDir::new("probe");
     let first = temp.0.join("first.verified");

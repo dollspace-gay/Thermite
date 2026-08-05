@@ -100,7 +100,7 @@ governs:
   - conformance/verified-composition/frozen_primitive.th
   - conformance/verified-composition/frozen_primitive_shell.rs
   - conformance/verified-composition/frozen_primitive_registry.json
-audited-content-sha256: bcb5baf9e4e6e36eb0dd5ea3533bf21ecbaf5c7274284b18cdb957879bfb37aa (re-pinned 2026-08-05 after adding the policy-free platform declaration package; no kernel policy or implementation was added)
+audited-content-sha256: 39dc185691b1de7cd7f07872210ae4f6d1cf6f00a2654b7b937677b69ff7e013 (re-pinned 2026-08-05 after shortening the generated registry-v3 note to meet its hard token budget; no kernel policy or implementation was added)
 extends:
   - .design/build/kernel-target.md
   - .design/build/l3-rich-composition.md
@@ -486,8 +486,8 @@ source/ownership/object drift, missing or extra reachable bindings, post-plan
 mutation, receipt tampering, and a lying implementation all reject without
 publication.
 
-These paths intentionally accept only the Rust ABI, safe direct-Verus bodies,
-and `sequential` concurrency. Sorted canonical target features are
+The v1/v2 paths intentionally accept only the Rust ABI, safe direct-Verus
+bodies, and `sequential` concurrency. Sorted canonical target features are
 bound into the frozen plan and supplied to the exact proof/codegen and replay
 commands. It rejects otherwise well-formed `atomic`, `volatile`, and
 `privileged` entries because safe-Rust source/object closure does not model
@@ -495,6 +495,16 @@ their machine semantics. Exact unsafe Rust/assembly object closure and direct
 machine refinement for irreducible instructions remain; they cannot be claimed
 through these schemas. The precise contract and limitations are in
 `.design/build/frozen-primitive-registry.md`.
+
+Registry v3 adds one honest machine-aware atomic vertical slice: a canonical
+`PAtomicU64` SeqCst create/load adapter whose bodyful wrapper verifies at L3
+relative to the exact pinned vstd permission model. The receipt binds the vstd
+atomic source/full rlib, adapter source/interface/rlib/object, target features,
+and both proof layers. It separately reports three residual machine assumptions
+and caps the aggregate at `L1/to_machine_boundary`; it does not claim that
+Verus's trusted atomic body, Rust/LLVM codegen, or hardware memory model was
+proved. Persistent sealed-cell ABI composition and the remaining operation
+matrix are still open.
 
 ### Atomics and memory ordering
 
@@ -524,13 +534,14 @@ an atomic-looking source name is not special.
 
 The executable ordering matrix builds and replays at strict L3 for the generic
 freestanding target. The fixed-array history relations build and replay at
-strict L3 for the hosted target because the current kernel-target Verus path is
-deliberately `--no-vstd`, while array-view relation proofs use vstd's finite
-array model. These are two proof surfaces over the same receipt-bound package,
+strict L3 for the hosted target because the ordinary kernel-target path uses a
+minimal vstd slice/array model. Registry v3 separately binds the full pinned
+vstd model only for its machine-aware adapter. These are distinct proof
+surfaces over the same receipt-bound package,
 not a claim that hosted evidence proves a machine atomic implementation. The
 consumer still owes exact object/machine semantics and direct refinement for
-every reachable atomic boundary. Registry v1 refuses to overstate that missing
-assurance. Slot single-use also remains dependent on the unfinished affine or
+every real sealed-cell atomic boundary. Safe v1/v2 linkages refuse to overstate
+that missing assurance, while the v3 pilot remains explicitly residual. Slot single-use also remains dependent on the unfinished affine or
 generation discipline; sealing alone prevents construction, not stale copies.
 
 The detailed contract, ordering matrix, verification split, and residual trust
@@ -691,9 +702,9 @@ Source: `.design/reqs/registry.toml`
 | REQ-KPRIM-2 | partial | `.design/build/kernel-primitives.md` | Exact mutable and fixed storage | Mutable borrowed slices/arrays, arbitrary old/final snapshot framing, native fixed arrays, scalar and recursively finite plain-aggregate equality plus exact one- and two-index quantified frames, defining-module opaque state transitions, exact typed root.field(.field)* mutation with an optional final fixed-array index, owned/value-call composition, exact user-ADT result/match contract and body TV with arm scoping, exact record-state loop entry/leaf-preservation/exit/full-result TV, statement-position mutable-call composition over pairwise-distinct direct finite-record roots, strict freestanding L3 record/rich-state receipts, digest-bound freestanding fixed-array views and repeat construction, total directly proved u64 bit methods, a receipt-bound packed bitmap with population count/set-bit search/bulk set operations, u64 vector, u64 FIFO ring, collision-explicit direct map, opaque collision-resolving open-addressed map, a generation-safe opaque slab, a duplicate-safe opaque freelist, opaque intrusive doubly linked metadata with arbitrary-live-node unlink and tail relink, and a receipt-bound generation-owned static-storage claim/fill/commit/release protocol are shipped. Add index-then-field aliasing if required, mixed shared/mutable, mutable slice/array, and projected-root call effects, consumed mutable-call return values, enum-payload lvalue mutation, arbitrary-position intrusive insertion/relink if required, chained maps where required, quantified aggregate loops/state framing, and generic library capacities/types. |
 | REQ-KPRIM-3 | partial | `.design/build/kernel-primitives.md` | Receipt-bound packages and modules | Independent parsing, module-local identity, direct-import/root-export enforcement, rooted graph validation, opaque construction/read/write ownership, source allowlisting, L3 build/composition, complete receipt binding, validation, and replay are shipped. Extend the remaining source-oriented Forge commands (check, audit, TV, goal/edit/fill) to operate on packages without losing module-local diagnostics. |
 | REQ-KPRIM-4 | partial | `.design/build/kernel-primitives.md` | Sealed authority and ownership | The sealed-construction barrier, direct and nested opaque lifecycle receipts, typed owned-record local/value-call L3 receipts, exact user-ADT result/match TV, exact direct finite-record mutable-call effects, an opaque receipt-bound 64-slot generation ledger, a generation-bound 64-slot static-storage lease/region protocol, and typed opaque single-use atomic-init slots prove acquisition/renewal/release, stale-token-after-reuse rejection, double-release rejection, monotonic rights, L3 move/clone refusal, initialization-witness matching, committed-region consumption, exact authority/slot/generation transfer, duplicate-init refusal, and foreign-module construction/read/write rejection. Add a complete affine rule if stronger general-purpose uniqueness is required, strictly compose the full owned-ADT lifecycles through exactly refined authority/memory/atomic doors, and add concurrent synchronization consumers that rotate generations through exact atomic transitions. |
-| REQ-KPRIM-5 | partial | `.design/build/kernel-primitives.md` | Sealed atomics and ordering model | The five-module receipt-bound package, typed generation-bound storage-to-slot conversion, enforceable single-use initialization, compound atomic identity, 50 atomic boundary declarations, exact ordering matrix, pre-codegen legality gate, bounded history relations, strict kernel ordering/storage proofs, strict hosted history proof, replay, runtime generated-logic execution, and adversarial tests are present. Add a kernel-target finite-history proof surface, exact atomic object/machine refinement, positive machine-aware lifecycle composition, and verified synchronization consumers. |
+| REQ-KPRIM-5 | partial | `.design/build/kernel-primitives.md` | Sealed atomics and ordering model | The five-module receipt-bound package, typed generation-bound storage-to-slot conversion, enforceable single-use initialization, compound atomic identity, 50 atomic boundary declarations, exact ordering matrix, pre-codegen legality gate, bounded history relations, strict kernel ordering/storage proofs, strict hosted history proof, replay, runtime generated-logic execution, and adversarial tests are present. Registry v3 additionally proves and executes a canonical PAtomicU64 SeqCst roundtrip adapter while retaining three explicit L1 machine assumptions. Add a kernel-target finite-history proof surface, persistent sealed-cell ABI refinement across the full atomic operation/ordering matrix, and verified synchronization consumers. |
 | REQ-KPRIM-6 | partial | `.design/build/kernel-primitives.md` | Verified waiting and synchronization | A receipt-bound bounded-wait trace scan, frozen pause/block/terminal-halt declarations, and fail-closed ticket-lock/barrier/epoch-ack/once/reference-count/seqlock/bounded-MPSC/bounded-work-deque mechanics are shipped with L3 proofs, adversarial claims, strict replay, and tamper rejection. Add registry-level fairness/progress semantics, directly refined wait bodies, atomic integration and machine concurrency composition, then richer reader/writer coordination in .th. |
-| REQ-KPRIM-7 | partial | `.design/build/kernel-primitives.md` | Generic frozen boundary registry | Same-crate and separately emitted safe sequential direct-Verus Rust-ABI entries now close reachable boundaries exactly. The v2 path binds authored and generated sources, exported proof interface, rlib, every object-member digest, target features, two no-cheating proof/codegen layers, validation, runtime linking, and replay. A policy-free package now supplies 74 frozen declarations across boot/runtime, memory/provenance, MMIO/PIO, CPU, IRQ/trap, SMP, DMA, clock, entropy, and power while keeping all 55 non-machine rows at L3. Add assembly and unsafe/irreducible Rust source/object closure plus exact atomic, volatile, privileged, and concurrent machine-model refinement without adding an architecture operation table. |
+| REQ-KPRIM-7 | partial | `.design/build/kernel-primitives.md` | Generic frozen boundary registry | Same-crate and separately emitted safe sequential direct-Verus Rust-ABI entries now close reachable boundaries exactly. The v2 path binds authored and generated sources, exported proof interface, rlib, every object-member digest, target features, two no-cheating proof/codegen layers, validation, runtime linking, and replay. Registry v3 adds an honestly capped atomic machine-model pilot with ten discharged wrapper obligations and three explicit residual assumptions. A policy-free package supplies 74 frozen declarations across boot/runtime, memory/provenance, MMIO/PIO, CPU, IRQ/trap, SMP, DMA, clock, entropy, and power while keeping all 55 non-machine rows at L3. Extend v3 to shared sealed ABIs, the full atomic matrix, assembly and unsafe/irreducible Rust source/object closure, volatile, privileged, and concurrent models without adding an architecture operation table. |
 | REQ-KPRIM-8 | shipped | `.design/build/kernel-primitives.md` | Generic freestanding verified library build |  |
-| REQ-KPRIM-9 | partial | `.design/build/kernel-primitives.md` | Exact platform refinement composition | Safe same-crate and separately emitted sequential direct-Verus operations now receive exact checked-wrapper/import refinement through their emitted Rust objects. Add direct machine-operation refinement tied to unsafe Rust/assembly objects and the atomic/concurrency model before every irreducible platform family is covered. |
+| REQ-KPRIM-9 | partial | `.design/build/kernel-primitives.md` | Exact platform refinement composition | Safe same-crate and separately emitted sequential direct-Verus operations receive exact checked-wrapper/import refinement through their emitted Rust objects. The registry-v3 atomic pilot proves an exact checked adapter relative to pinned vstd and binds the emitted object while exposing the literal hardware/codegen trust cap. Extend this honest split to persistent sealed atomic ABIs, unsafe Rust/assembly objects, volatile and privileged operations, and concurrency models before every irreducible platform family is covered. |
 <!-- /generated:reqs -->

@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: 9b17f96b4776cc4e0fd1c6771c80fb0863ca5ac8ddebfc1d512f32a98f072ace (re-pinned 2026-08-05 after documenting registry-v2 builtins-only primitive dependencies; byte-slice behavior remains regression-covered)
+audited-content-sha256: 9b916ff1230f2c9ff5dcd4460d82618a23876602c4db3e092b158e43a5b7a6e6 (re-pinned 2026-08-05 after registry-v3 selected the full vstd dependency only for machine adapters; byte-slice behavior remains regression-covered)
 decision: explicit pinned vstd slice/fixed-array proof-model import plus deterministic no_std erased link metadata
 issue: github:dollspace-gay/Thermite#108
 governs:

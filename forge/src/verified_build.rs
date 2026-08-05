@@ -4110,7 +4110,11 @@ fn expected_tv_inventory(
             let mut let_index = 0;
             for stmt in &body.stmts {
                 match stmt {
-                    Stmt::Let { init, .. } if !crate::exec_tv::expr_contains_body_control(init) => {
+                    Stmt::Let {
+                        ty: Some(_), init, ..
+                    } if !crate::exec_tv::expr_contains_body_control(init)
+                        && !crate::exec_tv::is_direct_mutable_call(program, init) =>
+                    {
                         let_index += 1;
                         expect_tv(
                             &mut expected,

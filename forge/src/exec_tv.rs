@@ -310,6 +310,36 @@ pub fn exec_tv_file(path: &Path, seed: u64, rlimit: f64) -> Result<ExecTvReport,
     Ok(report)
 }
 
+/// Whether `expr` is one direct call to an ordinary in-language function with
+/// at least one exclusive-reference formal. Such a call is stateful: its value
+/// and post-state are validated together by body TV, never by placing an exec
+/// call inside the pure per-expression specification obligation.
+pub(crate) fn is_direct_mutable_call(program: &thermite_syntax::Program, expr: &Expr) -> bool {
+    let Expr::Call { callee, .. } = expr else {
+        return false;
+    };
+    let Expr::Path(path) = callee.as_ref() else {
+        return false;
+    };
+    let [name] = path.as_slice() else {
+        return false;
+    };
+    program.items.iter().any(|item| match item {
+        Item::Fn(function)
+            if function.name == *name
+                && function.body.is_some()
+                && function.boundary.is_none()
+                && function.slag.is_none() =>
+        {
+            function
+                .params
+                .iter()
+                .any(|parameter| matches!(parameter.ty, Type::Ref { mutable: true, .. }))
+        }
+        _ => false,
+    })
+}
+
 /// Translation-validate the exact executable guard used by an L3 total export
 /// wrapper. The guard is checked over the full input domain: the synthetic
 /// frame's `req true` intentionally does not assume the guard being validated.
@@ -558,7 +588,13 @@ fn exec_tv_fn(
             } => {
                 let_no += 1;
                 let label = format!("{}.let#{}", f.name, let_no);
-                if let Some((ret_ty, _is_slice)) = exec_type_spelling(ty) {
+                let stateful_call = is_direct_mutable_call(program, init);
+                if stateful_call {
+                    // The exact callee source result and complete mutable
+                    // post-state are interpreted by body TV. A pure exec-TV
+                    // obligation cannot call an exec-mode `&mut` function from
+                    // its `ensures` clause.
+                } else if let Some((ret_ty, _is_slice)) = exec_type_spelling(ty) {
                     check_corpus_expr(
                         program,
                         init,
@@ -586,7 +622,9 @@ fn exec_tv_fn(
                 }
                 // Bind the local so a later expr referencing it frames.
                 if let Some((ty_str, is_slice)) = exec_type_spelling(ty) {
-                    env.bind_local_relation(name, &ty_str, init);
+                    if !stateful_call {
+                        env.bind_local_relation(name, &ty_str, init);
+                    }
                     env.bind(name, ty_str, is_slice);
                 }
             }
@@ -1408,6 +1446,59 @@ mod divergent_teeth {
                 inner: Box::new(named),
             }),
             Some(("&mut State".to_string(), false))
+        );
+    }
+
+    #[test]
+    fn direct_typed_mutable_call_is_owned_by_body_tv_not_pure_exec_tv() {
+        let parsed = thermite_syntax::parse(
+            r#"
+struct State { value: u64 }
+fn set(state: &mut State, value: u64) -> u64
+  req true
+  ens result == value
+  fx pure
+{
+  state.value = value;
+  value
+}
+fn caller(state: &mut State, value: u64) -> u64
+  req true
+  ens result == value
+  fx pure
+{
+  let observed: u64 = set(state, value);
+  observed
+}
+"#,
+        );
+        assert!(parsed.is_clean(), "parse errors: {:?}", parsed.errors);
+        let init = parsed
+            .program
+            .items
+            .iter()
+            .find_map(|item| match item {
+                Item::Fn(function) if function.name == "caller" => function
+                    .body
+                    .as_ref()
+                    .and_then(|body| body.stmts.first())
+                    .and_then(|statement| match statement {
+                        Stmt::Let { init, .. } => Some(init),
+                        _ => None,
+                    }),
+                _ => None,
+            })
+            .expect("caller let initializer");
+        assert!(is_direct_mutable_call(&parsed.program, init));
+
+        let nested = Expr::Binary {
+            op: BinOp::Add,
+            lhs: Box::new(init.clone()),
+            rhs: Box::new(int(1)),
+        };
+        assert!(
+            !is_direct_mutable_call(&parsed.program, &nested),
+            "nested effectful expressions must not be removed from pure exec TV as if they were the admitted direct initializer"
         );
     }
 

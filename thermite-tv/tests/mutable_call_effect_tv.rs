@@ -19,6 +19,16 @@ fn mutate(state: &mut State, value: u64) -> ()
 {
   state.value = value;
 }
+fn mutate_returning(state: &mut State, value: u64) -> u64
+  req true
+  ens result == value
+  ens final(state).value == value
+  ens final(state).guard == old(state).guard
+  fx pure
+{
+  state.value = value;
+  value
+}
 fn pipeline(state: &mut State, value: u64) -> ()
   req value < 1000
   ens final(state).value == value + 1
@@ -28,6 +38,18 @@ fn pipeline(state: &mut State, value: u64) -> ()
   mutate(state, value);
   let next: u64 = state.value + 1;
   mutate(state, next);
+}
+fn result_pipeline(state: &mut State, value: u64) -> u64
+  req value < 1000
+  ens result == value + 1
+  ens final(state).value == result
+  ens final(state).guard == old(state).guard
+  fx pure
+{
+  let observed: u64 = mutate_returning(state, value);
+  let next: u64 = observed + 1;
+  let final_value: u64 = mutate_returning(state, next);
+  final_value
 }
 "#;
 
@@ -43,6 +65,16 @@ fn mutate(state: &mut State, value: u64) -> (result: ())
         final(state).guard == old(state).guard,
 {
     state.value = value;
+}
+
+fn mutate_returning(state: &mut State, value: u64) -> (result: u64)
+    ensures
+        result == value,
+        final(state).value == value,
+        final(state).guard == old(state).guard,
+{
+    state.value = value;
+    value
 }
 "#;
 
@@ -95,6 +127,27 @@ fn frame() -> BodyObligationFrame {
             &["state", "value"],
             &["state"],
             function_body("mutate"),
+        )],
+        named_records: vec![NamedRecordFrame::new("State", fields())],
+        ..Default::default()
+    }
+}
+
+fn result_frame() -> BodyObligationFrame {
+    BodyObligationFrame {
+        spec_defs: vec![DEFINITIONS.to_string()],
+        params: vec![
+            BodyParamDecl::new("state", "&mut State"),
+            BodyParamDecl::new("value", "u64"),
+        ],
+        ret_type: "u64".to_string(),
+        req: Some("value < 1000".to_string()),
+        mutable_records: vec![MutableRecordFrame::typed("state", "State", fields())],
+        mutable_call_effects: vec![effect(
+            "mutate_returning",
+            &["state", "value"],
+            &["state"],
+            function_body("mutate_returning"),
         )],
         named_records: vec![NamedRecordFrame::new("State", fields())],
         ..Default::default()
@@ -166,6 +219,116 @@ fn exact_mutable_call_effect_and_dependent_sequence_verify() {
         "{obligation}"
     );
     assert_verus("faithful", &obligation, true);
+}
+
+#[test]
+fn direct_let_bound_mutable_call_results_compose_with_exact_post_state() {
+    let source = function_body("result_pipeline");
+    let production = r#"    let observed: u64 = mutate_returning(state, value);
+    let next: u64 = observed + 1;
+    let final_value: u64 = mutate_returning(state, next);
+    final_value
+"#;
+    let obligation = body_equivalence_obligation(&source, production, &result_frame())
+        .expect("result-consuming mutable-call obligation");
+    assert!(obligation.contains("result == (value + 1)"), "{obligation}");
+    assert!(
+        obligation.contains("final(state).value == (value + 1)"),
+        "{obligation}"
+    );
+    assert!(
+        obligation.contains("final(state).guard == old(state).guard"),
+        "{obligation}"
+    );
+    assert_verus("result_and_post_state", &obligation, true);
+
+    for (name, mutant) in [
+        (
+            "wrong_consumed_result",
+            r#"    let observed: u64 = mutate_returning(state, value);
+    let next: u64 = observed + 2;
+    let final_value: u64 = mutate_returning(state, next);
+    final_value
+"#,
+        ),
+        (
+            "discarded_return_value",
+            r#"    let observed: u64 = mutate_returning(state, value);
+    let next: u64 = observed + 1;
+    let final_value: u64 = mutate_returning(state, next);
+    value
+"#,
+        ),
+    ] {
+        let obligation = body_equivalence_obligation(&source, mutant, &result_frame())
+            .expect("result-consuming mutant obligation");
+        assert_verus(name, &obligation, false);
+    }
+}
+
+#[test]
+fn nested_mutable_call_result_use_remains_fail_closed() {
+    let source = thermite_syntax::parse(
+        r#"
+fn nested(state: &mut State, value: u64) -> u64
+  req true
+  ens result == value + 1
+  fx pure
+{
+  let observed: u64 = mutate_returning(state, value) + 1;
+  observed
+}
+"#,
+    );
+    assert!(source.is_clean(), "parse errors: {:?}", source.errors);
+    let body = source
+        .program
+        .items
+        .iter()
+        .find_map(|item| match item {
+            Item::Fn(function) if function.name == "nested" => function.body.clone(),
+            _ => None,
+        })
+        .expect("nested body");
+    let error = body_equivalence_obligation(&body, "", &result_frame())
+        .expect_err("nested mutable-call result use must not silently lose its effect");
+    assert!(
+        error
+            .to_string()
+            .contains("may only be consumed as one direct `let` initializer"),
+        "{error}"
+    );
+
+    let untyped = thermite_syntax::parse(
+        r#"
+fn untyped(state: &mut State, value: u64) -> u64
+  req true
+  ens result == value
+  fx pure
+{
+  let observed = mutate_returning(state, value);
+  observed
+}
+"#,
+    );
+    assert!(untyped.is_clean(), "parse errors: {:?}", untyped.errors);
+    let body = untyped
+        .program
+        .items
+        .iter()
+        .find_map(|item| match item {
+            Item::Fn(function) if function.name == "untyped" => function.body.clone(),
+            _ => None,
+        })
+        .expect("untyped body");
+    let error = body_equivalence_obligation(&body, "", &result_frame())
+        .expect_err("untyped mutable-call result binding must remain fail closed");
+    assert!(
+        error
+            .to_string()
+            .contains("requires one direct typed `let` initializer"),
+        "{error}"
+    );
 }
 
 #[test]

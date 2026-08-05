@@ -288,7 +288,7 @@ remain counted and the per-function scores stay above the configured floor.
 The canonical five-root package retains a scalar ring export, while the focused
 slab, freelist, and intrusive packages supply strict aggregate receipt fixtures.
 Body TV frames direct and nested finite-record mutation, user-ADT match/results,
-exact statement-position mutable calls over direct finite-record roots, and the
+exact statement-position and direct typed let-bound result calls over finite-record roots, and the
 slab, freelist, and intrusive fixed-array states. It closes statement-free
 constructor-field conditionals over prior locals, which keeps the independent
 unlink reference well scoped after multiple array writes. Quantified all-index

@@ -17405,7 +17405,7 @@ owner = ".design/build/kernel-primitives.md"
 status = "partial"
 scope = "verified"
 summary = "Thermite provides executable/specification mutation over slices and allocation-free fixed storage and collections."
-remaining_scope = "Mutable borrowed slices/arrays, arbitrary old/final snapshot framing, native fixed arrays, scalar and recursively finite plain-aggregate equality plus exact one- and two-index quantified frames, defining-module opaque state transitions, exact typed root.field(.field)* mutation with an optional final fixed-array index, owned/value-call composition, exact user-ADT result/match contract and body TV with arm scoping, exact record-state loop entry/leaf-preservation/exit/full-result TV, statement-position mutable-call composition over pairwise-distinct direct finite-record roots, strict freestanding L3 record/rich-state receipts, digest-bound freestanding fixed-array views and repeat construction, total directly proved u64 bit methods, a receipt-bound packed bitmap with population count/set-bit search/bulk set operations, u64 vector, u64 FIFO ring, collision-explicit direct map, opaque collision-resolving open-addressed map, a generation-safe opaque slab, a duplicate-safe opaque freelist, opaque intrusive doubly linked metadata with arbitrary-live-node unlink and tail relink, and a receipt-bound generation-owned static-storage claim/fill/commit/release protocol are shipped. Add index-then-field aliasing if required, mixed shared/mutable, mutable slice/array, and projected-root call effects, consumed mutable-call return values, enum-payload lvalue mutation, arbitrary-position intrusive insertion/relink if required, chained maps where required, quantified aggregate loops/state framing, and generic library capacities/types."
+remaining_scope = "Mutable borrowed slices/arrays, arbitrary old/final snapshot framing, native fixed arrays, scalar and recursively finite plain-aggregate equality plus exact one- and two-index quantified frames, defining-module opaque state transitions, exact typed root.field(.field)* mutation with an optional final fixed-array index, owned/value-call composition, exact user-ADT result/match contract and body TV with arm scoping, exact record-state loop entry/leaf-preservation/exit/full-result TV, statement-position and direct typed let-bound result mutable-call composition over pairwise-distinct direct finite-record roots, strict freestanding L3 record/rich-state receipts, digest-bound freestanding fixed-array views and repeat construction, total directly proved u64 bit methods, a receipt-bound packed bitmap with population count/set-bit search/bulk set operations, u64 vector, u64 FIFO ring, collision-explicit direct map, opaque collision-resolving open-addressed map, a generation-safe opaque slab, a duplicate-safe opaque freelist, opaque intrusive doubly linked metadata with arbitrary-live-node unlink and tail relink, and a receipt-bound generation-owned static-storage claim/fill/commit/release protocol are shipped. Add index-then-field aliasing if required, mixed shared/mutable, mutable slice/array, and projected-root call effects, nested/general mutable-call result expressions, enum-payload lvalue mutation, arbitrary-position intrusive insertion/relink if required, chained maps where required, quantified aggregate loops/state framing, and generic library capacities/types."
 contributors = [".design/build/kernel-byte-slice.md", ".design/build/fixed-collections.md", ".design/build/static-storage.md", ".design/build/aggregate-array-relations.md", ".design/build/named-record-lifecycle.md", ".design/build/owned-aggregate-lifecycle.md", ".design/build/nested-aggregate-lifecycle.md", ".design/build/adt-match-lifecycle.md", ".design/build/record-state-loops.md", ".design/build/mutable-call-effects.md", "thermite-syntax/src/parser.rs", "thermite-spec/src/validator.rs", "thermite-lower/src/lower.rs", "thermite-tv/src/ref_encode.rs", "thermite-tv/src/exec_stmt_encode.rs", "thermite-tv/src/obligation.rs", "forge/src/body_tv.rs", "forge/src/contract_tv.rs", "forge/src/exec_tv.rs", "forge/src/verified_build.rs"]
 generated_to = ["status", "forge-kernel-primitives-status"]
 
@@ -17587,7 +17587,7 @@ note = "Requires every in-language static-storage item at L3, pins the exact two
 [[requirement.evidence]]
 kind = "test"
 target = "thermite-tv/tests/mutable_call_effect_tv.rs"
-note = "Discharges exact dependent mutable-record calls and post-state field selection through real Verus while rejecting dropped/wrong calls, collateral-frame loss, duplicate exclusive aliases, recursive effect cycles, and a missing final selector."
+note = "Discharges exact dependent mutable-record calls, direct let-bound results, and post-state field selection through real Verus while rejecting wrong/discarded/nested results, dropped/wrong calls, collateral-frame loss, duplicate exclusive aliases, recursive effect cycles, and a missing final selector."
 
 [[requirement.evidence]]
 kind = "test"
@@ -17597,12 +17597,12 @@ note = "Derives a mutable callee effect from the validated reachable source clos
 [[requirement.evidence]]
 kind = "file"
 target = "conformance/verified-build/mutable_call_effect.th"
-note = "Policy-free opaque record pipeline whose second generated call consumes state read after the first call."
+note = "Policy-free opaque record pipeline whose direct typed let binding consumes the first generated mutable call's result in the second generated call."
 
 [[requirement.evidence]]
 kind = "test"
 target = "forge/tests/verified_build.rs::mutable_call_effect_is_strict_freestanding_l3_and_executes_generated_calls"
-note = "Builds and replays the all-L3 freestanding mutable-call receipt, executes both real generated calls from a downstream consumer, requires faithful TV, and rejects source tampering."
+note = "Builds and replays the all-L3 freestanding mutable-call receipt, returns and executes the composed generated result from a downstream consumer, routes stateful initializers exclusively through exact body TV while retaining surrounding pure exec TV, and rejects source tampering."
 
 [[requirement]]
 id = "REQ-KPRIM-3"

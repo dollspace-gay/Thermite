@@ -1143,13 +1143,23 @@ fn thread_lifecycle_stmt(
     active_calls: &mut Vec<String>,
 ) -> Result<(), RefEncodeError> {
     match statement {
-        Stmt::Let { name, init, .. } => {
+        Stmt::Let { name, init, ty, .. } => {
             if state.locals.contains_key(name) {
                 return Err(RefEncodeError::Unsupported(format!(
                     "re-shadowed lifecycle binding `{name}`"
                 )));
             }
-            let value = encode_lifecycle_expr(init, state, ctx)?;
+            let value = if let Some((callee, args)) = direct_mutable_call(init, ctx) {
+                if ty.is_none() {
+                    return Err(RefEncodeError::Unsupported(
+                        "a mutable-reference call result requires one direct typed `let` initializer"
+                            .to_string(),
+                    ));
+                }
+                apply_mutable_call_effect(callee, args, state, ctx, active_calls)?
+            } else {
+                encode_lifecycle_expr(init, state, ctx)?
+            };
             state.locals.insert(name.clone(), value);
             Ok(())
         }
@@ -1282,13 +1292,14 @@ fn thread_lifecycle_stmt(
                 if let Expr::Path(path) = callee.as_ref() {
                     if let [name] = path.as_slice() {
                         if ctx.mutable_call_effect(name).is_some() {
-                            return apply_mutable_call_effect(
+                            let _ = apply_mutable_call_effect(
                                 name,
                                 args,
                                 state,
                                 ctx,
                                 active_calls,
-                            );
+                            )?;
+                            return Ok(());
                         }
                     }
                 }
@@ -1317,7 +1328,7 @@ fn apply_mutable_call_effect(
     state: &mut LifecycleState,
     ctx: &BodyRefCtx,
     active_calls: &mut Vec<String>,
-) -> Result<(), RefEncodeError> {
+) -> Result<LifecycleCell, RefEncodeError> {
     if active_calls.iter().any(|active| active == name) {
         return Err(RefEncodeError::Unsupported(format!(
             "recursive mutable-reference effect cycle reaches `{name}`"
@@ -1437,12 +1448,13 @@ fn apply_mutable_call_effect(
     );
     active_calls.pop();
     interpreted?;
-    // This frozen call form appears as a statement, so the return value is
-    // intentionally discarded. Still encode the source tail under the exact
-    // post-state so an unsupported or effectful tail cannot disappear silently.
-    if let Some(tail) = &effect.body.tail {
-        let _ = encode_lifecycle_expr(tail, &callee_state, &callee_ctx)?;
-    }
+    // Interpret the callee's exact source result under its post-state. A
+    // statement-position caller may discard this cell; a direct `let` caller
+    // binds it. Either way, an unsupported or effectful tail cannot disappear.
+    let result = match &effect.body.tail {
+        Some(tail) => encode_lifecycle_expr(tail, &callee_state, &callee_ctx)?,
+        None => LifecycleCell::bounded("()"),
+    };
 
     for formal in &effect.mutable_records {
         let actual_root = actual_roots.get(&formal.name).ok_or_else(|| {
@@ -1467,7 +1479,26 @@ fn apply_mutable_call_effect(
                 .insert(format!("{actual_root}.{}", field.name), value);
         }
     }
-    Ok(())
+    Ok(result)
+}
+
+/// Recognize the sole admitted result-consuming form: a bare call to a framed
+/// in-language mutable callee used directly as a `let` initializer. Nested uses
+/// remain fail-closed until expression evaluation order and borrow aliasing are
+/// independently modeled.
+fn direct_mutable_call<'a>(expr: &'a Expr, ctx: &BodyRefCtx) -> Option<(&'a str, &'a [Expr])> {
+    let Expr::Call { callee, args } = expr else {
+        return None;
+    };
+    let Expr::Path(path) = callee.as_ref() else {
+        return None;
+    };
+    let [name] = path.as_slice() else {
+        return None;
+    };
+    ctx.mutable_call_effect(name)
+        .is_some()
+        .then_some((name.as_str(), args.as_slice()))
 }
 
 fn merge_lifecycle_cells(
@@ -1491,6 +1522,12 @@ fn encode_lifecycle_expr(
     state: &LifecycleState,
     ctx: &BodyRefCtx,
 ) -> Result<LifecycleCell, RefEncodeError> {
+    if expr_contains_mutable_call(expr, ctx) {
+        return Err(RefEncodeError::Unsupported(
+            "a mutable-reference call result may only be consumed as one direct `let` initializer; nested expression, condition, argument, assignment, and tail uses require a wider evaluation-order and alias frame"
+                .to_string(),
+        ));
+    }
     let exec = ctx
         .exec_ref_ctx()
         .with_value_bindings(
@@ -1541,6 +1578,114 @@ fn encode_lifecycle_expr(
         _ => false,
     };
     Ok(LifecycleCell { text, spec_int })
+}
+
+fn expr_contains_mutable_call(expr: &Expr, ctx: &BodyRefCtx) -> bool {
+    let any = |items: &[Expr]| {
+        items
+            .iter()
+            .any(|item| expr_contains_mutable_call(item, ctx))
+    };
+    match expr {
+        Expr::Path(_) | Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::StrLit(_) => false,
+        Expr::Array(items) | Expr::Tuple(items) => any(items),
+        Expr::ArrayRepeat { value, .. }
+        | Expr::Unary { expr: value, .. }
+        | Expr::Cast { expr: value, .. }
+        | Expr::Ref { expr: value, .. }
+        | Expr::Deref(value)
+        | Expr::TupleProj {
+            receiver: value, ..
+        }
+        | Expr::Field {
+            receiver: value, ..
+        }
+        | Expr::Closure { body: value, .. }
+        | Expr::Is {
+            scrutinee: value, ..
+        } => expr_contains_mutable_call(value, ctx),
+        Expr::Binary { lhs, rhs, .. } => {
+            expr_contains_mutable_call(lhs, ctx) || expr_contains_mutable_call(rhs, ctx)
+        }
+        Expr::Call { callee, args } => {
+            direct_mutable_call(expr, ctx).is_some()
+                || expr_contains_mutable_call(callee, ctx)
+                || any(args)
+        }
+        Expr::MethodCall { receiver, args, .. } => {
+            expr_contains_mutable_call(receiver, ctx) || any(args)
+        }
+        Expr::Match { scrutinee, arms } => {
+            expr_contains_mutable_call(scrutinee, ctx)
+                || arms.iter().any(|arm| {
+                    arm.guard
+                        .as_ref()
+                        .is_some_and(|guard| expr_contains_mutable_call(guard, ctx))
+                        || expr_contains_mutable_call(&arm.body, ctx)
+                })
+        }
+        Expr::If { cond, then, else_ } => {
+            expr_contains_mutable_call(cond, ctx)
+                || block_contains_mutable_call(then, ctx)
+                || block_contains_mutable_call(else_, ctx)
+        }
+        Expr::Index { base, index } => {
+            expr_contains_mutable_call(base, ctx)
+                || match index {
+                    IndexArg::Single(index)
+                    | IndexArg::RangeTo(index)
+                    | IndexArg::RangeFrom(index) => expr_contains_mutable_call(index, ctx),
+                    IndexArg::Range(start, end) => {
+                        expr_contains_mutable_call(start, ctx)
+                            || expr_contains_mutable_call(end, ctx)
+                    }
+                }
+        }
+        Expr::StructLit { fields, .. } => fields
+            .iter()
+            .any(|(_, value)| expr_contains_mutable_call(value, ctx)),
+        Expr::Quantifier { domain, body, .. } => {
+            expr_contains_mutable_call(domain, ctx) || expr_contains_mutable_call(body, ctx)
+        }
+    }
+}
+
+fn block_contains_mutable_call(block: &Block, ctx: &BodyRefCtx) -> bool {
+    block
+        .stmts
+        .iter()
+        .any(|statement| stmt_contains_mutable_call(statement, ctx))
+        || block
+            .tail
+            .as_deref()
+            .is_some_and(|tail| expr_contains_mutable_call(tail, ctx))
+}
+
+fn stmt_contains_mutable_call(statement: &Stmt, ctx: &BodyRefCtx) -> bool {
+    match statement {
+        Stmt::Let { init, .. } | Stmt::Expr(init) => expr_contains_mutable_call(init, ctx),
+        Stmt::Assign { target, value } => {
+            expr_contains_mutable_call(target, ctx) || expr_contains_mutable_call(value, ctx)
+        }
+        Stmt::Return(value) => value
+            .as_ref()
+            .is_some_and(|value| expr_contains_mutable_call(value, ctx)),
+        Stmt::If { cond, then, else_ } => {
+            expr_contains_mutable_call(cond, ctx)
+                || block_contains_mutable_call(then, ctx)
+                || else_
+                    .as_ref()
+                    .is_some_and(|block| block_contains_mutable_call(block, ctx))
+        }
+        Stmt::Loop(loop_node) => {
+            let condition = match &loop_node.kind {
+                LoopKind::While(condition) => expr_contains_mutable_call(condition, ctx),
+                LoopKind::Loop => false,
+            };
+            condition || block_contains_mutable_call(&loop_node.body, ctx)
+        }
+        Stmt::Break | Stmt::Continue => false,
+    }
 }
 
 /// Independently denote direct indexed writes through exclusive slice or

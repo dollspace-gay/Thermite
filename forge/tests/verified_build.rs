@@ -1151,11 +1151,11 @@ fn mutable_call_effect_is_strict_freestanding_l3_and_executes_generated_calls() 
     let source = fs::read_to_string(bundle.join("evidence/source.verus.rs")).unwrap();
     assert!(source.starts_with("#![no_std]\n"), "{source}");
     assert!(
-        source.contains("mutable_call_set(state, seed + 1);")
-            && source.contains("mutable_call_set(state, next);"),
+        source.contains("let initial: u64 = seed + 1;")
+            && source.contains("let first: u64 = mutable_call_set(state, initial);")
+            && source.contains("let final_value: u64 = mutable_call_set(state, first);"),
         "{source}"
     );
-    assert!(source.contains("let next: u64 = state.value;"), "{source}");
     assert!(!source.contains("external_body"), "{source}");
 
     let consumer_source = temp.0.join("mutable-call-effect-consumer.rs");
@@ -1170,7 +1170,7 @@ use mutable_call_effect::{
 fn main() {
     let mut state = mutable_call_new(3, 77);
     match thermite_export_mutable_call_pipeline_v1(&mut state, 40) {
-        Ok(()) => {}
+        Ok(value) => assert_eq!(value, 41),
         Err(_) => panic!("valid mutable-call pipeline input was rejected"),
     }
     assert_eq!(mutable_call_value(&state), 41);
@@ -1231,14 +1231,30 @@ fn main() {
         }),
         "missing exact mutable-call body row: {tv}"
     );
+    for stateful_let in ["mutable_call_pipeline.let#2", "mutable_call_pipeline.let#3"] {
+        assert!(
+            !rows
+                .iter()
+                .any(|row| row["phase"] == "exec" && row["label"] == stateful_let),
+            "an effectful mutable-call initializer was misclassified as a pure exec expression: {tv}"
+        );
+    }
+    assert!(
+        rows.iter().any(|row| {
+            row["phase"] == "exec"
+                && row["label"] == "mutable_call_pipeline.let#1"
+                && row["verdict"] == "faithful"
+        }),
+        "the pure initializer surrounding mutable calls lost exec TV: {tv}"
+    );
 
     let tampered = temp.0.join("mutable-call-effect-tampered.verified");
     copy_tree(&bundle, &tampered);
     let input = tampered.join("evidence/input.th");
     let original = fs::read_to_string(&input).unwrap();
     let changed = original.replacen(
-        "mutable_call_set(state, next)",
-        "mutable_call_set(state, seed)",
+        "let final_value: u64 = mutable_call_set(state, first)",
+        "let final_value: u64 = mutable_call_set(state, seed)",
         1,
     );
     assert_ne!(changed, original);

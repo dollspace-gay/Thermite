@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: partial
-audited-content-sha256: a4a1c8898bcc5b562526ad44887dcaaaeecf58eb20ee2a16c05a4d7e97aef295 (re-pinned 2026-08-05 after making registry-wide Rust-ABI and borrowed-return diagnostics version-neutral; semantics unchanged)
+audited-content-sha256: a4ae1941d08ddc45d63acb7a2aa6742894cd7f65d5f90734443e3c5122824ae5 (re-pinned 2026-08-05 after making registry-wide Rust-ABI and borrowed-return diagnostics version-neutral; semantics unchanged)
 decision: consumer-owned registry entries close reachable Thermite boundaries through non-exempt same-crate or separately compiled/imported direct-Verus calls
 governs:
   - thermite-lower/src/lower.rs

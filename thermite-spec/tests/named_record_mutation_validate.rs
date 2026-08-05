@@ -55,6 +55,22 @@ fn replace(next: u64) -> State
   state
 }
 "#,
+        r#"
+const SLOTS: usize = 4;
+struct Inner { value: u64, guard: u64 }
+struct State { inner: Inner, slots: [u64; SLOTS], tag: u64 }
+fn replace(state: &mut State, index: usize, next: u64) -> ()
+  req index < SLOTS
+  ens final(state).inner.value == next
+  ens final(state).inner.guard == old(state).inner.guard
+  ens final(state).slots[index] == next + 1
+  ens final(state).tag == old(state).tag
+  fx pure
+{
+  state.inner.value = next;
+  state.slots[index] = next + 1;
+}
+"#,
     ] {
         assert!(validate_src(source).is_ok(), "{source}");
     }
@@ -99,7 +115,7 @@ fn rejects_shared_and_immutable_record_roots() {
 }
 
 #[test]
-fn rejects_sealed_nested_recursive_heap_and_wrong_field_targets() {
+fn rejects_sealed_recursive_heap_and_wrong_field_targets() {
     for (label, source, needle) in [
         (
             "sealed root",
@@ -108,14 +124,6 @@ fn rejects_sealed_nested_recursive_heap_and_wrong_field_targets() {
                token.raw = 1; token.raw\n\
              }",
             "sealed",
-        ),
-        (
-            "nested target",
-            "struct Inner { value: u64 } struct Outer { inner: Inner }\n\
-             fn bad(state: &mut Outer) -> u64 req true ens true fx pure {\n\
-               state.inner.value = 1; state.inner.value\n\
-             }",
-            "exactly `root.field`",
         ),
         (
             "recursive root",
@@ -140,6 +148,71 @@ fn rejects_sealed_nested_recursive_heap_and_wrong_field_targets() {
                state.right = 1; state.left\n\
              }",
             "exact record type",
+        ),
+    ] {
+        let errors = mutation_error(source);
+        assert!(
+            errors.iter().any(|error| matches!(
+                error,
+                SpecError::InvalidNamedRecordMutation { detail, .. }
+                    if detail.contains(needle)
+            )),
+            "{label}: {errors:?}"
+        );
+    }
+}
+
+#[test]
+fn rejects_unmodeled_nested_projection_shapes() {
+    for (label, source, needle) in [
+        (
+            "index then field",
+            "const N: usize = 2; struct Inner { value: u64 } struct Outer { records: [Inner; N] }\n\
+             fn bad(state: &mut Outer, index: usize) -> u64 req index < N ens true fx pure {\n\
+               state.records[index].value = 1; state.records[index].value\n\
+             }",
+            "index must be the final",
+        ),
+        (
+            "index non-array field",
+            "struct Inner { value: u64 } struct Outer { inner: Inner }\n\
+             fn bad(state: &mut Outer) -> u64 req true ens true fx pure {\n\
+               state.inner[0] = 1; state.inner.value\n\
+             }",
+            "not a fixed array",
+        ),
+        (
+            "wrong nested field",
+            "struct Inner { value: u64 } struct Outer { inner: Inner }\n\
+             fn bad(state: &mut Outer) -> u64 req true ens true fx pure {\n\
+               state.inner.missing = 1; state.inner.value\n\
+             }",
+            "exact record type `Inner`",
+        ),
+        (
+            "computed receiver",
+            "struct State { value: u64 }\n\
+             fn make() -> State req true ens true fx pure { State { value: 0 } }\n\
+             fn bad() -> u64 req true ens true fx pure {\n\
+               make().value = 1; 0\n\
+             }",
+            "computed receivers are not admitted",
+        ),
+        (
+            "explicit dereference receiver",
+            "struct State { value: u64 }\n\
+             fn bad(state: &mut State) -> u64 req true ens true fx pure {\n\
+               (*state).value = 1; state.value\n\
+             }",
+            "dereference",
+        ),
+        (
+            "range index",
+            "const N: usize = 2; struct State { slots: [u64; N] }\n\
+             fn bad(state: &mut State, index: usize) -> u64 req index < N ens true fx pure {\n\
+               state.slots[..index] = 1; 0\n\
+             }",
+            "range",
         ),
     ] {
         let errors = mutation_error(source);

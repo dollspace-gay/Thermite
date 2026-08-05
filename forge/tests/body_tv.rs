@@ -453,6 +453,66 @@ fn choose_generation(state: &mut State, choose_next: bool, next: u64) -> u64
 }
 
 #[test]
+fn nested_record_and_terminal_array_writes_are_faithful() {
+    if !verus_present() {
+        eprintln!("SKIP: verus not available — nested aggregate body-TV not discharged.");
+        return;
+    }
+    let src = r#"
+const SLOTS: usize = 2;
+struct Inner { value: u64, guard: u64 }
+struct Nested { inner: Inner, slots: [u64; SLOTS], tag: u64 }
+
+fn nested_owned(state: Nested, index: usize, next: u64) -> Nested
+  req index < SLOTS && next < 1000
+  ens result.inner.value == next
+  ens result.inner.guard == state.inner.guard
+  ens result.slots[index] == next + 1
+  ens result.tag == state.tag
+  fx pure
+{
+  let mut updated: Nested = state;
+  updated.inner.value = next;
+  updated.slots[index] = updated.inner.value + 1;
+  updated
+}
+
+fn nested_borrowed(state: &mut Nested, index: usize, next: u64) -> u64
+  req index < SLOTS && next < 1000
+  ens result == next
+  ens final(state).inner.value == next
+  ens final(state).inner.guard == old(state).inner.guard
+  ens final(state).slots[index] == next + 1
+  ens final(state).tag == old(state).tag
+  fx pure
+{
+  state.inner.value = next;
+  state.slots[index] = state.inner.value + 1;
+  state.inner.value
+}
+"#;
+    let file = write_th("nested_aggregate_lifecycle", src);
+    let report = run_body_tv_json(&file);
+    assert_eq!(report["counts"]["checked"].as_u64(), Some(2), "{report}");
+    assert_eq!(report["counts"]["faithful"].as_u64(), Some(2), "{report}");
+    assert_eq!(report["counts"]["divergent"].as_u64(), Some(0), "{report}");
+    assert_eq!(
+        report["counts"]["unverifiable"].as_u64(),
+        Some(0),
+        "{report}"
+    );
+    assert_eq!(report["counts"]["skipped"].as_u64(), Some(0), "{report}");
+    for name in ["nested_owned", "nested_borrowed"] {
+        assert!(
+            report["bodies"].as_array().unwrap().iter().any(|body| {
+                body["body"].as_str() == Some(name) && body["verdict"].as_str() == Some("faithful")
+            }),
+            "{name}: {report}"
+        );
+    }
+}
+
+#[test]
 fn owned_aggregate_fixture_is_entirely_l3_body_faithful() {
     if !verus_present() {
         eprintln!("SKIP: verus not available — owned-aggregate body-TV not discharged.");
@@ -477,6 +537,39 @@ fn owned_aggregate_fixture_is_entirely_l3_body_faithful() {
         "owned_state_mix_generation",
         "owned_state_mix_second",
         "owned_state_pipeline",
+    ] {
+        assert!(
+            report["bodies"].as_array().unwrap().iter().any(|body| {
+                body["body"].as_str() == Some(name) && body["verdict"].as_str() == Some("faithful")
+            }),
+            "{name}: {report}"
+        );
+    }
+}
+
+#[test]
+fn nested_aggregate_fixture_is_entirely_l3_body_faithful() {
+    if !verus_present() {
+        eprintln!("SKIP: verus not available — nested-aggregate body-TV not discharged.");
+        return;
+    }
+    let file = corpus_dir().join("verified-build/nested_aggregate_lifecycle.th");
+    let report = run_body_tv_json(&file);
+    assert_eq!(report["counts"]["checked"].as_u64(), Some(5), "{report}");
+    assert_eq!(report["counts"]["faithful"].as_u64(), Some(5), "{report}");
+    assert_eq!(report["counts"]["divergent"].as_u64(), Some(0), "{report}");
+    assert_eq!(
+        report["counts"]["unverifiable"].as_u64(),
+        Some(0),
+        "{report}"
+    );
+    assert_eq!(report["counts"]["skipped"].as_u64(), Some(0), "{report}");
+    for name in [
+        "nested_state_value",
+        "nested_state_guard",
+        "nested_state_tag",
+        "nested_state_update",
+        "nested_state_pipeline",
     ] {
         assert!(
             report["bodies"].as_array().unwrap().iter().any(|body| {

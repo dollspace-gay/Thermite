@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: 2f608652efa0deab45d5f382f33552090e8e4632f77b0751c1d633d9ec6b366f (re-pinned 2026-08-04 after additive named-record lifecycle support; option/result remain outside that closure)
+audited-content-sha256: e17256bb6e38c5177ce435bbad8c5797f9225f76bfa83f17f63e723d3b40753c (re-pinned 2026-08-04 after exact nested aggregate lifecycle support; option/result remain outside that closure)
 governs: thermite-syntax/src/ast.rs
 governs: thermite-syntax/src/parser.rs
 governs: thermite-spec/src/validator.rs

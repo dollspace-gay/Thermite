@@ -6,7 +6,7 @@ use thermite_tv::obligation::{
     body_equivalence_obligation, exec_equivalence_obligation, BodyObligationFrame, BodyParamDecl,
     ExecObligationFrame, ExecParamDecl,
 };
-use thermite_tv::{NamedRecordFrame, RecordFieldFrame};
+use thermite_tv::{MutableRecordFrame, NamedRecordFrame, RecordFieldFrame};
 
 const SOURCE: &str = r#"
 struct State { first: u64, second: u64, occupied: bool }
@@ -38,6 +38,38 @@ fn replace_slot(state: Store, index: usize, value: u64) -> Store
   let mut updated: Store = state;
   updated.slots = slots;
   updated
+}
+"#;
+
+const NESTED_SOURCE: &str = r#"
+const SLOTS: usize = 2;
+struct Inner { value: u64, guard: u64 }
+struct Nested { inner: Inner, slots: [u64; SLOTS], tag: u64 }
+fn nested_owned(state: Nested, index: usize, next: u64) -> Nested
+  req index < SLOTS && next < 1000
+  ens result.inner.value == next
+  ens result.inner.guard == state.inner.guard
+  ens result.slots[index] == next + 1
+  ens result.tag == state.tag
+  fx pure
+{
+  let mut updated: Nested = state;
+  updated.inner.value = next;
+  updated.slots[index] = updated.inner.value + 1;
+  updated
+}
+fn nested_borrowed(state: &mut Nested, index: usize, next: u64) -> u64
+  req index < SLOTS && next < 1000
+  ens result == next
+  ens final(state).inner.value == next
+  ens final(state).inner.guard == old(state).inner.guard
+  ens final(state).slots[index] == next + 1
+  ens final(state).tag == old(state).tag
+  fx pure
+{
+  state.inner.value = next;
+  state.slots[index] = state.inner.value + 1;
+  state.inner.value
 }
 "#;
 
@@ -98,6 +130,74 @@ fn store_frame() -> BodyObligationFrame {
         fixed_array_fields: vec!["state.slots".to_string()],
         named_records: vec![record.clone()],
         result_record: Some(record),
+        ..Default::default()
+    }
+}
+
+fn parsed_record_frame(source: &str, type_name: &str) -> NamedRecordFrame {
+    let parsed = thermite_syntax::parse(source);
+    assert!(parsed.is_clean(), "parse errors: {:?}", parsed.errors);
+    let record = parsed
+        .program
+        .items
+        .iter()
+        .find_map(|item| match item {
+            Item::Struct(record) if record.name == type_name => Some(record),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("missing record `{type_name}`"));
+    NamedRecordFrame::new(
+        type_name,
+        record
+            .fields
+            .iter()
+            .map(|field| RecordFieldFrame::typed(field.name.clone(), field.ty.clone()))
+            .collect(),
+    )
+}
+
+fn nested_spec_defs() -> Vec<String> {
+    vec![
+        "pub const SLOTS: usize = 2;".to_string(),
+        "pub struct Inner {\n    pub value: u64,\n    pub guard: u64,\n}".to_string(),
+        "pub struct Nested {\n    pub inner: Inner,\n    pub slots: [u64; SLOTS],\n    pub tag: u64,\n}"
+            .to_string(),
+    ]
+}
+
+fn nested_owned_frame() -> BodyObligationFrame {
+    let inner = parsed_record_frame(NESTED_SOURCE, "Inner");
+    let nested = parsed_record_frame(NESTED_SOURCE, "Nested");
+    BodyObligationFrame {
+        spec_defs: nested_spec_defs(),
+        params: vec![
+            BodyParamDecl::new("state", "Nested"),
+            BodyParamDecl::new("index", "usize"),
+            BodyParamDecl::new("next", "u64"),
+        ],
+        ret_type: "Nested".to_string(),
+        req: Some("index < SLOTS && next < 1000".to_string()),
+        named_records: vec![inner, nested.clone()],
+        result_record: Some(nested),
+        ..Default::default()
+    }
+}
+
+fn nested_borrowed_frame() -> BodyObligationFrame {
+    let inner = parsed_record_frame(NESTED_SOURCE, "Inner");
+    let nested = parsed_record_frame(NESTED_SOURCE, "Nested");
+    BodyObligationFrame {
+        spec_defs: nested_spec_defs(),
+        params: vec![
+            BodyParamDecl::new("state", "&mut Nested"),
+            BodyParamDecl::new("index", "usize"),
+            BodyParamDecl::new("next", "u64"),
+        ],
+        ret_type: "u64".to_string(),
+        req: Some("index < SLOTS && next < 1000".to_string()),
+        fixed_array_fields: vec!["state.slots".to_string()],
+        mutable_records: vec![MutableRecordFrame::new("state", nested.fields.clone())],
+        named_records: vec![inner, nested],
         ..Default::default()
     }
 }
@@ -237,6 +337,101 @@ fn fixed_array_field_replacement_has_an_exact_l3_frame() {
         )
         .expect("array-field mutant obligation must build");
         assert_verus(name, &program, false);
+    }
+}
+
+fn nested_owned_obligation(production: &str) -> String {
+    let function = function(NESTED_SOURCE, 3);
+    body_equivalence_obligation(
+        function.body.as_ref().expect("nested_owned body"),
+        production,
+        &nested_owned_frame(),
+    )
+    .expect("nested owned-record body obligation must build")
+}
+
+#[test]
+fn nested_record_and_terminal_array_writes_are_l3_faithful() {
+    let program = nested_owned_obligation(
+        "    let mut updated: Nested = state;\n\
+         updated.inner.value = next;\n\
+         updated.slots[index] = updated.inner.value + 1;\n\
+         updated",
+    );
+    assert!(program.contains("spec_array_update"), "{program}");
+    assert!(program.contains("result.inner =="), "{program}");
+    assert!(program.contains("result.slots@ =="), "{program}");
+    assert_verus("nested_owned_faithful", &program, true);
+}
+
+#[test]
+fn nested_owned_mutants_fail_the_all_input_l3_obligation() {
+    for (name, production) in [
+        (
+            "nested_dropped_inner",
+            "    let mut updated: Nested = state;\n    updated.slots[index] = updated.inner.value + 1;\n    updated",
+        ),
+        (
+            "nested_dropped_array",
+            "    let mut updated: Nested = state;\n    updated.inner.value = next;\n    updated",
+        ),
+        (
+            "nested_wrong_index",
+            "    let mut updated: Nested = state;\n    updated.inner.value = next;\n    updated.slots[0] = updated.inner.value + 1;\n    updated",
+        ),
+        (
+            "nested_wrong_value",
+            "    let mut updated: Nested = state;\n    updated.inner.value = next;\n    updated.slots[index] = updated.inner.value;\n    updated",
+        ),
+        (
+            "nested_reordered_dependent_read",
+            "    let mut updated: Nested = state;\n    updated.slots[index] = updated.inner.value;\n    updated.inner.value = next;\n    updated",
+        ),
+        (
+            "nested_collateral_guard",
+            "    let mut updated: Nested = state;\n    updated.inner.value = next;\n    updated.inner.guard = next;\n    updated.slots[index] = updated.inner.value + 1;\n    updated",
+        ),
+        (
+            "nested_collateral_tag",
+            "    let mut updated: Nested = state;\n    updated.inner.value = next;\n    updated.slots[index] = updated.inner.value + 1;\n    updated.tag = next;\n    updated",
+        ),
+    ] {
+        assert_verus(name, &nested_owned_obligation(production), false);
+    }
+}
+
+fn nested_borrowed_obligation(production: &str) -> String {
+    let function = function(NESTED_SOURCE, 4);
+    body_equivalence_obligation(
+        function.body.as_ref().expect("nested_borrowed body"),
+        production,
+        &nested_borrowed_frame(),
+    )
+    .expect("nested borrowed-record body obligation must build")
+}
+
+#[test]
+fn exclusive_nested_record_and_array_writes_are_l3_faithful() {
+    let faithful = nested_borrowed_obligation(
+        "    state.inner.value = next;\n\
+         state.slots[index] = state.inner.value + 1;\n\
+         state.inner.value",
+    );
+    assert!(faithful.contains("final(state).inner =="), "{faithful}");
+    assert!(faithful.contains("final(state).slots@ =="), "{faithful}");
+    assert_verus("nested_borrowed_faithful", &faithful, true);
+
+    for (name, production) in [
+        (
+            "nested_borrowed_dropped_array",
+            "    state.inner.value = next;\n    state.inner.value",
+        ),
+        (
+            "nested_borrowed_collateral_guard",
+            "    state.inner.value = next;\n    state.inner.guard = next;\n    state.slots[index] = state.inner.value + 1;\n    state.inner.value",
+        ),
+    ] {
+        assert_verus(name, &nested_borrowed_obligation(production), false);
     }
 }
 

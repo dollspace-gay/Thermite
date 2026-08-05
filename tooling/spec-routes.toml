@@ -1765,6 +1765,63 @@ design = ".design/build/owned-aggregate-lifecycle.md"
 reference = []
 conformance_ops = ["owned-aggregate-lifecycle"]
 
+# Exact recursive finite-record mutation with an optional terminal fixed-array
+# index. The freestanding fixture is scalar-nested; hosted real-Verus evidence
+# covers the array-view form without introducing a concrete kernel or runtime.
+[[route]]
+crate_pattern = "thermite-spec/src/validator.rs"
+design = ".design/build/nested-aggregate-lifecycle.md"
+reference = ["conformance/verified-build/nested_aggregate_lifecycle.th"]
+conformance_ops = ["nested-mutation-validation"]
+
+[[route]]
+crate_pattern = "thermite-spec/tests/named_record_mutation_validate.rs"
+design = ".design/build/nested-aggregate-lifecycle.md"
+reference = ["conformance/verified-build/nested_aggregate_lifecycle.th"]
+conformance_ops = ["nested-mutation-rejections"]
+
+[[route]]
+crate_pattern = "thermite-lower/tests/nested_aggregate_lifecycle.rs"
+design = ".design/build/nested-aggregate-lifecycle.md"
+reference = ["conformance/verified-build/nested_aggregate_lifecycle.th"]
+conformance_ops = ["nested-lvalue-lowering", "nested-direct-verus"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/exec_stmt_encode.rs"
+design = ".design/build/nested-aggregate-lifecycle.md"
+reference = ["conformance/verified-build/nested_aggregate_lifecycle.th"]
+conformance_ops = ["nested-independent-reconstruction"]
+
+[[route]]
+crate_pattern = "thermite-tv/tests/owned_aggregate_lifecycle_tv.rs"
+design = ".design/build/nested-aggregate-lifecycle.md"
+reference = ["conformance/verified-build/nested_aggregate_lifecycle.th"]
+conformance_ops = ["nested-owned-exclusive-verus", "nested-mutants"]
+
+[[route]]
+crate_pattern = "forge/src/body_tv.rs"
+design = ".design/build/nested-aggregate-lifecycle.md"
+reference = ["conformance/verified-build/nested_aggregate_lifecycle.th"]
+conformance_ops = ["nested-typed-frame"]
+
+[[route]]
+crate_pattern = "forge/tests/body_tv.rs"
+design = ".design/build/nested-aggregate-lifecycle.md"
+reference = ["conformance/verified-build/nested_aggregate_lifecycle.th"]
+conformance_ops = ["nested-hosted-array-body-tv", "nested-freestanding-body-tv"]
+
+[[route]]
+crate_pattern = "forge/tests/verified_build.rs"
+design = ".design/build/nested-aggregate-lifecycle.md"
+reference = ["conformance/verified-build/nested_aggregate_lifecycle.th"]
+conformance_ops = ["nested-strict-l3", "nested-replay", "nested-runtime", "nested-tamper"]
+
+[[route]]
+crate_pattern = "conformance/verified-build/nested_aggregate_lifecycle.th"
+design = ".design/build/nested-aggregate-lifecycle.md"
+reference = []
+conformance_ops = ["nested-aggregate-lifecycle"]
+
 # Primitive-only sealed atomic declarations and proof vocabulary. These routes
 # intentionally cover no machine implementation: registry v1 must refuse that
 # assurance class until the separate object/machine refinement increment.

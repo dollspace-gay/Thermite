@@ -15,7 +15,7 @@ governs:
   - forge/tests/body_tv.rs
   - forge/tests/verified_build.rs
   - conformance/verified-build/owned_aggregate_lifecycle.th
-audited-content-sha256: c037c15296ef0f7ddf781f791fe713345b7c45cda2a2d3e57ea1f338ce42d22c (re-pinned 2026-08-04 after the cross-package assurance-floor gate)
+audited-content-sha256: 593276455714e6f2c22c53b01719aa7d365faa7d10560b0198869588fdc26243 (re-pinned 2026-08-04 after the exact nested lifecycle extension)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/named-record-lifecycle.md
@@ -75,15 +75,19 @@ fn open_then_replace(next: u64) -> State
 
 The admitted local must have an explicit `Type::Named` annotation, and that type
 must be an ordinary or defining-module opaque struct in the same recursively
-finite non-sealed closure used by direct borrowed-record mutation. The update
-target is exactly `local.field`. Nested projections, enum payloads, heap-backed
-fields, references, recursive records, sealed records, untyped/inferred mutable
-record locals, and aliasing remain outside this first owned-lifecycle subset.
+finite non-sealed closure used by direct borrowed-record mutation. This original
+increment froze the direct `local.field` case. The shipped extension in
+`.design/build/nested-aggregate-lifecycle.md` now admits exact recursive fields
+and one terminal fixed-array index. Enum payloads, heap-backed fields,
+references, recursive records, sealed records, untyped/inferred mutable record
+locals, index-then-field projections, and aliasing remain outside the combined
+subset.
 
-A fixed array may be stored in a field and replaced as a whole. Indexed mutation
-continues to occur through a separately typed local array followed by whole-field
-replacement. A target such as `state.slots[index] = value` or
-`state.inner.field = value` remains a later nested-projection increment.
+A fixed array may therefore be replaced as a whole, updated through a separately
+typed local and reinstalled, or updated directly as the final projection of a
+typed record root. The hosted proof profile observes the complete array view;
+the freestanding scalar-nested fixture remains separate until no-vstd array
+views are available.
 
 ## Independent state denotation
 
@@ -203,8 +207,9 @@ This increment is shipped only when all of the following hold:
 
 ## Residual work
 
-This increment does not claim mutable enum payloads, match-result body state,
-nested mutable projections, record-state loops, mutable-reference call effects,
-static global ownership, affine uniqueness, concurrent record access, atomic
-object/machine refinement, or Rust/assembly TPL refinement. It does not add or
-package a kernel.
+The exact typed nested-field and terminal fixed-array projection subset is now
+shipped by `.design/build/nested-aggregate-lifecycle.md`. This increment still
+does not claim mutable enum payloads, match-result body state, index-then-field
+aliasing, record-state loops, mutable-reference call effects, static global
+ownership, affine uniqueness, concurrent record access, atomic object/machine
+refinement, or Rust/assembly TPL refinement. It does not add or package a kernel.

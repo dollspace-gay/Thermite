@@ -107,7 +107,7 @@
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
-use thermite_syntax::ast::{BinOp, Block, Clause, Expr, IndexArg, LoopKind, LoopNode, Stmt};
+use thermite_syntax::ast::{BinOp, Block, Clause, Expr, IndexArg, LoopKind, LoopNode, Stmt, Type};
 
 use crate::exec_encode::{exec_ref_value, ExecRefCtx, RefEncodeError};
 
@@ -118,6 +118,7 @@ use crate::exec_encode::{exec_ref_value, ExecRefCtx, RefEncodeError};
 pub struct RecordFieldFrame {
     pub name: String,
     pub array_view: bool,
+    pub ty: Option<Type>,
 }
 
 impl RecordFieldFrame {
@@ -125,6 +126,18 @@ impl RecordFieldFrame {
         Self {
             name: name.into(),
             array_view,
+            ty: None,
+        }
+    }
+
+    /// Construct a field frame with its exact independently parsed source type.
+    /// Nested lifecycle reconstruction requires this; the historical untyped
+    /// constructor remains available for direct-field-only test frames.
+    pub fn typed(name: impl Into<String>, ty: Type) -> Self {
+        Self {
+            name: name.into(),
+            array_view: matches!(ty, Type::Array { .. }),
+            ty: Some(ty),
         }
     }
 }
@@ -301,6 +314,12 @@ impl BodyRefCtx {
     fn named_record(&self, type_name: &str) -> Option<&NamedRecordFrame> {
         self.named_records.get(type_name)
     }
+
+    fn mutable_record(&self, name: &str) -> Option<&MutableRecordFrame> {
+        self.mutable_records
+            .iter()
+            .find(|record| record.name == name)
+    }
 }
 
 /// The big-step state environment: each in-scope binding name -> its current
@@ -352,6 +371,202 @@ impl Env {
 
     fn named_record_type(&self, name: &str) -> Option<&str> {
         self.named_records.get(name).map(String::as_str)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum NestedLvalueStep {
+    Field(String),
+    Index(Expr),
+}
+
+fn nested_lvalue_path(target: &Expr) -> Result<(String, Vec<NestedLvalueStep>), RefEncodeError> {
+    fn collect(expr: &Expr, steps: &mut Vec<NestedLvalueStep>) -> Result<String, RefEncodeError> {
+        match expr {
+            Expr::Path(path) => match path.as_slice() {
+                [root] => Ok(root.clone()),
+                _ => Err(RefEncodeError::Unsupported(
+                    "nested mutation root must be one local or parameter name".to_string(),
+                )),
+            },
+            Expr::Field { receiver, name } => {
+                let root = collect(receiver, steps)?;
+                steps.push(NestedLvalueStep::Field(name.clone()));
+                Ok(root)
+            }
+            Expr::Index {
+                base,
+                index: IndexArg::Single(index),
+            } => {
+                let root = collect(base, steps)?;
+                steps.push(NestedLvalueStep::Index(index.as_ref().clone()));
+                Ok(root)
+            }
+            _ => Err(RefEncodeError::Unsupported(
+                "nested mutation admits exact fields and optionally one final single fixed-array index"
+                    .to_string(),
+            )),
+        }
+    }
+
+    let mut steps = Vec::new();
+    let root = collect(target, &mut steps)?;
+    Ok((root, steps))
+}
+
+fn target_contains_field(target: &Expr) -> bool {
+    match target {
+        Expr::Field { .. } => true,
+        Expr::Index { base, .. } => target_contains_field(base),
+        _ => false,
+    }
+}
+
+fn reference_expr_is_spec_int(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::Binary {
+            op: BinOp::Add
+                | BinOp::Sub
+                | BinOp::Mul
+                | BinOp::Div
+                | BinOp::Rem
+                | BinOp::Shl
+                | BinOp::Shr
+                | BinOp::BitAnd
+                | BinOp::BitOr
+                | BinOp::BitXor,
+            ..
+        }
+    )
+}
+
+fn contextualize_assignment_value(expr: Expr, target_ty: &Type, spec_int: bool) -> Expr {
+    if spec_int
+        && matches!(
+            target_ty,
+            Type::Prim(
+                thermite_syntax::PrimType::U8
+                    | thermite_syntax::PrimType::U16
+                    | thermite_syntax::PrimType::U32
+                    | thermite_syntax::PrimType::U64
+                    | thermite_syntax::PrimType::Usize
+            )
+        )
+    {
+        Expr::Cast {
+            expr: Box::new(expr),
+            ty: target_ty.clone(),
+        }
+    } else {
+        expr
+    }
+}
+
+/// Rebuild a nested finite value independently of production lowering. Every
+/// enclosing record is reconstructed with all sibling fields projected from
+/// the pre-write value; an optional terminal index becomes one exact array
+/// update. Index-then-field aliasing remains outside this increment.
+fn rebuild_nested_value(
+    current: Expr,
+    current_ty: &Type,
+    steps: &[NestedLvalueStep],
+    changed: Expr,
+    changed_spec_int: bool,
+    ctx: &BodyRefCtx,
+) -> Result<Expr, RefEncodeError> {
+    let Some((step, rest)) = steps.split_first() else {
+        return Ok(changed);
+    };
+    match step {
+        NestedLvalueStep::Field(field) => {
+            let Type::Named(type_name) = current_ty else {
+                return Err(RefEncodeError::Unsupported(format!(
+                    "field `{field}` is projected from a non-record nested value"
+                )));
+            };
+            let record = ctx.named_record(type_name).ok_or_else(|| {
+                RefEncodeError::Unsupported(format!(
+                    "nested mutation lost finite record declaration `{type_name}`"
+                ))
+            })?;
+            let field_frame = record
+                .fields
+                .iter()
+                .find(|candidate| candidate.name == *field)
+                .ok_or_else(|| {
+                    RefEncodeError::Unsupported(format!(
+                        "record `{type_name}` has no exact field `{field}`"
+                    ))
+                })?;
+            let next = if rest.is_empty() {
+                match &field_frame.ty {
+                    Some(field_ty) => {
+                        contextualize_assignment_value(changed, field_ty, changed_spec_int)
+                    }
+                    None => changed,
+                }
+            } else {
+                let field_ty = field_frame.ty.as_ref().ok_or_else(|| {
+                    RefEncodeError::Unsupported(format!(
+                        "nested mutation field `{type_name}.{field}` has no independent source type"
+                    ))
+                })?;
+                rebuild_nested_value(
+                    Expr::Field {
+                        receiver: Box::new(current.clone()),
+                        name: field.clone(),
+                    },
+                    field_ty,
+                    rest,
+                    changed,
+                    changed_spec_int,
+                    ctx,
+                )?
+            };
+            Ok(Expr::StructLit {
+                path: vec![type_name.clone()],
+                fields: record
+                    .fields
+                    .iter()
+                    .map(|candidate| {
+                        let value = if candidate.name == *field {
+                            next.clone()
+                        } else {
+                            Expr::Field {
+                                receiver: Box::new(current.clone()),
+                                name: candidate.name.clone(),
+                            }
+                        };
+                        (candidate.name.clone(), value)
+                    })
+                    .collect(),
+            })
+        }
+        NestedLvalueStep::Index(index) => {
+            if !rest.is_empty() {
+                return Err(RefEncodeError::Unsupported(
+                    "a fixed-array index must be the final nested mutation projection".to_string(),
+                ));
+            }
+            let Type::Array { elem, .. } = current_ty else {
+                return Err(RefEncodeError::Unsupported(
+                    "the final indexed nested mutation receiver is not a fixed array".to_string(),
+                ));
+            };
+            Ok(Expr::Call {
+                callee: Box::new(Expr::Path(vec![
+                    "vstd".to_string(),
+                    "array".to_string(),
+                    "spec_array_update".to_string(),
+                ])),
+                args: vec![
+                    current,
+                    index.clone(),
+                    contextualize_assignment_value(changed, elem, changed_spec_int),
+                ],
+            })
+        }
     }
 }
 
@@ -575,25 +790,75 @@ fn thread_lifecycle_stmt(
                     state.locals.insert(path[0].clone(), value);
                     Ok(())
                 }
-                Expr::Field { receiver, name } => {
-                    let Expr::Path(path) = receiver.as_ref() else {
+                _ if target_contains_field(target) => {
+                    let (root, steps) = nested_lvalue_path(target)?;
+                    let Some((NestedLvalueStep::Field(direct_field), rest)) = steps.split_first()
+                    else {
                         return Err(RefEncodeError::Unsupported(
-                            "nested/computed named-record assignment is outside the direct lifecycle subset"
+                            "named-record lifecycle target must begin with one exact field"
                                 .to_string(),
                         ));
                     };
-                    let [root] = path.as_slice() else {
-                        return Err(RefEncodeError::Unsupported(
-                            "named-record assignment root must be one parameter name".to_string(),
-                        ));
-                    };
-                    let key = format!("{root}.{name}");
-                    if !state.fields.contains_key(&key) {
-                        return Err(RefEncodeError::Unsupported(format!(
-                            "field assignment `{key}` is not in the independently declared mutable-record frame"
-                        )));
+                    let record = ctx.mutable_record(&root).ok_or_else(|| {
+                        RefEncodeError::Unsupported(format!(
+                            "named-record assignment root `{root}` is not an independently framed exclusive parameter"
+                        ))
+                    })?;
+                    let field = record
+                        .fields
+                        .iter()
+                        .find(|field| field.name == *direct_field)
+                        .ok_or_else(|| {
+                            RefEncodeError::Unsupported(format!(
+                                "field `{root}.{direct_field}` is not in the independently declared mutable-record frame"
+                            ))
+                        })?;
+                    let key = format!("{root}.{direct_field}");
+                    if rest.is_empty() {
+                        state.fields.insert(key, value);
+                        return Ok(());
                     }
-                    state.fields.insert(key, value);
+
+                    let field_ty = field.ty.as_ref().ok_or_else(|| {
+                        RefEncodeError::Unsupported(format!(
+                            "nested lifecycle field `{key}` has no independent source type"
+                        ))
+                    })?;
+                    let current = state.fields.get(&key).ok_or_else(|| {
+                        RefEncodeError::Unsupported(format!(
+                            "named-record lifecycle lost the modeled field `{key}`"
+                        ))
+                    })?;
+                    let current_name = "__thermite_nested_current";
+                    let changed_name = "__thermite_nested_changed";
+                    let updated = rebuild_nested_value(
+                        Expr::Path(vec![current_name.to_string()]),
+                        field_ty,
+                        rest,
+                        Expr::Path(vec![changed_name.to_string()]),
+                        value.spec_int,
+                        ctx,
+                    )?;
+                    let mut bindings = state
+                        .locals
+                        .iter()
+                        .map(|(name, cell)| (name.clone(), cell.text.clone()))
+                        .collect::<Vec<_>>();
+                    bindings.push((current_name.to_string(), current.text.clone()));
+                    bindings.push((changed_name.to_string(), value.text));
+                    let exec = ctx
+                        .exec_ref_ctx()
+                        .with_value_bindings(bindings)
+                        .with_field_bindings(
+                            state
+                                .fields
+                                .iter()
+                                .map(|(name, cell)| (name.clone(), cell.text.clone())),
+                        );
+                    state.fields.insert(
+                        key,
+                        LifecycleCell::bounded(exec_ref_value(&updated, &exec)?),
+                    );
                     Ok(())
                 }
                 Expr::Index { .. } => Err(RefEncodeError::Unsupported(
@@ -1441,78 +1706,37 @@ fn thread_stmt(stmt: &Stmt, env: &mut Env, ctx: &BodyRefCtx) -> Result<(), RefEn
             Ok(())
         }
         Stmt::Assign { target, value } => {
-            // A direct field write on a typed owned record local is an exact
-            // nominal reconstruction. Every untouched field projects from the
-            // pre-write value, and the changed field receives the RHS evaluated
-            // in that same pre-write environment.
-            if let Expr::Field {
-                receiver,
-                name: field,
-            } = target
-            {
-                let Expr::Path(segments) = receiver.as_ref() else {
-                    return Err(RefEncodeError::Unsupported(
-                        "owned-record field assignment requires one local-name receiver"
-                            .to_string(),
-                    ));
-                };
-                if segments.len() != 1 {
-                    return Err(RefEncodeError::Unsupported(
-                        "owned-record field assignment requires one local-name receiver"
-                            .to_string(),
-                    ));
-                }
-                let local = &segments[0];
-                let type_name = env
-                    .named_record_type(local)
-                    .ok_or_else(|| {
-                        RefEncodeError::Unsupported(format!(
+            // A field chain rooted at a typed owned record local is an exact
+            // recursive nominal reconstruction. A final fixed-array index is
+            // modeled as one exact finite update inside that reconstruction.
+            if target_contains_field(target) {
+                let (local, mut steps) = nested_lvalue_path(target)?;
+                let type_name = env.named_record_type(&local).ok_or_else(|| {
+                    RefEncodeError::Unsupported(format!(
                         "field assignment root `{local}` is not a typed finite named-record local"
                     ))
-                    })?
-                    .to_string();
-                let record = ctx.named_record(&type_name).ok_or_else(|| {
-                    RefEncodeError::Unsupported(format!(
-                        "owned-record field assignment lost declaration `{type_name}`"
-                    ))
                 })?;
-                if !record
-                    .fields
-                    .iter()
-                    .any(|candidate| candidate.name == *field)
-                {
-                    return Err(RefEncodeError::Unsupported(format!(
-                        "record `{type_name}` has no field `{field}`"
-                    )));
+                for step in &mut steps {
+                    if let NestedLvalueStep::Index(index) = step {
+                        *index = substitute(index, env)?;
+                    }
                 }
-                let current = env.get(local).cloned().ok_or_else(|| {
+                let current = env.get(&local).cloned().ok_or_else(|| {
                     RefEncodeError::Unsupported(format!(
                         "assignment to the unbound named-record local `{local}`"
                     ))
                 })?;
                 let changed = substitute(value, env)?;
-                let fields = record
-                    .fields
-                    .iter()
-                    .map(|candidate| {
-                        let value = if candidate.name == *field {
-                            changed.clone()
-                        } else {
-                            Expr::Field {
-                                receiver: Box::new(current.clone()),
-                                name: candidate.name.clone(),
-                            }
-                        };
-                        (candidate.name.clone(), value)
-                    })
-                    .collect();
-                env.insert(
-                    local.clone(),
-                    Expr::StructLit {
-                        path: vec![type_name],
-                        fields,
-                    },
-                );
+                let changed_spec_int = reference_expr_is_spec_int(&changed);
+                let updated = rebuild_nested_value(
+                    current,
+                    &Type::Named(type_name.to_string()),
+                    &steps,
+                    changed,
+                    changed_spec_int,
+                    ctx,
+                )?;
+                env.insert(local, updated);
                 return Ok(());
             }
 
@@ -1940,10 +2164,18 @@ fn substitute(expr: &Expr, env: &Env) -> Result<Expr, RefEncodeError> {
             receiver: Box::new(substitute(receiver, env)?),
             index: *index,
         }),
-        Expr::Field { receiver, name } => Ok(Expr::Field {
-            receiver: Box::new(substitute(receiver, env)?),
-            name: name.clone(),
-        }),
+        Expr::Field { receiver, name } => {
+            let receiver = substitute(receiver, env)?;
+            if let Expr::StructLit { fields, .. } = &receiver {
+                if let Some((_, value)) = fields.iter().find(|(field, _)| field == name) {
+                    return Ok(value.clone());
+                }
+            }
+            Ok(Expr::Field {
+                receiver: Box::new(receiver),
+                name: name.clone(),
+            })
+        }
         Expr::StructLit { path, fields } => Ok(Expr::StructLit {
             path: path.clone(),
             fields: fields

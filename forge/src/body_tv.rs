@@ -1022,12 +1022,7 @@ fn mutable_record_frames(
             structure
                 .fields
                 .iter()
-                .map(|field| {
-                    RecordFieldFrame::new(
-                        field.name.clone(),
-                        matches!(field.ty, Type::Array { .. }),
-                    )
-                })
+                .map(|field| RecordFieldFrame::typed(field.name.clone(), field.ty.clone()))
                 .collect(),
         ));
     }
@@ -1053,12 +1048,7 @@ pub(crate) fn named_record_frames(program: &thermite_syntax::Program) -> Vec<Nam
                     structure
                         .fields
                         .iter()
-                        .map(|field| {
-                            RecordFieldFrame::new(
-                                field.name.clone(),
-                                matches!(field.ty, Type::Array { .. }),
-                            )
-                        })
+                        .map(|field| RecordFieldFrame::typed(field.name.clone(), field.ty.clone()))
                         .collect(),
                 )
             })

@@ -1,0 +1,77 @@
+struct NestedInner {
+  value: u64,
+  guard: u64,
+}
+
+#[opaque] struct NestedState {
+  inner: NestedInner,
+  tag: u64,
+}
+
+spec fn nested_state_value_spec(state: NestedState) -> u64
+  dec state.inner.value
+{
+  state.inner.value
+}
+
+spec fn nested_state_guard_spec(state: NestedState) -> u64
+  dec state.inner.guard
+{
+  state.inner.guard
+}
+
+spec fn nested_state_tag_spec(state: NestedState) -> u64
+  dec state.tag
+{
+  state.tag
+}
+
+fn nested_state_value(state: &NestedState) -> u64
+  req true
+  ens result == nested_state_value_spec(*state)
+  fx pure
+{
+  state.inner.value
+}
+
+fn nested_state_guard(state: &NestedState) -> u64
+  req true
+  ens result == nested_state_guard_spec(*state)
+  fx pure
+{
+  state.inner.guard
+}
+
+fn nested_state_tag(state: &NestedState) -> u64
+  req true
+  ens result == nested_state_tag_spec(*state)
+  fx pure
+{
+  state.tag
+}
+
+fn nested_state_update(state: NestedState, next: u64) -> NestedState
+  req true
+  ens nested_state_value_spec(result) == next
+  ens nested_state_guard_spec(result) == nested_state_guard_spec(state)
+  ens nested_state_tag_spec(result) == nested_state_tag_spec(state)
+  fx pure
+{
+  let mut updated: NestedState = state;
+  updated.inner.value = next;
+  updated
+}
+
+fn nested_state_pipeline(initial: u64, guard: u64, tag: u64, next: u64) -> NestedState
+  req next > 0
+  ens nested_state_value_spec(result) == next
+  ens nested_state_guard_spec(result) == guard
+  ens nested_state_tag_spec(result) == tag
+  fx pure
+{
+  let state: NestedState = NestedState {
+    inner: NestedInner { value: initial, guard: guard },
+    tag: tag,
+  };
+  nested_state_update(state, next)
+}

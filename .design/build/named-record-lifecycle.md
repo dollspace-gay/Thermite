@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: 08a4983dbbbd60d03c6c4fdc58ad422a274a41d9a86655d5c2dde8876f5d4a30 (re-pinned 2026-08-04 after the cross-package assurance-floor gate; borrowed-record semantics are unchanged)
+audited-content-sha256: 32df3138be1175c3a7d229a8531fba131b22af511e06635b1fece29a09182a9a (re-pinned 2026-08-04 after the exact nested lifecycle extension; direct borrowed-record semantics remain regression-covered)
 decision: direct mutation through an exclusive borrow of finite non-sealed named record state is admitted only when validator, L3, independent contract/exec/body TV, strict ABI, receipt replay, and representation ownership all describe the same field-exact transition
 governs:
   - thermite-spec/src/validator.rs
@@ -90,19 +90,20 @@ exists specifically so that module can implement verified transitions. A sealed
 root is rejected: platform-minted authority must be transformed through an
 explicit registered operation, not by ambient field writes.
 
-Direct one-level fields are the mutation target in this increment. The field
-value may itself be a fixed array or finite plain record, but nested targets such
-as `state.inner.count = value`, enum-variant fields, references, `Box`, `Vec`,
+Direct one-level fields are the mutation target established by this increment.
+The exact recursive extension in `.design/build/nested-aggregate-lifecycle.md`
+now also admits `state.inner.count = value` and one terminal fixed-array index.
+Index-then-field projections, enum-variant fields, references, `Box`, `Vec`,
 `String`, `Map`, `Option`, `Result`, recursive records, and generic/heap-backed
 fields remain outside the admitted closure until each has an exact independent
-state model. Whole-field replacement avoids inventing alias semantics for nested
-mutable projections.
+state and alias model.
 
 ## Validation and representation ownership
 
 Field assignment is accepted before code generation only when all of these hold:
 
-1. the target is exactly `root.field`;
+1. the target is `root.field`, or belongs to the separately frozen exact nested
+   field/terminal-array extension;
 2. `root` is a named parameter or typed local whose source type is known;
 3. the root is writable because it is an `&mut Name` parameter or a `let mut`
    owned value;
@@ -113,8 +114,8 @@ Field assignment is accepted before code generation only when all of these hold:
    in the record's defining module.
 
 Shared borrows, immutable owned parameters, immutable locals, unknown roots,
-unknown fields, sealed roots, nested targets, recursive state, and unsupported
-field types receive structured validator/package diagnostics. They must not be
+unknown fields, sealed roots, unmodeled nested/aliased targets, recursive state,
+and unsupported field types receive structured validator/package diagnostics. They must not be
 left for Rust or Verus type errors. Ordinary bare-cell and indexed slice/array
 assignment keep their existing rules.
 
@@ -158,9 +159,10 @@ the wrong field must diverge.
 
 Body TV independently threads every direct field as a state cell. The initial
 cell is `old(root).field`. A field read observes the cell's value at that source
-program point; a direct write replaces exactly that cell. Scalar locals preserve
-snapshot semantics, and branch composition uses an exact `if` expression for
-every changed field. The final obligation contains:
+program point; a direct write replaces exactly that cell. The nested extension
+reconstructs the changed direct cell recursively while preserving all nested
+siblings. Scalar locals preserve snapshot semantics, and branch composition uses
+an exact `if` expression for every changed field. The final obligation contains:
 
 - the exact independently computed result value; and
 - one equality for every declared root field between `final(root).field` and
@@ -169,7 +171,7 @@ every changed field. The final obligation contains:
 Consequently an untouched field is explicitly framed to its old value. A
 dropped write, wrong field, wrong value, reordered dependent write, collateral
 write, stale read, or swapped branch changes at least one obligation. Fixed-array
-fields compare their complete finite sequence views. Unsupported nested writes,
+fields compare their complete finite sequence views. Index-then-field writes,
 loops over record state, mutable aliases, and mixtures the state encoder cannot
 compose are reported as `Skipped` and are forbidden from a strict verified
 export; they never become `Faithful` by omission.
@@ -203,8 +205,10 @@ the value; it is not formal evidence and does not replace any proof row.
 This increment is shipped only when all of the following are true:
 
 1. validator tests accept direct mutation of finite plain and defining-module
-   opaque records, and reject shared/immutable, sealed, nested, recursive,
-   heap-backed, unknown-root, and wrong-field targets before lowering;
+   opaque records, while the nested extension accepts exact field chains and a
+   terminal array index; shared/immutable, sealed, index-then-field, computed,
+   dereferenced, recursive, heap-backed, unknown-root, and wrong-field targets
+   fail before lowering;
 2. package tests reject foreign opaque field reads and writes across the complete
    receipt-bound module graph;
 3. emitted L3 and L1 bodies contain the exact field operation and a representative

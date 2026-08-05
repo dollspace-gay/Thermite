@@ -25,6 +25,7 @@ governs:
   - thermite-lower/tests/fixed_array.rs
   - thermite-lower/tests/aggregate_array_relations.rs
   - thermite-lower/tests/named_record_lifecycle.rs
+  - thermite-lower/tests/nested_aggregate_lifecycle.rs
   - thermite-lower/tests/kernel_mutable_slice.rs
   - thermite-lower/tests/effects_verified.rs
   - thermite-lower/tests/u64_bit_methods.rs
@@ -79,10 +80,11 @@ governs:
   - conformance/verified-build/aggregate_array_relations.th
   - conformance/verified-build/named_record_lifecycle.th
   - conformance/verified-build/owned_aggregate_lifecycle.th
+  - conformance/verified-build/nested_aggregate_lifecycle.th
   - conformance/verified-composition/frozen_primitive.th
   - conformance/verified-composition/frozen_primitive_shell.rs
   - conformance/verified-composition/frozen_primitive_registry.json
-audited-content-sha256: 8a1c52498027ce04c5f750fa7959cd35216f375c8bd88125d886e06bceac9f70 (re-pinned 2026-08-04 after complete primitive L3-floor enforcement; no kernel policy or implementation was added)
+audited-content-sha256: 7502e70aa5faa46c227ca48878c3f3c752086289b2c7408c57cadf38f59f5750 (re-pinned 2026-08-04 after exact nested aggregate L3 lifecycle completion; no kernel policy or implementation was added)
 extends:
   - .design/build/kernel-target.md
   - .design/build/l3-rich-composition.md
@@ -200,17 +202,20 @@ L3/L2/L1 lowering, and independent exact initialization/read/indexed-write/lengt
 translation validation described below. The strict L3 fixtures bind and replay
 those contract, executable-guard, body-state, and wrapper proof rows, and record
 shared/exclusive borrow ownership in the public ABI receipt.
-Direct one-level field reads and writes through `&mut Name` are now admitted for
-finite non-sealed records. The exact record type and field are resolved before
-lowering; sealed, recursive, heap/reference-bearing, nested-projection, unknown,
-and immutable targets fail closed. Defining modules may use the same primitive
-for opaque records, while foreign package modules may neither construct nor
-read/write their representation. Contract TV gives `old(...)` and `final(...)`
-independent typed snapshots, exec TV covers structural construction/projection,
-and body TV threads every declared direct field, including untouched-field
-frames, branches, unit mutators, and dependent write order. A strict opaque
-constructor/observer/mutator fixture is receipt-replayed, executed from a
-codegen-pinned consumer, and compile-checked for external field privacy.
+Exact field writes through `&mut Name` and typed owned locals are admitted for
+finite non-sealed records, including `root.field(.field)*` and an optional final
+fixed-array index. Every receiver field and target type is resolved before
+lowering; index-then-field aliasing, sealed, recursive, heap/reference-bearing,
+unknown, computed, dereferenced, and immutable targets fail closed. Defining
+modules may use the same primitive for opaque roots, while foreign package
+modules may neither construct nor read/write their representation. Contract TV
+gives `old(...)` and `final(...)` independent typed snapshots, exec TV covers
+structural construction/projection, and body TV recursively reconstructs every
+enclosing record plus the exact array update while framing untouched siblings
+and dependent write order. Strict opaque direct-field and scalar-nested fixtures
+are receipt-replayed and executed from codegen-pinned consumers; hosted real
+Verus covers the terminal fixed-array view until that view exists in the
+freestanding backend.
 Repeat initialization rejects non-copy element types before lowering.
 `.array_eq(other)` now provides allocation-free extensional equality for arrays
 of scalars and recursively finite plain records, tuples, and fixed arrays, while
@@ -225,11 +230,12 @@ L3 contracts. `.bit_set_preserves_other(changed, observed)` and
 `.bit_clear_preserves_other(changed, observed)` additionally prove exact
 same-word framing for any two distinct in-range indices. All five methods are
 independently checked by contract, expression, and body translation validation.
-Typed owned finite-record locals now have exact field-by-field body and
-aggregate-result expression TV, including pure value-call composition and a
-strict freestanding L3 receipt/runtime fixture. Static ownership, nested mutable
-projections, record-state loops, mutable-reference callee effects, finite-enum
-equality/mutation, and complete aggregate/ADT transition composition remain. The
+Typed owned finite-record locals now have exact recursive field-by-field body and
+aggregate-result expression TV, including terminal fixed-array updates, pure
+value-call composition, and a strict freestanding L3 receipt/runtime fixture.
+Static ownership, index-then-field aliasing, record-state loops,
+mutable-reference callee effects, finite-enum equality/mutation, and complete
+aggregate/ADT transition composition remain. The
 allocation-free collection package now supplies a packed 256-bit `[u64; 4]` bitmap,
 64-entry `u64` vector, FIFO ring, and collision-explicit `usize`-to-`u64` direct
 map in Thermite. Richer collision-resolving maps, slabs/freelists,
@@ -610,9 +616,9 @@ Source: `.design/reqs/registry.toml`
 |---|---|---|---|---|
 | REQ-KPRIM-1 | shipped | `.design/build/kernel-primitives.md` | Kernel scalar and effect surface |  |
 | REQ-KPRIM-10 | not_started | `.design/build/kernel-primitives.md` | Primitive-only adversarial suite | Add package, fixed-storage, atomic, waiting, registry, refinement, receipt-tamper, freestanding-consumer, and no-concrete-kernel gates. |
-| REQ-KPRIM-2 | partial | `.design/build/kernel-primitives.md` | Exact mutable and fixed storage | Mutable borrowed slices/arrays, arbitrary old/final snapshot framing, native fixed arrays, scalar and recursively finite plain-aggregate relations, direct one-level mutation of finite non-sealed named records, defining-module opaque state transitions, typed owned-record local mutation and pure value-call composition, exact contract/exec/body lifecycle TV, strict freestanding L3 record receipts, total directly proved u64 bit methods, and a receipt-bound packed bitmap/u64 vector/u64 FIFO-ring/collision-explicit direct-map package are shipped. Add static storage, nested mutable projections, record-state loops and mutable-reference call effects, finite-enum equality/mutation if required, richer collision-resolving maps, slabs/freelists, and generic library capacities. |
+| REQ-KPRIM-2 | partial | `.design/build/kernel-primitives.md` | Exact mutable and fixed storage | Mutable borrowed slices/arrays, arbitrary old/final snapshot framing, native fixed arrays, scalar and recursively finite plain-aggregate relations, defining-module opaque state transitions, exact typed root.field(.field)* mutation with an optional final fixed-array index, owned/value-call composition, contract/exec/body lifecycle TV, strict freestanding L3 record receipts, total directly proved u64 bit methods, and a receipt-bound packed bitmap/u64 vector/u64 FIFO-ring/collision-explicit direct-map package are shipped. Add static storage, index-then-field aliasing if required, record-state loops and mutable-reference call effects, finite-enum equality/mutation, richer collision-resolving maps, slabs/freelists, and generic library capacities. |
 | REQ-KPRIM-3 | partial | `.design/build/kernel-primitives.md` | Receipt-bound packages and modules | Independent parsing, module-local identity, direct-import/root-export enforcement, rooted graph validation, opaque construction/read/write ownership, source allowlisting, L3 build/composition, complete receipt binding, validation, and replay are shipped. Extend the remaining source-oriented Forge commands (check, audit, TV, goal/edit/fill) to operate on packages without losing module-local diagnostics. |
-| REQ-KPRIM-4 | partial | `.design/build/kernel-primitives.md` | Sealed authority and ownership | The sealed-construction barrier, direct opaque constructor/observer/exclusive-record lifecycle receipts, typed owned-record local/value-call L3 receipts, and opaque receipt-bound 64-slot generation ledger prove acquisition/renewal/release, stale-handle-after-reuse rejection, double-release rejection, monotonic rights, L3 move/clone refusal, and foreign-module construction/read/write rejection. Add a complete affine rule if stronger uniqueness is required, nested aggregate/ADT/mutable-callee body TV for the full generation-ledger lifecycle, exact authority-mint refinement, and atomic-slot integration. |
+| REQ-KPRIM-4 | partial | `.design/build/kernel-primitives.md` | Sealed authority and ownership | The sealed-construction barrier, direct and nested opaque lifecycle receipts, typed owned-record local/value-call L3 receipts, and opaque receipt-bound 64-slot generation ledger prove acquisition/renewal/release, stale-handle-after-reuse rejection, double-release rejection, monotonic rights, L3 move/clone refusal, and foreign-module construction/read/write rejection. Add a complete affine rule if stronger uniqueness is required, ADT/mutable-callee body TV for the full generation-ledger lifecycle, exact authority-mint refinement, and atomic-slot integration. |
 | REQ-KPRIM-5 | partial | `.design/build/kernel-primitives.md` | Sealed atomics and ordering model | The receipt-bound package, 50 sealed boundary declarations, exact ordering matrix, pre-codegen legality gate, bounded history relations, strict kernel ordering proof, strict hosted history proof, replay, and adversarial tests are present. Add enforceable single-use slot ownership, a kernel-target finite-history proof surface, exact atomic object/machine refinement, and verified synchronization consumers. |
 | REQ-KPRIM-6 | partial | `.design/build/kernel-primitives.md` | Verified waiting and synchronization | A receipt-bound bounded-wait trace scan, frozen pause/block/terminal-halt declarations, and fail-closed ticket-lock/barrier/epoch-ack/once/reference-count/seqlock/bounded-MPSC/bounded-work-deque mechanics are shipped with L3 proofs, adversarial claims, strict replay, and tamper rejection. Add registry-level fairness/progress semantics, directly refined wait bodies, atomic integration and machine concurrency composition, then richer reader/writer coordination in .th. |
 | REQ-KPRIM-7 | partial | `.design/build/kernel-primitives.md` | Generic frozen boundary registry | Same-crate safe direct-Verus Rust-ABI entries now close reachable boundaries exactly. Add non-empty codegen-feature binding and exact separate Rust/assembly source, object, machine-model, and refinement closure for irreducible operations without adding an architecture operation table. |

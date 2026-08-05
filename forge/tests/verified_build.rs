@@ -812,6 +812,143 @@ fn main() {
 }
 
 #[test]
+fn nested_aggregate_pipeline_is_strict_freestanding_l3_and_executes_generated_logic() {
+    let temp = TempDir::new("nested-aggregate-lifecycle");
+    let bundle = temp.0.join("nested-aggregate-lifecycle.verified");
+    let bundle_s = bundle.to_string_lossy().to_string();
+    assert_success(&forge(&[
+        "build",
+        "conformance/verified-build/nested_aggregate_lifecycle.th",
+        "--level",
+        "l3",
+        "--export",
+        "nested_state_pipeline",
+        "--export",
+        "nested_state_value",
+        "--export",
+        "nested_state_guard",
+        "--export",
+        "nested_state_tag",
+        "--crate-name",
+        "nested_aggregate_lifecycle",
+        "--target",
+        "kernel",
+        "--out",
+        &bundle_s,
+        "--json",
+    ]));
+    assert_success(&forge(&["verify-build", &bundle_s, "--replay", "--json"]));
+
+    let source = fs::read_to_string(bundle.join("evidence/source.verus.rs")).unwrap();
+    assert!(source.starts_with("#![no_std]\n"), "{source}");
+    assert!(
+        source.contains("let mut updated: NestedState = state;"),
+        "{source}"
+    );
+    assert!(source.contains("updated.inner.value = next;"), "{source}");
+    assert!(source.contains("fn nested_state_pipeline"), "{source}");
+    assert!(
+        source.contains("pub fn thermite_export_nested_state_pipeline_v1"),
+        "{source}"
+    );
+    assert!(!source.contains("external_body"), "{source}");
+
+    let consumer_source = temp.0.join("nested-aggregate-consumer.rs");
+    fs::write(
+        &consumer_source,
+        r#"
+use nested_aggregate_lifecycle::{
+    nested_state_guard, nested_state_tag, nested_state_value,
+    thermite_export_nested_state_pipeline_v1,
+};
+
+fn main() {
+    let state = match thermite_export_nested_state_pipeline_v1(3, 5, 7, 11) {
+        Ok(state) => state,
+        Err(_) => panic!("valid generated nested pipeline inputs were rejected"),
+    };
+    assert_eq!(nested_state_value(&state), 11);
+    assert_eq!(nested_state_guard(&state), 5);
+    assert_eq!(nested_state_tag(&state), 7);
+}
+"#,
+    )
+    .unwrap();
+    let consumer = temp.0.join("nested-aggregate-consumer");
+    let link = codegen_rustc(&bundle)
+        .current_dir(root())
+        .arg("--edition=2021")
+        .arg(&consumer_source)
+        .arg("--extern")
+        .arg(format!(
+            "nested_aggregate_lifecycle={}",
+            bundle
+                .join("artifact/libnested_aggregate_lifecycle.rlib")
+                .display()
+        ))
+        .arg("-L")
+        .arg(format!(
+            "dependency={}",
+            bundle.join("artifact/deps").display()
+        ))
+        .args(["-C", "panic=abort"])
+        .arg("-o")
+        .arg(&consumer)
+        .output()
+        .unwrap();
+    assert_success(&link);
+    assert_success(&Command::new(&consumer).output().unwrap());
+
+    let receipt: serde_json::Value =
+        serde_json::from_slice(&fs::read(bundle.join("receipt.json")).unwrap()).unwrap();
+    assert_eq!(receipt["binding"]["assurance"], "L3");
+    assert_eq!(receipt["binding"]["target"], "kernel");
+    assert!(receipt["binding"]["assurance_aggregate"]["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|member| member["achieved"] == "L3"));
+
+    let tv: serde_json::Value = serde_json::from_slice(
+        &fs::read(bundle.join("evidence/translation-validation.json")).unwrap(),
+    )
+    .unwrap();
+    let rows = tv["rows"].as_array().unwrap();
+    assert!(
+        rows.iter().all(|row| row["verdict"] == "faithful"),
+        "strict nested lifecycle admitted a non-faithful row: {tv}"
+    );
+    for (phase, label) in [
+        ("body", "nested_state_update"),
+        ("body", "nested_state_pipeline"),
+        ("exec", "nested_state_update.let#1"),
+        ("exec", "nested_state_pipeline.tail"),
+        ("wrapper_guard", "nested_state_pipeline.export_guard"),
+    ] {
+        assert!(
+            rows.iter().any(|row| {
+                row["phase"] == phase && row["label"] == label && row["verdict"] == "faithful"
+            }),
+            "missing {phase} L3 row `{label}`: {tv}"
+        );
+    }
+
+    let tampered = temp.0.join("nested-aggregate-tampered.verified");
+    copy_tree(&bundle, &tampered);
+    let input = tampered.join("evidence/input.th");
+    let original = fs::read_to_string(&input).unwrap();
+    let changed = original.replacen("value: u64", "value: usize", 1);
+    assert_ne!(changed, original);
+    fs::write(&input, changed).unwrap();
+    assert!(
+        !forge(&["verify-build", tampered.to_string_lossy().as_ref()])
+            .status
+            .success(),
+        "changing the bound nested-record layout must invalidate the receipt"
+    );
+}
+
+#[test]
 fn aggregate_mutable_storage_is_exported_replayed_and_exactly_validated() {
     let temp = TempDir::new("aggregate-storage");
     let bundle = temp.0.join("aggregate-storage.verified");

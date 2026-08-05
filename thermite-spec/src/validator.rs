@@ -943,6 +943,51 @@ impl AtomicOrdering {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum RecordMutationStep {
+    Field(String),
+    Index,
+}
+
+/// Recover the exact root-to-leaf projection order of the nested lifecycle
+/// lvalue. Range indexes and every computed/dereferenced receiver fail closed.
+fn record_mutation_path(target: &Expr) -> Option<(String, Vec<RecordMutationStep>)> {
+    fn collect(expr: &Expr, steps: &mut Vec<RecordMutationStep>) -> Option<String> {
+        match expr {
+            Expr::Path(path) => match path.as_slice() {
+                [root] => Some(root.clone()),
+                _ => None,
+            },
+            Expr::Field { receiver, name } => {
+                let root = collect(receiver, steps)?;
+                steps.push(RecordMutationStep::Field(name.clone()));
+                Some(root)
+            }
+            Expr::Index {
+                base,
+                index: IndexArg::Single(_),
+            } => {
+                let root = collect(base, steps)?;
+                steps.push(RecordMutationStep::Index);
+                Some(root)
+            }
+            _ => None,
+        }
+    }
+
+    let mut steps = Vec::new();
+    let root = collect(target, &mut steps)?;
+    Some((root, steps))
+}
+
+fn record_mutation_target_contains_field(target: &Expr) -> bool {
+    match target {
+        Expr::Field { .. } => true,
+        Expr::Index { base, .. } => record_mutation_target_contains_field(base),
+        _ => false,
+    }
+}
+
 /// Recognize only exact frozen boundary targets. This is intentionally keyed by
 /// declaration metadata rather than the Thermite function name: a package may
 /// rename an imported declaration, while an unrelated function named
@@ -1006,10 +1051,10 @@ struct Validator {
     /// all have finite structural equality. Used only by the explicit fixed-
     /// array relation built-ins; it grants no ambient equality operation.
     array_equality_structs: BTreeSet<String>,
-    /// Exact struct-name -> declared direct field names. Unlike the historical
-    /// global `struct_fields` set, named-record mutation must resolve a field on
-    /// the receiver's actual record type before code generation.
-    record_fields: HashMap<String, HashSet<String>>,
+    /// Exact struct-name -> direct field types. Nested lifecycle mutation walks
+    /// this table independently from lowering so every field and the optional
+    /// terminal fixed-array index are resolved at the source type.
+    record_field_types: HashMap<String, HashMap<String, Type>>,
     /// Finite non-sealed roots admitted by the direct named-record lifecycle
     /// primitive. Opaque roots may join; opaque representation ownership across
     /// package modules is enforced by Forge's package resolver.
@@ -1096,7 +1141,7 @@ impl Validator {
         let mut enums: HashMap<String, Vec<String>> = HashMap::new();
         let mut variant_to_enum: HashMap<String, String> = HashMap::new();
         let mut struct_fields: HashSet<String> = HashSet::new();
-        let mut record_fields: HashMap<String, HashSet<String>> = HashMap::new();
+        let mut record_field_types: HashMap<String, HashMap<String, Type>> = HashMap::new();
         // REQ-8 (`.design/basis/06-provenance-and-sinks.md`): the `#[sealed]`
         // clean/capability struct names — the abstraction barrier the
         // `Expr::StructLit` walk keys off to REJECT a direct mint. Collected in
@@ -1168,10 +1213,10 @@ impl Validator {
                     enums.insert(e.name.clone(), variant_names);
                 }
                 Item::Struct(s) => {
-                    let exact_fields = record_fields.entry(s.name.clone()).or_default();
+                    let exact_types = record_field_types.entry(s.name.clone()).or_default();
                     for field in &s.fields {
                         struct_fields.insert(field.name.clone());
-                        exact_fields.insert(field.name.clone());
+                        exact_types.insert(field.name.clone(), field.ty.clone());
                     }
                     // REQ-8: a `#[sealed]` struct joins the abstraction-barrier
                     // set — its name will reject any `StructLit` mint.
@@ -1227,7 +1272,7 @@ impl Validator {
             struct_fields,
             sealed_structs,
             array_equality_structs: structural_array_equality_structs(program),
-            record_fields,
+            record_field_types,
             record_mutation_structs: structural_record_mutation_structs(program),
             array_equality_types: HashMap::new(),
             mutable_bindings: HashSet::new(),
@@ -1582,30 +1627,32 @@ impl Validator {
         }
     }
 
-    /// Validate the frozen direct named-record assignment target. This is
-    /// deliberately narrower than Rust's lvalue grammar: independent lifecycle
-    /// TV models one exact direct field cell, so nested projections and unknown
-    /// receiver types fail before lowering instead of becoming backend behavior.
+    /// Validate the frozen nested named-record assignment target. Independent
+    /// lifecycle TV admits an exact field chain and, optionally, one terminal
+    /// fixed-array index. Wider Rust lvalues remain rejected before lowering.
     fn check_named_record_assignment(&mut self, target: &Expr, span: Span) {
-        let Expr::Field { receiver, name } = target else {
+        let Some((root, steps)) = record_mutation_path(target) else {
+            if record_mutation_target_contains_field(target) {
+                self.errors.push(SpecError::InvalidNamedRecordMutation {
+                    detail: "the target must be a typed root followed by exact fields and optionally one final single index; dereference, tuple, range, index-then-field, and computed receivers are not admitted"
+                        .to_string(),
+                    span,
+                });
+            }
             return;
         };
-        let Expr::Path(path) = receiver.as_ref() else {
-            self.errors.push(SpecError::InvalidNamedRecordMutation {
-                detail: "the target must be exactly `root.field`; nested field, index, dereference, and computed receivers are not in the direct lifecycle subset"
-                    .to_string(),
-                span,
-            });
+        if steps.is_empty() {
             return;
-        };
-        let [root] = path.as_slice() else {
-            self.errors.push(SpecError::InvalidNamedRecordMutation {
-                detail: "the record root must be one local or parameter name".to_string(),
-                span,
-            });
+        }
+        let has_field = steps
+            .iter()
+            .any(|step| matches!(step, RecordMutationStep::Field(_)));
+        if !has_field {
+            // Direct slice/fixed-array assignment is governed by the existing
+            // indexed-storage primitive, not the record lifecycle subset.
             return;
-        };
-        let Some(root_ty) = self.array_equality_types.get(root) else {
+        }
+        let Some(root_ty) = self.array_equality_types.get(&root) else {
             self.errors.push(SpecError::InvalidNamedRecordMutation {
                 detail: format!(
                     "record root `{root}` has no declared source type; use a typed `let mut` or an `&mut Name` parameter"
@@ -1615,9 +1662,9 @@ impl Validator {
             return;
         };
         let record_name = match root_ty {
-            Type::Named(record) => record,
+            Type::Named(record) => record.clone(),
             Type::Ref { inner, .. } => match inner.as_ref() {
-                Type::Named(record) => record,
+                Type::Named(record) => record.clone(),
                 _ => {
                     self.errors.push(SpecError::InvalidNamedRecordMutation {
                         detail: format!(
@@ -1636,7 +1683,7 @@ impl Validator {
                 return;
             }
         };
-        if !self.mutable_bindings.contains(root) {
+        if !self.mutable_bindings.contains(&root) {
             self.errors.push(SpecError::InvalidNamedRecordMutation {
                 detail: format!(
                     "record root `{root}` is not writable; use an exclusive `&mut {record_name}` parameter or a typed `let mut`"
@@ -1645,7 +1692,7 @@ impl Validator {
             });
             return;
         }
-        if !self.record_mutation_structs.contains(record_name) {
+        if !self.record_mutation_structs.contains(&record_name) {
             self.errors.push(SpecError::InvalidNamedRecordMutation {
                 detail: format!(
                     "record `{record_name}` is sealed, recursive, or contains a reference, enum, opaque nested record, or heap-backed field"
@@ -1654,17 +1701,54 @@ impl Validator {
             });
             return;
         }
-        if !self
-            .record_fields
-            .get(record_name)
-            .is_some_and(|fields| fields.contains(name))
-        {
-            self.errors.push(SpecError::InvalidNamedRecordMutation {
-                detail: format!(
-                    "field `{name}` is not declared by the receiver's exact record type `{record_name}`"
-                ),
-                span,
-            });
+
+        let mut current = Type::Named(record_name);
+        for (position, step) in steps.iter().enumerate() {
+            match step {
+                RecordMutationStep::Field(name) => {
+                    let Type::Named(receiver_name) = &current else {
+                        self.errors.push(SpecError::InvalidNamedRecordMutation {
+                            detail: format!(
+                                "field `{name}` is projected from non-record type `{current:?}`"
+                            ),
+                            span,
+                        });
+                        return;
+                    };
+                    let Some(field_ty) = self
+                        .record_field_types
+                        .get(receiver_name)
+                        .and_then(|fields| fields.get(name))
+                    else {
+                        self.errors.push(SpecError::InvalidNamedRecordMutation {
+                            detail: format!(
+                                "field `{name}` is not declared by the receiver's exact record type `{receiver_name}`"
+                            ),
+                            span,
+                        });
+                        return;
+                    };
+                    current = field_ty.clone();
+                }
+                RecordMutationStep::Index => {
+                    if position + 1 != steps.len() {
+                        self.errors.push(SpecError::InvalidNamedRecordMutation {
+                            detail: "a fixed-array index must be the final mutation projection; index-then-field aliasing is not admitted"
+                                .to_string(),
+                            span,
+                        });
+                        return;
+                    }
+                    let Type::Array { elem, .. } = current else {
+                        self.errors.push(SpecError::InvalidNamedRecordMutation {
+                            detail: "the final indexed receiver is not a fixed array".to_string(),
+                            span,
+                        });
+                        return;
+                    };
+                    current = *elem;
+                }
+            }
         }
     }
 

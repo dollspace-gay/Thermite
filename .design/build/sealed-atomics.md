@@ -7,12 +7,15 @@ decision: Thermite ships a receipt-bound, policy-free atomic declaration and pro
 governs:
   - stdlib/kernel-primitives/atomics.thpkg.json
   - stdlib/kernel-primitives/src/model.th
+  - stdlib/kernel-primitives/src/init.th
   - stdlib/kernel-primitives/src/api.th
+  - stdlib/kernel-primitives/src/atomic_storage.th
+  - stdlib/kernel-primitives/storage/static_storage.th
   - thermite-spec/src/validator.rs
   - thermite-spec/tests/atomic_ordering_validate.rs
   - forge/src/verified_build/primitive_registry.rs
   - forge/tests/verified_build.rs
-audited-content-sha256: 777717f803dfc2cfd8384bd7f8c80019df954c5cc29504137ee5bb3fc4429f97 (re-pinned 2026-08-04 after additive mutable-call acceptance in the shared verified-build suite; atomic semantics are unchanged)
+audited-content-sha256: c247d0f3b45af7a59baeceeb56379d67d6b75d8840ecad965571f77a2f184e3c (re-pinned 2026-08-04 for typed opaque single-use initialization slots and generation-bound static-storage composition)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/frozen-primitive-registry.md
@@ -31,11 +34,12 @@ and frozen boundary names. It does not implement atomics in Rust or assembly,
 choose a scheduler or synchronization policy, boot a machine, or claim that a
 host proof refines a target instruction.
 
-The package is `stdlib/kernel-primitives/atomics.thpkg.json`. Its root `api`
-module imports the `model` module through the ordinary receipt-bound package
-mechanism. Every consumer therefore receives the same source identities and
-the same transitive closure rather than copying declarations into a private
-kernel tree.
+The package is `stdlib/kernel-primitives/atomics.thpkg.json`. Its `api` and
+`atomic_storage` roots bind the atomic model, typed initialization policy,
+static-storage ownership protocol, machine declarations, and lifecycle
+composition through the ordinary receipt-bound package mechanism. Every
+consumer therefore receives the same source identities and transitive closure
+rather than copying declarations into a private kernel tree.
 
 ## Source surface
 
@@ -51,13 +55,13 @@ enum AtomicOrdering {
 }
 ```
 
-There are sealed initialization-slot and cell-handle types for `bool`, `u32`,
-`u64`, and `usize`. Ordinary Thermite code cannot construct either family.
-Initialization consumes a slot by value and returns the corresponding cell.
-This establishes a door-only construction surface, but it is not yet proof of
-single-use ownership: until affine consumption or a verified generation
-discipline ships, a stale copy of a sealed value is not rejected by the type
-system. Consumers must not interpret sealing alone as uniqueness evidence.
+There are opaque initialization-slot and sealed cell-handle types for `bool`,
+`u32`, `u64`, and `usize`. Ordinary foreign Thermite code cannot construct a
+slot or cell. An L3 converter consumes a generation-bound committed
+`StaticStorageRegion` to produce a typed slot, and initialization consumes that
+slot by value to return the corresponding cell. Duplicate use and foreign slot
+construction are pinned negative tests. The exact protocol is specified in
+`.design/build/atomic-storage-initialization.md`.
 
 The 50 frozen declarations are:
 
@@ -149,14 +153,15 @@ boundary.
 
 ## Verification and target split
 
-The assurance-floor gate checks the dependency-first `model.th` + `api.th`
-projection as one program. It requires every non-boundary certificate row to be
-L3 and requires exactly 50 boundary rows, all at L1. The standalone model also
-has 47 certificate rows and every one must remain non-boundary L3. This is a
-whole-source assertion: adding an unproved bodyful helper fails the gate even if
-the two public receipt probes below still pass.
+The assurance-floor gate checks the dependency-first five-module projection as
+one program. It requires every non-boundary certificate row to be L3 and
+requires exactly 52 boundary rows, all at L1: the 50 atomic declarations plus
+the two static-storage machine doors. The standalone model has 52 certificate
+rows and every one must remain non-boundary L3. This is a whole-source
+assertion: adding an unproved bodyful helper fails the gate even if the public
+receipt probes still pass.
 
-The package currently has two strict receipt proof surfaces:
+The package currently has three strict receipt proof surfaces:
 
 1. `atomic_ordering_matrix_probe` builds for `--target kernel --level l3`.
    This proves the executable ordering algorithms and their generated export
@@ -164,11 +169,14 @@ The package currently has two strict receipt proof surfaces:
 2. `atomic_history_model_probe` builds for `--target std --level l3`. This
    proves the borrowed-fixed-array happens-before and release-sequence relations
    using the vstd finite-array view available to hosted Verus.
+3. `atomic_storage_capacity_probe` builds for `--target kernel --level l3`.
+   This proves and executes the typed storage-capacity policy without reaching
+   a machine boundary.
 
-Both bundles bind and replay the package manifest, source map, `model.th`,
-`api.th`, generated Verus source, translation-validation inventory, toolchain,
-and artifact. The integration test requires assurance L3 for every reachable
-receipt member and requires every recorded TV row to be `faithful`.
+All three bundles bind and replay the package manifest, source map, five-module
+source closure, generated Verus source, translation-validation inventory,
+toolchain, and artifact. The integration test requires assurance L3 for every
+reachable receipt member and requires every recorded TV row to be `faithful`.
 
 The split is explicit because the generic kernel target invokes Verus with
 `--no-vstd`; its built-in-only environment does not provide the array `View`
@@ -219,12 +227,15 @@ The checked-in package currently has:
 
 | Metric | Value |
 |---|---:|
-| Thermite physical LOC | 1,157 |
-| Thermite nonblank LOC | 1,047 |
-| Thermite functions | 99 |
-| executable functions | 67 |
-| specification functions | 32 |
-| frozen boundary declarations | 50 |
+| Thermite physical LOC | 2,646 |
+| Thermite nonblank LOC | 2,450 |
+| Thermite functions | 171 |
+| executable functions | 112 |
+| specification functions | 59 |
+| bodyful executable functions | 60 |
+| in-language L3 certificate rows | 149 |
+| frozen boundary declarations | 52 (50 atomic, 2 static storage) |
+| executable mutants killed | 272/279 |
 | ordinary Rust kernel-policy LOC | 0 |
 | bundled Rust/assembly atomic implementations | 0 |
 | reachable boundaries in either pure proof bundle | 0 |
@@ -232,14 +243,13 @@ The checked-in package currently has:
 These metrics describe the reusable primitive package only. They are not kernel
 metrics and do not imply that any machine boundary is implemented. Function and
 boundary counts are mechanically recoverable with anchored searches over the
-two package modules; LOC is the ordinary line count of those exact receipt-bound
-files.
+five package modules; LOC is the ordinary line count of those exact
+receipt-bound files.
 
 ## Remaining work
 
 REQ-KPRIM-5 remains partial. Completion still requires:
 
-- enforceable single-use/generation ownership for initialization slots;
 - a kernel-target proof surface for the finite history model;
 - exact object/machine semantics and direct refinement for consumer-supplied
   atomic implementations;

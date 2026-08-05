@@ -1,0 +1,299 @@
+const ATOMIC_BOOL_STORAGE_BYTES: usize = 1;
+const ATOMIC_U32_STORAGE_BYTES: usize = 4;
+const ATOMIC_U64_STORAGE_BYTES: usize = 8;
+const ATOMIC_USIZE_STORAGE_BYTES: usize = 8;
+
+#[opaque] struct AtomicBoolSlot {
+  atomic_slot_identity: AtomicIdentity,
+  atomic_slot_bytes: usize,
+}
+
+#[opaque] struct AtomicU32Slot {
+  atomic_slot_identity: AtomicIdentity,
+  atomic_slot_bytes: usize,
+}
+
+#[opaque] struct AtomicU64Slot {
+  atomic_slot_identity: AtomicIdentity,
+  atomic_slot_bytes: usize,
+}
+
+#[opaque] struct AtomicUsizeSlot {
+  atomic_slot_identity: AtomicIdentity,
+  atomic_slot_bytes: usize,
+}
+
+spec fn atomic_init_capacity_legal_spec(
+  width: u8,
+  capacity: usize,
+) -> bool
+  dec width
+{
+  if width == 0 {
+    capacity >= ATOMIC_BOOL_STORAGE_BYTES
+  } else {
+    if width == 1 {
+      capacity >= ATOMIC_U32_STORAGE_BYTES
+    } else {
+      if width == 2 {
+        capacity >= ATOMIC_U64_STORAGE_BYTES
+      } else {
+        if width == 3 {
+          capacity >= ATOMIC_USIZE_STORAGE_BYTES
+        } else {
+          false
+        }
+      }
+    }
+  }
+}
+
+spec fn atomic_bool_slot_identity_matches_spec(
+  slot: &AtomicBoolSlot,
+  identity: &AtomicIdentity,
+) -> bool
+  dec slot.atomic_slot_bytes
+{
+  atomic_identity_eq_spec(&slot.atomic_slot_identity, identity)
+}
+
+spec fn atomic_u32_slot_identity_matches_spec(
+  slot: &AtomicU32Slot,
+  identity: &AtomicIdentity,
+) -> bool
+  dec slot.atomic_slot_bytes
+{
+  atomic_identity_eq_spec(&slot.atomic_slot_identity, identity)
+}
+
+spec fn atomic_u64_slot_identity_matches_spec(
+  slot: &AtomicU64Slot,
+  identity: &AtomicIdentity,
+) -> bool
+  dec slot.atomic_slot_bytes
+{
+  atomic_identity_eq_spec(&slot.atomic_slot_identity, identity)
+}
+
+spec fn atomic_usize_slot_identity_matches_spec(
+  slot: &AtomicUsizeSlot,
+  identity: &AtomicIdentity,
+) -> bool
+  dec slot.atomic_slot_bytes
+{
+  atomic_identity_eq_spec(&slot.atomic_slot_identity, identity)
+}
+
+spec fn atomic_bool_slot_matches_values_spec(
+  slot: &AtomicBoolSlot,
+  authority: usize,
+  storage_slot: usize,
+  generation: u64,
+  capacity: usize,
+) -> bool
+  dec storage_slot
+{
+  atomic_identity_matches_values_spec(
+    &slot.atomic_slot_identity,
+    authority,
+    storage_slot,
+    generation,
+  ) && slot.atomic_slot_bytes == capacity
+}
+
+spec fn atomic_u32_slot_matches_values_spec(
+  slot: &AtomicU32Slot,
+  authority: usize,
+  storage_slot: usize,
+  generation: u64,
+  capacity: usize,
+) -> bool
+  dec storage_slot
+{
+  atomic_identity_matches_values_spec(
+    &slot.atomic_slot_identity,
+    authority,
+    storage_slot,
+    generation,
+  ) && slot.atomic_slot_bytes == capacity
+}
+
+spec fn atomic_u64_slot_matches_values_spec(
+  slot: &AtomicU64Slot,
+  authority: usize,
+  storage_slot: usize,
+  generation: u64,
+  capacity: usize,
+) -> bool
+  dec storage_slot
+{
+  atomic_identity_matches_values_spec(
+    &slot.atomic_slot_identity,
+    authority,
+    storage_slot,
+    generation,
+  ) && slot.atomic_slot_bytes == capacity
+}
+
+spec fn atomic_usize_slot_matches_values_spec(
+  slot: &AtomicUsizeSlot,
+  authority: usize,
+  storage_slot: usize,
+  generation: u64,
+  capacity: usize,
+) -> bool
+  dec storage_slot
+{
+  atomic_identity_matches_values_spec(
+    &slot.atomic_slot_identity,
+    authority,
+    storage_slot,
+    generation,
+  ) && slot.atomic_slot_bytes == capacity
+}
+
+fn atomic_init_capacity_legal(
+  width: u8,
+  capacity: usize,
+) -> bool
+  req true
+  ens result == atomic_init_capacity_legal_spec(width, capacity)
+  fx pure
+{
+  if width == 0 {
+    capacity >= ATOMIC_BOOL_STORAGE_BYTES
+  } else {
+    if width == 1 {
+      capacity >= ATOMIC_U32_STORAGE_BYTES
+    } else {
+      if width == 2 {
+        capacity >= ATOMIC_U64_STORAGE_BYTES
+      } else {
+        if width == 3 {
+          capacity >= ATOMIC_USIZE_STORAGE_BYTES
+        } else {
+          false
+        }
+      }
+    }
+  }
+}
+
+fn atomic_bool_slot_from_region(
+  region: StaticStorageRegion,
+) -> AtomicBoolSlot
+  req static_storage_region_capacity_spec(&region) >= ATOMIC_BOOL_STORAGE_BYTES
+  ens atomic_bool_slot_matches_values_spec(
+    &result,
+    static_storage_region_authority_spec(&region),
+    static_storage_region_slot_spec(&region),
+    static_storage_region_generation_spec(&region),
+    static_storage_region_capacity_spec(&region),
+  )
+  fx pure
+{
+  let authority: usize = static_storage_region_authority(&region);
+  let storage_slot: usize = static_storage_region_slot(&region);
+  let generation: u64 = static_storage_region_generation(&region);
+  let capacity: usize = static_storage_region_capacity(&region);
+  AtomicBoolSlot {
+    atomic_slot_identity: AtomicIdentity {
+      authority: authority,
+      slot: storage_slot,
+      generation: generation,
+    },
+    atomic_slot_bytes: capacity,
+  }
+}
+
+fn atomic_u32_slot_from_region(
+  region: StaticStorageRegion,
+) -> AtomicU32Slot
+  req static_storage_region_capacity_spec(&region) >= ATOMIC_U32_STORAGE_BYTES
+  ens atomic_u32_slot_matches_values_spec(
+    &result,
+    static_storage_region_authority_spec(&region),
+    static_storage_region_slot_spec(&region),
+    static_storage_region_generation_spec(&region),
+    static_storage_region_capacity_spec(&region),
+  )
+  fx pure
+{
+  let authority: usize = static_storage_region_authority(&region);
+  let storage_slot: usize = static_storage_region_slot(&region);
+  let generation: u64 = static_storage_region_generation(&region);
+  let capacity: usize = static_storage_region_capacity(&region);
+  AtomicU32Slot {
+    atomic_slot_identity: AtomicIdentity {
+      authority: authority,
+      slot: storage_slot,
+      generation: generation,
+    },
+    atomic_slot_bytes: capacity,
+  }
+}
+
+fn atomic_u64_slot_from_region(
+  region: StaticStorageRegion,
+) -> AtomicU64Slot
+  req static_storage_region_capacity_spec(&region) >= ATOMIC_U64_STORAGE_BYTES
+  ens atomic_u64_slot_matches_values_spec(
+    &result,
+    static_storage_region_authority_spec(&region),
+    static_storage_region_slot_spec(&region),
+    static_storage_region_generation_spec(&region),
+    static_storage_region_capacity_spec(&region),
+  )
+  fx pure
+{
+  let authority: usize = static_storage_region_authority(&region);
+  let storage_slot: usize = static_storage_region_slot(&region);
+  let generation: u64 = static_storage_region_generation(&region);
+  let capacity: usize = static_storage_region_capacity(&region);
+  AtomicU64Slot {
+    atomic_slot_identity: AtomicIdentity {
+      authority: authority,
+      slot: storage_slot,
+      generation: generation,
+    },
+    atomic_slot_bytes: capacity,
+  }
+}
+
+fn atomic_usize_slot_from_region(
+  region: StaticStorageRegion,
+) -> AtomicUsizeSlot
+  req static_storage_region_capacity_spec(&region) >= ATOMIC_USIZE_STORAGE_BYTES
+  ens atomic_usize_slot_matches_values_spec(
+    &result,
+    static_storage_region_authority_spec(&region),
+    static_storage_region_slot_spec(&region),
+    static_storage_region_generation_spec(&region),
+    static_storage_region_capacity_spec(&region),
+  )
+  fx pure
+{
+  let authority: usize = static_storage_region_authority(&region);
+  let storage_slot: usize = static_storage_region_slot(&region);
+  let generation: u64 = static_storage_region_generation(&region);
+  let capacity: usize = static_storage_region_capacity(&region);
+  AtomicUsizeSlot {
+    atomic_slot_identity: AtomicIdentity {
+      authority: authority,
+      slot: storage_slot,
+      generation: generation,
+    },
+    atomic_slot_bytes: capacity,
+  }
+}
+
+fn atomic_init_capacity_probe(
+  width: u8,
+  capacity: usize,
+) -> bool
+  req true
+  ens result == atomic_init_capacity_legal_spec(width, capacity)
+  fx pure
+{
+  atomic_init_capacity_legal(width, capacity)
+}

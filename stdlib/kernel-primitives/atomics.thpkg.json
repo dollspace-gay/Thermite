@@ -2,19 +2,44 @@
   "schema": "thermite.package.v1",
   "name": "thermite_atomic_primitives",
   "roots": [
-    "api"
+    "api",
+    "atomic_storage"
   ],
   "modules": [
     {
       "name": "api",
       "path": "src/api.th",
       "imports": [
+        "init",
         "model"
+      ]
+    },
+    {
+      "name": "atomic_storage",
+      "path": "src/atomic_storage.th",
+      "imports": [
+        "api",
+        "init",
+        "model",
+        "static_storage"
+      ]
+    },
+    {
+      "name": "init",
+      "path": "src/init.th",
+      "imports": [
+        "model",
+        "static_storage"
       ]
     },
     {
       "name": "model",
       "path": "src/model.th",
+      "imports": []
+    },
+    {
+      "name": "static_storage",
+      "path": "storage/static_storage.th",
       "imports": []
     }
   ]

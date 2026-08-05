@@ -97,6 +97,78 @@ spec fn static_storage_witness_matches_spec(
     && witness.capacity == lease.capacity
 }
 
+spec fn static_storage_lease_authority_spec(
+  lease: &StaticStorageLease,
+) -> usize
+  dec lease.slot
+{
+  lease.authority
+}
+
+spec fn static_storage_lease_slot_spec(
+  lease: &StaticStorageLease,
+) -> usize
+  dec lease.slot
+{
+  lease.slot
+}
+
+spec fn static_storage_lease_generation_spec(
+  lease: &StaticStorageLease,
+) -> u64
+  dec lease.slot
+{
+  lease.generation
+}
+
+spec fn static_storage_lease_capacity_spec(
+  lease: &StaticStorageLease,
+) -> usize
+  dec lease.slot
+{
+  lease.capacity
+}
+
+spec fn static_storage_region_authority_spec(
+  region: &StaticStorageRegion,
+) -> usize
+  dec region.slot
+{
+  region.authority
+}
+
+spec fn static_storage_region_slot_spec(
+  region: &StaticStorageRegion,
+) -> usize
+  dec region.slot
+{
+  region.slot
+}
+
+spec fn static_storage_region_generation_spec(
+  region: &StaticStorageRegion,
+) -> u64
+  dec region.slot
+{
+  region.generation
+}
+
+spec fn static_storage_region_capacity_spec(
+  region: &StaticStorageRegion,
+) -> usize
+  dec region.slot
+{
+  region.capacity
+}
+
+spec fn static_storage_region_fill_spec(
+  region: &StaticStorageRegion,
+) -> u8
+  dec region.slot
+{
+  region.fill
+}
+
 spec fn static_storage_bool_slots_clear_spec(
   slots: &[bool; STATIC_STORAGE_SLOT_COUNT],
 ) -> bool
@@ -312,6 +384,96 @@ fn static_storage_witness_matches(
     && witness.slot == lease.slot
     && witness.generation == lease.generation
     && witness.capacity == lease.capacity
+}
+
+fn static_storage_lease_authority(
+  lease: &StaticStorageLease,
+) -> usize
+  req true
+  ens result == static_storage_lease_authority_spec(lease)
+  fx pure
+{
+  lease.authority
+}
+
+fn static_storage_lease_slot(
+  lease: &StaticStorageLease,
+) -> usize
+  req true
+  ens result == static_storage_lease_slot_spec(lease)
+  fx pure
+{
+  lease.slot
+}
+
+fn static_storage_lease_generation(
+  lease: &StaticStorageLease,
+) -> u64
+  req true
+  ens result == static_storage_lease_generation_spec(lease)
+  fx pure
+{
+  lease.generation
+}
+
+fn static_storage_lease_capacity(
+  lease: &StaticStorageLease,
+) -> usize
+  req true
+  ens result == static_storage_lease_capacity_spec(lease)
+  fx pure
+{
+  lease.capacity
+}
+
+fn static_storage_region_authority(
+  region: &StaticStorageRegion,
+) -> usize
+  req true
+  ens result == static_storage_region_authority_spec(region)
+  fx pure
+{
+  region.authority
+}
+
+fn static_storage_region_slot(
+  region: &StaticStorageRegion,
+) -> usize
+  req true
+  ens result == static_storage_region_slot_spec(region)
+  fx pure
+{
+  region.slot
+}
+
+fn static_storage_region_generation(
+  region: &StaticStorageRegion,
+) -> u64
+  req true
+  ens result == static_storage_region_generation_spec(region)
+  fx pure
+{
+  region.generation
+}
+
+fn static_storage_region_capacity(
+  region: &StaticStorageRegion,
+) -> usize
+  req true
+  ens result == static_storage_region_capacity_spec(region)
+  fx pure
+{
+  region.capacity
+}
+
+fn static_storage_region_fill(
+  region: &StaticStorageRegion,
+) -> u8
+  req true
+  ens result == static_storage_region_fill_spec(region)
+  fx pure
+{
+  region.fill
 }
 
 fn static_storage_claim_at(

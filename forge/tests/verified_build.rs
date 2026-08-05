@@ -1606,7 +1606,7 @@ fn atomic_primitive_package_keeps_every_in_language_item_at_l3() {
     assert_success(&model);
     let model_rows: serde_json::Value = serde_json::from_slice(&model.stdout).unwrap();
     let model_rows = model_rows.as_array().unwrap();
-    assert_eq!(model_rows.len(), 47);
+    assert_eq!(model_rows.len(), 52);
     assert!(
         model_rows
             .iter()
@@ -1617,10 +1617,16 @@ fn atomic_primitive_package_keeps_every_in_language_item_at_l3() {
     let projection = temp.0.join("atomic-primitives-projection.th");
     let mut projection_source =
         fs::read_to_string(root().join("stdlib/kernel-primitives/src/model.th")).unwrap();
-    projection_source.push('\n');
-    projection_source
-        .push_str(&fs::read_to_string(root().join("stdlib/kernel-primitives/src/api.th")).unwrap());
-    fs::write(&projection, projection_source).unwrap();
+    for source in [
+        "stdlib/kernel-primitives/storage/static_storage.th",
+        "stdlib/kernel-primitives/src/init.th",
+        "stdlib/kernel-primitives/src/api.th",
+        "stdlib/kernel-primitives/src/atomic_storage.th",
+    ] {
+        projection_source.push('\n');
+        projection_source.push_str(&fs::read_to_string(root().join(source)).unwrap());
+    }
+    fs::write(&projection, &projection_source).unwrap();
     let projection_s = projection.to_string_lossy().to_string();
     let checked = forge(&["check", &projection_s, "--level", "l3", "--json"]);
     assert_success(&checked);
@@ -1628,7 +1634,7 @@ fn atomic_primitive_package_keeps_every_in_language_item_at_l3() {
     let rows = rows.as_array().unwrap();
     assert_eq!(
         rows.iter().filter(|row| row["boundary"] == true).count(),
-        50
+        52
     );
     for row in rows {
         if row["boundary"] == true {
@@ -1644,9 +1650,197 @@ fn atomic_primitive_package_keeps_every_in_language_item_at_l3() {
         }
     }
 
+    for name in [
+        "atomic_identity_eq",
+        "atomic_identity_matches_values",
+        "atomic_init_capacity_legal",
+        "atomic_bool_slot_from_region",
+        "atomic_u32_slot_from_region",
+        "atomic_u64_slot_from_region",
+        "atomic_usize_slot_from_region",
+        "atomic_bool_region_init",
+        "atomic_u32_region_init",
+        "atomic_u64_region_init",
+        "atomic_usize_region_init",
+        "atomic_bool_storage_after_claim",
+        "atomic_u32_storage_after_claim",
+        "atomic_u64_storage_after_claim",
+        "atomic_usize_storage_after_claim",
+        "atomic_u64_storage_lifecycle_probe",
+    ] {
+        let row = rows
+            .iter()
+            .find(|row| row["item"] == name)
+            .unwrap_or_else(|| panic!("missing atomic-storage certificate `{name}`"));
+        assert_eq!(row["level"], "L3", "`{name}` fell below L3: {row}");
+        assert_ne!(
+            row["contract_quality"]["mutants_killed"], "0/0",
+            "`{name}` lacks executable contract teeth",
+        );
+    }
+
+    let mut duplicate_source = projection_source.clone();
+    duplicate_source.push_str(
+        r#"
+fn duplicate_atomic_u64_slot_rejected(slot: AtomicU64Slot) -> bool
+  req true
+  ens result
+  fx platform(atomic)
+{
+  let first: AtomicU64 = atomic_u64_init(slot, 0);
+  let second: AtomicU64 = atomic_u64_init(slot, 1);
+  atomic_identity_eq(&first.identity, &second.identity)
+}
+"#,
+    );
+    let duplicate = temp.0.join("duplicate-atomic-slot.th");
+    fs::write(&duplicate, duplicate_source).unwrap();
+    let duplicate_s = duplicate.to_string_lossy().to_string();
+    let duplicate_check = forge(&["check", &duplicate_s, "--level", "l3", "--json"]);
+    assert!(
+        !duplicate_check.status.success(),
+        "one opaque atomic-init slot initialized two cells",
+    );
+    let duplicate_rows: serde_json::Value =
+        serde_json::from_slice(&duplicate_check.stdout).unwrap();
+    let duplicate_row = duplicate_rows
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["item"] == "duplicate_atomic_u64_slot_rejected")
+        .unwrap();
+    assert_ne!(duplicate_row["level"], "L3");
+    let duplicate_diagnostic = duplicate_row["obligations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|obligation| obligation["diagnostic"].as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        duplicate_diagnostic.contains("use of moved value: `slot`")
+            && duplicate_diagnostic.contains("does not implement the `Copy` trait"),
+        "duplicate slot failed for the wrong reason: {duplicate_row}",
+    );
+
+    let opaque_attack = temp.0.join("opaque-atomic-slot");
+    fs::create_dir(&opaque_attack).unwrap();
+    for (source, destination) in [
+        ("stdlib/kernel-primitives/src/model.th", "model.th"),
+        (
+            "stdlib/kernel-primitives/storage/static_storage.th",
+            "static_storage.th",
+        ),
+        ("stdlib/kernel-primitives/src/init.th", "init.th"),
+    ] {
+        fs::copy(root().join(source), opaque_attack.join(destination)).unwrap();
+    }
+    fs::write(
+        opaque_attack.join("attack.th"),
+        r#"fn forge_atomic_u64_slot(
+  authority: usize,
+  storage_slot: usize,
+  generation: u64,
+  capacity: usize,
+) -> AtomicU64Slot
+  req true
+  ens atomic_u64_slot_matches_values_spec(
+    &result,
+    authority,
+    storage_slot,
+    generation,
+    capacity,
+  )
+  fx pure
+{
+  AtomicU64Slot {
+    atomic_slot_identity: AtomicIdentity {
+      authority: authority,
+      slot: storage_slot,
+      generation: generation,
+    },
+    atomic_slot_bytes: capacity,
+  }
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        opaque_attack.join("attack.thpkg.json"),
+        r#"{
+  "schema": "thermite.package.v1",
+  "name": "opaque_atomic_slot_attack",
+  "roots": [
+    "attack"
+  ],
+  "modules": [
+    {
+      "name": "attack",
+      "path": "attack.th",
+      "imports": [
+        "init",
+        "model"
+      ]
+    },
+    {
+      "name": "init",
+      "path": "init.th",
+      "imports": [
+        "model",
+        "static_storage"
+      ]
+    },
+    {
+      "name": "model",
+      "path": "model.th",
+      "imports": []
+    },
+    {
+      "name": "static_storage",
+      "path": "static_storage.th",
+      "imports": []
+    }
+  ]
+}
+"#,
+    )
+    .unwrap();
+    let attack_manifest = opaque_attack.join("attack.thpkg.json");
+    let attack_manifest_s = attack_manifest.to_string_lossy().to_string();
+    let attack_bundle = opaque_attack.join("attack.verified");
+    let attack_bundle_s = attack_bundle.to_string_lossy().to_string();
+    let attack = forge(&[
+        "build",
+        &attack_manifest_s,
+        "--level",
+        "l3",
+        "--export",
+        "forge_atomic_u64_slot",
+        "--target",
+        "kernel",
+        "--out",
+        &attack_bundle_s,
+        "--json",
+    ]);
+    assert!(
+        !attack.status.success(),
+        "a foreign package module constructed an opaque atomic-init slot",
+    );
+    let attack_diagnostic = format!(
+        "{}{}",
+        String::from_utf8_lossy(&attack.stdout),
+        String::from_utf8_lossy(&attack.stderr),
+    );
+    assert!(
+        attack_diagnostic.contains("constructs `#[opaque]` type `AtomicU64Slot`")
+            && attack_diagnostic.contains("declared in module `init`"),
+        "unexpected opaque-slot diagnostic: {attack_diagnostic}",
+    );
+
     for (name, export, target) in [
         ("ordering", "atomic_ordering_matrix_probe", "kernel"),
         ("history", "atomic_history_model_probe", "std"),
+        ("storage", "atomic_storage_capacity_probe", "kernel"),
     ] {
         let bundle = temp.0.join(format!("{name}.verified"));
         let bundle_s = bundle.to_string_lossy().to_string();
@@ -1670,6 +1864,9 @@ fn atomic_primitive_package_keeps_every_in_language_item_at_l3() {
             "evidence/thermite-package/source-map.json",
             "evidence/thermite-package/source/src/model.th",
             "evidence/thermite-package/source/src/api.th",
+            "evidence/thermite-package/source/src/init.th",
+            "evidence/thermite-package/source/src/atomic_storage.th",
+            "evidence/thermite-package/source/storage/static_storage.th",
         ] {
             assert!(
                 bundle.join(relative).is_file(),
@@ -1699,6 +1896,64 @@ fn atomic_primitive_package_keeps_every_in_language_item_at_l3() {
             rows.iter().all(|row| row["verdict"] == "faithful"),
             "{name} bundle contains non-faithful translation validation rows: {tv}"
         );
+
+        if name == "storage" {
+            let consumer_source = temp.0.join("atomic-storage-consumer.rs");
+            fs::write(
+                &consumer_source,
+                r#"fn main() {
+    use thermite_atomic_primitives::atomic_storage_capacity_probe;
+    assert!(!atomic_storage_capacity_probe(0, 0));
+    assert!(atomic_storage_capacity_probe(0, 1));
+    assert!(!atomic_storage_capacity_probe(1, 3));
+    assert!(atomic_storage_capacity_probe(1, 4));
+    assert!(!atomic_storage_capacity_probe(2, 7));
+    assert!(atomic_storage_capacity_probe(2, 8));
+    assert!(!atomic_storage_capacity_probe(3, 7));
+    assert!(atomic_storage_capacity_probe(3, 8));
+    assert!(!atomic_storage_capacity_probe(4, 64));
+}
+"#,
+            )
+            .unwrap();
+            let consumer = temp.0.join("atomic-storage-consumer");
+            let compiled = codegen_rustc(&bundle)
+                .current_dir(root())
+                .arg("--edition=2021")
+                .arg(&consumer_source)
+                .arg("--extern")
+                .arg(format!(
+                    "thermite_atomic_primitives={}",
+                    bundle
+                        .join("artifact/libthermite_atomic_primitives.rlib")
+                        .display()
+                ))
+                .arg("-L")
+                .arg(format!(
+                    "dependency={}",
+                    bundle.join("artifact/deps").display()
+                ))
+                .args(["-C", "panic=abort"])
+                .arg("-o")
+                .arg(&consumer)
+                .output()
+                .unwrap();
+            assert_success(&compiled);
+            assert_success(&Command::new(&consumer).output().unwrap());
+
+            let bound_init = bundle.join("evidence/thermite-package/source/src/init.th");
+            let original = fs::read_to_string(&bound_init).unwrap();
+            let weakened =
+                original.replacen("#[opaque] struct AtomicU64Slot", "struct AtomicU64Slot", 1);
+            assert_ne!(weakened, original);
+            fs::write(&bound_init, weakened).unwrap();
+            assert!(
+                !forge(&["verify-build", &bundle_s, "--replay", "--json"])
+                    .status
+                    .success(),
+                "removing the receipt-bound atomic-slot barrier replayed",
+            );
+        }
     }
 }
 

@@ -17612,8 +17612,8 @@ owner = ".design/build/kernel-primitives.md"
 status = "partial"
 scope = "spec"
 summary = "Sealed types cannot be forged in Thermite and support verified consumption or generation transitions for platform authority."
-remaining_scope = "The sealed-construction barrier, direct and nested opaque lifecycle receipts, typed owned-record local/value-call L3 receipts, exact user-ADT result/match TV, exact direct finite-record mutable-call effects, an opaque receipt-bound 64-slot generation ledger, and an opaque generation-bound 64-slot static-storage lease/region protocol prove acquisition/renewal/release, stale-token-after-reuse rejection, double-release rejection, monotonic rights, L3 move/clone refusal, initialization-witness matching, and foreign-module construction/read/write rejection. Add a complete affine rule if stronger uniqueness is required, strictly compose the full owned-ADT lifecycles through exactly refined authority/memory doors, and integrate generation/static-storage ownership with atomic initialization slots."
-contributors = [".design/basis/06-provenance-and-sinks.md", ".design/build/opaque-library-state.md", ".design/build/generation-ownership.md", ".design/build/static-storage.md", ".design/build/owned-aggregate-lifecycle.md", ".design/build/nested-aggregate-lifecycle.md", ".design/build/adt-match-lifecycle.md", ".design/build/mutable-call-effects.md"]
+remaining_scope = "The sealed-construction barrier, direct and nested opaque lifecycle receipts, typed owned-record local/value-call L3 receipts, exact user-ADT result/match TV, exact direct finite-record mutable-call effects, an opaque receipt-bound 64-slot generation ledger, a generation-bound 64-slot static-storage lease/region protocol, and typed opaque single-use atomic-init slots prove acquisition/renewal/release, stale-token-after-reuse rejection, double-release rejection, monotonic rights, L3 move/clone refusal, initialization-witness matching, committed-region consumption, exact authority/slot/generation transfer, duplicate-init refusal, and foreign-module construction/read/write rejection. Add a complete affine rule if stronger general-purpose uniqueness is required, strictly compose the full owned-ADT lifecycles through exactly refined authority/memory/atomic doors, and add concurrent synchronization consumers that rotate generations through exact atomic transitions."
+contributors = [".design/basis/06-provenance-and-sinks.md", ".design/build/opaque-library-state.md", ".design/build/generation-ownership.md", ".design/build/static-storage.md", ".design/build/atomic-storage-initialization.md", ".design/build/owned-aggregate-lifecycle.md", ".design/build/nested-aggregate-lifecycle.md", ".design/build/adt-match-lifecycle.md", ".design/build/mutable-call-effects.md"]
 generated_to = ["status", "forge-kernel-primitives-status"]
 
 [[requirement.evidence]]
@@ -17642,6 +17642,16 @@ target = "forge/tests/static_storage_primitives.rs"
 note = "Pins the generation-bound static-storage ownership protocol, sealed fill witness, stale-lease rejection, move/clone refusal, and foreign opaque-construction barrier at the L3 assurance floor."
 
 [[requirement.evidence]]
+kind = "file"
+target = "stdlib/kernel-primitives/src/init.th"
+note = "Defines typed opaque atomic-init slots, exact compound identities, capacity policy, and committed-region-consuming L3 converters."
+
+[[requirement.evidence]]
+kind = "file"
+target = "stdlib/kernel-primitives/src/atomic_storage.th"
+note = "Composes static claim/fill/commit, typed slot conversion, and atomic initialization in bodyful Thermite while preserving authority, slot, and generation."
+
+[[requirement.evidence]]
 kind = "test"
 target = "thermite-lower/tests/opaque_state.rs"
 note = "Pins crate-private generated fields, transitive public-closed specifications, unchanged plain visibility, and a real Verus proof of exported opaque construction/observation."
@@ -17662,20 +17672,30 @@ title = "Sealed atomics and ordering model"
 owner = ".design/build/kernel-primitives.md"
 status = "partial"
 scope = "verified"
-summary = "Thermite exposes sealed bool/u32/u64/usize atomics, legal orderings, RMW/CAS/fence operations, and a concurrency proof model."
-remaining_scope = "The receipt-bound package, 50 sealed boundary declarations, exact ordering matrix, pre-codegen legality gate, bounded history relations, strict kernel ordering proof, strict hosted history proof, replay, and adversarial tests are present. Add enforceable single-use slot ownership, a kernel-target finite-history proof surface, exact atomic object/machine refinement, and verified synchronization consumers."
-contributors = [".design/build/sealed-atomics.md", ".design/build/frozen-primitive-registry.md"]
+summary = "Thermite exposes opaque single-use bool/u32/u64/usize initialization slots, sealed atomic cells, legal orderings, RMW/CAS/fence operations, and a concurrency proof model."
+remaining_scope = "The five-module receipt-bound package, typed generation-bound storage-to-slot conversion, enforceable single-use initialization, compound atomic identity, 50 atomic boundary declarations, exact ordering matrix, pre-codegen legality gate, bounded history relations, strict kernel ordering/storage proofs, strict hosted history proof, replay, runtime generated-logic execution, and adversarial tests are present. Add a kernel-target finite-history proof surface, exact atomic object/machine refinement, positive machine-aware lifecycle composition, and verified synchronization consumers."
+contributors = [".design/build/sealed-atomics.md", ".design/build/atomic-storage-initialization.md", ".design/build/static-storage.md", ".design/build/frozen-primitive-registry.md"]
 generated_to = ["status", "forge-kernel-primitives-status"]
 
 [[requirement.evidence]]
 kind = "file"
 target = "stdlib/kernel-primitives/atomics.thpkg.json"
-note = "Receipt-bound two-module atomic primitive package with no Rust or assembly implementation."
+note = "Receipt-bound five-module atomic primitive package including static-storage ownership and typed initialization composition, with no Rust or assembly implementation."
 
 [[requirement.evidence]]
 kind = "file"
 target = "stdlib/kernel-primitives/src/api.th"
-note = "Sealed bool/u32/u64/usize slots and cells plus 50 frozen init/load/store/swap/CAS/RMW/fence declarations and pure proof probes."
+note = "Sealed bool/u32/u64/usize cells plus 50 frozen init/load/store/swap/CAS/RMW/fence declarations and pure proof probes; initialization consumes opaque slots from the init module."
+
+[[requirement.evidence]]
+kind = "file"
+target = "stdlib/kernel-primitives/src/init.th"
+note = "Opaque bool/u32/u64/usize slots, target-bound capacity rules, and exact committed-region-consuming converters, all bodyful at L3."
+
+[[requirement.evidence]]
+kind = "file"
+target = "stdlib/kernel-primitives/src/atomic_storage.th"
+note = "Generated Thermite lifecycle composition from generation-bound static storage through typed slot consumption to the atomic initialization boundary."
 
 [[requirement.evidence]]
 kind = "file"
@@ -17690,7 +17710,7 @@ note = "Classifies all 25 CAS pairs and rejects illegal, dynamic, bogus-path, wr
 [[requirement.evidence]]
 kind = "test"
 target = "forge/tests/verified_build.rs::atomic_primitive_package_keeps_every_in_language_item_at_l3"
-note = "Builds and replays the kernel-target ordering bundle and hosted finite-history bundle at strict L3, checks complete package evidence, and requires faithful TV rows."
+note = "Requires every bodyful item at L3, rejects duplicate slot use and foreign opaque construction, builds and replays kernel ordering/storage and hosted history bundles, executes generated capacity logic, checks the complete five-module closure, requires faithful TV, and rejects opaque-barrier receipt tampering."
 
 [[requirement.evidence]]
 kind = "test"

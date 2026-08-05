@@ -1,5 +1,68 @@
 const ATOMIC_HISTORY_CAPACITY: usize = 256;
 
+struct AtomicIdentity {
+  authority: usize,
+  slot: usize,
+  generation: u64,
+}
+
+spec fn atomic_identity_eq_spec(
+  left: &AtomicIdentity,
+  right: &AtomicIdentity,
+) -> bool
+  dec left.slot
+{
+  left.authority == right.authority
+    && left.slot == right.slot
+    && left.generation == right.generation
+}
+
+spec fn atomic_identity_matches_values_spec(
+  identity: &AtomicIdentity,
+  authority: usize,
+  slot: usize,
+  generation: u64,
+) -> bool
+  dec slot
+{
+  identity.authority == authority
+    && identity.slot == slot
+    && identity.generation == generation
+}
+
+fn atomic_identity_eq(
+  left: &AtomicIdentity,
+  right: &AtomicIdentity,
+) -> bool
+  req true
+  ens result == atomic_identity_eq_spec(left, right)
+  fx pure
+{
+  left.authority == right.authority
+    && left.slot == right.slot
+    && left.generation == right.generation
+}
+
+fn atomic_identity_matches_values(
+  identity: &AtomicIdentity,
+  authority: usize,
+  slot: usize,
+  generation: u64,
+) -> bool
+  req true
+  ens result == atomic_identity_matches_values_spec(
+    identity,
+    authority,
+    slot,
+    generation,
+  )
+  fx pure
+{
+  identity.authority == authority
+    && identity.slot == slot
+    && identity.generation == generation
+}
+
 enum AtomicOrdering {
   Relaxed,
   Acquire,
@@ -373,7 +436,7 @@ struct AtomicEvent {
   id: usize,
   cpu: u16,
   cpu_sequence: usize,
-  cell: usize,
+  cell: AtomicIdentity,
   kind: u8,
   order: u8,
   observed: u64,
@@ -413,7 +476,7 @@ spec fn atomic_modification_precedes(left: AtomicEvent, right: AtomicEvent) -> b
 {
   atomic_event_is_write(left)
     && atomic_event_is_write(right)
-    && left.cell == right.cell
+    && atomic_identity_eq_spec(&left.cell, &right.cell)
     && left.modification_order > 0
     && left.modification_order < right.modification_order
 }
@@ -423,7 +486,7 @@ spec fn atomic_reads_from(write: AtomicEvent, read: AtomicEvent) -> bool
 {
   atomic_event_is_write(write)
     && atomic_event_is_read(read)
-    && write.cell == read.cell
+    && atomic_identity_eq_spec(&write.cell, &read.cell)
     && read.reads_from == write.id
 }
 
@@ -433,7 +496,7 @@ spec fn atomic_release_sequence_member(head: AtomicEvent, member: AtomicEvent) -
   atomic_event_is_write(head)
     && atomic_order_code_is_release(head.order)
     && atomic_event_is_write(member)
-    && head.cell == member.cell
+    && atomic_identity_eq_spec(&head.cell, &member.cell)
     && (member.id == head.id || member.release_head == head.id)
 }
 
@@ -447,7 +510,7 @@ spec fn atomic_synchronizes_with(release: AtomicEvent, acquire: AtomicEvent) -> 
       && atomic_order_code_is_acquire(acquire.order)
       && atomic_event_is_write(release)
       && atomic_event_is_read(acquire)
-      && release.cell == acquire.cell
+      && atomic_identity_eq_spec(&release.cell, &acquire.cell)
       && acquire.release_head == release.id)
 }
 

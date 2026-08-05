@@ -15,7 +15,7 @@ governs:
   - forge/tests/body_tv.rs
   - forge/tests/verified_build.rs
   - conformance/verified-build/owned_aggregate_lifecycle.th
-audited-content-sha256: 0a4475eb154b4c93cb3551375fd7691618523add3882254a75fa512f4e1a6e5d (re-pinned 2026-08-04 after bounded typed-if initializer context was added to shared body TV; owned aggregate semantics remain regression-covered)
+audited-content-sha256: 4c6fda546cd9e377318b543a9b94ca4f7e301940d6397f53d912d1106b5800d1 (re-pinned 2026-08-04 after atomic-storage acceptance extended the shared verified-build suite; owned aggregate semantics remain regression-covered)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/named-record-lifecycle.md

@@ -9,10 +9,11 @@ governs:
   - stdlib/kernel-primitives/storage/static_storage.th
   - thermite-tv/src/exec_stmt_encode.rs
   - forge/tests/static_storage_primitives.rs
-audited-content-sha256: 9e4abd2439c6e365df356c211204ab3fbe3bbe8ccac4e8c58ae426f4d1db08e2 (pinned 2026-08-04 for the L3 static-storage package, bounded typed-if TV context, runtime acceptance, and exact two-boundary assurance split)
+audited-content-sha256: 34bc5c6bea4c94addd7693d67f9e0f658de21c1cca2e11855c8d1d14731aafe1 (re-pinned 2026-08-04 after exact L3 lease/region observers enabled typed atomic initialization)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/generation-ownership.md
+  - .design/build/atomic-storage-initialization.md
   - .design/build/frozen-primitive-registry.md
   - .design/build/kernel-target.md
 thesis-refs:
@@ -36,6 +37,11 @@ claim, commit, release, and rejection algorithms in Thermite. The canonical
 manifest, original source, module map, generated source, proof evidence,
 translation-validation rows, toolchain, and freestanding rlib are bound into a
 strict receipt.
+
+The defining module also exposes exact L3 observers for lease and committed
+region authority, slot, generation, capacity, and fill metadata. Those
+observers preserve opaque representation ownership while allowing the atomic
+package to consume a committed region without copying its implementation.
 
 There is no kernel, firmware runtime, architecture profile, Rust storage
 algorithm, assembly implementation, linker script, or image builder in this
@@ -152,13 +158,13 @@ At this increment:
 
 | Metric | Value |
 |---|---:|
-| Physical Thermite LOC | 690 |
-| Nonblank Thermite LOC | 657 |
-| Thermite functions | 25 (18 executable, 7 specification) |
-| Bodyful executable Thermite functions | 16 |
-| In-language L3 items | 31 |
+| Physical Thermite LOC | 852 |
+| Nonblank Thermite LOC | 801 |
+| Thermite functions | 43 (27 executable, 16 specification) |
+| Bodyful executable Thermite functions | 25 |
+| In-language L3 items | 49 |
 | Frozen boundary declarations | 2 at L1 |
-| Executable mutants killed | 84/84 |
+| Executable mutants killed | 93/93 |
 | Bodyful Rust/assembly primitive implementations | 0 |
 | Ordinary Rust kernel-policy/algorithm LOC | 0 |
 | Direct-Verus TPL LOC shipped by this package | 0 |
@@ -166,7 +172,7 @@ At this increment:
 The generic static-storage state machine is shipped. End-to-end machine storage
 assurance remains a consumer composition obligation until the generic registry
 can bind and directly refine the exact authority and fill implementations. The
-next reusable primitive step is to connect this generation-bound lease/region
-protocol to the sealed atomic initialization slots, followed by exact atomic
-object refinement. Those tasks must not introduce a concrete kernel or a
-parallel Rust storage algorithm here.
+generation-bound lease/region protocol is now connected to typed opaque atomic
+initialization slots by `.design/build/atomic-storage-initialization.md`. Exact
+atomic object refinement remains machine-aware registry work. That task must
+not introduce a concrete kernel or a parallel Rust storage algorithm here.

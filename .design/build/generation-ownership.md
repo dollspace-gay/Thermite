@@ -151,10 +151,13 @@ work is explicit:
    through that refined mint;
 3. add a complete affine/linear rule if consumers require uniqueness beyond
    the current sealed-root, move-check, generation, and construction barriers;
-4. bind the generation and static-storage ownership protocols into sealed atomic
-   initialization slots; and
-5. add concurrent synchronization consumers that rotate generations through
+4. add concurrent synchronization consumers that rotate generations through
    exact atomic transitions.
+
+Generation-bound static regions now feed typed opaque single-use atomic
+initialization slots through
+`.design/build/atomic-storage-initialization.md`; that integration no longer
+belongs to the remaining ownership list.
 
 Until those close, the accurate claim is “verified generation transition
 library with a sealed non-duplicable root and opaque construction,” not

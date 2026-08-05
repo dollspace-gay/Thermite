@@ -1,9 +1,9 @@
 //! Primitive-only acceptance for the allocation-free fixed collections.
 //!
-//! All four collection families are authored in Thermite. The package contains no platform
+//! All five collection families are authored in Thermite. The package contains no platform
 //! boundary and no Rust implementation: Forge proves every source item at L3,
 //! rejects deliberately false collection claims, builds a freestanding strict
-//! export, and replays the receipt-bound four-module source closure.
+//! export, and replays the receipt-bound five-module source closure.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -98,22 +98,29 @@ fn mutation_total(rows: &[serde_json::Value]) -> (u64, u64) {
 }
 
 fn assert_false_claim_rejected(source: &str, name: &str, temp: &TempDir) {
-    let path = temp.0.join(format!("{name}.th"));
+    assert_false_claims_rejected(source, &[name], temp);
+}
+
+fn assert_false_claims_rejected(source: &str, names: &[&str], temp: &TempDir) {
+    let label = names.join("-");
+    let path = temp.0.join(format!("{label}.th"));
     fs::write(&path, source).unwrap();
     let path_s = path.to_string_lossy().to_string();
     let rejected = forge(&["check", &path_s, "--level", "l3", "--json"]);
     assert!(
         !rejected.status.success(),
-        "`{name}` unexpectedly certified"
+        "false claims unexpectedly certified: {names:?}"
     );
     let rows: serde_json::Value = serde_json::from_slice(&rejected.stdout).unwrap();
-    let row = rows
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|row| row["item"] == name)
-        .unwrap_or_else(|| panic!("missing rejection row for `{name}`"));
-    assert_ne!(row["level"], "L3", "false claim certified: {row}");
+    for name in names {
+        let row = rows
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["item"] == *name)
+            .unwrap_or_else(|| panic!("missing rejection row for `{name}`"));
+        assert_ne!(row["level"], "L3", "false claim certified: {row}");
+    }
 }
 
 #[test]
@@ -121,6 +128,7 @@ fn fixed_collections_are_l3_freestanding_receipt_bound_primitives() {
     let temp = TempDir::new("package");
     let bitmap_source = "stdlib/kernel-primitives/collections/bitmap.th";
     let direct_map_source = "stdlib/kernel-primitives/collections/direct_map.th";
+    let open_map_source = "stdlib/kernel-primitives/collections/open_map.th";
     let ring_source = "stdlib/kernel-primitives/collections/ring.th";
     let vector_source = "stdlib/kernel-primitives/collections/vector.th";
 
@@ -135,13 +143,19 @@ fn fixed_collections_are_l3_freestanding_receipt_bound_primitives() {
             "fixed_bitmap_insert",
             "fixed_bitmap_remove",
             "fixed_bitmap_set_to",
+            "fixed_bitmap_count",
+            "fixed_bitmap_first_set_from",
+            "fixed_bitmap_first_set",
+            "fixed_bitmap_union",
+            "fixed_bitmap_intersection",
+            "fixed_bitmap_difference",
             "fixed_bitmap_insert_remove_probe",
             "fixed_bitmap_set_to_probe",
             "fixed_bitmap_word_boundary_probe",
         ],
     );
-    assert_eq!(bitmap_rows.len(), 19);
-    assert_eq!(mutation_total(&bitmap_rows), (33, 40));
+    assert_eq!(bitmap_rows.len(), 36);
+    assert_eq!(mutation_total(&bitmap_rows), (107, 114));
 
     let ring_rows = checked_rows(ring_source);
     assert_l3_functions(
@@ -193,6 +207,26 @@ fn fixed_collections_are_l3_freestanding_receipt_bound_primitives() {
     );
     assert_eq!(mutation_total(&direct_map_rows), (54, 58));
 
+    let open_map_rows = checked_rows(open_map_source);
+    assert_l3_functions(
+        &open_map_rows,
+        &[
+            "fixed_open_map_home",
+            "fixed_open_map_next",
+            "fixed_open_map_empty",
+            "fixed_open_map_find",
+            "fixed_open_map_search",
+            "fixed_open_map_lookup",
+            "fixed_open_map_insert",
+            "fixed_open_map_remove",
+            "fixed_open_map_insert_lookup_probe",
+            "fixed_open_map_collision_probe",
+            "fixed_open_map_delete_reuse_probe",
+        ],
+    );
+    assert_eq!(open_map_rows.len(), 43);
+    assert_eq!(mutation_total(&open_map_rows), (72, 80));
+
     let mut false_bitmap = fs::read_to_string(root().join(bitmap_source)).unwrap();
     false_bitmap.push_str(
         r#"
@@ -205,9 +239,40 @@ fn fixed_bitmap_false_absence_claim(bit: usize) -> bool
   let inserted: FixedBitmap256 = fixed_bitmap_insert(empty, bit);
   fixed_bitmap_contains(&inserted, bit)
 }
+
+fn fixed_bitmap_false_count_bound_claim(bitmap: &FixedBitmap256) -> u64
+  req fixed_bitmap_wf_spec(bitmap)
+  ens result > FIXED_BITMAP_BITS as u64
+  fx pure
+{
+  fixed_bitmap_count(bitmap)
+}
+
+fn fixed_bitmap_false_union_absence_claim(
+  left: FixedBitmap256,
+  right: &FixedBitmap256,
+  bit: usize,
+) -> FixedBitmap256
+  req fixed_bitmap_wf_spec(&left)
+    && fixed_bitmap_wf_spec(right)
+    && bit < FIXED_BITMAP_BITS
+    && fixed_bitmap_contains_spec(&left, bit)
+  ens !fixed_bitmap_contains_spec(&result, bit)
+  fx pure
+{
+  fixed_bitmap_union(left, right)
+}
 "#,
     );
-    assert_false_claim_rejected(&false_bitmap, "fixed_bitmap_false_absence_claim", &temp);
+    assert_false_claims_rejected(
+        &false_bitmap,
+        &[
+            "fixed_bitmap_false_absence_claim",
+            "fixed_bitmap_false_count_bound_claim",
+            "fixed_bitmap_false_union_absence_claim",
+        ],
+        &temp,
+    );
 
     let mut false_ring = fs::read_to_string(root().join(ring_source)).unwrap();
     false_ring.push_str(
@@ -288,6 +353,38 @@ fn fixed_direct_map_false_missing_claim(key: usize, value: u64) -> bool
     );
     assert_false_claim_rejected(&false_map, "fixed_direct_map_false_missing_claim", &temp);
 
+    let mut false_open_map = fs::read_to_string(root().join(open_map_source)).unwrap();
+    false_open_map.push_str(
+        r#"
+fn fixed_open_map_false_collision_slot_claim(first: u64) -> bool
+  req true
+  ens result
+  fx pure
+{
+  let empty: FixedOpenMap64 = fixed_open_map_empty();
+  match fixed_open_map_insert(empty, 0, first) {
+    FixedOpenMapInsert64::OpenMapAdded64 { map: one, slot: _ } =>
+      match fixed_open_map_search(&one, 64, 0, 2, FIXED_OPEN_MAP_CAPACITY) {
+        FixedOpenMapSearch64::OpenMapExisting64 { slot: _ } => true,
+        FixedOpenMapSearch64::OpenMapVacant64 { slot } => slot == 0,
+        FixedOpenMapSearch64::OpenMapFull64 => true,
+      },
+    FixedOpenMapInsert64::OpenMapReplaced64 {
+      map: _, slot: _, old_value: _,
+    } => true,
+    FixedOpenMapInsert64::OpenMapInsertFull64 {
+      map: _, key: _, value: _,
+    } => true,
+  }
+}
+"#,
+    );
+    assert_false_claim_rejected(
+        &false_open_map,
+        "fixed_open_map_false_collision_slot_claim",
+        &temp,
+    );
+
     let bundle = temp.0.join("collections.verified");
     let bundle_s = bundle.to_string_lossy().to_string();
     assert_success(&forge(&[
@@ -310,6 +407,7 @@ fn fixed_direct_map_false_missing_claim(key: usize, value: u64) -> bool
         "evidence/thermite-package/source-map.json",
         "evidence/thermite-package/source/collections/bitmap.th",
         "evidence/thermite-package/source/collections/direct_map.th",
+        "evidence/thermite-package/source/collections/open_map.th",
         "evidence/thermite-package/source/collections/ring.th",
         "evidence/thermite-package/source/collections/vector.th",
     ] {

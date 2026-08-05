@@ -1,0 +1,995 @@
+const FIXED_OPEN_MAP_CAPACITY: usize = 64;
+const OPEN_MAP_EMPTY: usize = 0;
+const OPEN_MAP_OCCUPIED: usize = 1;
+const OPEN_MAP_DELETED: usize = 2;
+
+#[opaque] struct FixedOpenMap64 {
+  states: [u8; FIXED_OPEN_MAP_CAPACITY],
+  open_keys: [usize; FIXED_OPEN_MAP_CAPACITY],
+  open_values: [u64; FIXED_OPEN_MAP_CAPACITY],
+}
+
+enum FixedOpenMapSearch64 {
+  OpenMapExisting64 {
+    slot: usize,
+  },
+  OpenMapVacant64 {
+    slot: usize,
+  },
+  OpenMapFull64,
+}
+
+enum FixedOpenMapFind64 {
+  OpenMapFindFound64 {
+    slot: usize,
+  },
+  OpenMapFindMissing64,
+}
+
+enum FixedOpenMapLookup64 {
+  OpenMapFound64 {
+    slot: usize,
+    value: u64,
+  },
+  OpenMapMissing64,
+}
+
+enum FixedOpenMapInsert64 {
+  OpenMapAdded64 {
+    map: FixedOpenMap64,
+    slot: usize,
+  },
+  OpenMapReplaced64 {
+    map: FixedOpenMap64,
+    slot: usize,
+    old_value: u64,
+  },
+  OpenMapInsertFull64 {
+    map: FixedOpenMap64,
+    key: usize,
+    value: u64,
+  },
+}
+
+enum FixedOpenMapRemove64 {
+  OpenMapRemoved64 {
+    map: FixedOpenMap64,
+    slot: usize,
+    value: u64,
+  },
+  OpenMapRemoveMissing64 {
+    map: FixedOpenMap64,
+    key: usize,
+  },
+}
+
+spec fn fixed_open_map_home_spec(key: usize) -> usize
+  dec key
+{
+  key % FIXED_OPEN_MAP_CAPACITY
+}
+
+spec fn fixed_open_map_next_spec(slot: usize) -> usize
+  dec slot
+{
+  (slot + 1) % 64
+}
+
+spec fn fixed_open_map_find_spec(
+  map: &FixedOpenMap64,
+  key: usize,
+  slot: usize,
+  remaining: usize,
+) -> FixedOpenMapFind64
+  dec remaining
+{
+  if remaining == 0 || slot >= FIXED_OPEN_MAP_CAPACITY {
+    FixedOpenMapFind64::OpenMapFindMissing64
+  } else {
+    if map.states[slot] == OPEN_MAP_EMPTY as u8 {
+      FixedOpenMapFind64::OpenMapFindMissing64
+    } else {
+      if map.states[slot] == OPEN_MAP_OCCUPIED as u8 && map.open_keys[slot] == key {
+        FixedOpenMapFind64::OpenMapFindFound64 { slot: slot }
+      } else {
+        fixed_open_map_find_spec(
+          map,
+          key,
+          fixed_open_map_next_spec(slot),
+          remaining - 1,
+        )
+      }
+    }
+  }
+}
+
+spec fn fixed_open_map_find_is_found_spec(
+  found: FixedOpenMapFind64,
+  expected_slot: usize,
+) -> bool
+  dec expected_slot
+{
+  match found {
+    FixedOpenMapFind64::OpenMapFindFound64 { slot } =>
+      slot == expected_slot,
+    FixedOpenMapFind64::OpenMapFindMissing64 => false,
+  }
+}
+
+spec fn fixed_open_map_find_is_missing_spec(
+  found: FixedOpenMapFind64,
+) -> bool
+  dec FIXED_OPEN_MAP_CAPACITY
+{
+  match found {
+    FixedOpenMapFind64::OpenMapFindFound64 { slot: _ } => false,
+    FixedOpenMapFind64::OpenMapFindMissing64 => true,
+  }
+}
+
+spec fn fixed_open_map_find_result_spec(
+  result: FixedOpenMapFind64,
+  map: &FixedOpenMap64,
+  key: usize,
+  slot: usize,
+  remaining: usize,
+) -> bool
+  dec remaining
+{
+  let expected: FixedOpenMapFind64 =
+    fixed_open_map_find_spec(map, key, slot, remaining);
+  match result {
+    FixedOpenMapFind64::OpenMapFindFound64 { slot: found } =>
+      fixed_open_map_find_is_found_spec(expected, found),
+    FixedOpenMapFind64::OpenMapFindMissing64 =>
+      fixed_open_map_find_is_missing_spec(expected),
+  }
+}
+
+spec fn fixed_open_map_search_spec(
+  map: &FixedOpenMap64,
+  key: usize,
+  slot: usize,
+  remaining: usize,
+  candidate: usize,
+) -> FixedOpenMapSearch64
+  dec remaining
+{
+  if remaining == 0
+    || slot >= FIXED_OPEN_MAP_CAPACITY
+    || candidate > FIXED_OPEN_MAP_CAPACITY {
+    if candidate < FIXED_OPEN_MAP_CAPACITY {
+      FixedOpenMapSearch64::OpenMapVacant64 { slot: candidate }
+    } else {
+      FixedOpenMapSearch64::OpenMapFull64
+    }
+  } else {
+    if map.states[slot] == OPEN_MAP_EMPTY as u8 {
+      if candidate < FIXED_OPEN_MAP_CAPACITY {
+        FixedOpenMapSearch64::OpenMapVacant64 { slot: candidate }
+      } else {
+        FixedOpenMapSearch64::OpenMapVacant64 { slot: slot }
+      }
+    } else {
+      if map.states[slot] == OPEN_MAP_OCCUPIED as u8 && map.open_keys[slot] == key {
+        FixedOpenMapSearch64::OpenMapExisting64 { slot: slot }
+      } else {
+        let next_candidate: usize = if map.states[slot] == OPEN_MAP_DELETED as u8
+          && candidate == FIXED_OPEN_MAP_CAPACITY {
+          slot
+        } else {
+          candidate
+        };
+        fixed_open_map_search_spec(
+          map,
+          key,
+          fixed_open_map_next_spec(slot),
+          remaining - 1,
+          next_candidate,
+        )
+      }
+    }
+  }
+}
+
+spec fn fixed_open_map_search_is_existing_spec(
+  search: FixedOpenMapSearch64,
+  expected_slot: usize,
+) -> bool
+  dec expected_slot
+{
+  match search {
+    FixedOpenMapSearch64::OpenMapExisting64 { slot } =>
+      slot == expected_slot,
+    FixedOpenMapSearch64::OpenMapVacant64 { slot: _ } => false,
+    FixedOpenMapSearch64::OpenMapFull64 => false,
+  }
+}
+
+spec fn fixed_open_map_search_is_vacant_spec(
+  search: FixedOpenMapSearch64,
+  expected_slot: usize,
+) -> bool
+  dec expected_slot
+{
+  match search {
+    FixedOpenMapSearch64::OpenMapExisting64 { slot: _ } => false,
+    FixedOpenMapSearch64::OpenMapVacant64 { slot } => slot == expected_slot,
+    FixedOpenMapSearch64::OpenMapFull64 => false,
+  }
+}
+
+spec fn fixed_open_map_search_is_full_spec(
+  search: FixedOpenMapSearch64,
+) -> bool
+  dec FIXED_OPEN_MAP_CAPACITY
+{
+  match search {
+    FixedOpenMapSearch64::OpenMapExisting64 { slot: _ } => false,
+    FixedOpenMapSearch64::OpenMapVacant64 { slot: _ } => false,
+    FixedOpenMapSearch64::OpenMapFull64 => true,
+  }
+}
+
+spec fn fixed_open_map_search_result_spec(
+  result: FixedOpenMapSearch64,
+  map: &FixedOpenMap64,
+  key: usize,
+  slot: usize,
+  remaining: usize,
+  candidate: usize,
+) -> bool
+  dec remaining
+{
+  let expected: FixedOpenMapSearch64 = fixed_open_map_search_spec(
+    map,
+    key,
+    slot,
+    remaining,
+    candidate,
+  );
+  match result {
+    FixedOpenMapSearch64::OpenMapExisting64 { slot: found } =>
+      fixed_open_map_search_is_existing_spec(expected, found),
+    FixedOpenMapSearch64::OpenMapVacant64 { slot: found } =>
+      fixed_open_map_search_is_vacant_spec(expected, found),
+    FixedOpenMapSearch64::OpenMapFull64 =>
+      fixed_open_map_search_is_full_spec(expected),
+  }
+}
+
+spec fn fixed_open_map_state_eq_spec(
+  left: &[u8; FIXED_OPEN_MAP_CAPACITY],
+  right: &[u8; FIXED_OPEN_MAP_CAPACITY],
+) -> bool
+  dec FIXED_OPEN_MAP_CAPACITY
+{
+  left.array_eq(right)
+}
+
+spec fn fixed_open_map_key_eq_spec(
+  left: &[usize; FIXED_OPEN_MAP_CAPACITY],
+  right: &[usize; FIXED_OPEN_MAP_CAPACITY],
+) -> bool
+  dec FIXED_OPEN_MAP_CAPACITY
+{
+  left.array_eq(right)
+}
+
+spec fn fixed_open_map_value_eq_spec(
+  left: &[u64; FIXED_OPEN_MAP_CAPACITY],
+  right: &[u64; FIXED_OPEN_MAP_CAPACITY],
+) -> bool
+  dec FIXED_OPEN_MAP_CAPACITY
+{
+  left.array_eq(right)
+}
+
+spec fn fixed_open_map_state_frame_spec(
+  next: &[u8; FIXED_OPEN_MAP_CAPACITY],
+  old: &[u8; FIXED_OPEN_MAP_CAPACITY],
+  slot: usize,
+) -> bool
+  dec slot
+{
+  next.array_same_except(old, slot)
+}
+
+spec fn fixed_open_map_key_frame_spec(
+  next: &[usize; FIXED_OPEN_MAP_CAPACITY],
+  old: &[usize; FIXED_OPEN_MAP_CAPACITY],
+  slot: usize,
+) -> bool
+  dec slot
+{
+  next.array_same_except(old, slot)
+}
+
+spec fn fixed_open_map_value_frame_spec(
+  next: &[u64; FIXED_OPEN_MAP_CAPACITY],
+  old: &[u64; FIXED_OPEN_MAP_CAPACITY],
+  slot: usize,
+) -> bool
+  dec slot
+{
+  next.array_same_except(old, slot)
+}
+
+spec fn fixed_open_map_equal_spec(
+  left: &FixedOpenMap64,
+  right: &FixedOpenMap64,
+) -> bool
+  dec FIXED_OPEN_MAP_CAPACITY
+{
+  fixed_open_map_state_eq_spec(&left.states, &right.states)
+    && fixed_open_map_key_eq_spec(&left.open_keys, &right.open_keys)
+    && fixed_open_map_value_eq_spec(&left.open_values, &right.open_values)
+}
+
+spec fn fixed_open_map_empty_spec(map: &FixedOpenMap64) -> bool
+  dec FIXED_OPEN_MAP_CAPACITY
+{
+  let states: [u8; FIXED_OPEN_MAP_CAPACITY] =
+    [OPEN_MAP_EMPTY as u8; FIXED_OPEN_MAP_CAPACITY];
+  let keys: [usize; FIXED_OPEN_MAP_CAPACITY] =
+    [0; FIXED_OPEN_MAP_CAPACITY];
+  let values: [u64; FIXED_OPEN_MAP_CAPACITY] =
+    [0; FIXED_OPEN_MAP_CAPACITY];
+  fixed_open_map_state_eq_spec(&map.states, &states)
+    && fixed_open_map_key_eq_spec(&map.open_keys, &keys)
+    && fixed_open_map_value_eq_spec(&map.open_values, &values)
+}
+
+spec fn fixed_open_map_lookup_value_spec(
+  map: &FixedOpenMap64,
+  key: usize,
+  expected_value: u64,
+) -> bool
+  dec key
+{
+  match fixed_open_map_find_spec(
+    map,
+    key,
+    fixed_open_map_home_spec(key),
+    FIXED_OPEN_MAP_CAPACITY,
+  ) {
+    FixedOpenMapFind64::OpenMapFindFound64 { slot } =>
+      map.open_values[slot] == expected_value,
+    FixedOpenMapFind64::OpenMapFindMissing64 => false,
+  }
+}
+
+fn fixed_open_map_home(key: usize) -> usize
+  req true
+  ens result == fixed_open_map_home_spec(key)
+  ens result < FIXED_OPEN_MAP_CAPACITY
+  fx pure
+{
+  key % FIXED_OPEN_MAP_CAPACITY
+}
+
+fn fixed_open_map_next(slot: usize) -> usize
+  req slot < FIXED_OPEN_MAP_CAPACITY
+  ens result == fixed_open_map_next_spec(slot)
+  ens result < FIXED_OPEN_MAP_CAPACITY
+  fx pure
+{
+  (slot + 1) % 64
+}
+
+fn fixed_open_map_empty() -> FixedOpenMap64
+  req true
+  ens fixed_open_map_empty_spec(&result)
+  ens result.states[0] == OPEN_MAP_EMPTY as u8
+    && result.states[FIXED_OPEN_MAP_CAPACITY - 1] == OPEN_MAP_EMPTY as u8
+  ens result.open_keys[0] == 0 && result.open_values[0] == 0
+  fx pure
+{
+  FixedOpenMap64 {
+    states: [OPEN_MAP_EMPTY as u8; FIXED_OPEN_MAP_CAPACITY],
+    open_keys: [0; FIXED_OPEN_MAP_CAPACITY],
+    open_values: [0; FIXED_OPEN_MAP_CAPACITY],
+  }
+}
+
+fn fixed_open_map_find(
+  map: &FixedOpenMap64,
+  key: usize,
+  slot: usize,
+  remaining: usize,
+) -> FixedOpenMapFind64
+  req slot < FIXED_OPEN_MAP_CAPACITY
+    && remaining <= FIXED_OPEN_MAP_CAPACITY
+  ens result == fixed_open_map_find_spec(map, key, slot, remaining)
+  ens match result {
+    FixedOpenMapFind64::OpenMapFindFound64 { slot: found } =>
+      found < FIXED_OPEN_MAP_CAPACITY
+        && map.states[found] == OPEN_MAP_OCCUPIED as u8
+        && map.open_keys[found] == key,
+    FixedOpenMapFind64::OpenMapFindMissing64 => true,
+  }
+  fx pure
+  dec remaining
+{
+  if remaining == 0 {
+    FixedOpenMapFind64::OpenMapFindMissing64
+  } else {
+    if map.states[slot] == OPEN_MAP_EMPTY as u8 {
+      FixedOpenMapFind64::OpenMapFindMissing64
+    } else {
+      if map.states[slot] == OPEN_MAP_OCCUPIED as u8 && map.open_keys[slot] == key {
+        FixedOpenMapFind64::OpenMapFindFound64 { slot: slot }
+      } else {
+        fixed_open_map_find(
+          map,
+          key,
+          fixed_open_map_next(slot),
+          remaining - 1,
+        )
+      }
+    }
+  }
+}
+
+fn fixed_open_map_search(
+  map: &FixedOpenMap64,
+  key: usize,
+  slot: usize,
+  remaining: usize,
+  candidate: usize,
+) -> FixedOpenMapSearch64
+  req slot < FIXED_OPEN_MAP_CAPACITY
+    && remaining <= FIXED_OPEN_MAP_CAPACITY
+    && candidate <= FIXED_OPEN_MAP_CAPACITY
+    && (candidate == FIXED_OPEN_MAP_CAPACITY
+      || map.states[candidate] != OPEN_MAP_OCCUPIED as u8)
+  ens result == fixed_open_map_search_spec(
+    map,
+    key,
+    slot,
+    remaining,
+    candidate,
+  )
+  ens match result {
+    FixedOpenMapSearch64::OpenMapExisting64 { slot: found } =>
+      found < FIXED_OPEN_MAP_CAPACITY
+        && map.states[found] == OPEN_MAP_OCCUPIED as u8
+        && map.open_keys[found] == key,
+    FixedOpenMapSearch64::OpenMapVacant64 { slot: found } =>
+      found < FIXED_OPEN_MAP_CAPACITY
+        && map.states[found] != OPEN_MAP_OCCUPIED as u8,
+    FixedOpenMapSearch64::OpenMapFull64 => true,
+  }
+  ens if remaining > 0
+    && map.states[slot] == OPEN_MAP_EMPTY as u8 {
+    match result {
+      FixedOpenMapSearch64::OpenMapExisting64 { slot: _ } => false,
+      FixedOpenMapSearch64::OpenMapVacant64 { slot: found } =>
+        found == (if candidate < FIXED_OPEN_MAP_CAPACITY {
+          candidate
+        } else {
+          slot
+        }),
+      FixedOpenMapSearch64::OpenMapFull64 => false,
+    }
+  } else {
+    true
+  }
+  ens if remaining > 1
+    && map.states[slot] != OPEN_MAP_EMPTY as u8
+    && !(map.states[slot] == OPEN_MAP_OCCUPIED as u8 && map.open_keys[slot] == key)
+    && map.states[fixed_open_map_next_spec(slot)] == OPEN_MAP_EMPTY as u8 {
+    match result {
+      FixedOpenMapSearch64::OpenMapExisting64 { slot: _ } => false,
+      FixedOpenMapSearch64::OpenMapVacant64 { slot: found } =>
+        found == (if map.states[slot] == OPEN_MAP_DELETED as u8
+          && candidate == FIXED_OPEN_MAP_CAPACITY {
+          slot
+        } else {
+          if candidate < FIXED_OPEN_MAP_CAPACITY {
+            candidate
+          } else {
+            fixed_open_map_next_spec(slot)
+          }
+        }),
+      FixedOpenMapSearch64::OpenMapFull64 => false,
+    }
+  } else {
+    true
+  }
+  fx pure
+  dec remaining
+{
+  if remaining == 0 {
+    if candidate < FIXED_OPEN_MAP_CAPACITY {
+      FixedOpenMapSearch64::OpenMapVacant64 { slot: candidate }
+    } else {
+      FixedOpenMapSearch64::OpenMapFull64
+    }
+  } else {
+    if map.states[slot] == OPEN_MAP_EMPTY as u8 {
+      if candidate < FIXED_OPEN_MAP_CAPACITY {
+        FixedOpenMapSearch64::OpenMapVacant64 { slot: candidate }
+      } else {
+        FixedOpenMapSearch64::OpenMapVacant64 { slot: slot }
+      }
+    } else {
+      if map.states[slot] == OPEN_MAP_OCCUPIED as u8 && map.open_keys[slot] == key {
+        FixedOpenMapSearch64::OpenMapExisting64 { slot: slot }
+      } else {
+        let next_candidate: usize = if map.states[slot] == OPEN_MAP_DELETED as u8
+          && candidate == FIXED_OPEN_MAP_CAPACITY {
+          slot
+        } else {
+          candidate
+        };
+        fixed_open_map_search(
+          map,
+          key,
+          fixed_open_map_next(slot),
+          remaining - 1,
+          next_candidate,
+        )
+      }
+    }
+  }
+}
+
+fn fixed_open_map_lookup(
+  map: &FixedOpenMap64,
+  key: usize,
+) -> FixedOpenMapLookup64
+  req true
+  ens match result {
+    FixedOpenMapLookup64::OpenMapFound64 { slot, value } =>
+      fixed_open_map_find_is_found_spec(
+        fixed_open_map_find_spec(
+          map,
+          key,
+          fixed_open_map_home_spec(key),
+          FIXED_OPEN_MAP_CAPACITY,
+        ),
+        slot,
+      )
+        && slot < FIXED_OPEN_MAP_CAPACITY
+        && map.states[slot] == OPEN_MAP_OCCUPIED as u8
+        && map.open_keys[slot] == key
+        && value == map.open_values[slot],
+    FixedOpenMapLookup64::OpenMapMissing64 =>
+      fixed_open_map_find_is_missing_spec(fixed_open_map_find_spec(
+        map,
+        key,
+        fixed_open_map_home_spec(key),
+        FIXED_OPEN_MAP_CAPACITY,
+      )),
+  }
+  fx pure
+{
+  let home: usize = key % FIXED_OPEN_MAP_CAPACITY;
+  match fixed_open_map_find(map, key, home, FIXED_OPEN_MAP_CAPACITY) {
+    FixedOpenMapFind64::OpenMapFindFound64 { slot } =>
+      FixedOpenMapLookup64::OpenMapFound64 {
+      slot: slot,
+      value: map.open_values[slot],
+    },
+    FixedOpenMapFind64::OpenMapFindMissing64 =>
+      FixedOpenMapLookup64::OpenMapMissing64,
+  }
+}
+
+fn fixed_open_map_lookup_value(
+  map: &FixedOpenMap64,
+  key: usize,
+  expected_value: u64,
+) -> bool
+  req true
+  ens result == fixed_open_map_lookup_value_spec(map, key, expected_value)
+  fx pure
+{
+  match fixed_open_map_lookup(map, key) {
+    FixedOpenMapLookup64::OpenMapFound64 { slot: _, value } =>
+      value == expected_value,
+    FixedOpenMapLookup64::OpenMapMissing64 => false,
+  }
+}
+
+fn fixed_open_map_replace_at(
+  map: FixedOpenMap64,
+  slot: usize,
+  key: usize,
+  value: u64,
+) -> FixedOpenMapInsert64
+  req slot < FIXED_OPEN_MAP_CAPACITY
+    && map.states[slot] == OPEN_MAP_OCCUPIED as u8
+    && map.open_keys[slot] == key
+  ens match result {
+    FixedOpenMapInsert64::OpenMapAdded64 { map: _, slot: _ } => false,
+    FixedOpenMapInsert64::OpenMapReplaced64 {
+      map: next,
+      slot: changed,
+      old_value,
+    } =>
+      changed == slot
+        && old_value == map.open_values[slot]
+        && next.states[slot] == OPEN_MAP_OCCUPIED as u8
+        && next.open_keys[slot] == key
+        && next.open_values[slot] == value
+        && fixed_open_map_state_eq_spec(&next.states, &map.states)
+        && fixed_open_map_key_eq_spec(&next.open_keys, &map.open_keys)
+        && fixed_open_map_value_frame_spec(&next.open_values, &map.open_values, slot),
+    FixedOpenMapInsert64::OpenMapInsertFull64 {
+      map: _,
+      key: _,
+      value: _,
+    } => false,
+  }
+  fx pure
+{
+  let changed: usize = slot % FIXED_OPEN_MAP_CAPACITY;
+  let old_value: u64 = map.open_values[changed];
+  let states: [u8; FIXED_OPEN_MAP_CAPACITY] = map.states;
+  let keys: [usize; FIXED_OPEN_MAP_CAPACITY] = map.open_keys;
+  let mut values: [u64; FIXED_OPEN_MAP_CAPACITY] = map.open_values;
+  values[changed] = value;
+  FixedOpenMapInsert64::OpenMapReplaced64 {
+    map: FixedOpenMap64 {
+      states: states,
+      open_keys: keys,
+      open_values: values,
+    },
+    slot: changed,
+    old_value: old_value,
+  }
+}
+
+fn fixed_open_map_add_at(
+  map: FixedOpenMap64,
+  slot: usize,
+  key: usize,
+  value: u64,
+) -> FixedOpenMapInsert64
+  req slot < FIXED_OPEN_MAP_CAPACITY
+  ens match result {
+    FixedOpenMapInsert64::OpenMapAdded64 { map: next, slot: changed } =>
+      changed == slot
+        && next.states[slot] == OPEN_MAP_OCCUPIED as u8
+        && next.open_keys[slot] == key
+        && next.open_values[slot] == value
+        && fixed_open_map_state_frame_spec(&next.states, &map.states, slot)
+        && fixed_open_map_key_frame_spec(&next.open_keys, &map.open_keys, slot)
+        && fixed_open_map_value_frame_spec(&next.open_values, &map.open_values, slot),
+    FixedOpenMapInsert64::OpenMapReplaced64 {
+      map: _,
+      slot: _,
+      old_value: _,
+    } => false,
+    FixedOpenMapInsert64::OpenMapInsertFull64 {
+      map: _,
+      key: _,
+      value: _,
+    } => false,
+  }
+  fx pure
+{
+  let changed: usize = slot % FIXED_OPEN_MAP_CAPACITY;
+  let mut states: [u8; FIXED_OPEN_MAP_CAPACITY] = map.states;
+  let mut keys: [usize; FIXED_OPEN_MAP_CAPACITY] = map.open_keys;
+  let mut values: [u64; FIXED_OPEN_MAP_CAPACITY] = map.open_values;
+  states[changed] = OPEN_MAP_OCCUPIED as u8;
+  keys[changed] = key;
+  values[changed] = value;
+  FixedOpenMapInsert64::OpenMapAdded64 {
+    map: FixedOpenMap64 {
+      states: states,
+      open_keys: keys,
+      open_values: values,
+    },
+    slot: changed,
+  }
+}
+
+fn fixed_open_map_insert(
+  map: FixedOpenMap64,
+  key: usize,
+  value: u64,
+) -> FixedOpenMapInsert64
+  req true
+  ens match result {
+    FixedOpenMapInsert64::OpenMapAdded64 { map: next, slot } =>
+      fixed_open_map_search_is_vacant_spec(
+        fixed_open_map_search_spec(
+          &map,
+          key,
+          fixed_open_map_home_spec(key),
+          FIXED_OPEN_MAP_CAPACITY,
+          FIXED_OPEN_MAP_CAPACITY,
+        ),
+        slot,
+      )
+        && slot < FIXED_OPEN_MAP_CAPACITY
+        && next.states[slot] == OPEN_MAP_OCCUPIED as u8
+        && next.open_keys[slot] == key
+        && next.open_values[slot] == value
+        && fixed_open_map_state_frame_spec(&next.states, &map.states, slot)
+        && fixed_open_map_key_frame_spec(&next.open_keys, &map.open_keys, slot)
+        && fixed_open_map_value_frame_spec(&next.open_values, &map.open_values, slot),
+    FixedOpenMapInsert64::OpenMapReplaced64 {
+      map: next,
+      slot,
+      old_value,
+    } =>
+      fixed_open_map_search_is_existing_spec(
+        fixed_open_map_search_spec(
+          &map,
+          key,
+          fixed_open_map_home_spec(key),
+          FIXED_OPEN_MAP_CAPACITY,
+          FIXED_OPEN_MAP_CAPACITY,
+        ),
+        slot,
+      )
+        && slot < FIXED_OPEN_MAP_CAPACITY
+        && old_value == map.open_values[slot]
+        && next.states[slot] == OPEN_MAP_OCCUPIED as u8
+        && next.open_keys[slot] == key
+        && next.open_values[slot] == value
+        && fixed_open_map_state_eq_spec(&next.states, &map.states)
+        && fixed_open_map_key_eq_spec(&next.open_keys, &map.open_keys)
+        && fixed_open_map_value_frame_spec(&next.open_values, &map.open_values, slot),
+    FixedOpenMapInsert64::OpenMapInsertFull64 {
+      map: next,
+      key: returned_key,
+      value: returned_value,
+    } =>
+      fixed_open_map_search_is_full_spec(fixed_open_map_search_spec(
+        &map,
+        key,
+        fixed_open_map_home_spec(key),
+        FIXED_OPEN_MAP_CAPACITY,
+        FIXED_OPEN_MAP_CAPACITY,
+      ))
+        && returned_key == key
+        && returned_value == value
+        && fixed_open_map_equal_spec(&next, &map),
+  }
+  fx pure
+{
+  let home: usize = key % FIXED_OPEN_MAP_CAPACITY;
+  match fixed_open_map_search(
+    &map,
+    key,
+    home,
+    FIXED_OPEN_MAP_CAPACITY,
+    FIXED_OPEN_MAP_CAPACITY,
+  ) {
+    FixedOpenMapSearch64::OpenMapExisting64 { slot } =>
+      fixed_open_map_replace_at(map, slot, key, value),
+    FixedOpenMapSearch64::OpenMapVacant64 { slot } =>
+      fixed_open_map_add_at(map, slot, key, value),
+    FixedOpenMapSearch64::OpenMapFull64 =>
+      FixedOpenMapInsert64::OpenMapInsertFull64 {
+        map: map,
+        key: key,
+        value: value,
+      },
+  }
+}
+
+fn fixed_open_map_remove_at(
+  map: FixedOpenMap64,
+  slot: usize,
+) -> FixedOpenMapRemove64
+  req slot < FIXED_OPEN_MAP_CAPACITY
+  ens match result {
+    FixedOpenMapRemove64::OpenMapRemoved64 {
+      map: next,
+      slot: changed,
+      value,
+    } =>
+      changed == slot
+        && value == map.open_values[slot]
+        && next.states[slot] == OPEN_MAP_DELETED as u8
+        && next.open_keys[slot] == 0
+        && next.open_values[slot] == 0
+        && fixed_open_map_state_frame_spec(&next.states, &map.states, slot)
+        && fixed_open_map_key_frame_spec(&next.open_keys, &map.open_keys, slot)
+        && fixed_open_map_value_frame_spec(&next.open_values, &map.open_values, slot),
+    FixedOpenMapRemove64::OpenMapRemoveMissing64 { map: _, key: _ } => false,
+  }
+  fx pure
+{
+  let value: u64 = map.open_values[slot];
+  let mut states: [u8; FIXED_OPEN_MAP_CAPACITY] = map.states;
+  let mut keys: [usize; FIXED_OPEN_MAP_CAPACITY] = map.open_keys;
+  let mut values: [u64; FIXED_OPEN_MAP_CAPACITY] = map.open_values;
+  states[slot] = OPEN_MAP_DELETED as u8;
+  keys[slot] = 0;
+  values[slot] = 0;
+  FixedOpenMapRemove64::OpenMapRemoved64 {
+    map: FixedOpenMap64 {
+      states: states,
+      open_keys: keys,
+      open_values: values,
+    },
+    slot: slot,
+    value: value,
+  }
+}
+
+fn fixed_open_map_remove(
+  map: FixedOpenMap64,
+  key: usize,
+) -> FixedOpenMapRemove64
+  req true
+  ens match result {
+    FixedOpenMapRemove64::OpenMapRemoved64 {
+      map: next,
+      slot,
+      value,
+    } =>
+      fixed_open_map_find_is_found_spec(
+        fixed_open_map_find_spec(
+          &map,
+          key,
+          fixed_open_map_home_spec(key),
+          FIXED_OPEN_MAP_CAPACITY,
+        ),
+        slot,
+      )
+        && slot < FIXED_OPEN_MAP_CAPACITY
+        && value == map.open_values[slot]
+        && next.states[slot] == OPEN_MAP_DELETED as u8
+        && next.open_keys[slot] == 0
+        && next.open_values[slot] == 0
+        && fixed_open_map_state_frame_spec(&next.states, &map.states, slot)
+        && fixed_open_map_key_frame_spec(&next.open_keys, &map.open_keys, slot)
+        && fixed_open_map_value_frame_spec(&next.open_values, &map.open_values, slot),
+    FixedOpenMapRemove64::OpenMapRemoveMissing64 {
+      map: next,
+      key: returned_key,
+    } =>
+      fixed_open_map_find_is_missing_spec(fixed_open_map_find_spec(
+        &map,
+        key,
+        fixed_open_map_home_spec(key),
+        FIXED_OPEN_MAP_CAPACITY,
+      ))
+        && returned_key == key
+        && fixed_open_map_equal_spec(&next, &map),
+  }
+  fx pure
+{
+  let home: usize = key % FIXED_OPEN_MAP_CAPACITY;
+  match fixed_open_map_find(&map, key, home, FIXED_OPEN_MAP_CAPACITY) {
+    FixedOpenMapFind64::OpenMapFindFound64 { slot } =>
+      fixed_open_map_remove_at(map, slot),
+    FixedOpenMapFind64::OpenMapFindMissing64 =>
+      FixedOpenMapRemove64::OpenMapRemoveMissing64 {
+      map: map,
+      key: key,
+    },
+  }
+}
+
+fn fixed_open_map_insert_lookup_probe(key: usize, value: u64) -> bool
+  req true
+  ens result
+  fx pure
+{
+  let empty: FixedOpenMap64 = fixed_open_map_empty();
+  match fixed_open_map_insert(empty, key, value) {
+    FixedOpenMapInsert64::OpenMapAdded64 { map, slot: _ } =>
+      match fixed_open_map_lookup(&map, key) {
+        FixedOpenMapLookup64::OpenMapFound64 { slot: _, value: found } =>
+          found == value,
+        FixedOpenMapLookup64::OpenMapMissing64 => false,
+      },
+    FixedOpenMapInsert64::OpenMapReplaced64 {
+      map: _,
+      slot: _,
+      old_value: _,
+    } => false,
+    FixedOpenMapInsert64::OpenMapInsertFull64 {
+      map: _,
+      key: _,
+      value: _,
+    } => false,
+  }
+}
+
+fn fixed_open_map_collision_probe(first: u64) -> bool
+  req true
+  ens result
+  fx pure
+{
+  let empty: FixedOpenMap64 = fixed_open_map_empty();
+  match fixed_open_map_insert(empty, 0, first) {
+    FixedOpenMapInsert64::OpenMapAdded64 { map: one, slot: _ } =>
+      match fixed_open_map_search(
+        &one,
+        64,
+        0,
+        2,
+        FIXED_OPEN_MAP_CAPACITY,
+      ) {
+        FixedOpenMapSearch64::OpenMapExisting64 { slot: _ } => false,
+        FixedOpenMapSearch64::OpenMapVacant64 { slot } => slot == 1,
+        FixedOpenMapSearch64::OpenMapFull64 => false,
+      },
+    FixedOpenMapInsert64::OpenMapReplaced64 {
+      map: _,
+      slot: _,
+      old_value: _,
+    } => false,
+    FixedOpenMapInsert64::OpenMapInsertFull64 {
+      map: _,
+      key: _,
+      value: _,
+    } => false,
+  }
+}
+
+fn fixed_open_map_reuse_deleted_zero(
+  map: &FixedOpenMap64,
+) -> bool
+  req map.states[0] == OPEN_MAP_DELETED as u8
+    && map.states[1] == OPEN_MAP_EMPTY as u8
+  ens result
+  fx pure
+{
+  match fixed_open_map_search(
+    map,
+    64,
+    0,
+    2,
+    FIXED_OPEN_MAP_CAPACITY,
+  ) {
+    FixedOpenMapSearch64::OpenMapExisting64 { slot: _ } => false,
+    FixedOpenMapSearch64::OpenMapVacant64 { slot } => slot == 0,
+    FixedOpenMapSearch64::OpenMapFull64 => false,
+  }
+}
+
+fn fixed_open_map_delete_reuse_after_zero(
+  map: FixedOpenMap64,
+  value: u64,
+) -> bool
+  req map.states[0] == OPEN_MAP_OCCUPIED as u8
+    && map.open_keys[0] == 0
+    && map.open_values[0] == value
+    && map.states[1] == OPEN_MAP_EMPTY as u8
+  ens result
+  fx pure
+{
+  match fixed_open_map_remove(map, 0) {
+    FixedOpenMapRemove64::OpenMapRemoved64 {
+      map: removed,
+      slot: _,
+      value: returned,
+    } => returned == value
+      && fixed_open_map_reuse_deleted_zero(&removed),
+    FixedOpenMapRemove64::OpenMapRemoveMissing64 { map: _, key: _ } => false,
+  }
+}
+
+fn fixed_open_map_delete_reuse_probe(value: u64) -> bool
+  req true
+  ens result
+  fx pure
+{
+  let empty: FixedOpenMap64 = fixed_open_map_empty();
+  match fixed_open_map_insert(empty, 0, value) {
+    FixedOpenMapInsert64::OpenMapAdded64 { map: one, slot: _ } =>
+      fixed_open_map_delete_reuse_after_zero(one, value),
+    FixedOpenMapInsert64::OpenMapReplaced64 {
+      map: _,
+      slot: _,
+      old_value: _,
+    } => false,
+    FixedOpenMapInsert64::OpenMapInsertFull64 {
+      map: _,
+      key: _,
+      value: _,
+    } => false,
+  }
+}

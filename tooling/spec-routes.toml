@@ -2099,6 +2099,12 @@ reference = []
 conformance_ops = ["fixed-direct-map-lookup", "fixed-direct-map-insert", "fixed-direct-map-remove"]
 
 [[route]]
+crate_pattern = "stdlib/kernel-primitives/collections/open_map.th"
+design = ".design/build/fixed-collections.md"
+reference = []
+conformance_ops = ["fixed-open-map-lookup", "fixed-open-map-insert", "fixed-open-map-remove", "fixed-open-map-tombstone"]
+
+[[route]]
 crate_pattern = "stdlib/kernel-primitives/collections/ring.th"
 design = ".design/build/fixed-collections.md"
 reference = []

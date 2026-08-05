@@ -3,15 +3,16 @@
 <!--
 tier: 3-component
 status: partial
-decision: Thermite ships policy-free packed bitmap, vector, FIFO-ring, and collision-explicit direct-map mechanics in .th; generic capacities, richer maps, slabs, and complete aggregate receipt TV remain
+decision: Thermite ships policy-free packed bitmap, vector, FIFO-ring, direct-map, and open-addressed map mechanics in .th; generic capacities, slabs, intrusive metadata, and complete aggregate receipt TV remain
 governs:
   - stdlib/kernel-primitives/collections.thpkg.json
   - stdlib/kernel-primitives/collections/bitmap.th
   - stdlib/kernel-primitives/collections/direct_map.th
+  - stdlib/kernel-primitives/collections/open_map.th
   - stdlib/kernel-primitives/collections/ring.th
   - stdlib/kernel-primitives/collections/vector.th
   - forge/tests/fixed_collections.rs
-audited-content-sha256: 9f3a5e88e97f0bb58fb4c53ed894d07e16fcced7ddc44015aa5ed6f45d47e44c
+audited-content-sha256: a7abf12ec73130a5ba4d86ac82d5ee6caa1c306b0637a8eda52cc8ae9a09c9d5
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/l3-verified-artifact.md
@@ -30,7 +31,7 @@ owns a collection, how producers are scheduled, or whether an operation should
 block. Those are consumer policies.
 
 `stdlib/kernel-primitives/collections.thpkg.json` is a canonical collection
-package. It binds its four manifest-declared Thermite modules without a
+package. It binds its five manifest-declared Thermite modules without a
 Rust runtime implementation, platform boundary, heap dependency, or hosted
 effect. The modules use native fixed arrays and ordinary verified Thermite
 control flow.
@@ -41,7 +42,9 @@ control flow.
 
 - an allocation-free empty constructor;
 - capacity and representation-validity queries;
-- bounded membership lookup; and
+- bounded membership lookup;
+- exact population count and first-set search from any bounded offset;
+- bulk union, intersection, and difference; and
 - owned insert, remove, and set-to transitions.
 
 Every transition preserves the fixed capacity, pins the requested bit's final
@@ -73,8 +76,12 @@ bit-vector proof, and independent contract, expression, and body encoders derive
 the equality separately. This closes the former same-word framing residual
 without weakening the exact word-update contracts.
 
-Popcount, first-set search, range scans, bulk union/intersection, and a fully
-quantified all-indices collection contract remain future operations.
+Population count is specified by an exact recursive prefix count. First-set
+search proves both that the returned bit is present and that the preceding
+range is clear; absence proves the complete requested range is clear. Bulk
+union, intersection, and difference pin all four result words through exact
+fixed-array equality. Generic capacities and a quantified all-indices public
+contract remain future work.
 
 ## Fixed FIFO ring
 
@@ -126,29 +133,50 @@ construct representation-inconsistent values.
 Source probes prove insert-then-lookup, replacement with the prior value,
 collision preservation for keys 0 and 64, and remove-then-vacancy. This is a
 useful deterministic slot-map mechanic, not a claim of general collision
-resolution. A later consumer can select a collision policy in Thermite, while a
-future library can add open addressing once quantified aggregate framing and
-opaque representations are available.
+resolution. Consumers that need explicit collision reporting can use it; the
+sibling open-addressed map supplies allocation-free linear probing.
+
+## Open-addressed map
+
+`FixedOpenMap64` is an opaque 64-slot `usize -> u64` map with empty, occupied,
+and deleted slot states. Keys start at `key % 64` and advance with bounded
+linear probing. Lookup terminates at the first empty slot. Insert remembers the
+first tombstone, replaces an existing key, reuses the earliest deleted slot, or
+returns the owned map/key/value unchanged when all 64 slots are occupied.
+Removal writes a tombstone rather than an empty marker, preserving lookup for
+keys later in the probe chain.
+
+The recursive find/search specifications exactly describe wraparound,
+termination, collision traversal, and tombstone selection. Insert, replacement,
+and removal contracts use fixed-array equality and same-except relations to pin
+the complete unchanged state and the one modified slot. Source probes prove
+insert-then-lookup, a collision between keys 0 and 64 selecting slot 1, and
+delete-then-search reusing tombstone slot 0. The representation is opaque and
+its field names are module-unique, so the package resolver preserves the
+foreign-construction/read/write barrier across the five-root closure.
 
 ## Assurance and adversarial evidence
 
-`forge check --level l3` proves all 76 source items across the four modules at
-L3. There are no boundaries. Executable contract mutation kills 196 of 218
+`forge check --level l3` proves all 136 source items across the five modules at
+L3. There are no boundaries. Executable contract mutation kills 342 of 372
 generated mutants; the surviving mutants remain counted and the per-function
 scores stay above the configured floor.
 
 `forge/tests/fixed_collections.rs` additionally:
 
 - requires every source row to be L3 and boundary-free;
-- pins the bitmap score at 33/40, ring score at 64/71, vector score at 45/49,
-  and direct-map score at 54/58;
-- rejects a hostile function claiming an inserted bit is absent;
+- pins the bitmap score at 107/114, ring score at 64/71, vector score at 45/49,
+  direct-map score at 54/58, and open-map score at 72/80;
+- rejects hostile functions claiming an inserted bit is absent, population
+  count exceeds capacity, or union drops a present bit;
 - rejects a hostile function claiming the FIFO is LIFO;
 - rejects a hostile function claiming vector pop is FIFO;
 - rejects a hostile function claiming an inserted map entry is missing;
+- rejects a hostile function claiming a linear-probe collision selects the
+  occupied home slot;
 - builds `fixed_ring_advance` as a strict freestanding L3 export;
 - replays every strict translation-validation row;
-- requires all four original package modules and the source map in the receipt;
+- requires all five package modules and the source map in the receipt;
   and
 - tampers with the bound direct-map source and requires validation to fail.
 
@@ -166,8 +194,8 @@ generic fixed-array TV evidence.
 
 This is a substantial REQ-KPRIM-2 increment, not completion. Remaining work is:
 
-1. popcount, set-bit search, and bulk bitmap operations;
-2. open-addressed or chained maps, slabs/freelists, and intrusive-list metadata;
+1. slabs/freelists and intrusive-list metadata;
+2. a chained-map variant where consumer workloads require it;
 3. capacity/type parameterization that does not rely on privileged generated
    policy types;
 4. quantified framing and equality for aggregate collection states;
@@ -187,12 +215,12 @@ At this increment:
 
 | Metric | Value |
 |---|---:|
-| Physical Thermite LOC | 1,287 |
-| Nonblank Thermite LOC | 1,211 |
-| Thermite functions | 65 (53 executable, 12 specification) |
-| In-language L3 items | 76 |
+| Physical Thermite LOC | 2,568 |
+| Nonblank Thermite LOC | 2,432 |
+| Thermite functions | 119 (76 executable, 43 specification) |
+| In-language L3 items | 136 |
 | Frozen boundary declarations | 0 |
-| Executable mutants killed | 196/218 |
+| Executable mutants killed | 342/372 |
 | Bodyful Rust/assembly collection implementations | 0 |
 | Ordinary Rust kernel-policy/algorithm LOC | 0 |
 | Direct-Verus TPL LOC shipped by this package | 0 |

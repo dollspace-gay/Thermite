@@ -949,6 +949,148 @@ fn main() {
 }
 
 #[test]
+fn record_state_loop_is_strict_freestanding_l3_and_executes_generated_loop() {
+    let temp = TempDir::new("record-state-loop");
+    let bundle = temp.0.join("record-state-loop.verified");
+    let bundle_s = bundle.to_string_lossy().to_string();
+    assert_success(&forge(&[
+        "build",
+        "conformance/verified-build/record_state_loop.th",
+        "--level",
+        "l3",
+        "--export",
+        "record_loop",
+        "--export",
+        "record_loop_cursor",
+        "--export",
+        "record_loop_total",
+        "--export",
+        "record_loop_guard",
+        "--export",
+        "record_loop_tag",
+        "--crate-name",
+        "record_state_loop",
+        "--target",
+        "kernel",
+        "--out",
+        &bundle_s,
+        "--json",
+    ]));
+    assert_success(&forge(&["verify-build", &bundle_s, "--replay", "--json"]));
+
+    let source = fs::read_to_string(bundle.join("evidence/source.verus.rs")).unwrap();
+    assert!(source.starts_with("#![no_std]\n"), "{source}");
+    assert!(source.contains("while state.cursor < limit"), "{source}");
+    assert!(
+        source.contains("state.inner.total = state.cursor + 1;"),
+        "{source}"
+    );
+    assert!(
+        source.contains("state.cursor = state.cursor + 1;"),
+        "{source}"
+    );
+    assert!(source.contains("state.inner.guard == guard"), "{source}");
+    assert!(source.contains("state.tag == tag"), "{source}");
+    assert!(!source.contains("external_body"), "{source}");
+
+    let consumer_source = temp.0.join("record-state-loop-consumer.rs");
+    fs::write(
+        &consumer_source,
+        r#"
+use record_state_loop::{
+    record_loop_cursor, record_loop_guard, record_loop_tag, record_loop_total,
+    thermite_export_record_loop_v1,
+};
+
+fn main() {
+    let state = match thermite_export_record_loop_v1(17, 55, 99) {
+        Ok(state) => state,
+        Err(_) => panic!("valid generated record-loop inputs were rejected"),
+    };
+    assert_eq!(record_loop_cursor(&state), 17);
+    assert_eq!(record_loop_total(&state), 17);
+    assert_eq!(record_loop_guard(&state), 55);
+    assert_eq!(record_loop_tag(&state), 99);
+}
+"#,
+    )
+    .unwrap();
+    let consumer = temp.0.join("record-state-loop-consumer");
+    let link = codegen_rustc(&bundle)
+        .current_dir(root())
+        .arg("--edition=2021")
+        .arg(&consumer_source)
+        .arg("--extern")
+        .arg(format!(
+            "record_state_loop={}",
+            bundle.join("artifact/librecord_state_loop.rlib").display()
+        ))
+        .arg("-L")
+        .arg(format!(
+            "dependency={}",
+            bundle.join("artifact/deps").display()
+        ))
+        .args(["-C", "panic=abort"])
+        .arg("-o")
+        .arg(&consumer)
+        .output()
+        .unwrap();
+    assert_success(&link);
+    assert_success(&Command::new(&consumer).output().unwrap());
+
+    let receipt: serde_json::Value =
+        serde_json::from_slice(&fs::read(bundle.join("receipt.json")).unwrap()).unwrap();
+    assert_eq!(receipt["binding"]["assurance"], "L3");
+    assert_eq!(receipt["binding"]["target"], "kernel");
+    assert!(receipt["binding"]["assurance_aggregate"]["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|member| member["achieved"] == "L3"));
+
+    let tv: serde_json::Value = serde_json::from_slice(
+        &fs::read(bundle.join("evidence/translation-validation.json")).unwrap(),
+    )
+    .unwrap();
+    let rows = tv["rows"].as_array().unwrap();
+    assert!(
+        rows.iter().all(|row| row["verdict"] == "faithful"),
+        "strict record-loop lifecycle admitted a non-faithful row: {tv}"
+    );
+    for (phase, label) in [
+        ("loop", "record_loop.loop"),
+        ("contract", "record_loop.ens#1"),
+        ("contract", "record_loop.ens#4"),
+        ("wrapper_guard", "record_loop.export_guard"),
+    ] {
+        assert!(
+            rows.iter().any(|row| {
+                row["phase"] == phase && row["label"] == label && row["verdict"] == "faithful"
+            }),
+            "missing {phase} L3 row `{label}`: {tv}"
+        );
+    }
+
+    let tampered = temp.0.join("record-state-loop-tampered.verified");
+    copy_tree(&bundle, &tampered);
+    let input = tampered.join("evidence/input.th");
+    let original = fs::read_to_string(&input).unwrap();
+    let changed = original.replacen(
+        "state.inner.total = state.cursor + 1",
+        "state.inner.total = state.cursor + 2",
+        1,
+    );
+    assert_ne!(changed, original);
+    fs::write(&input, changed).unwrap();
+    assert!(
+        !forge(&["verify-build", tampered.to_string_lossy().as_ref()])
+            .status
+            .success(),
+        "changing the bound record-loop step must invalidate the receipt"
+    );
+}
+
+#[test]
 fn aggregate_mutable_storage_is_exported_replayed_and_exactly_validated() {
     let temp = TempDir::new("aggregate-storage");
     let bundle = temp.0.join("aggregate-storage.verified");

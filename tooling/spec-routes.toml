@@ -1890,6 +1890,69 @@ design = ".design/build/adt-match-lifecycle.md"
 reference = []
 conformance_ops = ["adt-match-lifecycle"]
 
+# Exact finite-record while state: recursive leaf preservation plus a full
+# production-loop result obligation. This is a policy-free L3 primitive and
+# carries no concrete platform implementation.
+[[route]]
+crate_pattern = "thermite-lower/src/lower.rs"
+design = ".design/build/record-state-loops.md"
+reference = ["conformance/verified-build/record_state_loop.th"]
+conformance_ops = ["function-context-loop-lowering"]
+
+[[route]]
+crate_pattern = "thermite-lower/src/lib.rs"
+design = ".design/build/record-state-loops.md"
+reference = ["conformance/verified-build/record_state_loop.th"]
+conformance_ops = ["function-context-loop-api"]
+
+[[route]]
+crate_pattern = "thermite-lower/tests/function_context_loop_body.rs"
+design = ".design/build/record-state-loops.md"
+reference = ["conformance/verified-build/record_state_loop.th"]
+conformance_ops = ["exact-production-body-correspondence"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/exec_stmt_encode.rs"
+design = ".design/build/record-state-loops.md"
+reference = ["conformance/verified-build/record_state_loop.th"]
+conformance_ops = ["record-loop-reference", "recursive-step-state"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/obligation.rs"
+design = ".design/build/record-state-loops.md"
+reference = ["conformance/verified-build/record_state_loop.th"]
+conformance_ops = ["record-loop-four-obligations", "recursive-leaf-observation"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/lib.rs"
+design = ".design/build/record-state-loops.md"
+reference = ["conformance/verified-build/record_state_loop.th"]
+conformance_ops = ["record-loop-tv-api"]
+
+[[route]]
+crate_pattern = "thermite-tv/tests/record_state_loop_tv.rs"
+design = ".design/build/record-state-loops.md"
+reference = ["conformance/verified-build/record_state_loop.th"]
+conformance_ops = ["record-loop-real-verus", "record-loop-mutants"]
+
+[[route]]
+crate_pattern = "forge/src/body_tv.rs"
+design = ".design/build/record-state-loops.md"
+reference = ["conformance/verified-build/record_state_loop.th"]
+conformance_ops = ["record-loop-derived-frame", "record-loop-four-way"]
+
+[[route]]
+crate_pattern = "forge/tests/verified_build.rs"
+design = ".design/build/record-state-loops.md"
+reference = ["conformance/verified-build/record_state_loop.th"]
+conformance_ops = ["record-loop-strict-l3", "record-loop-replay", "record-loop-runtime", "record-loop-tamper"]
+
+[[route]]
+crate_pattern = "conformance/verified-build/record_state_loop.th"
+design = ".design/build/record-state-loops.md"
+reference = []
+conformance_ops = ["record-state-loop-lifecycle"]
+
 # Primitive-only sealed atomic declarations and proof vocabulary. These routes
 # intentionally cover no machine implementation: registry v1 must refuse that
 # assurance class until the separate object/machine refinement increment.

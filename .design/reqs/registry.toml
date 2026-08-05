@@ -17405,8 +17405,8 @@ owner = ".design/build/kernel-primitives.md"
 status = "partial"
 scope = "verified"
 summary = "Thermite provides executable/specification mutation over slices and allocation-free fixed storage and collections."
-remaining_scope = "Mutable borrowed slices/arrays, arbitrary old/final snapshot framing, native fixed arrays, scalar and recursively finite plain-aggregate relations, defining-module opaque state transitions, exact typed root.field(.field)* mutation with an optional final fixed-array index, owned/value-call composition, exact user-ADT result/match contract and body TV with arm scoping, strict freestanding L3 record/rich-state receipts, total directly proved u64 bit methods, and a receipt-bound packed bitmap/u64 vector/u64 FIFO-ring/collision-explicit direct-map package are shipped. Add static storage, index-then-field aliasing if required, record-state loops and mutable-reference call effects, enum-payload lvalue mutation, richer collision-resolving maps, slabs/freelists, and generic library capacities."
-contributors = [".design/build/kernel-byte-slice.md", ".design/build/fixed-collections.md", ".design/build/aggregate-array-relations.md", ".design/build/named-record-lifecycle.md", ".design/build/owned-aggregate-lifecycle.md", ".design/build/nested-aggregate-lifecycle.md", ".design/build/adt-match-lifecycle.md", "thermite-syntax/src/parser.rs", "thermite-spec/src/validator.rs", "thermite-lower/src/lower.rs", "thermite-tv/src/ref_encode.rs", "thermite-tv/src/exec_stmt_encode.rs", "thermite-tv/src/obligation.rs", "forge/src/body_tv.rs", "forge/src/contract_tv.rs", "forge/src/exec_tv.rs", "forge/src/verified_build.rs"]
+remaining_scope = "Mutable borrowed slices/arrays, arbitrary old/final snapshot framing, native fixed arrays, scalar and recursively finite plain-aggregate relations, defining-module opaque state transitions, exact typed root.field(.field)* mutation with an optional final fixed-array index, owned/value-call composition, exact user-ADT result/match contract and body TV with arm scoping, exact record-state loop entry/leaf-preservation/exit/full-result TV, strict freestanding L3 record/rich-state receipts, total directly proved u64 bit methods, and a receipt-bound packed bitmap/u64 vector/u64 FIFO-ring/collision-explicit direct-map package are shipped. Add static storage, index-then-field aliasing if required, mutable-reference call effects, enum-payload lvalue mutation, richer collision-resolving maps, slabs/freelists, quantified aggregate loops, and generic library capacities."
+contributors = [".design/build/kernel-byte-slice.md", ".design/build/fixed-collections.md", ".design/build/aggregate-array-relations.md", ".design/build/named-record-lifecycle.md", ".design/build/owned-aggregate-lifecycle.md", ".design/build/nested-aggregate-lifecycle.md", ".design/build/adt-match-lifecycle.md", ".design/build/record-state-loops.md", "thermite-syntax/src/parser.rs", "thermite-spec/src/validator.rs", "thermite-lower/src/lower.rs", "thermite-tv/src/ref_encode.rs", "thermite-tv/src/exec_stmt_encode.rs", "thermite-tv/src/obligation.rs", "forge/src/body_tv.rs", "forge/src/contract_tv.rs", "forge/src/exec_tv.rs", "forge/src/verified_build.rs"]
 generated_to = ["status", "forge-kernel-primitives-status"]
 
 [[requirement.evidence]]
@@ -17448,6 +17448,21 @@ note = "Discharges user tuple/unit/struct variants, aggregate match results, con
 kind = "test"
 target = "forge/tests/verified_composition.rs::probe_state_composition_is_exact_private_linkable_and_reproducible"
 note = "Builds, replays, links, and executes the generated user-ADT match transition at strict L3, requires faithful contract/body TV with exact control-value handoff, proves deterministic artifacts and private representation, and rejects tampering."
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-tv/tests/record_state_loop_tv.rs"
+note = "Discharges exact nested-record loop entry, recursive leaf preservation, abstract exit, and full generated-result obligations through real Verus while rejecting wrong-value, collateral, reorder, dropped-loop, wrong-tail, and missing-frame mutants."
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/function_context_loop_body.rs"
+note = "Pins the function-context loop body entry byte-for-byte inside complete production lowering so full-result TV checks the exact emitted invariant/decreases/body implementation."
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/verified_build.rs::record_state_loop_is_strict_freestanding_l3_and_executes_generated_loop"
+note = "Builds and replays the all-L3 freestanding record-loop receipt, requires faithful contract/exec/loop/wrapper rows, executes the generated loop from a linked consumer, and rejects bound step tampering."
 
 [[requirement.evidence]]
 kind = "test"

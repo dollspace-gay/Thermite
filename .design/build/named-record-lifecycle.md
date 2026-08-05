@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: 12c3f324073a8d7e323ebc9f2141631f56e1aa810738d8291701c31dbc983386 (re-pinned 2026-08-04 after additive ADT frame metadata; direct borrowed-record semantics remain regression-covered)
+audited-content-sha256: 31c8e960acbea898e01d4d8ea51f060af8857fa1a7e8ddc4527a8902844d122d (re-pinned 2026-08-04 after additive ADT frame metadata; direct borrowed-record semantics remain regression-covered)
 decision: direct mutation through an exclusive borrow of finite non-sealed named record state is admitted only when validator, L3, independent contract/exec/body TV, strict ABI, receipt replay, and representation ownership all describe the same field-exact transition
 governs:
   - thermite-spec/src/validator.rs
@@ -228,8 +228,10 @@ This increment is shipped only when all of the following are true:
 
 The follow-on owned-aggregate increment now supplies strict body TV for a typed
 mutable local record returned as an aggregate and pure value-call composition.
-Nested mutable projections, mutable enum payloads, heap-backed record fields, an
-affine type system, static global ownership, concurrent access to a record,
-atomic-object machine refinement, record-state loops, mutable-reference
-call-effect TV, and separate Rust/assembly TPL refinement remain explicit later
-primitive increments. It also does not add any kernel policy or kernel artifact.
+Nested mutable projections and record-state loops are now supplied by
+`.design/build/nested-aggregate-lifecycle.md` and
+`.design/build/record-state-loops.md`. Mutable enum payloads, heap-backed record
+fields, an affine type system, static global ownership, concurrent record access,
+atomic-object machine refinement, mutable-reference call-effect TV, and separate
+Rust/assembly TPL refinement remain explicit later primitive increments. It also
+does not add any kernel policy or kernel artifact.

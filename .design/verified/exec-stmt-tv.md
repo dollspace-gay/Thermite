@@ -4,7 +4,7 @@
 tier: 3-component
 status: draft
 audited-sha: 92396428567edc6940a9e2845217f5ff4c2ea3c6 (re-pinned 2026-06-16, user-authorized: the only change to this doc's governed files since the prior pin is the additive stage-1 forge-tier increment 2a — the new Item::Forge surface + inert Item::Forge match arms, verified net-additive with no substantive removal of existing v1 logic (git log <main>..HEAD = the 8 forge commits); the v1 behavior this doc governs is unchanged, and the new forge-tier surface is specified in .design/stage1-forge-tier.md / REQ-S1-3)
-audited-content-sha256: 01f42682a87d30d94d425e6806a7439be96ecffa2549dc97456c141b56246488 (re-pinned 2026-08-04 after exact user-ADT match state threading; no kernel implementation is present)
+audited-content-sha256: 1f6ce5e8d8f204bf0165c881313a3225fc63cf4a7132833e9e3944847b31ec72 (re-pinned 2026-08-04 after exact user-ADT match state threading; no kernel implementation is present)
 governs: thermite-tv/src/exec_stmt_encode.rs, thermite-tv/src/obligation.rs, thermite-lower/src/lower.rs, forge/src/body_tv.rs, forge/src/tv_signal.rs
 thesis-refs:
   - thermite-design.md §1 (trust relocated: code → spec → spec-intent)
@@ -123,12 +123,12 @@ Thermite module and expose public state through closed specifications/observers.
   framed not designed). The state-denotation (REQ-2) is the SINGLE-EXIT final-state function.
 - **`match` as a statement / `match`-bound state.** Exec `match` (C7 Option/Result payload) is exec-
   expression territory (`exec-tv.md`); a `match` that MUTATES per-arm is OUT of v1.
-- **Heap-backed, nested, enum, local-record, or call-effect aggregate mutation.**
-  Direct indexed mutation of native arrays/borrowed slices and direct one-level
-  writes through a framed `&mut Name` are IN. `Vec::push`, `Map::insert`, String
-  mutation, nested projections, mutable enum payloads, record-state loops,
-  returned mutable locals, and calls that mutate named state remain OUT until
-  their independent theories are frozen. Such a body is HONESTLY SKIPPED.
+- **Heap-backed, enum, aliased, or call-effect aggregate mutation.** Direct
+  indexed mutation, typed returned finite-record locals, exact nested fields,
+  terminal record-array indices, and sole-cell record-state loops now have
+  independent theories. `Vec::push`, `Map::insert`, String mutation, mutable enum
+  payloads, index-then-field aliases, and calls that mutate named state remain
+  OUT and are HONESTLY SKIPPED.
 - **Recursion-as-statement / nested-fn definitions.** No fn definitions inside a body; a recursive call
   is an exec-EXPRESSION (step 2.1 checks its value), not a statement form.
 - **Shadowing edge cases.** v1 assumes each `let` introduces a distinct name (no `let x = ..; let x =

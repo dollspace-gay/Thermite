@@ -107,9 +107,9 @@ pub use exec_stmt_encode::{
 pub use gen::{gen_exec_exprs, generate_clauses, ExecClause, Rng};
 pub use obligation::{
     body_equivalence_obligation, equivalence_obligation, exec_equivalence_obligation,
-    loop_entry_obligation, loop_exit_obligation, loop_preservation_obligation, BodyObligationFrame,
-    BodyParamDecl, ExecObligationFrame, ExecParamDecl, LoopObligationFrame, LoopParamDecl,
-    ObligationFrame, ParamDecl,
+    loop_entry_obligation, loop_exit_obligation, loop_preservation_obligation,
+    loop_result_obligation, BodyObligationFrame, BodyParamDecl, ExecObligationFrame, ExecParamDecl,
+    LoopObligationFrame, LoopParamDecl, ObligationFrame, ParamDecl,
 };
 pub use ref_encode::{ref_contract_pred, RefCtx, RefEncodeError};
 pub use strat_ref_encode::strat_ref_encode;

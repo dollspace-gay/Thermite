@@ -15,7 +15,7 @@ governs:
   - forge/tests/body_tv.rs
   - forge/tests/verified_build.rs
   - conformance/verified-build/owned_aggregate_lifecycle.th
-audited-content-sha256: 7829325dd0b3127898512c8963137a21073a867691046c2bf696425fc3e00871 (re-pinned 2026-08-04 after the exact ADT match/result lifecycle extension)
+audited-content-sha256: 427067d58ef53d8924bd6ec5afb95e377668207873a3e290d88487493168c6fe (re-pinned 2026-08-04 after the exact ADT match/result lifecycle extension)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/named-record-lifecycle.md
@@ -208,8 +208,9 @@ This increment is shipped only when all of the following hold:
 ## Residual work
 
 The exact typed nested-field and terminal fixed-array projection subset is now
-shipped by `.design/build/nested-aggregate-lifecycle.md`. This increment still
-does not claim mutable enum payloads, match-result body state, index-then-field
-aliasing, record-state loops, mutable-reference call effects, static global
+shipped by `.design/build/nested-aggregate-lifecycle.md`; exact record-state
+loops are supplied by `.design/build/record-state-loops.md`. This increment still
+does not claim mutable enum payloads, index-then-field aliasing,
+mutable-reference call effects, static global
 ownership, affine uniqueness, concurrent record access, atomic object/machine
 refinement, or Rust/assembly TPL refinement. It does not add or package a kernel.

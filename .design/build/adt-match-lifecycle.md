@@ -16,7 +16,7 @@ governs:
   - forge/src/verified_build.rs
   - forge/tests/verified_composition.rs
   - conformance/verified-composition/probe.th
-audited-content-sha256: 772be267ca1fdc90f5d8fe24fa2e6e7e01207c683cda4f14121e2359b9da64e6 (pinned 2026-08-04 for exact user-ADT match/result translation validation; no kernel was added)
+audited-content-sha256: 40417c2dfa51d1e0241084738b6a407378c842c0336af8aea738601584376fce (pinned 2026-08-04 for exact user-ADT match/result translation validation; no kernel was added)
 extends:
   - .design/build/owned-aggregate-lifecycle.md
   - .design/build/nested-aggregate-lifecycle.md
@@ -110,8 +110,9 @@ parallel implementation producing an expected marker.
 ## Residual boundary
 
 This increment does not add enum-payload lvalue mutation, slice-pattern execution,
-record-state loop fixpoints, mutable-reference callee effect composition, or new
-aliasing rules. Those remain separate aggregate-lifecycle increments. It also
+mutable-reference callee effect composition, or new aliasing rules. Record-state
+loop fixpoints are supplied separately by `.design/build/record-state-loops.md`.
+The other forms remain separate aggregate-lifecycle increments. It also
 does not add an allocator, scheduler, IPC policy, boot image, firmware path,
 architecture implementation, or any other kernel.
 

@@ -3866,6 +3866,99 @@ pub fn lower_exec_body(block: &Block) -> Result<String, LowerError> {
     lower_block_inner(block, Ctx::exec(), 0, zero_span())
 }
 
+/// Lower one executable body with the same enclosing-function aid context used
+/// by [`lower_fn`]. This is the production entry required by loop translation
+/// validation: unlike [`lower_exec_body`], it admits a top-level loop and emits
+/// the exact invariant, decreases, and shape-derived proof aids from
+/// [`lower_fn_body`]. The returned text is the contents between the generated
+/// function braces, ready to embed in an independently specified obligation.
+pub fn lower_exec_body_in_function(
+    program: &thermite_syntax::Program,
+    function: &FnItem,
+) -> Result<String, LowerError> {
+    let mut nat_fns: Vec<&str> = program
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::SpecFn(specification)
+                if is_head_fold_sum(&specification.body)
+                    || is_adt_fold_sum(&specification.body)
+                    || is_fold_scheme_call_body(&specification.body) =>
+            {
+                Some(specification.name.as_str())
+            }
+            _ => None,
+        })
+        .collect();
+    if program_uses_numfmt(program) {
+        nat_fns.extend(GENERATED_NUMFMT_SPEC_FNS.iter().copied());
+    }
+    if program_uses_string_search(program) {
+        nat_fns.push("count_sep");
+    }
+
+    let mut string_fields: Vec<&str> = program
+        .items
+        .iter()
+        .flat_map(|item| -> Box<dyn Iterator<Item = &str>> {
+            match item {
+                Item::Struct(structure) => Box::new(
+                    structure
+                        .fields
+                        .iter()
+                        .filter(|field| ty_reaches_string(&field.ty))
+                        .map(|field| field.name.as_str()),
+                ),
+                Item::Enum(enumeration) => {
+                    Box::new(enumeration.variants.iter().flat_map(|variant| {
+                        let fields: &[thermite_syntax::ast::FieldDef] = match &variant.shape {
+                            thermite_syntax::ast::VariantShape::Struct(fields) => fields,
+                            _ => &[],
+                        };
+                        fields
+                            .iter()
+                            .filter(|field| ty_reaches_string(&field.ty))
+                            .map(|field| field.name.as_str())
+                    }))
+                }
+                _ => Box::new(std::iter::empty()),
+            }
+        })
+        .collect();
+    string_fields.sort_unstable();
+    string_fields.dedup();
+
+    let variants: Vec<(&str, &str)> = program
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Enum(enumeration) => Some(enumeration),
+            _ => None,
+        })
+        .flat_map(|enumeration| {
+            enumeration
+                .variants
+                .iter()
+                .map(move |variant| (variant.name.as_str(), enumeration.name.as_str()))
+        })
+        .collect();
+    let spec_types_owned = spec_fn_param_type_map(program);
+    let spec_types: Vec<(&str, &[PrimType])> = spec_types_owned
+        .iter()
+        .map(|(name, parameters)| (*name, parameters.as_slice()))
+        .collect();
+
+    let lowered = lower_fn_body(function, &nat_fns, &string_fields, &variants, &spec_types)?;
+    lowered
+        .strip_prefix("{\n")
+        .and_then(|body| body.strip_suffix("}\n"))
+        .map(str::to_string)
+        .ok_or_else(|| LowerError::Unsupported {
+            what: "function-context body lowering lost its canonical brace frame".to_string(),
+            span: function.span,
+        })
+}
+
 /// Emit a total public wrapper for an export with a nontrivial executable
 /// precondition. The wrapper is itself inside the canonical `verus!` block, so
 /// Verus proves both that the true guard establishes the implementation's

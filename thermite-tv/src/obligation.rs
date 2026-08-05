@@ -59,8 +59,9 @@
 //! ## LOOP-position extension — step 2.2.2-i (`.design/verified/loop-tv.md`; epic #169)
 //!
 //! [`loop_entry_obligation`] / [`loop_preservation_obligation`] /
-//! [`loop_exit_obligation`] are the three per-run loop obligations (`loop-tv.md`
-//! REQ-2), siblings to [`body_equivalence_obligation`]. They consume
+//! [`loop_exit_obligation`] are the three while-rule premises; record-state loops
+//! additionally use [`loop_result_obligation`] to execute the complete generated loop
+//! (`record-state-loops.md`), siblings to [`body_equivalence_obligation`]. They consume
 //! [`crate::exec_stmt_encode::loop_ref_obligations`] (the v1-frozen-subset recognizer +
 //! the three reference pieces) and emit the self-contained Verus units the existing
 //! `forge::check::run_verus` discharges: entry (`proof fn` asserting `inv` on the
@@ -81,7 +82,7 @@
 //! | REQ-TV-LOOP-OBLIGATIONS | shipped | `thermite-tv/src/obligation.rs` | Loop-TV per-run obligation emitters |  |
 //! <!-- /generated:reqs -->
 
-use thermite_syntax::ast::{Block, Expr};
+use thermite_syntax::ast::{Block, Expr, Type};
 
 use crate::exec_encode::{exec_ref_value, ExecRefCtx, RefEncodeError as ExecRefEncodeError};
 use crate::exec_stmt_encode::{
@@ -675,8 +676,8 @@ impl BodyObligationFrame {
 /// Returns the obligation program text (`thermite-tv` does not run verus — the
 /// negative test and the future forge plug-in discharge it). Returns
 /// [`ExecRefEncodeError`] if the source body is outside the frozen straight-line
-/// subset (a loop / mid-branch early return / non-scalar mutation / re-shadow — an
-/// error, never a panic / silent wrong encoding).
+/// subset (a loop / mid-branch early return / mutation outside the admitted finite
+/// aggregate closure / re-shadow — an error, never a panic / silent wrong encoding).
 pub fn body_equivalence_obligation(
     body: &Block,
     p_production: &str,
@@ -751,7 +752,7 @@ impl LoopParamDecl {
     }
 }
 
-/// The frame carrying everything the three per-run loop obligations need besides the
+/// The frame carrying everything the loop obligations need besides the
 /// reference pieces (`loop-tv.md` REQ-2): the spec-fn defs, the fn input params (at
 /// their exec types — the slices / scalars the entry state + the inv/cond reference),
 /// the mutated cell params (at their exec types — `lo: usize`/`hi: usize`, declared in
@@ -786,6 +787,15 @@ pub struct LoopObligationFrame {
     /// cell encodes to the spec-view element value (`xs[i as int]`). Read by
     /// [`BodyRefCtx::with_slice_bound`].
     pub slice_params: Vec<String>,
+    /// Exact generated return type used by the full-loop result obligation.
+    /// `None` keeps direct low-level callers on the original three-obligation
+    /// surface; Forge always supplies it for an in-language function.
+    pub ret_type: Option<String>,
+    /// Recursively finite named-record declarations available to loop cells.
+    /// They drive independent field-by-field step observations and record
+    /// state substitution; they never admit a type absent from the parsed
+    /// structural-record closure.
+    pub named_records: Vec<NamedRecordFrame>,
 }
 
 impl LoopObligationFrame {
@@ -794,6 +804,14 @@ impl LoopObligationFrame {
     /// element value.
     fn body_ref_ctx(&self) -> BodyRefCtx {
         BodyRefCtx::with_slice_bound(self.slice_params.iter().cloned())
+            .with_named_records(self.named_records.clone())
+            .with_constructor_records(self.named_records.clone())
+            .with_bound_value_names(
+                self.inputs
+                    .iter()
+                    .chain(self.cells.iter())
+                    .map(|param| param.name.as_str()),
+            )
     }
 
     /// The Verus parameter list for the entry obligation: the fn inputs only (the
@@ -834,6 +852,73 @@ impl LoopObligationFrame {
             )
         }
     }
+
+    fn named_record(&self, type_name: &str) -> Option<&NamedRecordFrame> {
+        self.named_records
+            .iter()
+            .find(|record| record.type_name == type_name)
+    }
+
+    fn step_result_ensures(&self, steps: &[String]) -> Result<Vec<String>, ExecRefEncodeError> {
+        let mut ensures = Vec::new();
+        for (index, (cell, step)) in self.cells.iter().zip(steps).enumerate() {
+            let result = if self.cells.len() == 1 {
+                "result".to_string()
+            } else {
+                format!("result.{index}")
+            };
+            if self.named_record(&cell.type_str).is_some() {
+                append_record_step_ensures(
+                    self,
+                    &cell.type_str,
+                    &result,
+                    &format!("({step})"),
+                    &mut Vec::new(),
+                    &mut ensures,
+                )?;
+            } else {
+                ensures.push(format!("{result} == {step}"));
+            }
+        }
+        Ok(ensures)
+    }
+}
+
+fn append_record_step_ensures(
+    frame: &LoopObligationFrame,
+    type_name: &str,
+    result: &str,
+    reference: &str,
+    visiting: &mut Vec<String>,
+    ensures: &mut Vec<String>,
+) -> Result<(), ExecRefEncodeError> {
+    if visiting.iter().any(|name| name == type_name) {
+        return Err(ExecRefEncodeError::Unsupported(format!(
+            "recursive record-state loop observation reaches `{type_name}`"
+        )));
+    }
+    visiting.push(type_name.to_string());
+    let record = frame.named_record(type_name).ok_or_else(|| {
+        ExecRefEncodeError::Unsupported(format!(
+            "record-state loop observation has no finite declaration for `{type_name}`"
+        ))
+    })?;
+    for field in &record.fields {
+        let left = format!("{result}.{}", field.name);
+        let right = format!("{reference}.{}", field.name);
+        match field.ty.as_ref() {
+            Some(Type::Named(nested)) if frame.named_record(nested).is_some() => {
+                append_record_step_ensures(frame, nested, &left, &right, visiting, ensures)?;
+            }
+            Some(Type::Array { .. }) => ensures.push(format!("{left}@ == ({right})@")),
+            Some(_) | None if field.array_view => {
+                ensures.push(format!("{left}@ == ({right})@"));
+            }
+            Some(_) | None => ensures.push(format!("{left} == {right}")),
+        }
+    }
+    visiting.pop();
+    Ok(())
 }
 
 /// Build the entry loop obligation (`loop-tv.md` REQ-2.1): the loop is reached with
@@ -958,21 +1043,62 @@ pub fn loop_preservation_obligation(
     // here, AC-5); (b) the invariant at the stepped state (the preservation conjunct —
     // a broken-invariant body is caught here, AC-2).
     out.push_str("\n    ensures\n");
-    let proj = |i: usize| {
-        if frame.cells.len() == 1 {
-            "result".to_string()
-        } else {
-            format!("result.{i}")
-        }
-    };
-    for (i, step) in obs.step_cells.iter().enumerate() {
-        out.push_str(&format!("        {} == {step},\n", proj(i)));
+    for predicate in frame.step_result_ensures(&obs.step_cells)? {
+        out.push_str(&format!("        {predicate},\n"));
     }
     out.push_str(&format!("        {},\n", obs.inv_at_step));
     out.push_str("{\n");
     out.push_str(p_production);
     out.push_str("}\n");
     out.push_str("\n}\nfn main() {}\n");
+    Ok(out)
+}
+
+/// Build the exact full-loop result obligation for a source body whose tail
+/// returns its sole loop cell. Unlike the isolated exit proof, this wrapper
+/// executes the complete production prefix + `while` + tail and requires its
+/// actual result to satisfy the independently encoded `inv[result] && !cond[result]`
+/// characterization plus all automatically derived untouched-record frames.
+pub fn loop_result_obligation(
+    block: &Block,
+    p_production: &str,
+    frame: &LoopObligationFrame,
+) -> Result<String, ExecRefEncodeError> {
+    let obs = loop_ref_obligations(block, &frame.body_ref_ctx())?;
+    let predicate = obs.exit_result_pred.as_ref().ok_or_else(|| {
+        ExecRefEncodeError::Unsupported(
+            "exact loop-result framing requires the tail to return the sole loop cell".to_string(),
+        )
+    })?;
+    let ret_type = frame.ret_type.as_ref().ok_or_else(|| {
+        ExecRefEncodeError::Unsupported(
+            "exact loop-result framing requires a derived function return type".to_string(),
+        )
+    })?;
+
+    let mut out = String::new();
+    out.push_str("use vstd::prelude::*;\n");
+    out.push_str("verus! {\n");
+    for definition in &frame.spec_defs {
+        out.push('\n');
+        out.push_str(definition);
+        out.push('\n');
+    }
+    out.push_str("\nfn tv_loop_result(");
+    out.push_str(&frame.input_param_list());
+    out.push_str(") -> (result: ");
+    out.push_str(ret_type);
+    out.push(')');
+    if let Some(req) = &frame.req {
+        out.push_str("\n    requires ");
+        out.push_str(req);
+        out.push(',');
+    }
+    out.push_str("\n    ensures ");
+    out.push_str(predicate);
+    out.push_str(",\n{\n");
+    out.push_str(p_production);
+    out.push_str("}\n\n}\nfn main() {}\n");
     Ok(out)
 }
 

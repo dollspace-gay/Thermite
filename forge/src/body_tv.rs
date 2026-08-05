@@ -19,9 +19,9 @@
 //!     (`thermite_tv::body_equivalence_obligation`) through `verus`.
 //!   - **a v1 frozen-subset `while` loop** as the body's last statement (`loop-tv.md`
 //!     REQ-1: a single `while <cond>` with declared `inv`/`dec`, a straight-line
-//!     scalar body): discharges the three per-run loop obligations (entry /
-//!     preservation / exit — `thermite_tv::{loop_entry_obligation,
-//!     loop_preservation_obligation, loop_exit_obligation}`), reusing the shipped
+//!     scalar or finite-record body): discharges entry / preservation / exit and,
+//!     when the tail returns the sole state cell, the full generated-result obligation,
+//!     reusing the shipped
 //!     `body_ref_state` single-iteration step.
 //!
 //! `thermite-tv` stays independent of `thermite-lower` (the N-version boundary,
@@ -35,7 +35,7 @@
 //!
 //!   - **Faithful** — the obligation(s) verified (`verified >= 1, errors == 0`): the
 //!     body's lowered state transformation means the reference state-denotation for
-//!     all inputs (Z3). For a loop, all three obligations verified.
+//!     all inputs (Z3). For a loop, every applicable obligation verified.
 //!   - **Divergent** — verus found a counterexample (`postcondition not satisfied` /
 //!     an `assertion failed` exit characterization / a non-compiling production): the
 //!     lowering and the reference disagree. A finding that drives a non-zero
@@ -75,8 +75,8 @@ use thermite_syntax::ast::{Block, FnItem, Item, LoopNode, PrimType, Stmt, Type, 
 
 use thermite_tv::obligation::{
     body_equivalence_obligation, loop_entry_obligation, loop_exit_obligation,
-    loop_preservation_obligation, BodyObligationFrame, BodyParamDecl, LoopObligationFrame,
-    LoopParamDecl,
+    loop_preservation_obligation, loop_result_obligation, BodyObligationFrame, BodyParamDecl,
+    LoopObligationFrame, LoopParamDecl,
 };
 use thermite_tv::{
     loop_ref_obligations, BodyRefCtx, EnumVariantFrame, EnumVariantShapeFrame, MutableRecordFrame,
@@ -161,7 +161,7 @@ impl BodyCounts {
 
 /// Run the body-state TV over a `.th` file (REQ-5). For each in-language `fn` item
 /// take its exec body and run the straight-line body state-refinement TV (or, when
-/// the body's last statement is a v1 frozen-subset `while` loop, the three per-run
+/// the body's last statement is a frozen-subset `while` loop, the loop
 /// loop obligations). Each body is classified Faithful / Divergent / Unverifiable /
 /// Skipped (a body outside the frozen subset — an out-of-v1 loop, an unsupported
 /// aggregate mutation, a mid-body return, a non-derivable frame — is Skipped rather than
@@ -234,7 +234,14 @@ fn body_tv_fn(
     };
 
     if matches!(body.stmts.last(), Some(Stmt::Loop(_))) {
-        loop_body_tv(f, body, &support_defs, &support_names, seed, rlimit, report);
+        let context = LoopTvContext {
+            program,
+            support_defs: &support_defs,
+            support_names: &support_names,
+            seed,
+            rlimit,
+        };
+        loop_body_tv(f, body, &context, report);
     } else {
         straight_line_body_tv(
             program,
@@ -627,24 +634,31 @@ fn straight_line_body_tv(
 
 // ---- the loop arm (loop-tv REQ-5 / increment 2.2.2-iii) --------------------
 
+struct LoopTvContext<'a> {
+    program: &'a thermite_syntax::Program,
+    support_defs: &'a [String],
+    support_names: &'a BTreeSet<String>,
+    seed: u64,
+    rlimit: f64,
+}
+
 /// TV a fn body whose last statement is a loop (REQ-5; `loop-tv.md` increment
 /// 2.2.2-iii). A v1 frozen-subset `while` loop (a single `while <cond>` with declared
-/// `inv`/`dec`, a straight-line scalar body) discharges the three per-run obligations
+/// `inv`/`dec`, a straight-line scalar or finite-record body) discharges the while-rule
 /// (entry / preservation / exit); an out-of-v1 loop (`loop`-kind, `break`/`continue`,
-/// a mid-body `return`, a nested loop, non-scalar state, a trivially-weak `inv`) is
+/// a mid-body `return`, a nested loop, non-finite/aliased state, a trivially-weak `inv`) is
 /// Skipped (the `loop_ref_obligations` recognizer refuses to emit), never a
 /// false Faithful (R-HONEST-3). The `binary_search.th` corpus loop (a `loop`-kind with
 /// mid-body `return`s) reaches here as Skipped-with-reason, the expected
 /// result.
-fn loop_body_tv(
-    f: &FnItem,
-    body: &Block,
-    support_defs: &[String],
-    support_names: &BTreeSet<String>,
-    seed: u64,
-    rlimit: f64,
-    report: &mut BodyTvReport,
-) {
+fn loop_body_tv(f: &FnItem, body: &Block, context: &LoopTvContext<'_>, report: &mut BodyTvReport) {
+    let LoopTvContext {
+        program,
+        support_defs,
+        support_names,
+        seed,
+        rlimit,
+    } = context;
     let label = format!("{}.loop", f.name);
 
     // The loop node is the body's last statement (matched by the caller).
@@ -662,11 +676,11 @@ fn loop_body_tv(
     };
 
     // The loop-obligation frame: the fn inputs (the slices / scalars the inv/cond
-    // reference, at their exec types) + the mutated cells (the scalar cells the body
+    // reference, at their exec types) + the mutated scalar/finite-record cells the body
     // rebinds, in the sorted order `loop_ref_obligations` reports them). A param /
     // cell of a non-exec-frame type makes the frame non-derivable → Skip. An
     // out-of-v1 loop surfaces its `Unsupported` here (the recognizer refuses).
-    let frame = match build_loop_frame(f, body, loop_node, support_defs, support_names) {
+    let frame = match build_loop_frame(program, f, body, loop_node, support_defs, support_names) {
         Ok(frame) => frame,
         Err(reason) => {
             report.results.push(BodyResult {
@@ -691,7 +705,33 @@ fn loop_body_tv(
         }
     };
 
-    let verdict = discharge_loop(body, &p_production, &frame, &label, seed, rlimit);
+    // The full production prefix + while + tail. Record-state loops require
+    // this fourth obligation so assurance reaches the actual returned post-state
+    // rather than ending at entry/preservation/abstract-exit premises.
+    let p_result_production = match thermite_lower::lower_exec_body_in_function(program, f) {
+        Ok(production) => production,
+        Err(error) => {
+            report.results.push(BodyResult {
+                label,
+                verdict: BodyVerdict::Skipped {
+                    reason: format!(
+                        "production exec-body lowering cannot construct the exact full-loop result wrapper: {error}"
+                    ),
+                },
+            });
+            return;
+        }
+    };
+
+    let verdict = discharge_loop(
+        body,
+        &p_production,
+        &p_result_production,
+        &frame,
+        &label,
+        *seed,
+        *rlimit,
+    );
     report.results.push(BodyResult { label, verdict });
 }
 
@@ -702,6 +742,7 @@ fn loop_body_tv(
 /// body-local `let mut`, not a signature param). A param of a non-exec-frame type is
 /// a non-derivable frame.
 fn build_loop_frame(
+    program: &thermite_syntax::Program,
     f: &FnItem,
     body: &Block,
     _loop_node: &LoopNode,
@@ -710,18 +751,19 @@ fn build_loop_frame(
 ) -> Result<LoopObligationFrame, String> {
     // The mutated cells (+ the v1-subset recognition) come from the shipped
     // `loop_ref_obligations` — its `Unsupported` Err is the out-of-v1 reason.
-    let ctx = loop_body_ref_ctx(f);
+    let ctx = loop_body_ref_ctx(program, f);
     let obs = loop_ref_obligations(body, &ctx).map_err(|e| {
         format!(
             "the loop is OUTSIDE the v1 frozen subset (a `loop`-kind / `break` / \
-             mid-body `return` / nested loop / non-scalar state / trivially-weak \
+             mid-body `return` / nested loop / non-finite or aliased state / trivially-weak \
              `inv`) — Skipped honestly: {e}"
         )
     })?;
 
-    // The cells (the body-rebound scalar cells) at their exec types. A cell's exec
+    // The cells (the body-rebound scalar or finite-record cells) at their exec types. A cell's exec
     // type is the type of the `let mut <cell>: T = ..` that introduced it in the body
-    // prefix (the entry state). A cell with no derivable scalar type is non-derivable.
+    // prefix (the entry state). A cell with no derivable exec-frame type is
+    // non-derivable.
     let mut cells: Vec<LoopParamDecl> = Vec::with_capacity(obs.cells.len());
     for cell in &obs.cells {
         let ty = cell_decl_type(body, cell).ok_or_else(|| {
@@ -732,6 +774,18 @@ fn build_loop_frame(
             )
         })?;
         cells.push(LoopParamDecl::new(cell.clone(), ty));
+    }
+    let named_records = named_record_frames(program);
+    let has_record_cell = cells.iter().any(|cell| {
+        named_records
+            .iter()
+            .any(|record| record.type_name == cell.type_str)
+    });
+    if has_record_cell && obs.exit_result_pred.is_none() {
+        return Err(
+            "an exact record-state loop must return its sole record cell as the body tail so the full generated loop result is independently framed"
+                .to_string(),
+        );
     }
 
     // The inputs — the fn params at their exec types (the slices / scalars the
@@ -780,13 +834,15 @@ fn build_loop_frame(
         cells,
         req: corpus_req(f),
         slice_params,
+        ret_type: exec_type_spelling(&f.ret).map(|(spelling, _)| spelling),
+        named_records,
     })
 }
 
 /// The [`BodyRefCtx`] for the loop reference encoder of a fn: the slice-bound param
 /// names (so an index in the inv / cond / cell encodes to the spec-view element
 /// value). Derived from the fn signature.
-fn loop_body_ref_ctx(f: &FnItem) -> BodyRefCtx {
+fn loop_body_ref_ctx(program: &thermite_syntax::Program, f: &FnItem) -> BodyRefCtx {
     let slice_params: Vec<String> = f
         .params
         .iter()
@@ -795,7 +851,11 @@ fn loop_body_ref_ctx(f: &FnItem) -> BodyRefCtx {
             _ => None,
         })
         .collect();
+    let records = named_record_frames(program);
     BodyRefCtx::with_slice_bound(slice_params)
+        .with_named_records(records.clone())
+        .with_constructor_records(records)
+        .with_bound_value_names(f.params.iter().map(|param| param.name.as_str()))
 }
 
 /// Shape the production single-iteration loop-body lowering to the preservation
@@ -1250,8 +1310,8 @@ fn discharge(program: &str, label: &str, seed: u64, rlimit: f64) -> BodyVerdict 
     }
 }
 
-/// Discharge the three per-run loop obligations (`loop-tv.md` REQ-5; entry /
-/// preservation / exit) through `verus`, classifying the combined verdict (REQ-5).
+/// Discharge entry / preservation / exit plus the applicable full-result loop
+/// obligation through `verus`, classifying the combined verdict.
 /// `Faithful` ⟺ all three verified; `Divergent` ⟺ any obligation found a
 /// counterexample (a broken-invariant preservation `postcondition not satisfied` / a
 /// wrong-after-loop-state `assertion failed`, with no rlimit signal); `Unverifiable` ⟺
@@ -1265,6 +1325,7 @@ fn discharge(program: &str, label: &str, seed: u64, rlimit: f64) -> BodyVerdict 
 fn discharge_loop(
     block: &Block,
     p_production: &str,
+    p_result_production: &str,
     frame: &LoopObligationFrame,
     label: &str,
     seed: u64,
@@ -1311,15 +1372,36 @@ fn discharge_loop(
             }
         }
     };
+    let has_record_cell = frame.cells.iter().any(|cell| {
+        frame
+            .named_records
+            .iter()
+            .any(|record| record.type_name == cell.type_str)
+    });
+    let result = match loop_result_obligation(block, p_result_production, frame) {
+        Ok(program) => Some(program),
+        Err(_) if !has_record_cell => None,
+        Err(error) => {
+            return BodyVerdict::Skipped {
+                reason: format!(
+                    "the record-state loop has no exact full-result obligation: {error}"
+                ),
+            }
+        }
+    };
 
-    // Discharge all three; the combined verdict. A Divergent on any is the headline
+    // Discharge every applicable obligation; the combined verdict. A Divergent on any is the headline
     // finding; an Unverifiable on any (with no Divergent) is reported as such.
     let mut unverifiable: Option<String> = None;
-    for (sub, prog) in [
-        ("entry", &entry),
-        ("preservation", &preservation),
-        ("exit", &exit),
-    ] {
+    let mut obligations = vec![
+        ("entry", entry.as_str()),
+        ("preservation", preservation.as_str()),
+        ("exit", exit.as_str()),
+    ];
+    if let Some(result) = &result {
+        obligations.push(("result", result.as_str()));
+    }
+    for (sub, prog) in obligations {
         let sub_label = format!("{label}.{sub}");
         match run_obligation(prog, &sub_label, seed, rlimit) {
             DischargeOutcome::Verified => {}
@@ -1368,7 +1450,16 @@ fn discharge_loop(
 /// the continuation reads — it is implied by, not stronger than, `inv ∧ ¬cond`). An
 /// out-of-v1 loop surfaces its `Unsupported`.
 fn loop_after_loop_claim(block: &Block, frame: &LoopObligationFrame) -> Result<String, String> {
-    let ctx = BodyRefCtx::with_slice_bound(frame.slice_params.iter().cloned());
+    let ctx = BodyRefCtx::with_slice_bound(frame.slice_params.iter().cloned())
+        .with_named_records(frame.named_records.clone())
+        .with_constructor_records(frame.named_records.clone())
+        .with_bound_value_names(
+            frame
+                .inputs
+                .iter()
+                .chain(frame.cells.iter())
+                .map(|param| param.name.as_str()),
+        );
     let obs = loop_ref_obligations(block, &ctx).map_err(|e| {
         format!("the loop is OUTSIDE the v1 frozen subset (after-loop claim refused): {e}")
     })?;

@@ -14,7 +14,7 @@ governs:
   - forge/tests/body_tv.rs
   - forge/tests/verified_build.rs
   - conformance/verified-build/nested_aggregate_lifecycle.th
-audited-content-sha256: a39e2fbb9efe69934e5ee8ae89b7915448d49e3ddba807b3da36d46ced5c2a38 (re-pinned 2026-08-04 after the adjacent ADT lifecycle extension; no kernel policy or implementation was added)
+audited-content-sha256: f84b8ef94f65238b02a70565a11a35e7f90a400913de0cbbdbee1cd782f9cadd (re-pinned 2026-08-04 after the adjacent ADT lifecycle extension; no kernel policy or implementation was added)
 extends:
   - .design/build/owned-aggregate-lifecycle.md
   - .design/build/named-record-lifecycle.md
@@ -108,9 +108,9 @@ This increment does not admit an index followed by a field, alias construction,
 explicit dereference lvalues, tuple projections, enum payload mutation,
 recursive/reference/heap fields, or mutation rooted in a computed receiver.
 Those shapes require the later alias and enum-payload-mutation lifecycle work;
-user-ADT match/results are supplied separately by
-`.design/build/adt-match-lifecycle.md`. Record-state loops and mutable-reference
-callee effect composition also remain separate increments.
+user-ADT match/results are supplied by `.design/build/adt-match-lifecycle.md`,
+and record-state loops by `.design/build/record-state-loops.md`.
+Mutable-reference callee effect composition remains a separate increment.
 
 The increment supplies language and verification primitives only. It adds no
 allocator, scheduler, firmware, boot path, platform runtime, or kernel policy.

@@ -60,11 +60,8 @@ fn kernel_library_is_no_std_and_adds_alloc_only_when_needed() {
         visibility: L3ExportVisibility::Public,
     }];
     let pure = lower_l3_library(&scalar, &scalar_export, L3LibraryTarget::Kernel).unwrap();
-    assert!(pure.starts_with(
-        "#![no_std]\n#![crate_type = \"rlib\"]\nuse verus_builtin::*;\nuse verus_builtin_macros::*;"
-    ));
+    assert!(pure.starts_with("#![no_std]\n#![crate_type = \"rlib\"]\nuse vstd::prelude::*;"));
     assert!(!pure.contains("extern crate alloc"));
-    assert!(!pure.contains("use vstd::"));
     assert!(!pure.contains("fn main"));
 
     let allocating = parse("fn keep(s: String) -> String req true ens result == s fx alloc { s }");
@@ -92,7 +89,7 @@ fn kernel_library_is_no_std_and_adds_alloc_only_when_needed() {
     assert!(bounded_kernel.contains("pub struct TVecU64 { pub length: usize }"));
     assert!(bounded_kernel.contains("pub(crate) fn keep"));
     assert!(!bounded_kernel.contains("spec_get"));
-    assert!(!bounded_kernel.contains("use vstd::"));
+    assert!(bounded_kernel.contains("use vstd::prelude::*;"));
     assert!(!bounded_kernel.contains("extern crate alloc"));
 }
 
@@ -124,8 +121,8 @@ fn composition_library_delays_enum_items_past_randomized_verus_helper_synthesis(
         ..exports[0].clone()
     }];
     let ordinary = lower_l3_library(&program, &public_exports, L3LibraryTarget::Kernel).unwrap();
-    assert!(!ordinary.contains("__thermite_deterministic_enum"));
-    assert!(ordinary.contains("pub enum Action"));
+    assert!(ordinary.contains("macro_rules! __thermite_deterministic_enum"));
+    assert!(ordinary.contains("__thermite_deterministic_enum! {\npub enum Action"));
 }
 
 #[test]

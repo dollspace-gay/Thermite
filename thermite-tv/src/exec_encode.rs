@@ -188,6 +188,7 @@ impl ExecRefCtx {
 
     fn is_fixed_array_field(&self, root: &str, field: &str) -> bool {
         self.fixed_array_fields.contains(&format!("{root}.{field}"))
+            || self.fixed_array_fields.contains(field)
     }
 
     fn value_binding(&self, name: &str) -> Option<&str> {

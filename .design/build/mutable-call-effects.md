@@ -15,7 +15,7 @@ governs:
   - forge/tests/body_tv.rs
   - forge/tests/verified_build.rs
   - conformance/verified-build/mutable_call_effect.th
-audited-content-sha256: 4f0f7c6c72b23e489cf615d1a3c8e628bf1a81fcff9f48391c63ad71510e1a89 (re-pinned 2026-08-04 after atomic-storage acceptance extended the shared verified-build suite; mutable-call semantics remain regression-covered)
+audited-content-sha256: e6dba30a9c4a1092b4dba2e9b5a63d2850ab5210a98961e6711d47f6833f261d (re-pinned 2026-08-05 after exact dependency and pre-state grounding; mutable-call semantics remain regression-covered)
 extends:
   - .design/build/nested-aggregate-lifecycle.md
   - .design/build/owned-aggregate-lifecycle.md

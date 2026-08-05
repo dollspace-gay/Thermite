@@ -15,7 +15,7 @@ governs:
   - forge/tests/body_tv.rs
   - forge/tests/verified_build.rs
   - conformance/verified-build/owned_aggregate_lifecycle.th
-audited-content-sha256: 4c6fda546cd9e377318b543a9b94ca4f7e301940d6397f53d912d1106b5800d1 (re-pinned 2026-08-04 after atomic-storage acceptance extended the shared verified-build suite; owned aggregate semantics remain regression-covered)
+audited-content-sha256: 9f6957a4a215a0a8447d919a396c9f8eef01fd4d9fd024f6d007dcb4c60b6983 (re-pinned 2026-08-05 after freestanding fixed-array and exact dependency TV closure; owned aggregate semantics remain regression-covered)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/named-record-lifecycle.md
@@ -85,9 +85,11 @@ subset.
 
 A fixed array may therefore be replaced as a whole, updated through a separately
 typed local and reinstalled, or updated directly as the final projection of a
-typed record root. The hosted proof profile observes the complete array view;
-the freestanding scalar-nested fixture remains separate until no-vstd array
-views are available.
+typed record root. The kernel proof profile now imports the exact digest-bound
+vstd finite-array model through Forge's no-std metadata skeleton, so repeat-
+initialized arrays, indexed reads/writes, equality, and same-except framing are
+available in strict freestanding receipts. The generation-safe slab is the first
+aggregate package fixture exercising that path end to end.
 
 ## Independent state denotation
 

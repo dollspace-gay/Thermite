@@ -16,7 +16,7 @@ governs:
   - forge/src/verified_build.rs
   - forge/tests/verified_composition.rs
   - conformance/verified-composition/probe.th
-audited-content-sha256: 2d6fad607583ffb24798fea49aa055f2ae255a753bc62a826315c467bd7606af (re-pinned 2026-08-04 after bounded typed-if initializer context was added to shared body TV; ADT semantics remain regression-covered and no kernel was added)
+audited-content-sha256: 6b734ac589317ebbf01a72c3feb1e4570acecddb246f3832073f2642a80af8d1 (re-pinned 2026-08-05 after exact dependency/pre-state TV grounding; ADT semantics remain regression-covered and no kernel was added)
 extends:
   - .design/build/owned-aggregate-lifecycle.md
   - .design/build/nested-aggregate-lifecycle.md

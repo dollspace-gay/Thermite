@@ -636,7 +636,13 @@ conformance_ops = ["read_le_u32", "read_le_u64"]
 crate_pattern = "forge/src/kernel_vstd_link.rs"
 design = ".design/build/kernel-byte-slice.md"
 reference = ["conformance/verified-composition"]
-conformance_ops = ["Seq", "View", "slice-index"]
+conformance_ops = ["Seq", "View", "slice-index", "fixed-array-view", "fixed-array-repeat"]
+
+[[route]]
+crate_pattern = "thermite-lower/tests/fixed_array.rs"
+design = ".design/build/kernel-byte-slice.md"
+reference = ["conformance/verified-build/fixed_array.th"]
+conformance_ops = ["fixed-array-view", "fixed-array-repeat", "fixed-array-frame"]
 
 [[route]]
 crate_pattern = "forge/tests/kernel_byte_slice.rs"
@@ -2121,6 +2127,24 @@ crate_pattern = "forge/tests/fixed_collections.rs"
 design = ".design/build/fixed-collections.md"
 reference = ["stdlib/kernel-primitives/collections.thpkg.json"]
 conformance_ops = ["fixed-collections-l3", "fixed-collections-adversarial", "fixed-collections-replay"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/slab.thpkg.json"
+design = ".design/build/fixed-collections.md"
+reference = ["stdlib/kernel-primitives/collections/slab.th"]
+conformance_ops = ["fixed-slab-package-closure"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/collections/slab.th"
+design = ".design/build/fixed-collections.md"
+reference = ["stdlib/kernel-primitives/slab.thpkg.json"]
+conformance_ops = ["fixed-slab-allocate", "fixed-slab-get", "fixed-slab-release", "fixed-slab-generation"]
+
+[[route]]
+crate_pattern = "forge/tests/fixed_slab.rs"
+design = ".design/build/fixed-collections.md"
+reference = ["stdlib/kernel-primitives/slab.thpkg.json"]
+conformance_ops = ["fixed-slab-l3", "fixed-slab-adversarial", "fixed-slab-kernel-replay", "fixed-slab-tamper"]
 
 # Policy-free bounded waiting and synchronization state mechanics. Frozen
 # machine-facing operations are declarations; no consumer platform is bundled.

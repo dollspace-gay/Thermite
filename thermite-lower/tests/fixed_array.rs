@@ -39,7 +39,9 @@ fn l3_uses_native_fixed_arrays_and_preserves_mutation() {
     let emitted = lower(&program()).expect("L3 fixed-array lowering must succeed");
     assert!(emitted.contains("pub const SLOTS: usize = 4;"), "{emitted}");
     assert!(
-        emitted.contains("let mut slots: [u64; SLOTS] = [0; SLOTS];"),
+        emitted.contains(
+            "let mut slots: [u64; SLOTS] = vstd::array::array_fill_for_copy_types::<_, SLOTS>(0);"
+        ),
         "{emitted}"
     );
     assert!(emitted.contains("slots[at] = value;"), "{emitted}");
@@ -57,7 +59,10 @@ fn l3_uses_native_fixed_arrays_and_preserves_mutation() {
         emitted.contains(".__thermite_fixed_array_same_except(&(right), at)"),
         "{emitted}"
     );
-    assert!(emitted.contains("__thermite_i != (at) as int"), "{emitted}");
+    assert!(
+        emitted.contains(".__thermite_fixed_array_same_except_spec(&(right), at)"),
+        "{emitted}"
+    );
 }
 
 #[test]

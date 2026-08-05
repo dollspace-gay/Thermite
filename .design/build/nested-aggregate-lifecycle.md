@@ -14,7 +14,7 @@ governs:
   - forge/tests/body_tv.rs
   - forge/tests/verified_build.rs
   - conformance/verified-build/nested_aggregate_lifecycle.th
-audited-content-sha256: cbad500fb17423770c8e69dc9c1816322ae170079f1c3e8b6dcbb53616cbed75 (re-pinned 2026-08-04 after atomic-storage acceptance extended the shared verified-build suite; nested aggregate semantics remain regression-covered)
+audited-content-sha256: 84eb61647e39c4035f92d86e8b637dc66c0f45d2def8f097088f3f2287c424db (re-pinned 2026-08-05 after freestanding terminal-array proof support; nested aggregate semantics remain regression-covered)
 extends:
   - .design/build/owned-aggregate-lifecycle.md
   - .design/build/named-record-lifecycle.md
@@ -79,10 +79,10 @@ Completion requires:
 2. real-Verus faithful obligations for owned and exclusive-record updates;
 3. mutants for dropped writes, wrong field/index/value, reordered dependent
    reads, and collateral sibling changes;
-4. a strict freestanding scalar-nested receipt whose generated Thermite logic is
-   executed by a downstream consumer;
-5. hosted exact array-view evidence for terminal array indices until the
-   freestanding no-vstd array-view gap is closed; and
+4. strict freestanding scalar-nested and terminal-array receipts whose generated
+   Thermite logic is compiled into the kernel-target artifact;
+5. exact array-view evidence through the digest-bound no-std vstd model, including
+   repeat construction, indexed reads/writes, equality, and same-except framing;
 6. every bodyful Thermite item at L3 or L4, with no new boundary.
 
 The shipped battery satisfies these conditions. Validator tests admit both
@@ -91,16 +91,14 @@ computed receivers, dereferences, ranges, immutable roots, inferred roots,
 sealed roots, and non-finite layouts. The independent TV suite discharges both
 owned and exclusive-record forms through real Verus and kills dropped inner or
 array writes, wrong indices and values, reordered dependent reads, and nested or
-top-level collateral changes. Forge's file-level body walk proves both the
-hosted fixed-array form and every body in the freestanding scalar-nested
-fixture.
-
-The strict `--target kernel` build contains no `vstd` array view, so the receipt
-fixture uses the scalar nested path while the terminal fixed-array path remains
-hosted real-Verus evidence. The strict fixture builds only at L3, replays its
-receipt, executes the generated nested update from a codegen-pinned downstream
-consumer, and rejects bound-source layout tampering. No bodyless declaration or
-new assurance exception is introduced.
+top-level collateral changes. Forge's file-level body walk proves both forms.
+The scalar fixture executes its generated nested update from a codegen-pinned
+downstream consumer; the generation-safe slab fixture builds and replays a
+terminal-array aggregate export under `--target kernel`, requires faithful TV,
+and rejects opacity/source tampering. The proof-only vstd array vocabulary is
+bound by exact VIR/source/link-stub digests and contributes no collection policy
+or parallel runtime implementation. No bodyless Thermite declaration or new
+application-level assurance exception is introduced.
 
 ## Residual boundary
 

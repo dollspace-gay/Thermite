@@ -167,6 +167,7 @@ pub fn tv_file(path: &Path, seed: u64, rlimit: f64) -> Result<TvReport, ForgeErr
     for item in &parsed.program.items {
         match item {
             Item::Fn(f) => tv_fn(
+                &parsed.program,
                 f,
                 &preamble,
                 &spec_fn_param_types,
@@ -197,6 +198,7 @@ pub fn tv_file(path: &Path, seed: u64, rlimit: f64) -> Result<TvReport, ForgeErr
         report; the param-type map mirrors the signature path's threaded ctx"
 )]
 fn tv_fn(
+    program: &thermite_syntax::ast::Program,
     f: &FnItem,
     preamble: &[String],
     spec_fn_param_types: &[(&str, &[PrimType])],
@@ -220,7 +222,23 @@ fn tv_fn(
     // only drops the `result` param (a `req`/`inv`/`dec` clause that does not
     // mention `result` still frames + checks — e.g. binary_search's
     // `sorted(haystack)` req + its `forall_below`/`forall_from` loop invariants).
-    let Some(base_frame) = signature_frame(f, preamble, spec_call_slice_args, enum_variants) else {
+    let fixed_array_fields = program.items.iter().flat_map(|item| match item {
+        Item::Struct(structure) => structure
+            .fields
+            .iter()
+            .filter(|field| matches!(field.ty, Type::Array { .. }))
+            .map(|field| field.name.clone())
+            .collect::<Vec<_>>(),
+        _ => Vec::new(),
+    });
+    let fixed_array_fields = fixed_array_fields.collect::<Vec<_>>();
+    let Some(base_frame) = signature_frame(
+        f,
+        preamble,
+        spec_call_slice_args,
+        enum_variants,
+        &fixed_array_fields,
+    ) else {
         report.clauses.push(ClauseResult {
             label: format!("{}.signature", f.name),
             verdict: ClauseVerdict::Skipped {
@@ -651,6 +669,7 @@ fn generated_frame(preamble: &[String]) -> ObligationFrame {
         string_params: vec!["t".to_string()],
         map_params: vec![],
         fixed_array_params: vec![],
+        fixed_array_fields: vec![],
         spec_call_slice_args: vec![("spec_sum".to_string(), vec![0])],
         state_views: vec![],
         enum_variants: vec![],
@@ -765,10 +784,14 @@ fn program_spec_preamble(
     Ok(extract_spec_defs(&lowered))
 }
 
-/// Extract the `spec fn` / `proof fn` / `struct` / `enum` / `impl` definition blocks from a
-/// lowered Verus file, dropping the `use`/`verus! {`/`}`/`fn main()` frame and the
-/// exec `fn` items. A definition block runs from its header to the brace-balanced
-/// close (so a nested `impl { fn … {} }` is captured whole).
+/// Extract the `spec fn` / `proof fn` / `struct` / `enum` / `trait` / `impl`
+/// definition blocks from a lowered Verus file, dropping the
+/// `use`/`verus! {`/`}`/`fn main()` frame and ordinary exec `fn` items. Generated
+/// structural fixed-array equality helpers are retained because the exact
+/// const-generic trait impls call them and Verus typechecks every retained impl,
+/// including clauses whose predicate itself is scalar. A definition block runs
+/// from its header to the brace-balanced close (so a nested `impl { fn … {} }`
+/// is captured whole).
 fn extract_spec_defs(lowered: &str) -> Vec<String> {
     let mut defs = Vec::new();
     let lines: Vec<&str> = lowered.lines().collect();
@@ -781,16 +804,21 @@ fn extract_spec_defs(lowered: &str) -> Vec<String> {
             continue;
         }
         let is_exec_fn = trimmed.starts_with("fn ") || trimmed.starts_with("pub fn ");
-        let is_def_header = !is_exec_fn
-            && (trimmed.starts_with("spec fn ")
-                || trimmed.starts_with("pub open spec fn ")
-                || trimmed.starts_with("pub closed spec fn ")
-                || trimmed.starts_with("proof fn ")
-                || trimmed.starts_with("pub struct ")
-                || trimmed.starts_with("struct ")
-                || trimmed.starts_with("pub enum ")
-                || trimmed.starts_with("enum ")
-                || trimmed.starts_with("impl "));
+        let is_generated_array_equality_helper = trimmed.starts_with("fn __thermite_element_eq_");
+        let is_def_header = is_generated_array_equality_helper
+            || (!is_exec_fn
+                && (trimmed.starts_with("spec fn ")
+                    || trimmed.starts_with("pub open spec fn ")
+                    || trimmed.starts_with("pub closed spec fn ")
+                    || trimmed.starts_with("proof fn ")
+                    || trimmed.starts_with("pub struct ")
+                    || trimmed.starts_with("struct ")
+                    || trimmed.starts_with("pub enum ")
+                    || trimmed.starts_with("enum ")
+                    || trimmed.starts_with("pub trait ")
+                    || trimmed.starts_with("trait ")
+                    || trimmed.starts_with("impl ")
+                    || trimmed.starts_with("impl<")));
         if is_def_header {
             let (block, next) = capture_block(&lines, i);
             defs.push(block);
@@ -835,6 +863,7 @@ fn signature_frame(
     preamble: &[String],
     spec_call_slice_args: &[(String, Vec<usize>)],
     enum_variants: &[(String, String)],
+    fixed_array_fields: &[String],
 ) -> Option<ObligationFrame> {
     let mut params = Vec::new();
     // No signature slice param is seq-bound (#149): slices are bound `&[elem]` and
@@ -949,6 +978,7 @@ fn signature_frame(
         string_params,
         map_params,
         fixed_array_params,
+        fixed_array_fields: fixed_array_fields.to_vec(),
         spec_call_slice_args: spec_call_slice_args.to_vec(),
         state_views: vec![],
         enum_variants: enum_variants.to_vec(),
@@ -1460,7 +1490,6 @@ fn discharge(program: &str, label: &str, seed: u64, rlimit: f64) -> ClauseVerdic
     if std::fs::write(&file, program).is_err() {
         return ClauseVerdict::Unverifiable;
     }
-
     // No `--output-json` here — verus then emits the plain-text
     // `verification results:: N verified, M errors` summary line that
     // [`parse_results`] reads (the same form parsed by the `thermite-tv` negative test).

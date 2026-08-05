@@ -110,6 +110,70 @@ fn write_th(name: &str, src: &str) -> PathBuf {
     path
 }
 
+#[test]
+fn bounded_integer_dependency_reference_is_body_faithful() {
+    if !verus_present() {
+        eprintln!("SKIP: verus not available — bounded dependency body-TV not discharged.");
+        return;
+    }
+    let source = r#"
+fn next(slot: usize) -> usize
+  req slot < 64
+  ens result == slot + 1
+  fx pure
+{
+  slot + 1
+}
+
+fn caller(slot: usize) -> usize
+  req slot < 64
+  ens result == slot + 1
+  fx pure
+{
+  next(slot)
+}
+
+fn previous(remaining: usize) -> usize
+  req remaining != 0 && remaining <= 64
+  ens result + 1 == remaining
+  fx pure
+{
+  (remaining + 64) % 65
+}
+
+fn descend(remaining: usize) -> usize
+  req remaining <= 64
+  ens result == 0
+  fx pure
+  dec remaining
+{
+  if remaining == 0 {
+    0
+  } else {
+    descend(previous(remaining))
+  }
+}
+
+fn recursive_caller(remaining: usize) -> usize
+  req remaining <= 64
+  ens result == 0
+  fx pure
+{
+  descend(remaining)
+}
+"#;
+    let file = write_th("bounded_dependency_result", source);
+    let report = run_body_tv_json(&file);
+    assert_eq!(report["counts"]["checked"].as_u64(), Some(5), "{report}");
+    assert_eq!(report["counts"]["faithful"].as_u64(), Some(5), "{report}");
+    assert_eq!(
+        report["counts"]["unverifiable"].as_u64(),
+        Some(0),
+        "{report}"
+    );
+    assert_eq!(report["counts"]["skipped"].as_u64(), Some(0), "{report}");
+}
+
 // ---- AST helpers + verus discharge (mirrors body_teeth.rs) for the Divergent arm --
 
 fn path(name: &str) -> Expr {

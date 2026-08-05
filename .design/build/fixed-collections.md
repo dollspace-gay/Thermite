@@ -3,16 +3,19 @@
 <!--
 tier: 3-component
 status: partial
-decision: Thermite ships policy-free packed bitmap, vector, FIFO-ring, direct-map, and open-addressed map mechanics in .th; generic capacities, slabs, intrusive metadata, and complete aggregate receipt TV remain
+decision: Thermite ships policy-free packed bitmap, vector, FIFO-ring, direct-map, open-addressed map, and generation-safe slab mechanics in .th; generic capacities, freelists, intrusive metadata, and quantified aggregate framing remain
 governs:
   - stdlib/kernel-primitives/collections.thpkg.json
   - stdlib/kernel-primitives/collections/bitmap.th
   - stdlib/kernel-primitives/collections/direct_map.th
   - stdlib/kernel-primitives/collections/open_map.th
+  - stdlib/kernel-primitives/collections/slab.th
+  - stdlib/kernel-primitives/slab.thpkg.json
   - stdlib/kernel-primitives/collections/ring.th
   - stdlib/kernel-primitives/collections/vector.th
   - forge/tests/fixed_collections.rs
-audited-content-sha256: a7abf12ec73130a5ba4d86ac82d5ee6caa1c306b0637a8eda52cc8ae9a09c9d5
+  - forge/tests/fixed_slab.rs
+audited-content-sha256: 723052c1b4c693fdbcded31f3784b13f1b73b43b39da5c133d06661bf4ecbee5 (re-pinned 2026-08-05 after the strict L3 generation-safe slab increment)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/l3-verified-artifact.md
@@ -30,11 +33,13 @@ can reuse. It does not decide what a bit or queue entry means, which subsystem
 owns a collection, how producers are scheduled, or whether an operation should
 block. Those are consumer policies.
 
-`stdlib/kernel-primitives/collections.thpkg.json` is a canonical collection
-package. It binds its five manifest-declared Thermite modules without a
-Rust runtime implementation, platform boundary, heap dependency, or hosted
-effect. The modules use native fixed arrays and ordinary verified Thermite
-control flow.
+`stdlib/kernel-primitives/collections.thpkg.json` is the canonical five-module
+collection package. The generation-safe slab also has the focused
+`stdlib/kernel-primitives/slab.thpkg.json` receipt root so its aggregate public
+transition can be built, replayed, and attacked independently. Neither package
+contains a Rust runtime implementation, platform boundary, heap dependency, or
+hosted effect. The modules use native fixed arrays and ordinary verified
+Thermite control flow.
 
 ## Fixed bitset
 
@@ -155,12 +160,35 @@ delete-then-search reusing tombstone slot 0. The representation is opaque and
 its field names are module-unique, so the package resolver preserves the
 foreign-construction/read/write barrier across the five-root closure.
 
+## Generation-safe slab
+
+`FixedSlab64` owns 64 occupancy bits, generation counters, and `u64` values.
+Allocation finds the first free slot, advances that slot's nonzero generation,
+stores the value, and returns an opaque handle containing the exact slot and
+generation. A full slab and a slot whose generation is exhausted are explicit
+result variants that return the unconsumed value. Lookup succeeds only for a
+currently occupied slot whose generation matches the handle.
+
+Release consumes both the slab and handle. A live handle returns the stored
+value, clears exactly its occupancy/value slot, and preserves the generation so
+the handle becomes stale immediately. Invalid slot, vacant slot, stale
+generation, and zero generation are rejected with explicit reasons and return
+the original owned values. The opaque slab and handle cannot be cloned, forged,
+or inspected outside their defining module.
+
+Contracts pin all three fixed arrays through exact equality or same-except
+framing. Source probes compose allocation with lookup and release, prove the
+returned value, and prove that the released handle is no longer live. The
+focused package exports the aggregate allocation/lookup probe through a strict
+kernel-target L3 receipt; all reachable contract, expression, body, and wrapper
+TV rows are faithful.
+
 ## Assurance and adversarial evidence
 
-`forge check --level l3` proves all 136 source items across the five modules at
-L3. There are no boundaries. Executable contract mutation kills 342 of 372
-generated mutants; the surviving mutants remain counted and the per-function
-scores stay above the configured floor.
+`forge check --level l3` proves all 172 source items across the collection and
+slab modules at L3. There are no boundaries. Executable contract mutation kills
+412 of 445 generated mutants; the surviving mutants remain counted and the
+per-function scores stay above the configured floor.
 
 `forge/tests/fixed_collections.rs` additionally:
 
@@ -180,21 +208,28 @@ scores stay above the configured floor.
   and
 - tampers with the bound direct-map source and requires validation to fail.
 
-The strict export is intentionally scalar. Body TV now frames direct and nested
-finite-record mutation, user-ADT match/results, and exact statement-position
-mutable calls over direct finite-record roots. The collection package itself uses
-owned state transitions; complete collection exports remain gated by quantified
-aggregate framing and a dedicated strict aggregate receipt/runtime fixture. This
-increment therefore does not yet claim that the whole ring lifecycle is a strict
-public receipt export. The complete package source is bound by the scalar receipt,
-while aggregate operations retain their individual L3 certificates and the
-generic fixed-array TV evidence.
+`forge/tests/fixed_slab.rs` separately:
+
+- requires all 36 slab items to be boundary-free L3 and pins its executable
+  mutation score at 70/73;
+- rejects stale-handle-live claims, post-release-live claims, and handle cloning;
+- builds and replays the aggregate slab probe under the kernel target;
+- requires every reachable translation-validation row to be faithful; and
+- removes the bound opacity marker and requires replay to fail.
+
+The canonical five-root package retains a scalar ring export, while the focused
+slab package now supplies a strict aggregate receipt fixture. Body TV frames
+direct and nested finite-record mutation, user-ADT match/results, exact
+statement-position mutable calls over direct finite-record roots, and the slab's
+fixed-array state. Quantified all-index aggregate framing remains open, so this
+increment does not generalize the slab result into a claim that every collection
+lifecycle is already a strict public export.
 
 ## Remaining collection closure
 
 This is a substantial REQ-KPRIM-2 increment, not completion. Remaining work is:
 
-1. slabs/freelists and intrusive-list metadata;
+1. freelists and intrusive-list metadata;
 2. a chained-map variant where consumer workloads require it;
 3. capacity/type parameterization that does not rely on privileged generated
    policy types;
@@ -215,12 +250,12 @@ At this increment:
 
 | Metric | Value |
 |---|---:|
-| Physical Thermite LOC | 2,568 |
-| Nonblank Thermite LOC | 2,432 |
-| Thermite functions | 119 (76 executable, 43 specification) |
-| In-language L3 items | 136 |
+| Physical Thermite LOC | 3,252 |
+| Nonblank Thermite LOC | 3,081 |
+| Thermite functions | 149 (93 executable, 56 specification) |
+| In-language L3 items | 172 |
 | Frozen boundary declarations | 0 |
-| Executable mutants killed | 342/372 |
+| Executable mutants killed | 412/445 |
 | Bodyful Rust/assembly collection implementations | 0 |
 | Ordinary Rust kernel-policy/algorithm LOC | 0 |
 | Direct-Verus TPL LOC shipped by this package | 0 |

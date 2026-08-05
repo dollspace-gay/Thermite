@@ -73,11 +73,13 @@ use std::process::Command;
 
 use thermite_syntax::ast::{Block, FnItem, Item, LoopNode, PrimType, Stmt, Type, VariantShape};
 
+use thermite_tv::exec_encode::{exec_ref_value, ExecRefCtx};
 use thermite_tv::obligation::{
     body_equivalence_obligation, loop_entry_obligation, loop_exit_obligation,
     loop_preservation_obligation, loop_result_obligation, BodyObligationFrame, BodyParamDecl,
     LoopObligationFrame, LoopParamDecl,
 };
+use thermite_tv::ref_encode::{ref_contract_pred, RefCtx, StateViewKind};
 use thermite_tv::{
     loop_ref_obligations, BodyRefCtx, EnumVariantFrame, EnumVariantShapeFrame,
     MutableCallEffectFrame, MutableRecordFrame, NamedRecordFrame, RecordFieldFrame,
@@ -276,6 +278,7 @@ pub(crate) fn body_tv_support(
         // the resulting obligation will classify the missing frame honestly.
         Err(_) => return Ok((Vec::new(), BTreeSet::new(), Vec::new())),
     };
+    let self_recursive = closure.edges.contains(&(f.name.clone(), f.name.clone()));
     let mut support_names: BTreeSet<String> = closure
         .functions
         .iter()
@@ -305,7 +308,9 @@ pub(crate) fn body_tv_support(
             .items
             .iter()
             .filter(|item| match item {
-                Item::Fn(dep) => support_names.contains(&dep.name),
+                Item::Fn(dep) => {
+                    support_names.contains(&dep.name) || (self_recursive && dep.name == f.name)
+                }
                 Item::SpecFn(dep) => support_names.contains(&dep.name),
                 Item::Struct(dep) => adt_names.contains(&dep.name),
                 Item::Enum(dep) => adt_names.contains(&dep.name),
@@ -408,9 +413,9 @@ pub(crate) fn body_tv_support(
         }
         let reference = thermite_tv::body_ref_state(
             body,
-            &BodyRefCtx::with_slice_bound(slices)
+            &BodyRefCtx::with_slice_bound(slices.iter().cloned())
                 .with_mutable_indexed_bound(mutable_indexed)
-                .with_fixed_array_bound(arrays)
+                .with_fixed_array_bound(arrays.iter().cloned())
                 .with_fixed_array_fields(fixed_array_field_bindings(program, dep))
                 .with_fixed_array_result(matches!(dep.ret, Type::Array { .. }))
                 .with_unit_result(matches!(dep.ret, Type::Unit))
@@ -426,11 +431,23 @@ pub(crate) fn body_tv_support(
                 dep.name
             )
         })?;
+        let reference = ground_dependency_reference_result(reference, &dep.ret);
+        let decreases = dependency_reference_decreases(dep, &slices, &arrays)
+            .map_err(|error| format!("body-TV dependency `{}` decreases: {error}", dep.name))?;
         let spec_name = format!("thermite_tv_ref_{}", dep.name);
         reference_defs.push_str(&format!(
-            "\nspec fn {spec_name}({}) -> {ret} {{ {reference} }}\n",
+            "\nspec fn {spec_name}({}) -> {ret}{decreases} {{ {reference} }}\n",
             params.join(", ")
         ));
+        inject_dependency_reference_postcondition(
+            &mut inner,
+            dep,
+            &spec_name,
+            &dep.params
+                .iter()
+                .map(|parameter| parameter.name.as_str())
+                .collect::<Vec<_>>(),
+        )?;
         let needle = format!("\nfn {}(", dep.name);
         let replacement = format!(
             "\n#[verifier::when_used_as_spec({spec_name})]\nfn {}(",
@@ -446,6 +463,96 @@ pub(crate) fn body_tv_support(
     }
     reference_defs.push_str(&inner);
     Ok((vec![reference_defs], support_names, mutable_call_effects))
+}
+
+/// Make executable dependency calls compose through their independently
+/// reconstructed body semantics, rather than only through the author's source
+/// contract. `when_used_as_spec` rewrites calls that already occur in a spec
+/// expression; it does not by itself constrain the value returned by an exec
+/// call in the production body.  This exact postcondition is proved against the
+/// lowered dependency implementation in the same Verus unit and then supplies
+/// the caller with the equality needed for aggregate/ADT result composition.
+fn inject_dependency_reference_postcondition(
+    lowered: &mut String,
+    dependency: &FnItem,
+    spec_name: &str,
+    arguments: &[&str],
+) -> Result<(), String> {
+    let needle = format!("\nfn {}(", dependency.name);
+    let start = lowered.find(&needle).ok_or_else(|| {
+        format!(
+            "body-TV dependency frame could not locate lowered function `{}` for exact reference composition",
+            dependency.name
+        )
+    })?;
+    let body_offset = lowered[start..].find("\n{\n").ok_or_else(|| {
+        format!(
+            "body-TV dependency frame could not locate lowered function body `{}` for exact reference composition",
+            dependency.name
+        )
+    })?;
+    let body_insertion = start + body_offset;
+    let insertion = lowered[start..body_insertion]
+        .find("\n    decreases ")
+        .map(|offset| start + offset)
+        .unwrap_or(body_insertion);
+    let has_ensures = lowered[start..insertion].contains("\n    ensures\n");
+    let clause = if has_ensures {
+        format!("\n        result == {spec_name}({}),", arguments.join(", "))
+    } else {
+        format!(
+            "\n    ensures\n        result == {spec_name}({}),",
+            arguments.join(", ")
+        )
+    };
+    lowered.insert_str(insertion, &clause);
+    Ok(())
+}
+
+/// Ground an independently derived dependency-body reference at the exact
+/// bounded return type declared by the Thermite source.
+///
+/// Verus intentionally interprets integer arithmetic in `spec fn` position as
+/// mathematical `int`, even when every operand is a bounded executable integer.
+/// A reference such as `(slot + 1) % 65` therefore cannot inhabit a generated
+/// `-> usize` helper without an explicit narrowing.  The ordinary production
+/// function still executes checked bounded arithmetic, and its own body-TV row
+/// proves that implementation separately; this cast only makes the independently
+/// reconstructed value usable as its `when_used_as_spec` twin.  The source return
+/// type is parsed independently here, so the TV path does not consult or reuse
+/// production lowering.
+fn ground_dependency_reference_result(reference: String, ret: &Type) -> String {
+    let bounded = match ret {
+        Type::Prim(PrimType::U8) => Some("u8"),
+        Type::Prim(PrimType::U16) => Some("u16"),
+        Type::Prim(PrimType::U32) => Some("u32"),
+        Type::Prim(PrimType::U64) => Some("u64"),
+        Type::Prim(PrimType::Usize) => Some("usize"),
+        _ => None,
+    };
+    match bounded {
+        Some(ty) => format!("({reference}) as {ty}"),
+        None => reference,
+    }
+}
+
+/// Independently encode the source termination measure for a recursive
+/// dependency reference.  A `when_used_as_spec` twin is itself recursive when
+/// the source body calls the original function, so Verus requires the same
+/// well-founded measure on the generated twin.  Non-recursive functions carry
+/// no `dec` and retain the compact one-line form.
+fn dependency_reference_decreases(
+    function: &FnItem,
+    slices: &[String],
+    arrays: &[String],
+) -> Result<String, thermite_tv::exec_encode::RefEncodeError> {
+    let Some(dec) = &function.dec else {
+        return Ok(String::new());
+    };
+    let context = ExecRefCtx::with_slice_bound(slices.iter().cloned())
+        .with_fixed_array_bound(arrays.iter().cloned());
+    let measure = exec_ref_value(&dec.expr, &context)?;
+    Ok(format!("\n    decreases {measure}\n"))
 }
 
 // ---- the straight-line body arm (exec-stmt-tv REQ-5) -----------------------
@@ -619,11 +726,21 @@ fn straight_line_body_tv(
         }
     };
     let result_record = named_record_result_frame(&named_records, &f.ret);
+    let req = match reference_corpus_req(program, f) {
+        Ok(req) => req,
+        Err(reason) => {
+            report.results.push(BodyResult {
+                label,
+                verdict: BodyVerdict::Skipped { reason },
+            });
+            return;
+        }
+    };
     let frame = BodyObligationFrame {
         spec_defs,
         params,
         ret_type: ret_ty,
-        req: corpus_req(f),
+        req,
         slice_params,
         mutable_indexed_params,
         fixed_array_params,
@@ -863,7 +980,7 @@ fn build_loop_frame(
         spec_defs: support_defs.to_vec(),
         inputs,
         cells,
-        req: corpus_req(f),
+        req: reference_corpus_req(program, f)?,
         slice_params,
         ret_type: exec_type_spelling(&f.ret).map(|(spelling, _)| spelling),
         named_records,
@@ -958,13 +1075,86 @@ fn cell_decl_type(body: &Block, cell: &str) -> Option<String> {
 /// best available well-formedness / no-overflow frame). `req true` → no requires (an
 /// empty frame). The `req` is emitted verbatim (the obligation's own precondition,
 /// authored from the source, not lowered here — `exec-stmt-tv.md` REQ-3).
-fn corpus_req(f: &FnItem) -> Option<String> {
+fn corpus_req_text(f: &FnItem) -> Option<String> {
     let text = f.contract.req.text.trim();
     if text.is_empty() || text == "true" {
         None
     } else {
         Some(text.to_string())
     }
+}
+
+/// Independently encode a function's source precondition into the Verus
+/// specification surface used by body-TV obligations. Raw Thermite text is not
+/// sufficient once the frame contains fixed arrays or slices: source
+/// `state.slots[i]` denotes the finite view `state.slots@[i as int]`.
+pub(crate) fn reference_corpus_req(
+    program: &thermite_syntax::Program,
+    function: &FnItem,
+) -> Result<Option<String>, String> {
+    if corpus_req_text(function).is_none() {
+        return Ok(None);
+    }
+    let fixed_arrays = function.params.iter().filter_map(|parameter| {
+        is_fixed_array_binding(&parameter.ty).then(|| parameter.name.clone())
+    });
+    let bounded = function.params.iter().filter_map(|parameter| {
+        matches!(
+            &parameter.ty,
+            Type::Prim(
+                PrimType::U8 | PrimType::U16 | PrimType::U32 | PrimType::U64 | PrimType::Usize
+            )
+        )
+        .then(|| parameter.name.clone())
+    });
+    let call_slices = program.items.iter().filter_map(|item| {
+        let (name, params) = match item {
+            Item::Fn(item) => (&item.name, &item.params),
+            Item::SpecFn(item) => (&item.name, &item.params),
+            _ => return None,
+        };
+        Some((
+            name.clone(),
+            params
+                .iter()
+                .enumerate()
+                .filter_map(|(index, parameter)| {
+                    let is_slice = match &parameter.ty {
+                        Type::Slice(_) => true,
+                        Type::Ref { inner, .. } => matches!(inner.as_ref(), Type::Slice(_)),
+                        _ => false,
+                    };
+                    is_slice.then_some(index)
+                })
+                .collect::<Vec<_>>(),
+        ))
+    });
+    let variants = enum_variant_frames(program)?
+        .into_iter()
+        .map(|variant| (variant.variant_name, variant.enum_name));
+    // A body obligation's parameters are the function-entry values. Therefore
+    // `old(param)` in a source precondition denotes that same binding; it is not
+    // a second arbitrary contract-TV snapshot. Ground the state view explicitly
+    // so the independent encoder cannot invent an unbound `old_param` name.
+    let entry_views = function.params.iter().map(|parameter| {
+        (
+            StateViewKind::Old,
+            parameter.name.clone(),
+            parameter.name.clone(),
+        )
+    });
+    let context = RefCtx::with_seq_bound(std::iter::empty::<String>())
+        .with_fixed_array_bound(fixed_arrays)
+        .with_fixed_array_fields(fixed_array_field_bindings(program, function))
+        .with_spec_call_slice_args(call_slices)
+        .with_enum_variants(variants)
+        .with_nat_coerce(bounded)
+        .with_state_views(entry_views);
+    ref_contract_pred(&function.contract.req.expr, &context)
+        .map(Some)
+        .map_err(|error| {
+            format!("the source `req` is outside the independent body-TV contract frame: {error}")
+        })
 }
 
 /// The req gate (mirrors `exec_tv::check_corpus_expr`'s req gate). Returns
@@ -977,7 +1167,7 @@ fn corpus_req(f: &FnItem) -> Option<String> {
 /// ident is declared (or the `req` is empty / `true`), so a body whose `req` references
 /// only its own params (`req x <= 1000`) is not over-skipped.
 fn req_references_undeclarable(f: &FnItem, declared: &[&str]) -> Option<String> {
-    let req = corpus_req(f)?;
+    let req = corpus_req_text(f)?;
     collect_text_idents(&req)
         .into_iter()
         .find(|ident| !declared.contains(&ident.as_str()))
@@ -1278,7 +1468,7 @@ pub(crate) fn fixed_array_field_bindings(
                 .fields
                 .iter()
                 .filter(|field| matches!(field.ty, Type::Array { .. }))
-                .map(|field| format!("{}.{}", param.name, field.name)),
+                .flat_map(|field| [field.name.clone(), format!("{}.{}", param.name, field.name)]),
         );
     }
     bindings
@@ -1545,7 +1735,6 @@ fn run_obligation(program: &str, label: &str, seed: u64, rlimit: f64) -> Dischar
             "could not write the obligation program to the scratch dir".to_string(),
         );
     }
-
     let output = Command::new("verus")
         .arg("--rlimit")
         .arg(format!("{rlimit}"))
@@ -1746,6 +1935,105 @@ mod divergent_teeth {
         assert_eq!(
             collect_text_idents("sorted(haystack) && bound < 1_000"),
             vec!["sorted", "haystack", "bound"]
+        );
+    }
+
+    #[test]
+    fn dependency_reference_grounds_bounded_arithmetic_results() {
+        let source = r#"
+fn next(slot: usize) -> usize
+  req slot < 64
+  ens result == slot + 1
+  fx pure
+{
+  slot + 1
+}
+
+fn caller(slot: usize) -> usize
+  req slot < 64
+  ens result == slot + 1
+  fx pure
+{
+  next(slot)
+}
+
+fn previous(remaining: usize) -> usize
+  req remaining != 0 && remaining <= 64
+  ens result + 1 == remaining
+  fx pure
+{
+  (remaining + 64) % 65
+}
+
+fn descend(remaining: usize) -> usize
+  req remaining <= 64
+  ens result == 0
+  fx pure
+  dec remaining
+{
+  if remaining == 0 {
+    0
+  } else {
+    descend(previous(remaining))
+  }
+}
+
+fn recursive_caller(slot: usize) -> usize
+  req slot < 64
+  ens result == 0
+  fx pure
+{
+  descend(slot)
+}
+"#;
+        let parsed = thermite_syntax::parse(source);
+        assert!(parsed.is_clean(), "fixture must parse: {:?}", parsed.errors);
+        let caller = parsed.program.items.iter().find_map(|item| match item {
+            Item::Fn(function) if function.name == "caller" => Some(function),
+            _ => None,
+        });
+        assert!(caller.is_some(), "fixture must contain `caller`");
+        let support = caller.and_then(|function| body_tv_support(&parsed.program, function).ok());
+        assert!(support.is_some(), "dependency frame must build");
+        let definitions = support
+            .map(|(definitions, _, _)| definitions.join("\n"))
+            .unwrap_or_default();
+        assert!(
+            definitions.contains(
+                "spec fn thermite_tv_ref_next(slot: usize) -> usize { ((slot + 1)) as usize }"
+            ),
+            "the independent arithmetic reference must narrow to its parsed bounded return: \
+             {definitions}"
+        );
+        assert!(
+            definitions.contains("result == thermite_tv_ref_next(slot),"),
+            "an executable dependency must prove its exact independent reference \
+             postcondition in the caller frame: {definitions}"
+        );
+        let recursive = parsed.program.items.iter().find_map(|item| match item {
+            Item::Fn(function) if function.name == "recursive_caller" => Some(function),
+            _ => None,
+        });
+        assert!(
+            recursive.is_some(),
+            "fixture must contain `recursive_caller`"
+        );
+        let recursive_support = recursive
+            .and_then(|function| body_tv_support(&parsed.program, function).ok())
+            .map(|(definitions, _, _)| definitions.join("\n"))
+            .unwrap_or_default();
+        assert!(
+            recursive_support.contains(
+                "spec fn thermite_tv_ref_descend(remaining: usize) -> usize\n    decreases remaining\n"
+            ),
+            "a recursive dependency reference must retain its independently encoded source \
+             termination measure: {recursive_support}"
+        );
+        assert!(
+            recursive_support
+                .contains("result == thermite_tv_ref_descend(remaining),\n    decreases remaining"),
+            "the exact dependency postcondition must precede the executable function's \
+             decreases clause: {recursive_support}"
         );
     }
 

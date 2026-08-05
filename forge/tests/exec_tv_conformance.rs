@@ -242,6 +242,53 @@ fn fixed_array_read_expression_is_faithful() {
 }
 
 #[test]
+fn typed_local_relations_ground_fixed_array_field_arithmetic() {
+    if !verus_present() {
+        eprintln!("SKIP: verus not available — typed-local fixed-array exec-TV not discharged.");
+        return;
+    }
+    let source = r#"
+const SLOTS: usize = 4;
+struct State { generations: [u64; SLOTS] }
+
+fn next_generation(state: &State, slot: usize) -> u64
+  req slot < SLOTS && state.generations[slot] < u64::MAX
+  ens result == state.generations[slot] + 1
+  fx pure
+{
+  let changed: usize = slot % SLOTS;
+  let next: u64 = state.generations[changed] + 1;
+  next
+}
+"#;
+    let path = std::env::temp_dir().join("thermite_exec_tv_typed_local_array_field.th");
+    std::fs::write(&path, source).expect("write typed-local fixed-array exec-TV fixture");
+    let report = run_exec_tv_json(&path, None);
+    let counts = &report["corpus"]["counts"];
+    assert_eq!(counts["checked"].as_u64(), Some(3), "{report}");
+    assert_eq!(counts["faithful"].as_u64(), Some(3), "{report}");
+    assert_eq!(counts["divergent"].as_u64(), Some(0), "{report}");
+    assert_eq!(counts["unverifiable"].as_u64(), Some(0), "{report}");
+    for label in [
+        "next_generation.let#1",
+        "next_generation.let#2",
+        "next_generation.tail",
+    ] {
+        assert!(
+            report["corpus"]["exprs"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|expr| {
+                    expr["expr"].as_str() == Some(label)
+                        && expr["verdict"].as_str() == Some("faithful")
+                }),
+            "{label}: {report}"
+        );
+    }
+}
+
+#[test]
 fn named_record_field_read_expression_is_faithful() {
     if !verus_present() {
         eprintln!("SKIP: verus not available — named-record exec-TV not discharged.");

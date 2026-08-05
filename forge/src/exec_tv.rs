@@ -57,6 +57,7 @@ use std::process::Command;
 
 use thermite_syntax::ast::{Clause, Expr, FnItem, IndexArg, Item, PrimType, Stmt, Type};
 
+use thermite_tv::exec_encode::{exec_ref_value, ExecRefCtx};
 use thermite_tv::gen_exec_exprs;
 use thermite_tv::obligation::{exec_equivalence_obligation, ExecObligationFrame, ExecParamDecl};
 
@@ -405,6 +406,14 @@ struct ExecEnv {
     fixed_array_fields: Vec<String>,
     mutable_records: Vec<thermite_tv::MutableRecordFrame>,
     constant_names: Vec<String>,
+    local_relations: Vec<LocalRelation>,
+}
+
+#[derive(Debug, Clone)]
+struct LocalRelation {
+    name: String,
+    predicate: String,
+    dependencies: Vec<String>,
 }
 
 impl ExecEnv {
@@ -429,6 +438,38 @@ impl ExecEnv {
     fn declares(&self, name: &str) -> bool {
         self.params.iter().any(|p| p.name == name)
             || self.constant_names.iter().any(|constant| constant == name)
+    }
+
+    /// Record the exact independently encoded value of a scalar typed local.
+    /// Later per-expression obligations use these equations to recover bounds
+    /// such as `changed == slot % CAPACITY` rather than treating every local as
+    /// an unrelated arbitrary parameter.
+    fn bind_local_relation(&mut self, name: &str, ty: &str, init: &Expr) {
+        let bounded = matches!(ty, "u8" | "u16" | "u32" | "u64" | "usize");
+        if !bounded && ty != "bool" {
+            return;
+        }
+        let context = ExecRefCtx::with_slice_bound(self.slice_params.iter().cloned())
+            .with_fixed_array_bound(self.fixed_array_params.iter().cloned())
+            .with_fixed_array_fields(self.fixed_array_fields.iter().cloned());
+        let Ok(reference) = exec_ref_value(init, &context) else {
+            return;
+        };
+        let value = if bounded {
+            format!("({reference}) as {ty}")
+        } else {
+            reference
+        };
+        let mut dependencies = Vec::new();
+        collect_free_paths(init, &mut dependencies);
+        dependencies.retain(|dependency| self.declares(dependency));
+        dependencies.sort();
+        dependencies.dedup();
+        self.local_relations.push(LocalRelation {
+            name: name.to_string(),
+            predicate: format!("{name} == {value}"),
+            dependencies,
+        });
     }
 }
 
@@ -545,6 +586,7 @@ fn exec_tv_fn(
                 }
                 // Bind the local so a later expr referencing it frames.
                 if let Some((ty_str, is_slice)) = exec_type_spelling(ty) {
+                    env.bind_local_relation(name, &ty_str, init);
                     env.bind(name, ty_str, is_slice);
                 }
             }
@@ -788,37 +830,85 @@ fn check_corpus_expr(
         }
     };
 
-    // The fn's source `req` is the best available overflow/index frame. It is
-    // included only when every var it references is env-declared (else its text
-    // would reference an undeclared param and the obligation would not compile, a
-    // framing failure rather than an infidelity). When included, its referenced vars
-    // join the obligation params so the `requires` typechecks. A `req` that cannot be
-    // included is dropped (the expr is then checked with no frame, adequate for a
-    // total expr like a literal/comparison; an arithmetic expr without an adequate
-    // bound discharges Unverifiable, not Faithful).
-    let req_text = corpus_req(f);
-    let req = match &req_text {
-        Some(text) => {
-            let req_vars: Vec<String> = collect_text_idents(text);
-            if req_vars.iter().all(|v| env.declares(v)) {
-                Some((text.clone(), req_vars))
+    // Independently encode the function precondition. Raw Thermite contract text
+    // is not a Verus specification once it contains a slice/fixed-array view or a
+    // bounded-integer coercion, so reusing it here would let the production syntax
+    // define its own TV frame. The parsed source expression is used only to derive
+    // the parameters that the independently encoded predicate needs.
+    let source_req = match crate::body_tv::reference_corpus_req(program, f) {
+        Ok(Some(predicate)) => {
+            let mut variables = Vec::new();
+            collect_free_paths(&f.contract.req.expr, &mut variables);
+            if variables.iter().all(|variable| env.declares(variable)) {
+                Some((predicate, variables))
             } else {
                 None
             }
         }
-        None => None,
+        Ok(None) => None,
+        Err(reason) => {
+            report.results.push(ExecResult {
+                label: label.to_string(),
+                verdict: ExecVerdict::Skipped { reason },
+            });
+            return;
+        }
     };
 
     // The obligation params: every var the expr references, plus every var the
     // (included) `req` references — declared from the env at its exec type.
     let mut needed: Vec<String> = referenced.clone();
-    if let Some((_, req_vars)) = &req {
+    if let Some((_, req_vars)) = &source_req {
         for v in req_vars {
             if !needed.contains(v) {
                 needed.push(v.clone());
             }
         }
     }
+
+    // A typed scalar local is not an unconstrained fresh parameter. Pull in its
+    // independently encoded defining equation, then recursively pull in equations
+    // for predecessor locals. This restores source facts such as
+    // `changed == slot % CAPACITY` when proving a later fixed-array access or
+    // bounded arithmetic expression.
+    let mut active_relations = Vec::new();
+    loop {
+        let mut grew = false;
+        for (index, relation) in env.local_relations.iter().enumerate() {
+            if active_relations.contains(&index)
+                || !needed.iter().any(|name| name == &relation.name)
+            {
+                continue;
+            }
+            active_relations.push(index);
+            for dependency in &relation.dependencies {
+                if !needed.contains(dependency) {
+                    needed.push(dependency.clone());
+                }
+            }
+            grew = true;
+        }
+        if !grew {
+            break;
+        }
+    }
+
+    let mut req_clauses = Vec::new();
+    if let Some((predicate, _)) = source_req {
+        req_clauses.push(predicate);
+    }
+    req_clauses.extend(
+        active_relations
+            .iter()
+            .map(|index| env.local_relations[*index].predicate.clone()),
+    );
+    let req = (!req_clauses.is_empty()).then(|| {
+        req_clauses
+            .iter()
+            .map(|clause| format!("({clause})"))
+            .collect::<Vec<_>>()
+            .join(" && ")
+    });
     let mut spec_defs = support_defs.to_vec();
     if thermite_lower::expr_uses_fixed_array_equality(e) {
         if let Err(reason) =
@@ -843,7 +933,7 @@ fn check_corpus_expr(
             .cloned()
             .collect(),
         ret_type: ret_ty.to_string(),
-        req: req.map(|(text, _)| text),
+        req,
         slice_params: env
             .slice_params
             .iter()
@@ -890,55 +980,6 @@ fn check_corpus_expr(
         label: label.to_string(),
         verdict,
     });
-}
-
-/// Extract the candidate identifiers a `req` text references (a heuristic over the
-/// verbatim source: alphanumeric/`_` runs starting with a letter/`_`, excluding the
-/// dotted `.len()`-style method tail and numeric literals). A bare ident that is an
-/// env param is a referenced var; anything else (a keyword, a method name, a
-/// `u32::MAX`-style path segment) is not an env param, so the all-declared gate drops
-/// the `req` if it mentions any non-param ident. Only the leading segment of a dotted
-/// access (`xs.len()` → `xs`) is a var; `.len`/`.MAX` tails are dropped.
-fn collect_text_idents(text: &str) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    let bytes: Vec<char> = text.chars().collect();
-    let mut i = 0;
-    while i < bytes.len() {
-        let c = bytes[i];
-        if c.is_ascii_alphabetic() || c == '_' {
-            // A leading-segment ident; consume the run.
-            let start = i;
-            while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == '_') {
-                i += 1;
-            }
-            let ident: String = bytes[start..i].iter().collect();
-            // Skip a `.`-tail (a method / field / assoc access) — it is not a var.
-            let after_dot = start > 0 && bytes[start - 1] == '.';
-            // Skip a `::`-tail leading segment is kept; the tail after `::` is an
-            // assoc item (`u32::MAX`'s `MAX`) — but it follows `:`, caught here.
-            let after_colon = start > 0 && bytes[start - 1] == ':';
-            if !after_dot && !after_colon && !out.contains(&ident) {
-                out.push(ident);
-            }
-        } else {
-            i += 1;
-        }
-    }
-    out
-}
-
-/// The corpus fn's source `req` text as the obligation's enclosing `requires` (the
-/// best available frame). `req true` → no requires (an empty frame). This is the
-/// contract `req`, which may not adequately bound an exec arithmetic expr's overflow
-/// (the source bound for `acc + xs[i]` lives in a loop `inv`, not the `req`); such an
-/// expr then discharges Unverifiable, not Faithful.
-fn corpus_req(f: &FnItem) -> Option<String> {
-    let text = f.contract.req.text.trim();
-    if text.is_empty() || text == "true" {
-        None
-    } else {
-        Some(text.to_string())
-    }
 }
 
 /// Collect the single-segment free-var path names an exec expr references (the

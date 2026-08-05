@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: 7fae46b2226af63fb4f2cc44c5fbd060ca6ae6975563186ae598eda1b31a0f89 (re-pinned 2026-08-04 after exact nested aggregate lifecycle support; option/result remain outside that closure)
+audited-content-sha256: a75967adff473a6d48abc3bba897187c003c508185c18a8a350cc3e581447858 (re-pinned 2026-08-05 after the freestanding fixed-array/slab proof increment; option/result behavior remains regression-covered)
 governs: thermite-syntax/src/ast.rs
 governs: thermite-syntax/src/parser.rs
 governs: thermite-spec/src/validator.rs

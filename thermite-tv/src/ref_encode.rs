@@ -122,6 +122,11 @@ pub struct RefCtx {
     /// Names bound as native fixed arrays. Their frozen length operation is
     /// independently encoded through the finite `@` view.
     fixed_array_bound: BTreeSet<String>,
+    /// Direct `root.field` paths whose independently parsed source type is a
+    /// native fixed array. Contract/body frames need this to encode
+    /// `state.slots[i]` as `state.slots@[i as int]`, rather than attempting an
+    /// executable array index in specification position.
+    fixed_array_fields: BTreeSet<String>,
     /// User `spec fn` declarations keyed to the argument positions whose source
     /// type is a slice view. Other argument positions remain values or references.
     spec_call_slice_args: BTreeMap<String, BTreeSet<usize>>,
@@ -160,6 +165,7 @@ impl RefCtx {
             string_bound: BTreeSet::new(),
             map_bound: BTreeSet::new(),
             fixed_array_bound: BTreeSet::new(),
+            fixed_array_fields: BTreeSet::new(),
             spec_call_slice_args: BTreeMap::new(),
             enum_variants: BTreeMap::new(),
             nat_coerce: BTreeSet::new(),
@@ -192,6 +198,18 @@ impl RefCtx {
         S: Into<String>,
     {
         self.fixed_array_bound = names.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Declare exact direct named-record fields whose values are native fixed
+    /// arrays. The inventory comes from parsed record declarations rather than
+    /// production lowering.
+    pub fn with_fixed_array_fields<I, S>(mut self, paths: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.fixed_array_fields = paths.into_iter().map(Into::into).collect();
         self
     }
 
@@ -273,6 +291,11 @@ impl RefCtx {
 
     fn is_fixed_array_bound(&self, name: &str) -> bool {
         self.fixed_array_bound.contains(name)
+    }
+
+    fn is_fixed_array_field(&self, root: &str, field: &str) -> bool {
+        self.fixed_array_fields.contains(&format!("{root}.{field}"))
+            || self.fixed_array_fields.contains(field)
     }
 
     fn spec_call_slice_positions(&self, name: &str) -> Option<&BTreeSet<usize>> {
@@ -628,7 +651,7 @@ fn encode_call(callee: &Expr, args: &[Expr], ctx: &RefCtx) -> Result<String, Ref
                 } else if slice_positions.contains(&index) {
                     encode_slice_arg(arg, ctx)
                 } else {
-                    encode(arg, ctx)
+                    encode_non_slice_call_arg(arg, ctx)
                 }
             })
             .collect::<Result<Vec<_>, _>>()?
@@ -638,6 +661,17 @@ fn encode_call(callee: &Expr, args: &[Expr], ctx: &RefCtx) -> Result<String, Ref
             .collect::<Result<Vec<_>, _>>()?
     };
     Ok(format!("{name}({})", encoded_args.join(", ")))
+}
+
+/// Encode an argument at a source-declared non-slice position. A shared
+/// reference here is an actual Verus borrow of a named record, scalar, or fixed
+/// array; it must not take the slice-only `@` view used by [`encode_ref`]'s
+/// historical unknown-call fallback.
+fn encode_non_slice_call_arg(arg: &Expr, ctx: &RefCtx) -> Result<String, RefEncodeError> {
+    match arg {
+        Expr::Ref { expr, .. } => Ok(format!("&({})", encode(expr, ctx)?)),
+        _ => encode(arg, ctx),
+    }
 }
 
 /// Encode a frozen-combinator call (F2). The combinator's `verus_l3` body is the
@@ -778,6 +812,10 @@ fn encode_method_call(
     let is_fixed_array_value = |expr: &Expr| {
         matches!(expr, Expr::Path(segs)
             if segs.len() == 1 && ctx.is_fixed_array_bound(&segs[0]))
+            || matches!(expr, Expr::Field { receiver, name }
+                if matches!(receiver.as_ref(), Expr::Path(root)
+                    if matches!(root.as_slice(), [root]
+                        if ctx.is_fixed_array_field(root, name))))
             || matches!(expr, Expr::Array(_) | Expr::ArrayRepeat { .. })
             || matches!(expr, Expr::Call { callee, .. }
                 if matches!(callee.as_ref(), Expr::Path(path)
@@ -1161,6 +1199,19 @@ fn encode_receiver(receiver: &Expr, ctx: &RefCtx) -> Result<String, RefEncodeErr
             return Ok(format!("{}@", segments[0]));
         }
     }
+    if let Expr::Field {
+        receiver: root,
+        name,
+    } = receiver
+    {
+        if let Expr::Path(segments) = root.as_ref() {
+            if let [root] = segments.as_slice() {
+                if ctx.is_fixed_array_field(root, name) {
+                    return Ok(format!("{}@", encode(receiver, ctx)?));
+                }
+            }
+        }
+    }
     if let Expr::Call { callee, args } = receiver {
         if let Expr::Path(operator) = callee.as_ref() {
             if let ([kind], [Expr::Path(source)]) = (operator.as_slice(), args.as_slice()) {
@@ -1249,6 +1300,16 @@ fn encode_index(base: &Expr, index: &IndexArg, ctx: &RefCtx) -> Result<String, R
 /// encoding).
 fn encode_ref(inner: &Expr, ctx: &RefCtx) -> Result<String, RefEncodeError> {
     match inner {
+        Expr::Path(path) if matches!(path.as_slice(), [name] if ctx.is_fixed_array_bound(name)) => {
+            Ok(format!("&({})", encode(inner, ctx)?))
+        }
+        Expr::Field { receiver, name }
+            if matches!(receiver.as_ref(), Expr::Path(path)
+                if matches!(path.as_slice(), [root]
+                    if ctx.is_fixed_array_field(root, name))) =>
+        {
+            Ok(format!("&({})", encode(inner, ctx)?))
+        }
         // `&xs[..i]` / `&xs[a..b]` / `&xs[i]` — the slice-range/element borrow is
         // the inner index/subrange itself (production routes `&`-of-`Index`
         // straight through `lower_index`).

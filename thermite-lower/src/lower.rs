@@ -811,20 +811,16 @@ fn lower_with_profile(
 ) -> Result<String, LowerError> {
     // Verus 0.2026.05.24 synthesizes named-enum projection helpers by iterating
     // a randomly seeded HashMap. That order reaches `lib.rmeta`, so an otherwise
-    // exact composition replay can change bytes when a rich enum has several
-    // named fields. A crate-visible export identifies the same-crate
-    // composition profile. In that profile only, enum declarations are delayed
+    // exact receipt replay can change bytes when a rich enum has several named
+    // fields. Every compiled L3 library must be reproducible, whether its export
+    // is public or crate-visible, so library enum declarations are delayed
     // through this Forge-owned item macro: rustc expands the enum after the
     // outer `verus!` rewrite has finished, while the internal marker keeps the
     // resulting HIR in Verus's checked crate instead of treating it as external.
     // The declaration remains in the single exact source and is still proved
     // and compiled by the one strict Verus invocation; only the randomized,
     // unused `arrow_*` helper synthesis is bypassed.
-    let deterministic_composition_enums = library.as_ref().is_some_and(|(exports, _)| {
-        exports
-            .values()
-            .any(|export| export.visibility == L3ExportVisibility::Crate)
-    });
+    let deterministic_library_enums = library.is_some();
     let mut out = String::new();
     if let Some((_, target)) = &library {
         if matches!(target, L3LibraryTarget::Kernel) {
@@ -835,17 +831,15 @@ fn lower_with_profile(
             out.push_str("extern crate alloc;\nuse alloc::vec::Vec;\n");
         }
     }
-    if matches!(
-        library.as_ref().map(|(_, target)| target),
-        Some(L3LibraryTarget::Kernel)
-    ) {
-        out.push_str("use verus_builtin::*;\nuse verus_builtin_macros::*;\n");
-    } else {
-        out.push_str("use vstd::prelude::*;\n");
-    }
+    // Kernel libraries are verified with `--no-vstd`, but Forge explicitly
+    // imports a digest-bound `vstd.vir` and a matching no_std metadata skeleton.
+    // Use that exact prelude in both profiles so native fixed arrays retain their
+    // finite View/index/update model in freestanding proofs. Specification items
+    // erase; executable indexing and assignment remain core Rust operations.
+    out.push_str("use vstd::prelude::*;\n");
     out.push_str("verus! {\n");
 
-    if deterministic_composition_enums
+    if deterministic_library_enums
         && program
             .items
             .iter()
@@ -1221,7 +1215,7 @@ fn lower_with_profile(
                 &spec_fn_param_types,
                 opaque_types.contains(s.name.as_str()),
             )?,
-            Item::Enum(e) if deterministic_composition_enums => lower_composition_enum(e)?,
+            Item::Enum(e) if deterministic_library_enums => lower_composition_enum(e)?,
             Item::Enum(e) => lower_enum(e)?,
             // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 lowering/cert
             // consumer yet (increments 2b-3); emit nothing, mirroring the inert
@@ -1888,7 +1882,7 @@ fn lower_inv_expr(
                     span,
                 )?;
                 return Ok(format!(
-                    "(forall|__thermite_i: int| 0 <= __thermite_i < ({r})@.len() && __thermite_i != ({except}) as int ==> ({r})@[__thermite_i] == ({right})@[__thermite_i])"
+                    "({r}).__thermite_fixed_array_same_except_spec(&({right}), {except})"
                 ));
             }
             if args.len() == 1 && matches!(name.as_str(), "bit_test" | "bit_set" | "bit_clear") {
@@ -5344,13 +5338,24 @@ pub fn block_uses_fixed_array_equality(block: &Block) -> bool {
 
 fn program_uses_fixed_array_equality(program: &Program) -> bool {
     program.items.iter().any(|item| match item {
-        Item::Fn(function) => function
-            .body
-            .as_ref()
-            .is_some_and(block_uses_fixed_array_equality),
-        Item::Const(_) | Item::SpecFn(_) | Item::Struct(_) | Item::Enum(_) | Item::Forge(_) => {
-            false
+        Item::Fn(function) => {
+            expr_uses_fixed_array_equality(&function.contract.req.expr)
+                || function
+                    .contract
+                    .ens
+                    .iter()
+                    .any(|clause| expr_uses_fixed_array_equality(&clause.expr))
+                || function
+                    .body
+                    .as_ref()
+                    .is_some_and(block_uses_fixed_array_equality)
         }
+        Item::SpecFn(function) => block_uses_fixed_array_equality(&function.body),
+        Item::Struct(structure) => structure
+            .inv
+            .as_ref()
+            .is_some_and(|clause| expr_uses_fixed_array_equality(&clause.expr)),
+        Item::Const(_) | Item::Enum(_) | Item::Forge(_) => false,
     })
 }
 
@@ -5438,6 +5443,7 @@ pub fn fixed_array_equality_defs() -> String {
 
     let mut out = String::from(
         "\npub trait __thermite_FixedArrayEq {\n\
+         \x20   spec fn __thermite_fixed_array_same_except_spec(&self, right: &Self, except: usize) -> bool;\n\
          \x20   fn __thermite_fixed_array_eq(&self, right: &Self) -> (result: bool);\n\
          \x20   fn __thermite_fixed_array_same_except(&self, right: &Self, except: usize) -> (result: bool);\n\
          }\n",
@@ -5448,6 +5454,15 @@ pub fn fixed_array_equality_defs() -> String {
             "impl<const N: usize> __thermite_FixedArrayEq for [{primitive}; N] {{"
         )
         .ok();
+        writeln!(
+            out,
+            "    open spec fn __thermite_fixed_array_same_except_spec(&self, right: &[{primitive}; N], except: usize) -> bool {{"
+        )
+        .ok();
+        out.push_str(
+            "        forall|j: int| 0 <= j < N && j != except as int ==> self@[j] == right@[j]\n",
+        );
+        out.push_str("    }\n");
         writeln!(
             out,
             "    fn __thermite_fixed_array_eq(&self, right: &[{primitive}; N]) -> (result: bool)"
@@ -5478,7 +5493,7 @@ pub fn fixed_array_equality_defs() -> String {
         )
         .ok();
         out.push_str("        ensures\n");
-        out.push_str("            result <==> forall|j: int| 0 <= j < N && j != except as int ==> self@[j] == right@[j],\n");
+        out.push_str("            result <==> self.__thermite_fixed_array_same_except_spec(right, except),\n");
         out.push_str("    {\n");
         out.push_str("        let mut i: usize = 0;\n");
         out.push_str("        while i < N\n");
@@ -5917,6 +5932,15 @@ fn emit_structural_array_impl(ty: &Type, out: &mut String) -> Result<(), LowerEr
     .ok();
     writeln!(
         out,
+        "    open spec fn __thermite_fixed_array_same_except_spec(&self, right: &[{spelling}; N], except: usize) -> bool {{"
+    )
+    .ok();
+    out.push_str(
+        "        forall|j: int| 0 <= j < N && j != except as int ==> self@[j] == right@[j]\n\
+         \x20   }\n",
+    );
+    writeln!(
+        out,
         "    fn __thermite_fixed_array_eq(&self, right: &[{spelling}; N]) -> (result: bool)"
     )
     .ok();
@@ -5950,7 +5974,7 @@ fn emit_structural_array_impl(ty: &Type, out: &mut String) -> Result<(), LowerEr
     .ok();
     out.push_str(
         "        ensures\n\
-         \x20           result <==> forall|j: int| 0 <= j < N && j != except as int ==> self@[j] == right@[j],\n\
+         \x20           result <==> self.__thermite_fixed_array_same_except_spec(right, except),\n\
          \x20   {\n\
          \x20       let mut i: usize = 0;\n\
          \x20       while i < N\n\
@@ -9109,7 +9133,15 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
         }
         Expr::ArrayRepeat { value, len } => {
             let value = lower_expr(value, ctx, d, span)?;
-            Ok(format!("[{value}; {}]", lower_array_len(len)))
+            // Verus rejects array literal syntax under `--no-vstd` even when
+            // Forge explicitly imports its exact digest-bound array model. Route
+            // repeat construction through that model's executable constructor.
+            // The const length is fixed explicitly, while the element type is
+            // inferred from the surrounding Thermite type.
+            Ok(format!(
+                "vstd::array::array_fill_for_copy_types::<_, {}>({value})",
+                lower_array_len(len)
+            ))
         }
         // Basis Stage 7 (`.design/basis/07-strings.md` REQ-1/REQ-4): a string
         // literal `"hello"` materializes into an owned `TString` whose bytes are
@@ -9461,7 +9493,7 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
                 let except = lower_expr(&args[1], ctx, d, span)?;
                 if ctx.is_spec() {
                     return Ok(format!(
-                        "(forall|__thermite_i: int| 0 <= __thermite_i < ({r})@.len() && __thermite_i != ({except}) as int ==> ({r})@[__thermite_i] == ({right})@[__thermite_i])"
+                        "({r}).__thermite_fixed_array_same_except_spec(&({right}), {except})"
                     ));
                 }
                 return Ok(format!(

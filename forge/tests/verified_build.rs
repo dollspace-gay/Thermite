@@ -358,6 +358,8 @@ fn fixed_array_logic_is_compiled_and_bound_by_all_strict_l3_gates() {
         "l3",
         "--export",
         "fixed_array_read",
+        "--target",
+        "kernel",
         "--crate-name",
         "fixed_array_read",
         "--out",
@@ -367,9 +369,13 @@ fn fixed_array_logic_is_compiled_and_bound_by_all_strict_l3_gates() {
     assert_success(&forge(&["verify-build", &bundle_s, "--replay", "--json"]));
 
     let source = fs::read_to_string(bundle.join("evidence/source.verus.rs")).unwrap();
+    assert!(source.starts_with("#![no_std]\n#![crate_type = \"rlib\"]"));
+    assert!(source.contains("use vstd::prelude::*;"));
     assert!(source.contains("pub const SLOTS: usize = 4;"), "{source}");
     assert!(
-        source.contains("let slots: [u64; SLOTS] = [7; SLOTS];"),
+        source.contains(
+            "let slots: [u64; SLOTS] = vstd::array::array_fill_for_copy_types::<_, SLOTS>(7);"
+        ),
         "{source}"
     );
     assert!(source.contains("slots[at]"), "{source}");
@@ -378,6 +384,25 @@ fn fixed_array_logic_is_compiled_and_bound_by_all_strict_l3_gates() {
         "{source}"
     );
     assert!(source.contains("__thermite_fixed_array_eq"), "{source}");
+
+    let plan: serde_json::Value =
+        serde_json::from_slice(&fs::read(bundle.join("evidence/artifact-plan.v1")).unwrap())
+            .unwrap();
+    assert_eq!(plan["target"], "kernel");
+    for expected in [
+        "--no-vstd",
+        "vstd=<KERNEL_VSTD_VIR>",
+        "vstd=<KERNEL_VSTD_RLIB>",
+    ] {
+        assert!(
+            plan["expected_verus_args"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|arg| arg == expected),
+            "missing `{expected}`: {plan}"
+        );
+    }
 
     let tv: serde_json::Value = serde_json::from_slice(
         &fs::read(bundle.join("evidence/translation-validation.json")).unwrap(),

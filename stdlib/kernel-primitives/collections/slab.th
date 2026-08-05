@@ -1,0 +1,684 @@
+const FIXED_SLAB_CAPACITY: usize = 64;
+#[opaque] struct FixedSlab64 {
+  slab_used: [bool; FIXED_SLAB_CAPACITY],
+  slab_generation: [u64; FIXED_SLAB_CAPACITY],
+  slab_values: [u64; FIXED_SLAB_CAPACITY],
+}
+
+#[opaque] struct FixedSlabHandle64 {
+  slab_slot: usize,
+  slab_generation: u64,
+}
+
+enum FixedSlabFind64 {
+  SlabFreeFound64 {
+    slot: usize,
+  },
+  SlabFreeMissing64,
+}
+
+enum FixedSlabAllocate64 {
+  SlabAllocated64 {
+    slab: FixedSlab64,
+    handle: FixedSlabHandle64,
+  },
+  SlabFull64 {
+    slab: FixedSlab64,
+    value: u64,
+  },
+  SlabGenerationExhausted64 {
+    slab: FixedSlab64,
+    value: u64,
+    slot: usize,
+  },
+}
+
+enum FixedSlabGet64 {
+  SlabValue64 {
+    value: u64,
+  },
+  SlabHandleStale64,
+}
+
+enum FixedSlabRelease64 {
+  SlabReleased64 {
+    slab: FixedSlab64,
+    value: u64,
+  },
+  SlabReleaseRejected64 {
+    slab: FixedSlab64,
+    handle: FixedSlabHandle64,
+    reason: u8,
+  },
+}
+
+spec fn fixed_slab_next_spec(slot: usize) -> usize
+  dec slot
+{
+  (slot + 1) % 65
+}
+
+spec fn fixed_slab_remaining_spec(remaining: usize) -> usize
+  dec remaining
+{
+  if remaining == 0 { 0 } else { (remaining + 64) % 65 }
+}
+
+spec fn fixed_slab_find_free_spec(
+  slab: &FixedSlab64,
+  slot: usize,
+  remaining: usize,
+) -> FixedSlabFind64
+  dec remaining
+{
+  if remaining == 0 || slot >= FIXED_SLAB_CAPACITY {
+    FixedSlabFind64::SlabFreeMissing64
+  } else {
+    if !slab.slab_used[slot] {
+      FixedSlabFind64::SlabFreeFound64 { slot: slot }
+    } else {
+      fixed_slab_find_free_spec(
+        slab,
+        fixed_slab_next_spec(slot),
+        fixed_slab_remaining_spec(remaining),
+      )
+    }
+  }
+}
+
+spec fn fixed_slab_find_is_slot_spec(
+  found: FixedSlabFind64,
+  expected: usize,
+) -> bool
+  dec expected
+{
+  match found {
+    FixedSlabFind64::SlabFreeFound64 { slot } => slot == expected,
+    FixedSlabFind64::SlabFreeMissing64 => false,
+  }
+}
+
+spec fn fixed_slab_find_is_missing_spec(found: FixedSlabFind64) -> bool
+  dec FIXED_SLAB_CAPACITY
+{
+  match found {
+    FixedSlabFind64::SlabFreeFound64 { slot: _ } => false,
+    FixedSlabFind64::SlabFreeMissing64 => true,
+  }
+}
+
+spec fn fixed_slab_bool_eq_spec(
+  left: &[bool; FIXED_SLAB_CAPACITY],
+  right: &[bool; FIXED_SLAB_CAPACITY],
+) -> bool
+  dec FIXED_SLAB_CAPACITY
+{
+  left.array_eq(right)
+}
+
+spec fn fixed_slab_u64_eq_spec(
+  left: &[u64; FIXED_SLAB_CAPACITY],
+  right: &[u64; FIXED_SLAB_CAPACITY],
+) -> bool
+  dec FIXED_SLAB_CAPACITY
+{
+  left.array_eq(right)
+}
+
+spec fn fixed_slab_bool_frame_spec(
+  next: &[bool; FIXED_SLAB_CAPACITY],
+  old: &[bool; FIXED_SLAB_CAPACITY],
+  slot: usize,
+) -> bool
+  dec slot
+{
+  next.array_same_except(old, slot)
+}
+
+spec fn fixed_slab_u64_frame_spec(
+  next: &[u64; FIXED_SLAB_CAPACITY],
+  old: &[u64; FIXED_SLAB_CAPACITY],
+  slot: usize,
+) -> bool
+  dec slot
+{
+  next.array_same_except(old, slot)
+}
+
+spec fn fixed_slab_equal_spec(
+  left: &FixedSlab64,
+  right: &FixedSlab64,
+) -> bool
+  dec FIXED_SLAB_CAPACITY
+{
+  fixed_slab_bool_eq_spec(&left.slab_used, &right.slab_used)
+    && fixed_slab_u64_eq_spec(&left.slab_generation, &right.slab_generation)
+    && fixed_slab_u64_eq_spec(&left.slab_values, &right.slab_values)
+}
+
+spec fn fixed_slab_empty_spec(slab: &FixedSlab64) -> bool
+  dec FIXED_SLAB_CAPACITY
+{
+  let used: [bool; FIXED_SLAB_CAPACITY] = [false; FIXED_SLAB_CAPACITY];
+  let generation: [u64; FIXED_SLAB_CAPACITY] = [0; FIXED_SLAB_CAPACITY];
+  let values: [u64; FIXED_SLAB_CAPACITY] = [0; FIXED_SLAB_CAPACITY];
+  fixed_slab_bool_eq_spec(&slab.slab_used, &used)
+    && fixed_slab_u64_eq_spec(&slab.slab_generation, &generation)
+    && fixed_slab_u64_eq_spec(&slab.slab_values, &values)
+}
+
+spec fn fixed_slab_handle_live_spec(
+  slab: &FixedSlab64,
+  handle: &FixedSlabHandle64,
+) -> bool
+  dec handle.slab_slot
+{
+  handle.slab_slot < FIXED_SLAB_CAPACITY
+    && slab.slab_used[handle.slab_slot]
+    && slab.slab_generation[handle.slab_slot] == handle.slab_generation
+    && handle.slab_generation != 0
+}
+
+spec fn fixed_slab_release_reason_spec(
+  slab: &FixedSlab64,
+  handle: &FixedSlabHandle64,
+) -> u8
+  dec handle.slab_slot
+{
+  if handle.slab_slot >= FIXED_SLAB_CAPACITY {
+    1
+  } else {
+    if !slab.slab_used[handle.slab_slot] {
+      2
+    } else {
+      if slab.slab_generation[handle.slab_slot] != handle.slab_generation {
+        3
+      } else {
+        if handle.slab_generation == 0 { 4 } else { 0 }
+      }
+    }
+  }
+}
+
+fn fixed_slab_next(slot: usize) -> usize
+  req slot < FIXED_SLAB_CAPACITY
+  ens result == fixed_slab_next_spec(slot)
+  ens result <= FIXED_SLAB_CAPACITY
+  fx pure
+{
+  (slot + 1) % 65
+}
+
+fn fixed_slab_remaining(remaining: usize) -> usize
+  req remaining != 0 && remaining <= FIXED_SLAB_CAPACITY
+  ens result + 1 == remaining
+  fx pure
+{
+  (remaining + 64) % 65
+}
+
+fn fixed_slab_empty() -> FixedSlab64
+  req true
+  ens fixed_slab_empty_spec(&result)
+  ens !result.slab_used[0]
+    && !result.slab_used[FIXED_SLAB_CAPACITY - 1]
+    && result.slab_generation[0] == 0
+    && result.slab_generation[FIXED_SLAB_CAPACITY - 1] == 0
+    && result.slab_values[0] == 0
+    && result.slab_values[FIXED_SLAB_CAPACITY - 1] == 0
+  fx pure
+{
+  FixedSlab64 {
+    slab_used: [false; FIXED_SLAB_CAPACITY],
+    slab_generation: [0; FIXED_SLAB_CAPACITY],
+    slab_values: [0; FIXED_SLAB_CAPACITY],
+  }
+}
+
+fn fixed_slab_handle_slot(handle: &FixedSlabHandle64) -> usize
+  req handle.slab_slot < FIXED_SLAB_CAPACITY
+  ens result == handle.slab_slot
+  ens result < FIXED_SLAB_CAPACITY
+  fx pure
+{
+  handle.slab_slot
+}
+
+fn fixed_slab_handle_generation(handle: &FixedSlabHandle64) -> u64
+  req handle.slab_generation != 0
+  ens result == handle.slab_generation
+  ens result != 0
+  fx pure
+{
+  handle.slab_generation
+}
+
+fn fixed_slab_handle_live(
+  slab: &FixedSlab64,
+  handle: &FixedSlabHandle64,
+) -> bool
+  req true
+  ens result == fixed_slab_handle_live_spec(slab, handle)
+  fx pure
+{
+  handle.slab_slot < FIXED_SLAB_CAPACITY
+    && slab.slab_used[handle.slab_slot]
+    && slab.slab_generation[handle.slab_slot] == handle.slab_generation
+    && handle.slab_generation != 0
+}
+
+fn fixed_slab_find_free(
+  slab: &FixedSlab64,
+  slot: usize,
+  remaining: usize,
+) -> FixedSlabFind64
+  req slot <= FIXED_SLAB_CAPACITY
+    && remaining <= FIXED_SLAB_CAPACITY - slot
+  ens result == fixed_slab_find_free_spec(slab, slot, remaining)
+  ens match result {
+    FixedSlabFind64::SlabFreeFound64 { slot: found } =>
+      slot <= found
+        && found < FIXED_SLAB_CAPACITY
+        && !slab.slab_used[found],
+    FixedSlabFind64::SlabFreeMissing64 => true,
+  }
+  fx pure
+  dec remaining
+{
+  if remaining == 0 || slot == FIXED_SLAB_CAPACITY {
+    FixedSlabFind64::SlabFreeMissing64
+  } else {
+    if !slab.slab_used[slot] {
+      FixedSlabFind64::SlabFreeFound64 { slot: slot }
+    } else {
+      fixed_slab_find_free(
+        slab,
+        fixed_slab_next(slot),
+        fixed_slab_remaining(remaining),
+      )
+    }
+  }
+}
+
+fn fixed_slab_get(
+  slab: &FixedSlab64,
+  handle: &FixedSlabHandle64,
+) -> FixedSlabGet64
+  req true
+  ens match result {
+    FixedSlabGet64::SlabValue64 { value } =>
+      fixed_slab_handle_live_spec(slab, handle)
+        && value == slab.slab_values[handle.slab_slot],
+    FixedSlabGet64::SlabHandleStale64 =>
+      !fixed_slab_handle_live_spec(slab, handle),
+  }
+  fx pure
+{
+  if fixed_slab_handle_live(slab, handle) {
+    FixedSlabGet64::SlabValue64 {
+      value: slab.slab_values[handle.slab_slot],
+    }
+  } else {
+    FixedSlabGet64::SlabHandleStale64
+  }
+}
+
+fn fixed_slab_allocate_at(
+  slab: FixedSlab64,
+  slot: usize,
+  value: u64,
+) -> FixedSlabAllocate64
+  req slot < FIXED_SLAB_CAPACITY
+    && !slab.slab_used[slot]
+    && slab.slab_generation[slot] < 18_446_744_073_709_551_614 + 1
+  ens match result {
+    FixedSlabAllocate64::SlabAllocated64 { slab: next, handle } =>
+      handle.slab_slot == slot
+        && handle.slab_generation == slab.slab_generation[slot] + 1
+        && next.slab_used[slot]
+        && next.slab_generation[slot] == slab.slab_generation[slot] + 1
+        && next.slab_values[slot] == value
+        && fixed_slab_handle_live_spec(&next, &handle)
+        && fixed_slab_bool_frame_spec(&next.slab_used, &slab.slab_used, slot)
+        && fixed_slab_u64_frame_spec(
+          &next.slab_generation,
+          &slab.slab_generation,
+          slot,
+        )
+        && fixed_slab_u64_frame_spec(&next.slab_values, &slab.slab_values, slot),
+    FixedSlabAllocate64::SlabFull64 { slab: _, value: _ } => false,
+    FixedSlabAllocate64::SlabGenerationExhausted64 {
+      slab: _,
+      value: _,
+      slot: _,
+    } => false,
+  }
+  fx pure
+{
+  let changed: usize = slot % FIXED_SLAB_CAPACITY;
+  let next_generation: u64 = slab.slab_generation[changed] + 1;
+  let mut used: [bool; FIXED_SLAB_CAPACITY] = slab.slab_used;
+  let mut generation: [u64; FIXED_SLAB_CAPACITY] = slab.slab_generation;
+  let mut values: [u64; FIXED_SLAB_CAPACITY] = slab.slab_values;
+  used[changed] = true;
+  generation[changed] = next_generation;
+  values[changed] = value;
+  FixedSlabAllocate64::SlabAllocated64 {
+    slab: FixedSlab64 {
+      slab_used: used,
+      slab_generation: generation,
+      slab_values: values,
+    },
+    handle: FixedSlabHandle64 {
+      slab_slot: changed,
+      slab_generation: next_generation,
+    },
+  }
+}
+
+fn fixed_slab_allocate_found(
+  slab: FixedSlab64,
+  slot: usize,
+  value: u64,
+) -> FixedSlabAllocate64
+  req slot < FIXED_SLAB_CAPACITY
+    && !slab.slab_used[slot]
+  ens match result {
+    FixedSlabAllocate64::SlabAllocated64 { slab: next, handle } =>
+      handle.slab_slot == slot
+        && handle.slab_generation == slab.slab_generation[slot] + 1
+        && next.slab_used[slot]
+        && next.slab_generation[slot] == handle.slab_generation
+        && next.slab_values[slot] == value
+        && fixed_slab_handle_live_spec(&next, &handle)
+        && fixed_slab_bool_frame_spec(&next.slab_used, &slab.slab_used, slot)
+        && fixed_slab_u64_frame_spec(
+          &next.slab_generation,
+          &slab.slab_generation,
+          slot,
+        )
+        && fixed_slab_u64_frame_spec(&next.slab_values, &slab.slab_values, slot),
+    FixedSlabAllocate64::SlabFull64 { slab: _, value: _ } => false,
+    FixedSlabAllocate64::SlabGenerationExhausted64 {
+      slab: next,
+      value: returned,
+      slot: exhausted,
+    } =>
+      exhausted == slot
+        && slab.slab_generation[slot] == 18_446_744_073_709_551_614 + 1
+        && returned == value
+        && fixed_slab_equal_spec(&next, &slab),
+  }
+  fx pure
+{
+  let changed: usize = slot % FIXED_SLAB_CAPACITY;
+  if slab.slab_generation[changed] < 18_446_744_073_709_551_614 + 1 {
+    fixed_slab_allocate_at(slab, changed, value)
+  } else {
+    FixedSlabAllocate64::SlabGenerationExhausted64 {
+      slab: slab,
+      value: value,
+      slot: changed,
+    }
+  }
+}
+
+fn fixed_slab_allocate(
+  slab: FixedSlab64,
+  value: u64,
+) -> FixedSlabAllocate64
+  req true
+  ens match result {
+    FixedSlabAllocate64::SlabAllocated64 { slab: next, handle } =>
+      fixed_slab_find_is_slot_spec(
+        fixed_slab_find_free_spec(&slab, 0, FIXED_SLAB_CAPACITY),
+        handle.slab_slot,
+      )
+        && handle.slab_slot < FIXED_SLAB_CAPACITY
+        && slab.slab_generation[handle.slab_slot] < 18_446_744_073_709_551_614 + 1
+        && handle.slab_generation
+          == slab.slab_generation[handle.slab_slot] + 1
+        && next.slab_used[handle.slab_slot]
+        && next.slab_generation[handle.slab_slot] == handle.slab_generation
+        && next.slab_values[handle.slab_slot] == value
+        && fixed_slab_handle_live_spec(&next, &handle)
+        && fixed_slab_bool_frame_spec(
+          &next.slab_used,
+          &slab.slab_used,
+          handle.slab_slot,
+        )
+        && fixed_slab_u64_frame_spec(
+          &next.slab_generation,
+          &slab.slab_generation,
+          handle.slab_slot,
+        )
+        && fixed_slab_u64_frame_spec(
+          &next.slab_values,
+          &slab.slab_values,
+          handle.slab_slot,
+        ),
+    FixedSlabAllocate64::SlabFull64 { slab: next, value: returned } =>
+      fixed_slab_find_is_missing_spec(fixed_slab_find_free_spec(
+        &slab,
+        0,
+        FIXED_SLAB_CAPACITY,
+      ))
+        && returned == value
+        && fixed_slab_equal_spec(&next, &slab),
+    FixedSlabAllocate64::SlabGenerationExhausted64 {
+      slab: next,
+      value: returned,
+      slot,
+    } =>
+      fixed_slab_find_is_slot_spec(
+        fixed_slab_find_free_spec(&slab, 0, FIXED_SLAB_CAPACITY),
+        slot,
+      )
+        && slot < FIXED_SLAB_CAPACITY
+        && slab.slab_generation[slot] == 18_446_744_073_709_551_614 + 1
+        && returned == value
+        && fixed_slab_equal_spec(&next, &slab),
+  }
+  fx pure
+{
+  let remaining: usize = FIXED_SLAB_CAPACITY - 0;
+  match fixed_slab_find_free(&slab, 0, remaining) {
+    FixedSlabFind64::SlabFreeFound64 { slot } =>
+      fixed_slab_allocate_found(slab, slot, value),
+    FixedSlabFind64::SlabFreeMissing64 =>
+      FixedSlabAllocate64::SlabFull64 {
+      slab: slab,
+      value: value,
+    },
+  }
+}
+
+fn fixed_slab_release_live(
+  slab: FixedSlab64,
+  handle: FixedSlabHandle64,
+) -> FixedSlabRelease64
+  req handle.slab_slot < FIXED_SLAB_CAPACITY
+    && fixed_slab_handle_live_spec(&slab, &handle)
+  ens match result {
+    FixedSlabRelease64::SlabReleased64 { slab: next, value } =>
+      value == slab.slab_values[handle.slab_slot]
+        && !next.slab_used[handle.slab_slot]
+        && next.slab_generation[handle.slab_slot] == handle.slab_generation
+        && next.slab_values[handle.slab_slot] == 0
+        && fixed_slab_bool_frame_spec(
+          &next.slab_used,
+          &slab.slab_used,
+          handle.slab_slot,
+        )
+        && fixed_slab_u64_eq_spec(
+          &next.slab_generation,
+          &slab.slab_generation,
+        )
+        && fixed_slab_u64_frame_spec(
+          &next.slab_values,
+          &slab.slab_values,
+          handle.slab_slot,
+        ),
+    FixedSlabRelease64::SlabReleaseRejected64 {
+      slab: _,
+      handle: _,
+      reason: _,
+    } => false,
+  }
+  fx pure
+{
+  let slot: usize = handle.slab_slot % FIXED_SLAB_CAPACITY;
+  let value: u64 = slab.slab_values[slot];
+  let mut used: [bool; FIXED_SLAB_CAPACITY] = slab.slab_used;
+  let generation: [u64; FIXED_SLAB_CAPACITY] = slab.slab_generation;
+  let mut values: [u64; FIXED_SLAB_CAPACITY] = slab.slab_values;
+  used[slot] = false;
+  values[slot] = 0;
+  FixedSlabRelease64::SlabReleased64 {
+    slab: FixedSlab64 {
+      slab_used: used,
+      slab_generation: generation,
+      slab_values: values,
+    },
+    value: value,
+  }
+}
+
+fn fixed_slab_release(
+  slab: FixedSlab64,
+  handle: FixedSlabHandle64,
+) -> FixedSlabRelease64
+  req true
+  ens match result {
+    FixedSlabRelease64::SlabReleased64 { slab: next, value } =>
+      fixed_slab_handle_live_spec(&slab, &handle)
+        && value == slab.slab_values[handle.slab_slot]
+        && !next.slab_used[handle.slab_slot]
+        && next.slab_generation[handle.slab_slot] == handle.slab_generation
+        && next.slab_values[handle.slab_slot] == 0
+        && fixed_slab_bool_frame_spec(
+          &next.slab_used,
+          &slab.slab_used,
+          handle.slab_slot,
+        )
+        && fixed_slab_u64_eq_spec(
+          &next.slab_generation,
+          &slab.slab_generation,
+        )
+        && fixed_slab_u64_frame_spec(
+          &next.slab_values,
+          &slab.slab_values,
+          handle.slab_slot,
+        ),
+    FixedSlabRelease64::SlabReleaseRejected64 {
+      slab: next,
+      handle: returned,
+      reason,
+    } =>
+      !fixed_slab_handle_live_spec(&slab, &handle)
+        && reason == fixed_slab_release_reason_spec(&slab, &handle)
+        && reason != 0
+        && fixed_slab_equal_spec(&next, &slab)
+        && returned.slab_slot == handle.slab_slot
+        && returned.slab_generation == handle.slab_generation,
+  }
+  fx pure
+{
+  if fixed_slab_handle_live(&slab, &handle) {
+    fixed_slab_release_live(slab, handle)
+  } else {
+    let reason: u8 = if handle.slab_slot >= FIXED_SLAB_CAPACITY {
+      1
+    } else {
+      if !slab.slab_used[handle.slab_slot] {
+        2
+      } else {
+        if slab.slab_generation[handle.slab_slot] != handle.slab_generation {
+          3
+        } else {
+          4
+        }
+      }
+    };
+    FixedSlabRelease64::SlabReleaseRejected64 {
+      slab: slab,
+      handle: handle,
+      reason: reason,
+    }
+  }
+}
+
+fn fixed_slab_get_after_allocate(
+  slab: &FixedSlab64,
+  handle: &FixedSlabHandle64,
+  expected: u64,
+) -> bool
+  req fixed_slab_handle_live_spec(slab, handle)
+    && slab.slab_values[handle.slab_slot] == expected
+  ens result
+  fx pure
+{
+  match fixed_slab_get(slab, handle) {
+    FixedSlabGet64::SlabValue64 { value } => value == expected,
+    FixedSlabGet64::SlabHandleStale64 => false,
+  }
+}
+
+fn fixed_slab_allocate_get_probe(value: u64) -> bool
+  req true
+  ens result
+  fx pure
+{
+  let empty: FixedSlab64 = fixed_slab_empty();
+  match fixed_slab_allocate(empty, value) {
+    FixedSlabAllocate64::SlabAllocated64 { slab, handle } =>
+      fixed_slab_get_after_allocate(&slab, &handle, value),
+    FixedSlabAllocate64::SlabFull64 { slab: _, value: _ } => false,
+    FixedSlabAllocate64::SlabGenerationExhausted64 {
+      slab: _,
+      value: _,
+      slot: _,
+    } => false,
+  }
+}
+
+fn fixed_slab_release_after_allocate(
+  slab: FixedSlab64,
+  handle: FixedSlabHandle64,
+  expected: u64,
+) -> bool
+  req fixed_slab_handle_live_spec(&slab, &handle)
+    && slab.slab_values[handle.slab_slot] == expected
+  ens result
+  fx pure
+{
+  let slot: usize = handle.slab_slot;
+  match fixed_slab_release(slab, handle) {
+    FixedSlabRelease64::SlabReleased64 { slab: released, value } =>
+      value == expected
+        && !released.slab_used[slot],
+    FixedSlabRelease64::SlabReleaseRejected64 {
+      slab: _,
+      handle: _,
+      reason: _,
+    } => false,
+  }
+}
+
+fn fixed_slab_allocate_release_probe(value: u64) -> bool
+  req true
+  ens result
+  fx pure
+{
+  let empty: FixedSlab64 = fixed_slab_empty();
+  match fixed_slab_allocate(empty, value) {
+    FixedSlabAllocate64::SlabAllocated64 { slab, handle } =>
+      fixed_slab_release_after_allocate(slab, handle, value),
+    FixedSlabAllocate64::SlabFull64 { slab: _, value: _ } => false,
+    FixedSlabAllocate64::SlabGenerationExhausted64 {
+      slab: _,
+      value: _,
+      slot: _,
+    } => false,
+  }
+}

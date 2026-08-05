@@ -1,0 +1,14 @@
+{
+  "schema": "thermite.package.v1",
+  "name": "thermite_fixed_slab",
+  "roots": [
+    "slab"
+  ],
+  "modules": [
+    {
+      "name": "slab",
+      "path": "collections/slab.th",
+      "imports": []
+    }
+  ]
+}

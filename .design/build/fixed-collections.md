@@ -172,10 +172,14 @@ This is a substantial REQ-KPRIM-2 increment, not completion. Remaining work is:
    policy types;
 4. quantified framing and equality for aggregate collection states;
 5. quantified aggregate body TV and strict aggregate receipt/runtime fixtures;
-6. static-storage ownership and initialization; and
-7. atomic integration for concurrent containers; pure bounded MPSC and
+6. atomic integration for concurrent containers; pure bounded MPSC and
    work-stealing deque state mechanics are supplied by the synchronization
    package.
+
+Allocation-free static-storage ownership and initialization are now supplied by
+the sibling `stdlib/kernel-primitives/static-storage.thpkg.json` package; see
+`.design/build/static-storage.md`. Collection-to-storage composition remains a
+consumer of that primitive rather than a second storage implementation here.
 
 ## Auditable metrics
 

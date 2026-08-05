@@ -4,7 +4,7 @@
 tier: 3-component
 status: draft
 audited-sha: 92396428567edc6940a9e2845217f5ff4c2ea3c6 (re-pinned 2026-06-16, user-authorized: the only change to this doc's governed files since the prior pin is the additive stage-1 forge-tier increment 2a — the new Item::Forge surface + inert Item::Forge match arms, verified net-additive with no substantive removal of existing v1 logic (git log <main>..HEAD = the 8 forge commits); the v1 behavior this doc governs is unchanged, and the new forge-tier surface is specified in .design/stage1-forge-tier.md / REQ-S1-3)
-audited-content-sha256: 425ce9560474ca3c40f1b3faded3a952aa21a7b840cbea3b55720e8e4084416c (re-pinned 2026-08-04 after exact direct finite-record mutable-call state threading and alias rejection; no kernel implementation is present)
+audited-content-sha256: ae14e7d93940c30265266a96757ff27923b04131f617e0a3d2480e1299de5e1b (re-pinned 2026-08-04 after bounded typed-if and match initializer context was added to the independent body reference; no kernel implementation is present)
 governs: thermite-tv/src/exec_stmt_encode.rs, thermite-tv/src/obligation.rs, thermite-lower/src/lower.rs, forge/src/body_tv.rs, forge/src/tv_signal.rs
 thesis-refs:
   - thermite-design.md §1 (trust relocated: code → spec → spec-intent)
@@ -170,6 +170,13 @@ body returns), e.g. for `{ let a = x + 1; let b = a * 2; b }` the denotation is
 (the threading), the tail returned. Mutation (`s = s + 1; s = s * 2`) is the same SUBSTITUTION at the
 mutated cell, ORDER-SENSITIVE (a reorder changes the substitution chain → a different closed form). An
 `if` denotes a Verus `if`-expression over the two branch state-transformers.
+When a typed `let` initializer returns a bounded integer through `if` or `match`,
+the reference denotation propagates that exact parsed result type into every arm
+and casts bare integer leaves. This preserves the source's `u8`/`u16`/`u32`/
+`u64`/`usize` elaboration after substitution into an `ensures` expression,
+where unsuffixed literals would otherwise become ambiguous or mathematical
+integers. The rule is derived from the source annotation and remains independent
+of production lowering.
 
 A direct `data[i] = value` write denotes
 `state[data] := state[data].update(i, value)`. Multiple writes chain left-to-right.

@@ -54,6 +54,7 @@ governs:
   - forge/tests/verified_build.rs
   - forge/tests/fixed_collections.rs
   - forge/tests/ownership_primitives.rs
+  - forge/tests/static_storage_primitives.rs
   - forge/tests/synchronization_primitives.rs
   - stdlib/kernel-primitives/collections.thpkg.json
   - stdlib/kernel-primitives/collections/bitmap.th
@@ -62,6 +63,8 @@ governs:
   - stdlib/kernel-primitives/collections/vector.th
   - stdlib/kernel-primitives/ownership.thpkg.json
   - stdlib/kernel-primitives/ownership/generation.th
+  - stdlib/kernel-primitives/static-storage.thpkg.json
+  - stdlib/kernel-primitives/storage/static_storage.th
   - stdlib/kernel-primitives/synchronization.thpkg.json
   - stdlib/kernel-primitives/synchronization/barrier.th
   - stdlib/kernel-primitives/synchronization/epoch_ack.th
@@ -84,7 +87,7 @@ governs:
   - conformance/verified-composition/frozen_primitive.th
   - conformance/verified-composition/frozen_primitive_shell.rs
   - conformance/verified-composition/frozen_primitive_registry.json
-audited-content-sha256: 934cec657f36db1ba71beb2b22bcfa9f4a450cd9b27b8b49fbeafb0b792be272 (re-pinned 2026-08-04 after exact direct finite-record mutable-call L3 lifecycle completion; no kernel policy or implementation was added)
+audited-content-sha256: b220c44766d5c5956e8076fc1bb74a6985fa8f23c712be5d4d2a8a8ae1557ab6 (re-pinned 2026-08-04 after allocation-free static-storage L3 primitives and bounded typed-if body TV; no kernel policy or implementation was added)
 extends:
   - .design/build/kernel-target.md
   - .design/build/l3-rich-composition.md
@@ -405,6 +408,19 @@ The exact construction semantics are in
 `.design/build/opaque-library-state.md`; the ownership claim and residual trust
 are in `.design/build/generation-ownership.md`.
 
+The receipt-bound `stdlib/kernel-primitives/static-storage.thpkg.json` package
+now supplies the allocation-free static-storage protocol. Its opaque 64-slot
+ledger claims a nonzero-capacity slot under a sealed authority, rotates a
+nonwrapping generation, issues an uninitialized lease, consumes a sealed fill
+witness, commits an initialized opaque region, and permits release only before
+commit. Reuse invalidates stale leases, zero capacity and exhausted generations
+fail closed, and foreign modules cannot construct the ledger, lease, or region.
+All 31 in-language rows are L3 and all 84 executable mutants are killed. The
+only two L1 rows are the bodyless authority and physical byte-fill declarations;
+their exact static object and emitted implementation remain consumer-owned
+direct-refinement obligations. The complete protocol and assurance split are in
+`.design/build/static-storage.md`.
+
 ### Frozen boundary registry
 
 Thermite defines a generic, versioned registry schema. Consumer projects supply
@@ -621,9 +637,9 @@ Source: `.design/reqs/registry.toml`
 |---|---|---|---|---|
 | REQ-KPRIM-1 | shipped | `.design/build/kernel-primitives.md` | Kernel scalar and effect surface |  |
 | REQ-KPRIM-10 | not_started | `.design/build/kernel-primitives.md` | Primitive-only adversarial suite | Add package, fixed-storage, atomic, waiting, registry, refinement, receipt-tamper, freestanding-consumer, and no-concrete-kernel gates. |
-| REQ-KPRIM-2 | partial | `.design/build/kernel-primitives.md` | Exact mutable and fixed storage | Mutable borrowed slices/arrays, arbitrary old/final snapshot framing, native fixed arrays, scalar and recursively finite plain-aggregate relations, defining-module opaque state transitions, exact typed root.field(.field)* mutation with an optional final fixed-array index, owned/value-call composition, exact user-ADT result/match contract and body TV with arm scoping, exact record-state loop entry/leaf-preservation/exit/full-result TV, statement-position mutable-call composition over pairwise-distinct direct finite-record roots, strict freestanding L3 record/rich-state receipts, total directly proved u64 bit methods, and a receipt-bound packed bitmap/u64 vector/u64 FIFO-ring/collision-explicit direct-map package are shipped. Add static storage, index-then-field aliasing if required, mixed shared/mutable, mutable slice/array, and projected-root call effects, consumed mutable-call return values, enum-payload lvalue mutation, richer collision-resolving maps, slabs/freelists, quantified aggregate loops, and generic library capacities. |
+| REQ-KPRIM-2 | partial | `.design/build/kernel-primitives.md` | Exact mutable and fixed storage | Mutable borrowed slices/arrays, arbitrary old/final snapshot framing, native fixed arrays, scalar and recursively finite plain-aggregate relations, defining-module opaque state transitions, exact typed root.field(.field)* mutation with an optional final fixed-array index, owned/value-call composition, exact user-ADT result/match contract and body TV with arm scoping, exact record-state loop entry/leaf-preservation/exit/full-result TV, statement-position mutable-call composition over pairwise-distinct direct finite-record roots, strict freestanding L3 record/rich-state receipts, total directly proved u64 bit methods, a receipt-bound packed bitmap/u64 vector/u64 FIFO-ring/collision-explicit direct-map package, and a receipt-bound generation-owned static-storage claim/fill/commit/release protocol are shipped. Add index-then-field aliasing if required, mixed shared/mutable, mutable slice/array, and projected-root call effects, consumed mutable-call return values, enum-payload lvalue mutation, richer collision-resolving maps, slabs/freelists, quantified aggregate loops, and generic library capacities. |
 | REQ-KPRIM-3 | partial | `.design/build/kernel-primitives.md` | Receipt-bound packages and modules | Independent parsing, module-local identity, direct-import/root-export enforcement, rooted graph validation, opaque construction/read/write ownership, source allowlisting, L3 build/composition, complete receipt binding, validation, and replay are shipped. Extend the remaining source-oriented Forge commands (check, audit, TV, goal/edit/fill) to operate on packages without losing module-local diagnostics. |
-| REQ-KPRIM-4 | partial | `.design/build/kernel-primitives.md` | Sealed authority and ownership | The sealed-construction barrier, direct and nested opaque lifecycle receipts, typed owned-record local/value-call L3 receipts, exact user-ADT result/match TV, exact direct finite-record mutable-call effects, and an opaque receipt-bound 64-slot generation ledger prove acquisition/renewal/release, stale-handle-after-reuse rejection, double-release rejection, monotonic rights, L3 move/clone refusal, and foreign-module construction/read/write rejection. Add a complete affine rule if stronger uniqueness is required, strictly compose the full owned-ADT generation lifecycle through an exactly refined authority mint, and integrate generation ownership with atomic initialization slots. |
+| REQ-KPRIM-4 | partial | `.design/build/kernel-primitives.md` | Sealed authority and ownership | The sealed-construction barrier, direct and nested opaque lifecycle receipts, typed owned-record local/value-call L3 receipts, exact user-ADT result/match TV, exact direct finite-record mutable-call effects, an opaque receipt-bound 64-slot generation ledger, and an opaque generation-bound 64-slot static-storage lease/region protocol prove acquisition/renewal/release, stale-token-after-reuse rejection, double-release rejection, monotonic rights, L3 move/clone refusal, initialization-witness matching, and foreign-module construction/read/write rejection. Add a complete affine rule if stronger uniqueness is required, strictly compose the full owned-ADT lifecycles through exactly refined authority/memory doors, and integrate generation/static-storage ownership with atomic initialization slots. |
 | REQ-KPRIM-5 | partial | `.design/build/kernel-primitives.md` | Sealed atomics and ordering model | The receipt-bound package, 50 sealed boundary declarations, exact ordering matrix, pre-codegen legality gate, bounded history relations, strict kernel ordering proof, strict hosted history proof, replay, and adversarial tests are present. Add enforceable single-use slot ownership, a kernel-target finite-history proof surface, exact atomic object/machine refinement, and verified synchronization consumers. |
 | REQ-KPRIM-6 | partial | `.design/build/kernel-primitives.md` | Verified waiting and synchronization | A receipt-bound bounded-wait trace scan, frozen pause/block/terminal-halt declarations, and fail-closed ticket-lock/barrier/epoch-ack/once/reference-count/seqlock/bounded-MPSC/bounded-work-deque mechanics are shipped with L3 proofs, adversarial claims, strict replay, and tamper rejection. Add registry-level fairness/progress semantics, directly refined wait bodies, atomic integration and machine concurrency composition, then richer reader/writer coordination in .th. |
 | REQ-KPRIM-7 | partial | `.design/build/kernel-primitives.md` | Generic frozen boundary registry | Same-crate safe direct-Verus Rust-ABI entries now close reachable boundaries exactly. Add non-empty codegen-feature binding and exact separate Rust/assembly source, object, machine-model, and refinement closure for irreducible operations without adding an architecture operation table. |

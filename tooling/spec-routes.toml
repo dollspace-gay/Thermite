@@ -2285,3 +2285,31 @@ crate_pattern = "tooling/control-plane-check.py"
 design = ".design/tooling/control-plane.md"
 reference = []
 conformance_ops = []
+
+# ---------------------------------------------------------------------
+# allocation-free static-storage ownership — generic Thermite protocol
+# ---------------------------------------------------------------------
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/static-storage.thpkg.json"
+design = ".design/build/static-storage.md"
+reference = ["stdlib/kernel-primitives/storage/static_storage.th"]
+conformance_ops = ["canonical-static-storage-package"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/storage/static_storage.th"
+design = ".design/build/static-storage.md"
+reference = ["stdlib/kernel-primitives/static-storage.thpkg.json"]
+conformance_ops = ["static-storage-lifecycle", "sealed-fill-witness"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/exec_stmt_encode.rs"
+design = ".design/build/static-storage.md"
+reference = ["stdlib/kernel-primitives/storage/static_storage.th"]
+conformance_ops = ["bounded-if-result-context"]
+
+[[route]]
+crate_pattern = "forge/tests/static_storage_primitives.rs"
+design = ".design/build/static-storage.md"
+reference = ["stdlib/kernel-primitives/static-storage.thpkg.json"]
+conformance_ops = ["static-storage-l3-floor", "static-storage-replay", "static-storage-runtime"]

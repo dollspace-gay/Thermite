@@ -662,6 +662,47 @@ fn contextualize_value_for_type(
         return Ok(contextualize_assignment_value(expr, target_ty, true));
     }
     match (expr, target_ty) {
+        (
+            literal @ Expr::IntLit { .. },
+            Type::Prim(
+                thermite_syntax::PrimType::U8
+                | thermite_syntax::PrimType::U16
+                | thermite_syntax::PrimType::U32
+                | thermite_syntax::PrimType::U64
+                | thermite_syntax::PrimType::Usize,
+            ),
+        ) => Ok(Expr::Cast {
+            expr: Box::new(literal),
+            ty: target_ty.clone(),
+        }),
+        (Expr::If { cond, then, else_ }, _) => {
+            let contextualize_block = |mut block: Block| -> Result<Block, RefEncodeError> {
+                if let Some(tail) = block.tail.take() {
+                    block.tail = Some(Box::new(contextualize_value_for_type(
+                        *tail, target_ty, ctx,
+                    )?));
+                }
+                Ok(block)
+            };
+            Ok(Expr::If {
+                cond,
+                then: contextualize_block(then)?,
+                else_: contextualize_block(else_)?,
+            })
+        }
+        (Expr::Match { scrutinee, arms }, _) => Ok(Expr::Match {
+            scrutinee,
+            arms: arms
+                .into_iter()
+                .map(|arm| {
+                    Ok(MatchArm {
+                        pattern: arm.pattern,
+                        guard: arm.guard,
+                        body: contextualize_value_for_type(arm.body, target_ty, ctx)?,
+                    })
+                })
+                .collect::<Result<Vec<_>, RefEncodeError>>()?,
+        }),
         (Expr::Tuple(values), Type::Tuple(types)) if values.len() == types.len() => {
             Ok(Expr::Tuple(
                 values
@@ -2185,47 +2226,6 @@ fn encode_block_tail(
     }
 }
 
-/// Preserve the element-type context that an annotated native array initializer
-/// supplies. State substitution can move `[7; N]` into an `ensures` expression,
-/// where its unsuffixed literal otherwise has no inferred element type.
-fn contextualize_array_initializer(expr: Expr, ty: &thermite_syntax::Type) -> Expr {
-    let thermite_syntax::Type::Array { elem, .. } = ty else {
-        return expr;
-    };
-    match expr {
-        Expr::Array(elements) => Expr::Array(
-            elements
-                .into_iter()
-                .map(|element| contextualize_array_element(element, elem))
-                .collect(),
-        ),
-        Expr::ArrayRepeat { value, len } => Expr::ArrayRepeat {
-            value: Box::new(contextualize_array_element(*value, elem)),
-            len,
-        },
-        other => other,
-    }
-}
-
-fn contextualize_array_element(expr: Expr, elem: &thermite_syntax::Type) -> Expr {
-    match elem {
-        thermite_syntax::Type::Array { .. } => contextualize_array_initializer(expr, elem),
-        thermite_syntax::Type::Prim(thermite_syntax::PrimType::U8)
-        | thermite_syntax::Type::Prim(thermite_syntax::PrimType::U16)
-        | thermite_syntax::Type::Prim(thermite_syntax::PrimType::U32)
-        | thermite_syntax::Type::Prim(thermite_syntax::PrimType::U64)
-        | thermite_syntax::Type::Prim(thermite_syntax::PrimType::Usize)
-            if matches!(expr, Expr::IntLit { .. }) =>
-        {
-            Expr::Cast {
-                expr: Box::new(expr),
-                ty: elem.clone(),
-            }
-        }
-        _ => expr,
-    }
-}
-
 /// Thread one statement through `env` (REQ-2): bind/rebind a cell to its
 /// env-substituted RHS. The frozen straight-line subset admits `Let`/`Assign`/
 /// `Expr` here; `If`/`Return` are only admitted in tail position (handled by
@@ -2246,8 +2246,8 @@ fn thread_stmt(stmt: &Stmt, env: &mut Env, ctx: &BodyRefCtx) -> Result<(), RefEn
                 )));
             }
             let mut substituted = substitute(init, env)?;
-            if let Some(ty @ thermite_syntax::Type::Array { .. }) = ty {
-                substituted = contextualize_array_initializer(substituted, ty);
+            if let Some(ty) = ty {
+                substituted = contextualize_value_for_type(substituted, ty, ctx)?;
             }
             env.insert(name.clone(), substituted);
             if matches!(ty, Some(thermite_syntax::Type::Array { .. })) {
@@ -3075,6 +3075,45 @@ mod tests {
         assert_eq!(
             body_ref_state(&block, &BodyRefCtx::default()).unwrap(),
             "if c { (x + 1) } else { (x - 1) }"
+        );
+    }
+
+    #[test]
+    fn annotated_bounded_if_initializer_types_every_literal_arm() {
+        let nested = Expr::If {
+            cond: Box::new(path("d")),
+            then: Block {
+                stmts: vec![],
+                tail: Some(Box::new(int(2))),
+            },
+            else_: Block {
+                stmts: vec![],
+                tail: Some(Box::new(int(3))),
+            },
+        };
+        let block = Block {
+            stmts: vec![Stmt::Let {
+                mutable: false,
+                name: "reason".to_string(),
+                ty: Some(Type::Prim(thermite_syntax::PrimType::U8)),
+                init: Expr::If {
+                    cond: Box::new(path("c")),
+                    then: Block {
+                        stmts: vec![],
+                        tail: Some(Box::new(int(1))),
+                    },
+                    else_: Block {
+                        stmts: vec![],
+                        tail: Some(Box::new(nested)),
+                    },
+                },
+            }],
+            tail: Some(Box::new(path("reason"))),
+        };
+
+        assert_eq!(
+            body_ref_state(&block, &BodyRefCtx::default()).unwrap(),
+            "if c { 1 as u8 } else { if d { 2 as u8 } else { 3 as u8 } }"
         );
     }
 

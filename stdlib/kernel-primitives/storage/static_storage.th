@@ -1,0 +1,690 @@
+const STATIC_STORAGE_SLOT_COUNT: usize = 64;
+
+#[sealed] struct StaticStorageAuthority {
+  identity: usize,
+}
+
+#[sealed] struct StaticStorageInitWitness {
+  authority: usize,
+  slot: usize,
+  generation: u64,
+  capacity: usize,
+  fill: u8,
+}
+
+#[opaque] struct StaticStorageLedger {
+  authority: StaticStorageAuthority,
+  reserved: [bool; STATIC_STORAGE_SLOT_COUNT],
+  initialized: [bool; STATIC_STORAGE_SLOT_COUNT],
+  generation: [u64; STATIC_STORAGE_SLOT_COUNT],
+  capacity: [usize; STATIC_STORAGE_SLOT_COUNT],
+}
+
+#[opaque] struct StaticStorageLease {
+  authority: usize,
+  slot: usize,
+  generation: u64,
+  capacity: usize,
+}
+
+#[opaque] struct StaticStorageRegion {
+  authority: usize,
+  slot: usize,
+  generation: u64,
+  capacity: usize,
+  fill: u8,
+}
+
+enum StaticStorageClaim {
+  Claimed {
+    ledger: StaticStorageLedger,
+    lease: StaticStorageLease,
+  },
+  ClaimRejected {
+    ledger: StaticStorageLedger,
+    reason: u8,
+  },
+}
+
+enum StaticStorageCommit {
+  Initialized {
+    ledger: StaticStorageLedger,
+    region: StaticStorageRegion,
+  },
+  CommitRejected {
+    ledger: StaticStorageLedger,
+    lease: StaticStorageLease,
+    witness: StaticStorageInitWitness,
+    reason: u8,
+  },
+}
+
+enum StaticStorageRelease {
+  Released {
+    ledger: StaticStorageLedger,
+  },
+  ReleaseRejected {
+    ledger: StaticStorageLedger,
+    lease: StaticStorageLease,
+    reason: u8,
+  },
+}
+
+spec fn static_storage_lease_live_spec(
+  ledger: &StaticStorageLedger,
+  lease: &StaticStorageLease,
+) -> bool
+  dec lease.slot
+{
+  lease.slot < STATIC_STORAGE_SLOT_COUNT
+    && lease.authority == ledger.authority.identity
+    && ledger.reserved[lease.slot]
+    && !ledger.initialized[lease.slot]
+    && ledger.generation[lease.slot] == lease.generation
+    && ledger.capacity[lease.slot] == lease.capacity
+    && lease.capacity != 0
+}
+
+spec fn static_storage_witness_matches_spec(
+  lease: &StaticStorageLease,
+  witness: &StaticStorageInitWitness,
+) -> bool
+  dec lease.slot
+{
+  witness.authority == lease.authority
+    && witness.slot == lease.slot
+    && witness.generation == lease.generation
+    && witness.capacity == lease.capacity
+}
+
+spec fn static_storage_bool_slots_clear_spec(
+  slots: &[bool; STATIC_STORAGE_SLOT_COUNT],
+) -> bool
+  dec STATIC_STORAGE_SLOT_COUNT
+{
+  let expected: [bool; STATIC_STORAGE_SLOT_COUNT] =
+    [false; STATIC_STORAGE_SLOT_COUNT];
+  slots.array_eq(expected)
+}
+
+spec fn static_storage_generation_slots_clear_spec(
+  slots: &[u64; STATIC_STORAGE_SLOT_COUNT],
+) -> bool
+  dec STATIC_STORAGE_SLOT_COUNT
+{
+  let expected: [u64; STATIC_STORAGE_SLOT_COUNT] =
+    [0; STATIC_STORAGE_SLOT_COUNT];
+  slots.array_eq(expected)
+}
+
+spec fn static_storage_capacity_slots_clear_spec(
+  slots: &[usize; STATIC_STORAGE_SLOT_COUNT],
+) -> bool
+  dec STATIC_STORAGE_SLOT_COUNT
+{
+  let expected: [usize; STATIC_STORAGE_SLOT_COUNT] =
+    [0; STATIC_STORAGE_SLOT_COUNT];
+  slots.array_eq(expected)
+}
+
+spec fn static_storage_claim_reason_spec(
+  reserved: bool,
+  initialized: bool,
+  generation: u64,
+  capacity: usize,
+) -> u8
+  dec generation
+{
+  let reason: u8 = if capacity == 0 {
+    1
+  } else {
+    if reserved {
+      2
+    } else {
+      if initialized {
+        3
+      } else {
+        if generation == 18_446_744_073_709_551_614 + 1 {
+          4
+        } else {
+          0
+        }
+      }
+    }
+  };
+  reason
+}
+
+spec fn static_storage_commit_reason_spec(
+  live: bool,
+  witness_matches: bool,
+) -> u8
+  dec live
+{
+  let reason: u8 = if !live {
+    1
+  } else {
+    if !witness_matches {
+      2
+    } else {
+      0
+    }
+  };
+  reason
+}
+
+#[boundary("thermite::storage::static_authority")]
+fn static_storage_authority(identity: usize) -> StaticStorageAuthority
+  req true
+  ens result.identity == identity
+  fx platform(boot);
+
+#[boundary("thermite::storage::fill_bytes")]
+fn static_storage_fill_bytes(
+  lease: &StaticStorageLease,
+  fill: u8,
+) -> StaticStorageInitWitness
+  req true
+  ens result.authority == lease.authority
+    && result.slot == lease.slot
+    && result.generation == lease.generation
+    && result.capacity == lease.capacity
+    && result.fill == fill
+  fx platform(memory);
+
+fn static_storage_capacity_valid(capacity: usize) -> bool
+  req true
+  ens result == (capacity != 0)
+  fx pure
+{
+  capacity != 0
+}
+
+fn static_storage_claim_reason(
+  reserved: bool,
+  initialized: bool,
+  generation: u64,
+  capacity: usize,
+) -> u8
+  req true
+  ens result == static_storage_claim_reason_spec(
+    reserved,
+    initialized,
+    generation,
+    capacity,
+  )
+  fx pure
+{
+  let reason: u8 = if capacity == 0 {
+    1
+  } else {
+    if reserved {
+      2
+    } else {
+      if initialized {
+        3
+      } else {
+        if generation == 18_446_744_073_709_551_614 + 1 {
+          4
+        } else {
+          0
+        }
+      }
+    }
+  };
+  reason
+}
+
+fn static_storage_commit_reason(
+  live: bool,
+  witness_matches: bool,
+) -> u8
+  req true
+  ens result == static_storage_commit_reason_spec(live, witness_matches)
+  fx pure
+{
+  let reason: u8 = if !live {
+    1
+  } else {
+    if !witness_matches {
+      2
+    } else {
+      0
+    }
+  };
+  reason
+}
+
+fn static_storage_ledger_init(
+  authority: StaticStorageAuthority,
+) -> StaticStorageLedger
+  req true
+  ens result.authority.identity == authority.identity
+    && static_storage_bool_slots_clear_spec(&result.reserved)
+    && static_storage_bool_slots_clear_spec(&result.initialized)
+    && static_storage_generation_slots_clear_spec(&result.generation)
+    && static_storage_capacity_slots_clear_spec(&result.capacity)
+    && !result.reserved[0]
+    && !result.reserved[STATIC_STORAGE_SLOT_COUNT - 1]
+    && !result.initialized[0]
+    && !result.initialized[STATIC_STORAGE_SLOT_COUNT - 1]
+    && result.generation[0] == 0
+    && result.generation[STATIC_STORAGE_SLOT_COUNT - 1] == 0
+    && result.capacity[0] == 0
+    && result.capacity[STATIC_STORAGE_SLOT_COUNT - 1] == 0
+  fx pure
+{
+  StaticStorageLedger {
+    authority: authority,
+    reserved: [false; STATIC_STORAGE_SLOT_COUNT],
+    initialized: [false; STATIC_STORAGE_SLOT_COUNT],
+    generation: [0; STATIC_STORAGE_SLOT_COUNT],
+    capacity: [0; STATIC_STORAGE_SLOT_COUNT],
+  }
+}
+
+fn static_storage_lease_live(
+  ledger: &StaticStorageLedger,
+  lease: &StaticStorageLease,
+) -> bool
+  req true
+  ens result == static_storage_lease_live_spec(ledger, lease)
+  fx pure
+{
+  lease.slot < STATIC_STORAGE_SLOT_COUNT
+    && lease.authority == ledger.authority.identity
+    && ledger.reserved[lease.slot]
+    && !ledger.initialized[lease.slot]
+    && ledger.generation[lease.slot] == lease.generation
+    && ledger.capacity[lease.slot] == lease.capacity
+    && lease.capacity != 0
+}
+
+fn static_storage_witness_matches(
+  lease: &StaticStorageLease,
+  witness: &StaticStorageInitWitness,
+) -> bool
+  req true
+  ens result == static_storage_witness_matches_spec(lease, witness)
+  fx pure
+{
+  witness.authority == lease.authority
+    && witness.slot == lease.slot
+    && witness.generation == lease.generation
+    && witness.capacity == lease.capacity
+}
+
+fn static_storage_claim_at(
+  ledger: StaticStorageLedger,
+  slot: usize,
+  capacity: usize,
+) -> StaticStorageClaim
+  req slot < STATIC_STORAGE_SLOT_COUNT
+  ens match result {
+    StaticStorageClaim::Claimed { ledger: next, lease } =>
+      !ledger.reserved[slot]
+        && !ledger.initialized[slot]
+        && capacity != 0
+        && ledger.generation[slot] < 18_446_744_073_709_551_614 + 1
+        && next.authority.identity == ledger.authority.identity
+        && next.reserved[slot]
+        && !next.initialized[slot]
+        && next.generation[slot] == ledger.generation[slot] + 1
+        && next.capacity[slot] == capacity
+        && lease.authority == ledger.authority.identity
+        && lease.slot == slot
+        && lease.generation == ledger.generation[slot] + 1
+        && lease.capacity == capacity
+        && static_storage_lease_live_spec(&next, &lease),
+    StaticStorageClaim::ClaimRejected { ledger: next, reason } =>
+      reason == static_storage_claim_reason_spec(
+        ledger.reserved[slot],
+        ledger.initialized[slot],
+        ledger.generation[slot],
+        capacity,
+      )
+        && reason != 0
+        && next.authority.identity == ledger.authority.identity
+        && next.reserved[slot] == ledger.reserved[slot]
+        && next.initialized[slot] == ledger.initialized[slot]
+        && next.generation[slot] == ledger.generation[slot]
+        && next.capacity[slot] == ledger.capacity[slot],
+  }
+  fx pure
+{
+  let reason: u8 = static_storage_claim_reason(
+    ledger.reserved[slot],
+    ledger.initialized[slot],
+    ledger.generation[slot],
+    capacity,
+  );
+  if reason == 0 {
+    let identity: usize = ledger.authority.identity;
+    let next_generation: u64 = ledger.generation[slot] + 1;
+    let mut reserved: [bool; STATIC_STORAGE_SLOT_COUNT] = ledger.reserved;
+    let mut initialized: [bool; STATIC_STORAGE_SLOT_COUNT] = ledger.initialized;
+    let mut generations: [u64; STATIC_STORAGE_SLOT_COUNT] = ledger.generation;
+    let mut capacities: [usize; STATIC_STORAGE_SLOT_COUNT] = ledger.capacity;
+    reserved[slot] = true;
+    initialized[slot] = false;
+    generations[slot] = next_generation;
+    capacities[slot] = capacity;
+    StaticStorageClaim::Claimed {
+      ledger: StaticStorageLedger {
+        authority: ledger.authority,
+        reserved: reserved,
+        initialized: initialized,
+        generation: generations,
+        capacity: capacities,
+      },
+      lease: StaticStorageLease {
+        authority: identity,
+        slot: slot,
+        generation: next_generation,
+        capacity: capacity,
+      },
+    }
+  } else {
+    StaticStorageClaim::ClaimRejected {
+      ledger: ledger,
+      reason: reason,
+    }
+  }
+}
+
+fn static_storage_commit(
+  ledger: StaticStorageLedger,
+  lease: StaticStorageLease,
+  witness: StaticStorageInitWitness,
+) -> StaticStorageCommit
+  req true
+  ens match result {
+    StaticStorageCommit::Initialized { ledger: next, region } =>
+      static_storage_lease_live_spec(&ledger, &lease)
+        && static_storage_witness_matches_spec(&lease, &witness)
+        && next.authority.identity == ledger.authority.identity
+        && next.reserved[lease.slot]
+        && next.initialized[lease.slot]
+        && next.generation[lease.slot] == lease.generation
+        && next.capacity[lease.slot] == lease.capacity
+        && region.authority == lease.authority
+        && region.slot == lease.slot
+        && region.generation == lease.generation
+        && region.capacity == lease.capacity
+        && region.fill == witness.fill,
+    StaticStorageCommit::CommitRejected {
+      ledger: next,
+      lease: returned,
+      witness: returned_witness,
+      reason,
+    } =>
+      reason == static_storage_commit_reason_spec(
+        static_storage_lease_live_spec(&ledger, &lease),
+        static_storage_witness_matches_spec(&lease, &witness),
+      )
+        && reason != 0
+        && next.authority.identity == ledger.authority.identity
+        && returned.authority == lease.authority
+        && returned.slot == lease.slot
+        && returned.generation == lease.generation
+        && returned.capacity == lease.capacity
+        && returned_witness.authority == witness.authority
+        && returned_witness.slot == witness.slot
+        && returned_witness.generation == witness.generation
+        && returned_witness.capacity == witness.capacity
+        && returned_witness.fill == witness.fill,
+  }
+  fx pure
+{
+  let live: bool = static_storage_lease_live(&ledger, &lease);
+  let matches: bool = static_storage_witness_matches(&lease, &witness);
+  let reason: u8 = static_storage_commit_reason(live, matches);
+  if reason == 0 {
+    let mut initialized: [bool; STATIC_STORAGE_SLOT_COUNT] = ledger.initialized;
+    initialized[lease.slot] = true;
+    StaticStorageCommit::Initialized {
+      ledger: StaticStorageLedger {
+        authority: ledger.authority,
+        reserved: ledger.reserved,
+        initialized: initialized,
+        generation: ledger.generation,
+        capacity: ledger.capacity,
+      },
+      region: StaticStorageRegion {
+        authority: lease.authority,
+        slot: lease.slot,
+        generation: lease.generation,
+        capacity: lease.capacity,
+        fill: witness.fill,
+      },
+    }
+  } else {
+    StaticStorageCommit::CommitRejected {
+      ledger: ledger,
+      lease: lease,
+      witness: witness,
+      reason: reason,
+    }
+  }
+}
+
+fn static_storage_release_uninitialized(
+  ledger: StaticStorageLedger,
+  lease: StaticStorageLease,
+) -> StaticStorageRelease
+  req true
+  ens match result {
+    StaticStorageRelease::Released { ledger: next } =>
+      static_storage_lease_live_spec(&ledger, &lease)
+        && next.authority.identity == ledger.authority.identity
+        && !next.reserved[lease.slot]
+        && !next.initialized[lease.slot]
+        && next.generation[lease.slot] == lease.generation
+        && next.capacity[lease.slot] == 0,
+    StaticStorageRelease::ReleaseRejected {
+      ledger: next,
+      lease: returned,
+      reason,
+    } =>
+      reason == 1
+        && !static_storage_lease_live_spec(&ledger, &lease)
+        && next.authority.identity == ledger.authority.identity
+        && returned.authority == lease.authority
+        && returned.slot == lease.slot
+        && returned.generation == lease.generation
+        && returned.capacity == lease.capacity,
+  }
+  fx pure
+{
+  if static_storage_lease_live(&ledger, &lease) {
+    let mut reserved: [bool; STATIC_STORAGE_SLOT_COUNT] = ledger.reserved;
+    let mut capacities: [usize; STATIC_STORAGE_SLOT_COUNT] = ledger.capacity;
+    reserved[lease.slot] = false;
+    capacities[lease.slot] = 0;
+    StaticStorageRelease::Released {
+      ledger: StaticStorageLedger {
+        authority: ledger.authority,
+        reserved: reserved,
+        initialized: ledger.initialized,
+        generation: ledger.generation,
+        capacity: capacities,
+      },
+    }
+  } else {
+    StaticStorageRelease::ReleaseRejected {
+      ledger: ledger,
+      lease: lease,
+      reason: 1,
+    }
+  }
+}
+
+fn static_storage_zero_capacity_rejected(
+  ledger: StaticStorageLedger,
+  slot: usize,
+) -> bool
+  req slot < STATIC_STORAGE_SLOT_COUNT
+  ens result
+  fx pure
+{
+  match static_storage_claim_at(ledger, slot, 0) {
+    StaticStorageClaim::Claimed { ledger: _, lease: _ } => false,
+    StaticStorageClaim::ClaimRejected { ledger: _, reason } => reason == 1,
+  }
+}
+
+fn static_storage_release_invalidates_lease(
+  ledger: StaticStorageLedger,
+  lease: StaticStorageLease,
+) -> bool
+  req static_storage_lease_live_spec(&ledger, &lease)
+  ens result
+  fx pure
+{
+  let stale: StaticStorageLease = StaticStorageLease {
+    authority: lease.authority,
+    slot: lease.slot,
+    generation: lease.generation,
+    capacity: lease.capacity,
+  };
+  match static_storage_release_uninitialized(ledger, lease) {
+    StaticStorageRelease::Released { ledger: released } =>
+      !static_storage_lease_live(&released, &stale),
+    StaticStorageRelease::ReleaseRejected { ledger: _, lease: _, reason: _ } => false,
+  }
+}
+
+fn static_storage_stale_witness_rejected(
+  ledger: StaticStorageLedger,
+  lease: StaticStorageLease,
+  witness: StaticStorageInitWitness,
+) -> bool
+  req static_storage_lease_live_spec(&ledger, &lease)
+    && !static_storage_witness_matches_spec(&lease, &witness)
+  ens result
+  fx pure
+{
+  match static_storage_commit(ledger, lease, witness) {
+    StaticStorageCommit::Initialized { ledger: _, region: _ } => false,
+    StaticStorageCommit::CommitRejected {
+      ledger: _,
+      lease: _,
+      witness: _,
+      reason,
+    } => reason == 2,
+  }
+}
+
+fn static_storage_commit_after_claim(
+  ledger: StaticStorageLedger,
+  lease: StaticStorageLease,
+  identity: usize,
+  slot: usize,
+  capacity: usize,
+  fill: u8,
+) -> bool
+  req static_storage_lease_live_spec(&ledger, &lease)
+    && lease.authority == identity
+    && lease.slot == slot
+    && lease.capacity == capacity
+  ens result
+  fx platform(memory)
+{
+  let witness: StaticStorageInitWitness = static_storage_fill_bytes(&lease, fill);
+  match static_storage_commit(ledger, lease, witness) {
+    StaticStorageCommit::Initialized {
+      ledger: _,
+      region,
+    } => region.fill == fill,
+    StaticStorageCommit::CommitRejected {
+      ledger: _,
+      lease: _,
+      witness: _,
+      reason: _,
+    } => false,
+  }
+}
+
+fn static_storage_reuse_after_claim(
+  ledger: StaticStorageLedger,
+  lease: StaticStorageLease,
+  slot: usize,
+  second_capacity: usize,
+) -> bool
+  req static_storage_lease_live_spec(&ledger, &lease)
+    && lease.slot == slot
+    && lease.generation < 18_446_744_073_709_551_614 + 1
+    && second_capacity != 0
+  ens result
+  fx pure
+{
+  let stale: StaticStorageLease = StaticStorageLease {
+    authority: lease.authority,
+    slot: lease.slot,
+    generation: lease.generation,
+    capacity: lease.capacity,
+  };
+  match static_storage_release_uninitialized(ledger, lease) {
+    StaticStorageRelease::Released { ledger: released } =>
+      match static_storage_claim_at(released, slot, second_capacity) {
+        StaticStorageClaim::Claimed {
+          ledger: reclaimed,
+          lease: _,
+        } => !static_storage_lease_live(&reclaimed, &stale),
+        StaticStorageClaim::ClaimRejected { ledger: _, reason: _ } => false,
+      },
+    StaticStorageRelease::ReleaseRejected {
+      ledger: _,
+      lease: _,
+      reason: _,
+    } => false,
+  }
+}
+
+fn static_storage_lifecycle_probe(
+  identity: usize,
+  slot: usize,
+  capacity: usize,
+  fill: u8,
+) -> bool
+  req slot < STATIC_STORAGE_SLOT_COUNT
+    && capacity != 0
+  ens result
+  fx platform(boot), platform(memory)
+{
+  let authority: StaticStorageAuthority = static_storage_authority(identity);
+  let ledger: StaticStorageLedger = static_storage_ledger_init(authority);
+  match static_storage_claim_at(ledger, slot, capacity) {
+    StaticStorageClaim::Claimed { ledger: claimed, lease } =>
+      static_storage_commit_after_claim(
+        claimed,
+        lease,
+        identity,
+        slot,
+        capacity,
+        fill,
+      ),
+    StaticStorageClaim::ClaimRejected { ledger: _, reason: _ } => false,
+  }
+}
+
+fn static_storage_slot_reuse_probe(
+  identity: usize,
+  slot: usize,
+  first_capacity: usize,
+  second_capacity: usize,
+) -> bool
+  req slot < STATIC_STORAGE_SLOT_COUNT
+    && first_capacity != 0
+    && second_capacity != 0
+  ens result
+  fx platform(boot)
+{
+  let authority: StaticStorageAuthority = static_storage_authority(identity);
+  let ledger: StaticStorageLedger = static_storage_ledger_init(authority);
+  match static_storage_claim_at(ledger, slot, first_capacity) {
+    StaticStorageClaim::Claimed { ledger: claimed, lease } =>
+      static_storage_reuse_after_claim(claimed, lease, slot, second_capacity),
+    StaticStorageClaim::ClaimRejected { ledger: _, reason: _ } => false,
+  }
+}

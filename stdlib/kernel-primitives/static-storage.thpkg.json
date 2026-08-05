@@ -1,0 +1,14 @@
+{
+  "schema": "thermite.package.v1",
+  "name": "thermite_static_storage_primitives",
+  "roots": [
+    "static_storage"
+  ],
+  "modules": [
+    {
+      "name": "static_storage",
+      "path": "storage/static_storage.th",
+      "imports": []
+    }
+  ]
+}

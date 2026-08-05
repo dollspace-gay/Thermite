@@ -58,6 +58,12 @@ operation validates the fields against the unique ledger state, and an accepted
 transition either retires the slot or returns a refreshed generation. A stale
 copied handle therefore fails the next state check.
 
+The sibling `stdlib/kernel-primitives/static-storage.thpkg.json` now applies the
+same nonwrapping generation discipline to allocation-free storage leases and
+committed regions. It does not duplicate this rights ledger or add capability
+policy; the two protocols are separate reusable components until their tokens
+are connected to sealed atomic initialization slots.
+
 ## Transition surface
 
 The bodyful Thermite operations are:
@@ -145,7 +151,8 @@ work is explicit:
    through that refined mint;
 3. add a complete affine/linear rule if consumers require uniqueness beyond
    the current sealed-root, move-check, generation, and construction barriers;
-4. bind generation ownership into sealed atomic initialization slots; and
+4. bind the generation and static-storage ownership protocols into sealed atomic
+   initialization slots; and
 5. add concurrent synchronization consumers that rotate generations through
    exact atomic transitions.
 

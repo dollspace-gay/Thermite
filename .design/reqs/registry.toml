@@ -17840,7 +17840,7 @@ owner = ".design/build/kernel-primitives.md"
 status = "partial"
 scope = "forge"
 summary = "Consumer projects supply versioned platform registries whose exact declarations, implementations, effects, ownership, ABI, models, and evidence are closed from source reachability."
-remaining_scope = "Same-crate safe direct-Verus Rust-ABI entries now close reachable boundaries exactly, including canonical non-empty target features checked against the pinned rustc inventory and bound into proof/codegen, validation, and replay. Add exact separate Rust/assembly source, object, machine-model, and refinement closure for irreducible operations without adding an architecture operation table."
+remaining_scope = "Same-crate and separately emitted safe sequential direct-Verus Rust-ABI entries now close reachable boundaries exactly. The v2 path binds authored and generated sources, exported proof interface, rlib, every object-member digest, target features, two no-cheating proof/codegen layers, validation, runtime linking, and replay. Add assembly and unsafe/irreducible Rust source/object closure plus exact atomic, volatile, privileged, and concurrent machine-model refinement without adding an architecture operation table."
 contributors = [".design/boundary/ffi-boundary.md", ".design/build/l3-rich-composition.md", ".design/build/frozen-primitive-registry.md"]
 generated_to = ["status", "forge-kernel-primitives-status"]
 
@@ -17853,6 +17853,11 @@ note = "Strict schema parsing, one-to-one reachable closure, declaration drift c
 kind = "test"
 target = "forge/tests/verified_composition.rs::frozen_registry_directly_refines_the_exact_reachable_boundary"
 note = "Builds and replays a synthetic primitive with a non-empty sse2 feature set bound through the plan and exact Verus/rustc arguments, rejects receipt and post-plan registry mutation, and rejects a digest-updated lying implementation at whole-crate Verus."
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/verified_composition.rs::separate_primitive_source_interface_rlib_and_object_are_exact_and_replayed"
+note = "Builds a freestanding registry-v2 primitive as a separate strict Verus crate, imports its checked interface, links and executes its exact rlib, binds every object member, replays both proof layers, and rejects source/interface/rlib drift."
 
 [[requirement.evidence]]
 kind = "test"
@@ -17886,7 +17891,7 @@ owner = ".design/build/kernel-primitives.md"
 status = "partial"
 scope = "verified"
 summary = "Generated Thermite callers compose with consumer-supplied direct-Verus shells, and receipts distinguish exact refinement from boundary assumptions."
-remaining_scope = "Safe same-crate direct-Verus operations now receive exact one-to-one checked-wrapper refinement. Add direct machine-operation refinement tied to separate Rust/assembly objects and the atomic/concurrency model before every irreducible platform family is covered."
+remaining_scope = "Safe same-crate and separately emitted sequential direct-Verus operations now receive exact checked-wrapper/import refinement through their emitted Rust objects. Add direct machine-operation refinement tied to unsafe Rust/assembly objects and the atomic/concurrency model before every irreducible platform family is covered."
 contributors = [".design/build/l3-rich-composition.md", ".design/build/frozen-primitive-registry.md"]
 generated_to = ["status", "forge-kernel-primitives-status"]
 

@@ -15,7 +15,7 @@ governs:
   - thermite-spec/tests/atomic_ordering_validate.rs
   - forge/src/verified_build/primitive_registry.rs
   - forge/tests/verified_build.rs
-audited-content-sha256: f7576f3c41f397ce808a45c4ad5b985ece498c92d17eebf2c3bd5c6d5c2d4dd7 (re-pinned 2026-08-05 after exact target-feature codegen binding; atomic machine semantics remain unclaimed)
+audited-content-sha256: 0f0146c2d6a01c73843cfd6c5bc08513d0e8aa19cb5e4c424107c0afaf268363 (re-pinned 2026-08-05 after safe registry-v2 object closure; atomic machine semantics remain unclaimed)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/frozen-primitive-registry.md
@@ -201,11 +201,12 @@ forge verify-build /tmp/atomic-history.verified --replay
 
 ## Registry and machine refinement
 
-Frozen registry v1 proves exact same-crate safe-Rust checked wrappers. That is
-sufficient for sequential pure adapters; it is not a machine-concurrency proof.
-Registry v1 therefore rejects every entry whose concurrency is `atomic`,
-`volatile`, or `privileged`, even when its memory-ordering strings are otherwise
-well formed.
+Frozen registry v1 proves exact same-crate safe-Rust checked wrappers, and v2
+adds exact separately emitted safe sequential Rust source/rlib/object closure.
+Those paths are sufficient for sequential pure adapters; neither is a
+machine-concurrency proof. Both therefore reject every entry whose concurrency
+is `atomic`, `volatile`, or `privileged`, even when its memory-ordering strings
+are otherwise well formed.
 
 A later registry schema may admit an atomic entry only when it binds all of:
 

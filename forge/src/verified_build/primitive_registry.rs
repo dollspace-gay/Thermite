@@ -6,7 +6,8 @@
 
 use super::*;
 
-const REGISTRY_SCHEMA: &str = "thermite.frozen-primitive-registry.v1";
+const REGISTRY_SCHEMA_V1: &str = "thermite.frozen-primitive-registry.v1";
+const REGISTRY_SCHEMA_V2: &str = "thermite.frozen-primitive-registry.v2";
 const REGISTRY_EVIDENCE_PATH: &str = "evidence/frozen-primitive-registry.json";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -14,6 +15,7 @@ pub(super) struct PrimitiveRegistrySource {
     pub(super) bytes: Vec<u8>,
     pub(super) plan: PlannedPrimitiveRegistryV1,
     pub(super) bindings: Vec<thermite_lower::L3BoundaryBinding>,
+    pub(super) separate_crates: BTreeSet<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -66,6 +68,8 @@ struct RegistryImplementation {
     shell_module: String,
     item: String,
     source_sha256: String,
+    #[serde(default)]
+    linkage: Option<String>,
     abi: String,
     symbol: String,
     alignment: u64,
@@ -90,12 +94,16 @@ fn plan_from_bytes(
 ) -> Result<PrimitiveRegistrySource, String> {
     let document: RegistryDocument = serde_json::from_slice(&bytes)
         .map_err(|error| format!("invalid frozen primitive registry JSON: {error}"))?;
-    if document.schema != REGISTRY_SCHEMA {
+    if !matches!(
+        document.schema.as_str(),
+        REGISTRY_SCHEMA_V1 | REGISTRY_SCHEMA_V2
+    ) {
         return Err(format!(
             "unsupported frozen primitive registry schema `{}`",
             document.schema
         ));
     }
+    let registry_v2 = document.schema == REGISTRY_SCHEMA_V2;
     if document.target.target_triple != target_triple {
         return Err(format!(
             "primitive registry target triple `{}` does not match codegen target `{target_triple}`",
@@ -158,6 +166,8 @@ fn plan_from_bytes(
     let mut implementations = BTreeSet::new();
     let mut rows = Vec::new();
     let mut bindings = Vec::new();
+    let mut module_linkages = BTreeMap::<String, String>::new();
+    let mut separate_crates = BTreeSet::new();
 
     for entry in document.entries {
         if !valid_semantic_name(&entry.semantic_name, entry.version) {
@@ -272,6 +282,47 @@ fn plan_from_bytes(
             ));
         }
 
+        let linkage = entry
+            .implementation
+            .linkage
+            .as_deref()
+            .unwrap_or("same_crate");
+        if registry_v2 && entry.implementation.linkage.is_none() {
+            return Err(format!(
+                "primitive entry `{}` in registry v2 must declare implementation.linkage",
+                entry.semantic_name
+            ));
+        }
+        if !registry_v2 && entry.implementation.linkage.is_some() {
+            return Err(format!(
+                "primitive entry `{}` cannot declare implementation.linkage in registry v1",
+                entry.semantic_name
+            ));
+        }
+        if !matches!(linkage, "same_crate" | "separate_verus_crate") {
+            return Err(format!(
+                "primitive entry `{}` has unknown implementation linkage `{linkage}`",
+                entry.semantic_name
+            ));
+        }
+        if linkage == "separate_verus_crate" && !registry_v2 {
+            return Err(format!(
+                "primitive entry `{}` requires frozen primitive registry v2 for separate-crate linkage",
+                entry.semantic_name
+            ));
+        }
+        if let Some(previous) = module_linkages.insert(
+            entry.implementation.shell_module.clone(),
+            linkage.to_string(),
+        ) {
+            if previous != linkage {
+                return Err(format!(
+                    "direct-Verus module `{}` cannot mix `{previous}` and `{linkage}` linkage",
+                    entry.implementation.shell_module
+                ));
+            }
+        }
+
         let Some(shell) = shell_by_name.get(entry.implementation.shell_module.as_str()) else {
             return Err(format!(
                 "primitive entry `{}` names unknown direct-Verus shell `{}`",
@@ -328,11 +379,14 @@ fn plan_from_bytes(
                 entry.semantic_name
             ));
         }
-        if entry.model != "thermite_contract"
-            || entry.refinement != "same_crate_verus_checked_wrapper"
-        {
+        let expected_refinement = match linkage {
+            "same_crate" => "same_crate_verus_checked_wrapper",
+            "separate_verus_crate" => "separate_crate_verus_import",
+            _ => unreachable!(),
+        };
+        if entry.model != "thermite_contract" || entry.refinement != expected_refinement {
             return Err(format!(
-                "primitive entry `{}` must use model `thermite_contract` and refinement `same_crate_verus_checked_wrapper` in registry v1",
+                "primitive entry `{}` with `{linkage}` linkage must use model `thermite_contract` and refinement `{expected_refinement}`",
                 entry.semantic_name
             ));
         }
@@ -341,11 +395,24 @@ fn plan_from_bytes(
             &entry.proof_obligations,
             valid_evidence_name,
         )?;
-        for required in [
-            "contract_refinement",
-            "exact_implementation_call",
-            "whole_crate_no_cheating",
-        ] {
+        let mandatory_obligations: &[&str] = if linkage == "same_crate" {
+            &[
+                "contract_refinement",
+                "exact_implementation_call",
+                "whole_crate_no_cheating",
+            ]
+        } else {
+            &[
+                "contract_refinement",
+                "exact_implementation_call",
+                "exported_verus_interface",
+                "imported_call_refinement",
+                "separate_object_identity",
+                "separate_source_identity",
+                "whole_crate_no_cheating",
+            ]
+        };
+        for required in mandatory_obligations {
             if !entry
                 .proof_obligations
                 .iter()
@@ -373,7 +440,7 @@ fn plan_from_bytes(
         )?;
         if entry.concurrency != "sequential" {
             return Err(format!(
-                "primitive entry `{}` requests `{}` concurrency, but frozen primitive registry v1 can directly refine only sequential safe-Rust operations; atomic, volatile, and privileged implementations require exact object/machine semantics and refinement evidence",
+                "primitive entry `{}` requests `{}` concurrency, but frozen primitive registries v1/v2 can directly refine only sequential safe-Rust operations; atomic, volatile, and privileged implementations require exact object/machine semantics and refinement evidence",
                 entry.semantic_name, entry.concurrency
             ));
         }
@@ -399,6 +466,9 @@ fn plan_from_bytes(
                 call_target,
             });
         }
+        if linkage == "separate_verus_crate" {
+            separate_crates.insert(entry.implementation.shell_module.clone());
+        }
         rows.push(PlannedPrimitiveEntryV1 {
             semantic_name: entry.semantic_name,
             version: entry.version,
@@ -416,6 +486,7 @@ fn plan_from_bytes(
             implementation_shell: entry.implementation.shell_module,
             implementation_item: entry.implementation.item,
             implementation_source_sha256: shell.plan.sha256.clone(),
+            implementation_linkage: linkage.to_string(),
             implementation_abi: entry.implementation.abi,
             implementation_symbol: entry.implementation.symbol,
             alignment: entry.implementation.alignment,
@@ -441,7 +512,7 @@ fn plan_from_bytes(
     bindings.sort_by(|left, right| left.source_name.cmp(&right.source_name));
     Ok(PrimitiveRegistrySource {
         plan: PlannedPrimitiveRegistryV1 {
-            schema: REGISTRY_SCHEMA.to_string(),
+            schema: document.schema,
             path: REGISTRY_EVIDENCE_PATH.to_string(),
             length: bytes.len() as u64,
             sha256: sha256(&bytes),
@@ -453,6 +524,7 @@ fn plan_from_bytes(
         },
         bytes,
         bindings,
+        separate_crates,
     })
 }
 
@@ -645,7 +717,7 @@ mod tests {
             })
             .unwrap();
         let registry = serde_json::json!({
-            "schema": REGISTRY_SCHEMA,
+            "schema": REGISTRY_SCHEMA_V1,
             "target": {
                 "target_triple": "synthetic64-unknown-none",
                 "target_features": []
@@ -734,6 +806,62 @@ mod tests {
         assert!(planned.plan.entries[0].reachable);
         assert_eq!(planned.plan.entries[0].proof_obligations.len(), 3);
         assert_eq!(planned.plan.target.target_features, ["sse2"]);
+    }
+
+    #[test]
+    fn registry_v2_separates_source_and_requires_the_full_import_proof_set() {
+        let (_, _, _, mut registry) = fixture();
+        registry["schema"] = serde_json::json!(REGISTRY_SCHEMA_V2);
+        registry["entries"][0]["implementation"]["linkage"] =
+            serde_json::json!("separate_verus_crate");
+        registry["entries"][0]["refinement"] = serde_json::json!("separate_crate_verus_import");
+        registry["entries"][0]["proof_obligations"] = serde_json::json!([
+            "contract_refinement",
+            "exact_implementation_call",
+            "exported_verus_interface",
+            "imported_call_refinement",
+            "separate_object_identity",
+            "separate_source_identity",
+            "whole_crate_no_cheating"
+        ]);
+        let planned = plan(&registry).unwrap();
+        assert_eq!(
+            planned.separate_crates,
+            BTreeSet::from(["platform_shell".to_string()])
+        );
+        assert_eq!(
+            planned.plan.entries[0].implementation_linkage,
+            "separate_verus_crate"
+        );
+        assert_eq!(planned.plan.entries[0].proof_obligations.len(), 7);
+
+        let mut missing = registry.clone();
+        missing["entries"][0]["proof_obligations"] = serde_json::json!([
+            "contract_refinement",
+            "exact_implementation_call",
+            "exported_verus_interface",
+            "imported_call_refinement",
+            "separate_source_identity",
+            "whole_crate_no_cheating"
+        ]);
+        assert!(plan(&missing)
+            .unwrap_err()
+            .contains("separate_object_identity"));
+
+        let mut v2_without_linkage = registry.clone();
+        v2_without_linkage["entries"][0]["implementation"]
+            .as_object_mut()
+            .unwrap()
+            .remove("linkage");
+        assert!(plan(&v2_without_linkage)
+            .unwrap_err()
+            .contains("must declare implementation.linkage"));
+
+        let mut v1_with_linkage = registry;
+        v1_with_linkage["schema"] = serde_json::json!(REGISTRY_SCHEMA_V1);
+        assert!(plan(&v1_with_linkage)
+            .unwrap_err()
+            .contains("cannot declare implementation.linkage in registry v1"));
     }
 
     #[test]

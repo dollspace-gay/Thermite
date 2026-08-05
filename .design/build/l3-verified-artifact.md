@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: bfedc1b20e6c3623578ebc83cac16d5da1b416727a978f12e1dc4ddabc760f71 (re-pinned 2026-08-05 after binding the pinned rustc target-feature inventory into lint-clean codegen identity)
+audited-content-sha256: 75e6bb21568e0f24b02337f6821d59f455a44b9e5ef901df28372c1923993d54 (re-pinned 2026-08-05 after binding optional separate verified primitive dependencies into composition receipts)
 decision: Option A — compile the canonical Verus executable body that was verified
 issue: github:dollspace-gay/Thermite#101, github:dollspace-gay/Thermite#103, github:dollspace-gay/Thermite#104, github:dollspace-gay/Thermite#108, github:dollspace-gay/Thermite#111
 governs:
@@ -54,10 +54,13 @@ Issue #104 extends this pipeline additively for exact-source rich-state
 composition. A composition build has the distinct plan schema
 `thermite.combined-artifact-plan.v1` and receipt schema
 `thermite.verified-composition-receipt.v1`; it binds canonical Thermite lowering
-and exact direct-Verus shell bytes into the same single Verus proof-and-compile
-input. Ordinary L3 builds omit the optional composition fields and retain this
-document's original schemas and semantics. The composition-specific policy,
-visibility, inventory, and acceptance contract live in
+and exact direct-Verus shell bytes into the final caller proof-and-compile
+input. Registry-v2 safe sequential primitives may be proven and emitted first
+as separate crates; their authored/generated sources, interface, rlib, and
+object members are bound before the caller imports them. Ordinary L3 builds
+omit the optional composition fields and retain this document's original
+schemas and semantics. The composition-specific policy, visibility, inventory,
+and acceptance contract live in
 `.design/build/l3-rich-composition.md`.
 
 Issue #108 extends only the kernel composition toolchain boundary. Kernel

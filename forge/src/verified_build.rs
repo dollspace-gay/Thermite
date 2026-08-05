@@ -212,6 +212,7 @@ pub struct PlannedPrimitiveEntryV1 {
     pub implementation_shell: String,
     pub implementation_item: String,
     pub implementation_source_sha256: String,
+    pub implementation_linkage: String,
     pub implementation_abi: String,
     pub implementation_symbol: String,
     pub alignment: u64,
@@ -221,6 +222,17 @@ pub struct PlannedPrimitiveEntryV1 {
     pub concurrency: String,
     pub memory_orderings: Vec<String>,
     pub failure: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlannedPrimitiveCrateV1 {
+    pub name: String,
+    pub authored_source_path: String,
+    pub authored_source_length: u64,
+    pub authored_source_sha256: String,
+    pub crate_source_path: String,
+    pub crate_source_sha256: String,
+    pub items: Vec<PlannedShellItem>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -238,6 +250,8 @@ pub struct CompositionPlanV1 {
     pub schema: String,
     pub composition_exports: Vec<PlannedCompositionExport>,
     pub shell_modules: Vec<PlannedShellModule>,
+    #[serde(default)]
+    pub primitive_crates: Vec<PlannedPrimitiveCrateV1>,
     pub inventory: Vec<CompositionInventoryRow>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub primitive_registry: Option<PlannedPrimitiveRegistryV1>,
@@ -249,6 +263,13 @@ pub struct CompositionPlanV1 {
 struct DirectVerusSource {
     plan: PlannedShellModule,
     bytes: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PrimitiveCrateSource {
+    plan: PlannedPrimitiveCrateV1,
+    authored_bytes: Vec<u8>,
+    crate_source: String,
 }
 
 fn canonical_shell_set_sha256(modules: &[PlannedShellModule]) -> String {
@@ -480,6 +501,32 @@ impl ArtifactPlanV1 {
                         }
                     });
                 }
+                for primitive_crate in &composition.primitive_crates {
+                    c.record("primitive_crate", |c| {
+                        c.field("name", &primitive_crate.name);
+                        c.field(
+                            "authored_source_path",
+                            &primitive_crate.authored_source_path,
+                        );
+                        c.field(
+                            "authored_source_length",
+                            &primitive_crate.authored_source_length.to_string(),
+                        );
+                        c.field(
+                            "authored_source_sha256",
+                            &primitive_crate.authored_source_sha256,
+                        );
+                        c.field("crate_source_path", &primitive_crate.crate_source_path);
+                        c.field("crate_source_sha256", &primitive_crate.crate_source_sha256);
+                        for item in &primitive_crate.items {
+                            c.record("item", |c| {
+                                c.field("name", &item.name);
+                                c.field("kind", &item.kind);
+                                c.field("visibility", &item.visibility);
+                            });
+                        }
+                    });
+                }
                 for item in &composition.inventory {
                     c.record("inventory", |c| {
                         c.field("origin", &item.origin);
@@ -527,6 +574,7 @@ impl ArtifactPlanV1 {
                                     "implementation_source_sha256",
                                     &entry.implementation_source_sha256,
                                 );
+                                c.field("implementation_linkage", &entry.implementation_linkage);
                                 c.field("implementation_abi", &entry.implementation_abi);
                                 c.field("implementation_symbol", &entry.implementation_symbol);
                                 c.field("alignment", &entry.alignment.to_string());
@@ -796,12 +844,36 @@ pub struct CompositionReceiptBindingV1 {
     pub direct_verus_set_sha256: String,
     pub inventory_sha256: String,
     pub combined_source_sha256: String,
+    #[serde(default)]
+    pub primitive_crates: Vec<BoundPrimitiveCrateV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub primitive_registry_sha256: Option<String>,
     #[serde(default)]
     pub reachable_primitive_count: u64,
     #[serde(default)]
     pub discharged_refinement_obligations: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BoundPrimitiveObjectV1 {
+    pub name: String,
+    pub length: u64,
+    pub sha256: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BoundPrimitiveCrateV1 {
+    pub name: String,
+    pub authored_source_sha256: String,
+    pub crate_source_sha256: String,
+    pub verus_result_sha256: String,
+    pub vir_path: String,
+    pub vir_length: u64,
+    pub vir_sha256: String,
+    pub rlib_path: String,
+    pub rlib_length: u64,
+    pub rlib_sha256: String,
+    pub object_members: Vec<BoundPrimitiveObjectV1>,
 }
 
 impl ReceiptBindingV1 {
@@ -893,6 +965,30 @@ impl ReceiptBindingV1 {
                     "combined_source_sha256",
                     &composition.combined_source_sha256,
                 );
+                for primitive_crate in &composition.primitive_crates {
+                    c.record("primitive_crate", |c| {
+                        c.field("name", &primitive_crate.name);
+                        c.field(
+                            "authored_source_sha256",
+                            &primitive_crate.authored_source_sha256,
+                        );
+                        c.field("crate_source_sha256", &primitive_crate.crate_source_sha256);
+                        c.field("verus_result_sha256", &primitive_crate.verus_result_sha256);
+                        c.field("vir_path", &primitive_crate.vir_path);
+                        c.field("vir_length", &primitive_crate.vir_length.to_string());
+                        c.field("vir_sha256", &primitive_crate.vir_sha256);
+                        c.field("rlib_path", &primitive_crate.rlib_path);
+                        c.field("rlib_length", &primitive_crate.rlib_length.to_string());
+                        c.field("rlib_sha256", &primitive_crate.rlib_sha256);
+                        for object in &primitive_crate.object_members {
+                            c.record("object", |c| {
+                                c.field("name", &object.name);
+                                c.field("length", &object.length.to_string());
+                                c.field("sha256", &object.sha256);
+                            });
+                        }
+                    });
+                }
                 c.field(
                     "primitive_registry_sha256",
                     composition
@@ -2516,6 +2612,7 @@ pub fn build_file(
         target_pointer_width: &toolchain.target_pointer_width,
         target_endian: &toolchain.target_endian,
         target_features: &[],
+        verus_imports: &[],
         verus_source: &verus_source,
     });
     let frozen_plan_sha = plan.canonical_sha256();
@@ -2576,6 +2673,9 @@ pub fn build_file(
         codegen_toolchain_sha256: &toolchain.artifact_codegen.canonical_identity_sha256(),
         kernel_vstd_rlib: collected_toolchain.dependency_path("libvstd.rlib"),
         target_features: &[],
+        imports: &[],
+        export_vir: false,
+        kernel_vstd_model: true,
     })?;
     if !compiled.evidence.success || compiled.evidence.errors != Some(0) {
         return Ok(reject(
@@ -3179,6 +3279,7 @@ struct PlanInput<'a> {
     target_pointer_width: &'a str,
     target_endian: &'a str,
     target_features: &'a [String],
+    verus_imports: &'a [String],
     verus_source: &'a str,
 }
 
@@ -3196,6 +3297,7 @@ fn make_plan(input: PlanInput<'_>) -> ArtifactPlanV1 {
         target_pointer_width,
         target_endian,
         target_features,
+        verus_imports,
         verus_source,
     } = input;
     let mut nodes = Vec::new();
@@ -3325,7 +3427,14 @@ fn make_plan(input: PlanInput<'_>) -> ArtifactPlanV1 {
         target_endian: target_endian.to_string(),
         crate_type: "rlib".to_string(),
         panic_strategy: "abort".to_string(),
-        expected_verus_args: expected_verus_args(crate_name, target, target_features),
+        expected_verus_args: expected_verus_args(
+            crate_name,
+            target,
+            target_features,
+            verus_imports,
+            false,
+            true,
+        ),
         exports: exports.to_vec(),
         closure_nodes: nodes,
         closure_edges: edges,
@@ -4761,7 +4870,15 @@ fn command_text(command: &mut Command, label: &str) -> Result<String, ForgeError
 struct CompiledVerus {
     artifact: Vec<u8>,
     artifact_name: String,
+    exported_vir: Option<Vec<u8>>,
+    object_members: Vec<BoundPrimitiveObjectV1>,
     evidence: VerusEvidence,
+}
+
+struct VerusImportBytes<'a> {
+    name: &'a str,
+    vir: &'a [u8],
+    rlib: &'a [u8],
 }
 
 struct CompileVerusInput<'a> {
@@ -4773,6 +4890,9 @@ struct CompileVerusInput<'a> {
     codegen_toolchain_sha256: &'a str,
     kernel_vstd_rlib: Option<&'a Path>,
     target_features: &'a [String],
+    imports: &'a [VerusImportBytes<'a>],
+    export_vir: bool,
+    kernel_vstd_model: bool,
 }
 
 fn compile_verus_source(input: CompileVerusInput<'_>) -> Result<CompiledVerus, ForgeError> {
@@ -4785,13 +4905,38 @@ fn compile_verus_source(input: CompileVerusInput<'_>) -> Result<CompiledVerus, F
         codegen_toolchain_sha256,
         kernel_vstd_rlib,
         target_features,
+        imports,
+        export_vir,
+        kernel_vstd_model,
     } = input;
+    let import_names: Vec<String> = imports
+        .iter()
+        .map(|import| import.name.to_string())
+        .collect();
+    let args = expected_verus_args(
+        crate_name,
+        target,
+        target_features,
+        &import_names,
+        export_vir,
+        kernel_vstd_model,
+    );
     let scratch = ScratchTree::new_in_temp(&format!("verified_{crate_name}"))?;
     let source_name = format!("{crate_name}.rs");
     let source_path = scratch.path.join(&source_name);
     write_bytes(&source_path, source.as_bytes())?;
     let before = file_sha256(&source_path)?.2;
-    let args = expected_verus_args(crate_name, target, target_features);
+    if !imports.is_empty() {
+        let deps = scratch.path.join("deps");
+        fs::create_dir(&deps).map_err(|source| ForgeError::Io {
+            path: deps.display().to_string(),
+            source,
+        })?;
+        for import in imports {
+            write_bytes(&deps.join(format!("{}.vir", import.name)), import.vir)?;
+            write_bytes(&deps.join(format!("lib{}.rlib", import.name)), import.rlib)?;
+        }
+    }
     let mut command = Command::new(verus_path);
     for arg in &args[..args.len() - 2] {
         match arg.as_str() {
@@ -4861,6 +5006,8 @@ fn compile_verus_source(input: CompileVerusInput<'_>) -> Result<CompiledVerus, F
         return Ok(CompiledVerus {
             artifact: Vec::new(),
             artifact_name: format!("lib{crate_name}.rlib"),
+            exported_vir: None,
+            object_members: Vec::new(),
             evidence,
         });
     }
@@ -4898,9 +5045,21 @@ fn compile_verus_source(input: CompileVerusInput<'_>) -> Result<CompiledVerus, F
         path: artifact_path.display().to_string(),
         source,
     })?;
+    let exported_vir = if export_vir {
+        let path = scratch.path.join(format!("{crate_name}.vir"));
+        Some(fs::read(&path).map_err(|source| ForgeError::Io {
+            path: path.display().to_string(),
+            source,
+        })?)
+    } else {
+        None
+    };
+    let object_members = archive_object_members(&artifact)?;
     Ok(CompiledVerus {
         artifact,
         artifact_name,
+        exported_vir,
+        object_members,
         evidence,
     })
 }
@@ -4909,15 +5068,31 @@ fn expected_verus_args(
     crate_name: &str,
     target: VerifiedTarget,
     target_features: &[String],
+    imports: &[String],
+    export_vir: bool,
+    kernel_vstd_model: bool,
 ) -> Vec<String> {
     let mut args = vec!["--output-json".to_string(), "--profile".to_string()];
+    if export_vir {
+        args.extend(["--export".to_string(), format!("{crate_name}.vir")]);
+    }
     if matches!(target, VerifiedTarget::Kernel) {
+        args.push("--no-vstd".to_string());
+        if kernel_vstd_model {
+            args.extend([
+                "--import".to_string(),
+                "vstd=<KERNEL_VSTD_VIR>".to_string(),
+                "--extern".to_string(),
+                "vstd=<KERNEL_VSTD_RLIB>".to_string(),
+            ]);
+        }
+    }
+    for import in imports {
         args.extend([
-            "--no-vstd".to_string(),
             "--import".to_string(),
-            "vstd=<KERNEL_VSTD_VIR>".to_string(),
+            format!("{import}=deps/{import}.vir"),
             "--extern".to_string(),
-            "vstd=<KERNEL_VSTD_RLIB>".to_string(),
+            format!("{import}=deps/lib{import}.rlib"),
         ]);
     }
     args.extend([
@@ -4948,6 +5123,146 @@ fn expected_verus_args(
         format!("{crate_name}.rs"),
     ]);
     args
+}
+
+fn archive_object_members(bytes: &[u8]) -> Result<Vec<BoundPrimitiveObjectV1>, ForgeError> {
+    const MAGIC: &[u8] = b"!<arch>\n";
+    if !bytes.starts_with(MAGIC) {
+        return Err(ForgeError::VerusOutput {
+            detail: "Verus rlib is not a canonical ar archive".to_string(),
+        });
+    }
+    struct RawMember<'a> {
+        name: String,
+        data: &'a [u8],
+    }
+    let mut raw_members = Vec::new();
+    let mut string_table: Option<&[u8]> = None;
+    let mut offset = MAGIC.len();
+    while offset < bytes.len() {
+        if bytes.len() - offset < 60 {
+            return Err(ForgeError::VerusOutput {
+                detail: "Verus rlib has a truncated ar member header".to_string(),
+            });
+        }
+        let header = &bytes[offset..offset + 60];
+        if &header[58..60] != b"`\n" {
+            return Err(ForgeError::VerusOutput {
+                detail: "Verus rlib has an invalid ar member header".to_string(),
+            });
+        }
+        let raw_name = std::str::from_utf8(&header[..16])
+            .map_err(|_| ForgeError::VerusOutput {
+                detail: "Verus rlib has a non-UTF-8 ar member name".to_string(),
+            })?
+            .trim()
+            .to_string();
+        let size = std::str::from_utf8(&header[48..58])
+            .ok()
+            .map(str::trim)
+            .and_then(|value| value.parse::<usize>().ok())
+            .ok_or_else(|| ForgeError::VerusOutput {
+                detail: "Verus rlib has an invalid ar member size".to_string(),
+            })?;
+        let data_start = offset + 60;
+        let data_end = data_start
+            .checked_add(size)
+            .ok_or_else(|| ForgeError::VerusOutput {
+                detail: "Verus rlib ar member size overflow".to_string(),
+            })?;
+        if data_end > bytes.len() {
+            return Err(ForgeError::VerusOutput {
+                detail: "Verus rlib has a truncated ar member".to_string(),
+            });
+        }
+        let data = &bytes[data_start..data_end];
+        if raw_name == "//" {
+            string_table = Some(data);
+        } else {
+            raw_members.push(RawMember {
+                name: raw_name,
+                data,
+            });
+        }
+        offset = data_end + (size & 1);
+    }
+    if offset != bytes.len() {
+        return Err(ForgeError::VerusOutput {
+            detail: "Verus rlib has invalid ar alignment padding".to_string(),
+        });
+    }
+
+    let mut rows = Vec::new();
+    let mut names = BTreeSet::new();
+    for member in raw_members {
+        let (name, data) =
+            if let Some(length) = member.name.strip_prefix("#1/") {
+                let length = length
+                    .parse::<usize>()
+                    .map_err(|_| ForgeError::VerusOutput {
+                        detail: "Verus rlib has an invalid BSD extended member name".to_string(),
+                    })?;
+                if length > member.data.len() {
+                    return Err(ForgeError::VerusOutput {
+                        detail: "Verus rlib has a truncated BSD extended member name".to_string(),
+                    });
+                }
+                let name = std::str::from_utf8(&member.data[..length])
+                    .map_err(|_| ForgeError::VerusOutput {
+                        detail: "Verus rlib has a non-UTF-8 BSD extended member name".to_string(),
+                    })?
+                    .trim_end_matches('\0')
+                    .to_string();
+                (name, &member.data[length..])
+            } else if let Some(table_offset) = member.name.strip_prefix('/').filter(|suffix| {
+                !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_digit())
+            }) {
+                let table_offset =
+                    table_offset
+                        .parse::<usize>()
+                        .map_err(|_| ForgeError::VerusOutput {
+                            detail: "Verus rlib has an invalid GNU name-table offset".to_string(),
+                        })?;
+                let table = string_table.ok_or_else(|| ForgeError::VerusOutput {
+                    detail: "Verus rlib references a missing GNU name table".to_string(),
+                })?;
+                let tail = table
+                    .get(table_offset..)
+                    .ok_or_else(|| ForgeError::VerusOutput {
+                        detail: "Verus rlib GNU name-table offset is out of bounds".to_string(),
+                    })?;
+                let end = tail
+                    .windows(2)
+                    .position(|window| window == b"/\n")
+                    .or_else(|| tail.iter().position(|byte| *byte == 0))
+                    .ok_or_else(|| ForgeError::VerusOutput {
+                        detail: "Verus rlib has an unterminated GNU member name".to_string(),
+                    })?;
+                let name = std::str::from_utf8(&tail[..end])
+                    .map_err(|_| ForgeError::VerusOutput {
+                        detail: "Verus rlib has a non-UTF-8 GNU member name".to_string(),
+                    })?
+                    .to_string();
+                (name, member.data)
+            } else {
+                (member.name.trim_end_matches('/').to_string(), member.data)
+            };
+        if !name.ends_with(".o") {
+            continue;
+        }
+        if !names.insert(name.clone()) {
+            return Err(ForgeError::VerusOutput {
+                detail: format!("Verus rlib has duplicate object member `{name}`"),
+            });
+        }
+        rows.push(BoundPrimitiveObjectV1 {
+            name,
+            length: data.len() as u64,
+            sha256: sha256(data),
+        });
+    }
+    rows.sort_by(|left, right| left.name.cmp(&right.name));
+    Ok(rows)
 }
 
 fn parse_verus_summary(stdout: &str) -> (bool, Option<u64>) {
@@ -5018,6 +5333,8 @@ struct CompositionStageInput<'a> {
     lowered_thermite: &'a str,
     shell_sources: &'a [DirectVerusSource],
     primitive_registry: Option<&'a primitive_registry::PrimitiveRegistrySource>,
+    primitive_crates: &'a [PrimitiveCrateSource],
+    compiled_primitive_crates: &'a [CompiledVerus],
 }
 
 fn stage_and_publish(input: StageInput<'_>) -> Result<VerifiedBuildReceiptV1, ForgeError> {
@@ -5076,6 +5393,7 @@ fn stage_and_publish(input: StageInput<'_>) -> Result<VerifiedBuildReceiptV1, Fo
     }
     write_bytes(&evidence.join("artifact-plan.v1"), plan_json.as_bytes())?;
     write_bytes(&evidence.join("source.verus.rs"), verus_source.as_bytes())?;
+    let mut bound_primitive_crates = Vec::new();
     if let Some(composition) = &composition {
         let shell_dir = evidence.join("direct-verus");
         fs::create_dir_all(&shell_dir).map_err(|source| ForgeError::Io {
@@ -5088,6 +5406,92 @@ fn stage_and_publish(input: StageInput<'_>) -> Result<VerifiedBuildReceiptV1, Fo
         )?;
         for shell in composition.shell_sources {
             write_bytes(&stage.path.join(&shell.plan.path), &shell.bytes)?;
+        }
+        if composition.primitive_crates.len() != composition.compiled_primitive_crates.len() {
+            return Err(ForgeError::VerusOutput {
+                detail: "separate primitive source/codegen cardinality mismatch".to_string(),
+            });
+        }
+        for (source, compiled_primitive) in composition
+            .primitive_crates
+            .iter()
+            .zip(composition.compiled_primitive_crates)
+        {
+            let primitive_dir = stage.path.join(
+                Path::new(&source.plan.authored_source_path)
+                    .parent()
+                    .ok_or_else(|| ForgeError::VerusOutput {
+                        detail: "separate primitive authored source has no parent".to_string(),
+                    })?,
+            );
+            fs::create_dir_all(&primitive_dir).map_err(|source_error| ForgeError::Io {
+                path: primitive_dir.display().to_string(),
+                source: source_error,
+            })?;
+            write_bytes(
+                &stage.path.join(&source.plan.authored_source_path),
+                &source.authored_bytes,
+            )?;
+            write_bytes(
+                &stage.path.join(&source.plan.crate_source_path),
+                source.crate_source.as_bytes(),
+            )?;
+            let verus_result_path = format!(
+                "{}/verus-result.json",
+                Path::new(&source.plan.authored_source_path)
+                    .parent()
+                    .unwrap()
+                    .to_string_lossy()
+                    .replace('\\', "/")
+            );
+            let verus_result = pretty_json(
+                &compiled_primitive.evidence,
+                "separate primitive Verus evidence",
+            )?;
+            write_bytes(
+                &stage.path.join(&verus_result_path),
+                verus_result.as_bytes(),
+            )?;
+            let vir = compiled_primitive.exported_vir.as_ref().ok_or_else(|| {
+                ForgeError::VerusOutput {
+                    detail: format!(
+                        "separate primitive crate `{}` has no exported Verus interface",
+                        source.plan.name
+                    ),
+                }
+            })?;
+            let vir_path = format!(
+                "{}/interface.vir",
+                Path::new(&source.plan.authored_source_path)
+                    .parent()
+                    .unwrap()
+                    .to_string_lossy()
+                    .replace('\\', "/")
+            );
+            write_bytes(&stage.path.join(&vir_path), vir)?;
+            let rlib_path = format!("artifact/deps/lib{}.rlib", source.plan.name);
+            if compiled_primitive.artifact_name != format!("lib{}.rlib", source.plan.name) {
+                return Err(ForgeError::VerusOutput {
+                    detail: format!(
+                        "separate primitive crate `{}` emitted unexpected artifact `{}`",
+                        source.plan.name, compiled_primitive.artifact_name
+                    ),
+                });
+            }
+            write_bytes(&stage.path.join(&rlib_path), &compiled_primitive.artifact)?;
+            bound_primitive_crates.push(BoundPrimitiveCrateV1 {
+                name: source.plan.name.clone(),
+                authored_source_sha256: source.plan.authored_source_sha256.clone(),
+                crate_source_sha256: source.plan.crate_source_sha256.clone(),
+                verus_result_sha256: sha256(verus_result.as_bytes()),
+                vir_path,
+                vir_length: vir.len() as u64,
+                vir_sha256: sha256(vir),
+                rlib_path,
+                rlib_length: compiled_primitive.artifact.len() as u64,
+                rlib_sha256: sha256(&compiled_primitive.artifact),
+                object_members: compiled_primitive.object_members.clone(),
+            });
         }
         if let Some(registry) = composition.primitive_registry {
             write_bytes(&stage.path.join(&registry.plan.path), &registry.bytes)?;
@@ -5226,6 +5630,7 @@ fn stage_and_publish(input: StageInput<'_>) -> Result<VerifiedBuildReceiptV1, Fo
                 direct_verus_set_sha256: canonical_shell_set_sha256(&composition.shell_modules),
                 inventory_sha256: canonical_composition_inventory_sha256(&composition.inventory),
                 combined_source_sha256: composition.combined_source_sha256.clone(),
+                primitive_crates: bound_primitive_crates.clone(),
                 primitive_registry_sha256: composition
                     .primitive_registry
                     .as_ref()
@@ -5739,6 +6144,7 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
             target_pointer_width: &plan.target_pointer_width,
             target_endian: &plan.target_endian,
             target_features: &[],
+            verus_imports: &[],
             verus_source: &emitted,
         });
         (emitted, reconstructed)
@@ -5861,7 +6267,24 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
         || verus.errors != Some(0)
         || verus.args != plan.expected_verus_args
         || plan.expected_verus_args
-            != expected_verus_args(&plan.crate_name, plan.target, target_features)
+            != expected_verus_args(
+                &plan.crate_name,
+                plan.target,
+                target_features,
+                &plan
+                    .composition
+                    .as_ref()
+                    .map(|composition| {
+                        composition
+                            .primitive_crates
+                            .iter()
+                            .map(|primitive_crate| primitive_crate.name.clone())
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default(),
+                false,
+                true,
+            )
         || verus.source_relative_path != format!("{}.rs", plan.crate_name)
         || verus.source_sha256_before != plan.expected_verus_source_sha256
         || verus.source_sha256_after != plan.expected_verus_source_sha256
@@ -5939,6 +6362,16 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
         return Err(ForgeError::VerusOutput {
             detail: "bound toolchain policy or environment whitelist is invalid".to_string(),
         });
+    }
+    if let (Some(composition), Some(binding)) = (&plan.composition, &receipt.binding.composition) {
+        validate_bound_primitive_crates(
+            bundle,
+            plan.target,
+            target_features,
+            &toolchain.artifact_codegen.canonical_identity_sha256(),
+            &composition.primitive_crates,
+            &binding.primitive_crates,
+        )?;
     }
     if file_sha256(&bundle.join("evidence/Cargo.lock"))?.2 != toolchain.cargo_lock_sha256 {
         return Err(ForgeError::VerusOutput {
@@ -6108,6 +6541,67 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
         let replay_kernel_vstd_path = replay_kernel_vstd
             .as_ref()
             .map(|(scratch, _, _)| scratch.path.join("libvstd.rlib"));
+        let planned_primitive_crates = plan
+            .composition
+            .as_ref()
+            .map(|composition| composition.primitive_crates.as_slice())
+            .unwrap_or(&[]);
+        let bound_primitive_crates = receipt
+            .binding
+            .composition
+            .as_ref()
+            .map(|composition| composition.primitive_crates.as_slice())
+            .unwrap_or(&[]);
+        let mut replayed_primitive_crates = Vec::new();
+        for (planned, bound) in planned_primitive_crates.iter().zip(bound_primitive_crates) {
+            let primitive_source =
+                String::from_utf8(file_sha256(&bundle.join(&planned.crate_source_path))?.1)
+                    .map_err(|error| ForgeError::VerusOutput {
+                        detail: format!(
+                            "bound separate primitive crate `{}` source is not UTF-8: {error}",
+                            planned.name
+                        ),
+                    })?;
+            let replayed = compile_verus_source(CompileVerusInput {
+                crate_name: &planned.name,
+                source: &primitive_source,
+                target: plan.target,
+                verus_path: current_verus.to_string_lossy().as_ref(),
+                environment: &replay_environment,
+                codegen_toolchain_sha256: &current_codegen.canonical_identity_sha256(),
+                kernel_vstd_rlib: replay_kernel_vstd_path.as_deref(),
+                target_features,
+                imports: &[],
+                export_vir: true,
+                kernel_vstd_model: false,
+            })?;
+            if !replayed.evidence.success
+                || sha256(&replayed.artifact) != bound.rlib_sha256
+                || replayed.exported_vir.is_none()
+                || replayed.object_members != bound.object_members
+            {
+                return Err(ForgeError::VerusOutput {
+                    detail: format!(
+                        "replay did not reproduce separate primitive crate `{}` verified rlib and objects (rlib expected {}, observed {}; exported_interface={}; objects_match={})",
+                        planned.name,
+                        bound.rlib_sha256,
+                        sha256(&replayed.artifact),
+                        replayed.exported_vir.is_some(),
+                        replayed.object_members == bound.object_members,
+                    ),
+                });
+            }
+            replayed_primitive_crates.push(replayed);
+        }
+        let replay_imports: Vec<VerusImportBytes<'_>> = planned_primitive_crates
+            .iter()
+            .zip(&replayed_primitive_crates)
+            .map(|(planned, replayed)| VerusImportBytes {
+                name: &planned.name,
+                vir: replayed.exported_vir.as_deref().unwrap_or_default(),
+                rlib: &replayed.artifact,
+            })
+            .collect();
         let compiled = compile_verus_source(CompileVerusInput {
             crate_name: &plan.crate_name,
             source: &source,
@@ -6117,6 +6611,9 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
             codegen_toolchain_sha256: &current_codegen.canonical_identity_sha256(),
             kernel_vstd_rlib: replay_kernel_vstd_path.as_deref(),
             target_features,
+            imports: &replay_imports,
+            export_vir: false,
+            kernel_vstd_model: true,
         })?;
         if !compiled.evidence.success || sha256(&compiled.artifact) != artifact.sha256 {
             return Err(ForgeError::VerusOutput {
@@ -6131,6 +6628,94 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
         replayed: replay,
         artifact_sha256: artifact.sha256.clone(),
     })
+}
+
+fn validate_bound_primitive_crates(
+    bundle: &Path,
+    target: VerifiedTarget,
+    target_features: &[String],
+    codegen_toolchain_sha256: &str,
+    planned: &[PlannedPrimitiveCrateV1],
+    bound: &[BoundPrimitiveCrateV1],
+) -> Result<(), ForgeError> {
+    if planned.len() != bound.len() {
+        return Err(ForgeError::VerusOutput {
+            detail: "separate primitive crate plan/receipt cardinality mismatch".to_string(),
+        });
+    }
+    for (planned, bound) in planned.iter().zip(bound) {
+        let parent = Path::new(&planned.authored_source_path)
+            .parent()
+            .ok_or_else(|| ForgeError::VerusOutput {
+                detail: "separate primitive authored source has no parent".to_string(),
+            })?
+            .to_string_lossy()
+            .replace('\\', "/");
+        let expected_vir_path = format!("{parent}/interface.vir");
+        let expected_rlib_path = format!("artifact/deps/lib{}.rlib", planned.name);
+        let verus_result_path = format!("{parent}/verus-result.json");
+        if bound.name != planned.name
+            || bound.authored_source_sha256 != planned.authored_source_sha256
+            || bound.crate_source_sha256 != planned.crate_source_sha256
+            || bound.vir_path != expected_vir_path
+            || bound.rlib_path != expected_rlib_path
+            || bound.object_members.is_empty()
+        {
+            return Err(ForgeError::VerusOutput {
+                detail: format!(
+                    "separate primitive crate `{}` receipt identity disagrees with its plan",
+                    planned.name
+                ),
+            });
+        }
+        for path in [&bound.vir_path, &bound.rlib_path, &verus_result_path] {
+            validate_relative_path(path)?;
+        }
+        let (vir_length, _, vir_sha256) = file_sha256(&bundle.join(&bound.vir_path))?;
+        let (rlib_length, rlib_bytes, rlib_sha256) = file_sha256(&bundle.join(&bound.rlib_path))?;
+        let verus_result_bytes = file_sha256(&bundle.join(&verus_result_path))?.1;
+        if vir_length != bound.vir_length
+            || vir_sha256 != bound.vir_sha256
+            || rlib_length != bound.rlib_length
+            || rlib_sha256 != bound.rlib_sha256
+            || sha256(&verus_result_bytes) != bound.verus_result_sha256
+            || archive_object_members(&rlib_bytes)? != bound.object_members
+        {
+            return Err(ForgeError::VerusOutput {
+                detail: format!(
+                    "separate primitive crate `{}` interface, rlib, object, or proof digest mismatch",
+                    planned.name
+                ),
+            });
+        }
+        let evidence: VerusEvidence =
+            serde_json::from_slice(&verus_result_bytes).map_err(|error| {
+                ForgeError::VerusOutput {
+                    detail: format!(
+                        "invalid separate primitive crate `{}` Verus evidence: {error}",
+                        planned.name
+                    ),
+                }
+            })?;
+        if !evidence.success
+            || evidence.errors != Some(0)
+            || evidence.args
+                != expected_verus_args(&planned.name, target, target_features, &[], true, false)
+            || evidence.source_relative_path != format!("{}.rs", planned.name)
+            || evidence.source_sha256_before != planned.crate_source_sha256
+            || evidence.source_sha256_after != planned.crate_source_sha256
+            || evidence.codegen_toolchain_sha256 != codegen_toolchain_sha256
+            || parse_verus_summary(&evidence.stdout) != (true, Some(0))
+        {
+            return Err(ForgeError::VerusOutput {
+                detail: format!(
+                    "separate primitive crate `{}` does not carry exact no-cheating proof/codegen evidence",
+                    planned.name
+                ),
+            });
+        }
+    }
+    Ok(())
 }
 
 fn validate_relative_path(path: &str) -> Result<(), ForgeError> {

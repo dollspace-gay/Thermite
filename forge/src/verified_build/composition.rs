@@ -9,6 +9,7 @@ struct Assembly {
     link_exports: Vec<PlannedExport>,
     composition_exports: Vec<PlannedCompositionExport>,
     shell_sources: Vec<DirectVerusSource>,
+    primitive_crates: Vec<PrimitiveCrateSource>,
     primitive_registry: Option<primitive_registry::PrimitiveRegistrySource>,
     lowered_thermite: String,
     combined_source: String,
@@ -110,6 +111,11 @@ pub(super) fn build_file(
         .as_ref()
         .map(|registry| registry.plan.target.target_features.as_slice())
         .unwrap_or(&[]);
+    let primitive_imports: Vec<String> = assembly
+        .primitive_crates
+        .iter()
+        .map(|primitive_crate| primitive_crate.plan.name.clone())
+        .collect();
 
     let mut plan = make_plan(PlanInput {
         raw_source,
@@ -124,6 +130,7 @@ pub(super) fn build_file(
         target_pointer_width: &toolchain.target_pointer_width,
         target_endian: &toolchain.target_endian,
         target_features,
+        verus_imports: &primitive_imports,
         verus_source: &assembly.combined_source,
     });
     attach_composition_plan(&mut plan, &assembly);
@@ -158,6 +165,7 @@ pub(super) fn build_file(
     }
     if fresh.lowered_thermite != assembly.lowered_thermite
         || fresh.shell_sources != assembly.shell_sources
+        || fresh.primitive_crates != assembly.primitive_crates
         || fresh.primitive_registry != assembly.primitive_registry
         || fresh.combined_source != assembly.combined_source
         || sha256(fresh.combined_source.as_bytes()) != plan.expected_verus_source_sha256
@@ -201,6 +209,62 @@ pub(super) fn build_file(
     if test_fault("before-verus") {
         return Ok(reject("fault-injection", "injected failure before Verus"));
     }
+    let mut compiled_primitive_crates = Vec::new();
+    for primitive_crate in &fresh.primitive_crates {
+        let compiled_primitive = compile_verus_source(CompileVerusInput {
+            crate_name: &primitive_crate.plan.name,
+            source: &primitive_crate.crate_source,
+            target,
+            verus_path: &toolchain.verus_path,
+            environment: &toolchain.environment,
+            codegen_toolchain_sha256: &toolchain.artifact_codegen.canonical_identity_sha256(),
+            kernel_vstd_rlib: collected_toolchain.dependency_path("libvstd.rlib"),
+            target_features,
+            imports: &[],
+            export_vir: true,
+            kernel_vstd_model: false,
+        })?;
+        if !compiled_primitive.evidence.success
+            || compiled_primitive.evidence.errors != Some(0)
+            || compiled_primitive.exported_vir.is_none()
+            || compiled_primitive.object_members.is_empty()
+        {
+            return Ok(reject(
+                "primitive-crate-verus",
+                verus_failure_detail(
+                    &format!(
+                        "strict separate primitive crate `{}` proof/codegen failed",
+                        primitive_crate.plan.name
+                    ),
+                    &compiled_primitive.evidence,
+                ),
+            ));
+        }
+        if compiled_primitive.evidence.source_sha256_before
+            != primitive_crate.plan.crate_source_sha256
+            || compiled_primitive.evidence.source_sha256_after
+                != primitive_crate.plan.crate_source_sha256
+        {
+            return Ok(reject(
+                "binding",
+                format!(
+                    "separate primitive crate `{}` changed before or during proof/codegen",
+                    primitive_crate.plan.name
+                ),
+            ));
+        }
+        compiled_primitive_crates.push(compiled_primitive);
+    }
+    let primitive_import_bytes: Vec<VerusImportBytes<'_>> = fresh
+        .primitive_crates
+        .iter()
+        .zip(&compiled_primitive_crates)
+        .map(|(source, compiled)| VerusImportBytes {
+            name: &source.plan.name,
+            vir: compiled.exported_vir.as_deref().unwrap_or_default(),
+            rlib: &compiled.artifact,
+        })
+        .collect();
     let compiled = compile_verus_source(CompileVerusInput {
         crate_name: &crate_name,
         source: &fresh.combined_source,
@@ -210,6 +274,9 @@ pub(super) fn build_file(
         codegen_toolchain_sha256: &toolchain.artifact_codegen.canonical_identity_sha256(),
         kernel_vstd_rlib: collected_toolchain.dependency_path("libvstd.rlib"),
         target_features,
+        imports: &primitive_import_bytes,
+        export_vir: false,
+        kernel_vstd_model: true,
     })?;
     if !compiled.evidence.success || compiled.evidence.errors != Some(0) {
         return Ok(reject(
@@ -253,6 +320,8 @@ pub(super) fn build_file(
             lowered_thermite: &fresh.lowered_thermite,
             shell_sources: &fresh.shell_sources,
             primitive_registry: fresh.primitive_registry.as_ref(),
+            primitive_crates: &fresh.primitive_crates,
+            compiled_primitive_crates: &compiled_primitive_crates,
         }),
     })?;
 
@@ -355,7 +424,7 @@ fn complete_registered_boundary_tv(
         });
         if let Some(boundary) = registered_dependency {
             let completion = format!(
-                "frozen primitive completion through `{boundary}`: the registry binds the exact Thermite contract and boundary target to a same-crate direct-Verus function; the generated non-exempt wrapper calls that function and the single no-cheating whole-crate proof checks the call and post-state"
+                "frozen primitive completion through `{boundary}`: the registry binds the exact Thermite contract and boundary target to an exact checked direct-Verus call target; the generated non-exempt wrapper calls that target and the mandatory same-crate or separately imported no-cheating proof closure checks the call and post-state"
             );
             if row.phase == "exec" && closure.functions.contains(&row.label) {
                 for ((phase, label), count) in &expected {
@@ -456,6 +525,8 @@ fn assemble(
             )
         })
         .transpose()?;
+    let (shell_sources, primitive_crates) =
+        split_primitive_crates(shell_sources, primitive_registry.as_ref(), target.target)?;
     let registered: BTreeSet<String> = primitive_registry
         .as_ref()
         .map(|registry| {
@@ -521,13 +592,14 @@ fn assemble(
             "canonical Thermite lowering contains forbidden escape hatch `{token}`"
         ));
     }
-    let combined_source = combine_sources(&lowered_thermite, &shell_sources)?;
+    let combined_source = combine_sources(&lowered_thermite, &shell_sources, &primitive_crates)?;
     Ok(Assembly {
         closure,
         selected_program,
         link_exports,
         composition_exports,
         shell_sources,
+        primitive_crates,
         primitive_registry,
         lowered_thermite,
         combined_source,
@@ -546,6 +618,11 @@ fn attach_composition_plan(plan: &mut ArtifactPlanV1, assembly: &Assembly) {
         composition_exports: assembly.composition_exports.clone(),
         shell_modules: assembly
             .shell_sources
+            .iter()
+            .map(|source| source.plan.clone())
+            .collect(),
+        primitive_crates: assembly
+            .primitive_crates
             .iter()
             .map(|source| source.plan.clone())
             .collect(),
@@ -634,6 +711,34 @@ fn composition_inventory(
                     format!(
                         "{}\0{}\0{}\0{}\0{}",
                         shell.plan.sha256, shell.plan.name, item.kind, item.name, item.visibility
+                    )
+                    .as_bytes(),
+                ),
+            });
+        }
+    }
+    for primitive_crate in &assembly.primitive_crates {
+        rows.push(CompositionInventoryRow {
+            origin: "direct-verus-separate-crate".to_string(),
+            name: primitive_crate.plan.name.clone(),
+            kind: "crate".to_string(),
+            visibility: "linked".to_string(),
+            sha256: primitive_crate.plan.crate_source_sha256.clone(),
+        });
+        for item in &primitive_crate.plan.items {
+            rows.push(CompositionInventoryRow {
+                origin: format!("direct-verus-separate-crate::{}", primitive_crate.plan.name),
+                name: item.name.clone(),
+                kind: item.kind.clone(),
+                visibility: item.visibility.clone(),
+                sha256: sha256(
+                    format!(
+                        "{}\0{}\0{}\0{}\0{}",
+                        primitive_crate.plan.authored_source_sha256,
+                        primitive_crate.plan.name,
+                        item.kind,
+                        item.name,
+                        item.visibility
                     )
                     .as_bytes(),
                 ),
@@ -1108,8 +1213,25 @@ fn shell_items(name: &str, tokens: &[String]) -> Result<Vec<PlannedShellItem>, S
     Ok(items)
 }
 
-fn combine_sources(lowered: &str, shells: &[DirectVerusSource]) -> Result<String, String> {
-    let Some(prefix) = lowered.strip_suffix("}\n") else {
+fn combine_sources(
+    lowered: &str,
+    shells: &[DirectVerusSource],
+    primitive_crates: &[PrimitiveCrateSource],
+) -> Result<String, String> {
+    let mut base = lowered.to_string();
+    if !primitive_crates.is_empty() {
+        let marker = base
+            .find("verus! {\n")
+            .ok_or_else(|| "canonical Thermite lowering has no outer verus! marker".to_string())?;
+        let mut imports = String::new();
+        for primitive_crate in primitive_crates {
+            imports.push_str("extern crate ");
+            imports.push_str(&primitive_crate.plan.name);
+            imports.push_str(";\n");
+        }
+        base.insert_str(marker, &imports);
+    }
+    let Some(prefix) = base.strip_suffix("}\n") else {
         return Err(
             "canonical Thermite lowering has an unexpected outer verus! framing".to_string(),
         );
@@ -1136,6 +1258,96 @@ fn combine_sources(lowered: &str, shells: &[DirectVerusSource]) -> Result<String
         return Err("combined source must contain exactly one verus! invocation".to_string());
     }
     Ok(combined)
+}
+
+fn split_primitive_crates(
+    sources: Vec<DirectVerusSource>,
+    registry: Option<&primitive_registry::PrimitiveRegistrySource>,
+    target: VerifiedTarget,
+) -> Result<(Vec<DirectVerusSource>, Vec<PrimitiveCrateSource>), String> {
+    let separate = registry
+        .map(|registry| &registry.separate_crates)
+        .cloned()
+        .unwrap_or_default();
+    let mut inline = Vec::new();
+    let mut primitive_crates = Vec::new();
+    for mut source in sources {
+        if separate.contains(&source.plan.name) {
+            let index = primitive_crates.len();
+            let directory = format!("evidence/primitive-crates/{index:02}-{}", source.plan.name);
+            let authored_source_path = format!("{directory}/authored.rs");
+            let crate_source_path = format!("{directory}/crate.verus.rs");
+            let crate_source = primitive_crate_source(&source, target)?;
+            let plan = PlannedPrimitiveCrateV1 {
+                name: source.plan.name.clone(),
+                authored_source_path,
+                authored_source_length: source.plan.length,
+                authored_source_sha256: source.plan.sha256.clone(),
+                crate_source_path,
+                crate_source_sha256: sha256(crate_source.as_bytes()),
+                items: source.plan.items.clone(),
+            };
+            primitive_crates.push(PrimitiveCrateSource {
+                plan,
+                authored_bytes: source.bytes,
+                crate_source,
+            });
+        } else {
+            source.plan.path = format!(
+                "evidence/direct-verus/{:02}-{}.rs",
+                inline.len(),
+                source.plan.name
+            );
+            inline.push(source);
+        }
+    }
+    let found: BTreeSet<String> = primitive_crates
+        .iter()
+        .map(|source| source.plan.name.clone())
+        .collect();
+    if found != separate {
+        return Err(
+            "frozen registry separate-crate set does not match supplied direct-Verus sources"
+                .to_string(),
+        );
+    }
+    Ok((inline, primitive_crates))
+}
+
+fn primitive_crate_source(
+    source: &DirectVerusSource,
+    target: VerifiedTarget,
+) -> Result<String, String> {
+    let authored = std::str::from_utf8(&source.bytes).map_err(|error| {
+        format!(
+            "separate direct-Verus crate `{}` is not UTF-8: {error}",
+            source.plan.name
+        )
+    })?;
+    let mut crate_source = String::new();
+    if matches!(target, VerifiedTarget::Kernel) {
+        crate_source.push_str("#![no_std]\n");
+    }
+    crate_source.push_str("#![crate_type = \"rlib\"]\n");
+    if matches!(target, VerifiedTarget::Kernel) {
+        crate_source.push_str("use verus_builtin::*;\n");
+        crate_source.push_str("use verus_builtin_macros::*;\n");
+    } else {
+        crate_source.push_str("use vstd::prelude::*;\n");
+    }
+    crate_source.push_str("verus! {\n");
+    crate_source.push_str(authored);
+    if !authored.ends_with('\n') {
+        crate_source.push('\n');
+    }
+    crate_source.push_str("}\n");
+    if let Some(token) = forbidden_emission(&crate_source) {
+        return Err(format!(
+            "separate direct-Verus crate `{}` contains forbidden escape hatch `{token}`",
+            source.plan.name
+        ));
+    }
+    Ok(crate_source)
 }
 
 pub(super) fn reconstruct_plan(
@@ -1190,6 +1402,30 @@ pub(super) fn reconstruct_plan(
             bytes,
         });
     }
+    for primitive_crate in &expected.primitive_crates {
+        validate_relative_path(&primitive_crate.authored_source_path)?;
+        validate_relative_path(&primitive_crate.crate_source_path)?;
+        let bytes = file_sha256(&bundle.join(&primitive_crate.authored_source_path))?.1;
+        let observed = analyze_shell(&primitive_crate.name, "", &bytes).map_err(|detail| {
+            ForgeError::VerusOutput {
+                detail: format!("bound separate direct-Verus source violates policy: {detail}"),
+            }
+        })?;
+        if observed.length != primitive_crate.authored_source_length
+            || observed.sha256 != primitive_crate.authored_source_sha256
+            || observed.items != primitive_crate.items
+        {
+            return Err(ForgeError::VerusOutput {
+                detail: "bound separate direct-Verus source does not match its planned inventory"
+                    .to_string(),
+            });
+        }
+        sources.push(DirectVerusSource {
+            plan: observed,
+            bytes,
+        });
+    }
+    sources.sort_by(|left, right| left.plan.name.cmp(&right.plan.name));
     let primitive_registry_bytes = expected
         .primitive_registry
         .as_ref()
@@ -1215,6 +1451,27 @@ pub(super) fn reconstruct_plan(
     .map_err(|detail| ForgeError::VerusOutput {
         detail: format!("could not reconstruct the composition: {detail}"),
     })?;
+    if assembly
+        .primitive_crates
+        .iter()
+        .map(|source| &source.plan)
+        .ne(expected.primitive_crates.iter())
+    {
+        return Err(ForgeError::VerusOutput {
+            detail: "bound separate direct-Verus crate plan failed reconstruction".to_string(),
+        });
+    }
+    for primitive_crate in &assembly.primitive_crates {
+        let bound = file_sha256(&bundle.join(&primitive_crate.plan.crate_source_path))?.1;
+        if bound != primitive_crate.crate_source.as_bytes() {
+            return Err(ForgeError::VerusOutput {
+                detail: format!(
+                    "bound generated source for separate primitive crate `{}` failed reconstruction",
+                    primitive_crate.plan.name
+                ),
+            });
+        }
+    }
     let mut reconstructed = make_plan(PlanInput {
         raw_source,
         program,
@@ -1232,6 +1489,11 @@ pub(super) fn reconstruct_plan(
             .as_ref()
             .map(|registry| registry.plan.target.target_features.as_slice())
             .unwrap_or(&[]),
+        verus_imports: &assembly
+            .primitive_crates
+            .iter()
+            .map(|primitive_crate| primitive_crate.plan.name.clone())
+            .collect::<Vec<_>>(),
         verus_source: &assembly.combined_source,
     });
     attach_composition_plan(&mut reconstructed, &assembly);

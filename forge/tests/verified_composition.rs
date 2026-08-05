@@ -324,6 +324,166 @@ fn frozen_registry_directly_refines_the_exact_reachable_boundary() {
 }
 
 #[test]
+fn separate_primitive_source_interface_rlib_and_object_are_exact_and_replayed() {
+    let temp = TempDir::new("separate-primitive");
+    let bundle = temp.0.join("separate.verified");
+    let bundle_s = bundle.to_string_lossy().to_string();
+    let args = [
+        "build",
+        "conformance/verified-composition/frozen_primitive.th",
+        "--level",
+        "l3",
+        "--compose-export",
+        "primitive_observation",
+        "--compose-shell",
+        "conformance/verified-composition/separate_primitive_impl.rs",
+        "--compose-shell",
+        "conformance/verified-composition/separate_primitive_shell.rs",
+        "--primitive-registry",
+        "conformance/verified-composition/separate_primitive_registry.json",
+        "--crate-name",
+        "thermite_separate_primitive",
+        "--target",
+        "kernel",
+        "--out",
+        &bundle_s,
+    ];
+    assert_success(&forge(&args));
+    assert_success(&forge(&["verify-build", &bundle_s, "--replay"]));
+
+    let source = fs::read_to_string(bundle.join("evidence/source.verus.rs")).unwrap();
+    assert!(source.contains("extern crate separate_primitive_impl;"));
+    assert!(source.contains("separate_primitive_impl::identity_impl(value)"));
+    assert!(!source.contains("pub fn identity_impl"));
+
+    let plan: serde_json::Value =
+        serde_json::from_slice(&fs::read(bundle.join("evidence/artifact-plan.v1")).unwrap())
+            .unwrap();
+    assert_eq!(
+        plan["composition"]["primitive_registry"]["schema"],
+        "thermite.frozen-primitive-registry.v2"
+    );
+    assert_eq!(
+        plan["composition"]["primitive_registry"]["entries"][0]["implementation_linkage"],
+        "separate_verus_crate"
+    );
+    let primitive_crates = plan["composition"]["primitive_crates"].as_array().unwrap();
+    assert_eq!(primitive_crates.len(), 1);
+    assert_eq!(primitive_crates[0]["name"], "separate_primitive_impl");
+
+    let receipt: serde_json::Value =
+        serde_json::from_slice(&fs::read(bundle.join("receipt.json")).unwrap()).unwrap();
+    let bound = &receipt["binding"]["composition"]["primitive_crates"][0];
+    assert_eq!(bound["name"], "separate_primitive_impl");
+    assert_eq!(bound["vir_sha256"].as_str().unwrap().len(), 64);
+    assert_eq!(bound["rlib_sha256"].as_str().unwrap().len(), 64);
+    assert!(!bound["object_members"].as_array().unwrap().is_empty());
+    assert!(bound["object_members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|object| object["name"].as_str().unwrap().ends_with(".o")
+            && object["sha256"].as_str().unwrap().len() == 64));
+
+    let consumer = temp.0.join("separate-consumer");
+    let linked = codegen_rustc(&bundle)
+        .current_dir(root())
+        .args([
+            "--edition=2021",
+            "conformance/verified-composition/separate_primitive_consumer.rs",
+        ])
+        .arg("--extern")
+        .arg(format!(
+            "thermite_separate_primitive={}",
+            bundle
+                .join("artifact/libthermite_separate_primitive.rlib")
+                .display()
+        ))
+        .arg("-L")
+        .arg(format!(
+            "dependency={}",
+            bundle.join("artifact/deps").display()
+        ))
+        .args(["-C", "panic=abort"])
+        .arg("-o")
+        .arg(&consumer)
+        .output()
+        .unwrap();
+    assert_success(&linked);
+    assert_success(&Command::new(&consumer).output().unwrap());
+
+    for (name, relative) in [
+        ("rlib", "artifact/deps/libseparate_primitive_impl.rlib"),
+        (
+            "vir",
+            "evidence/primitive-crates/00-separate_primitive_impl/interface.vir",
+        ),
+        (
+            "authored-source",
+            "evidence/primitive-crates/00-separate_primitive_impl/authored.rs",
+        ),
+    ] {
+        let tampered = temp.0.join(format!("tampered-{name}.verified"));
+        copy_tree(&bundle, &tampered);
+        let path = tampered.join(relative);
+        let mut bytes = fs::read(&path).unwrap();
+        bytes.push(b' ');
+        fs::write(path, bytes).unwrap();
+        assert!(
+            !forge(&["verify-build", tampered.to_string_lossy().as_ref()])
+                .status
+                .success(),
+            "tampered separate primitive {name} was accepted"
+        );
+    }
+
+    let lying_dir = temp.0.join("lying-source");
+    fs::create_dir(&lying_dir).unwrap();
+    let lying_source =
+        b"pub fn identity_impl(value: u64) -> (result: u64) ensures result == value, { 0 }\n";
+    let lying_source_path = lying_dir.join("separate_primitive_impl.rs");
+    fs::write(&lying_source_path, lying_source).unwrap();
+    let mut lying_registry: serde_json::Value = serde_json::from_slice(
+        &fs::read(root().join("conformance/verified-composition/separate_primitive_registry.json"))
+            .unwrap(),
+    )
+    .unwrap();
+    lying_registry["entries"][0]["implementation"]["source_sha256"] =
+        serde_json::json!(digest(lying_source));
+    let lying_registry_path = lying_dir.join("registry.json");
+    fs::write(
+        &lying_registry_path,
+        serde_json::to_vec_pretty(&lying_registry).unwrap(),
+    )
+    .unwrap();
+    let lying_bundle = temp.0.join("lying-must-not-publish.verified");
+    let lying = forge(&[
+        "build",
+        "conformance/verified-composition/frozen_primitive.th",
+        "--level",
+        "l3",
+        "--compose-export",
+        "primitive_observation",
+        "--compose-shell",
+        lying_source_path.to_string_lossy().as_ref(),
+        "--compose-shell",
+        "conformance/verified-composition/separate_primitive_shell.rs",
+        "--primitive-registry",
+        lying_registry_path.to_string_lossy().as_ref(),
+        "--crate-name",
+        "thermite_lying_separate_primitive",
+        "--target",
+        "kernel",
+        "--out",
+        lying_bundle.to_string_lossy().as_ref(),
+        "--json",
+    ]);
+    assert_eq!(lying.status.code(), Some(1));
+    assert!(!lying_bundle.exists());
+    assert!(String::from_utf8_lossy(&lying.stdout).contains("primitive-crate-verus"));
+}
+
+#[test]
 fn probe_state_composition_is_exact_private_linkable_and_reproducible() {
     let temp = TempDir::new("probe");
     let first = temp.0.join("first.verified");

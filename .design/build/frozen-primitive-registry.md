@@ -3,8 +3,8 @@
 <!--
 tier: 3-component
 status: partial
-audited-content-sha256: 1fc7305aed00fb09e0f760b2e37844d0b4379ffcca08ebdf26763bd28c1998b3 (re-pinned 2026-08-05 after exact target-feature inventory, proof/codegen, validation, replay, and lint-clean command binding)
-decision: consumer-owned registry entries close reachable Thermite boundaries through non-exempt same-crate direct-Verus calls
+audited-content-sha256: 5fa17764189dc46a7253821ca9deae82298aea27fa4f9c6a7e7d678411bf6a83 (re-pinned 2026-08-05 after registry-v2 separate-crate source/interface/rlib/object closure and replay)
+decision: consumer-owned registry entries close reachable Thermite boundaries through non-exempt same-crate or separately compiled/imported direct-Verus calls
 governs:
   - thermite-lower/src/lower.rs
   - thermite-lower/src/lib.rs
@@ -17,6 +17,9 @@ governs:
   - conformance/verified-composition/frozen_primitive.th
   - conformance/verified-composition/frozen_primitive_shell.rs
   - conformance/verified-composition/frozen_primitive_registry.json
+  - conformance/verified-composition/separate_primitive_impl.rs
+  - conformance/verified-composition/separate_primitive_shell.rs
+  - conformance/verified-composition/separate_primitive_registry.json
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/l3-rich-composition.md
@@ -47,15 +50,18 @@ or device profile. A consumer declares only the platform operations its source
 contains. Forge resolves those declarations against the source-reachable
 boundary closure selected by the link and composition roots.
 
-Registry v1 deliberately supports exact same-crate Rust-ABI functions authored
-in a direct-Verus shell with `sequential` concurrency semantics. Canonical
-non-empty target-feature sets are bound into the frozen plan and supplied to
-the exact Verus/rustc proof-codegen and replay invocations. Foreign ABIs,
-separate objects, unsafe Rust, assembly, atomics, volatile access, and
-privileged instructions remain unsupported. They must fail closed rather than
-being mislabeled as directly refined. A later schema must bind their exact
-separate-source/object identities and direct-Verus object or machine model
-before those implementations can receive this assurance label.
+Registry v1 supports exact same-crate Rust-ABI functions authored in a
+direct-Verus shell with `sequential` concurrency semantics. Registry v2 adds a
+`separate_verus_crate` linkage for the safe sequential subset. Forge compiles
+that authored source in its own strict Verus crate, exports the checked proof
+interface, links the exact emitted rlib into the generated caller, and records
+the hashes of every emitted object member. Canonical non-empty target-feature
+sets are bound into both proof/codegen invocations and their replay.
+
+Foreign ABIs, unsafe Rust, assembly, atomics, volatile access, and privileged
+instructions remain unsupported. Separate-crate byte closure is not a machine
+model and cannot be repurposed to claim those classes. They fail closed until a
+later registry schema supplies a direct object/machine refinement proof.
 
 ## Schema v1
 
@@ -96,6 +102,46 @@ rejects any mismatch. It independently inventories the shell and rejects a
 missing, private, declaration-only, digest-drifted, duplicate, or non-function
 implementation.
 
+## Schema v2: separate safe-Rust crate closure
+
+`thermite.frozen-primitive-registry.v2` retains every v1 declaration and makes
+`implementation.linkage` mandatory. `same_crate` has the v1 meaning.
+`separate_verus_crate` selects a whole source module as a separate crate; a
+module cannot mix linkage modes. Its exact symbol remains
+`crate_name::checked_item`, so the generated Thermite wrapper calls the imported
+crate directly rather than a parallel same-crate implementation.
+
+For each separate crate, the frozen plan binds:
+
+- the authored module path, length, digest, public-item inventory, and generated
+  complete crate-source digest;
+- the exact target and feature set;
+- mandatory `contract_refinement`, `exact_implementation_call`,
+  `exported_verus_interface`, `imported_call_refinement`,
+  `separate_source_identity`, `separate_object_identity`, and
+  `whole_crate_no_cheating` obligations.
+
+Forge first runs `verus --no-cheating --compile --export` on the generated
+crate. The kernel form is `#![no_std]` and uses only Verus builtins, so the
+emitted implementation has no hosted or `vstd` runtime dependency. Forge then
+imports the emitted `.vir` interface and passes the exact emitted rlib as the
+Rust dependency of the canonical Thermite caller proof/codegen. The caller
+source contains `extern crate <name>` and its generated wrapper calls
+`<name>::<item>`.
+
+The receipt independently binds the authored and generated sources, separate
+Verus result, exported interface, rlib, and every `.o` archive member's name,
+length, and SHA-256. Forge parses the rlib archive itself; an external `ar` tool
+does not define the inventory. Validation rejects a changed source, interface,
+rlib, archive member, proof result, plan, or receipt.
+
+Verus's serialized `.vir` includes nondeterministic internal metadata, so replay
+does not falsely require byte reproduction of a fresh export. It re-verifies the
+same generated source, requires byte-identical rlib and object members, imports
+the freshly checked interface into the caller, and requires the final caller
+rlib to reproduce exactly. The original interface bytes remain individually
+bound and tamper-evident in the receipt.
+
 ## Reachability closure
 
 Forge computes the union closure of every selected link and composition root.
@@ -122,11 +168,14 @@ Thermite caller
 ```
 
 The generated boundary function has a real body. It carries no
-`external_body`, `assume`, `admit`, `unsafe`, or `unimplemented` exemption. The
-exact shell bytes are inserted into the same canonical `verus!` crate, and one
-`verus --no-cheating --compile` invocation must prove the wrapper call satisfies
-the Thermite contract and compile those same bytes. A shell body returning the
-wrong value therefore fails whole-crate verification and publishes nothing.
+`external_body`, `assume`, `admit`, `unsafe`, or `unimplemented` exemption. For
+`same_crate`, the exact shell bytes are inserted into the same canonical
+`verus!` crate, and one `verus --no-cheating --compile` invocation must prove
+the wrapper call and compile those same bytes. For `separate_verus_crate`, the
+first strict invocation verifies and emits the dependency, and the second
+strict invocation imports that checked interface and proves the generated
+wrapper's exact cross-crate call. A body returning the wrong value therefore
+fails before publication in either mode.
 
 The ordinary per-function certificate for the source boundary remains an honest
 L1 boundary declaration. The composition assurance aggregate upgrades that
@@ -153,11 +202,12 @@ binding additionally records the registry digest, reachable primitive count,
 and discharged refinement-obligation count.
 
 Validation re-parses the strict schema, re-resolves the source closure, rechecks
-every declaration/shell/digest/ownership fact, regenerates the bound wrappers,
-and requires the reconstructed plan and combined source to be identical. Replay
-re-runs the exact proof/codegen and reproduces the rlib digest. Registry byte
-tampering, semantic re-authoring, post-plan mutation, shell drift, or receipt
-drift rejects.
+every declaration/shell/digest/ownership fact, regenerates the bound wrappers
+and separate crate sources, and requires the reconstructed plan and combined
+source to be identical. Replay re-runs both proof/codegen layers and reproduces
+the separate rlib/object set and final rlib digest. Registry byte tampering,
+semantic re-authoring, post-plan mutation, shell drift, dependency artifact
+drift, or receipt drift rejects.
 
 ## Acceptance
 
@@ -177,16 +227,19 @@ drift rejects.
   real whole-crate proof, fails there, and publishes nothing.
 - Otherwise well-formed `atomic`, `volatile`, and `privileged` entries reject
   because this proof path has no object/machine semantics.
+- A registry-v2 synthetic primitive verifies and compiles as a separate
+  freestanding crate, is called by the generated Thermite wrapper, links and
+  executes from a downstream consumer, replays both proof layers, inventories
+  at least one exact object member, and rejects source/interface/rlib tampering.
 - Builds without a registry retain the previous strict policy and continue to
   reject reachable boundaries.
 
 ## Remaining work
 
-Registry v1 is the exact safe/direct-Verus substrate needed by later platform
-declaration work. The sealed atomic declaration and finite proof-model package
-now exists, but it deliberately cannot use this schema to claim machine
-refinement. Completion of the larger primitive goal still requires affine
-sealed ownership, separate object/source closure for irreducible Rust/assembly
-machine operations, an atomic object/machine refinement model,
-waiting/liveness primitives, and verified
-synchronization libraries. None of those are claimed here.
+Registry v1 plus v2 now cover same-crate and separately emitted safe sequential
+Rust with exact source, proof-interface, rlib, and object identity. The sealed
+atomic declaration and finite proof-model package exists, but it deliberately
+cannot use either schema to claim machine refinement. Completion still requires
+assembly and unsafe/irreducible Rust source/object closure, an atomic/volatile/
+privileged machine model with direct refinement, and concurrency/liveness
+composition. None of those are claimed here.

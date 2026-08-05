@@ -97,7 +97,7 @@ governs:
   - conformance/verified-composition/frozen_primitive.th
   - conformance/verified-composition/frozen_primitive_shell.rs
   - conformance/verified-composition/frozen_primitive_registry.json
-audited-content-sha256: 0593386ece7d82a0308f825cf46c7f3e92b44811f1dab2bd057c3271bcf2215b (re-pinned 2026-08-05 after exact target-feature codegen binding and lint cleanup; no kernel policy or implementation was added)
+audited-content-sha256: 964f27ce5118dc0ec6296e248f90b83d5f3532bdbfab96da40650589538d4518 (re-pinned 2026-08-05 after exact separate safe-Rust source/rlib/object binding; no kernel policy or implementation was added)
 extends:
   - .design/build/kernel-target.md
   - .design/build/l3-rich-composition.md
@@ -466,26 +466,29 @@ contract-drifted, effect-drifted, ABI-drifted, or implementation-drifted
 entries. Registries are data owned by consumer platforms, not a hard-coded
 104-operation x86 table in Thermite.
 
-The first registry increment is shipped for exact same-crate direct-Verus
-functions. `--primitive-registry` binds a strict versioned JSON document to an
+The first two registry increments are shipped for exact same-crate and
+separately emitted safe sequential direct-Verus functions.
+`--primitive-registry` binds a strict versioned JSON document to an
 L3 composition build; Forge independently reconstructs signature, contract,
 effects, ownership, shell inventory, source digest, symbol, ABI, alignment,
 concurrency/failure declarations, and one-to-one reachability. Registered
 boundaries lower to real checked wrapper calls, never `external_body`, and the
-single `--no-cheating` proof must establish their Thermite contracts. Receipts
-and replay bind the registry bytes, resolved plan, reachable count, and proof
-obligation count. Signature/effect/contract/source/ownership drift, missing or
-extra reachable bindings, post-plan mutation, receipt tampering, and a lying
-implementation all reject without publication.
+final `--no-cheating` caller proof must establish their Thermite contracts.
+Registry v2 additionally binds a separate authored/generated source, exported
+proof interface, rlib, every object-member digest, and its own no-cheating
+proof/codegen. Receipts and replay bind both layers. Signature/effect/contract/
+source/ownership/object drift, missing or extra reachable bindings, post-plan
+mutation, receipt tampering, and a lying implementation all reject without
+publication.
 
-This v1 path intentionally accepts only the Rust ABI, safe direct-Verus shell
-bodies, and `sequential` concurrency. Sorted canonical target features are
+These paths intentionally accept only the Rust ABI, safe direct-Verus bodies,
+and `sequential` concurrency. Sorted canonical target features are
 bound into the frozen plan and supplied to the exact proof/codegen and replay
 commands. It rejects otherwise well-formed `atomic`, `volatile`, and
-`privileged` entries because the same-crate checked-wrapper proof does not
-model their object or machine semantics. Exact separate Rust/assembly object
-closure for irreducible machine instructions remains; it cannot be claimed as
-directly refined through this schema. The precise contract and limitations are in
+`privileged` entries because safe-Rust source/object closure does not model
+their machine semantics. Exact unsafe Rust/assembly object closure and direct
+machine refinement for irreducible instructions remain; they cannot be claimed
+through these schemas. The precise contract and limitations are in
 `.design/build/frozen-primitive-registry.md`.
 
 ### Atomics and memory ordering
@@ -672,7 +675,7 @@ Source: `.design/reqs/registry.toml`
 | REQ-KPRIM-4 | partial | `.design/build/kernel-primitives.md` | Sealed authority and ownership | The sealed-construction barrier, direct and nested opaque lifecycle receipts, typed owned-record local/value-call L3 receipts, exact user-ADT result/match TV, exact direct finite-record mutable-call effects, an opaque receipt-bound 64-slot generation ledger, a generation-bound 64-slot static-storage lease/region protocol, and typed opaque single-use atomic-init slots prove acquisition/renewal/release, stale-token-after-reuse rejection, double-release rejection, monotonic rights, L3 move/clone refusal, initialization-witness matching, committed-region consumption, exact authority/slot/generation transfer, duplicate-init refusal, and foreign-module construction/read/write rejection. Add a complete affine rule if stronger general-purpose uniqueness is required, strictly compose the full owned-ADT lifecycles through exactly refined authority/memory/atomic doors, and add concurrent synchronization consumers that rotate generations through exact atomic transitions. |
 | REQ-KPRIM-5 | partial | `.design/build/kernel-primitives.md` | Sealed atomics and ordering model | The five-module receipt-bound package, typed generation-bound storage-to-slot conversion, enforceable single-use initialization, compound atomic identity, 50 atomic boundary declarations, exact ordering matrix, pre-codegen legality gate, bounded history relations, strict kernel ordering/storage proofs, strict hosted history proof, replay, runtime generated-logic execution, and adversarial tests are present. Add a kernel-target finite-history proof surface, exact atomic object/machine refinement, positive machine-aware lifecycle composition, and verified synchronization consumers. |
 | REQ-KPRIM-6 | partial | `.design/build/kernel-primitives.md` | Verified waiting and synchronization | A receipt-bound bounded-wait trace scan, frozen pause/block/terminal-halt declarations, and fail-closed ticket-lock/barrier/epoch-ack/once/reference-count/seqlock/bounded-MPSC/bounded-work-deque mechanics are shipped with L3 proofs, adversarial claims, strict replay, and tamper rejection. Add registry-level fairness/progress semantics, directly refined wait bodies, atomic integration and machine concurrency composition, then richer reader/writer coordination in .th. |
-| REQ-KPRIM-7 | partial | `.design/build/kernel-primitives.md` | Generic frozen boundary registry | Same-crate safe direct-Verus Rust-ABI entries now close reachable boundaries exactly, including canonical non-empty target features checked against the pinned rustc inventory and bound into proof/codegen, validation, and replay. Add exact separate Rust/assembly source, object, machine-model, and refinement closure for irreducible operations without adding an architecture operation table. |
+| REQ-KPRIM-7 | partial | `.design/build/kernel-primitives.md` | Generic frozen boundary registry | Same-crate and separately emitted safe sequential direct-Verus Rust-ABI entries now close reachable boundaries exactly. The v2 path binds authored and generated sources, exported proof interface, rlib, every object-member digest, target features, two no-cheating proof/codegen layers, validation, runtime linking, and replay. Add assembly and unsafe/irreducible Rust source/object closure plus exact atomic, volatile, privileged, and concurrent machine-model refinement without adding an architecture operation table. |
 | REQ-KPRIM-8 | shipped | `.design/build/kernel-primitives.md` | Generic freestanding verified library build |  |
-| REQ-KPRIM-9 | partial | `.design/build/kernel-primitives.md` | Exact platform refinement composition | Safe same-crate direct-Verus operations now receive exact one-to-one checked-wrapper refinement. Add direct machine-operation refinement tied to separate Rust/assembly objects and the atomic/concurrency model before every irreducible platform family is covered. |
+| REQ-KPRIM-9 | partial | `.design/build/kernel-primitives.md` | Exact platform refinement composition | Safe same-crate and separately emitted sequential direct-Verus operations now receive exact checked-wrapper/import refinement through their emitted Rust objects. Add direct machine-operation refinement tied to unsafe Rust/assembly objects and the atomic/concurrency model before every irreducible platform family is covered. |
 <!-- /generated:reqs -->

@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: fbc5a2784e027eed6f79b9f8648507d6b1b3945e1702e94cade2a7298a8beedd (re-pinned 2026-08-05 after orthogonal target-feature codegen binding; byte-slice behavior remains regression-covered)
+audited-content-sha256: 9b17f96b4776cc4e0fd1c6771c80fb0863ca5ac8ddebfc1d512f32a98f072ace (re-pinned 2026-08-05 after documenting registry-v2 builtins-only primitive dependencies; byte-slice behavior remains regression-covered)
 decision: explicit pinned vstd slice/fixed-array proof-model import plus deterministic no_std erased link metadata
 issue: github:dollspace-gay/Thermite#108
 governs:
@@ -96,10 +96,12 @@ shape:
 ```
 
 At execution time Forge substitutes the exact pinned VIR and generated rlib
-paths. Kernel lowering and direct-Verus shells explicitly import
-`vstd::prelude::*` from that closed dependency. The ghost finite-view vocabulary
-survives only in proof position, while executable length, indexing, and updates
-remain native allocation-free operations.
+paths. Kernel lowering and same-crate direct-Verus shells explicitly import
+`vstd::prelude::*` from that closed dependency. Registry-v2 scalar primitive
+crates use only Verus builtins and therefore add no second `vstd` runtime
+dependency. The ghost finite-view vocabulary survives only in proof position,
+while executable length, indexing, and updates remain native allocation-free
+operations.
 
 The link skeleton deliberately mirrors the pinned vstd definition paths and
 impl order for the admitted subset. Verus metadata keys external impls by those

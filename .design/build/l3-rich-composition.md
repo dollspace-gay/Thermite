@@ -3,8 +3,8 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: db19d51438addccafd207719e83acaa3554c5e2093a9ebff526aa99316807e6d (re-pinned 2026-08-05 after exact target-feature proof/codegen, replay, and lint-clean command binding)
-decision: one canonical Verus crate with crate-visible rich Thermite roots and public shell exports
+audited-content-sha256: 2eb33345d82f653ed9349391282dd337ff47c1dd88f6d202063dcf084482aff5 (re-pinned 2026-08-05 after registry-v2 separate primitive proof/codegen, object inventory, and replay)
+decision: one canonical caller crate with crate-visible rich Thermite roots, public shell exports, and optionally exact separately verified primitive crates
 issue: github:dollspace-gay/Thermite#104
 governs:
   - forge/src/verified_build.rs
@@ -25,15 +25,19 @@ Forge can build one L3 library from canonical Thermite lowering and authored
 direct-Verus shell modules without exposing rich Rust types as a cross-crate
 ABI. The selected Thermite functions may accept and return ADTs, references,
 tuples, and bounded collections. They lower as `pub(crate)` and are callable by
-the shell only because both sources are verified and compiled in the same
-crate. Only explicitly selected link exports and public shell items cross the
-crate boundary.
+ordinary shells only because both sources are verified and compiled in the same
+caller crate. Registry-v2 scalar primitive implementations may instead live in
+separately verified crates whose exact proof interface, rlib, and object members
+are bound. Only explicitly selected link exports and public shell items cross
+the caller's public boundary.
 
 The combined source is not a second lowering. Forge takes the unchanged,
 target-specific result of `lower_l3_library`, removes only its final `verus!`
 delimiter, inserts each exact shell source in a deterministic module frame, and
-restores that delimiter. One `verus --no-cheating --compile` invocation proves
-and compiles those exact bytes. A distinct
+restores that delimiter. One final `verus --no-cheating --compile` invocation
+proves and compiles those exact caller bytes. A registry-v2 separate primitive
+adds its own prior no-cheating proof/codegen and is then imported by that final
+caller invocation. A distinct
 `VerifiedCompositionReceiptV1`-schema receipt binds the Thermite input,
 canonical lowering, exact shell files, complete item/type inventory, combined
 source, proof evidence, artifact-codegen closure, and output rlib.
@@ -88,9 +92,10 @@ boundaries, holes, unresolved calls, divergence, panic, hosted effects in a
 kernel target, or any sub-L3 certificate reject the whole build.
 
 The sole boundary exception is an exact frozen-registry composition. Every
-reachable boundary must then resolve one-to-one to a checked direct-Verus shell
-function, and canonical lowering emits a real wrapper call rather than an
-`external_body`. Unregistered boundaries and every slag function still reject.
+reachable boundary must then resolve one-to-one to a checked direct-Verus
+same-crate function or registry-v2 separate crate function, and canonical
+lowering emits a real wrapper call rather than an `external_body`. Unregistered
+boundaries and every slag function still reject.
 
 For each composition export the plan records its semantic address, exact
 signature, parameter ownership (`by_value`, `shared_borrow`, or
@@ -173,7 +178,8 @@ other refusal—the composition path completes the row from the conjunction of:
 - the normalized Thermite AST and complete closure bound by the plan;
 - the canonical target lowering bound byte-for-byte;
 - the L3 function certificate for that same lowering; and
-- the single whole-crate no-cheating proof and compilation.
+- the final whole-caller no-cheating proof and compilation, plus the bound
+  separate-crate proof/codegen when the registered call target is imported.
 
 The evidence row identifies this rich-state completion explicitly. It does not
 convert an actual counterexample, timeout, unsupported body construct, missing
@@ -221,6 +227,8 @@ The bundle uses:
 - receipt schema `thermite.verified-composition-receipt.v1`;
 - `evidence/lowered-thermite.verus.rs` for the canonical lowering;
 - `evidence/direct-verus/*.rs` for exact authored shell bytes; and
+- `evidence/primitive-crates/*` plus `artifact/deps/lib*.rlib` for any exact
+  separately verified primitive source, proof interface, result, and object;
 - `evidence/source.verus.rs` for the exact combined compiler input.
 
 The receipt composition binding commits to the lowering digest, canonical
@@ -234,8 +242,9 @@ and artifact drift.
 When a frozen registry is present, the plan and receipt also bind its exact
 bytes, resolved entries, reachable count, discharged refinement-obligation
 count, and generated checked-wrapper calls. Validation reconstructs those facts
-from the Thermite program and exact shell inventory; replay proves and compiles
-the same combined source.
+from the Thermite program and exact shell/primitive inventory; replay regenerates
+separate proof interfaces, reproduces their rlib/object identities, and then
+proves and compiles the same combined caller source.
 
 Publication reuses the staging/fsync/self-validation/atomic-rename protocol.
 No destination appears on any planning, policy, certificate, TV, proof,

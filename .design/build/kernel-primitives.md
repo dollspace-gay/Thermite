@@ -635,7 +635,11 @@ The primitive suite is target-independent wherever possible.
   adapters. This exercises the registry/refinement machinery without booting
   or implementing a kernel.
 - Confirm that the repository contains no bundled kernel policy, firmware
-  runtime, architecture boot assembly, or bootable image.
+  runtime, architecture boot assembly, or bootable image. The permanent
+  `tooling/primitive-only-gate.py` check now enumerates the canonical Git-index
+  source set, rejects those concrete paths and artifacts, pins the only two
+  compile-only freestanding fixtures by digest, and runs in CI. Untracked local
+  output is deliberately outside the committed-source claim.
 
 ## Implementation order
 
@@ -649,8 +653,9 @@ The primitive suite is target-independent wherever possible.
    libraries.
 6. Complete the generic frozen registry and remaining platform-operation
    declarations.
-7. Run the primitive-only adversarial matrix and publish a reusable
-   freestanding bundle.
+7. Consolidate the now-enforced no-concrete-kernel gate and existing primitive
+   adversarial suites into one matrix, then publish a reusable freestanding
+   bundle.
 
 ## Requirements
 
@@ -660,7 +665,7 @@ Source: `.design/reqs/registry.toml`
 | ID | Status | Owner | Title | Follow-up |
 |---|---|---|---|---|
 | REQ-KPRIM-1 | shipped | `.design/build/kernel-primitives.md` | Kernel scalar and effect surface |  |
-| REQ-KPRIM-10 | not_started | `.design/build/kernel-primitives.md` | Primitive-only adversarial suite | Add package, fixed-storage, atomic, waiting, registry, refinement, receipt-tamper, freestanding-consumer, and no-concrete-kernel gates. |
+| REQ-KPRIM-10 | partial | `.design/build/kernel-primitives.md` | Primitive-only adversarial suite | The canonical tracked-source gate now rejects concrete kernel/firmware/boot/image directories, release and machine artifacts, generated trees, binary or nonlocal source closure, and hidden freestanding entries; exact compile-only freestanding fixtures are digest-pinned, CI-enforced, and adversarially tested. Consolidate the existing package, fixed-storage, atomic, waiting, registry, refinement, receipt-tamper, and freestanding-consumer suites into one primitive-only matrix, then publish the reusable bundle. |
 | REQ-KPRIM-2 | partial | `.design/build/kernel-primitives.md` | Exact mutable and fixed storage | Mutable borrowed slices/arrays, arbitrary old/final snapshot framing, native fixed arrays, scalar and recursively finite plain-aggregate equality plus exact one- and two-index quantified frames, defining-module opaque state transitions, exact typed root.field(.field)* mutation with an optional final fixed-array index, owned/value-call composition, exact user-ADT result/match contract and body TV with arm scoping, exact record-state loop entry/leaf-preservation/exit/full-result TV, statement-position mutable-call composition over pairwise-distinct direct finite-record roots, strict freestanding L3 record/rich-state receipts, digest-bound freestanding fixed-array views and repeat construction, total directly proved u64 bit methods, a receipt-bound packed bitmap with population count/set-bit search/bulk set operations, u64 vector, u64 FIFO ring, collision-explicit direct map, opaque collision-resolving open-addressed map, a generation-safe opaque slab, a duplicate-safe opaque freelist, opaque intrusive doubly linked metadata with arbitrary-live-node unlink and tail relink, and a receipt-bound generation-owned static-storage claim/fill/commit/release protocol are shipped. Add index-then-field aliasing if required, mixed shared/mutable, mutable slice/array, and projected-root call effects, consumed mutable-call return values, enum-payload lvalue mutation, arbitrary-position intrusive insertion/relink if required, chained maps where required, quantified aggregate loops/state framing, and generic library capacities/types. |
 | REQ-KPRIM-3 | partial | `.design/build/kernel-primitives.md` | Receipt-bound packages and modules | Independent parsing, module-local identity, direct-import/root-export enforcement, rooted graph validation, opaque construction/read/write ownership, source allowlisting, L3 build/composition, complete receipt binding, validation, and replay are shipped. Extend the remaining source-oriented Forge commands (check, audit, TV, goal/edit/fill) to operate on packages without losing module-local diagnostics. |
 | REQ-KPRIM-4 | partial | `.design/build/kernel-primitives.md` | Sealed authority and ownership | The sealed-construction barrier, direct and nested opaque lifecycle receipts, typed owned-record local/value-call L3 receipts, exact user-ADT result/match TV, exact direct finite-record mutable-call effects, an opaque receipt-bound 64-slot generation ledger, a generation-bound 64-slot static-storage lease/region protocol, and typed opaque single-use atomic-init slots prove acquisition/renewal/release, stale-token-after-reuse rejection, double-release rejection, monotonic rights, L3 move/clone refusal, initialization-witness matching, committed-region consumption, exact authority/slot/generation transfer, duplicate-init refusal, and foreign-module construction/read/write rejection. Add a complete affine rule if stronger general-purpose uniqueness is required, strictly compose the full owned-ADT lifecycles through exactly refined authority/memory/atomic doors, and add concurrent synchronization consumers that rotate generations through exact atomic transitions. |

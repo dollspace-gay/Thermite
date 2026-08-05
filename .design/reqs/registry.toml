@@ -17899,9 +17899,24 @@ note = "Exercises exact-source composition and receipt validation over consumer-
 id = "REQ-KPRIM-10"
 title = "Primitive-only adversarial suite"
 owner = ".design/build/kernel-primitives.md"
-status = "not_started"
+status = "partial"
 scope = "forge"
 summary = "Small target-independent conformance packages prove and mutate every reusable primitive and confirm that Thermite contains no bundled kernel."
-remaining_scope = "Add package, fixed-storage, atomic, waiting, registry, refinement, receipt-tamper, freestanding-consumer, and no-concrete-kernel gates."
-contributors = []
+remaining_scope = "The canonical tracked-source gate now rejects concrete kernel/firmware/boot/image directories, release and machine artifacts, generated trees, binary or nonlocal source closure, and hidden freestanding entries; exact compile-only freestanding fixtures are digest-pinned, CI-enforced, and adversarially tested. Consolidate the existing package, fixed-storage, atomic, waiting, registry, refinement, receipt-tamper, and freestanding-consumer suites into one primitive-only matrix, then publish the reusable bundle."
+contributors = [".design/tooling/primitive-only-gate.md"]
 generated_to = ["status", "forge-kernel-primitives-status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "tooling/primitive-only-gate.py"
+note = "Enumerates the NUL-safe Git index as the canonical source allowlist and fails closed on concrete implementation paths, incidental/generated trees, release or boot artifacts, binary/nonlocal closure, and freestanding entry markers."
+
+[[requirement.evidence]]
+kind = "test"
+target = "tooling/tests/test_primitive_only_gate.py"
+note = "Ten temporary-Git adversarial oracles cover clean primitives, untracked-output exclusion, tracked artifacts, exact path matching, entry markers, digest-pinned compile fixtures, modes/missing files, allowlist expansion, determinism, and exit 3."
+
+[[requirement.evidence]]
+kind = "command"
+target = "make primitive-only"
+note = "Whole-repository positive gate over every tracked path; also wired into make gauntlet and the pull-request checks job."

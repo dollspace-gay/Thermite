@@ -2365,6 +2365,35 @@ reference = []
 conformance_ops = []
 
 # ---------------------------------------------------------------------
+# tooling — permanent primitive-only repository boundary
+# ---------------------------------------------------------------------
+# The tracked Git index is the canonical source allowlist. These declarative
+# routes make the gate, oracle, and its Make/CI wiring content-pinned together.
+[[route]]
+crate_pattern = "tooling/primitive-only-gate.py"
+design = ".design/tooling/primitive-only-gate.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "tooling/tests/test_primitive_only_gate.py"
+design = ".design/tooling/primitive-only-gate.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "Makefile"
+design = ".design/tooling/primitive-only-gate.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = ".github/workflows/ci.yml"
+design = ".design/tooling/primitive-only-gate.md"
+reference = []
+conformance_ops = []
+
+# ---------------------------------------------------------------------
 # allocation-free static-storage ownership — generic Thermite protocol
 # ---------------------------------------------------------------------
 

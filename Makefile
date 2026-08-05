@@ -1,7 +1,7 @@
 # Thermite — convenience targets. The build/test system is Cargo; these are
 # thin entry points. `make audit` is the headline: a FULL TRUST-CHAIN
 # re-derivation a skeptic runs on their own machine (see scripts/audit.sh).
-.PHONY: audit audit-fast check test fmt clippy gauntlet doc-drift doc-drift-ci doc-drift-worktree doc-drift-test req-status req-status-test req-registry req-registry-test control-plane control-plane-test
+.PHONY: audit audit-fast check test fmt clippy gauntlet doc-drift doc-drift-ci doc-drift-worktree doc-drift-test req-status req-status-test req-registry req-registry-test control-plane control-plane-test primitive-only primitive-only-test
 
 DOC_DRIFT_CI_BASE ?= origin/main
 DOC_DRIFT_CI_HEAD ?= HEAD
@@ -29,6 +29,7 @@ audit-fast:
 
 # The full local gauntlet (mirrors CI).
 gauntlet:
+	python3 tooling/primitive-only-gate.py
 	cargo build --workspace
 	cargo test --workspace
 	cargo clippy --workspace --all-targets -- -D warnings
@@ -120,3 +121,14 @@ control-plane:
 
 control-plane-test:
 	@python3 -m unittest discover -s tooling/tests -v
+
+# Permanent repository-scope gate: the Git index is the canonical source
+# allowlist, and may contain reusable primitives/conformance fixtures but no
+# concrete kernel, firmware, boot image, release archive, or generated tree.
+# Untracked developer output is intentionally outside this committed-source
+# claim. See .design/tooling/primitive-only-gate.md.
+primitive-only:
+	@python3 tooling/primitive-only-gate.py
+
+primitive-only-test:
+	@python3 -m unittest tooling.tests.test_primitive_only_gate -v

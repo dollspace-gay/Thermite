@@ -57,6 +57,8 @@ jobs:
 
       - name: tooling gate tests (tooling/tests)
         run: python3 -m unittest discover -s tooling/tests
+      - name: primitive-only tracked-source gate
+        run: python3 tooling/primitive-only-gate.py
       - name: doc-drift tripwire (design-doc freshness)
         run: python3 tooling/doc-drift.py
       # The gate that guards the gates (crosslink #93): asserts the two

@@ -2164,6 +2164,24 @@ design = ".design/build/fixed-collections.md"
 reference = ["stdlib/kernel-primitives/freelist.thpkg.json"]
 conformance_ops = ["fixed-freelist-l3", "fixed-freelist-adversarial", "fixed-freelist-kernel-replay", "fixed-freelist-tamper"]
 
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/intrusive.thpkg.json"
+design = ".design/build/fixed-collections.md"
+reference = ["stdlib/kernel-primitives/collections/intrusive.th"]
+conformance_ops = ["fixed-intrusive-package-closure"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/collections/intrusive.th"
+design = ".design/build/fixed-collections.md"
+reference = ["stdlib/kernel-primitives/intrusive.thpkg.json"]
+conformance_ops = ["fixed-intrusive-push", "fixed-intrusive-pop", "fixed-intrusive-fifo", "fixed-intrusive-fail-closed"]
+
+[[route]]
+crate_pattern = "forge/tests/fixed_intrusive.rs"
+design = ".design/build/fixed-collections.md"
+reference = ["stdlib/kernel-primitives/intrusive.thpkg.json"]
+conformance_ops = ["fixed-intrusive-l3", "fixed-intrusive-adversarial", "fixed-intrusive-kernel-replay", "fixed-intrusive-runtime", "fixed-intrusive-tamper"]
+
 # Policy-free bounded waiting and synchronization state mechanics. Frozen
 # machine-facing operations are declarations; no consumer platform is bundled.
 [[route]]

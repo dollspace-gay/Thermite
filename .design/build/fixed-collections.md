@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: partial
-decision: Thermite ships policy-free packed bitmap, vector, FIFO-ring, direct-map, open-addressed map, generation-safe slab, and duplicate-safe freelist mechanics in .th; generic capacities, intrusive metadata, and quantified aggregate framing remain
+decision: Thermite ships policy-free packed bitmap, vector, FIFO-ring, direct-map, open-addressed map, generation-safe slab, duplicate-safe freelist, and intrusive FIFO metadata mechanics in .th; generic capacities and quantified aggregate framing remain
 governs:
   - stdlib/kernel-primitives/collections.thpkg.json
   - stdlib/kernel-primitives/collections/bitmap.th
@@ -11,14 +11,17 @@ governs:
   - stdlib/kernel-primitives/collections/open_map.th
   - stdlib/kernel-primitives/collections/freelist.th
   - stdlib/kernel-primitives/freelist.thpkg.json
+  - stdlib/kernel-primitives/collections/intrusive.th
+  - stdlib/kernel-primitives/intrusive.thpkg.json
   - stdlib/kernel-primitives/collections/slab.th
   - stdlib/kernel-primitives/slab.thpkg.json
   - stdlib/kernel-primitives/collections/ring.th
   - stdlib/kernel-primitives/collections/vector.th
   - forge/tests/fixed_collections.rs
   - forge/tests/fixed_freelist.rs
+  - forge/tests/fixed_intrusive.rs
   - forge/tests/fixed_slab.rs
-audited-content-sha256: 653fdde9a839d495afd1e5c1744f0e22297876f452b2005ff53b766b2f2c648b (re-pinned 2026-08-05 after the strict L3 duplicate-safe freelist increment)
+audited-content-sha256: b9efb3e86a77b3daa30ee7954eeb159927bee17c0facd412cb689a246ec03c82 (re-pinned 2026-08-05 after the strict L3 intrusive FIFO metadata increment)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/l3-verified-artifact.md
@@ -37,8 +40,9 @@ owns a collection, how producers are scheduled, or whether an operation should
 block. Those are consumer policies.
 
 `stdlib/kernel-primitives/collections.thpkg.json` is the canonical five-module
-collection package. The generation-safe slab and duplicate-safe freelist also
-have focused `stdlib/kernel-primitives/{slab,freelist}.thpkg.json` receipt roots
+collection package. The generation-safe slab, duplicate-safe freelist, and
+intrusive FIFO metadata also have focused
+`stdlib/kernel-primitives/{slab,freelist,intrusive}.thpkg.json` receipt roots
 so their aggregate public transitions can be built, replayed, and attacked
 independently. None of these packages contains a Rust runtime implementation,
 platform boundary, heap dependency, or hosted effect. The modules use native
@@ -203,12 +207,28 @@ and release/reuse of an index. The focused package exports the LIFO probe as a
 strict kernel-target L3 receipt with faithful contract, expression, body, and
 wrapper TV. The state is not clonable, and there is no parallel Rust freelist.
 
+## Intrusive FIFO metadata
+
+`FixedIntrusiveList64` is opaque metadata for a doubly linked FIFO over 64
+consumer-owned slot identities. It stores only presence, predecessor, successor,
+head, tail, and length metadata; it neither allocates nodes nor assigns meaning to
+them. Push-at-tail and pop-at-head are total, fail closed on malformed endpoints,
+and return the owned state in every success or rejection variant.
+
+Successful transitions pin the exact changed presence bit and link slots using
+fixed-array equality or same-except frames. Empty insertion, nonempty insertion,
+last-node removal, and multi-node removal are separate L3 helpers, while the public
+operations expose their complete conditional frames without unsupported contract
+control flow. Source probes prove FIFO order, exact forward/reverse endpoints, and
+duplicate rejection. The focused package executes the generated FIFO proof from a
+downstream consumer and contains no Rust list implementation.
+
 ## Assurance and adversarial evidence
 
-`forge check --level l3` proves all 195 source items across the collection, slab,
-and freelist modules at L3. There are no boundaries. Executable contract
-mutation kills 461 of 498 generated mutants; the surviving mutants remain counted and the
-per-function scores stay above the configured floor.
+`forge check --level l3` proves all 223 source items across the collection, slab,
+freelist, and intrusive modules at L3. There are no boundaries. Executable
+contract mutation kills 627 of 669 generated mutants; the surviving mutants
+remain counted and the per-function scores stay above the configured floor.
 
 `forge/tests/fixed_collections.rs` additionally:
 
@@ -247,11 +267,22 @@ per-function scores stay above the configured floor.
 - requires every reachable translation-validation row to be faithful; and
 - removes the bound opacity marker and requires replay to fail.
 
+`forge/tests/fixed_intrusive.rs` separately:
+
+- requires all 28 intrusive-metadata items to be boundary-free L3 and pins the
+  executable mutation score at 166/171;
+- rejects false LIFO, duplicate-acceptance, and state-cloning claims;
+- builds and replays the FIFO probe under the kernel target;
+- requires all 49 reachable translation-validation rows to be faithful;
+- executes the generated FIFO logic from a codegen-pinned downstream consumer;
+  and
+- removes the bound opacity marker and requires replay to fail.
+
 The canonical five-root package retains a scalar ring export, while the focused
-slab and freelist packages supply strict aggregate receipt fixtures. Body TV frames
-direct and nested finite-record mutation, user-ADT match/results, exact
-statement-position mutable calls over direct finite-record roots, and the slab's
-and freelist's fixed-array state. Quantified all-index aggregate framing remains
+slab, freelist, and intrusive packages supply strict aggregate receipt fixtures.
+Body TV frames direct and nested finite-record mutation, user-ADT match/results, exact
+statement-position mutable calls over direct finite-record roots, and the slab,
+freelist, and intrusive fixed-array states. Quantified all-index aggregate framing remains
 open, so these increments do not generalize the focused results into a claim that
 every collection lifecycle is already a strict public export.
 
@@ -259,7 +290,8 @@ every collection lifecycle is already a strict public export.
 
 This is a substantial REQ-KPRIM-2 increment, not completion. Remaining work is:
 
-1. intrusive-list metadata;
+1. arbitrary-node intrusive unlink/relink once exact two-index array framing is
+   available; the shipped FIFO surface changes only one index per metadata array;
 2. a chained-map variant where consumer workloads require it;
 3. capacity/type parameterization that does not rely on privileged generated
    policy types;
@@ -280,12 +312,12 @@ At this increment:
 
 | Metric | Value |
 |---|---:|
-| Physical Thermite LOC | 3,799 |
-| Nonblank Thermite LOC | 3,605 |
-| Thermite functions | 169 (105 executable, 64 specification) |
-| In-language L3 items | 195 |
+| Physical Thermite LOC | 4,893 |
+| Nonblank Thermite LOC | 4,671 |
+| Thermite functions | 193 (120 executable, 73 specification) |
+| In-language L3 items | 223 |
 | Frozen boundary declarations | 0 |
-| Executable mutants killed | 461/498 |
+| Executable mutants killed | 627/669 |
 | Bodyful Rust/assembly collection implementations | 0 |
 | Ordinary Rust kernel-policy/algorithm LOC | 0 |
 | Direct-Verus TPL LOC shipped by this package | 0 |

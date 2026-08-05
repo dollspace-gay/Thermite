@@ -1,0 +1,1094 @@
+const FIXED_INTRUSIVE_CAPACITY: usize = 64;
+const FIXED_INTRUSIVE_NONE: usize = 64;
+
+#[opaque] struct FixedIntrusiveList64 {
+  intrusive_present: [bool; FIXED_INTRUSIVE_CAPACITY],
+  intrusive_prev: [usize; FIXED_INTRUSIVE_CAPACITY],
+  intrusive_next: [usize; FIXED_INTRUSIVE_CAPACITY],
+  intrusive_head: usize,
+  intrusive_tail: usize,
+  intrusive_len: usize,
+}
+
+enum FixedIntrusiveLink64 {
+  IntrusiveLinked64 {
+    list: FixedIntrusiveList64,
+  },
+  IntrusiveAlreadyLinked64 {
+    list: FixedIntrusiveList64,
+    node: usize,
+  },
+  IntrusiveOutOfRange64 {
+    list: FixedIntrusiveList64,
+    node: usize,
+  },
+  IntrusiveFull64 {
+    list: FixedIntrusiveList64,
+    node: usize,
+  },
+  IntrusiveLinkCorrupt64 {
+    list: FixedIntrusiveList64,
+    node: usize,
+    reason: u8,
+  },
+}
+
+enum FixedIntrusivePop64 {
+  IntrusivePopped64 {
+    list: FixedIntrusiveList64,
+    node: usize,
+  },
+  IntrusiveEmpty64 {
+    list: FixedIntrusiveList64,
+  },
+  IntrusivePopCorrupt64 {
+    list: FixedIntrusiveList64,
+    node: usize,
+    reason: u8,
+  },
+}
+
+struct FixedIntrusiveEndpoints64 {
+  intrusive_first: usize,
+  intrusive_last: usize,
+  intrusive_after_first: usize,
+  intrusive_before_last: usize,
+  intrusive_first_prev: usize,
+  intrusive_last_next: usize,
+}
+
+spec fn fixed_intrusive_bool_eq_spec(
+  left: &[bool; FIXED_INTRUSIVE_CAPACITY],
+  right: &[bool; FIXED_INTRUSIVE_CAPACITY],
+) -> bool
+  dec FIXED_INTRUSIVE_CAPACITY
+{
+  left.array_eq(right)
+}
+
+spec fn fixed_intrusive_usize_eq_spec(
+  left: &[usize; FIXED_INTRUSIVE_CAPACITY],
+  right: &[usize; FIXED_INTRUSIVE_CAPACITY],
+) -> bool
+  dec FIXED_INTRUSIVE_CAPACITY
+{
+  left.array_eq(right)
+}
+
+spec fn fixed_intrusive_bool_frame_spec(
+  next: &[bool; FIXED_INTRUSIVE_CAPACITY],
+  old: &[bool; FIXED_INTRUSIVE_CAPACITY],
+  changed: usize,
+) -> bool
+  dec changed
+{
+  next.array_same_except(old, changed)
+}
+
+spec fn fixed_intrusive_usize_frame_spec(
+  next: &[usize; FIXED_INTRUSIVE_CAPACITY],
+  old: &[usize; FIXED_INTRUSIVE_CAPACITY],
+  changed: usize,
+) -> bool
+  dec changed
+{
+  next.array_same_except(old, changed)
+}
+
+spec fn fixed_intrusive_equal_spec(
+  left: &FixedIntrusiveList64,
+  right: &FixedIntrusiveList64,
+) -> bool
+  dec FIXED_INTRUSIVE_CAPACITY
+{
+  left.intrusive_head == right.intrusive_head
+    && left.intrusive_tail == right.intrusive_tail
+    && left.intrusive_len == right.intrusive_len
+    && fixed_intrusive_bool_eq_spec(
+      &left.intrusive_present,
+      &right.intrusive_present,
+    )
+    && fixed_intrusive_usize_eq_spec(
+      &left.intrusive_prev,
+      &right.intrusive_prev,
+    )
+    && fixed_intrusive_usize_eq_spec(
+      &left.intrusive_next,
+      &right.intrusive_next,
+    )
+}
+
+spec fn fixed_intrusive_empty_spec(list: &FixedIntrusiveList64) -> bool
+  dec FIXED_INTRUSIVE_CAPACITY
+{
+  let present: [bool; FIXED_INTRUSIVE_CAPACITY] =
+    [false; FIXED_INTRUSIVE_CAPACITY];
+  let links: [usize; FIXED_INTRUSIVE_CAPACITY] =
+    [FIXED_INTRUSIVE_NONE; FIXED_INTRUSIVE_CAPACITY];
+  list.intrusive_head == FIXED_INTRUSIVE_NONE
+    && list.intrusive_tail == FIXED_INTRUSIVE_NONE
+    && list.intrusive_len == 0
+    && fixed_intrusive_bool_eq_spec(&list.intrusive_present, &present)
+    && fixed_intrusive_usize_eq_spec(&list.intrusive_prev, &links)
+    && fixed_intrusive_usize_eq_spec(&list.intrusive_next, &links)
+}
+
+spec fn fixed_intrusive_contains_spec(
+  list: &FixedIntrusiveList64,
+  node: usize,
+) -> bool
+  dec node
+{
+  node < FIXED_INTRUSIVE_CAPACITY && list.intrusive_present[node]
+}
+
+spec fn fixed_intrusive_link_reason_spec(
+  list: &FixedIntrusiveList64,
+  node: usize,
+) -> u8
+  dec node
+{
+  if node >= FIXED_INTRUSIVE_CAPACITY {
+    1 as u8
+  } else {
+    if list.intrusive_present[node] {
+      2 as u8
+    } else {
+      if list.intrusive_len >= FIXED_INTRUSIVE_CAPACITY {
+        3 as u8
+      } else {
+        if list.intrusive_prev[node] != FIXED_INTRUSIVE_NONE
+          || list.intrusive_next[node] != FIXED_INTRUSIVE_NONE {
+          4 as u8
+        } else {
+          if list.intrusive_len == 0 {
+            if list.intrusive_head == FIXED_INTRUSIVE_NONE
+              && list.intrusive_tail == FIXED_INTRUSIVE_NONE {
+              0 as u8
+            } else {
+              5 as u8
+            }
+          } else {
+            if list.intrusive_head >= FIXED_INTRUSIVE_CAPACITY
+              || list.intrusive_tail >= FIXED_INTRUSIVE_CAPACITY {
+              6 as u8
+            } else {
+              if !list.intrusive_present[list.intrusive_head]
+                || !list.intrusive_present[list.intrusive_tail] {
+                7 as u8
+              } else {
+                if list.intrusive_prev[list.intrusive_head]
+                  != FIXED_INTRUSIVE_NONE {
+                  8 as u8
+                } else {
+                  if list.intrusive_next[list.intrusive_tail]
+                    != FIXED_INTRUSIVE_NONE {
+                    9 as u8
+                  } else {
+                    0 as u8
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+spec fn fixed_intrusive_pop_reason_spec(list: &FixedIntrusiveList64) -> u8
+  dec list.intrusive_len
+{
+  if list.intrusive_len == 0 {
+    if list.intrusive_head == FIXED_INTRUSIVE_NONE
+      && list.intrusive_tail == FIXED_INTRUSIVE_NONE {
+      0 as u8
+    } else {
+      1 as u8
+    }
+  } else {
+    if list.intrusive_len > FIXED_INTRUSIVE_CAPACITY {
+      2 as u8
+    } else {
+      if list.intrusive_head >= FIXED_INTRUSIVE_CAPACITY
+        || list.intrusive_tail >= FIXED_INTRUSIVE_CAPACITY {
+        3 as u8
+      } else {
+        if !list.intrusive_present[list.intrusive_head]
+          || !list.intrusive_present[list.intrusive_tail] {
+          4 as u8
+        } else {
+          if list.intrusive_prev[list.intrusive_head] != FIXED_INTRUSIVE_NONE
+            || list.intrusive_next[list.intrusive_tail] != FIXED_INTRUSIVE_NONE {
+            5 as u8
+          } else {
+            if list.intrusive_len == 1 {
+              if list.intrusive_tail != list.intrusive_head
+                || list.intrusive_next[list.intrusive_head]
+                  != FIXED_INTRUSIVE_NONE {
+                6 as u8
+              } else {
+                0 as u8
+              }
+            } else {
+              let successor: usize = list.intrusive_next[list.intrusive_head];
+              if successor >= FIXED_INTRUSIVE_CAPACITY {
+                7 as u8
+              } else {
+                if !list.intrusive_present[successor] {
+                  8 as u8
+                } else {
+                  if list.intrusive_prev[successor]
+                    != list.intrusive_head {
+                    9 as u8
+                  } else {
+                    0 as u8
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+fn fixed_intrusive_empty() -> FixedIntrusiveList64
+  req true
+  ens fixed_intrusive_empty_spec(&result)
+  ens result.intrusive_len == 0
+    && result.intrusive_head == FIXED_INTRUSIVE_NONE
+    && result.intrusive_tail == FIXED_INTRUSIVE_NONE
+    && !result.intrusive_present[0]
+    && result.intrusive_prev[0] == FIXED_INTRUSIVE_NONE
+    && result.intrusive_next[0] == FIXED_INTRUSIVE_NONE
+  fx pure
+{
+  FixedIntrusiveList64 {
+    intrusive_present: [false; FIXED_INTRUSIVE_CAPACITY],
+    intrusive_prev: [FIXED_INTRUSIVE_NONE; FIXED_INTRUSIVE_CAPACITY],
+    intrusive_next: [FIXED_INTRUSIVE_NONE; FIXED_INTRUSIVE_CAPACITY],
+    intrusive_head: FIXED_INTRUSIVE_NONE,
+    intrusive_tail: FIXED_INTRUSIVE_NONE,
+    intrusive_len: 0,
+  }
+}
+
+fn fixed_intrusive_contains(
+  list: &FixedIntrusiveList64,
+  node: usize,
+) -> bool
+  req true
+  ens result == fixed_intrusive_contains_spec(list, node)
+  fx pure
+{
+  node < FIXED_INTRUSIVE_CAPACITY && list.intrusive_present[node]
+}
+
+fn fixed_intrusive_head(list: &FixedIntrusiveList64) -> Option<usize>
+  req true
+  ens match result {
+    Some(node) =>
+      list.intrusive_len != 0
+        && node == list.intrusive_head
+        && node < FIXED_INTRUSIVE_CAPACITY
+        && list.intrusive_present[node],
+    None =>
+      list.intrusive_len == 0
+        || list.intrusive_head >= FIXED_INTRUSIVE_CAPACITY
+        || !list.intrusive_present[list.intrusive_head],
+  }
+  fx pure
+{
+  if list.intrusive_len != 0
+    && list.intrusive_head < FIXED_INTRUSIVE_CAPACITY
+    && list.intrusive_present[list.intrusive_head] {
+    Some(list.intrusive_head)
+  } else {
+    None
+  }
+}
+
+fn fixed_intrusive_tail(list: &FixedIntrusiveList64) -> Option<usize>
+  req true
+  ens match result {
+    Some(node) =>
+      list.intrusive_len != 0
+        && node == list.intrusive_tail
+        && node < FIXED_INTRUSIVE_CAPACITY
+        && list.intrusive_present[node],
+    None =>
+      list.intrusive_len == 0
+        || list.intrusive_tail >= FIXED_INTRUSIVE_CAPACITY
+        || !list.intrusive_present[list.intrusive_tail],
+  }
+  fx pure
+{
+  if list.intrusive_len != 0
+    && list.intrusive_tail < FIXED_INTRUSIVE_CAPACITY
+    && list.intrusive_present[list.intrusive_tail] {
+    Some(list.intrusive_tail)
+  } else {
+    None
+  }
+}
+
+fn fixed_intrusive_link_reason(
+  list: &FixedIntrusiveList64,
+  node: usize,
+) -> u8
+  req true
+  ens result == fixed_intrusive_link_reason_spec(list, node)
+  fx pure
+{
+  if node >= FIXED_INTRUSIVE_CAPACITY {
+    1 as u8
+  } else {
+    if list.intrusive_present[node] {
+      2 as u8
+    } else {
+      if list.intrusive_len >= FIXED_INTRUSIVE_CAPACITY {
+        3 as u8
+      } else {
+        if list.intrusive_prev[node] != FIXED_INTRUSIVE_NONE
+          || list.intrusive_next[node] != FIXED_INTRUSIVE_NONE {
+          4 as u8
+        } else {
+          if list.intrusive_len == 0 {
+            if list.intrusive_head == FIXED_INTRUSIVE_NONE
+              && list.intrusive_tail == FIXED_INTRUSIVE_NONE {
+              0 as u8
+            } else {
+              5 as u8
+            }
+          } else {
+            if list.intrusive_head >= FIXED_INTRUSIVE_CAPACITY
+              || list.intrusive_tail >= FIXED_INTRUSIVE_CAPACITY {
+              6 as u8
+            } else {
+              if !list.intrusive_present[list.intrusive_head]
+                || !list.intrusive_present[list.intrusive_tail] {
+                7 as u8
+              } else {
+                if list.intrusive_prev[list.intrusive_head]
+                  != FIXED_INTRUSIVE_NONE {
+                  8 as u8
+                } else {
+                  if list.intrusive_next[list.intrusive_tail]
+                    != FIXED_INTRUSIVE_NONE {
+                    9 as u8
+                  } else {
+                    0 as u8
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+fn fixed_intrusive_pop_reason(list: &FixedIntrusiveList64) -> u8
+  req true
+  ens result == fixed_intrusive_pop_reason_spec(list)
+  fx pure
+{
+  if list.intrusive_len == 0 {
+    if list.intrusive_head == FIXED_INTRUSIVE_NONE
+      && list.intrusive_tail == FIXED_INTRUSIVE_NONE {
+      0 as u8
+    } else {
+      1 as u8
+    }
+  } else {
+    if list.intrusive_len > FIXED_INTRUSIVE_CAPACITY {
+      2 as u8
+    } else {
+      if list.intrusive_head >= FIXED_INTRUSIVE_CAPACITY
+        || list.intrusive_tail >= FIXED_INTRUSIVE_CAPACITY {
+        3 as u8
+      } else {
+        if !list.intrusive_present[list.intrusive_head]
+          || !list.intrusive_present[list.intrusive_tail] {
+          4 as u8
+        } else {
+          if list.intrusive_prev[list.intrusive_head] != FIXED_INTRUSIVE_NONE
+            || list.intrusive_next[list.intrusive_tail] != FIXED_INTRUSIVE_NONE {
+            5 as u8
+          } else {
+            if list.intrusive_len == 1 {
+              if list.intrusive_tail != list.intrusive_head
+                || list.intrusive_next[list.intrusive_head]
+                  != FIXED_INTRUSIVE_NONE {
+                6 as u8
+              } else {
+                0 as u8
+              }
+            } else {
+              let successor: usize = list.intrusive_next[list.intrusive_head];
+              if successor >= FIXED_INTRUSIVE_CAPACITY {
+                7 as u8
+              } else {
+                if !list.intrusive_present[successor] {
+                  8 as u8
+                } else {
+                  if list.intrusive_prev[successor]
+                    != list.intrusive_head {
+                    9 as u8
+                  } else {
+                    0 as u8
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+fn fixed_intrusive_link_empty(
+  list: FixedIntrusiveList64,
+  node: usize,
+) -> FixedIntrusiveLink64
+  req node < FIXED_INTRUSIVE_CAPACITY
+    && !list.intrusive_present[node]
+    && list.intrusive_prev[node] == FIXED_INTRUSIVE_NONE
+    && list.intrusive_next[node] == FIXED_INTRUSIVE_NONE
+    && list.intrusive_len == 0
+    && list.intrusive_head == FIXED_INTRUSIVE_NONE
+    && list.intrusive_tail == FIXED_INTRUSIVE_NONE
+  ens match result {
+    FixedIntrusiveLink64::IntrusiveLinked64 { list: next } =>
+      next.intrusive_head == node
+        && next.intrusive_tail == node
+        && next.intrusive_len == 1
+        && next.intrusive_present[node]
+        && next.intrusive_prev[node] == FIXED_INTRUSIVE_NONE
+        && next.intrusive_next[node] == FIXED_INTRUSIVE_NONE
+        && fixed_intrusive_bool_frame_spec(
+          &next.intrusive_present,
+          &list.intrusive_present,
+          node,
+        )
+        && fixed_intrusive_usize_eq_spec(
+          &next.intrusive_prev,
+          &list.intrusive_prev,
+        )
+        && fixed_intrusive_usize_eq_spec(
+          &next.intrusive_next,
+          &list.intrusive_next,
+        ),
+    FixedIntrusiveLink64::IntrusiveAlreadyLinked64 { list: _, node: _ } => false,
+    FixedIntrusiveLink64::IntrusiveOutOfRange64 { list: _, node: _ } => false,
+    FixedIntrusiveLink64::IntrusiveFull64 { list: _, node: _ } => false,
+    FixedIntrusiveLink64::IntrusiveLinkCorrupt64 {
+      list: _, node: _, reason: _,
+    } => false,
+  }
+  fx pure
+{
+  let mut present: [bool; FIXED_INTRUSIVE_CAPACITY] = list.intrusive_present;
+  present[node] = true;
+  FixedIntrusiveLink64::IntrusiveLinked64 {
+    list: FixedIntrusiveList64 {
+      intrusive_present: present,
+      intrusive_prev: list.intrusive_prev,
+      intrusive_next: list.intrusive_next,
+      intrusive_head: node,
+      intrusive_tail: node,
+      intrusive_len: 1,
+    },
+  }
+}
+
+fn fixed_intrusive_link_nonempty(
+  list: FixedIntrusiveList64,
+  node: usize,
+) -> FixedIntrusiveLink64
+  req node < FIXED_INTRUSIVE_CAPACITY
+    && !list.intrusive_present[node]
+    && list.intrusive_prev[node] == FIXED_INTRUSIVE_NONE
+    && list.intrusive_next[node] == FIXED_INTRUSIVE_NONE
+    && list.intrusive_len != 0
+    && list.intrusive_len < FIXED_INTRUSIVE_CAPACITY
+    && list.intrusive_head < FIXED_INTRUSIVE_CAPACITY
+    && list.intrusive_tail < FIXED_INTRUSIVE_CAPACITY
+    && list.intrusive_present[list.intrusive_head]
+    && list.intrusive_present[list.intrusive_tail]
+    && list.intrusive_prev[list.intrusive_head] == FIXED_INTRUSIVE_NONE
+    && list.intrusive_next[list.intrusive_tail] == FIXED_INTRUSIVE_NONE
+  ens match result {
+    FixedIntrusiveLink64::IntrusiveLinked64 { list: next } =>
+      next.intrusive_head == list.intrusive_head
+        && next.intrusive_tail == node
+        && next.intrusive_len == list.intrusive_len + 1
+        && next.intrusive_present[node]
+        && next.intrusive_prev[node] == list.intrusive_tail
+        && next.intrusive_next[node] == FIXED_INTRUSIVE_NONE
+        && next.intrusive_next[list.intrusive_tail] == node
+        && fixed_intrusive_bool_frame_spec(
+          &next.intrusive_present,
+          &list.intrusive_present,
+          node,
+        )
+        && fixed_intrusive_usize_frame_spec(
+          &next.intrusive_prev,
+          &list.intrusive_prev,
+          node,
+        )
+        && fixed_intrusive_usize_frame_spec(
+          &next.intrusive_next,
+          &list.intrusive_next,
+          list.intrusive_tail,
+        ),
+    FixedIntrusiveLink64::IntrusiveAlreadyLinked64 { list: _, node: _ } => false,
+    FixedIntrusiveLink64::IntrusiveOutOfRange64 { list: _, node: _ } => false,
+    FixedIntrusiveLink64::IntrusiveFull64 { list: _, node: _ } => false,
+    FixedIntrusiveLink64::IntrusiveLinkCorrupt64 {
+      list: _, node: _, reason: _,
+    } => false,
+  }
+  fx pure
+{
+  let old_tail: usize = list.intrusive_tail;
+  let mut present: [bool; FIXED_INTRUSIVE_CAPACITY] = list.intrusive_present;
+  let mut previous: [usize; FIXED_INTRUSIVE_CAPACITY] = list.intrusive_prev;
+  let mut following: [usize; FIXED_INTRUSIVE_CAPACITY] = list.intrusive_next;
+  present[node] = true;
+  previous[node] = old_tail;
+  following[old_tail] = node;
+  FixedIntrusiveLink64::IntrusiveLinked64 {
+    list: FixedIntrusiveList64 {
+      intrusive_present: present,
+      intrusive_prev: previous,
+      intrusive_next: following,
+      intrusive_head: list.intrusive_head,
+      intrusive_tail: node,
+      intrusive_len: (list.intrusive_len + 1) as usize,
+    },
+  }
+}
+
+fn fixed_intrusive_push_back(
+  list: FixedIntrusiveList64,
+  node: usize,
+) -> FixedIntrusiveLink64
+  req true
+  ens match result {
+    FixedIntrusiveLink64::IntrusiveLinked64 { list: next } =>
+      fixed_intrusive_link_reason_spec(&list, node) == 0
+        && (list.intrusive_len != 0 || next.intrusive_head == node)
+        && (list.intrusive_len == 0
+          || next.intrusive_head == list.intrusive_head)
+        && next.intrusive_tail == node
+        && next.intrusive_len == list.intrusive_len + 1
+        && next.intrusive_present[node]
+        && (list.intrusive_len != 0
+          || next.intrusive_prev[node] == FIXED_INTRUSIVE_NONE)
+        && (list.intrusive_len == 0
+          || next.intrusive_prev[node] == list.intrusive_tail)
+        && next.intrusive_next[node] == FIXED_INTRUSIVE_NONE
+        && fixed_intrusive_bool_frame_spec(
+          &next.intrusive_present,
+          &list.intrusive_present,
+          node,
+        )
+        && (list.intrusive_len != 0
+          || (fixed_intrusive_usize_eq_spec(
+            &next.intrusive_prev,
+            &list.intrusive_prev,
+          )
+            && fixed_intrusive_usize_eq_spec(
+              &next.intrusive_next,
+              &list.intrusive_next,
+            )))
+        && (list.intrusive_len == 0
+          || (next.intrusive_next[list.intrusive_tail] == node
+            && fixed_intrusive_usize_frame_spec(
+              &next.intrusive_prev,
+              &list.intrusive_prev,
+              node,
+            )
+            && fixed_intrusive_usize_frame_spec(
+              &next.intrusive_next,
+              &list.intrusive_next,
+              list.intrusive_tail,
+            ))),
+    FixedIntrusiveLink64::IntrusiveAlreadyLinked64 {
+      list: next,
+      node: returned,
+    } =>
+      fixed_intrusive_link_reason_spec(&list, node) == 2
+        && returned == node
+        && fixed_intrusive_equal_spec(&next, &list),
+    FixedIntrusiveLink64::IntrusiveOutOfRange64 {
+      list: next,
+      node: returned,
+    } =>
+      fixed_intrusive_link_reason_spec(&list, node) == 1
+        && returned == node
+        && fixed_intrusive_equal_spec(&next, &list),
+    FixedIntrusiveLink64::IntrusiveFull64 {
+      list: next,
+      node: returned,
+    } =>
+      fixed_intrusive_link_reason_spec(&list, node) == 3
+        && returned == node
+        && fixed_intrusive_equal_spec(&next, &list),
+    FixedIntrusiveLink64::IntrusiveLinkCorrupt64 {
+      list: next,
+      node: returned,
+      reason,
+    } =>
+      reason == fixed_intrusive_link_reason_spec(&list, node)
+        && reason >= 4
+        && returned == node
+        && fixed_intrusive_equal_spec(&next, &list),
+  }
+  fx pure
+{
+  let reason: u8 = fixed_intrusive_link_reason(&list, node);
+  if reason == 1 {
+    FixedIntrusiveLink64::IntrusiveOutOfRange64 {
+      list: list,
+      node: node,
+    }
+  } else {
+    if reason == 2 {
+      FixedIntrusiveLink64::IntrusiveAlreadyLinked64 {
+        list: list,
+        node: node,
+      }
+    } else {
+      if reason == 3 {
+        FixedIntrusiveLink64::IntrusiveFull64 {
+          list: list,
+          node: node,
+        }
+      } else {
+        if reason != 0 {
+          FixedIntrusiveLink64::IntrusiveLinkCorrupt64 {
+            list: list,
+            node: node,
+            reason: reason,
+          }
+        } else {
+          if list.intrusive_len == 0 {
+            fixed_intrusive_link_empty(list, node)
+          } else {
+            fixed_intrusive_link_nonempty(list, node)
+          }
+        }
+      }
+    }
+  }
+}
+
+fn fixed_intrusive_pop_last(
+  list: FixedIntrusiveList64,
+  node: usize,
+) -> FixedIntrusivePop64
+  req list.intrusive_len == 1
+    && node == list.intrusive_head
+    && node == list.intrusive_tail
+    && node < FIXED_INTRUSIVE_CAPACITY
+    && list.intrusive_present[node]
+    && list.intrusive_prev[node] == FIXED_INTRUSIVE_NONE
+    && list.intrusive_next[node] == FIXED_INTRUSIVE_NONE
+  ens match result {
+    FixedIntrusivePop64::IntrusivePopped64 {
+      list: next,
+      node: returned,
+    } =>
+      returned == node
+        && next.intrusive_len == 0
+        && next.intrusive_head == FIXED_INTRUSIVE_NONE
+        && next.intrusive_tail == FIXED_INTRUSIVE_NONE
+        && !next.intrusive_present[node]
+        && fixed_intrusive_bool_frame_spec(
+          &next.intrusive_present,
+          &list.intrusive_present,
+          node,
+        )
+        && fixed_intrusive_usize_eq_spec(
+          &next.intrusive_prev,
+          &list.intrusive_prev,
+        )
+        && fixed_intrusive_usize_eq_spec(
+          &next.intrusive_next,
+          &list.intrusive_next,
+        ),
+    FixedIntrusivePop64::IntrusiveEmpty64 { list: _ } => false,
+    FixedIntrusivePop64::IntrusivePopCorrupt64 {
+      list: _, node: _, reason: _,
+    } => false,
+  }
+  fx pure
+{
+  let mut present: [bool; FIXED_INTRUSIVE_CAPACITY] = list.intrusive_present;
+  present[node] = false;
+  FixedIntrusivePop64::IntrusivePopped64 {
+    list: FixedIntrusiveList64 {
+      intrusive_present: present,
+      intrusive_prev: list.intrusive_prev,
+      intrusive_next: list.intrusive_next,
+      intrusive_head: FIXED_INTRUSIVE_NONE,
+      intrusive_tail: FIXED_INTRUSIVE_NONE,
+      intrusive_len: 0,
+    },
+    node: node,
+  }
+}
+
+fn fixed_intrusive_pop_more(
+  list: FixedIntrusiveList64,
+  node: usize,
+  successor: usize,
+) -> FixedIntrusivePop64
+  req list.intrusive_len > 1
+    && list.intrusive_len <= FIXED_INTRUSIVE_CAPACITY
+    && node == list.intrusive_head
+    && node < FIXED_INTRUSIVE_CAPACITY
+    && successor == list.intrusive_next[node]
+    && successor < FIXED_INTRUSIVE_CAPACITY
+    && list.intrusive_present[node]
+    && list.intrusive_present[successor]
+    && list.intrusive_prev[node] == FIXED_INTRUSIVE_NONE
+    && list.intrusive_prev[successor] == node
+    && list.intrusive_tail < FIXED_INTRUSIVE_CAPACITY
+    && list.intrusive_present[list.intrusive_tail]
+    && list.intrusive_next[list.intrusive_tail] == FIXED_INTRUSIVE_NONE
+  ens match result {
+    FixedIntrusivePop64::IntrusivePopped64 {
+      list: next,
+      node: returned,
+    } =>
+      returned == node
+        && next.intrusive_head == successor
+        && next.intrusive_tail == list.intrusive_tail
+        && next.intrusive_len == list.intrusive_len - 1
+        && !next.intrusive_present[node]
+        && next.intrusive_next[node] == FIXED_INTRUSIVE_NONE
+        && next.intrusive_prev[successor] == FIXED_INTRUSIVE_NONE
+        && fixed_intrusive_bool_frame_spec(
+          &next.intrusive_present,
+          &list.intrusive_present,
+          node,
+        )
+        && fixed_intrusive_usize_frame_spec(
+          &next.intrusive_prev,
+          &list.intrusive_prev,
+          successor,
+        )
+        && fixed_intrusive_usize_frame_spec(
+          &next.intrusive_next,
+          &list.intrusive_next,
+          node,
+        ),
+    FixedIntrusivePop64::IntrusiveEmpty64 { list: _ } => false,
+    FixedIntrusivePop64::IntrusivePopCorrupt64 {
+      list: _, node: _, reason: _,
+    } => false,
+  }
+  fx pure
+{
+  let mut present: [bool; FIXED_INTRUSIVE_CAPACITY] = list.intrusive_present;
+  let mut previous: [usize; FIXED_INTRUSIVE_CAPACITY] = list.intrusive_prev;
+  let mut following: [usize; FIXED_INTRUSIVE_CAPACITY] = list.intrusive_next;
+  present[node] = false;
+  previous[successor] = FIXED_INTRUSIVE_NONE;
+  following[node] = FIXED_INTRUSIVE_NONE;
+  FixedIntrusivePop64::IntrusivePopped64 {
+    list: FixedIntrusiveList64 {
+      intrusive_present: present,
+      intrusive_prev: previous,
+      intrusive_next: following,
+      intrusive_head: successor,
+      intrusive_tail: list.intrusive_tail,
+      intrusive_len: (list.intrusive_len - 1) as usize,
+    },
+    node: node,
+  }
+}
+
+fn fixed_intrusive_pop_front(list: FixedIntrusiveList64) -> FixedIntrusivePop64
+  req true
+  ens match result {
+    FixedIntrusivePop64::IntrusivePopped64 {
+      list: next,
+      node,
+    } =>
+      fixed_intrusive_pop_reason_spec(&list) == 0
+        && list.intrusive_len != 0
+        && node == list.intrusive_head
+        && !next.intrusive_present[node]
+        && next.intrusive_len == list.intrusive_len - 1
+        && (list.intrusive_len != 1
+          || next.intrusive_head == FIXED_INTRUSIVE_NONE)
+        && (list.intrusive_len == 1
+          || next.intrusive_head == list.intrusive_next[node])
+        && (list.intrusive_len != 1
+          || next.intrusive_tail == FIXED_INTRUSIVE_NONE)
+        && (list.intrusive_len == 1
+          || next.intrusive_tail == list.intrusive_tail)
+        && fixed_intrusive_bool_frame_spec(
+          &next.intrusive_present,
+          &list.intrusive_present,
+          node,
+        )
+        && (list.intrusive_len != 1
+          || (fixed_intrusive_usize_eq_spec(
+            &next.intrusive_prev,
+            &list.intrusive_prev,
+          )
+            && fixed_intrusive_usize_eq_spec(
+              &next.intrusive_next,
+              &list.intrusive_next,
+            )))
+        && (list.intrusive_len == 1
+          || (next.intrusive_next[node] == FIXED_INTRUSIVE_NONE
+            && next.intrusive_prev[list.intrusive_next[node]]
+              == FIXED_INTRUSIVE_NONE
+            && fixed_intrusive_usize_frame_spec(
+              &next.intrusive_prev,
+              &list.intrusive_prev,
+              list.intrusive_next[node],
+            )
+            && fixed_intrusive_usize_frame_spec(
+              &next.intrusive_next,
+              &list.intrusive_next,
+              node,
+            ))),
+    FixedIntrusivePop64::IntrusiveEmpty64 { list: next } =>
+      fixed_intrusive_pop_reason_spec(&list) == 0
+        && list.intrusive_len == 0
+        && fixed_intrusive_equal_spec(&next, &list),
+    FixedIntrusivePop64::IntrusivePopCorrupt64 {
+      list: next,
+      node,
+      reason,
+    } =>
+      reason == fixed_intrusive_pop_reason_spec(&list)
+        && reason != 0
+        && fixed_intrusive_equal_spec(&next, &list)
+        && node == list.intrusive_head,
+  }
+  fx pure
+{
+  let reason: u8 = fixed_intrusive_pop_reason(&list);
+  if reason != 0 {
+    FixedIntrusivePop64::IntrusivePopCorrupt64 {
+      node: list.intrusive_head,
+      list: list,
+      reason: reason,
+    }
+  } else {
+    if list.intrusive_len == 0 {
+      FixedIntrusivePop64::IntrusiveEmpty64 { list: list }
+    } else {
+      let node: usize = list.intrusive_head;
+      if list.intrusive_len == 1 {
+        fixed_intrusive_pop_last(list, node)
+      } else {
+        let successor: usize = list.intrusive_next[node];
+        fixed_intrusive_pop_more(list, node, successor)
+      }
+    }
+  }
+}
+
+fn fixed_intrusive_fifo_probe(first: usize, second: usize) -> bool
+  req first < FIXED_INTRUSIVE_CAPACITY
+    && second < FIXED_INTRUSIVE_CAPACITY
+    && first != second
+  ens result
+  fx pure
+{
+  let empty: FixedIntrusiveList64 = fixed_intrusive_empty();
+  match fixed_intrusive_push_back(empty, first) {
+    FixedIntrusiveLink64::IntrusiveLinked64 { list: one } =>
+      match fixed_intrusive_push_back(one, second) {
+        FixedIntrusiveLink64::IntrusiveLinked64 { list: two } =>
+          match fixed_intrusive_pop_front(two) {
+            FixedIntrusivePop64::IntrusivePopped64 {
+              list: one_left,
+              node: got_first,
+            } =>
+              match fixed_intrusive_pop_front(one_left) {
+                FixedIntrusivePop64::IntrusivePopped64 {
+                  list: none_left,
+                  node: got_second,
+                } =>
+                  got_first == first
+                    && got_second == second
+                    && none_left.intrusive_len == 0
+                    && none_left.intrusive_head == FIXED_INTRUSIVE_NONE
+                    && none_left.intrusive_tail == FIXED_INTRUSIVE_NONE,
+                FixedIntrusivePop64::IntrusiveEmpty64 { list: _ } => false,
+                FixedIntrusivePop64::IntrusivePopCorrupt64 {
+                  list: _, node: _, reason: _,
+                } => false,
+              },
+            FixedIntrusivePop64::IntrusiveEmpty64 { list: _ } => false,
+            FixedIntrusivePop64::IntrusivePopCorrupt64 {
+              list: _, node: _, reason: _,
+            } => false,
+          },
+        FixedIntrusiveLink64::IntrusiveAlreadyLinked64 { list: _, node: _ } => false,
+        FixedIntrusiveLink64::IntrusiveOutOfRange64 { list: _, node: _ } => false,
+        FixedIntrusiveLink64::IntrusiveFull64 { list: _, node: _ } => false,
+        FixedIntrusiveLink64::IntrusiveLinkCorrupt64 {
+          list: _, node: _, reason: _,
+        } => false,
+      },
+    FixedIntrusiveLink64::IntrusiveAlreadyLinked64 { list: _, node: _ } => false,
+    FixedIntrusiveLink64::IntrusiveOutOfRange64 { list: _, node: _ } => false,
+    FixedIntrusiveLink64::IntrusiveFull64 { list: _, node: _ } => false,
+    FixedIntrusiveLink64::IntrusiveLinkCorrupt64 {
+      list: _, node: _, reason: _,
+    } => false,
+  }
+}
+
+fn fixed_intrusive_endpoints_probe(
+  first: usize,
+  second: usize,
+) -> FixedIntrusiveEndpoints64
+  req first < FIXED_INTRUSIVE_CAPACITY
+    && second < FIXED_INTRUSIVE_CAPACITY
+    && first != second
+  ens result.intrusive_first == first
+    && result.intrusive_last == second
+    && result.intrusive_after_first == second
+    && result.intrusive_before_last == first
+    && result.intrusive_first_prev == FIXED_INTRUSIVE_NONE
+    && result.intrusive_last_next == FIXED_INTRUSIVE_NONE
+  fx pure
+{
+  let empty: FixedIntrusiveList64 = fixed_intrusive_empty();
+  match fixed_intrusive_push_back(empty, first) {
+    FixedIntrusiveLink64::IntrusiveLinked64 { list: one } =>
+      match fixed_intrusive_push_back(one, second) {
+        FixedIntrusiveLink64::IntrusiveLinked64 { list: two } =>
+          FixedIntrusiveEndpoints64 {
+            intrusive_first: two.intrusive_head,
+            intrusive_last: two.intrusive_tail,
+            intrusive_after_first: two.intrusive_next[first],
+            intrusive_before_last: two.intrusive_prev[second],
+            intrusive_first_prev: two.intrusive_prev[first],
+            intrusive_last_next: two.intrusive_next[second],
+          },
+        FixedIntrusiveLink64::IntrusiveAlreadyLinked64 { list: _, node: _ } =>
+          FixedIntrusiveEndpoints64 {
+            intrusive_first: FIXED_INTRUSIVE_NONE,
+            intrusive_last: FIXED_INTRUSIVE_NONE,
+            intrusive_after_first: FIXED_INTRUSIVE_NONE,
+            intrusive_before_last: FIXED_INTRUSIVE_NONE,
+            intrusive_first_prev: FIXED_INTRUSIVE_NONE,
+            intrusive_last_next: FIXED_INTRUSIVE_NONE,
+          },
+        FixedIntrusiveLink64::IntrusiveOutOfRange64 { list: _, node: _ } =>
+          FixedIntrusiveEndpoints64 {
+            intrusive_first: FIXED_INTRUSIVE_NONE,
+            intrusive_last: FIXED_INTRUSIVE_NONE,
+            intrusive_after_first: FIXED_INTRUSIVE_NONE,
+            intrusive_before_last: FIXED_INTRUSIVE_NONE,
+            intrusive_first_prev: FIXED_INTRUSIVE_NONE,
+            intrusive_last_next: FIXED_INTRUSIVE_NONE,
+          },
+        FixedIntrusiveLink64::IntrusiveFull64 { list: _, node: _ } =>
+          FixedIntrusiveEndpoints64 {
+            intrusive_first: FIXED_INTRUSIVE_NONE,
+            intrusive_last: FIXED_INTRUSIVE_NONE,
+            intrusive_after_first: FIXED_INTRUSIVE_NONE,
+            intrusive_before_last: FIXED_INTRUSIVE_NONE,
+            intrusive_first_prev: FIXED_INTRUSIVE_NONE,
+            intrusive_last_next: FIXED_INTRUSIVE_NONE,
+          },
+        FixedIntrusiveLink64::IntrusiveLinkCorrupt64 {
+          list: _, node: _, reason: _,
+        } => FixedIntrusiveEndpoints64 {
+          intrusive_first: FIXED_INTRUSIVE_NONE,
+          intrusive_last: FIXED_INTRUSIVE_NONE,
+          intrusive_after_first: FIXED_INTRUSIVE_NONE,
+          intrusive_before_last: FIXED_INTRUSIVE_NONE,
+          intrusive_first_prev: FIXED_INTRUSIVE_NONE,
+          intrusive_last_next: FIXED_INTRUSIVE_NONE,
+        },
+      },
+    FixedIntrusiveLink64::IntrusiveAlreadyLinked64 { list: _, node: _ } =>
+      FixedIntrusiveEndpoints64 {
+        intrusive_first: FIXED_INTRUSIVE_NONE,
+        intrusive_last: FIXED_INTRUSIVE_NONE,
+        intrusive_after_first: FIXED_INTRUSIVE_NONE,
+        intrusive_before_last: FIXED_INTRUSIVE_NONE,
+        intrusive_first_prev: FIXED_INTRUSIVE_NONE,
+        intrusive_last_next: FIXED_INTRUSIVE_NONE,
+      },
+    FixedIntrusiveLink64::IntrusiveOutOfRange64 { list: _, node: _ } =>
+      FixedIntrusiveEndpoints64 {
+        intrusive_first: FIXED_INTRUSIVE_NONE,
+        intrusive_last: FIXED_INTRUSIVE_NONE,
+        intrusive_after_first: FIXED_INTRUSIVE_NONE,
+        intrusive_before_last: FIXED_INTRUSIVE_NONE,
+        intrusive_first_prev: FIXED_INTRUSIVE_NONE,
+        intrusive_last_next: FIXED_INTRUSIVE_NONE,
+      },
+    FixedIntrusiveLink64::IntrusiveFull64 { list: _, node: _ } =>
+      FixedIntrusiveEndpoints64 {
+        intrusive_first: FIXED_INTRUSIVE_NONE,
+        intrusive_last: FIXED_INTRUSIVE_NONE,
+        intrusive_after_first: FIXED_INTRUSIVE_NONE,
+        intrusive_before_last: FIXED_INTRUSIVE_NONE,
+        intrusive_first_prev: FIXED_INTRUSIVE_NONE,
+        intrusive_last_next: FIXED_INTRUSIVE_NONE,
+      },
+    FixedIntrusiveLink64::IntrusiveLinkCorrupt64 {
+      list: _, node: _, reason: _,
+    } => FixedIntrusiveEndpoints64 {
+      intrusive_first: FIXED_INTRUSIVE_NONE,
+      intrusive_last: FIXED_INTRUSIVE_NONE,
+      intrusive_after_first: FIXED_INTRUSIVE_NONE,
+      intrusive_before_last: FIXED_INTRUSIVE_NONE,
+      intrusive_first_prev: FIXED_INTRUSIVE_NONE,
+      intrusive_last_next: FIXED_INTRUSIVE_NONE,
+    },
+  }
+}
+
+fn fixed_intrusive_duplicate_probe(node: usize) -> bool
+  req node < FIXED_INTRUSIVE_CAPACITY
+  ens result
+  fx pure
+{
+  let empty: FixedIntrusiveList64 = fixed_intrusive_empty();
+  match fixed_intrusive_push_back(empty, node) {
+    FixedIntrusiveLink64::IntrusiveLinked64 { list: one } =>
+      match fixed_intrusive_push_back(one, node) {
+        FixedIntrusiveLink64::IntrusiveAlreadyLinked64 {
+          list: unchanged,
+          node: returned,
+        } =>
+          returned == node
+            && fixed_intrusive_contains(&unchanged, node),
+        FixedIntrusiveLink64::IntrusiveLinked64 { list: _ } => false,
+        FixedIntrusiveLink64::IntrusiveOutOfRange64 { list: _, node: _ } => false,
+        FixedIntrusiveLink64::IntrusiveFull64 { list: _, node: _ } => false,
+        FixedIntrusiveLink64::IntrusiveLinkCorrupt64 {
+          list: _, node: _, reason: _,
+        } => false,
+      },
+    FixedIntrusiveLink64::IntrusiveAlreadyLinked64 { list: _, node: _ } => false,
+    FixedIntrusiveLink64::IntrusiveOutOfRange64 { list: _, node: _ } => false,
+    FixedIntrusiveLink64::IntrusiveFull64 { list: _, node: _ } => false,
+    FixedIntrusiveLink64::IntrusiveLinkCorrupt64 {
+      list: _, node: _, reason: _,
+    } => false,
+  }
+}

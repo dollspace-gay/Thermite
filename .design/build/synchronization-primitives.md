@@ -256,10 +256,11 @@ total. Executable contracts kill 756 of 834 generated mutants.
   export while binding all nine original modules into the receipt; and
 - tampers with the bound wait source and requires validation to fail.
 
-The strict export is scalar because current body TV cannot independently frame
-the full named-aggregate/ADT lifecycle. The complete package source is still
-receipt-bound, and every in-language aggregate transition has its individual
-L3 certificate.
+The strict export remains scalar. Body TV now independently frames user-ADT
+match/results, but complete synchronization transitions still need exact
+mutable-reference callee effects and record-state loop composition. The complete
+package source is receipt-bound, and every in-language aggregate transition has
+its individual L3 certificate.
 
 Remaining synchronization work includes atomic integration, named progress and
 fairness assumptions in the registry, and richer reader/writer coordination.

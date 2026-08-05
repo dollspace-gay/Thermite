@@ -1822,6 +1822,74 @@ design = ".design/build/nested-aggregate-lifecycle.md"
 reference = []
 conformance_ops = ["nested-aggregate-lifecycle"]
 
+# Exact user-ADT pattern/result semantics. Contract TV and complete body TV own
+# control-flow values; leaf exec TV hands them off without duplicating evidence.
+[[route]]
+crate_pattern = "thermite-tv/src/ref_encode.rs"
+design = ".design/build/adt-match-lifecycle.md"
+reference = ["conformance/verified-composition/probe.th"]
+conformance_ops = ["adt-contract-reference"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/exec_stmt_encode.rs"
+design = ".design/build/adt-match-lifecycle.md"
+reference = ["conformance/verified-composition/probe.th"]
+conformance_ops = ["adt-body-reference", "pattern-binding-scope", "typed-constructors"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/obligation.rs"
+design = ".design/build/adt-match-lifecycle.md"
+reference = ["conformance/verified-composition/probe.th"]
+conformance_ops = ["adt-contract-body-frames"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/lib.rs"
+design = ".design/build/adt-match-lifecycle.md"
+reference = ["conformance/verified-composition/probe.th"]
+conformance_ops = ["adt-frame-api"]
+
+[[route]]
+crate_pattern = "thermite-tv/tests/adt_match_lifecycle_tv.rs"
+design = ".design/build/adt-match-lifecycle.md"
+reference = ["conformance/verified-composition/probe.th"]
+conformance_ops = ["adt-real-verus", "adt-mutants", "adt-pattern-shadowing"]
+
+[[route]]
+crate_pattern = "forge/src/body_tv.rs"
+design = ".design/build/adt-match-lifecycle.md"
+reference = ["conformance/verified-composition/probe.th"]
+conformance_ops = ["adt-derived-frame"]
+
+[[route]]
+crate_pattern = "forge/src/contract_tv.rs"
+design = ".design/build/adt-match-lifecycle.md"
+reference = ["conformance/verified-composition/probe.th"]
+conformance_ops = ["adt-contract-tv", "tuple-result-frame"]
+
+[[route]]
+crate_pattern = "forge/src/exec_tv.rs"
+design = ".design/build/adt-match-lifecycle.md"
+reference = ["conformance/verified-composition/probe.th"]
+conformance_ops = ["body-control-handoff"]
+
+[[route]]
+crate_pattern = "forge/src/verified_build.rs"
+design = ".design/build/adt-match-lifecycle.md"
+reference = ["conformance/verified-composition/probe.th"]
+conformance_ops = ["strict-tv-inventory"]
+
+[[route]]
+crate_pattern = "forge/tests/verified_composition.rs"
+design = ".design/build/adt-match-lifecycle.md"
+reference = ["conformance/verified-composition/probe.th"]
+conformance_ops = ["adt-strict-build", "adt-replay", "adt-runtime", "adt-tamper"]
+
+[[route]]
+crate_pattern = "conformance/verified-composition/probe.th"
+design = ".design/build/adt-match-lifecycle.md"
+reference = []
+conformance_ops = ["adt-match-lifecycle"]
+
 # Primitive-only sealed atomic declarations and proof vocabulary. These routes
 # intentionally cover no machine implementation: registry v1 must refuse that
 # assurance class until the separate object/machine refinement increment.

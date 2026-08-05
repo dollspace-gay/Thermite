@@ -3869,7 +3869,7 @@ fn expected_tv_inventory(
             let mut let_index = 0;
             for stmt in &body.stmts {
                 match stmt {
-                    Stmt::Let { .. } => {
+                    Stmt::Let { init, .. } if !crate::exec_tv::expr_contains_body_control(init) => {
                         let_index += 1;
                         expect_tv(
                             &mut expected,
@@ -3877,13 +3877,24 @@ fn expected_tv_inventory(
                             format!("{}.let#{let_index}", function.name),
                         );
                     }
-                    Stmt::Return(Some(_)) => {
+                    Stmt::Let { .. } => {
+                        // Body-TV owns control-flow values; still advance the
+                        // source-order label counter used for later leaf lets.
+                        let_index += 1;
+                    }
+                    Stmt::Return(Some(value))
+                        if !crate::exec_tv::expr_contains_body_control(value) =>
+                    {
                         expect_tv(&mut expected, "exec", format!("{}.return", function.name))
                     }
                     _ => {}
                 }
             }
-            if body.tail.is_some() {
+            if body
+                .tail
+                .as_deref()
+                .is_some_and(|tail| !crate::exec_tv::expr_contains_body_control(tail))
+            {
                 expect_tv(&mut expected, "exec", format!("{}.tail", function.name));
             }
             let body_label = if matches!(body.stmts.last(), Some(Stmt::Loop(_))) {

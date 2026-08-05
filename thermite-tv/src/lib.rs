@@ -101,7 +101,8 @@ pub mod strat_two_phase;
 pub use exec_encode::{exec_ref_value, ExecRefCtx};
 pub use exec_stmt_encode::{
     body_ref_state, body_ref_state_ensures, loop_ref_obligations, negate_condition, BodyRefCtx,
-    LoopObligations, MutableRecordFrame, NamedRecordFrame, RecordFieldFrame,
+    EnumVariantFrame, EnumVariantShapeFrame, LoopObligations, MutableRecordFrame, NamedRecordFrame,
+    RecordFieldFrame,
 };
 pub use gen::{gen_exec_exprs, generate_clauses, ExecClause, Rng};
 pub use obligation::{

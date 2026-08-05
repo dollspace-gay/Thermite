@@ -125,6 +125,9 @@ pub struct RefCtx {
     /// User `spec fn` declarations keyed to the argument positions whose source
     /// type is a slice view. Other argument positions remain values or references.
     spec_call_slice_args: BTreeMap<String, BTreeSet<usize>>,
+    /// User-enum variant ownership used to qualify unqualified patterns and
+    /// constructors independently of production lowering.
+    enum_variants: BTreeMap<String, String>,
     /// Names that are a bounded integer (`u64`/`u32`/`usize`) and must be coerced
     /// `as nat` when they appear as a top-level operand of a comparison against a
     /// `nat`-valued term (a `nat`-returning spec-fn call). This re-implements,
@@ -158,6 +161,7 @@ impl RefCtx {
             map_bound: BTreeSet::new(),
             fixed_array_bound: BTreeSet::new(),
             spec_call_slice_args: BTreeMap::new(),
+            enum_variants: BTreeMap::new(),
             nat_coerce: BTreeSet::new(),
             old_state_views: BTreeMap::new(),
             final_state_views: BTreeMap::new(),
@@ -200,6 +204,20 @@ impl RefCtx {
         self.spec_call_slice_args = entries
             .into_iter()
             .map(|(name, positions)| (name, positions.into_iter().collect()))
+            .collect();
+        self
+    }
+
+    /// Declare the exact parsed owner of every user-enum variant.
+    pub fn with_enum_variants<I, V, E>(mut self, variants: I) -> Self
+    where
+        I: IntoIterator<Item = (V, E)>,
+        V: Into<String>,
+        E: Into<String>,
+    {
+        self.enum_variants = variants
+            .into_iter()
+            .map(|(variant, enumeration)| (variant.into(), enumeration.into()))
             .collect();
         self
     }
@@ -259,6 +277,15 @@ impl RefCtx {
 
     fn spec_call_slice_positions(&self, name: &str) -> Option<&BTreeSet<usize>> {
         self.spec_call_slice_args.get(name)
+    }
+
+    fn qualify_variant_path(&self, path: &[String]) -> String {
+        if let [variant] = path {
+            if let Some(enumeration) = self.enum_variants.get(variant) {
+                return format!("{enumeration}::{variant}");
+            }
+        }
+        path.join("::")
     }
 
     fn needs_nat_coerce(&self, name: &str) -> bool {
@@ -352,7 +379,7 @@ fn encode(expr: &Expr, ctx: &RefCtx) -> Result<String, RefEncodeError> {
         }
         Expr::Is { scrutinee, variant } => {
             let s = encode(scrutinee, ctx)?;
-            Ok(format!("({s} is {})", variant.join("::")))
+            Ok(format!("({s} is {})", ctx.qualify_variant_path(variant)))
         }
         Expr::Match { scrutinee, arms } => encode_match(scrutinee, arms, ctx),
         other => Err(RefEncodeError::Unsupported(node_kind(other))),
@@ -1056,7 +1083,7 @@ fn encode_match(
     let s = encode(scrutinee, ctx)?;
     let mut out = format!("match {s} {{\n");
     for arm in arms {
-        let pat = encode_pattern(&arm.pattern)?;
+        let pat = encode_pattern(&arm.pattern, ctx)?;
         let body = encode(&arm.body, ctx)?;
         match &arm.guard {
             Some(guard) => {
@@ -1073,52 +1100,55 @@ fn encode_match(
 }
 
 /// Encode a contract-position match pattern independently of production's
-/// `lower_pattern` (#150 gap #1). The frozen contract-`match` covers the C7
-/// payload-in-contract patterns: the built-in `Option`/`Result` variants
-/// (`Some(x)`/`None`/`Ok(x)`/`Err(e)`, unqualified — Verus knows `Option`/`Result`,
-/// as production's `qualify_variant_path` leaves a built-in unqualified),
-/// a binding (`x`), and a wildcard (`_`). A nested/struct/slice/or pattern, or a
-/// user enum variant (which production would enum-qualify via its `variants` map —
-/// the reference has no such map, so qualifying it would risk a silent wrong
-/// encoding) is an [`RefEncodeError`].
-fn encode_pattern(pat: &Pattern) -> Result<String, RefEncodeError> {
+/// pattern lowerer. Built-in Option/Result variants stay unqualified; user-enum
+/// variants are qualified from the exact parsed owner map. Tuple, struct,
+/// literal, binding, wildcard, and or-patterns are recursive. Slice patterns
+/// remain exclusive to head-fold specification functions and fail closed here.
+fn encode_pattern(pat: &Pattern, ctx: &RefCtx) -> Result<String, RefEncodeError> {
     match pat {
         Pattern::Wildcard => Ok("_".to_string()),
         Pattern::Binding(name) => Ok(name.clone()),
+        Pattern::Literal(value) => encode(value, ctx),
         Pattern::Enum { path, fields } => {
-            let head = path.join("::");
-            // Only the built-in Option/Result variants are encodable unqualified
-            // (production leaves a built-in unqualified; a user variant would need
-            // the enum-qualification map this encoder does not import).
-            if !is_builtin_variant(&head) {
-                return Err(RefEncodeError::Unsupported(format!(
-                    "match pattern over the user/non-built-in variant `{head}` \
-                     (the frozen contract-`match` covers the built-in \
-                     Some/None/Ok/Err payload patterns)"
-                )));
-            }
+            let head = ctx.qualify_variant_path(path);
             if fields.is_empty() {
                 Ok(head)
             } else {
                 let mut fs = Vec::with_capacity(fields.len());
                 for f in fields {
-                    fs.push(encode_pattern(f)?);
+                    fs.push(encode_pattern(f, ctx)?);
                 }
                 Ok(format!("{head}({})", fs.join(", ")))
             }
         }
-        other => Err(RefEncodeError::Unsupported(format!(
-            "match pattern {other:?} (the frozen contract-`match` covers the \
-             built-in Some/None/Ok/Err payload patterns + bindings/wildcards)"
-        ))),
+        Pattern::Struct { path, fields, rest } => {
+            let head = ctx.qualify_variant_path(path);
+            let mut parts = Vec::with_capacity(fields.len() + usize::from(*rest));
+            for (name, pattern) in fields {
+                if matches!(pattern, Pattern::Binding(binding) if binding == name) {
+                    parts.push(name.clone());
+                } else {
+                    parts.push(format!("{name}: {}", encode_pattern(pattern, ctx)?));
+                }
+            }
+            if *rest {
+                parts.push("..".to_string());
+            }
+            if parts.is_empty() {
+                Ok(format!("{head} {{}}"))
+            } else {
+                Ok(format!("{head} {{ {} }}", parts.join(", ")))
+            }
+        }
+        Pattern::Or(alternatives) => alternatives
+            .iter()
+            .map(|alternative| encode_pattern(alternative, ctx))
+            .collect::<Result<Vec<_>, _>>()
+            .map(|parts| parts.join(" | ")),
+        Pattern::Slice(_) => Err(RefEncodeError::Unsupported(
+            "slice pattern outside a head-fold specification function".to_string(),
+        )),
     }
-}
-
-/// Is `head` a built-in `Option`/`Result` variant constructor (unqualified in
-/// Verus)? These are the only variants a contract-position `match` patterns over
-/// in the frozen sublanguage (#150 gap #1).
-fn is_builtin_variant(head: &str) -> bool {
-    matches!(head, "Some" | "None" | "Ok" | "Err")
 }
 
 /// Encode a method-call receiver. A bare slice/string param name takes its

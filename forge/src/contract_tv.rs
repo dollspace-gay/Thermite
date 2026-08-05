@@ -157,6 +157,11 @@ pub fn tv_file(path: &Path, seed: u64, rlimit: f64) -> Result<TvReport, ForgeErr
     let spec_fn_param_types: Vec<(&str, &[PrimType])> =
         pt_owned.iter().map(|(n, ps)| (*n, ps.as_slice())).collect();
     let spec_call_slice_args = spec_fn_slice_arg_positions(&parsed.program);
+    let enum_variants = crate::body_tv::enum_variant_frames(&parsed.program)
+        .map_err(|detail| ForgeError::VerusOutput { detail })?
+        .into_iter()
+        .map(|variant| (variant.variant_name, variant.enum_name))
+        .collect::<Vec<_>>();
 
     let mut report = TvReport::default();
     for item in &parsed.program.items {
@@ -166,6 +171,7 @@ pub fn tv_file(path: &Path, seed: u64, rlimit: f64) -> Result<TvReport, ForgeErr
                 &preamble,
                 &spec_fn_param_types,
                 &spec_call_slice_args,
+                &enum_variants,
                 seed,
                 rlimit,
                 &mut report,
@@ -195,6 +201,7 @@ fn tv_fn(
     preamble: &[String],
     spec_fn_param_types: &[(&str, &[PrimType])],
     spec_call_slice_args: &[(String, Vec<usize>)],
+    enum_variants: &[(String, String)],
     seed: u64,
     rlimit: f64,
     report: &mut TvReport,
@@ -213,7 +220,7 @@ fn tv_fn(
     // only drops the `result` param (a `req`/`inv`/`dec` clause that does not
     // mention `result` still frames + checks — e.g. binary_search's
     // `sorted(haystack)` req + its `forall_below`/`forall_from` loop invariants).
-    let Some(base_frame) = signature_frame(f, preamble, spec_call_slice_args) else {
+    let Some(base_frame) = signature_frame(f, preamble, spec_call_slice_args, enum_variants) else {
         report.clauses.push(ClauseResult {
             label: format!("{}.signature", f.name),
             verdict: ClauseVerdict::Skipped {
@@ -283,7 +290,8 @@ fn tv_fn(
                 | SpecType::Opt(_)
                 | SpecType::Res(_, _)
                 | SpecType::Named(_)
-                | SpecType::NamedRef(_, _) => {}
+                | SpecType::NamedRef(_, _)
+                | SpecType::Tuple(_) => {}
             }
             loop_frame
                 .params
@@ -527,7 +535,6 @@ fn tv_clause(
             return;
         }
     };
-
     let verdict = discharge(&program, label, seed, rlimit);
     report.clauses.push(ClauseResult {
         label: label.to_string(),
@@ -646,6 +653,7 @@ fn generated_frame(preamble: &[String]) -> ObligationFrame {
         fixed_array_params: vec![],
         spec_call_slice_args: vec![("spec_sum".to_string(), vec![0])],
         state_views: vec![],
+        enum_variants: vec![],
     }
 }
 
@@ -826,6 +834,7 @@ fn signature_frame(
     f: &FnItem,
     preamble: &[String],
     spec_call_slice_args: &[(String, Vec<usize>)],
+    enum_variants: &[(String, String)],
 ) -> Option<ObligationFrame> {
     let mut params = Vec::new();
     // No signature slice param is seq-bound (#149): slices are bound `&[elem]` and
@@ -878,7 +887,8 @@ fn signature_frame(
             SpecType::Opt(_)
             | SpecType::Res(_, _)
             | SpecType::Named(_)
-            | SpecType::NamedRef(_, _) => {}
+            | SpecType::NamedRef(_, _)
+            | SpecType::Tuple(_) => {}
         }
         params.push(ParamDecl::new(
             p.name.clone(),
@@ -917,7 +927,8 @@ fn signature_frame(
                 SpecType::Opt(_)
                 | SpecType::Res(_, _)
                 | SpecType::Named(_)
-                | SpecType::NamedRef(_, _) => {}
+                | SpecType::NamedRef(_, _)
+                | SpecType::Tuple(_) => {}
             }
             params.push(ParamDecl::new("result", ret_ty.verus_param_spelling()));
         }
@@ -940,6 +951,7 @@ fn signature_frame(
         fixed_array_params,
         spec_call_slice_args: spec_call_slice_args.to_vec(),
         state_views: vec![],
+        enum_variants: enum_variants.to_vec(),
     })
 }
 
@@ -1024,6 +1036,8 @@ enum SpecType {
     /// A `Result<T, E>` bound as the native Verus `Result<…, …>` (#150 gap #3). The
     /// string is the full Verus spelling (`Result<u64, ParseErr>`).
     Res(String, String),
+    /// A native Verus tuple whose elements are each independently framable.
+    Tuple(Vec<SpecType>),
 }
 
 impl SpecType {
@@ -1057,6 +1071,14 @@ impl SpecType {
             SpecType::Map(_, _) => self.map_wrapper_name(),
             SpecType::Opt(inner) => format!("Option<{inner}>"),
             SpecType::Res(ok, err) => format!("Result<{ok}, {err}>"),
+            SpecType::Tuple(elements) => format!(
+                "({})",
+                elements
+                    .iter()
+                    .map(SpecType::verus_spelling)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
         }
     }
 
@@ -1154,6 +1176,12 @@ fn spec_type_of(ty: &Type) -> Option<SpecType> {
             verus_type_spelling(v)?,
         )),
         Type::Named(name) => Some(SpecType::Named(name.clone())),
+        Type::Tuple(elements) => Some(SpecType::Tuple(
+            elements
+                .iter()
+                .map(spec_type_of)
+                .collect::<Option<Vec<_>>>()?,
+        )),
         _ => None,
     }
 }
@@ -1184,6 +1212,14 @@ fn verus_type_spelling(ty: &Type) -> Option<String> {
             "[{}; {}]",
             verus_type_spelling(elem)?,
             array_len_spelling(len)
+        )),
+        Type::Tuple(elements) => Some(format!(
+            "({})",
+            elements
+                .iter()
+                .map(verus_type_spelling)
+                .collect::<Option<Vec<_>>>()?
+                .join(", ")
         )),
         _ => None,
     }

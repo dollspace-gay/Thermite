@@ -371,6 +371,7 @@ pub fn exec_tv_export_guard(
         &env,
         &frame_fn,
         &support_defs,
+        false,
         seed,
         rlimit,
         &mut report,
@@ -504,6 +505,7 @@ fn exec_tv_fn(
                         &env,
                         f,
                         &support_defs,
+                        true,
                         seed,
                         rlimit,
                         report,
@@ -629,6 +631,7 @@ fn check_return_like(
             env,
             f,
             support_defs,
+            true,
             seed,
             rlimit,
             report,
@@ -642,6 +645,55 @@ fn check_return_like(
                 ),
             },
         }),
+    }
+}
+
+/// Whether an expression contains control-flow value semantics owned by the
+/// complete body-TV state transformer rather than the leaf exec-value encoder.
+pub(crate) fn expr_contains_body_control(expr: &Expr) -> bool {
+    let any = |values: &[Expr]| values.iter().any(expr_contains_body_control);
+    match expr {
+        Expr::Match { .. } | Expr::If { .. } => true,
+        Expr::Array(values) | Expr::Tuple(values) => any(values),
+        Expr::ArrayRepeat { value, .. }
+        | Expr::Unary { expr: value, .. }
+        | Expr::Cast { expr: value, .. }
+        | Expr::Ref { expr: value, .. }
+        | Expr::Deref(value)
+        | Expr::TupleProj {
+            receiver: value, ..
+        }
+        | Expr::Closure { body: value, .. } => expr_contains_body_control(value),
+        Expr::Binary { lhs, rhs, .. } => {
+            expr_contains_body_control(lhs) || expr_contains_body_control(rhs)
+        }
+        Expr::Call { callee, args } => expr_contains_body_control(callee) || any(args),
+        Expr::MethodCall { receiver, args, .. } => {
+            expr_contains_body_control(receiver) || any(args)
+        }
+        Expr::Field { receiver, .. }
+        | Expr::Is {
+            scrutinee: receiver,
+            ..
+        } => expr_contains_body_control(receiver),
+        Expr::Index { base, index } => {
+            expr_contains_body_control(base)
+                || match index {
+                    IndexArg::Single(index)
+                    | IndexArg::RangeTo(index)
+                    | IndexArg::RangeFrom(index) => expr_contains_body_control(index),
+                    IndexArg::Range(start, end) => {
+                        expr_contains_body_control(start) || expr_contains_body_control(end)
+                    }
+                }
+        }
+        Expr::StructLit { fields, .. } => fields
+            .iter()
+            .any(|(_, value)| expr_contains_body_control(value)),
+        Expr::Quantifier { domain, body, .. } => {
+            expr_contains_body_control(domain) || expr_contains_body_control(body)
+        }
+        Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::StrLit(_) | Expr::Path(_) => false,
     }
 }
 
@@ -661,10 +713,20 @@ fn check_corpus_expr(
     env: &ExecEnv,
     f: &FnItem,
     support_defs: &[String],
+    body_control_handoff: bool,
     seed: u64,
     rlimit: f64,
     report: &mut ExecTvReport,
 ) {
+    // Match/if values are control-flow state transformers.  When this expression
+    // came from an in-language body, the complete body-TV obligation owns it and
+    // checks the production lowering against the independent state denotation.
+    // Do not also force it through the deliberately leaf-only exec-value encoder;
+    // strict verified builds require the corresponding body row to be faithful.
+    // Export guards have no such body owner and therefore keep the exec-TV path.
+    if body_control_handoff && expr_contains_body_control(e) {
+        return;
+    }
     // The expr's free vars must all be declared in the env (a derivable frame). An
     // undeclared free var (a local bound by an out-of-scope construct, a richer-typed
     // param) → Skip (non-derivable frame), not a guessed binding.

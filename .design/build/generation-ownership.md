@@ -121,13 +121,13 @@ The package also has a strict freestanding build/replay surface rooted at
 requires every recorded translation-validation row to be faithful.
 
 The complete generation-ledger lifecycle is not yet claimed as a strict receipt
-export. Strict body TV now independently frames both direct one-level writes
-through exclusive finite named-record borrows and typed owned-record local
-mutation/pure value-call composition. This package additionally consumes and
-returns large aggregate values through nested ADT matches and mutable callee
-chains. Those match/result/call-effect forms are still rejected as `skipped`,
-rather than silently promoted from the per-item L3 proof. Closing that narrower
-gap requires exact ADT result state and mutable callee-effect composition.
+export. Strict body TV now independently frames direct and nested writes through
+exclusive finite named-record borrows, typed owned-record local mutation/pure
+value-call composition, and user-ADT match/results. This package additionally
+threads those values through mutable-reference callee chains. That call-effect
+form is still rejected as `skipped`, rather than silently promoted from the
+per-item L3 proof. Closing the remaining lifecycle gap requires exact mutable
+callee-effect composition.
 
 Likewise, the frozen authority mint is only a declaration in this package. A
 consumer must bind it to an exact implementation and direct refinement. The
@@ -139,9 +139,8 @@ fits that assurance class; this package does not claim a machine operation.
 This increment strengthens REQ-KPRIM-4 but does not complete it. The remaining
 work is explicit:
 
-1. extend the shipped owned-record value TV to nested aggregate/enum results,
-   ADT matches, and mutable-reference callee effects, then strictly build/replay
-   the full generation lifecycle;
+1. extend the shipped aggregate/ADT value TV through mutable-reference callee
+   effects, then strictly build/replay the full generation lifecycle;
 2. directly refine the authority-mint implementation supplied by a synthetic
    consumer platform;
 3. add a complete affine/linear rule if consumers require uniqueness beyond

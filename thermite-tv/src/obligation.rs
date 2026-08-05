@@ -85,8 +85,8 @@ use thermite_syntax::ast::{Block, Expr};
 
 use crate::exec_encode::{exec_ref_value, ExecRefCtx, RefEncodeError as ExecRefEncodeError};
 use crate::exec_stmt_encode::{
-    body_ref_state_ensures, loop_ref_obligations, negate_condition, BodyRefCtx, MutableRecordFrame,
-    NamedRecordFrame,
+    body_ref_state_ensures, loop_ref_obligations, negate_condition, BodyRefCtx, EnumVariantFrame,
+    MutableRecordFrame, NamedRecordFrame,
 };
 pub use crate::ref_encode::StateViewKind;
 use crate::ref_encode::{ref_contract_pred, RefCtx, RefEncodeError};
@@ -213,6 +213,9 @@ pub struct ObligationFrame {
     /// independent reference encoder resolves the source AST through the same
     /// symbolic bindings.
     pub state_views: Vec<StateViewDecl>,
+    /// `(variant, enum)` ownership pairs for user-ADT patterns and constructors
+    /// in independently encoded contract expressions.
+    pub enum_variants: Vec<(String, String)>,
 }
 
 impl ObligationFrame {
@@ -229,6 +232,7 @@ impl ObligationFrame {
             .with_map_bound(self.map_params.iter().cloned())
             .with_fixed_array_bound(self.fixed_array_params.iter().cloned())
             .with_spec_call_slice_args(self.spec_call_slice_args.clone())
+            .with_enum_variants(self.enum_variants.clone())
             .with_state_views(self.state_views.iter().map(|view| {
                 (
                     view.kind,
@@ -593,6 +597,11 @@ pub struct BodyObligationFrame {
     pub mutable_records: Vec<MutableRecordFrame>,
     /// Exact finite named-record declarations available to typed owned locals.
     pub named_records: Vec<NamedRecordFrame>,
+    /// All parsed record declarations used only for constructor typing. Unlike
+    /// `named_records`, this inventory does not admit owned mutation.
+    pub constructor_records: Vec<NamedRecordFrame>,
+    /// Exact user-enum owner and payload frames derived from the parsed program.
+    pub enum_variants: Vec<EnumVariantFrame>,
     /// Exact field frame for a named-record result, if any.
     pub result_record: Option<NamedRecordFrame>,
 }
@@ -609,6 +618,9 @@ impl BodyObligationFrame {
             .with_unit_result(self.result_is_unit)
             .with_mutable_records(self.mutable_records.clone())
             .with_named_records(self.named_records.clone())
+            .with_constructor_records(self.constructor_records.clone())
+            .with_enum_variants(self.enum_variants.clone())
+            .with_bound_value_names(self.params.iter().map(|param| param.name.as_str()))
             .with_result_record(self.result_record.clone())
     }
 

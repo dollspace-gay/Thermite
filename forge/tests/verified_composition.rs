@@ -369,6 +369,18 @@ fn probe_state_composition_is_exact_private_linkable_and_reproducible() {
         .unwrap()
         .iter()
         .all(|row| row["verdict"] == "faithful"));
+    let tv_rows = tv["rows"].as_array().unwrap();
+    assert!(tv_rows.iter().any(|row| {
+        row["phase"] == "contract"
+            && row["label"] == "probe_step.ens#4"
+            && row["verdict"] == "faithful"
+    }));
+    assert!(tv_rows.iter().any(|row| {
+        row["phase"] == "body" && row["label"] == "probe_step" && row["verdict"] == "faithful"
+    }));
+    assert!(!tv_rows
+        .iter()
+        .any(|row| row["phase"] == "exec" && row["label"] == "probe_step.tail"));
 
     let artifact = first.join("artifact/libthermite_probe.rlib");
     let artifact_bytes = fs::read(&artifact).unwrap();

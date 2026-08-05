@@ -15,7 +15,7 @@ governs:
   - forge/tests/body_tv.rs
   - forge/tests/verified_build.rs
   - conformance/verified-build/owned_aggregate_lifecycle.th
-audited-content-sha256: 593276455714e6f2c22c53b01719aa7d365faa7d10560b0198869588fdc26243 (re-pinned 2026-08-04 after the exact nested lifecycle extension)
+audited-content-sha256: 7829325dd0b3127898512c8963137a21073a867691046c2bf696425fc3e00871 (re-pinned 2026-08-04 after the exact ADT match/result lifecycle extension)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/named-record-lifecycle.md

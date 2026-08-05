@@ -107,7 +107,9 @@
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
-use thermite_syntax::ast::{BinOp, Block, Clause, Expr, IndexArg, LoopKind, LoopNode, Stmt, Type};
+use thermite_syntax::ast::{
+    BinOp, Block, Clause, Expr, IndexArg, LoopKind, LoopNode, MatchArm, Pattern, Stmt, Type,
+};
 
 use crate::exec_encode::{exec_ref_value, ExecRefCtx, RefEncodeError};
 
@@ -169,6 +171,37 @@ impl NamedRecordFrame {
     }
 }
 
+/// Exact independently parsed payload shape for one user-enum variant. This is
+/// reference-denotation metadata, not a production-lowering artifact.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EnumVariantShapeFrame {
+    Unit,
+    Tuple(Vec<Type>),
+    Struct(Vec<RecordFieldFrame>),
+}
+
+/// One user-enum variant and its nominal owner/payload inventory.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnumVariantFrame {
+    pub enum_name: String,
+    pub variant_name: String,
+    pub shape: EnumVariantShapeFrame,
+}
+
+impl EnumVariantFrame {
+    pub fn new(
+        enum_name: impl Into<String>,
+        variant_name: impl Into<String>,
+        shape: EnumVariantShapeFrame,
+    ) -> Self {
+        Self {
+            enum_name: enum_name.into(),
+            variant_name: variant_name.into(),
+            shape,
+        }
+    }
+}
+
 impl MutableRecordFrame {
     pub fn new(name: impl Into<String>, fields: Vec<RecordFieldFrame>) -> Self {
         Self {
@@ -208,6 +241,8 @@ pub struct BodyRefCtx {
     result_is_unit: bool,
     mutable_records: Vec<MutableRecordFrame>,
     named_records: BTreeMap<String, NamedRecordFrame>,
+    constructor_records: BTreeMap<String, NamedRecordFrame>,
+    enum_variants: BTreeMap<String, EnumVariantFrame>,
     result_record: Option<NamedRecordFrame>,
 }
 
@@ -227,6 +262,8 @@ impl BodyRefCtx {
             result_is_unit: false,
             mutable_records: Vec::new(),
             named_records: BTreeMap::new(),
+            constructor_records: BTreeMap::new(),
+            enum_variants: BTreeMap::new(),
             result_record: None,
         }
     }
@@ -292,6 +329,45 @@ impl BodyRefCtx {
         self
     }
 
+    /// Add every parsed record declaration used to recover constructor-field
+    /// types. This is deliberately distinct from `named_records`, whose smaller
+    /// structural set controls admission of owned record mutation.
+    pub fn with_constructor_records(mut self, records: Vec<NamedRecordFrame>) -> Self {
+        self.constructor_records = records
+            .into_iter()
+            .map(|record| (record.type_name.clone(), record))
+            .collect();
+        self
+    }
+
+    /// Add the independently parsed user-enum variant ownership map used to
+    /// qualify unqualified patterns in body-reference `match` expressions.
+    pub fn with_enum_variants<I>(mut self, variants: I) -> Self
+    where
+        I: IntoIterator<Item = EnumVariantFrame>,
+    {
+        self.enum_variants = variants
+            .into_iter()
+            .map(|variant| (variant.variant_name.clone(), variant))
+            .collect();
+        self
+    }
+
+    /// Remove enum constructor spellings shadowed by value bindings in the
+    /// current function frame.  Thermite resolves a bare path such as `Idle`
+    /// to a parameter/local before considering an unqualified enum variant, so
+    /// the independent reference must preserve that lexical distinction too.
+    pub fn with_bound_value_names<I, S>(mut self, names: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        for name in names {
+            self.enum_variants.remove(name.as_ref());
+        }
+        self
+    }
+
     /// Record the exact field frame of a named-record result. Result equality is
     /// then emitted per field, using complete sequence views for native arrays.
     pub fn with_result_record(mut self, record: Option<NamedRecordFrame>) -> Self {
@@ -315,10 +391,42 @@ impl BodyRefCtx {
         self.named_records.get(type_name)
     }
 
+    fn constructor_record(&self, type_name: &str) -> Option<&NamedRecordFrame> {
+        self.constructor_records.get(type_name)
+    }
+
+    fn enum_variant(&self, path: &[String]) -> Option<&EnumVariantFrame> {
+        match path {
+            [variant] => self.enum_variants.get(variant),
+            [enumeration, variant] => self
+                .enum_variants
+                .get(variant)
+                .filter(|frame| frame.enum_name == *enumeration),
+            _ => None,
+        }
+    }
+
+    fn without_enum_variants(&self, names: &BTreeSet<String>) -> Self {
+        let mut scoped = self.clone();
+        for name in names {
+            scoped.enum_variants.remove(name);
+        }
+        scoped
+    }
+
     fn mutable_record(&self, name: &str) -> Option<&MutableRecordFrame> {
         self.mutable_records
             .iter()
             .find(|record| record.name == name)
+    }
+
+    fn qualify_pattern_path(&self, path: &[String]) -> String {
+        if let [variant] = path {
+            if let Some(frame) = self.enum_variants.get(variant) {
+                return format!("{}::{variant}", frame.enum_name);
+            }
+        }
+        path.join("::")
     }
 }
 
@@ -371,6 +479,16 @@ impl Env {
 
     fn named_record_type(&self, name: &str) -> Option<&str> {
         self.named_records.get(name).map(String::as_str)
+    }
+
+    fn without_bindings(&self, names: &BTreeSet<String>) -> Self {
+        let mut scoped = self.clone();
+        for name in names {
+            scoped.values.remove(name);
+            scoped.fixed_arrays.remove(name);
+            scoped.named_records.remove(name);
+        }
+        scoped
     }
 }
 
@@ -460,6 +578,147 @@ fn contextualize_assignment_value(expr: Expr, target_ty: &Type, spec_int: bool) 
         }
     } else {
         expr
+    }
+}
+
+/// Restore the bounded type supplied by an aggregate constructor field.  A
+/// reference term appears in an `ensures` expression, where an unsuffixed
+/// arithmetic literal otherwise lifts the whole expression to mathematical
+/// `int`; construction of a parsed `u64`/`usize` field must instead denote the
+/// same bounded operation as the executable body.
+fn contextualize_value_for_type(
+    expr: Expr,
+    target_ty: &Type,
+    ctx: &BodyRefCtx,
+) -> Result<Expr, RefEncodeError> {
+    let expr = contextualize_constructor_value(expr, ctx)?;
+    if reference_expr_is_spec_int(&expr) {
+        return Ok(contextualize_assignment_value(expr, target_ty, true));
+    }
+    match (expr, target_ty) {
+        (Expr::Tuple(values), Type::Tuple(types)) if values.len() == types.len() => {
+            Ok(Expr::Tuple(
+                values
+                    .into_iter()
+                    .zip(types)
+                    .map(|(value, ty)| contextualize_value_for_type(value, ty, ctx))
+                    .collect::<Result<Vec<_>, _>>()?,
+            ))
+        }
+        (Expr::Array(values), Type::Array { elem, .. }) => Ok(Expr::Array(
+            values
+                .into_iter()
+                .map(|value| contextualize_value_for_type(value, elem, ctx))
+                .collect::<Result<Vec<_>, _>>()?,
+        )),
+        (Expr::ArrayRepeat { value, len }, Type::Array { elem, .. }) => Ok(Expr::ArrayRepeat {
+            value: Box::new(contextualize_value_for_type(*value, elem, ctx)?),
+            len,
+        }),
+        (value, _) => Ok(value),
+    }
+}
+
+/// Independently qualify user-variant constructors and reapply the exact parsed
+/// payload field types. This is intentionally separate from pattern lowering and
+/// from the production lowerer.
+fn contextualize_constructor_value(expr: Expr, ctx: &BodyRefCtx) -> Result<Expr, RefEncodeError> {
+    match expr {
+        Expr::Path(path) => {
+            let Some(variant) = ctx.enum_variant(&path) else {
+                return Ok(Expr::Path(path));
+            };
+            if !matches!(variant.shape, EnumVariantShapeFrame::Unit) {
+                return Err(RefEncodeError::Unsupported(format!(
+                    "payload-bearing variant `{}::{}` used as a unit value",
+                    variant.enum_name, variant.variant_name
+                )));
+            }
+            Ok(Expr::Path(vec![
+                variant.enum_name.clone(),
+                variant.variant_name.clone(),
+            ]))
+        }
+        Expr::Call { callee, args } => {
+            let Expr::Path(path) = callee.as_ref() else {
+                return Ok(Expr::Call { callee, args });
+            };
+            let Some(variant) = ctx.enum_variant(path) else {
+                return Ok(Expr::Call { callee, args });
+            };
+            let EnumVariantShapeFrame::Tuple(types) = &variant.shape else {
+                return Err(RefEncodeError::Unsupported(format!(
+                    "non-tuple variant `{}::{}` used as a call constructor",
+                    variant.enum_name, variant.variant_name
+                )));
+            };
+            if args.len() != types.len() {
+                return Err(RefEncodeError::Unsupported(format!(
+                    "variant `{}::{}` constructor has {} arguments but its parsed payload has {} fields",
+                    variant.enum_name,
+                    variant.variant_name,
+                    args.len(),
+                    types.len()
+                )));
+            }
+            let args = args
+                .into_iter()
+                .zip(types)
+                .map(|(argument, ty)| contextualize_value_for_type(argument, ty, ctx))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Expr::Call {
+                callee: Box::new(Expr::Path(vec![
+                    variant.enum_name.clone(),
+                    variant.variant_name.clone(),
+                ])),
+                args,
+            })
+        }
+        Expr::StructLit { path, fields } => {
+            let (qualified_path, field_frames): (Vec<String>, Vec<RecordFieldFrame>) =
+                if let Some(variant) = ctx.enum_variant(&path) {
+                    let EnumVariantShapeFrame::Struct(field_frames) = &variant.shape else {
+                        return Err(RefEncodeError::Unsupported(format!(
+                            "non-struct variant `{}::{}` used as a brace constructor",
+                            variant.enum_name, variant.variant_name
+                        )));
+                    };
+                    (
+                        vec![variant.enum_name.clone(), variant.variant_name.clone()],
+                        field_frames.clone(),
+                    )
+                } else {
+                    let record_name = path.join("::");
+                    let Some(record) = ctx.constructor_record(&record_name) else {
+                        return Ok(Expr::StructLit { path, fields });
+                    };
+                    (path, record.fields.clone())
+                };
+            let fields = fields
+                .into_iter()
+                .map(|(name, value)| {
+                    let field = field_frames
+                        .iter()
+                        .find(|field| field.name == name)
+                        .ok_or_else(|| {
+                            RefEncodeError::Unsupported(format!(
+                                "aggregate constructor `{}` has no parsed field `{name}`",
+                                qualified_path.join("::")
+                            ))
+                        })?;
+                    let value = match &field.ty {
+                        Some(ty) => contextualize_value_for_type(value, ty, ctx)?,
+                        None => contextualize_constructor_value(value, ctx)?,
+                    };
+                    Ok((name, value))
+                })
+                .collect::<Result<Vec<_>, RefEncodeError>>()?;
+            Ok(Expr::StructLit {
+                path: qualified_path,
+                fields,
+            })
+        }
+        other => Ok(other),
     }
 }
 
@@ -2034,11 +2293,164 @@ fn encode_value(expr: &Expr, env: &Env, ctx: &BodyRefCtx) -> Result<String, RefE
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(format!("({})", parts.join(", ")))
         }
+        // Executable ADT dispatch is a body-level control-flow value, rather than
+        // a leaf expression understood by `exec_ref_value`.  The source match has
+        // already been recursively state-substituted above, with arm bindings
+        // protected from capture, so an empty environment is the exact remaining
+        // scope.  Patterns and arms are then encoded independently of production
+        // lowering.
+        Expr::Match { scrutinee, arms } => encode_match_value(scrutinee, arms, &Env::new(), ctx),
         // Every other value (a path, arithmetic, a cast, a call, an index, ...) is a
         // step-2.1 exec value -> reuse the independent per-RHS encoder (the
         // #122/#146/overflow disciplines unchanged). Already substituted above.
-        _ => exec_ref_value(&substituted, &ctx.exec_ref_ctx()),
+        _ => {
+            let contextualized = contextualize_constructor_value(substituted, ctx)?;
+            exec_ref_value(&contextualized, &ctx.exec_ref_ctx())
+        }
     }
+}
+
+/// Collect the names introduced by one match pattern.  The validator normally
+/// rejects duplicate bindings and mismatched or-pattern bindings first, but the
+/// translation validator is fail-closed on its own: it never relies on that fact
+/// when deciding which outer state bindings an arm may observe.
+fn pattern_bindings(pattern: &Pattern) -> Result<BTreeSet<String>, RefEncodeError> {
+    fn merge(
+        target: &mut BTreeSet<String>,
+        source: BTreeSet<String>,
+    ) -> Result<(), RefEncodeError> {
+        for name in source {
+            if !target.insert(name.clone()) {
+                return Err(RefEncodeError::Unsupported(format!(
+                    "duplicate match-pattern binding `{name}`"
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    match pattern {
+        Pattern::Wildcard | Pattern::Literal(_) => Ok(BTreeSet::new()),
+        Pattern::Binding(name) => Ok(BTreeSet::from([name.clone()])),
+        Pattern::Enum { fields, .. } => {
+            let mut bindings = BTreeSet::new();
+            for field in fields {
+                merge(&mut bindings, pattern_bindings(field)?)?;
+            }
+            Ok(bindings)
+        }
+        Pattern::Struct { fields, .. } => {
+            let mut bindings = BTreeSet::new();
+            for (_, field) in fields {
+                merge(&mut bindings, pattern_bindings(field)?)?;
+            }
+            Ok(bindings)
+        }
+        Pattern::Or(alternatives) => {
+            let Some(first) = alternatives.first() else {
+                return Err(RefEncodeError::Unsupported(
+                    "empty or-pattern in executable match".to_string(),
+                ));
+            };
+            let expected = pattern_bindings(first)?;
+            for alternative in &alternatives[1..] {
+                let actual = pattern_bindings(alternative)?;
+                if actual != expected {
+                    return Err(RefEncodeError::Unsupported(
+                        "or-pattern alternatives bind different names".to_string(),
+                    ));
+                }
+            }
+            Ok(expected)
+        }
+        Pattern::Slice(_) => Err(RefEncodeError::Unsupported(
+            "slice pattern outside a head-fold specification function".to_string(),
+        )),
+    }
+}
+
+/// Encode one executable match pattern without calling the production lowerer.
+/// User-enum variants are qualified from the independently supplied variant-owner
+/// map; built-in and already-qualified paths remain unchanged.
+fn encode_body_pattern(pattern: &Pattern, ctx: &BodyRefCtx) -> Result<String, RefEncodeError> {
+    match pattern {
+        Pattern::Wildcard => Ok("_".to_string()),
+        Pattern::Literal(value) => exec_ref_value(value, &ctx.exec_ref_ctx()),
+        Pattern::Binding(name) => Ok(name.clone()),
+        Pattern::Enum { path, fields } => {
+            let head = ctx.qualify_pattern_path(path);
+            if fields.is_empty() {
+                return Ok(head);
+            }
+            let fields = fields
+                .iter()
+                .map(|field| encode_body_pattern(field, ctx))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(format!("{head}({})", fields.join(", ")))
+        }
+        Pattern::Struct { path, fields, rest } => {
+            let head = ctx.qualify_pattern_path(path);
+            let mut parts = Vec::with_capacity(fields.len() + usize::from(*rest));
+            for (name, pattern) in fields {
+                if matches!(pattern, Pattern::Binding(binding) if binding == name) {
+                    parts.push(name.clone());
+                } else {
+                    parts.push(format!("{name}: {}", encode_body_pattern(pattern, ctx)?));
+                }
+            }
+            if *rest {
+                parts.push("..".to_string());
+            }
+            if parts.is_empty() {
+                Ok(format!("{head} {{}}"))
+            } else {
+                Ok(format!("{head} {{ {} }}", parts.join(", ")))
+            }
+        }
+        Pattern::Or(alternatives) => alternatives
+            .iter()
+            .map(|alternative| encode_body_pattern(alternative, ctx))
+            .collect::<Result<Vec<_>, _>>()
+            .map(|parts| parts.join(" | ")),
+        Pattern::Slice(_) => Err(RefEncodeError::Unsupported(
+            "slice pattern outside a head-fold specification function".to_string(),
+        )),
+    }
+}
+
+/// Encode an executable match value under the current state environment.  Arm
+/// bindings shadow same-named outer locals in both guards and bodies; this is the
+/// capture-sensitive part of the denotation and is intentionally independent of
+/// production lowering.
+fn encode_match_value(
+    scrutinee: &Expr,
+    arms: &[MatchArm],
+    env: &Env,
+    ctx: &BodyRefCtx,
+) -> Result<String, RefEncodeError> {
+    if arms.is_empty() {
+        return Err(RefEncodeError::Unsupported(
+            "executable match with no arms".to_string(),
+        ));
+    }
+    let scrutinee = encode_value(scrutinee, env, ctx)?;
+    let mut encoded_arms = Vec::with_capacity(arms.len());
+    for arm in arms {
+        let bindings = pattern_bindings(&arm.pattern)?;
+        let arm_env = env.without_bindings(&bindings);
+        let arm_ctx = ctx.without_enum_variants(&bindings);
+        let pattern = encode_body_pattern(&arm.pattern, ctx)?;
+        let guard = match &arm.guard {
+            Some(guard) => format!(" if {}", encode_value(guard, &arm_env, &arm_ctx)?),
+            None => String::new(),
+        };
+        let body = encode_value(&arm.body, &arm_env, &arm_ctx)?;
+        encoded_arms.push(format!("{pattern}{guard} => {body}"));
+    }
+    Ok(format!(
+        "match {scrutinee} {{ {}, }}",
+        encoded_arms.join(", ")
+    ))
 }
 
 /// Whether the value an `if`-expression branch `block` yields is encoded by
@@ -2191,10 +2603,29 @@ fn substitute(expr: &Expr, env: &Env) -> Result<Expr, RefEncodeError> {
             expr: Box::new(substitute(inner, env)?),
         }),
         Expr::Deref(inner) => Ok(Expr::Deref(Box::new(substitute(inner, env)?))),
-        // An out-of-subset value node (a closure or match expression) is passed
-        // through unchanged so [`exec_ref_value`] rejects it with the precise
-        // node tag. `Expr::If` is interpreted by `encode_value`, which threads
-        // each branch under the current environment.
+        Expr::Match { scrutinee, arms } => Ok(Expr::Match {
+            scrutinee: Box::new(substitute(scrutinee, env)?),
+            arms: arms
+                .iter()
+                .map(|arm| {
+                    let bindings = pattern_bindings(&arm.pattern)?;
+                    let arm_env = env.without_bindings(&bindings);
+                    Ok(MatchArm {
+                        pattern: arm.pattern.clone(),
+                        guard: arm
+                            .guard
+                            .as_ref()
+                            .map(|guard| substitute(guard, &arm_env))
+                            .transpose()?,
+                        body: substitute(&arm.body, &arm_env)?,
+                    })
+                })
+                .collect::<Result<Vec<_>, RefEncodeError>>()?,
+        }),
+        // An out-of-subset value node (a closure) is passed through unchanged so
+        // [`exec_ref_value`] rejects it with the precise node tag. `Expr::If` is
+        // interpreted by `encode_value`, which threads each branch under the
+        // current environment.
         other => Ok(other.clone()),
     }
 }

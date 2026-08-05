@@ -14,7 +14,7 @@ governs:
   - forge/tests/body_tv.rs
   - forge/tests/verified_build.rs
   - conformance/verified-build/nested_aggregate_lifecycle.th
-audited-content-sha256: bf3265508ef50d2df1149770699ff29fd8a97f1fc4702beb88d130957b930b31 (pinned 2026-08-04 for the shipped nested aggregate lifecycle primitive; no kernel policy or implementation was added)
+audited-content-sha256: a39e2fbb9efe69934e5ee8ae89b7915448d49e3ddba807b3da36d46ced5c2a38 (re-pinned 2026-08-04 after the adjacent ADT lifecycle extension; no kernel policy or implementation was added)
 extends:
   - .design/build/owned-aggregate-lifecycle.md
   - .design/build/named-record-lifecycle.md
@@ -107,8 +107,10 @@ new assurance exception is introduced.
 This increment does not admit an index followed by a field, alias construction,
 explicit dereference lvalues, tuple projections, enum payload mutation,
 recursive/reference/heap fields, or mutation rooted in a computed receiver.
-Those shapes require the later alias/ADT lifecycle work. Record-state loops and
-mutable-reference callee effect composition also remain separate increments.
+Those shapes require the later alias and enum-payload-mutation lifecycle work;
+user-ADT match/results are supplied separately by
+`.design/build/adt-match-lifecycle.md`. Record-state loops and mutable-reference
+callee effect composition also remain separate increments.
 
 The increment supplies language and verification primitives only. It adds no
 allocator, scheduler, firmware, boot path, platform runtime, or kernel policy.

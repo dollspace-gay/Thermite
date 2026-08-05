@@ -152,14 +152,14 @@ scores stay above the configured floor.
   and
 - tampers with the bound direct-map source and requires validation to fail.
 
-The strict export is intentionally scalar. Body TV now frames direct one-level
-mutation through an exclusive finite named-record borrow, but these owned
-collection transitions return structs/enums through nested ADT matches and
-callee chains. Those aggregate-result/match/call-effect forms remain outside the
-strict body denotation, so this increment does not claim that the whole ring
-lifecycle is a strict public receipt export. The complete package source is
-bound by the scalar receipt, while aggregate operations retain their individual
-L3 certificates and the generic fixed-array TV evidence.
+The strict export is intentionally scalar. Body TV now frames direct and nested
+finite-record mutation plus user-ADT match/results, but complete collection
+transitions still traverse mutable-reference callee chains and quantified
+aggregate frames. Those call-effect/quantified forms remain outside the strict
+body denotation, so this increment does not claim that the whole ring lifecycle
+is a strict public receipt export. The complete package source is bound by the
+scalar receipt, while aggregate operations retain their individual L3
+certificates and the generic fixed-array TV evidence.
 
 ## Remaining collection closure
 
@@ -170,8 +170,8 @@ This is a substantial REQ-KPRIM-2 increment, not completion. Remaining work is:
 3. capacity/type parameterization that does not rely on privileged generated
    policy types;
 4. quantified framing and equality for aggregate collection states;
-5. aggregate-result, ADT-match, mutable-local, and callee-effect body TV so
-   complete transitions can be strict exports;
+5. mutable-reference callee-effect and quantified aggregate body TV so complete
+   transitions can be strict exports;
 6. static-storage ownership and initialization; and
 7. atomic integration for concurrent containers; pure bounded MPSC and
    work-stealing deque state mechanics are supplied by the synchronization

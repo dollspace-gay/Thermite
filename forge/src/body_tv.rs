@@ -71,7 +71,7 @@ use std::collections::BTreeSet;
 use std::path::Path;
 use std::process::Command;
 
-use thermite_syntax::ast::{Block, FnItem, Item, LoopNode, PrimType, Stmt, Type};
+use thermite_syntax::ast::{Block, FnItem, Item, LoopNode, PrimType, Stmt, Type, VariantShape};
 
 use thermite_tv::obligation::{
     body_equivalence_obligation, loop_entry_obligation, loop_exit_obligation,
@@ -79,7 +79,8 @@ use thermite_tv::obligation::{
     LoopParamDecl,
 };
 use thermite_tv::{
-    loop_ref_obligations, BodyRefCtx, MutableRecordFrame, NamedRecordFrame, RecordFieldFrame,
+    loop_ref_obligations, BodyRefCtx, EnumVariantFrame, EnumVariantShapeFrame, MutableRecordFrame,
+    NamedRecordFrame, RecordFieldFrame,
 };
 
 use crate::check::{unique_scratch_dir, ScratchDir, DEFAULT_RLIMIT, DEFAULT_SOLVER_SEED};
@@ -319,6 +320,8 @@ pub(crate) fn body_tv_support(
     let mut inner = lowered[start..end].to_string();
     let mut reference_defs = String::new();
     let named_records = named_record_frames(program);
+    let constructor_records = constructor_record_frames(program);
+    let enum_variants = enum_variant_frames(program)?;
     for item in &support.items {
         let Item::Fn(dep) = item else {
             continue;
@@ -376,6 +379,9 @@ pub(crate) fn body_tv_support(
                 .with_fixed_array_result(matches!(dep.ret, Type::Array { .. }))
                 .with_unit_result(matches!(dep.ret, Type::Unit))
                 .with_named_records(named_records.clone())
+                .with_constructor_records(constructor_records.clone())
+                .with_enum_variants(enum_variants.clone())
+                .with_bound_value_names(dep.params.iter().map(|param| param.name.as_str()))
                 .with_result_record(named_record_result_frame(&named_records, &dep.ret)),
         )
         .map_err(|error| {
@@ -564,6 +570,17 @@ fn straight_line_body_tv(
         }
     };
     let named_records = named_record_frames(program);
+    let constructor_records = constructor_record_frames(program);
+    let enum_variants = match enum_variant_frames(program) {
+        Ok(variants) => variants,
+        Err(reason) => {
+            report.results.push(BodyResult {
+                label,
+                verdict: BodyVerdict::Skipped { reason },
+            });
+            return;
+        }
+    };
     let result_record = named_record_result_frame(&named_records, &f.ret);
     let frame = BodyObligationFrame {
         spec_defs,
@@ -578,6 +595,8 @@ fn straight_line_body_tv(
         result_is_unit: matches!(f.ret, Type::Unit),
         mutable_records,
         named_records,
+        constructor_records,
+        enum_variants,
         result_record,
     };
 
@@ -886,7 +905,15 @@ fn collect_text_idents(text: &str) -> Vec<String> {
     let mut i = 0;
     while i < chars.len() {
         let c = chars[i];
-        if c.is_ascii_alphabetic() || c == '_' {
+        if c.is_ascii_digit() {
+            // Consume the complete source numeric token before looking for
+            // identifiers. Otherwise the separator in `18_446_...` is seen as
+            // an identifier beginning with `_`, and radix digits/suffixes such
+            // as `0xff_u64` are misclassified as helper names.
+            while i < chars.len() && (chars[i].is_ascii_alphanumeric() || chars[i] == '_') {
+                i += 1;
+            }
+        } else if c.is_ascii_alphabetic() || c == '_' {
             let start = i;
             while i < chars.len() && (chars[i].is_ascii_alphanumeric() || chars[i] == '_') {
                 i += 1;
@@ -1054,6 +1081,71 @@ pub(crate) fn named_record_frames(program: &thermite_syntax::Program) -> Vec<Nam
             })
         })
         .collect()
+}
+
+/// Every parsed record declaration, used only to recover constructor field
+/// types in the independent ADT value denotation.  Mutation admission continues
+/// to use the narrower `named_record_frames` structural closure above.
+pub(crate) fn constructor_record_frames(
+    program: &thermite_syntax::Program,
+) -> Vec<NamedRecordFrame> {
+    program
+        .items
+        .iter()
+        .filter_map(|item| {
+            let Item::Struct(structure) = item else {
+                return None;
+            };
+            Some(NamedRecordFrame::new(
+                structure.name.clone(),
+                structure
+                    .fields
+                    .iter()
+                    .map(|field| RecordFieldFrame::typed(field.name.clone(), field.ty.clone()))
+                    .collect(),
+            ))
+        })
+        .collect()
+}
+
+/// Derive the exact owner of every user-enum variant.  Built-in Option/Result
+/// variants are intentionally absent and remain Verus-prelude names.  Ambiguous
+/// ownership is rejected here even if an earlier validator should already have
+/// diagnosed it: body TV must never guess which nominal constructor a pattern
+/// denotes.
+pub(crate) fn enum_variant_frames(
+    program: &thermite_syntax::Program,
+) -> Result<Vec<EnumVariantFrame>, String> {
+    let mut owners = std::collections::BTreeMap::<String, EnumVariantFrame>::new();
+    for item in &program.items {
+        let Item::Enum(enumeration) = item else {
+            continue;
+        };
+        for variant in &enumeration.variants {
+            let shape = match &variant.shape {
+                VariantShape::Unit => EnumVariantShapeFrame::Unit,
+                VariantShape::Tuple(fields) => EnumVariantShapeFrame::Tuple(fields.clone()),
+                VariantShape::Struct(fields) => EnumVariantShapeFrame::Struct(
+                    fields
+                        .iter()
+                        .map(|field| RecordFieldFrame::typed(field.name.clone(), field.ty.clone()))
+                        .collect(),
+                ),
+            };
+            let frame =
+                EnumVariantFrame::new(enumeration.name.clone(), variant.name.clone(), shape);
+            if let Some(existing) = owners.insert(variant.name.clone(), frame) {
+                if existing.enum_name != enumeration.name {
+                    return Err(format!(
+                        "body-TV enum frame is ambiguous: variant `{}` belongs to both `{existing}` and `{}`",
+                        variant.name, enumeration.name,
+                        existing = existing.enum_name
+                    ));
+                }
+            }
+        }
+    }
+    Ok(owners.into_values().collect())
 }
 
 fn named_record_result_frame(records: &[NamedRecordFrame], ty: &Type) -> Option<NamedRecordFrame> {
@@ -1519,6 +1611,20 @@ mod divergent_teeth {
 
     const SEED: u64 = BODY_TV_DEFAULT_SEED;
     const RLIMIT: f64 = BODY_TV_DEFAULT_RLIMIT;
+
+    #[test]
+    fn req_identifier_scan_ignores_complete_numeric_literals() {
+        assert_eq!(
+            collect_text_idents(
+                "state.generation < 18_446_744_073_709_551_615 && mask == 0xff_u64"
+            ),
+            vec!["state", "mask"]
+        );
+        assert_eq!(
+            collect_text_idents("sorted(haystack) && bound < 1_000"),
+            vec!["sorted", "haystack", "bound"]
+        );
+    }
 
     fn path(name: &str) -> Expr {
         Expr::Path(vec![name.to_string()])

@@ -17840,8 +17840,8 @@ owner = ".design/build/kernel-primitives.md"
 status = "partial"
 scope = "forge"
 summary = "Consumer projects supply versioned platform registries whose exact declarations, implementations, effects, ownership, ABI, models, and evidence are closed from source reachability."
-remaining_scope = "Same-crate and separately emitted safe sequential direct-Verus Rust-ABI entries now close reachable boundaries exactly. The v2 path binds authored and generated sources, exported proof interface, rlib, every object-member digest, target features, two no-cheating proof/codegen layers, validation, runtime linking, and replay. Add assembly and unsafe/irreducible Rust source/object closure plus exact atomic, volatile, privileged, and concurrent machine-model refinement without adding an architecture operation table."
-contributors = [".design/boundary/ffi-boundary.md", ".design/build/l3-rich-composition.md", ".design/build/frozen-primitive-registry.md"]
+remaining_scope = "Same-crate and separately emitted safe sequential direct-Verus Rust-ABI entries now close reachable boundaries exactly. The v2 path binds authored and generated sources, exported proof interface, rlib, every object-member digest, target features, two no-cheating proof/codegen layers, validation, runtime linking, and replay. A policy-free package now supplies 74 frozen declarations across boot/runtime, memory/provenance, MMIO/PIO, CPU, IRQ/trap, SMP, DMA, clock, entropy, and power while keeping all 55 non-machine rows at L3. Add assembly and unsafe/irreducible Rust source/object closure plus exact atomic, volatile, privileged, and concurrent machine-model refinement without adding an architecture operation table."
+contributors = [".design/boundary/ffi-boundary.md", ".design/build/l3-rich-composition.md", ".design/build/frozen-primitive-registry.md", ".design/build/platform-primitives.md"]
 generated_to = ["status", "forge-kernel-primitives-status"]
 
 [[requirement.evidence]]
@@ -17858,6 +17858,21 @@ note = "Builds and replays a synthetic primitive with a non-empty sse2 feature s
 kind = "test"
 target = "forge/tests/verified_composition.rs::separate_primitive_source_interface_rlib_and_object_are_exact_and_replayed"
 note = "Builds a freestanding registry-v2 primitive as a separate strict Verus crate, imports its checked interface, links and executes its exact rlib, binds every object member, replays both proof layers, and rejects source/interface/rlib drift."
+
+[[requirement.evidence]]
+kind = "file"
+target = "stdlib/kernel-primitives/platform.thpkg.json"
+note = "Receipt-bound, architecture-neutral package for the frozen non-atomic platform-operation surface."
+
+[[requirement.evidence]]
+kind = "file"
+target = "stdlib/kernel-primitives/platform/api.th"
+note = "Sealed platform authorities, L3 legality helpers, and 74 exact bodyless machine declarations across every required platform family."
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/platform_primitives.rs"
+note = "Pins the exact 74-row L1 machine exception by family/effect/target, requires every other one of 55 rows at L3, replays a strict freestanding package receipt, and rejects a false width claim."
 
 [[requirement.evidence]]
 kind = "test"
@@ -17907,7 +17922,7 @@ owner = ".design/build/kernel-primitives.md"
 status = "partial"
 scope = "forge"
 summary = "Small target-independent conformance packages prove and mutate every reusable primitive and confirm that Thermite contains no bundled kernel."
-remaining_scope = "The canonical tracked-source gate now rejects concrete kernel/firmware/boot/image directories, release and machine artifacts, generated trees, binary or nonlocal source closure, and hidden freestanding entries; exact compile-only freestanding fixtures are digest-pinned, CI-enforced, and adversarially tested. Consolidate the existing package, fixed-storage, atomic, waiting, registry, refinement, receipt-tamper, and freestanding-consumer suites into one primitive-only matrix, then publish the reusable bundle."
+remaining_scope = "The canonical tracked-source gate now rejects concrete kernel/firmware/boot/image directories, release and machine artifacts, generated trees, binary or nonlocal source closure, and hidden freestanding entries; exact compile-only freestanding fixtures are digest-pinned, CI-enforced, and adversarially tested. The platform suite also pins its exact 74-row bodyless machine exception and 55-row L3 floor. Consolidate the existing package, fixed-storage, atomic, waiting, platform, registry, refinement, receipt-tamper, and freestanding-consumer suites into one primitive-only matrix, then publish the reusable bundle."
 contributors = [".design/tooling/primitive-only-gate.md"]
 generated_to = ["status", "forge-kernel-primitives-status"]
 

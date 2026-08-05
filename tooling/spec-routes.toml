@@ -617,6 +617,24 @@ design = ".design/build/frozen-primitive-registry.md"
 reference = []
 conformance_ops = ["synthetic-identity-primitive"]
 
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/platform.thpkg.json"
+design = ".design/build/frozen-primitive-registry.md"
+reference = ["stdlib/kernel-primitives/platform/api.th"]
+conformance_ops = ["generic-platform-declaration-closure"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/platform/api.th"
+design = ".design/build/frozen-primitive-registry.md"
+reference = ["stdlib/kernel-primitives/platform.thpkg.json"]
+conformance_ops = ["machine-boundary-vocabulary"]
+
+[[route]]
+crate_pattern = "forge/tests/platform_primitives.rs"
+design = ".design/build/frozen-primitive-registry.md"
+reference = ["stdlib/kernel-primitives/platform.thpkg.json"]
+conformance_ops = ["platform-machine-exception-inventory"]
+
 # Receipt-bound kernel byte-slice proof model (issue #108): Forge explicitly
 # imports the pinned vstd VIR while pairing it with deterministic no_std erased
 # metadata, then proves exact native &[u8] reads in the combined crate.
@@ -1481,6 +1499,24 @@ design = ".design/build/kernel-primitives.md"
 reference = ["conformance/kernel_primitives.th"]
 conformance_ops = ["kernel-skill-reference"]
 
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/platform.thpkg.json"
+design = ".design/build/kernel-primitives.md"
+reference = ["stdlib/kernel-primitives/platform/api.th"]
+conformance_ops = ["platform-package-closure"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/platform/api.th"
+design = ".design/build/kernel-primitives.md"
+reference = []
+conformance_ops = ["platform-types", "platform-legality", "platform-boundaries"]
+
+[[route]]
+crate_pattern = "forge/tests/platform_primitives.rs"
+design = ".design/build/kernel-primitives.md"
+reference = ["stdlib/kernel-primitives/platform.thpkg.json"]
+conformance_ops = ["platform-l3-floor", "platform-l1-exception", "platform-replay"]
+
 # Explicit finite structural relations for fixed arrays of ordinary acyclic
 # records, tuples, and nested arrays. This is compiler/proof infrastructure;
 # sealed and opaque authority remains outside ambient derived equality.
@@ -2021,6 +2057,26 @@ crate_pattern = "conformance/verified-build/mutable_call_effect.th"
 design = ".design/build/mutable-call-effects.md"
 reference = []
 conformance_ops = ["mutable-call-effect-lifecycle"]
+
+# Policy-free frozen platform declarations. The 74 bodyless machine doors are
+# the explicit consumer-owned exception; every other package row is L3.
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/platform.thpkg.json"
+design = ".design/build/platform-primitives.md"
+reference = ["stdlib/kernel-primitives/platform/api.th"]
+conformance_ops = ["platform-package-closure", "platform-receipt"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/platform/api.th"
+design = ".design/build/platform-primitives.md"
+reference = []
+conformance_ops = ["platform-sealed-types", "platform-legality", "platform-boundary-inventory"]
+
+[[route]]
+crate_pattern = "forge/tests/platform_primitives.rs"
+design = ".design/build/platform-primitives.md"
+reference = ["stdlib/kernel-primitives/platform.thpkg.json", "stdlib/kernel-primitives/platform/api.th"]
+conformance_ops = ["platform-l3-floor", "platform-machine-exception", "platform-replay", "platform-false-claim"]
 
 # Primitive-only sealed atomic declarations and proof vocabulary. These routes
 # intentionally cover no machine implementation: registry v1 must refuse that

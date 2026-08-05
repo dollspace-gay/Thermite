@@ -1,0 +1,14 @@
+{
+  "schema": "thermite.package.v1",
+  "name": "thermite_platform_primitives",
+  "roots": [
+    "platform"
+  ],
+  "modules": [
+    {
+      "name": "platform",
+      "path": "platform/api.th",
+      "imports": []
+    }
+  ]
+}

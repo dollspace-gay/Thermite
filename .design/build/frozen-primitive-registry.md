@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: partial
-audited-content-sha256: 5fa17764189dc46a7253821ca9deae82298aea27fa4f9c6a7e7d678411bf6a83 (re-pinned 2026-08-05 after registry-v2 separate-crate source/interface/rlib/object closure and replay)
+audited-content-sha256: 0f5c1633fd4952e7525f0fab1691ca1f74a534996e97f47f01db4193f35f5be0 (re-pinned 2026-08-05 after binding the generic platform declaration inventory to the future machine-refinement scope)
 decision: consumer-owned registry entries close reachable Thermite boundaries through non-exempt same-crate or separately compiled/imported direct-Verus calls
 governs:
   - thermite-lower/src/lower.rs
@@ -20,6 +20,9 @@ governs:
   - conformance/verified-composition/separate_primitive_impl.rs
   - conformance/verified-composition/separate_primitive_shell.rs
   - conformance/verified-composition/separate_primitive_registry.json
+  - stdlib/kernel-primitives/platform.thpkg.json
+  - stdlib/kernel-primitives/platform/api.th
+  - forge/tests/platform_primitives.rs
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/l3-rich-composition.md
@@ -49,6 +52,13 @@ Thermite contains no built-in x86, ARM, RISC-V, firmware, scheduler, allocator,
 or device profile. A consumer declares only the platform operations its source
 contains. Forge resolves those declarations against the source-reachable
 boundary closure selected by the link and composition roots.
+
+Thermite now ships 74 architecture-neutral frozen declarations in
+`platform.thpkg.json`, plus the separate 50-operation atomic surface and three
+wait operations. Those declarations define reusable semantic contracts; they
+are not registry entries and contain no implementation. A consumer registry
+still closes only its reachable subset, with consumer-owned target and object
+evidence.
 
 Registry v1 supports exact same-crate Rust-ABI functions authored in a
 direct-Verus shell with `sequential` concurrency semantics. Registry v2 adds a
@@ -238,8 +248,9 @@ drift, or receipt drift rejects.
 
 Registry v1 plus v2 now cover same-crate and separately emitted safe sequential
 Rust with exact source, proof-interface, rlib, and object identity. The sealed
-atomic declaration and finite proof-model package exists, but it deliberately
-cannot use either schema to claim machine refinement. Completion still requires
-assembly and unsafe/irreducible Rust source/object closure, an atomic/volatile/
-privileged machine model with direct refinement, and concurrency/liveness
-composition. None of those are claimed here.
+atomic declaration and finite proof-model package exists, and the generic
+platform package now supplies all requested non-atomic declaration families,
+but neither package can use v1/v2 to claim machine refinement. Completion still
+requires assembly and unsafe/irreducible Rust source/object closure, an atomic/
+volatile/privileged machine model with direct refinement, and concurrency/
+liveness composition. None of those are claimed here.

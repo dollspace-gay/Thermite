@@ -1,0 +1,853 @@
+#[sealed] struct BootHandoff {
+  identity: usize,
+  length: usize,
+}
+
+#[sealed] struct EntryPermit {
+  identity: usize,
+}
+
+#[sealed] struct TerminalReceipt {
+  identity: usize,
+  code: u64,
+}
+
+#[sealed] struct MemoryRegion {
+  identity: usize,
+  capacity: usize,
+}
+
+#[sealed] struct RawAddress {
+  region: usize,
+  offset: usize,
+  capacity: usize,
+}
+
+#[sealed] struct AddressSpace {
+  identity: usize,
+  generation: u64,
+}
+
+#[sealed] struct DeviceRegion {
+  identity: usize,
+  capacity: usize,
+}
+
+#[sealed] struct MmioAddress {
+  device: usize,
+  offset: usize,
+  capacity: usize,
+}
+
+#[sealed] struct InterruptState {
+  cpu: usize,
+  generation: u64,
+  enabled: bool,
+}
+
+#[sealed] struct InterruptDisabled {
+  cpu: usize,
+  generation: u64,
+  restore_enabled: bool,
+}
+
+#[sealed] struct InterruptRoute {
+  identity: usize,
+  vector: u16,
+  destination: usize,
+}
+
+#[sealed] struct TrapContext {
+  identity: usize,
+  vector: u16,
+}
+
+#[sealed] struct TrapReturnReceipt {
+  identity: usize,
+}
+
+#[sealed] struct CpuControlToken {
+  cpu: usize,
+  generation: u64,
+}
+
+#[sealed] struct SmpPermit {
+  identity: usize,
+}
+
+#[sealed] struct ApBootToken {
+  cpu: usize,
+  generation: u64,
+}
+
+#[sealed] struct OnlineSnapshot {
+  generation: u64,
+  mask: u64,
+}
+
+#[sealed] struct DmaDomain {
+  identity: usize,
+  generation: u64,
+}
+
+#[sealed] struct DmaMapping {
+  domain: usize,
+  generation: u64,
+  device_address: u64,
+  length: usize,
+}
+
+#[sealed] struct EntropyPermit {
+  identity: usize,
+  generation: u64,
+}
+
+#[sealed] struct PowerPermit {
+  identity: usize,
+}
+
+struct AddressObservation8 {
+  region: usize,
+  offset: usize,
+  value: u8,
+}
+
+struct AddressObservation16 {
+  region: usize,
+  offset: usize,
+  value: u16,
+}
+
+struct AddressObservation32 {
+  region: usize,
+  offset: usize,
+  value: u32,
+}
+
+struct AddressObservation64 {
+  region: usize,
+  offset: usize,
+  value: u64,
+}
+
+struct AddressWriteReceipt {
+  region: usize,
+  offset: usize,
+  width: u8,
+  value: u64,
+}
+
+struct MemoryTransferReceipt {
+  destination_region: usize,
+  destination_offset: usize,
+  source_region: usize,
+  source_offset: usize,
+  length: usize,
+}
+
+struct MemoryFillReceipt {
+  region: usize,
+  offset: usize,
+  length: usize,
+  value: u8,
+}
+
+struct PageTableObservation {
+  address_space: usize,
+  generation: u64,
+  virtual_page: usize,
+  value: u64,
+}
+
+struct AddressSpaceReceipt {
+  address_space: usize,
+  generation: u64,
+}
+
+struct DeviceObservation8 {
+  device: usize,
+  offset: usize,
+  value: u8,
+}
+
+struct DeviceObservation16 {
+  device: usize,
+  offset: usize,
+  value: u16,
+}
+
+struct DeviceObservation32 {
+  device: usize,
+  offset: usize,
+  value: u32,
+}
+
+struct DeviceObservation64 {
+  device: usize,
+  offset: usize,
+  value: u64,
+}
+
+struct DeviceWriteReceipt {
+  device: usize,
+  offset: usize,
+  width: u8,
+  value: u64,
+}
+
+struct PortObservation {
+  port: u16,
+  width: u8,
+  value: u32,
+}
+
+struct PortWriteReceipt {
+  port: u16,
+  width: u8,
+  value: u32,
+}
+
+struct CpuObservation {
+  cpu: usize,
+  selector: u32,
+  value: u64,
+}
+
+struct CpuWriteReceipt {
+  cpu: usize,
+  selector: u32,
+  value: u64,
+}
+
+struct InterruptReceipt {
+  route: usize,
+  vector: u16,
+  destination: usize,
+}
+
+struct SmpReceipt {
+  generation: u64,
+  mask: u64,
+}
+
+struct DmaSyncReceipt {
+  domain: usize,
+  generation: u64,
+  device_address: u64,
+  length: usize,
+}
+
+struct ClockObservation {
+  clock: usize,
+  ticks: u64,
+}
+
+struct DeadlineReceipt {
+  clock: usize,
+  deadline: u64,
+}
+
+struct EntropyReceipt {
+  permit: usize,
+  generation: u64,
+  length: usize,
+}
+
+spec fn platform_width_legal_spec(width: u8) -> bool
+  dec width
+{
+  width == 1 || width == 2 || width == 4 || width == 8
+}
+
+spec fn raw_range_legal_spec(address: &RawAddress, length: usize) -> bool
+  dec length
+{
+  address.offset <= address.capacity
+    && length <= address.capacity - address.offset
+}
+
+spec fn raw_aligned_spec(address: &RawAddress, width: u8) -> bool
+  dec width
+{
+  platform_width_legal_spec(width)
+    && address.offset % width as usize == 0
+    && raw_range_legal_spec(address, width as usize)
+}
+
+spec fn mmio_range_legal_spec(address: &MmioAddress, length: usize) -> bool
+  dec length
+{
+  address.offset <= address.capacity
+    && length <= address.capacity - address.offset
+}
+
+spec fn mmio_aligned_spec(address: &MmioAddress, width: u8) -> bool
+  dec width
+{
+  platform_width_legal_spec(width)
+    && address.offset % width as usize == 0
+    && mmio_range_legal_spec(address, width as usize)
+}
+
+fn platform_width_legal(width: u8) -> bool
+  req true
+  ens result == platform_width_legal_spec(width)
+  fx pure
+{
+  width == 1 || width == 2 || width == 4 || width == 8
+}
+
+fn raw_range_legal(address: &RawAddress, length: usize) -> bool
+  req true
+  ens result == raw_range_legal_spec(address, length)
+  fx pure
+{
+  address.offset <= address.capacity
+    && length <= address.capacity - address.offset
+}
+
+fn raw_aligned(address: &RawAddress, width: u8) -> bool
+  req true
+  ens result == raw_aligned_spec(address, width)
+  fx pure
+{
+  platform_width_legal(width)
+    && address.offset % width as usize == 0
+    && raw_range_legal(address, width as usize)
+}
+
+fn mmio_range_legal(address: &MmioAddress, length: usize) -> bool
+  req true
+  ens result == mmio_range_legal_spec(address, length)
+  fx pure
+{
+  address.offset <= address.capacity
+    && length <= address.capacity - address.offset
+}
+
+fn mmio_aligned(address: &MmioAddress, width: u8) -> bool
+  req true
+  ens result == mmio_aligned_spec(address, width)
+  fx pure
+{
+  platform_width_legal(width)
+    && address.offset % width as usize == 0
+    && mmio_range_legal(address, width as usize)
+}
+
+#[boundary("thermite::boot::normalize_handoff")]
+fn boot_handoff_normalize(raw: usize, length: usize) -> BootHandoff
+  req length > 0
+  ens result.identity == raw && result.length == length
+  fx platform(boot);
+
+#[boundary("thermite::boot::entry_transfer")]
+fn boot_entry_transfer(handoff: BootHandoff, permit: EntryPermit) -> TerminalReceipt
+  req handoff.length > 0
+  ens result.identity == permit.identity && result.code == handoff.identity as u64
+  fx platform(boot), diverge;
+
+#[boundary("thermite::runtime::panic_terminal")]
+fn runtime_panic_terminal(permit: EntryPermit, code: u64) -> TerminalReceipt
+  req true
+  ens result.identity == permit.identity && result.code == code
+  fx platform(boot), diverge;
+
+#[boundary("thermite::runtime::contract_failure_terminal")]
+fn runtime_contract_failure_terminal(permit: EntryPermit, code: u64) -> TerminalReceipt
+  req true
+  ens result.identity == permit.identity && result.code == code
+  fx platform(boot), diverge;
+
+#[boundary("thermite::runtime::allocation_failure_terminal")]
+fn runtime_allocation_failure_terminal(permit: EntryPermit, bytes: usize) -> TerminalReceipt
+  req true
+  ens result.identity == permit.identity && result.code == bytes as u64
+  fx platform(boot), diverge;
+
+#[boundary("thermite::runtime::copy_nonoverlapping")]
+fn runtime_copy_nonoverlapping(
+  destination: RawAddress,
+  source: RawAddress,
+  length: usize,
+) -> MemoryTransferReceipt
+  req raw_range_legal_spec(&destination, length)
+    && raw_range_legal_spec(&source, length)
+    && destination.region != source.region
+  ens result.destination_region == destination.region
+    && result.destination_offset == destination.offset
+    && result.source_region == source.region
+    && result.source_offset == source.offset
+    && result.length == length
+  fx platform(memory);
+
+#[boundary("thermite::runtime::move_bytes")]
+fn runtime_move_bytes(
+  destination: RawAddress,
+  source: RawAddress,
+  length: usize,
+) -> MemoryTransferReceipt
+  req raw_range_legal_spec(&destination, length)
+    && raw_range_legal_spec(&source, length)
+  ens result.destination_region == destination.region
+    && result.destination_offset == destination.offset
+    && result.source_region == source.region
+    && result.source_offset == source.offset
+    && result.length == length
+  fx platform(memory);
+
+#[boundary("thermite::runtime::fill_bytes")]
+fn runtime_fill_bytes(address: RawAddress, length: usize, value: u8) -> MemoryFillReceipt
+  req raw_range_legal_spec(&address, length)
+  ens result.region == address.region
+    && result.offset == address.offset
+    && result.length == length
+    && result.value == value
+  fx platform(memory);
+
+#[boundary("thermite::memory::address_from_region")]
+fn raw_address_from_region(region: &MemoryRegion, offset: usize) -> RawAddress
+  req offset <= region.capacity
+  ens result.region == region.identity
+    && result.offset == offset
+    && result.capacity == region.capacity
+  fx platform(memory);
+
+#[boundary("thermite::memory::address_advance")]
+fn raw_address_advance(address: RawAddress, length: usize) -> RawAddress
+  req raw_range_legal_spec(&address, length)
+  ens result.region == address.region
+    && result.offset == address.offset + length
+    && result.capacity == address.capacity
+  fx platform(memory);
+
+#[boundary("thermite::memory::raw_read_u8")]
+fn raw_read_u8(address: RawAddress) -> AddressObservation8
+  req raw_range_legal_spec(&address, 1)
+  ens result.region == address.region && result.offset == address.offset
+  fx platform(memory);
+
+#[boundary("thermite::memory::raw_write_u8")]
+fn raw_write_u8(address: RawAddress, value: u8) -> AddressWriteReceipt
+  req raw_range_legal_spec(&address, 1)
+  ens result.region == address.region
+    && result.offset == address.offset
+    && result.width == 1
+    && result.value == value as u64
+  fx platform(memory);
+
+#[boundary("thermite::memory::volatile_read_u8")]
+fn volatile_read_u8(address: RawAddress) -> AddressObservation8
+  req raw_aligned_spec(&address, 1)
+  ens result.region == address.region && result.offset == address.offset
+  fx platform(memory);
+
+#[boundary("thermite::memory::volatile_read_u16")]
+fn volatile_read_u16(address: RawAddress) -> AddressObservation16
+  req raw_aligned_spec(&address, 2)
+  ens result.region == address.region && result.offset == address.offset
+  fx platform(memory);
+
+#[boundary("thermite::memory::volatile_read_u32")]
+fn volatile_read_u32(address: RawAddress) -> AddressObservation32
+  req raw_aligned_spec(&address, 4)
+  ens result.region == address.region && result.offset == address.offset
+  fx platform(memory);
+
+#[boundary("thermite::memory::volatile_read_u64")]
+fn volatile_read_u64(address: RawAddress) -> AddressObservation64
+  req raw_aligned_spec(&address, 8)
+  ens result.region == address.region && result.offset == address.offset
+  fx platform(memory);
+
+#[boundary("thermite::memory::volatile_write_u8")]
+fn volatile_write_u8(address: RawAddress, value: u8) -> AddressWriteReceipt
+  req raw_aligned_spec(&address, 1)
+  ens result.region == address.region && result.offset == address.offset
+    && result.width == 1 && result.value == value as u64
+  fx platform(memory);
+
+#[boundary("thermite::memory::volatile_write_u16")]
+fn volatile_write_u16(address: RawAddress, value: u16) -> AddressWriteReceipt
+  req raw_aligned_spec(&address, 2)
+  ens result.region == address.region && result.offset == address.offset
+    && result.width == 2 && result.value == value as u64
+  fx platform(memory);
+
+#[boundary("thermite::memory::volatile_write_u32")]
+fn volatile_write_u32(address: RawAddress, value: u32) -> AddressWriteReceipt
+  req raw_aligned_spec(&address, 4)
+  ens result.region == address.region && result.offset == address.offset
+    && result.width == 4 && result.value == value as u64
+  fx platform(memory);
+
+#[boundary("thermite::memory::volatile_write_u64")]
+fn volatile_write_u64(address: RawAddress, value: u64) -> AddressWriteReceipt
+  req raw_aligned_spec(&address, 8)
+  ens result.region == address.region && result.offset == address.offset
+    && result.width == 8 && result.value == value
+  fx platform(memory);
+
+#[boundary("thermite::memory::page_table_entry_read")]
+fn page_table_entry_read(space: &AddressSpace, virtual_page: usize) -> PageTableObservation
+  req true
+  ens result.address_space == space.identity
+    && result.generation == space.generation
+    && result.virtual_page == virtual_page
+  fx platform(memory);
+
+#[boundary("thermite::memory::page_table_entry_write")]
+fn page_table_entry_write(
+  space: &AddressSpace,
+  virtual_page: usize,
+  value: u64,
+) -> PageTableObservation
+  req true
+  ens result.address_space == space.identity
+    && result.generation == space.generation
+    && result.virtual_page == virtual_page
+    && result.value == value
+  fx platform(memory);
+
+#[boundary("thermite::memory::address_space_activate")]
+fn address_space_activate(space: AddressSpace) -> AddressSpaceReceipt
+  req true
+  ens result.address_space == space.identity && result.generation == space.generation
+  fx platform(memory);
+
+#[boundary("thermite::memory::tlb_invalidate_local")]
+fn tlb_invalidate_local(space: &AddressSpace, virtual_page: usize) -> PageTableObservation
+  req true
+  ens result.address_space == space.identity
+    && result.generation == space.generation
+    && result.virtual_page == virtual_page
+  fx platform(memory);
+
+#[boundary("thermite::memory::cache_clean_range")]
+fn cache_clean_range(address: RawAddress, length: usize) -> MemoryFillReceipt
+  req raw_range_legal_spec(&address, length)
+  ens result.region == address.region
+    && result.offset == address.offset
+    && result.length == length
+  fx platform(memory);
+
+#[boundary("thermite::memory::cache_invalidate_range")]
+fn cache_invalidate_range(address: RawAddress, length: usize) -> MemoryFillReceipt
+  req raw_range_legal_spec(&address, length)
+  ens result.region == address.region
+    && result.offset == address.offset
+    && result.length == length
+  fx platform(memory);
+
+#[boundary("thermite::mmio::address_from_region")]
+fn mmio_address_from_region(region: &DeviceRegion, offset: usize) -> MmioAddress
+  req offset <= region.capacity
+  ens result.device == region.identity
+    && result.offset == offset
+    && result.capacity == region.capacity
+  fx platform(mmio);
+
+#[boundary("thermite::mmio::read_u8")]
+fn mmio_read_u8(address: MmioAddress) -> DeviceObservation8
+  req mmio_aligned_spec(&address, 1)
+  ens result.device == address.device && result.offset == address.offset
+  fx platform(mmio);
+
+#[boundary("thermite::mmio::read_u16")]
+fn mmio_read_u16(address: MmioAddress) -> DeviceObservation16
+  req mmio_aligned_spec(&address, 2)
+  ens result.device == address.device && result.offset == address.offset
+  fx platform(mmio);
+
+#[boundary("thermite::mmio::read_u32")]
+fn mmio_read_u32(address: MmioAddress) -> DeviceObservation32
+  req mmio_aligned_spec(&address, 4)
+  ens result.device == address.device && result.offset == address.offset
+  fx platform(mmio);
+
+#[boundary("thermite::mmio::read_u64")]
+fn mmio_read_u64(address: MmioAddress) -> DeviceObservation64
+  req mmio_aligned_spec(&address, 8)
+  ens result.device == address.device && result.offset == address.offset
+  fx platform(mmio);
+
+#[boundary("thermite::mmio::write_u8")]
+fn mmio_write_u8(address: MmioAddress, value: u8) -> DeviceWriteReceipt
+  req mmio_aligned_spec(&address, 1)
+  ens result.device == address.device && result.offset == address.offset
+    && result.width == 1 && result.value == value as u64
+  fx platform(mmio);
+
+#[boundary("thermite::mmio::write_u16")]
+fn mmio_write_u16(address: MmioAddress, value: u16) -> DeviceWriteReceipt
+  req mmio_aligned_spec(&address, 2)
+  ens result.device == address.device && result.offset == address.offset
+    && result.width == 2 && result.value == value as u64
+  fx platform(mmio);
+
+#[boundary("thermite::mmio::write_u32")]
+fn mmio_write_u32(address: MmioAddress, value: u32) -> DeviceWriteReceipt
+  req mmio_aligned_spec(&address, 4)
+  ens result.device == address.device && result.offset == address.offset
+    && result.width == 4 && result.value == value as u64
+  fx platform(mmio);
+
+#[boundary("thermite::mmio::write_u64")]
+fn mmio_write_u64(address: MmioAddress, value: u64) -> DeviceWriteReceipt
+  req mmio_aligned_spec(&address, 8)
+  ens result.device == address.device && result.offset == address.offset
+    && result.width == 8 && result.value == value
+  fx platform(mmio);
+
+#[boundary("thermite::mmio::device_fence")]
+fn mmio_device_fence(device: &DeviceRegion) -> DeviceWriteReceipt
+  req true
+  ens result.device == device.identity && result.offset == 0 && result.width == 0
+  fx platform(mmio);
+
+#[boundary("thermite::pio::read_u8")]
+fn pio_read_u8(port: u16) -> PortObservation
+  req true
+  ens result.port == port && result.width == 1
+  fx platform(pio);
+
+#[boundary("thermite::pio::read_u16")]
+fn pio_read_u16(port: u16) -> PortObservation
+  req true
+  ens result.port == port && result.width == 2
+  fx platform(pio);
+
+#[boundary("thermite::pio::read_u32")]
+fn pio_read_u32(port: u16) -> PortObservation
+  req true
+  ens result.port == port && result.width == 4
+  fx platform(pio);
+
+#[boundary("thermite::pio::write_u8")]
+fn pio_write_u8(port: u16, value: u8) -> PortWriteReceipt
+  req true
+  ens result.port == port && result.width == 1 && result.value == value as u32
+  fx platform(pio);
+
+#[boundary("thermite::pio::write_u16")]
+fn pio_write_u16(port: u16, value: u16) -> PortWriteReceipt
+  req true
+  ens result.port == port && result.width == 2 && result.value == value as u32
+  fx platform(pio);
+
+#[boundary("thermite::pio::write_u32")]
+fn pio_write_u32(port: u16, value: u32) -> PortWriteReceipt
+  req true
+  ens result.port == port && result.width == 4 && result.value == value
+  fx platform(pio);
+
+#[boundary("thermite::pio::device_fence")]
+fn pio_device_fence(port: u16) -> PortWriteReceipt
+  req true
+  ens result.port == port && result.width == 0
+  fx platform(pio);
+
+#[boundary("thermite::cpu::id")]
+fn cpu_id() -> CpuObservation
+  req true
+  ens result.selector == 0
+  fx platform(cpu);
+
+#[boundary("thermite::cpu::feature_read")]
+fn cpu_feature_read(selector: u32) -> CpuObservation
+  req true
+  ens result.selector == selector
+  fx platform(cpu);
+
+#[boundary("thermite::cpu::control_read")]
+fn cpu_control_read(token: &CpuControlToken, selector: u32) -> CpuObservation
+  req true
+  ens result.cpu == token.cpu && result.selector == selector
+  fx platform(cpu);
+
+#[boundary("thermite::cpu::control_write")]
+fn cpu_control_write(token: &CpuControlToken, selector: u32, value: u64) -> CpuWriteReceipt
+  req true
+  ens result.cpu == token.cpu && result.selector == selector && result.value == value
+  fx platform(cpu);
+
+#[boundary("thermite::cpu::register_read")]
+fn cpu_register_read(token: &CpuControlToken, selector: u32) -> CpuObservation
+  req true
+  ens result.cpu == token.cpu && result.selector == selector
+  fx platform(cpu);
+
+#[boundary("thermite::cpu::register_write")]
+fn cpu_register_write(token: &CpuControlToken, selector: u32, value: u64) -> CpuWriteReceipt
+  req true
+  ens result.cpu == token.cpu && result.selector == selector && result.value == value
+  fx platform(cpu);
+
+#[boundary("thermite::cpu::per_cpu_base_read")]
+fn per_cpu_base_read(token: &CpuControlToken) -> CpuObservation
+  req true
+  ens result.cpu == token.cpu && result.selector == 0
+  fx platform(cpu);
+
+#[boundary("thermite::cpu::per_cpu_base_write")]
+fn per_cpu_base_write(token: &CpuControlToken, value: u64) -> CpuWriteReceipt
+  req true
+  ens result.cpu == token.cpu && result.selector == 0 && result.value == value
+  fx platform(cpu);
+
+#[boundary("thermite::irq::state_current")]
+fn interrupt_state_current(cpu: usize) -> InterruptState
+  req true
+  ens result.cpu == cpu
+  fx platform(irq);
+
+#[boundary("thermite::irq::disable")]
+fn interrupt_disable(state: InterruptState) -> InterruptDisabled
+  req true
+  ens result.cpu == state.cpu
+    && result.generation == state.generation
+    && result.restore_enabled == state.enabled
+  fx platform(irq);
+
+#[boundary("thermite::irq::restore")]
+fn interrupt_restore(disabled: InterruptDisabled) -> InterruptState
+  req true
+  ens result.cpu == disabled.cpu
+    && result.generation == disabled.generation
+    && result.enabled == disabled.restore_enabled
+  fx platform(irq);
+
+#[boundary("thermite::irq::route")]
+fn interrupt_route(route: &InterruptRoute) -> InterruptReceipt
+  req true
+  ens result.route == route.identity
+    && result.vector == route.vector
+    && result.destination == route.destination
+  fx platform(irq);
+
+#[boundary("thermite::irq::mask")]
+fn interrupt_mask(route: &InterruptRoute) -> InterruptReceipt
+  req true
+  ens result.route == route.identity && result.vector == route.vector
+  fx platform(irq);
+
+#[boundary("thermite::irq::unmask")]
+fn interrupt_unmask(route: &InterruptRoute) -> InterruptReceipt
+  req true
+  ens result.route == route.identity && result.vector == route.vector
+  fx platform(irq);
+
+#[boundary("thermite::irq::eoi")]
+fn interrupt_eoi(route: &InterruptRoute) -> InterruptReceipt
+  req true
+  ens result.route == route.identity && result.vector == route.vector
+  fx platform(irq);
+
+#[boundary("thermite::trap::context_enter")]
+fn trap_context_enter(identity: usize, vector: u16) -> TrapContext
+  req true
+  ens result.identity == identity && result.vector == vector
+  fx platform(irq);
+
+#[boundary("thermite::trap::context_return")]
+fn trap_context_return(context: TrapContext) -> TrapReturnReceipt
+  req true
+  ens result.identity == context.identity
+  fx platform(irq), diverge;
+
+#[boundary("thermite::smp::ap_start")]
+fn smp_ap_start(permit: &SmpPermit, cpu: usize, entry: RawAddress) -> ApBootToken
+  req raw_range_legal_spec(&entry, 1)
+  ens result.cpu == cpu && result.generation == permit.identity as u64
+  fx platform(smp);
+
+#[boundary("thermite::smp::ipi_send")]
+fn smp_ipi_send(permit: &SmpPermit, mask: u64, vector: u16) -> SmpReceipt
+  req mask != 0
+  ens result.generation == permit.identity as u64 && result.mask == mask
+  fx platform(smp);
+
+#[boundary("thermite::smp::online_snapshot")]
+fn smp_online_snapshot(permit: &SmpPermit) -> OnlineSnapshot
+  req true
+  ens result.generation == permit.identity as u64
+  fx platform(smp);
+
+#[boundary("thermite::smp::online_ack")]
+fn smp_online_ack(snapshot: OnlineSnapshot, mask: u64) -> SmpReceipt
+  req mask & !snapshot.mask == 0
+  ens result.generation == snapshot.generation && result.mask == mask
+  fx platform(smp);
+
+#[boundary("thermite::dma::map")]
+fn dma_map(domain: &DmaDomain, region: &MemoryRegion, length: usize) -> DmaMapping
+  req length > 0 && length <= region.capacity
+  ens result.domain == domain.identity
+    && result.generation == domain.generation
+    && result.length == length
+  fx platform(dma);
+
+#[boundary("thermite::dma::unmap")]
+fn dma_unmap(mapping: DmaMapping) -> DmaSyncReceipt
+  req true
+  ens result.domain == mapping.domain
+    && result.generation == mapping.generation
+    && result.device_address == mapping.device_address
+    && result.length == mapping.length
+  fx platform(dma);
+
+#[boundary("thermite::dma::sync_for_device")]
+fn dma_sync_for_device(mapping: &DmaMapping) -> DmaSyncReceipt
+  req true
+  ens result.domain == mapping.domain
+    && result.generation == mapping.generation
+    && result.device_address == mapping.device_address
+    && result.length == mapping.length
+  fx platform(dma);
+
+#[boundary("thermite::dma::sync_for_cpu")]
+fn dma_sync_for_cpu(mapping: &DmaMapping) -> DmaSyncReceipt
+  req true
+  ens result.domain == mapping.domain
+    && result.generation == mapping.generation
+    && result.device_address == mapping.device_address
+    && result.length == mapping.length
+  fx platform(dma);
+
+#[boundary("thermite::clock::monotonic_read")]
+fn clock_monotonic_read(clock: usize) -> ClockObservation
+  req true
+  ens result.clock == clock
+  fx platform(clock);
+
+#[boundary("thermite::clock::deadline_arm")]
+fn clock_deadline_arm(clock: usize, deadline: u64) -> DeadlineReceipt
+  req true
+  ens result.clock == clock && result.deadline == deadline
+  fx platform(clock);
+
+#[boundary("thermite::clock::deadline_cancel")]
+fn clock_deadline_cancel(clock: usize) -> DeadlineReceipt
+  req true
+  ens result.clock == clock && result.deadline == 0
+  fx platform(clock);
+
+#[boundary("thermite::entropy::fill")]
+fn entropy_fill(permit: EntropyPermit, destination: RawAddress, length: usize) -> EntropyReceipt
+  req raw_range_legal_spec(&destination, length)
+  ens result.permit == permit.identity
+    && result.generation == permit.generation
+    && result.length == length
+  fx platform(entropy);
+
+#[boundary("thermite::power::reboot_terminal")]
+fn power_reboot_terminal(permit: PowerPermit, reason: u64) -> TerminalReceipt
+  req true
+  ens result.identity == permit.identity && result.code == reason
+  fx platform(power), diverge;
+
+#[boundary("thermite::power::off_terminal")]
+fn power_off_terminal(permit: PowerPermit, reason: u64) -> TerminalReceipt
+  req true
+  ens result.identity == permit.identity && result.code == reason
+  fx platform(power), diverge;

@@ -1375,10 +1375,10 @@ Kernel manifests are receipt-bound `*.thpkg.json`. `.array_eq` /
 `.array_same_except` cover scalar and finite plain aggregate arrays; sealed,
 opaque, recursive, enum, reference, and heap shapes fail closed. Packed `u64`
 provides total bit operations and distinct-bit frames, all bridged to L3.
-Primitive manifests provide atomics, generation ownership, fixed collections,
-synchronization state machines, and frozen waits—never a kernel or machine
-body. Consumers refine boundaries; affinity, general aggregate lifecycle TV,
-and machine refinement remain.
+Primitive manifests provide atomics, ownership, collections, synchronization,
+waits, and `platform.thpkg.json` declarations—never a kernel or machine body.
+Bodyful helpers are L3; bodyless machine doors are consumer refinement
+obligations. Full affinity, aggregate generality, and machine refinement remain.
 
 ",
     );

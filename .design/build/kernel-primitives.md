@@ -59,6 +59,7 @@ governs:
   - forge/tests/ownership_primitives.rs
   - forge/tests/static_storage_primitives.rs
   - forge/tests/synchronization_primitives.rs
+  - forge/tests/platform_primitives.rs
   - stdlib/kernel-primitives/collections.thpkg.json
   - stdlib/kernel-primitives/collections/bitmap.th
   - stdlib/kernel-primitives/collections/direct_map.th
@@ -88,6 +89,8 @@ governs:
   - stdlib/kernel-primitives/atomics.thpkg.json
   - stdlib/kernel-primitives/src/api.th
   - stdlib/kernel-primitives/src/model.th
+  - stdlib/kernel-primitives/platform.thpkg.json
+  - stdlib/kernel-primitives/platform/api.th
   - conformance/kernel_primitives.th
   - conformance/verified-build/aggregate_storage.th
   - conformance/verified-build/aggregate_array_relations.th
@@ -97,7 +100,7 @@ governs:
   - conformance/verified-composition/frozen_primitive.th
   - conformance/verified-composition/frozen_primitive_shell.rs
   - conformance/verified-composition/frozen_primitive_registry.json
-audited-content-sha256: 964f27ce5118dc0ec6296e248f90b83d5f3532bdbfab96da40650589538d4518 (re-pinned 2026-08-05 after exact separate safe-Rust source/rlib/object binding; no kernel policy or implementation was added)
+audited-content-sha256: bcb5baf9e4e6e36eb0dd5ea3533bf21ecbaf5c7274284b18cdb957879bfb37aa (re-pinned 2026-08-05 after adding the policy-free platform declaration package; no kernel policy or implementation was added)
 extends:
   - .design/build/kernel-target.md
   - .design/build/l3-rich-composition.md
@@ -183,7 +186,9 @@ inventories, not only representative exports: all collection rows, all
 ownership rows except the exact mint declaration, all synchronization rows
 except the exact three wait/machine declarations, and all bodyful atomic model
 and API rows must be L3. The atomic machine declarations are the exact 50-item
-bodyless L1 set. Any additional sub-L3 row fails the gate.
+bodyless L1 set. The generic platform package has exactly 74 additional
+bodyless L1 machine doors; its other 55 type/model/helper rows are L3. Any
+additional sub-L3 row fails the applicable package gate.
 
 ## Primitive inventory
 
@@ -579,8 +584,16 @@ and residual work are in
 
 ### Irreducible platform-operation families
 
-The generic registry schema must be able to declare these families. Thermite
-does not ship their architecture-specific bodies.
+The receipt-bound `stdlib/kernel-primitives/platform.thpkg.json` package now
+ships the policy-free semantic declarations for these families. Its 74 exact
+machine-facing rows are bodyless L1 boundaries because Thermite does not ship
+their architecture-specific bodies. All 55 sealed-type, observation-type,
+specification, and executable legality rows prove at L3; the width/range/
+alignment helpers kill 38/38 generated mutants. A strict freestanding receipt
+binds and replays the complete package module while exporting only an L3 helper,
+and a false width claim is rejected. Atomics remain in their dedicated package,
+and pause/block/halt remain in the synchronization package rather than being
+duplicated here.
 
 | Family | Minimal frozen operation |
 |---|---|
@@ -594,6 +607,9 @@ does not ship their architecture-specific bodies.
 | DMA | device-visible mapping/synchronization mechanics |
 | services | monotonic counter/deadline, entropy fill, reboot/poweroff |
 | atomics | the sealed operations and fences listed above |
+
+The exact inventory and consumer-refinement rule are in
+`.design/build/platform-primitives.md`.
 
 Frame allocation, virtual layout, page-table traversal, shootdown epochs, AP
 lifecycle, interrupt policy, DMA protocols, drivers, schedulers, IPC, and
@@ -635,6 +651,8 @@ The primitive suite is target-independent wherever possible.
   enum, reference-bearing, and heap-backed element shapes.
 - Compile those libraries for the generic freestanding target with no hosted
   effects and no concrete platform dependency.
+- Require every non-boundary platform-package row at L3 and pin the 74-row
+  bodyless machine exception exactly by family, effect, and target.
 - Compose a synthetic test platform whose bodies are tiny direct-Verus
   adapters. This exercises the registry/refinement machinery without booting
   or implementing a kernel.
@@ -655,8 +673,8 @@ The primitive suite is target-independent wherever possible.
    composition for a synthetic platform.
 5. Land explicit waiting/liveness primitives and verified synchronization
    libraries.
-6. Complete the generic frozen registry and remaining platform-operation
-   declarations.
+6. Land the generic platform-operation declarations, then complete their
+   unsafe-Rust/assembly/object and machine-refinement registry path.
 7. Consolidate the now-enforced no-concrete-kernel gate and existing primitive
    adversarial suites into one matrix, then publish a reusable freestanding
    bundle.
@@ -669,13 +687,13 @@ Source: `.design/reqs/registry.toml`
 | ID | Status | Owner | Title | Follow-up |
 |---|---|---|---|---|
 | REQ-KPRIM-1 | shipped | `.design/build/kernel-primitives.md` | Kernel scalar and effect surface |  |
-| REQ-KPRIM-10 | partial | `.design/build/kernel-primitives.md` | Primitive-only adversarial suite | The canonical tracked-source gate now rejects concrete kernel/firmware/boot/image directories, release and machine artifacts, generated trees, binary or nonlocal source closure, and hidden freestanding entries; exact compile-only freestanding fixtures are digest-pinned, CI-enforced, and adversarially tested. Consolidate the existing package, fixed-storage, atomic, waiting, registry, refinement, receipt-tamper, and freestanding-consumer suites into one primitive-only matrix, then publish the reusable bundle. |
+| REQ-KPRIM-10 | partial | `.design/build/kernel-primitives.md` | Primitive-only adversarial suite | The canonical tracked-source gate now rejects concrete kernel/firmware/boot/image directories, release and machine artifacts, generated trees, binary or nonlocal source closure, and hidden freestanding entries; exact compile-only freestanding fixtures are digest-pinned, CI-enforced, and adversarially tested. The platform suite also pins its exact 74-row bodyless machine exception and 55-row L3 floor. Consolidate the existing package, fixed-storage, atomic, waiting, platform, registry, refinement, receipt-tamper, and freestanding-consumer suites into one primitive-only matrix, then publish the reusable bundle. |
 | REQ-KPRIM-2 | partial | `.design/build/kernel-primitives.md` | Exact mutable and fixed storage | Mutable borrowed slices/arrays, arbitrary old/final snapshot framing, native fixed arrays, scalar and recursively finite plain-aggregate equality plus exact one- and two-index quantified frames, defining-module opaque state transitions, exact typed root.field(.field)* mutation with an optional final fixed-array index, owned/value-call composition, exact user-ADT result/match contract and body TV with arm scoping, exact record-state loop entry/leaf-preservation/exit/full-result TV, statement-position mutable-call composition over pairwise-distinct direct finite-record roots, strict freestanding L3 record/rich-state receipts, digest-bound freestanding fixed-array views and repeat construction, total directly proved u64 bit methods, a receipt-bound packed bitmap with population count/set-bit search/bulk set operations, u64 vector, u64 FIFO ring, collision-explicit direct map, opaque collision-resolving open-addressed map, a generation-safe opaque slab, a duplicate-safe opaque freelist, opaque intrusive doubly linked metadata with arbitrary-live-node unlink and tail relink, and a receipt-bound generation-owned static-storage claim/fill/commit/release protocol are shipped. Add index-then-field aliasing if required, mixed shared/mutable, mutable slice/array, and projected-root call effects, consumed mutable-call return values, enum-payload lvalue mutation, arbitrary-position intrusive insertion/relink if required, chained maps where required, quantified aggregate loops/state framing, and generic library capacities/types. |
 | REQ-KPRIM-3 | partial | `.design/build/kernel-primitives.md` | Receipt-bound packages and modules | Independent parsing, module-local identity, direct-import/root-export enforcement, rooted graph validation, opaque construction/read/write ownership, source allowlisting, L3 build/composition, complete receipt binding, validation, and replay are shipped. Extend the remaining source-oriented Forge commands (check, audit, TV, goal/edit/fill) to operate on packages without losing module-local diagnostics. |
 | REQ-KPRIM-4 | partial | `.design/build/kernel-primitives.md` | Sealed authority and ownership | The sealed-construction barrier, direct and nested opaque lifecycle receipts, typed owned-record local/value-call L3 receipts, exact user-ADT result/match TV, exact direct finite-record mutable-call effects, an opaque receipt-bound 64-slot generation ledger, a generation-bound 64-slot static-storage lease/region protocol, and typed opaque single-use atomic-init slots prove acquisition/renewal/release, stale-token-after-reuse rejection, double-release rejection, monotonic rights, L3 move/clone refusal, initialization-witness matching, committed-region consumption, exact authority/slot/generation transfer, duplicate-init refusal, and foreign-module construction/read/write rejection. Add a complete affine rule if stronger general-purpose uniqueness is required, strictly compose the full owned-ADT lifecycles through exactly refined authority/memory/atomic doors, and add concurrent synchronization consumers that rotate generations through exact atomic transitions. |
 | REQ-KPRIM-5 | partial | `.design/build/kernel-primitives.md` | Sealed atomics and ordering model | The five-module receipt-bound package, typed generation-bound storage-to-slot conversion, enforceable single-use initialization, compound atomic identity, 50 atomic boundary declarations, exact ordering matrix, pre-codegen legality gate, bounded history relations, strict kernel ordering/storage proofs, strict hosted history proof, replay, runtime generated-logic execution, and adversarial tests are present. Add a kernel-target finite-history proof surface, exact atomic object/machine refinement, positive machine-aware lifecycle composition, and verified synchronization consumers. |
 | REQ-KPRIM-6 | partial | `.design/build/kernel-primitives.md` | Verified waiting and synchronization | A receipt-bound bounded-wait trace scan, frozen pause/block/terminal-halt declarations, and fail-closed ticket-lock/barrier/epoch-ack/once/reference-count/seqlock/bounded-MPSC/bounded-work-deque mechanics are shipped with L3 proofs, adversarial claims, strict replay, and tamper rejection. Add registry-level fairness/progress semantics, directly refined wait bodies, atomic integration and machine concurrency composition, then richer reader/writer coordination in .th. |
-| REQ-KPRIM-7 | partial | `.design/build/kernel-primitives.md` | Generic frozen boundary registry | Same-crate and separately emitted safe sequential direct-Verus Rust-ABI entries now close reachable boundaries exactly. The v2 path binds authored and generated sources, exported proof interface, rlib, every object-member digest, target features, two no-cheating proof/codegen layers, validation, runtime linking, and replay. Add assembly and unsafe/irreducible Rust source/object closure plus exact atomic, volatile, privileged, and concurrent machine-model refinement without adding an architecture operation table. |
+| REQ-KPRIM-7 | partial | `.design/build/kernel-primitives.md` | Generic frozen boundary registry | Same-crate and separately emitted safe sequential direct-Verus Rust-ABI entries now close reachable boundaries exactly. The v2 path binds authored and generated sources, exported proof interface, rlib, every object-member digest, target features, two no-cheating proof/codegen layers, validation, runtime linking, and replay. A policy-free package now supplies 74 frozen declarations across boot/runtime, memory/provenance, MMIO/PIO, CPU, IRQ/trap, SMP, DMA, clock, entropy, and power while keeping all 55 non-machine rows at L3. Add assembly and unsafe/irreducible Rust source/object closure plus exact atomic, volatile, privileged, and concurrent machine-model refinement without adding an architecture operation table. |
 | REQ-KPRIM-8 | shipped | `.design/build/kernel-primitives.md` | Generic freestanding verified library build |  |
 | REQ-KPRIM-9 | partial | `.design/build/kernel-primitives.md` | Exact platform refinement composition | Safe same-crate and separately emitted sequential direct-Verus operations now receive exact checked-wrapper/import refinement through their emitted Rust objects. Add direct machine-operation refinement tied to unsafe Rust/assembly objects and the atomic/concurrency model before every irreducible platform family is covered. |
 <!-- /generated:reqs -->

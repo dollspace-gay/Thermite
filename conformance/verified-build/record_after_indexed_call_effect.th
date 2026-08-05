@@ -84,6 +84,30 @@ fn record_after_indexed_pipeline(
   copied
 }
 
+fn record_after_indexed_snapshot(
+  outer: &mut RecordAfterIndexedOuter,
+  value: u64,
+) -> RecordAfterIndexedBank
+  req true
+  ens result.slots[0] == value
+  ens result.slots[1] == old(outer).left.slots[1]
+  ens result.guard == old(outer).left.guard
+  ens final(outer).left.slots[0] == value
+  ens final(outer).left.slots[1] == old(outer).left.slots[1]
+  ens final(outer).left.guard == old(outer).left.guard
+  ens final(outer).right.slots[0] == old(outer).right.slots[0]
+  ens final(outer).right.slots[1] == old(outer).right.slots[1]
+  ens final(outer).right.guard == old(outer).right.guard
+  ens final(outer).tag == old(outer).tag
+  fx pure
+{
+  let written: u64 = record_after_indexed_write(&mut outer.left.slots, value);
+  RecordAfterIndexedBank {
+    slots: outer.left.slots,
+    guard: outer.left.guard,
+  }
+}
+
 fn record_after_indexed_left_zero(outer: &RecordAfterIndexedOuter) -> u64
   req true
   ens result == outer.left.slots[0]

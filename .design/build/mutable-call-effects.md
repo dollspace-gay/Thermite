@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-decision: a statement-position call or direct typed let-bound result call through structurally disjoint direct or explicitly borrowed projected finite-record and indexed-storage actuals composes by independently interpreting the reachable in-language callee body, shared snapshots, result, and every complete post-state leaf or sequence
+decision: a statement-position call or direct typed let-bound result call through structurally disjoint direct or explicitly borrowed projected finite-record and indexed-storage actuals composes by independently interpreting the reachable in-language callee body, shared snapshots, leafwise finite-record result, and every complete post-state leaf or sequence
 governs:
   - thermite-tv/src/exec_encode.rs
   - thermite-tv/src/exec_stmt_encode.rs
@@ -21,7 +21,7 @@ governs:
   - conformance/verified-build/projected_record_call_effect.th
   - conformance/verified-build/projected_indexed_call_effect.th
   - conformance/verified-build/record_after_indexed_call_effect.th
-audited-content-sha256: 326286d6913c53fe8e5c07e115696398db47ddf5acf820373a0a707fad494ecf (leafwise record-call composition after projected indexed state and strict L3 runtime evidence added 2026-08-05)
+audited-content-sha256: f7267c0fac11ee3b79c5dd3b5711516ad05192b17ca098dfb166ef04605ca05a (leafwise final record-result composition after projected indexed state and strict L3 runtime evidence added 2026-08-05)
 extends:
   - .design/build/nested-aggregate-lifecycle.md
   - .design/build/owned-aggregate-lifecycle.md
@@ -84,7 +84,10 @@ lifecycle semantics applies a call as follows:
 3. interpret the callee source body through the independent statement semantics,
    recursively applying any further acyclic mutable-call effects;
 4. encode the callee tail under the exact post-state, either discarding it for a
-   statement call or binding it to the typed caller local; and
+   statement call or binding it to the typed caller local; a final finite-record
+   constructor or exact access path is related field-by-field, so an array leaf
+   with a current sequence overlay is compared through its complete logical view;
+   and
 5. copy every formal post-state field or complete sequence back to its caller
    path; projected record copy-back reconstructs each enclosing nominal record,
    while projected indexed copy-back stores an exact path-keyed sequence overlay
@@ -126,9 +129,13 @@ callee therefore observe the exact program-point sequence, and mutable
 copy-back replaces only the actual record subtree's overlays. If the callee
 replaces an array or enclosing record, the corresponding overlay is removed and
 the exact native replacement becomes authoritative. This is leafwise state
-composition, not a fabricated `Seq<T>`-to-`[T; N]` conversion. General
-whole-record value/result use that would require such a conversion remains
-fail-closed.
+composition, not a fabricated `Seq<T>`-to-`[T; N]` conversion. A final
+finite-record result is now admitted when it is an exact constructor or access
+path: every scalar leaf is compared directly and every overlaid array leaf is
+compared by its complete sequence view. The independent theory never fabricates
+a native array or enclosing record from a logical sequence. Intermediate or
+otherwise general whole-record by-value use that would require such a conversion
+remains fail-closed.
 
 ## Production and expression fidelity
 
@@ -216,10 +223,12 @@ guard/tag preservation, and projected-borrow tamper rejection are mandatory.
 The `record_after_indexed_call_effect.th` fixture mutates a projected fixed
 array, passes the enclosing record through a generated mutable record call,
 then snapshots that current record through a generated shared record call while
-mutating a disjoint sibling. Its strict freestanding receipt has 59 faithful
-translation-validation rows and only L3 reachable members. Replay, linked
-downstream execution, both sequence transitions, scalar sibling framing, and
-record-actual tamper rejection are mandatory.
+mutating a disjoint sibling. It also returns a finite record literal whose array
+field is the current projected sequence overlay. Its strict freestanding receipt
+has 72 faithful translation-validation rows and only L3 reachable members.
+Replay, linked downstream execution, exact returned array/scalar leaves, both
+sequence transitions, scalar sibling framing, and record-actual tamper rejection
+are mandatory.
 
 This is reusable language and proof machinery. It adds no scheduler, allocator,
 boot path, firmware runtime, architecture implementation, or kernel artifact.
@@ -227,8 +236,8 @@ boot path, firmware runtime, architecture implementation, or kernel artifact.
 ## Residual boundary
 
 The frozen subset still excludes implicit field borrowing, an array-element
-actual such as `&mut slots[i]`, general whole-record value/result materialization
-after a descendant sequence overlay, nested result use inside
+actual such as `&mut slots[i]`, intermediate/general whole-record by-value
+materialization after a descendant sequence overlay, nested result use inside
 arithmetic/conditions/arguments/assignments/tails, untyped
 result bindings, recursive mutable effects, mutable enum payloads, calls inside
 the record-loop theory, dynamically quantified aggregate frames, and concurrent

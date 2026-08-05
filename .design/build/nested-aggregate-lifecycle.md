@@ -14,7 +14,7 @@ governs:
   - forge/tests/body_tv.rs
   - forge/tests/verified_build.rs
   - conformance/verified-build/nested_aggregate_lifecycle.th
-audited-content-sha256: 3fb8e9a78613207ca581be72e574039554a52921c0bab72aed67d30e0395adfb (re-pinned 2026-08-05 after leafwise record-call frames reused exact nested reconstruction and legacy nested evidence was updated)
+audited-content-sha256: ea10bb7cf15231e1ee353d1c2b79ff41ef2a357fecd1b08a811d8d431feab3a3 (re-pinned 2026-08-05 after leafwise final record-result frames reused exact nested reconstruction)
 extends:
   - .design/build/owned-aggregate-lifecycle.md
   - .design/build/named-record-lifecycle.md

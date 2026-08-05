@@ -253,6 +253,23 @@ fn record_after_array_pipeline(outer: &mut ArrayOuter, value: u64, next_guard: u
   let copied: u64 = copy_bank(&mut outer.right, &outer.left);
   copied
 }
+fn snapshot_after_array(outer: &mut ArrayOuter, value: u64) -> Bank
+  req value < 1000
+  ens result.slots[0] == value
+  ens result.slots[1] == old(outer).left.slots[1]
+  ens result.guard == old(outer).left.guard
+  ens final(outer).left.slots[0] == value
+  ens final(outer).left.slots[1] == old(outer).left.slots[1]
+  ens final(outer).left.guard == old(outer).left.guard
+  ens final(outer).right.slots[0] == old(outer).right.slots[0]
+  ens final(outer).right.slots[1] == old(outer).right.slots[1]
+  ens final(outer).right.guard == old(outer).right.guard
+  ens final(outer).tag == old(outer).tag
+  fx pure
+{
+  let written: u64 = write_array(&mut outer.left.slots, value);
+  Bank { slots: outer.left.slots, guard: outer.left.guard }
+}
 "#;
 
 const PROJECTED_INDEXED_DEFINITIONS: &str = r#"
@@ -844,6 +861,39 @@ fn record_calls_consume_and_copy_back_projected_sequence_state_at_l3() {
     )
     .expect("record-after-sequence mutant obligation");
     assert_verus("record_after_projected_sequence_mutant", &mutant, false);
+}
+
+#[test]
+fn record_results_materialize_projected_sequence_state_leafwise_at_l3() {
+    let body = function_body_in(PROJECTED_INDEXED_SOURCE, "snapshot_after_array");
+    let mut frame = projected_indexed_frame();
+    frame.ret_type = "Bank".to_string();
+    frame.result_record = frame
+        .named_records
+        .iter()
+        .find(|record| record.type_name == "Bank")
+        .cloned();
+    let production = r#"    let written: u64 = write_array(&mut outer.left.slots, value);
+    Bank { slots: outer.left.slots, guard: outer.left.guard }
+"#;
+    let obligation = body_equivalence_obligation(&body, production, &frame)
+        .expect("record result after projected sequence state");
+    assert!(obligation.contains("result.slots@ =="), "{obligation}");
+    assert!(obligation.contains(".update(0, value)"), "{obligation}");
+    assert!(obligation.contains("result.guard =="), "{obligation}");
+    assert_verus("record_result_after_projected_sequence", &obligation, true);
+
+    let mutant = body_equivalence_obligation(
+        &body,
+        "    Bank { slots: outer.left.slots, guard: outer.left.guard }\n",
+        &frame,
+    )
+    .expect("record result mutant obligation");
+    assert_verus(
+        "record_result_after_projected_sequence_mutant",
+        &mutant,
+        false,
+    );
 }
 
 #[test]

@@ -1333,6 +1333,132 @@ fn lifecycle_value_frame(
     Ok(())
 }
 
+/// Return one exact root-plus-field path without accepting indexing, calls, or
+/// computed receivers.  Sequence overlays are keyed by this same structural
+/// spelling, so a record result can be related leafwise to the current logical
+/// array state without pretending that a `Seq<T>` is a native `[T; N]` value.
+fn lifecycle_field_path(expr: &Expr) -> Option<Vec<String>> {
+    match expr {
+        Expr::Path(path) => match path.as_slice() {
+            [root] => Some(vec![root.clone()]),
+            _ => None,
+        },
+        Expr::Field { receiver, name } => {
+            let mut path = lifecycle_field_path(receiver)?;
+            path.push(name.clone());
+            Some(path)
+        }
+        _ => None,
+    }
+}
+
+/// Compare an aggregate lifecycle result to the independently interpreted
+/// source expression one finite leaf at a time.  In particular, an array-valued
+/// field expression whose path has a sequence overlay is compared through its
+/// complete `@` view.  No reverse conversion from the logical sequence to a
+/// native array or enclosing record is introduced.
+fn lifecycle_result_frame(
+    result_value: &str,
+    source: &Expr,
+    ty: &Type,
+    state: &LifecycleState,
+    ctx: &BodyRefCtx,
+    ensures: &mut Vec<String>,
+) -> Result<(), RefEncodeError> {
+    if matches!(ty, Type::Array { .. } | Type::Slice(_)) {
+        if let Some(path) = lifecycle_field_path(source) {
+            if let Some(sequence) = state.indexed.get(&path.join(".")) {
+                ensures.push(format!("{result_value}@ == {}", sequence.text));
+                return Ok(());
+            }
+        }
+        let current = encode_lifecycle_expr(source, state, ctx)?;
+        ensures.push(format!("{result_value}@ == ({})@", current.text));
+        return Ok(());
+    }
+
+    if let Type::Named(type_name) = ty {
+        let record = ctx.named_record(type_name).ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "aggregate lifecycle result type `{type_name}` has no finite record frame"
+            ))
+        })?;
+        if let Expr::StructLit { path, fields } = source {
+            if path.last().map(String::as_str) != Some(type_name.as_str()) {
+                return Err(RefEncodeError::Unsupported(format!(
+                    "aggregate lifecycle result constructor `{}` does not match `{type_name}`",
+                    path.join("::")
+                )));
+            }
+            for field in &record.fields {
+                let field_ty = field.ty.as_ref().ok_or_else(|| {
+                    RefEncodeError::Unsupported(format!(
+                        "aggregate lifecycle result field `{type_name}.{}` has no exact source type",
+                        field.name
+                    ))
+                })?;
+                let field_source = fields
+                    .iter()
+                    .find_map(|(name, value)| (name == &field.name).then_some(value))
+                    .ok_or_else(|| {
+                        RefEncodeError::Unsupported(format!(
+                            "aggregate lifecycle result constructor `{type_name}` omits field `{}`",
+                            field.name
+                        ))
+                    })?;
+                lifecycle_result_frame(
+                    &format!("{result_value}.{}", field.name),
+                    field_source,
+                    field_ty,
+                    state,
+                    ctx,
+                    ensures,
+                )?;
+            }
+            return Ok(());
+        }
+
+        let current = encode_lifecycle_expr(source, state, ctx)?;
+        let mut path = lifecycle_field_path(source)
+            .unwrap_or_else(|| vec!["__thermite_result_value".to_string()]);
+        return lifecycle_value_frame(
+            result_value,
+            &current.text,
+            ty,
+            &mut path,
+            state,
+            ctx,
+            ensures,
+        );
+    }
+
+    if let Type::Tuple(types) = ty {
+        if let Expr::Tuple(values) = source {
+            if values.len() != types.len() {
+                return Err(RefEncodeError::Unsupported(
+                    "aggregate lifecycle result tuple arity does not match its exact source type"
+                        .to_string(),
+                ));
+            }
+            for (index, (value, value_ty)) in values.iter().zip(types).enumerate() {
+                lifecycle_result_frame(
+                    &format!("{result_value}.{index}"),
+                    value,
+                    value_ty,
+                    state,
+                    ctx,
+                    ensures,
+                )?;
+            }
+            return Ok(());
+        }
+    }
+
+    let current = encode_lifecycle_expr(source, state, ctx)?;
+    ensures.push(format!("{result_value} == {}", current.text));
+    Ok(())
+}
+
 fn aggregate_lifecycle_ensures(
     block: &Block,
     result_name: &str,
@@ -1371,21 +1497,35 @@ fn aggregate_lifecycle_ensures(
     }
     thread_lifecycle_block(block, &mut state, ctx, false, &mut Vec::new())?;
 
-    let result = match &block.tail {
-        Some(tail) => encode_lifecycle_expr(tail, &state, ctx)?,
-        None if ctx.result_is_unit => LifecycleCell::bounded("()"),
+    let mut ensures = Vec::new();
+    match &block.tail {
+        Some(tail) => {
+            if let Some(record) = &ctx.result_record {
+                lifecycle_result_frame(
+                    result_name,
+                    tail,
+                    &Type::Named(record.type_name.clone()),
+                    &state,
+                    ctx,
+                    &mut ensures,
+                )?;
+            } else {
+                let result = encode_lifecycle_expr(tail, &state, ctx)?;
+                ensures.push(if ctx.result_is_fixed_array {
+                    format!("{result_name}@ == ({})@", result.text)
+                } else {
+                    format!("{result_name} == {}", result.text)
+                });
+            }
+        }
+        None if ctx.result_is_unit => ensures.push(format!("{result_name} == ()")),
         None => {
             return Err(RefEncodeError::Unsupported(
                 "tail-less aggregate lifecycle body requires an explicit unit result type"
                     .to_string(),
             ));
         }
-    };
-    let mut ensures = vec![if ctx.result_is_fixed_array {
-        format!("{result_name}@ == ({})@", result.text)
-    } else {
-        format!("{result_name} == {}", result.text)
-    }];
+    }
     for record in &ctx.mutable_records {
         for field in &record.fields {
             let key = format!("{}.{}", record.name, field.name);

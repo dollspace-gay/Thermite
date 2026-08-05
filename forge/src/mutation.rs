@@ -351,8 +351,9 @@ fn binop_token(op: BinOp) -> &'static str {
 /// OQ-3 widened by #48). Every real `fn` body gets an early-return mutant so
 /// the §7 floor is not skipped via a 0/0 score:
 ///
-/// - a scalar return uses its canonical zero (`zero_value_for`): `0` for an
-///   integer prim, `false` for `bool`, `None` for an `Option`;
+/// - a scalar or fixed-array return uses its canonical zero (`zero_value_for`):
+///   `0` for an integer prim, `false` for `bool`, `None` for an `Option`, and a
+///   capacity-preserving repeat such as `[0; N]` for a copy-safe fixed array;
 /// - a reference-to-slice return (`&[T]` / `&mut [T]`) has no scalar zero, so it
 ///   synthesizes the empty-slice literal early return `&[]` (`&mut []`). An empty
 ///   slice is the canonical "trivial" slice (it borrows nothing, so its lifetime
@@ -514,9 +515,10 @@ fn empty_slice_literal() -> Expr {
     Expr::Path(vec!["[]".to_string()])
 }
 
-/// The canonical zero value of a scalar return type for the early-return mutant
-/// (REQ-1, OQ-3): `0` for an integer prim, `false` for `bool`, `None` for an
-/// `Option`. A type with no scalar zero (`Unit`, a `Ref`, a bare `Slice`, a
+/// The canonical zero value of a scalar or fixed-array return type for the
+/// early-return mutant (REQ-1, OQ-3): `0` for an integer prim, `false` for
+/// `bool`, `None` for an `Option`, and a recursively copy-safe fixed-array
+/// repeat. A type with no canonical zero (`Unit`, a `Ref`, a bare `Slice`, a
 /// non-`Option` generic) yields `None` here; reference-to-slice returns are
 /// handled by `early_return_value`. Returning a value of the function's return
 /// type keeps the mutant well-typed so it lowers (the contract should reject
@@ -537,6 +539,14 @@ fn zero_value_for(ret: &Type) -> Option<Expr> {
         // (A `Result`-returning fn has no canonical scalar zero — its `Err(e)` needs
         // a typed reason — so it falls through to `None` here, like a bare `Slice`.)
         Type::Option(_) => Some(Expr::Path(vec!["None".to_string()])),
+        // Native arrays preserve their exact parsed capacity. Named record
+        // elements are intentionally absent from this recursion because
+        // Thermite does not derive ambient Copy for them; generating
+        // `[Record { .. }; N]` would make an ill-typed mutant look killed.
+        Type::Array { elem, len } => Some(Expr::ArrayRepeat {
+            value: Box::new(zero_value_for(elem)?),
+            len: len.clone(),
+        }),
         // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-8, #109): the
         // early-return zero value of a tuple-returning fn is the tuple of its
         // elements' zero values (`(u64, u64)` → `(0, 0)`) — the #48/#74/#80
@@ -663,6 +673,7 @@ fn zero_desc(ret: &Type) -> &'static str {
         // static label for the synthesized zero-tuple early-return mutant (the
         // per-element zeros are in `zero_value_for`; this is only the human desc).
         Type::Tuple(_) => "(0, ..)",
+        Type::Array { .. } => "[zero; N]",
         _ => "<none>",
     }
 }
@@ -1505,6 +1516,31 @@ mod tests {
                 .any(|d| d == "insert early `return Buffer { <field zeros> }` at body head"),
             "a Buffer struct (String + u64 fields) synthesizes its field-zero \
              literal via the #74/#80 ladder: {descs:?}"
+        );
+    }
+
+    #[test]
+    fn struct_zero_composes_fixed_array_and_scalar_fields() {
+        let items = parse_items(
+            "const SLOTS: usize = 2; \
+             struct Bank { slots: [u64; SLOTS], guard: u64 } \
+             fn snapshot(bank: &Bank) -> Bank req true \
+               ens result.slots[0] == bank.slots[0] \
+               ens result.slots[1] == bank.slots[1] \
+               ens result.guard == bank.guard fx pure \
+             { Bank { slots: bank.slots, guard: bank.guard } }",
+        );
+        let f = fn_named(&items, "snapshot");
+        let descs: Vec<String> = generate(&f, 0, &items)
+            .into_iter()
+            .map(|m| m.desc)
+            .collect();
+        assert!(
+            descs
+                .iter()
+                .any(|d| d == "insert early `return Bank { <field zeros> }` at body head"),
+            "a fixed-array record result synthesizes a capacity-preserving zero \
+             mutant instead of escaping through a 0/0 score: {descs:?}"
         );
     }
 

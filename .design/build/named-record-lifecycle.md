@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: 49e97d75a70723605f6620186556cb0d35ecf6e9e6b592678501352d9de2b406 (re-pinned 2026-08-05 after record-formal overlay rebasing joined the aggregate lifecycle engine)
+audited-content-sha256: 518aa8cf8b21fb0c59c0619a21a64899759bd20864826d29007cf165dc0bd15e (re-pinned 2026-08-05 after leafwise final record results joined the aggregate lifecycle engine)
 decision: direct mutation through an exclusive borrow of finite non-sealed named record state is admitted only when validator, L3, independent contract/exec/body TV, strict ABI, receipt replay, and representation ownership all describe the same field-exact transition
 governs:
   - thermite-spec/src/validator.rs
@@ -232,11 +232,12 @@ Nested mutable projections and record-state loops are now supplied by
 `.design/build/nested-aggregate-lifecycle.md` and
 `.design/build/record-state-loops.md`. Mutable enum payloads, heap-backed record
 fields, an affine type system, static global ownership, concurrent record access,
-atomic-object machine refinement, array-element-root calls and whole-record value
-materialization after projected indexed state, and separate Rust/assembly TPL
+atomic-object machine refinement, array-element-root calls and intermediate/general
+whole-record by-value materialization after projected indexed state, and separate Rust/assembly TPL
 refinement remain explicit later primitive
 increments. Exact statement-position calls over structurally disjoint direct or
 projected finite-record roots are supplied by
 `.design/build/mutable-call-effects.md`, including nonoverlapping shared direct
-or projected finite-record snapshots. It also does not add any kernel policy
+or projected finite-record snapshots and leafwise final record results over
+projected indexed state. It also does not add any kernel policy
 or kernel artifact.

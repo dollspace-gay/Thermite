@@ -1573,6 +1573,8 @@ fn record_after_indexed_call_effect_is_strict_l3_replayed_and_executed() {
         "--export",
         "record_after_indexed_pipeline",
         "--export",
+        "record_after_indexed_snapshot",
+        "--export",
         "record_after_indexed_left_zero",
         "--export",
         "record_after_indexed_left_one",
@@ -1601,7 +1603,8 @@ fn record_after_indexed_call_effect_is_strict_l3_replayed_and_executed() {
     assert!(
         source.contains("record_after_indexed_write(&mut outer.left.slots, value)")
             && source.contains("record_after_indexed_advance(&mut outer.left, next_guard)",)
-            && source.contains("record_after_indexed_copy(&mut outer.right, &outer.left)"),
+            && source.contains("record_after_indexed_copy(&mut outer.right, &outer.left)")
+            && source.contains("pub fn record_after_indexed_snapshot"),
         "{source}"
     );
     assert!(!source.contains("external_body"), "{source}");
@@ -1614,7 +1617,8 @@ use record_after_indexed_call_effect::{
     record_after_indexed_left_guard, record_after_indexed_left_one,
     record_after_indexed_left_zero, record_after_indexed_pipeline,
     record_after_indexed_right_guard, record_after_indexed_right_one,
-    record_after_indexed_right_zero, record_after_indexed_tag,
+    record_after_indexed_right_zero, record_after_indexed_snapshot,
+    record_after_indexed_tag,
     RecordAfterIndexedBank, RecordAfterIndexedOuter,
 };
 
@@ -1626,6 +1630,16 @@ fn main() {
     };
     assert_eq!(record_after_indexed_pipeline(&mut outer, 41, 55), 41);
     assert_eq!(record_after_indexed_left_zero(&outer), 41);
+    assert_eq!(record_after_indexed_left_one(&outer), 41);
+    assert_eq!(record_after_indexed_left_guard(&outer), 55);
+    assert_eq!(record_after_indexed_right_zero(&outer), 41);
+    assert_eq!(record_after_indexed_right_one(&outer), 7);
+    assert_eq!(record_after_indexed_right_guard(&outer), 8);
+    assert_eq!(record_after_indexed_tag(&outer), 9);
+    let snapshot = record_after_indexed_snapshot(&mut outer, 62);
+    assert_eq!(snapshot.slots, [62, 41]);
+    assert_eq!(snapshot.guard, 55);
+    assert_eq!(record_after_indexed_left_zero(&outer), 62);
     assert_eq!(record_after_indexed_left_one(&outer), 41);
     assert_eq!(record_after_indexed_left_guard(&outer), 55);
     assert_eq!(record_after_indexed_right_zero(&outer), 41);
@@ -1676,7 +1690,7 @@ fn main() {
     )
     .unwrap();
     let rows = tv["rows"].as_array().unwrap();
-    assert_eq!(rows.len(), 59, "{tv}");
+    assert_eq!(rows.len(), 72, "{tv}");
     assert!(
         rows.iter().all(|row| row["verdict"] == "faithful"),
         "record-after-indexed lifecycle admitted a non-faithful row: {tv}"
@@ -1686,10 +1700,16 @@ fn main() {
             && row["label"] == "record_after_indexed_pipeline"
             && row["verdict"] == "faithful"
     }));
+    assert!(rows.iter().any(|row| {
+        row["phase"] == "body"
+            && row["label"] == "record_after_indexed_snapshot"
+            && row["verdict"] == "faithful"
+    }));
     for effectful_let in [
         "record_after_indexed_pipeline.let#1",
         "record_after_indexed_pipeline.let#2",
         "record_after_indexed_pipeline.let#3",
+        "record_after_indexed_snapshot.let#1",
     ] {
         assert!(!rows
             .iter()

@@ -8,8 +8,8 @@ use thermite_tv::obligation::{
     ExecObligationFrame, ExecParamDecl,
 };
 use thermite_tv::{
-    MutableCallEffectFrame, MutableRecordFrame, NamedRecordFrame, RecordFieldFrame,
-    SharedRecordFrame,
+    MutableCallEffectFrame, MutableIndexedFrame, MutableRecordFrame, NamedRecordFrame,
+    RecordFieldFrame, SharedIndexedFrame, SharedRecordFrame,
 };
 
 const SOURCE: &str = r#"
@@ -175,6 +175,100 @@ fn copy_leaf(destination: &mut Leaf, source: &Leaf) -> (result: u64)
 }
 "#;
 
+const PROJECTED_INDEXED_SOURCE: &str = r#"
+const SLOTS: usize = 2;
+struct Bank { slots: [u64; SLOTS], guard: u64 }
+struct ArrayOuter { left: Bank, right: Bank, tag: u64 }
+fn write_array(data: &mut [u64; SLOTS], value: u64) -> u64
+  req true
+  ens result == value
+  ens final(data)[0] == value
+  ens final(data)[1] == old(data)[1]
+  fx pure
+{
+  data[0] = value;
+  data[0]
+}
+fn copy_array(destination: &mut [u64; SLOTS], source: &[u64; SLOTS]) -> u64
+  req true
+  ens result == source[0]
+  ens final(destination)[0] == source[0]
+  ens final(destination)[1] == old(destination)[1]
+  fx pure
+{
+  destination[0] = source[0];
+  destination[0]
+}
+fn projected_array_pipeline(outer: &mut ArrayOuter, value: u64) -> u64
+  req value < 1000
+  ens result == value
+  ens final(outer).left.slots[0] == value
+  ens final(outer).right.slots[0] == value
+  ens final(outer).left.guard == old(outer).left.guard
+  ens final(outer).right.guard == old(outer).right.guard
+  ens final(outer).tag == old(outer).tag
+  fx pure
+{
+  let written: u64 = write_array(&mut outer.left.slots, value);
+  let observed: u64 = copy_array(&mut outer.right.slots, &outer.left.slots);
+  observed
+}
+"#;
+
+const PROJECTED_INDEXED_DEFINITIONS: &str = r#"
+pub const SLOTS: usize = 2;
+pub struct Bank { pub slots: [u64; SLOTS], pub guard: u64 }
+pub struct ArrayOuter { pub left: Bank, pub right: Bank, pub tag: u64 }
+
+fn write_array(data: &mut [u64; SLOTS], value: u64) -> (result: u64)
+    ensures
+        result == value,
+        final(data)@[0] == value,
+        final(data)@[1] == old(data)@[1],
+{
+    data[0] = value;
+    data[0]
+}
+
+fn copy_array(destination: &mut [u64; SLOTS], source: &[u64; SLOTS]) -> (result: u64)
+    ensures
+        result == source@[0],
+        final(destination)@[0] == source@[0],
+        final(destination)@[1] == old(destination)@[1],
+{
+    destination[0] = source[0];
+    destination[0]
+}
+"#;
+
+const PROJECTED_INDEXED_BRANCH_SOURCE: &str = r#"
+fn replace_one_branch(outer: &mut ArrayOuter, value: u64, choose: bool) -> u64
+  req value < 1000
+  ens result == value
+  fx pure
+{
+  let written: u64 = write_array(&mut outer.left.slots, value);
+  if choose {
+    outer.left.slots = [value, 1];
+  }
+  written
+}
+
+fn replace_both_branches(outer: &mut ArrayOuter, value: u64, choose: bool) -> u64
+  req value < 1000
+  ens result == value
+  fx pure
+{
+  let written: u64 = write_array(&mut outer.left.slots, value);
+  if choose {
+    outer.left.slots = [value, 1];
+  } else {
+    outer.left.slots = [value, 2];
+  }
+  written
+}
+"#;
+
 fn function_body(name: &str) -> Block {
     function_body_in(SOURCE, name)
 }
@@ -251,6 +345,79 @@ fn projected_frame() -> BodyObligationFrame {
             NamedRecordFrame::new("Leaf", leaf_fields()),
             NamedRecordFrame::new("Pair", pair_fields()),
             NamedRecordFrame::new("Outer", outer_fields()),
+        ],
+        ..Default::default()
+    }
+}
+
+fn projected_indexed_frame() -> BodyObligationFrame {
+    let parsed = thermite_syntax::parse(PROJECTED_INDEXED_SOURCE);
+    assert!(parsed.is_clean(), "parse errors: {:?}", parsed.errors);
+    let structure_fields = |name: &str| {
+        parsed
+            .program
+            .items
+            .iter()
+            .find_map(|item| match item {
+                Item::Struct(structure) if structure.name == name => Some(
+                    structure
+                        .fields
+                        .iter()
+                        .map(|field| RecordFieldFrame::typed(field.name.clone(), field.ty.clone()))
+                        .collect::<Vec<_>>(),
+                ),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("missing projected indexed structure `{name}`"))
+    };
+    let bank_fields = structure_fields("Bank");
+    let outer_fields = structure_fields("ArrayOuter");
+    let slots_type = bank_fields
+        .iter()
+        .find(|field| field.name == "slots")
+        .and_then(|field| field.ty.clone())
+        .expect("Bank.slots exact type");
+
+    BodyObligationFrame {
+        spec_defs: vec![PROJECTED_INDEXED_DEFINITIONS.to_string()],
+        params: vec![
+            BodyParamDecl::new("outer", "&mut ArrayOuter"),
+            BodyParamDecl::new("value", "u64"),
+        ],
+        ret_type: "u64".to_string(),
+        req: Some("value < 1000".to_string()),
+        fixed_array_fields: vec![
+            "outer.left.slots".to_string(),
+            "outer.right.slots".to_string(),
+        ],
+        mutable_records: vec![MutableRecordFrame::typed(
+            "outer",
+            "ArrayOuter",
+            outer_fields.clone(),
+        )],
+        mutable_call_effects: vec![
+            MutableCallEffectFrame::new(
+                "write_array",
+                vec!["data".to_string(), "value".to_string()],
+                vec![],
+                function_body_in(PROJECTED_INDEXED_SOURCE, "write_array"),
+            )
+            .with_mutable_indexed(vec![MutableIndexedFrame::new("data", slots_type.clone())]),
+            MutableCallEffectFrame::new(
+                "copy_array",
+                vec!["destination".to_string(), "source".to_string()],
+                vec![],
+                function_body_in(PROJECTED_INDEXED_SOURCE, "copy_array"),
+            )
+            .with_mutable_indexed(vec![MutableIndexedFrame::new(
+                "destination",
+                slots_type.clone(),
+            )])
+            .with_shared_indexed(vec![SharedIndexedFrame::new("source", slots_type)]),
+        ],
+        named_records: vec![
+            NamedRecordFrame::new("Bank", bank_fields),
+            NamedRecordFrame::new("ArrayOuter", outer_fields),
         ],
         ..Default::default()
     }
@@ -504,6 +671,86 @@ fn projected_record_calls_compose_current_sibling_state_at_l3() {
     )
     .expect("projected-record mutant obligation");
     assert_verus("projected_record_calls_mutant", &mutant, false);
+}
+
+#[test]
+fn projected_indexed_calls_compose_nested_sequence_state_at_l3() {
+    let body = function_body_in(PROJECTED_INDEXED_SOURCE, "projected_array_pipeline");
+    let production = r#"    let written: u64 = write_array(&mut outer.left.slots, value);
+    let observed: u64 = copy_array(&mut outer.right.slots, &outer.left.slots);
+    observed
+"#;
+    let obligation = body_equivalence_obligation(&body, production, &projected_indexed_frame())
+        .expect("nested projected-indexed call obligation");
+    assert!(
+        obligation.contains("final(outer).left.slots@ =="),
+        "{obligation}"
+    );
+    assert!(
+        obligation.contains("final(outer).right.slots@ =="),
+        "{obligation}"
+    );
+    assert!(
+        obligation.contains("final(outer).left.guard == (old(outer).left).guard"),
+        "{obligation}"
+    );
+    assert_verus("projected_indexed_calls", &obligation, true);
+
+    let mutant = body_equivalence_obligation(
+        &body,
+        r#"    let written: u64 = write_array(&mut outer.left.slots, value + 1);
+    let observed: u64 = copy_array(&mut outer.right.slots, &outer.left.slots);
+    observed
+"#,
+        &projected_indexed_frame(),
+    )
+    .expect("projected-indexed mutant obligation");
+    assert_verus("projected_indexed_calls_mutant", &mutant, false);
+}
+
+#[test]
+fn projected_indexed_branch_overlay_lifecycle_is_exact_or_fails_closed() {
+    let mut frame = projected_indexed_frame();
+    frame.params.push(BodyParamDecl::new("choose", "bool"));
+
+    let one_branch = function_body_in(PROJECTED_INDEXED_BRANCH_SOURCE, "replace_one_branch");
+    let error = body_equivalence_obligation(
+        &one_branch,
+        r#"    let written: u64 = write_array(&mut outer.left.slots, value);
+    if choose {
+        outer.left.slots = [value, 1];
+    }
+    written
+"#,
+        &frame,
+    )
+    .expect_err("one-branch overlay removal must fail closed");
+    assert!(
+        error
+            .to_string()
+            .contains("changes projected indexed path `outer.left.slots` in only one branch"),
+        "{error}"
+    );
+
+    let both_branches = function_body_in(PROJECTED_INDEXED_BRANCH_SOURCE, "replace_both_branches");
+    let obligation = body_equivalence_obligation(
+        &both_branches,
+        r#"    let written: u64 = write_array(&mut outer.left.slots, value);
+    if choose {
+        outer.left.slots = [value, 1];
+    } else {
+        outer.left.slots = [value, 2];
+    }
+    written
+"#,
+        &frame,
+    )
+    .expect("symmetric overlay removal uses exact merged native arrays");
+    assert_verus(
+        "projected_indexed_branch_overlay_lifecycle",
+        &obligation,
+        true,
+    );
 }
 
 #[test]

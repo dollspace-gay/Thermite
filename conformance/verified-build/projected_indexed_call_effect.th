@@ -1,0 +1,151 @@
+const PROJECTED_INDEXED_SLOTS: usize = 2;
+
+struct ProjectedIndexedBank {
+  slots: [u64; PROJECTED_INDEXED_SLOTS],
+  guard: u64,
+}
+
+struct ProjectedIndexedOuter {
+  left: ProjectedIndexedBank,
+  right: ProjectedIndexedBank,
+  tag: u64,
+}
+
+fn projected_indexed_new(
+  left_zero: u64,
+  left_one: u64,
+  left_guard: u64,
+  right_zero: u64,
+  right_one: u64,
+  right_guard: u64,
+  tag: u64,
+) -> ProjectedIndexedOuter
+  req true
+  ens result.left.slots[0] == left_zero
+  ens result.left.slots[1] == left_one
+  ens result.left.guard == left_guard
+  ens result.right.slots[0] == right_zero
+  ens result.right.slots[1] == right_one
+  ens result.right.guard == right_guard
+  ens result.tag == tag
+  fx pure
+{
+  ProjectedIndexedOuter {
+    left: ProjectedIndexedBank {
+      slots: [left_zero, left_one],
+      guard: left_guard,
+    },
+    right: ProjectedIndexedBank {
+      slots: [right_zero, right_one],
+      guard: right_guard,
+    },
+    tag: tag,
+  }
+}
+
+fn projected_indexed_write(
+  slots: &mut [u64; PROJECTED_INDEXED_SLOTS],
+  value: u64,
+) -> u64
+  req true
+  ens result == value
+  ens final(slots)[0] == value
+  ens final(slots)[1] == old(slots)[1]
+  fx pure
+{
+  slots[0] = value;
+  slots[0]
+}
+
+fn projected_indexed_copy(
+  destination: &mut [u64; PROJECTED_INDEXED_SLOTS],
+  source: &[u64; PROJECTED_INDEXED_SLOTS],
+) -> u64
+  req true
+  ens result == source[0]
+  ens final(destination)[0] == source[0]
+  ens final(destination)[1] == old(destination)[1]
+  fx pure
+{
+  destination[0] = source[0];
+  destination[0]
+}
+
+fn projected_indexed_pipeline(
+  outer: &mut ProjectedIndexedOuter,
+  value: u64,
+) -> u64
+  req true
+  ens result == value
+  ens final(outer).left.slots[0] == value
+  ens final(outer).left.slots[1] == old(outer).left.slots[1]
+  ens final(outer).left.guard == old(outer).left.guard
+  ens final(outer).right.slots[0] == value
+  ens final(outer).right.slots[1] == old(outer).right.slots[1]
+  ens final(outer).right.guard == old(outer).right.guard
+  ens final(outer).tag == old(outer).tag
+  fx pure
+{
+  let written: u64 = projected_indexed_write(&mut outer.left.slots, value);
+  let observed: u64 = projected_indexed_copy(
+    &mut outer.right.slots,
+    &outer.left.slots,
+  );
+  observed
+}
+
+fn projected_indexed_left_zero(outer: &ProjectedIndexedOuter) -> u64
+  req true
+  ens result == outer.left.slots[0]
+  fx pure
+{
+  outer.left.slots[0]
+}
+
+fn projected_indexed_left_one(outer: &ProjectedIndexedOuter) -> u64
+  req true
+  ens result == outer.left.slots[1]
+  fx pure
+{
+  outer.left.slots[1]
+}
+
+fn projected_indexed_left_guard(outer: &ProjectedIndexedOuter) -> u64
+  req true
+  ens result == outer.left.guard
+  fx pure
+{
+  outer.left.guard
+}
+
+fn projected_indexed_right_zero(outer: &ProjectedIndexedOuter) -> u64
+  req true
+  ens result == outer.right.slots[0]
+  fx pure
+{
+  outer.right.slots[0]
+}
+
+fn projected_indexed_right_one(outer: &ProjectedIndexedOuter) -> u64
+  req true
+  ens result == outer.right.slots[1]
+  fx pure
+{
+  outer.right.slots[1]
+}
+
+fn projected_indexed_right_guard(outer: &ProjectedIndexedOuter) -> u64
+  req true
+  ens result == outer.right.guard
+  fx pure
+{
+  outer.right.guard
+}
+
+fn projected_indexed_tag(outer: &ProjectedIndexedOuter) -> u64
+  req true
+  ens result == outer.tag
+  fx pure
+{
+  outer.tag
+}

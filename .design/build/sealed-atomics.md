@@ -16,7 +16,7 @@ governs:
   - thermite-spec/tests/atomic_ordering_validate.rs
   - forge/src/verified_build/primitive_registry.rs
   - forge/tests/verified_build.rs
-audited-content-sha256: 40a8bfbfe46a013b145b76cdad62fef12ca3f71d83d741ee13a2ffebc2afde51 (re-pinned 2026-08-05 after projected-record strict-build coverage in the shared harness; atomic semantics unchanged)
+audited-content-sha256: f6656c570c033c5feca0bf25504c3f6c6e7a917cb70739ab74f0aa48fb9fd39c (re-pinned 2026-08-05 after projected-indexed strict-build coverage in the shared harness; atomic semantics unchanged)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/frozen-primitive-registry.md

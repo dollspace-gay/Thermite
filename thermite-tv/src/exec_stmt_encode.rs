@@ -1197,6 +1197,102 @@ struct LifecycleState {
     indexed: BTreeMap<String, LifecycleCell>,
 }
 
+fn dotted_path_segments(path: &str) -> Vec<&str> {
+    path.split('.').collect()
+}
+
+fn indexed_descendant<'a>(state: &'a LifecycleState, segments: &[String]) -> Option<&'a str> {
+    state.indexed.keys().find_map(|path| {
+        let indexed = dotted_path_segments(path);
+        (indexed.len() > segments.len()
+            && segments
+                .iter()
+                .zip(indexed.iter())
+                .all(|(expected, found)| expected == found))
+        .then_some(path.as_str())
+    })
+}
+
+fn remove_indexed_at_or_below(state: &mut LifecycleState, segments: &[String]) {
+    state.indexed.retain(|path, _| {
+        let indexed = dotted_path_segments(path);
+        !(indexed.len() >= segments.len()
+            && segments
+                .iter()
+                .zip(indexed.iter())
+                .all(|(expected, found)| expected == found))
+    });
+}
+
+fn lifecycle_value_frame(
+    final_value: &str,
+    current_value: &str,
+    ty: &Type,
+    path: &mut Vec<String>,
+    state: &LifecycleState,
+    ctx: &BodyRefCtx,
+    ensures: &mut Vec<String>,
+) -> Result<(), RefEncodeError> {
+    let dotted = path.join(".");
+    if let Some(sequence) = state.indexed.get(&dotted) {
+        if !matches!(ty, Type::Array { .. } | Type::Slice(_)) {
+            return Err(RefEncodeError::Unsupported(format!(
+                "projected indexed lifecycle path `{dotted}` does not end at indexed storage"
+            )));
+        }
+        ensures.push(format!("{final_value}@ == {}", sequence.text));
+        return Ok(());
+    }
+
+    let has_overlay_below = state.indexed.keys().any(|candidate| {
+        let candidate = dotted_path_segments(candidate);
+        candidate.len() > path.len()
+            && path
+                .iter()
+                .zip(candidate.iter())
+                .all(|(expected, found)| expected == found)
+    });
+    if !has_overlay_below {
+        if matches!(ty, Type::Array { .. } | Type::Slice(_)) {
+            ensures.push(format!("{final_value}@ == ({current_value})@"));
+        } else {
+            ensures.push(format!("{final_value} == {current_value}"));
+        }
+        return Ok(());
+    }
+
+    let Type::Named(type_name) = ty else {
+        return Err(RefEncodeError::Unsupported(format!(
+            "projected indexed lifecycle overlay descends through non-record path `{dotted}`"
+        )));
+    };
+    let record = ctx.named_record(type_name).ok_or_else(|| {
+        RefEncodeError::Unsupported(format!(
+            "projected indexed lifecycle lost finite record declaration `{type_name}` below `{dotted}`"
+        ))
+    })?;
+    for field in &record.fields {
+        let field_ty = field.ty.as_ref().ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "projected indexed lifecycle field `{type_name}.{}` has no exact source type",
+                field.name
+            ))
+        })?;
+        path.push(field.name.clone());
+        lifecycle_value_frame(
+            &format!("{final_value}.{}", field.name),
+            &format!("({current_value}).{}", field.name),
+            field_ty,
+            path,
+            state,
+            ctx,
+            ensures,
+        )?;
+        path.pop();
+    }
+    Ok(())
+}
+
 fn aggregate_lifecycle_ensures(
     block: &Block,
     result_name: &str,
@@ -1258,7 +1354,17 @@ fn aggregate_lifecycle_ensures(
                     "named-record lifecycle lost the modeled field `{key}`"
                 ))
             })?;
-            if field.array_view {
+            if let Some(field_ty) = field.ty.as_ref() {
+                lifecycle_value_frame(
+                    &format!("final({}).{}", record.name, field.name),
+                    &value.text,
+                    field_ty,
+                    &mut vec![record.name.clone(), field.name.clone()],
+                    &state,
+                    ctx,
+                    &mut ensures,
+                )?;
+            } else if field.array_view {
                 ensures.push(format!(
                     "final({}).{}@ == ({})@",
                     record.name, field.name, value.text
@@ -1343,6 +1449,37 @@ fn thread_lifecycle_stmt(
                 }
                 _ if target_contains_field(target) => {
                     let (root, steps) = nested_lvalue_path(target)?;
+                    let mut projected_path = vec![root.clone()];
+                    for (position, step) in steps.iter().enumerate() {
+                        match step {
+                            NestedLvalueStep::Field(field) => {
+                                projected_path.push(field.clone());
+                            }
+                            NestedLvalueStep::Index(index) => {
+                                if position + 1 != steps.len() {
+                                    return Err(RefEncodeError::Unsupported(
+                                        "projected indexed lifecycle admits an index only as the terminal assignment projection"
+                                            .to_string(),
+                                    ));
+                                }
+                                let dotted = projected_path.join(".");
+                                if let Some(current) = state.indexed.get(&dotted) {
+                                    let encoded_index = encode_lifecycle_expr(index, state, ctx)?;
+                                    let index = if matches!(index, Expr::IntLit { .. }) {
+                                        encoded_index.text
+                                    } else {
+                                        format!("({}) as int", encoded_index.text)
+                                    };
+                                    let next = LifecycleCell::bounded(format!(
+                                        "({}).update({index}, {})",
+                                        current.text, value.text
+                                    ));
+                                    state.indexed.insert(dotted, next);
+                                    return Ok(());
+                                }
+                            }
+                        }
+                    }
                     let Some((NestedLvalueStep::Field(direct_field), rest)) = steps.split_first()
                     else {
                         return Err(RefEncodeError::Unsupported(
@@ -1366,6 +1503,7 @@ fn thread_lifecycle_stmt(
                         })?;
                     let key = format!("{root}.{direct_field}");
                     if rest.is_empty() {
+                        remove_indexed_at_or_below(state, &projected_path);
                         state.fields.insert(key, value);
                         return Ok(());
                     }
@@ -1405,7 +1543,14 @@ fn thread_lifecycle_stmt(
                                 .fields
                                 .iter()
                                 .map(|(name, cell)| (name.clone(), cell.text.clone())),
+                        )
+                        .with_indexed_bindings(
+                            state
+                                .indexed
+                                .iter()
+                                .map(|(name, cell)| (name.clone(), cell.text.clone())),
                         );
+                    remove_indexed_at_or_below(state, &projected_path);
                     state.fields.insert(
                         key,
                         LifecycleCell::bounded(exec_ref_value(&updated, &exec)?),
@@ -1491,13 +1636,38 @@ fn thread_lifecycle_stmt(
                         .insert(key.clone(), merge_lifecycle_cells(&condition, left, right));
                 }
             }
-            for (key, prior) in &before.indexed {
-                let left = then_state.indexed.get(key).unwrap_or(prior);
-                let right = else_state.indexed.get(key).unwrap_or(prior);
-                if left != prior || right != prior {
-                    state
-                        .indexed
-                        .insert(key.clone(), merge_lifecycle_cells(&condition, left, right));
+            let indexed_keys = before
+                .indexed
+                .keys()
+                .chain(then_state.indexed.keys())
+                .chain(else_state.indexed.keys())
+                .cloned()
+                .collect::<BTreeSet<_>>();
+            for key in indexed_keys {
+                let left = then_state.indexed.get(&key);
+                let right = else_state.indexed.get(&key);
+                match (left, right) {
+                    (Some(left), Some(right)) => {
+                        let prior = before.indexed.get(&key);
+                        if prior != Some(left) || prior != Some(right) {
+                            state.indexed.insert(
+                                key,
+                                merge_lifecycle_cells(&condition, left, right),
+                            );
+                        }
+                    }
+                    (None, None) => {
+                        // Both branches replaced an enclosing native value and
+                        // deliberately invalidated this overlay. Their exact
+                        // native record values were merged above, so retaining
+                        // the pre-branch sequence here would be stale.
+                        state.indexed.remove(&key);
+                    }
+                    _ => {
+                        return Err(RefEncodeError::Unsupported(format!(
+                            "conditional aggregate lifecycle changes projected indexed path `{key}` in only one branch; an exact native-array/sequence merge is not materialized"
+                        )));
+                    }
                 }
             }
             Ok(())
@@ -1552,6 +1722,30 @@ struct RecordCallActual {
     types: Vec<String>,
 }
 
+/// One exact slice/fixed-array actual. A direct actual is an already borrowed
+/// parameter such as `data`; a projected actual is an explicit borrow such as
+/// `&mut outer.inner.slots`. The complete structural path participates in the
+/// same prefix-overlap alias rule as finite-record actuals.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct IndexedCallActual {
+    segments: Vec<String>,
+    pointee: Type,
+}
+
+impl IndexedCallActual {
+    fn root(&self) -> &str {
+        &self.segments[0]
+    }
+
+    fn is_direct(&self) -> bool {
+        self.segments.len() == 1
+    }
+
+    fn display(&self) -> String {
+        self.segments.join(".")
+    }
+}
+
 impl RecordCallActual {
     fn root(&self) -> &str {
         &self.segments[0]
@@ -1576,6 +1770,51 @@ fn access_paths_overlap(left: &[String], right: &[String]) -> bool {
     left.iter()
         .zip(right)
         .all(|(left_segment, right_segment)| left_segment == right_segment)
+}
+
+fn projected_borrow_segments(
+    argument: &Expr,
+    mutable: bool,
+    callee: &str,
+    formal: &str,
+    kind: &str,
+) -> Result<Vec<String>, RefEncodeError> {
+    let Expr::Ref {
+        mutable: actual_mutable,
+        expr,
+    } = argument
+    else {
+        let borrow = if mutable { "&mut" } else { "&" };
+        return Err(RefEncodeError::Unsupported(format!(
+            "{} {kind} actual for `{callee}::{formal}` must be one direct borrowed root or an explicit `{borrow} root.field(.field)*` projection",
+            if mutable { "exclusive" } else { "shared" },
+        )));
+    };
+    if *actual_mutable != mutable {
+        return Err(RefEncodeError::Unsupported(format!(
+            "{} {kind} formal `{callee}::{formal}` received a {} projected borrow",
+            if mutable { "exclusive" } else { "shared" },
+            if *actual_mutable { "mutable" } else { "shared" }
+        )));
+    }
+    let (root, steps) = nested_lvalue_path(expr)?;
+    if steps.is_empty() {
+        return Err(RefEncodeError::Unsupported(format!(
+            "direct {kind} actual `{root}` for `{callee}::{formal}` is already borrowed; an explicit reference would change its type"
+        )));
+    }
+    let mut segments = vec![root];
+    for step in steps {
+        match step {
+            NestedLvalueStep::Field(field) => segments.push(field),
+            NestedLvalueStep::Index(_) => {
+                return Err(RefEncodeError::Unsupported(format!(
+                    "projected {kind} actual for `{callee}::{formal}` may contain only finite-record fields"
+                )));
+            }
+        }
+    }
+    Ok(segments)
 }
 
 fn record_actual_segments(
@@ -1685,6 +1924,124 @@ fn resolve_record_call_actual(
     Ok(RecordCallActual { segments, types })
 }
 
+fn resolve_indexed_call_actual(
+    argument: &Expr,
+    mutable: bool,
+    callee: &str,
+    formal: &str,
+    ctx: &BodyRefCtx,
+) -> Result<IndexedCallActual, RefEncodeError> {
+    if let Expr::Path(path) = argument {
+        if let [root] = path.as_slice() {
+            let pointee = if mutable {
+                ctx.mutable_indexed(root).map(|frame| &frame.pointee)
+            } else {
+                ctx.shared_indexed(root)
+                    .map(|frame| &frame.pointee)
+                    .or_else(|| ctx.mutable_indexed(root).map(|frame| &frame.pointee))
+            }
+            .ok_or_else(|| {
+                RefEncodeError::Unsupported(format!(
+                    "{} indexed actual `{root}` for `{callee}::{formal}` is not an independently framed {} slice or fixed array",
+                    if mutable { "mutable" } else { "shared" },
+                    if mutable { "exclusive" } else { "borrowed" },
+                ))
+            })?;
+            return Ok(IndexedCallActual {
+                segments: path.clone(),
+                pointee: pointee.clone(),
+            });
+        }
+    }
+
+    let segments = projected_borrow_segments(argument, mutable, callee, formal, "indexed")?;
+    let root = &segments[0];
+    let root_type = if mutable {
+        ctx.mutable_record(root)
+            .and_then(|record| record.type_name.as_deref())
+    } else if let Some(record) = ctx.shared_record(root) {
+        Some(record.type_name.as_str())
+    } else {
+        ctx.mutable_record(root)
+            .and_then(|record| record.type_name.as_deref())
+    }
+    .ok_or_else(|| {
+        RefEncodeError::Unsupported(format!(
+            "{} indexed actual root `{root}` for `{callee}::{formal}` has no exact independently framed nominal type",
+            if mutable { "exclusive" } else { "shared" }
+        ))
+    })?;
+
+    let mut current = Type::Named(root_type.to_string());
+    for field_name in &segments[1..] {
+        let Type::Named(record_name) = &current else {
+            return Err(RefEncodeError::Unsupported(format!(
+                "projected indexed actual `{}` for `{callee}::{formal}` crosses non-record storage before `{field_name}`",
+                segments.join(".")
+            )));
+        };
+        let record = ctx.named_record(record_name).ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "projected indexed actual `{}` for `{callee}::{formal}` crosses non-finite record `{record_name}`",
+                segments.join(".")
+            ))
+        })?;
+        let field = record
+            .fields
+            .iter()
+            .find(|field| field.name == *field_name)
+            .ok_or_else(|| {
+                RefEncodeError::Unsupported(format!(
+                    "projected indexed actual `{}` for `{callee}::{formal}` names unknown field `{record_name}.{field_name}`",
+                    segments.join(".")
+                ))
+            })?;
+        current = field.ty.clone().ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "projected indexed actual `{}` for `{callee}::{formal}` has no exact source type for `{record_name}.{field_name}`",
+                segments.join(".")
+            ))
+        })?;
+    }
+    if !matches!(current, Type::Slice(_) | Type::Array { .. }) {
+        return Err(RefEncodeError::Unsupported(format!(
+            "projected indexed actual `{}` for `{callee}::{formal}` ends at non-indexed type `{current:?}`",
+            segments.join(".")
+        )));
+    }
+    Ok(IndexedCallActual {
+        segments,
+        pointee: current,
+    })
+}
+
+fn snapshot_indexed_actual(
+    actual: &IndexedCallActual,
+    state: &LifecycleState,
+    callee: &str,
+) -> Result<LifecycleCell, RefEncodeError> {
+    let path = actual.display();
+    if let Some(sequence) = state.indexed.get(&path) {
+        return Ok(sequence.clone());
+    }
+    if actual.is_direct() {
+        return Err(RefEncodeError::Unsupported(format!(
+            "indexed call `{callee}` cannot observe exact caller sequence `{path}`"
+        )));
+    }
+
+    let top_key = format!("{}.{}", actual.root(), actual.segments[1]);
+    let mut native = state.fields.get(&top_key).cloned().ok_or_else(|| {
+        RefEncodeError::Unsupported(format!(
+            "projected indexed call `{callee}` cannot observe enclosing caller field `{top_key}`"
+        ))
+    })?;
+    for field in &actual.segments[2..] {
+        native = LifecycleCell::bounded(format!("({}).{field}", native.text));
+    }
+    Ok(LifecycleCell::bounded(format!("({})@", native.text)))
+}
+
 fn projected_record_value(
     actual: &RecordCallActual,
     state: &LifecycleState,
@@ -1709,6 +2066,12 @@ fn snapshot_record_actual(
     state: &LifecycleState,
     callee: &str,
 ) -> Result<Vec<(String, LifecycleCell)>, RefEncodeError> {
+    if let Some(indexed) = indexed_descendant(state, &actual.segments) {
+        return Err(RefEncodeError::Unsupported(format!(
+            "mutable-reference call `{callee}` cannot materialize record actual `{}` after projected sequence state `{indexed}`; the exact leaf state remains framed but native aggregate reconstruction is unavailable",
+            actual.display()
+        )));
+    }
     if actual.is_direct() {
         return formal
             .fields
@@ -1851,6 +2214,12 @@ fn copy_back_record_actual(
     callee: &str,
     ctx: &BodyRefCtx,
 ) -> Result<(), RefEncodeError> {
+    if let Some(indexed) = indexed_descendant(callee_state, std::slice::from_ref(&formal.name)) {
+        return Err(RefEncodeError::Unsupported(format!(
+            "mutable-reference callee `{callee}` leaves projected sequence state `{indexed}` below record formal `{}`; native aggregate copy-back is unavailable",
+            formal.name
+        )));
+    }
     if actual.is_direct() {
         for field in &formal.fields {
             let formal_key = format!("{}.{}", formal.name, field.name);
@@ -1970,7 +2339,7 @@ fn apply_mutable_call_effect(
         mutable_actual_roots.insert(formal.name.clone(), actual);
     }
 
-    let mut indexed_actual_roots = BTreeMap::<String, String>::new();
+    let mut indexed_actual_roots = BTreeMap::<String, IndexedCallActual>::new();
     for formal in &effect.mutable_indexed {
         let position = formal_positions.get(formal.name.as_str()).ok_or_else(|| {
             RefEncodeError::Unsupported(format!(
@@ -1978,38 +2347,26 @@ fn apply_mutable_call_effect(
                 formal.name
             ))
         })?;
-        let root = match &args[*position] {
-            Expr::Path(path) if path.len() == 1 => path[0].clone(),
-            _ => {
-                return Err(RefEncodeError::Unsupported(format!(
-                    "mutable indexed actual for `{name}::{}` must be one direct exclusive root",
-                    formal.name
-                )));
-            }
-        };
-        let path = vec![root.clone()];
+        let actual = resolve_indexed_call_actual(&args[*position], true, name, &formal.name, ctx)?;
         if let Some(overlap) = exclusive_paths
             .iter()
-            .find(|existing| access_paths_overlap(existing, &path))
+            .find(|existing| access_paths_overlap(existing, &actual.segments))
         {
             return Err(RefEncodeError::Unsupported(format!(
-                "mutable-reference call `{name}` aliases exclusive access paths `{}` and `{root}` across record/indexed formals",
-                overlap.join(".")
+                "mutable-reference call `{name}` aliases exclusive access paths `{}` and `{}` across record/indexed formals",
+                overlap.join("."),
+                actual.display(),
             )));
         }
-        exclusive_paths.push(path);
-        let actual = ctx.mutable_indexed(&root).ok_or_else(|| {
-            RefEncodeError::Unsupported(format!(
-                "mutable indexed actual `{root}` for `{name}` is not an independently framed exclusive slice or fixed array"
-            ))
-        })?;
+        exclusive_paths.push(actual.segments.clone());
         if formal.pointee != actual.pointee {
             return Err(RefEncodeError::Unsupported(format!(
-                "mutable indexed call `{name}` has an exact pointee-type mismatch for formal `{}` and actual `{root}`",
-                formal.name
+                "mutable indexed call `{name}` has an exact pointee-type mismatch for formal `{}` and actual `{}`",
+                formal.name,
+                actual.display(),
             )));
         }
-        indexed_actual_roots.insert(formal.name.clone(), root);
+        indexed_actual_roots.insert(formal.name.clone(), actual);
     }
 
     let mut shared_actual_roots = BTreeMap::<String, RecordCallActual>::new();
@@ -2044,7 +2401,7 @@ fn apply_mutable_call_effect(
         shared_actual_roots.insert(formal.name.clone(), actual);
     }
 
-    let mut shared_indexed_actual_roots = BTreeMap::<String, String>::new();
+    let mut shared_indexed_actual_roots = BTreeMap::<String, IndexedCallActual>::new();
     for formal in &effect.shared_indexed {
         let position = formal_positions.get(formal.name.as_str()).ok_or_else(|| {
             RefEncodeError::Unsupported(format!(
@@ -2052,42 +2409,26 @@ fn apply_mutable_call_effect(
                 formal.name
             ))
         })?;
-        let root = match &args[*position] {
-            Expr::Path(path) if path.len() == 1 => path[0].clone(),
-            _ => {
-                return Err(RefEncodeError::Unsupported(format!(
-                    "shared indexed actual for `{name}::{}` must be one direct slice or fixed-array root",
-                    formal.name
-                )));
-            }
-        };
-        let path = vec![root.clone()];
+        let actual = resolve_indexed_call_actual(&args[*position], false, name, &formal.name, ctx)?;
         if let Some(overlap) = exclusive_paths
             .iter()
-            .find(|existing| access_paths_overlap(existing, &path))
+            .find(|existing| access_paths_overlap(existing, &actual.segments))
         {
             return Err(RefEncodeError::Unsupported(format!(
-                "mixed-reference call `{name}` aliases exclusive access path `{}` through shared indexed root `{root}` for formal `{}`",
+                "mixed-reference call `{name}` aliases exclusive access path `{}` through shared indexed root `{}` for formal `{}`",
                 overlap.join("."),
+                actual.display(),
                 formal.name,
             )));
         }
-        let found = if let Some(actual) = ctx.shared_indexed(&root) {
-            &actual.pointee
-        } else if let Some(actual) = ctx.mutable_indexed(&root) {
-            &actual.pointee
-        } else {
+        if formal.pointee != actual.pointee {
             return Err(RefEncodeError::Unsupported(format!(
-                "shared indexed actual `{root}` for `{name}` is not an independently framed slice or fixed array"
-            )));
-        };
-        if formal.pointee != *found {
-            return Err(RefEncodeError::Unsupported(format!(
-                "shared indexed call `{name}` has an exact pointee-type mismatch for formal `{}` and actual `{root}`",
-                formal.name
+                "shared indexed call `{name}` has an exact pointee-type mismatch for formal `{}` and actual `{}`",
+                formal.name,
+                actual.display(),
             )));
         }
-        shared_indexed_actual_roots.insert(formal.name.clone(), root);
+        shared_indexed_actual_roots.insert(formal.name.clone(), actual);
     }
 
     let mut callee_state = LifecycleState::default();
@@ -2142,21 +2483,17 @@ fn apply_mutable_call_effect(
         }
     }
     for formal in &effect.mutable_indexed {
-        let actual_root = indexed_actual_roots.get(&formal.name).ok_or_else(|| {
+        let actual = indexed_actual_roots.get(&formal.name).ok_or_else(|| {
             RefEncodeError::Unsupported(format!(
                 "mutable indexed callee `{name}` lost actual root for formal `{}`",
                 formal.name
             ))
         })?;
-        let value = state.indexed.get(actual_root).cloned().ok_or_else(|| {
-            RefEncodeError::Unsupported(format!(
-                "mutable indexed call `{name}` cannot observe exact caller sequence `{actual_root}`"
-            ))
-        })?;
+        let value = snapshot_indexed_actual(actual, state, name)?;
         callee_state.indexed.insert(formal.name.clone(), value);
     }
     for formal in &effect.shared_indexed {
-        let actual_root = shared_indexed_actual_roots
+        let actual = shared_indexed_actual_roots
             .get(&formal.name)
             .ok_or_else(|| {
                 RefEncodeError::Unsupported(format!(
@@ -2164,11 +2501,7 @@ fn apply_mutable_call_effect(
                     formal.name
                 ))
             })?;
-        let value = state.indexed.get(actual_root).cloned().ok_or_else(|| {
-            RefEncodeError::Unsupported(format!(
-                "mixed-reference call `{name}` cannot snapshot exact caller sequence `{actual_root}`"
-            ))
-        })?;
+        let value = snapshot_indexed_actual(actual, state, name)?;
         callee_state.indexed.insert(formal.name.clone(), value);
     }
 
@@ -2236,7 +2569,7 @@ fn apply_mutable_call_effect(
         copy_back_record_actual(formal, actual, &callee_state, state, name, ctx)?;
     }
     for formal in &effect.mutable_indexed {
-        let actual_root = indexed_actual_roots.get(&formal.name).ok_or_else(|| {
+        let actual = indexed_actual_roots.get(&formal.name).ok_or_else(|| {
             RefEncodeError::Unsupported(format!(
                 "mutable indexed callee `{name}` lost actual root for formal `{}`",
                 formal.name
@@ -2252,7 +2585,7 @@ fn apply_mutable_call_effect(
                     formal.name
                 ))
             })?;
-        state.indexed.insert(actual_root.clone(), value);
+        state.indexed.insert(actual.display(), value);
     }
     Ok(result)
 }

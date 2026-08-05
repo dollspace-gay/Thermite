@@ -1635,6 +1635,43 @@ pub(crate) fn fixed_array_field_bindings(
     program: &thermite_syntax::Program,
     function: &FnItem,
 ) -> Vec<String> {
+    fn collect(
+        program: &thermite_syntax::Program,
+        type_name: &str,
+        prefix: &str,
+        depth: usize,
+        active: &mut BTreeSet<String>,
+        bindings: &mut Vec<String>,
+    ) {
+        if !active.insert(type_name.to_string()) {
+            return;
+        }
+        let structure = program.items.iter().find_map(|item| match item {
+            Item::Struct(structure) if structure.name == type_name => Some(structure),
+            _ => None,
+        });
+        if let Some(structure) = structure {
+            for field in &structure.fields {
+                let path = format!("{prefix}.{}", field.name);
+                match &field.ty {
+                    Type::Array { .. } => {
+                        if depth == 0 {
+                            // Preserve the historical unqualified direct-field
+                            // marker used by expression/contract frames.
+                            bindings.push(field.name.clone());
+                        }
+                        bindings.push(path);
+                    }
+                    Type::Named(nested) => {
+                        collect(program, nested, &path, depth + 1, active, bindings);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        active.remove(type_name);
+    }
+
     let mut bindings = Vec::new();
     for param in &function.params {
         let named = match &param.ty {
@@ -1648,18 +1685,13 @@ pub(crate) fn fixed_array_field_bindings(
         let Some(named) = named else {
             continue;
         };
-        let Some(structure) = program.items.iter().find_map(|item| match item {
-            Item::Struct(structure) if structure.name == *named => Some(structure),
-            _ => None,
-        }) else {
-            continue;
-        };
-        bindings.extend(
-            structure
-                .fields
-                .iter()
-                .filter(|field| matches!(field.ty, Type::Array { .. }))
-                .flat_map(|field| [field.name.clone(), format!("{}.{}", param.name, field.name)]),
+        collect(
+            program,
+            named,
+            &param.name,
+            0,
+            &mut BTreeSet::new(),
+            &mut bindings,
         );
     }
     bindings

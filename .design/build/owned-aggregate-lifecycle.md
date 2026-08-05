@@ -15,7 +15,7 @@ governs:
   - forge/tests/body_tv.rs
   - forge/tests/verified_build.rs
   - conformance/verified-build/owned_aggregate_lifecycle.th
-audited-content-sha256: f5f6fadfd2e923530fd27a441bd25b04482e9949e801207e657fcf8f73814613 (re-pinned 2026-08-05 after exact projected-record calls joined owned lifecycle TV)
+audited-content-sha256: ccff7bd45ade692844ac70f14f8f0ded5b4214cf2ec2e9abe239617ed28254f9 (re-pinned 2026-08-05 after exact projected-indexed calls joined owned lifecycle TV)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/named-record-lifecycle.md
@@ -142,12 +142,14 @@ This increment's original composition is deliberately limited to value effects.
 `.design/build/mutable-call-effects.md` now supplies the separate exact frame for
 statement-position bodyful calls and direct typed let-bound results over
 structurally disjoint direct or explicitly borrowed projected finite-record
-actuals and pairwise-distinct direct mutable-slice/fixed-array roots, including
+actuals and structurally disjoint direct or explicitly borrowed projected
+mutable-slice/fixed-array paths, including
 nominally exact direct/projected shared finite-record snapshots that do not
-overlap an exclusive access path and exact direct shared slice/fixed-array
+overlap an exclusive access path and exact direct/projected shared slice/fixed-array
 snapshots with the same rule. Complete indexed sequence state is threaded
 through callee writes, later reads, shared snapshots, result binding, and
-copy-back. Projected indexed/array-field actuals, nested/general returned-value
+copy-back. Array-element-root actuals, native record materialization after a
+descendant sequence overlay, nested/general returned-value
 expressions, bodyless boundary functions, platform
 effects, allocation, unresolved calls, recursive effect cycles, and other
 non-admitted effects remain fail-closed.
@@ -221,8 +223,9 @@ This increment is shipped only when all of the following hold:
 The exact typed nested-field and terminal fixed-array projection subset is now
 shipped by `.design/build/nested-aggregate-lifecycle.md`; exact record-state
 loops are supplied by `.design/build/record-state-loops.md`. This increment still
-does not claim mutable enum payloads, index-then-field aliasing, projected
-indexed/array-field call effects, nested or
+does not claim mutable enum payloads, index-then-field aliasing,
+array-element-root call effects, native record materialization after a
+descendant sequence overlay, nested or
 general mutable-call result expressions, static global ownership, affine uniqueness, concurrent
 record access, atomic object/machine refinement, or Rust/assembly TPL refinement.
 It does not add or package a kernel.

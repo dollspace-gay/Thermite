@@ -210,6 +210,10 @@ impl ExecRefCtx {
             || self.fixed_array_fields.contains(field)
     }
 
+    fn is_fixed_array_path(&self, path: &str) -> bool {
+        self.fixed_array_fields.contains(path)
+    }
+
     fn value_binding(&self, name: &str) -> Option<&str> {
         self.value_bindings.get(name).map(String::as_str)
     }
@@ -220,8 +224,25 @@ impl ExecRefCtx {
             .map(String::as_str)
     }
 
-    fn indexed_binding(&self, name: &str) -> Option<&str> {
-        self.indexed_bindings.get(name).map(String::as_str)
+    fn indexed_binding(&self, path: &str) -> Option<&str> {
+        self.indexed_bindings.get(path).map(String::as_str)
+    }
+}
+
+/// Return the exact dotted access path of a bare binding followed only by field
+/// projections. Lifecycle TV uses the same structural path for projected
+/// indexed-storage snapshots, so an index after a mutable call observes the
+/// current sequence overlay instead of the native array's stale entry value.
+fn field_access_path(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Path(segments) => match segments.as_slice() {
+            [root] => Some(root.clone()),
+            _ => None,
+        },
+        Expr::Field { receiver, name } => {
+            field_access_path(receiver).map(|prefix| format!("{prefix}.{name}"))
+        }
+        _ => None,
     }
 }
 
@@ -363,6 +384,9 @@ fn encode_method_call(
     args: &[Expr],
     ctx: &ExecRefCtx,
 ) -> Result<String, RefEncodeError> {
+    let indexed_receiver = field_access_path(receiver)
+        .and_then(|path| ctx.indexed_binding(&path))
+        .map(str::to_string);
     let is_fixed_array_value = |expr: &Expr| {
         let is_bound_array = matches!(expr, Expr::Path(segments)
         if segments.len() == 1 && ctx.is_fixed_array_bound(&segments[0]));
@@ -397,6 +421,10 @@ fn encode_method_call(
     }
 
     match name {
+        "len" if args.is_empty() && indexed_receiver.is_some() => Ok(format!(
+            "({}.len() as usize)",
+            indexed_receiver.expect("guarded projected sequence binding")
+        )),
         "len" if args.is_empty() && is_slice_value(receiver) => {
             let slice = encode(receiver, ctx)?;
             Ok(format!("({slice}@.len() as usize)"))
@@ -635,13 +663,18 @@ fn encode_index(base: &Expr, index: &IndexArg, ctx: &ExecRefCtx) -> Result<Strin
     // Slice and fixed-array bindings both expose a finite sequence view in the
     // obligation. Keep the historical slice spelling stable; native arrays use
     // their explicit `@` view.
-    if let Expr::Path(segments) = base {
-        if let [name] = segments.as_slice() {
-            if let Some(sequence) = ctx.indexed_binding(name) {
-                let idx = encode_index_value(i, ctx)?;
-                return Ok(format!("({sequence})[{idx}]"));
-            }
+    if let Some(path) = field_access_path(base) {
+        if let Some(sequence) = ctx.indexed_binding(&path) {
+            let idx = encode_index_value(i, ctx)?;
+            return Ok(format!("({sequence})[{idx}]"));
         }
+        if ctx.is_fixed_array_path(&path) {
+            let array = encode(base, ctx)?;
+            let idx = encode_index_value(i, ctx)?;
+            return Ok(format!("({array})@[{idx}]"));
+        }
+    }
+    if let Expr::Path(segments) = base {
         if segments.len() == 1 && ctx.is_slice_bound(&segments[0]) {
             let idx = encode_index_value(i, ctx)?;
             return Ok(format!("{}[{idx}]", segments[0]));

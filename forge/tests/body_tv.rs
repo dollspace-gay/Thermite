@@ -948,6 +948,161 @@ fn shared_alias(outer: &mut Outer) -> ()
 }
 
 #[test]
+fn projected_indexed_callee_effects_are_nested_current_and_faithful() {
+    let source = r#"
+const SLOTS: usize = 2;
+struct Bank { slots: [u64; SLOTS], guard: u64 }
+struct ArrayOuter { left: Bank, right: Bank, tag: u64 }
+fn write_array(data: &mut [u64; SLOTS], value: u64) -> u64
+  req true
+  ens result == value
+  ens final(data)[0] == value
+  ens final(data)[1] == old(data)[1]
+  fx pure
+{
+  data[0] = value;
+  data[0]
+}
+fn copy_array(destination: &mut [u64; SLOTS], source: &[u64; SLOTS]) -> u64
+  req true
+  ens result == source[0]
+  ens final(destination)[0] == source[0]
+  ens final(destination)[1] == old(destination)[1]
+  fx pure
+{
+  destination[0] = source[0];
+  destination[0]
+}
+fn projected_array_pipeline(outer: &mut ArrayOuter, value: u64) -> u64
+  req value < 1000
+  ens result == value
+  ens final(outer).left.slots[0] == value
+  ens final(outer).right.slots[0] == value
+  ens final(outer).left.guard == old(outer).left.guard
+  ens final(outer).right.guard == old(outer).right.guard
+  ens final(outer).tag == old(outer).tag
+  fx pure
+{
+  let written: u64 = write_array(&mut outer.left.slots, value);
+  let observed: u64 = copy_array(&mut outer.right.slots, &outer.left.slots);
+  observed
+}
+"#;
+    let file = write_th("projected_indexed_callee", source);
+    let report = run_body_tv_json(&file);
+    assert_eq!(report["counts"]["checked"].as_u64(), Some(3), "{report}");
+    assert_eq!(report["counts"]["faithful"].as_u64(), Some(3), "{report}");
+    assert_eq!(report["counts"]["divergent"].as_u64(), Some(0), "{report}");
+    assert_eq!(report["counts"]["skipped"].as_u64(), Some(0), "{report}");
+    for name in ["write_array", "copy_array", "projected_array_pipeline"] {
+        assert!(
+            report["bodies"].as_array().unwrap().iter().any(|body| {
+                body["body"].as_str() == Some(name) && body["verdict"].as_str() == Some("faithful")
+            }),
+            "{name}: {report}"
+        );
+    }
+}
+
+#[test]
+fn projected_indexed_prefix_aliases_remain_fail_closed() {
+    let source = r#"
+const SLOTS: usize = 2;
+struct Bank { slots: [u64; SLOTS], guard: u64 }
+struct ArrayOuter { left: Bank, right: Bank }
+fn overlap(bank: &mut Bank, slots: &mut [u64; SLOTS]) -> ()
+  req true
+  ens true
+  fx pure
+{
+  bank.guard = 1;
+  slots[0] = 2;
+}
+fn alias(outer: &mut ArrayOuter) -> ()
+  req true
+  ens true
+  fx pure
+{
+  overlap(&mut outer.left, &mut outer.left.slots);
+}
+"#;
+    let file = write_th("projected_indexed_alias", source);
+    let report = run_body_tv_json(&file);
+    let caller = report["bodies"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|body| body["body"].as_str() == Some("alias"))
+        .unwrap_or_else(|| panic!("missing projected indexed alias caller: {report}"));
+    assert_eq!(caller["verdict"].as_str(), Some("skipped"), "{report}");
+    assert!(
+        caller["detail"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("`outer.left` and `outer.left.slots`"),
+        "{report}"
+    );
+}
+
+#[test]
+fn projected_indexed_type_and_borrow_mismatches_remain_fail_closed() {
+    let source = r#"
+const TWO: usize = 2;
+const THREE: usize = 3;
+struct Bank2 { slots: [u64; TWO] }
+struct Bank3 { slots: [u64; THREE] }
+struct ArrayOuter { narrow: Bank2, wide: Bank3 }
+fn write_array(data: &mut [u64; TWO], value: u64) -> ()
+  req true
+  ens final(data)[0] == value
+  fx pure
+{
+  data[0] = value;
+}
+fn borrow_mismatch(outer: &mut ArrayOuter) -> ()
+  req true
+  ens true
+  fx pure
+{
+  write_array(&outer.narrow.slots, 1);
+}
+fn type_mismatch(outer: &mut ArrayOuter) -> ()
+  req true
+  ens true
+  fx pure
+{
+  write_array(&mut outer.wide.slots, 1);
+}
+"#;
+    let file = write_th("projected_indexed_mismatch", source);
+    let report = run_body_tv_json(&file);
+    for (caller, expected) in [
+        (
+            "borrow_mismatch",
+            "exclusive indexed formal `write_array::data` received a shared projected borrow",
+        ),
+        ("type_mismatch", "exact pointee-type mismatch"),
+    ] {
+        let body = report["bodies"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|body| body["body"].as_str() == Some(caller))
+            .unwrap_or_else(|| {
+                panic!("missing projected-indexed mismatch caller `{caller}`: {report}")
+            });
+        assert_eq!(body["verdict"].as_str(), Some("skipped"), "{report}");
+        assert!(
+            body["detail"]
+                .as_str()
+                .unwrap_or_default()
+                .contains(expected),
+            "{report}"
+        );
+    }
+}
+
+#[test]
 fn mutable_fixed_array_callee_effects_are_exact_and_faithful() {
     let source = r#"
 const SLOTS: usize = 2;

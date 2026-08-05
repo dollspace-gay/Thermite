@@ -82,8 +82,8 @@ use thermite_tv::obligation::{
 use thermite_tv::ref_encode::{ref_contract_pred, RefCtx, StateViewKind};
 use thermite_tv::{
     loop_ref_obligations, BodyRefCtx, EnumVariantFrame, EnumVariantShapeFrame,
-    MutableCallEffectFrame, MutableRecordFrame, NamedRecordFrame, RecordFieldFrame,
-    SharedRecordFrame,
+    MutableCallEffectFrame, MutableIndexedFrame, MutableRecordFrame, NamedRecordFrame,
+    RecordFieldFrame, SharedRecordFrame,
 };
 
 use crate::check::{unique_scratch_dir, ScratchDir, DEFAULT_RLIMIT, DEFAULT_SOLVER_SEED};
@@ -349,6 +349,20 @@ pub(crate) fn body_tv_support(
                 dep.name
             ));
         };
+        if let Some(effect) = mutable_call_effect_frame(program, dep, body)? {
+            mutable_call_effects.push(effect);
+        }
+    }
+    for item in &support.items {
+        let Item::Fn(dep) = item else {
+            continue;
+        };
+        let Some(body) = &dep.body else {
+            return Err(format!(
+                "body-TV dependency `{}` has no in-language body",
+                dep.name
+            ));
+        };
         let mut params = Vec::new();
         let mut slices = Vec::new();
         let mut mutable_indexed = Vec::new();
@@ -382,39 +396,41 @@ pub(crate) fn body_tv_support(
             .iter()
             .any(|param| matches!(param.ty, Type::Ref { mutable: true, .. }));
         if has_mutable_reference {
-            let records = mutable_record_frames(program, dep)?;
-            let mutable_count = dep
-                .params
+            let effect = mutable_call_effects
                 .iter()
-                .filter(|param| matches!(param.ty, Type::Ref { mutable: true, .. }))
-                .count();
-            if records.len() != mutable_count {
-                return Err(format!(
-                    "body-TV mutable-reference dependency `{}` contains a mutable slice, array, or non-finite record outside the first exact call-effect subset",
+                .find(|effect| effect.name == dep.name)
+                .ok_or_else(|| {
+                    format!(
+                        "body-TV mutable-reference dependency `{}` lost its exact call-effect frame",
+                        dep.name
+                    )
+                })?;
+            let reference = thermite_tv::body_ref_state_ensures(
+                body,
+                "result",
+                &BodyRefCtx::with_slice_bound(slices.iter().cloned())
+                    .with_mutable_indexed_bound(mutable_indexed)
+                    .with_fixed_array_bound(arrays.iter().cloned())
+                    .with_fixed_array_fields(fixed_array_field_bindings(program, dep))
+                    .with_fixed_array_result(matches!(dep.ret, Type::Array { .. }))
+                    .with_unit_result(matches!(dep.ret, Type::Unit))
+                    .with_mutable_records(effect.mutable_records.clone())
+                    .with_mutable_indexed(effect.mutable_indexed.clone())
+                    .with_shared_records(effect.shared_records.clone())
+                    .with_mutable_call_effects(mutable_call_effects.clone())
+                    .with_named_records(named_records.clone())
+                    .with_constructor_records(constructor_records.clone())
+                    .with_enum_variants(enum_variants.clone())
+                    .with_bound_value_names(dep.params.iter().map(|param| param.name.as_str()))
+                    .with_result_record(named_record_result_frame(&named_records, &dep.ret)),
+            )
+            .map_err(|error| {
+                format!(
+                    "body-TV mutable-reference dependency `{}` is outside the independent body reference: {error}",
                     dep.name
-                ));
-            }
-            let shared_records = shared_record_frames(program, dep);
-            let shared_count = dep
-                .params
-                .iter()
-                .filter(|param| matches!(param.ty, Type::Ref { mutable: false, .. }))
-                .count();
-            if shared_records.len() != shared_count {
-                return Err(format!(
-                    "body-TV mutable-reference dependency `{}` contains a shared slice, array, or non-finite record outside the exact mixed-borrow call-effect subset",
-                    dep.name
-                ));
-            }
-            mutable_call_effects.push(
-                MutableCallEffectFrame::new(
-                    dep.name.clone(),
-                    dep.params.iter().map(|param| param.name.clone()).collect(),
-                    records,
-                    body.clone(),
                 )
-                .with_shared_records(shared_records),
-            );
+            })?;
+            inject_dependency_reference_ensures(&mut inner, dep, &reference)?;
             continue;
         }
         let reference = thermite_tv::body_ref_state(
@@ -484,6 +500,21 @@ fn inject_dependency_reference_postcondition(
     spec_name: &str,
     arguments: &[&str],
 ) -> Result<(), String> {
+    inject_dependency_reference_ensures(
+        lowered,
+        dependency,
+        &format!("result == {spec_name}({})", arguments.join(", ")),
+    )
+}
+
+/// Add one independently derived predicate to the exact lowered dependency.
+/// The predicate is not assumed: Verus proves it against this function body in
+/// the same obligation unit before any caller can use it for composition.
+fn inject_dependency_reference_ensures(
+    lowered: &mut String,
+    dependency: &FnItem,
+    predicate: &str,
+) -> Result<(), String> {
     let needle = format!("\nfn {}(", dependency.name);
     let start = lowered.find(&needle).ok_or_else(|| {
         format!(
@@ -504,12 +535,9 @@ fn inject_dependency_reference_postcondition(
         .unwrap_or(body_insertion);
     let has_ensures = lowered[start..insertion].contains("\n    ensures\n");
     let clause = if has_ensures {
-        format!("\n        result == {spec_name}({}),", arguments.join(", "))
+        format!("\n        ({predicate}),")
     } else {
-        format!(
-            "\n    ensures\n        result == {spec_name}({}),",
-            arguments.join(", ")
-        )
+        format!("\n    ensures\n        ({predicate}),")
     };
     lowered.insert_str(insertion, &clause);
     Ok(())
@@ -720,6 +748,7 @@ fn straight_line_body_tv(
         }
     };
     let shared_records = shared_record_frames(program, f);
+    let mutable_indexed = mutable_indexed_frames(f);
     let named_records = named_record_frames(program);
     let constructor_records = constructor_record_frames(program);
     let enum_variants = match enum_variant_frames(program) {
@@ -755,6 +784,7 @@ fn straight_line_body_tv(
         result_is_fixed_array: matches!(f.ret, Type::Array { .. }),
         result_is_unit: matches!(f.ret, Type::Unit),
         mutable_records,
+        mutable_indexed,
         shared_records,
         mutable_call_effects: mutable_call_effects.to_vec(),
         named_records,
@@ -1392,6 +1422,84 @@ pub(crate) fn shared_record_frames(
             ))
         })
         .collect()
+}
+
+/// Exact pointee types for exclusive slice and fixed-array parameters. Sequence
+/// state is represented extensionally, while this parsed type prevents a call
+/// frame from conflating element types or fixed capacities.
+pub(crate) fn mutable_indexed_frames(function: &FnItem) -> Vec<MutableIndexedFrame> {
+    function
+        .params
+        .iter()
+        .filter_map(|param| {
+            let Type::Ref {
+                mutable: true,
+                inner,
+            } = &param.ty
+            else {
+                return None;
+            };
+            matches!(inner.as_ref(), Type::Slice(_) | Type::Array { .. })
+                .then(|| MutableIndexedFrame::new(param.name.clone(), inner.as_ref().clone()))
+        })
+        .collect()
+}
+
+/// Derive one complete mutable-callee frame from the validated source AST.
+/// Mutable records and indexed storage share one exclusive-root inventory, so
+/// every mutable formal must be represented exactly before callers may compose
+/// its effect. Shared formals are likewise restricted to finite named records
+/// until exact shared sequence snapshots are added deliberately.
+fn mutable_call_effect_frame(
+    program: &thermite_syntax::Program,
+    function: &FnItem,
+    body: &Block,
+) -> Result<Option<MutableCallEffectFrame>, String> {
+    let mutable_count = function
+        .params
+        .iter()
+        .filter(|param| matches!(param.ty, Type::Ref { mutable: true, .. }))
+        .count();
+    if mutable_count == 0 {
+        return Ok(None);
+    }
+
+    let records = mutable_record_frames(program, function)?;
+    let indexed = mutable_indexed_frames(function);
+    if records.len() + indexed.len() != mutable_count {
+        return Err(format!(
+            "body-TV mutable-reference dependency `{}` contains a mutable non-finite record outside the exact call-effect subset",
+            function.name
+        ));
+    }
+
+    let shared_records = shared_record_frames(program, function);
+    let shared_count = function
+        .params
+        .iter()
+        .filter(|param| matches!(param.ty, Type::Ref { mutable: false, .. }))
+        .count();
+    if shared_records.len() != shared_count {
+        return Err(format!(
+            "body-TV mutable-reference dependency `{}` contains a shared slice, array, or non-finite record outside the exact mixed-borrow call-effect subset",
+            function.name
+        ));
+    }
+
+    Ok(Some(
+        MutableCallEffectFrame::new(
+            function.name.clone(),
+            function
+                .params
+                .iter()
+                .map(|param| param.name.clone())
+                .collect(),
+            records,
+            body.clone(),
+        )
+        .with_mutable_indexed(indexed)
+        .with_shared_records(shared_records),
+    ))
 }
 
 /// Exact finite named-record declarations available to owned local-state TV.

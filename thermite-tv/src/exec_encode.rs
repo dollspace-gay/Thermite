@@ -109,6 +109,10 @@ pub struct ExecRefCtx {
     value_bindings: BTreeMap<String, String>,
     /// Closed-form direct record-field cells, keyed as `root.field`.
     field_bindings: BTreeMap<String, String>,
+    /// Closed-form finite-sequence states for exclusive slice/fixed-array roots.
+    /// An index over a bound root observes this program-point state rather than
+    /// the entry or final borrow view.
+    indexed_bindings: BTreeMap<String, String>,
 }
 
 impl ExecRefCtx {
@@ -126,6 +130,7 @@ impl ExecRefCtx {
             fixed_array_fields: BTreeSet::new(),
             value_bindings: BTreeMap::new(),
             field_bindings: BTreeMap::new(),
+            indexed_bindings: BTreeMap::new(),
         }
     }
 
@@ -178,6 +183,20 @@ impl ExecRefCtx {
         self
     }
 
+    /// Add exact closed-form sequence states for exclusive indexed storage.
+    pub fn with_indexed_bindings<I, K, V>(mut self, bindings: I) -> Self
+    where
+        I: IntoIterator<Item = (K, V)>,
+        K: Into<String>,
+        V: Into<String>,
+    {
+        self.indexed_bindings = bindings
+            .into_iter()
+            .map(|(name, value)| (name.into(), value.into()))
+            .collect();
+        self
+    }
+
     fn is_slice_bound(&self, name: &str) -> bool {
         self.slice_bound.contains(name)
     }
@@ -199,6 +218,10 @@ impl ExecRefCtx {
         self.field_bindings
             .get(&format!("{root}.{field}"))
             .map(String::as_str)
+    }
+
+    fn indexed_binding(&self, name: &str) -> Option<&str> {
+        self.indexed_bindings.get(name).map(String::as_str)
     }
 }
 
@@ -613,6 +636,12 @@ fn encode_index(base: &Expr, index: &IndexArg, ctx: &ExecRefCtx) -> Result<Strin
     // obligation. Keep the historical slice spelling stable; native arrays use
     // their explicit `@` view.
     if let Expr::Path(segments) = base {
+        if let [name] = segments.as_slice() {
+            if let Some(sequence) = ctx.indexed_binding(name) {
+                let idx = encode_index_value(i, ctx)?;
+                return Ok(format!("({sequence})[{idx}]"));
+            }
+        }
         if segments.len() == 1 && ctx.is_slice_bound(&segments[0]) {
             let idx = encode_index_value(i, ctx)?;
             return Ok(format!("{}[{idx}]", segments[0]));
@@ -661,6 +690,11 @@ fn encode_index_value(expr: &Expr, ctx: &ExecRefCtx) -> Result<String, RefEncode
     match expr {
         Expr::IntLit { value, .. } => Ok(value.to_string()),
         Expr::Path(segments) => {
+            if let [name] = segments.as_slice() {
+                if let Some(value) = ctx.value_binding(name) {
+                    return Ok(format!("({value}) as int"));
+                }
+            }
             let p = encode_path(segments)?;
             Ok(format!("{p} as int"))
         }

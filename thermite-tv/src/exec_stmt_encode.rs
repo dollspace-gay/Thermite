@@ -168,18 +168,31 @@ pub struct SharedRecordFrame {
     pub fields: Vec<RecordFieldFrame>,
 }
 
+/// One exclusively borrowed slice or fixed-array root with its exact parsed
+/// pointee type.  Call-effect composition compares this type structurally and
+/// threads the complete finite sequence from `old(root)@` to `final(root)@`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MutableIndexedFrame {
+    pub name: String,
+    pub pointee: Type,
+}
+
 /// One independently parsed in-language callee whose body may transform one or
-/// more exclusive finite-record parameters. The reference side interprets this
-/// source body directly; production continues to call the ordinary generated
-/// function, so changing either column is observable.
+/// more exclusive finite-record, slice, or fixed-array parameters. The
+/// reference side interprets this source body directly; production continues to
+/// call the ordinary generated function, so changing either column is
+/// observable.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MutableCallEffectFrame {
     pub name: String,
-    /// All formal parameter names in signature order. Borrowed record formals
-    /// are identified by `mutable_records` or `shared_records`; the rest are
-    /// value inputs.
+    /// All formal parameter names in signature order. Borrowed formals are
+    /// identified by `mutable_records`, `mutable_indexed`, or `shared_records`;
+    /// the rest are value inputs.
     pub params: Vec<String>,
     pub mutable_records: Vec<MutableRecordFrame>,
+    /// Exact exclusive slice/fixed-array formals whose complete sequence state
+    /// is interpreted and copied back with the record post-state.
+    pub mutable_indexed: Vec<MutableIndexedFrame>,
     /// Exact finite-record shared-reference formals.  These are snapshotted from
     /// the caller's current lifecycle state and remain read-only while the callee
     /// source body is interpreted.
@@ -272,6 +285,15 @@ impl SharedRecordFrame {
     }
 }
 
+impl MutableIndexedFrame {
+    pub fn new(name: impl Into<String>, pointee: Type) -> Self {
+        Self {
+            name: name.into(),
+            pointee,
+        }
+    }
+}
+
 impl MutableCallEffectFrame {
     pub fn new(
         name: impl Into<String>,
@@ -283,6 +305,7 @@ impl MutableCallEffectFrame {
             name: name.into(),
             params,
             mutable_records,
+            mutable_indexed: Vec::new(),
             shared_records: Vec::new(),
             body,
         }
@@ -291,6 +314,12 @@ impl MutableCallEffectFrame {
     /// Add exact shared finite-record formals to a mutable call-effect frame.
     pub fn with_shared_records(mut self, records: Vec<SharedRecordFrame>) -> Self {
         self.shared_records = records;
+        self
+    }
+
+    /// Add exact exclusive slice/fixed-array formals to this call-effect frame.
+    pub fn with_mutable_indexed(mut self, indexed: Vec<MutableIndexedFrame>) -> Self {
+        self.mutable_indexed = indexed;
         self
     }
 }
@@ -324,9 +353,11 @@ pub struct BodyRefCtx {
     result_is_fixed_array: bool,
     result_is_unit: bool,
     mutable_records: Vec<MutableRecordFrame>,
+    mutable_indexed: Vec<MutableIndexedFrame>,
     shared_records: Vec<SharedRecordFrame>,
-    /// Exact source bodies and formal frames for reachable in-language
-    /// mutable-reference callees. Boundary declarations never enter this map.
+    /// Exact source bodies and record/indexed formal frames for reachable
+    /// in-language mutable-reference callees. Boundary declarations never enter
+    /// this map.
     mutable_call_effects: BTreeMap<String, MutableCallEffectFrame>,
     named_records: BTreeMap<String, NamedRecordFrame>,
     constructor_records: BTreeMap<String, NamedRecordFrame>,
@@ -349,6 +380,7 @@ impl BodyRefCtx {
             result_is_fixed_array: false,
             result_is_unit: false,
             mutable_records: Vec::new(),
+            mutable_indexed: Vec::new(),
             shared_records: Vec::new(),
             mutable_call_effects: BTreeMap::new(),
             named_records: BTreeMap::new(),
@@ -406,6 +438,14 @@ impl BodyRefCtx {
     /// Add complete direct-field frames for exclusive named-record borrows.
     pub fn with_mutable_records(mut self, records: Vec<MutableRecordFrame>) -> Self {
         self.mutable_records = records;
+        self
+    }
+
+    /// Add exact exclusive slice/fixed-array root metadata. The historical name
+    /// set remains the observation switch; these frames additionally make call
+    /// argument types independently comparable.
+    pub fn with_mutable_indexed(mut self, indexed: Vec<MutableIndexedFrame>) -> Self {
+        self.mutable_indexed = indexed;
         self
     }
 
@@ -531,6 +571,12 @@ impl BodyRefCtx {
         self.shared_records
             .iter()
             .find(|record| record.name == name)
+    }
+
+    fn mutable_indexed(&self, name: &str) -> Option<&MutableIndexedFrame> {
+        self.mutable_indexed
+            .iter()
+            .find(|indexed| indexed.name == name)
     }
 
     fn mutable_call_effect(&self, name: &str) -> Option<&MutableCallEffectFrame> {
@@ -1028,14 +1074,8 @@ pub fn body_ref_state_ensures(
     result_name: &str,
     ctx: &BodyRefCtx,
 ) -> Result<String, RefEncodeError> {
-    if !ctx.mutable_records.is_empty() {
-        if !ctx.mutable_indexed_bound.is_empty() {
-            return Err(RefEncodeError::Unsupported(
-                "mixing named-record and indexed exclusive mutations is outside the first exact lifecycle subset"
-                    .to_string(),
-            ));
-        }
-        return record_lifecycle_ensures(block, result_name, ctx);
+    if !ctx.mutable_records.is_empty() || !ctx.mutable_indexed_bound.is_empty() {
+        return aggregate_lifecycle_ensures(block, result_name, ctx);
     }
     let mut conjuncts = Vec::new();
     if let Some(record) = &ctx.result_record {
@@ -1086,7 +1126,6 @@ pub fn body_ref_state_ensures(
             conjuncts.push(format!("{result_name} == {reference}"));
         }
     }
-    conjuncts.extend(indexed_write_ensures(block, ctx)?);
     Ok(conjuncts.join(" && "))
 }
 
@@ -1110,9 +1149,10 @@ struct LifecycleState {
     locals: BTreeMap<String, LifecycleCell>,
     readonly_inputs: BTreeSet<String>,
     fields: BTreeMap<String, LifecycleCell>,
+    indexed: BTreeMap<String, LifecycleCell>,
 }
 
-fn record_lifecycle_ensures(
+fn aggregate_lifecycle_ensures(
     block: &Block,
     result_name: &str,
     ctx: &BodyRefCtx,
@@ -1136,6 +1176,12 @@ fn record_lifecycle_ensures(
             );
         }
     }
+    for name in &ctx.mutable_indexed_bound {
+        state.indexed.insert(
+            name.clone(),
+            LifecycleCell::bounded(format!("old({name})@")),
+        );
+    }
     thread_lifecycle_block(block, &mut state, ctx, false, &mut Vec::new())?;
 
     let result = match &block.tail {
@@ -1143,7 +1189,7 @@ fn record_lifecycle_ensures(
         None if ctx.result_is_unit => LifecycleCell::bounded("()"),
         None => {
             return Err(RefEncodeError::Unsupported(
-                "tail-less named-record lifecycle body requires an explicit unit result type"
+                "tail-less aggregate lifecycle body requires an explicit unit result type"
                     .to_string(),
             ));
         }
@@ -1174,6 +1220,14 @@ fn record_lifecycle_ensures(
             }
         }
     }
+    for name in &ctx.mutable_indexed_bound {
+        let value = state.indexed.get(name).ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "exclusive indexed lifecycle lost the modeled root `{name}`"
+            ))
+        })?;
+        ensures.push(format!("final({name})@ == {}", value.text));
+    }
     Ok(ensures.join(" && "))
 }
 
@@ -1189,7 +1243,7 @@ fn thread_lifecycle_block(
     }
     if branch && block.tail.is_some() {
         return Err(RefEncodeError::Unsupported(
-            "a named-record lifecycle `if` statement branch may mutate state but may not carry a discarded tail value"
+            "an aggregate lifecycle `if` statement branch may mutate state but may not carry a discarded tail value"
                 .to_string(),
         ));
     }
@@ -1307,12 +1361,53 @@ fn thread_lifecycle_stmt(
                     );
                     Ok(())
                 }
+                Expr::Index {
+                    base,
+                    index: IndexArg::Single(index),
+                } => {
+                    let Expr::Path(path) = base.as_ref() else {
+                        return Err(RefEncodeError::Unsupported(
+                            "exclusive indexed lifecycle target must have one direct root"
+                                .to_string(),
+                        ));
+                    };
+                    let [root] = path.as_slice() else {
+                        return Err(RefEncodeError::Unsupported(
+                            "exclusive indexed lifecycle target must have one direct root"
+                                .to_string(),
+                        ));
+                    };
+                    if !ctx.is_mutable_indexed_bound(root) {
+                        return Err(RefEncodeError::Unsupported(format!(
+                            "indexed assignment root `{root}` is not an independently framed exclusive slice or fixed array"
+                        )));
+                    }
+                    let encoded_index = encode_lifecycle_expr(index, state, ctx)?;
+                    let index = if matches!(index.as_ref(), Expr::IntLit { .. }) {
+                        encoded_index.text
+                    } else {
+                        format!("({}) as int", encoded_index.text)
+                    };
+                    let current = state.indexed.get(root).ok_or_else(|| {
+                        RefEncodeError::Unsupported(format!(
+                            "exclusive indexed lifecycle lost the current sequence `{root}`"
+                        ))
+                    })?;
+                    state.indexed.insert(
+                        root.clone(),
+                        LifecycleCell::bounded(format!(
+                            "({}).update({index}, {})",
+                            current.text, value.text
+                        )),
+                    );
+                    Ok(())
+                }
                 Expr::Index { .. } => Err(RefEncodeError::Unsupported(
-                    "indexed mutation cannot be mixed into a named-record lifecycle obligation"
+                    "exclusive indexed lifecycle supports one direct element index, not a range"
                         .to_string(),
                 )),
                 _ => Err(RefEncodeError::Unsupported(
-                    "named-record lifecycle assignment target is neither a framed direct field nor an in-scope scalar local"
+                    "aggregate lifecycle assignment target is neither a framed direct field/indexed root nor an in-scope scalar local"
                         .to_string(),
                 )),
             }
@@ -1345,6 +1440,15 @@ fn thread_lifecycle_stmt(
                         .insert(key.clone(), merge_lifecycle_cells(&condition, left, right));
                 }
             }
+            for (key, prior) in &before.indexed {
+                let left = then_state.indexed.get(key).unwrap_or(prior);
+                let right = else_state.indexed.get(key).unwrap_or(prior);
+                if left != prior || right != prior {
+                    state
+                        .indexed
+                        .insert(key.clone(), merge_lifecycle_cells(&condition, left, right));
+                }
+            }
             Ok(())
         }
         Stmt::Expr(expr) => {
@@ -1368,10 +1472,10 @@ fn thread_lifecycle_stmt(
             Ok(())
         }
         Stmt::Return(_) => Err(RefEncodeError::Unsupported(
-            "mid-body return is outside the single-exit named-record lifecycle subset".to_string(),
+            "mid-body return is outside the single-exit aggregate lifecycle subset".to_string(),
         )),
         Stmt::Loop(_) | Stmt::Break | Stmt::Continue => Err(RefEncodeError::Unsupported(
-            "loops and loop control over named-record state require a separate invariant lifecycle model"
+            "loops and loop control over aggregate state require a separate invariant lifecycle model"
                 .to_string(),
         )),
     }
@@ -1408,9 +1512,9 @@ fn apply_mutable_call_effect(
             effect.params.len()
         )));
     }
-    if effect.mutable_records.is_empty() {
+    if effect.mutable_records.is_empty() && effect.mutable_indexed.is_empty() {
         return Err(RefEncodeError::Unsupported(format!(
-            "mutable-reference call `{name}` has no admitted finite-record formal"
+            "mutable-reference call `{name}` has no admitted finite-record or indexed-storage formal"
         )));
     }
     let formal_positions = effect
@@ -1465,6 +1569,42 @@ fn apply_mutable_call_effect(
         mutable_actual_roots.insert(formal.name.clone(), root);
     }
 
+    let mut indexed_actual_roots = BTreeMap::<String, String>::new();
+    for formal in &effect.mutable_indexed {
+        let position = formal_positions.get(formal.name.as_str()).ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "mutable indexed callee `{name}` lost formal `{}`",
+                formal.name
+            ))
+        })?;
+        let root = match &args[*position] {
+            Expr::Path(path) if path.len() == 1 => path[0].clone(),
+            _ => {
+                return Err(RefEncodeError::Unsupported(format!(
+                    "mutable indexed actual for `{name}::{}` must be one direct exclusive root",
+                    formal.name
+                )));
+            }
+        };
+        if !used_mutable_roots.insert(root.clone()) {
+            return Err(RefEncodeError::Unsupported(format!(
+                "mutable-reference call `{name}` aliases exclusive root `{root}` across record/indexed formals"
+            )));
+        }
+        let actual = ctx.mutable_indexed(&root).ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "mutable indexed actual `{root}` for `{name}` is not an independently framed exclusive slice or fixed array"
+            ))
+        })?;
+        if formal.pointee != actual.pointee {
+            return Err(RefEncodeError::Unsupported(format!(
+                "mutable indexed call `{name}` has an exact pointee-type mismatch for formal `{}` and actual `{root}`",
+                formal.name
+            )));
+        }
+        indexed_actual_roots.insert(formal.name.clone(), root);
+    }
+
     let mut shared_actual_roots = BTreeMap::<String, String>::new();
     for formal in &effect.shared_records {
         let position = formal_positions.get(formal.name.as_str()).ok_or_else(|| {
@@ -1516,6 +1656,10 @@ fn apply_mutable_call_effect(
             .mutable_records
             .iter()
             .any(|record| record.name == *formal_name)
+            || effect
+                .mutable_indexed
+                .iter()
+                .any(|indexed| indexed.name == *formal_name)
         {
             continue;
         }
@@ -1561,9 +1705,41 @@ fn apply_mutable_call_effect(
                 .insert(format!("{}.{}", formal.name, field.name), value);
         }
     }
+    for formal in &effect.mutable_indexed {
+        let actual_root = indexed_actual_roots.get(&formal.name).ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "mutable indexed callee `{name}` lost actual root for formal `{}`",
+                formal.name
+            ))
+        })?;
+        let value = state.indexed.get(actual_root).cloned().ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "mutable indexed call `{name}` cannot observe exact caller sequence `{actual_root}`"
+            ))
+        })?;
+        callee_state.indexed.insert(formal.name.clone(), value);
+    }
 
     let mut callee_ctx = ctx.clone();
     callee_ctx.mutable_records = effect.mutable_records.clone();
+    callee_ctx.mutable_indexed = effect.mutable_indexed.clone();
+    callee_ctx.mutable_indexed_bound = effect
+        .mutable_indexed
+        .iter()
+        .map(|indexed| indexed.name.clone())
+        .collect();
+    callee_ctx.slice_bound = effect
+        .mutable_indexed
+        .iter()
+        .filter(|indexed| matches!(indexed.pointee, Type::Slice(_)))
+        .map(|indexed| indexed.name.clone())
+        .collect();
+    callee_ctx.fixed_array_bound = effect
+        .mutable_indexed
+        .iter()
+        .filter(|indexed| matches!(indexed.pointee, Type::Array { .. }))
+        .map(|indexed| indexed.name.clone())
+        .collect();
     callee_ctx.shared_records = effect.shared_records.clone();
     active_calls.push(name.to_string());
     let interpreted = thread_lifecycle_block(
@@ -1605,6 +1781,25 @@ fn apply_mutable_call_effect(
                 .fields
                 .insert(format!("{actual_root}.{}", field.name), value);
         }
+    }
+    for formal in &effect.mutable_indexed {
+        let actual_root = indexed_actual_roots.get(&formal.name).ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "mutable indexed callee `{name}` lost actual root for formal `{}`",
+                formal.name
+            ))
+        })?;
+        let value = callee_state
+            .indexed
+            .get(&formal.name)
+            .cloned()
+            .ok_or_else(|| {
+                RefEncodeError::Unsupported(format!(
+                    "mutable indexed callee `{name}` lost exact post-state sequence `{}`",
+                    formal.name
+                ))
+            })?;
+        state.indexed.insert(actual_root.clone(), value);
     }
     Ok(result)
 }
@@ -1666,6 +1861,12 @@ fn encode_lifecycle_expr(
         .with_field_bindings(
             state
                 .fields
+                .iter()
+                .map(|(name, cell)| (name.clone(), cell.text.clone())),
+        )
+        .with_indexed_bindings(
+            state
+                .indexed
                 .iter()
                 .map(|(name, cell)| (name.clone(), cell.text.clone())),
         );
@@ -1811,250 +2012,6 @@ fn stmt_contains_mutable_call(statement: &Stmt, ctx: &BodyRefCtx) -> bool {
             };
             condition || block_contains_mutable_call(&loop_node.body, ctx)
         }
-        Stmt::Break | Stmt::Continue => false,
-    }
-}
-
-/// Independently denote direct indexed writes through exclusive slice or
-/// fixed-array borrows. Each parameter begins at `old(name)@`; every source
-/// assignment appends one exact `Seq::update`, and the obligation equates that
-/// complete sequence with `final(name)@`. This observes every element, so a
-/// dropped, reordered, wrong-index, wrong-value, or collateral write diverges.
-///
-/// The first frozen effect subset is deliberately straight-line. An index or
-/// value that reads an exclusively borrowed sequence, or a write nested under
-/// control flow, is rejected rather than conflating its pre- and post-state.
-fn indexed_write_ensures(block: &Block, ctx: &BodyRefCtx) -> Result<Vec<String>, RefEncodeError> {
-    if ctx.mutable_indexed_bound.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let mut scalar_env = Env::new();
-    let mut states: BTreeMap<String, String> = ctx
-        .mutable_indexed_bound
-        .iter()
-        .map(|name| (name.clone(), format!("old({name})@")))
-        .collect();
-    let mut changed = BTreeSet::new();
-
-    for stmt in &block.stmts {
-        if let Stmt::Assign {
-            target:
-                Expr::Index {
-                    base,
-                    index: IndexArg::Single(index),
-                },
-            value,
-        } = stmt
-        {
-            let Expr::Path(segments) = base.as_ref() else {
-                return Err(unsupported_indexed_write());
-            };
-            if segments.len() != 1 || !ctx.is_mutable_indexed_bound(&segments[0]) {
-                return Err(unsupported_indexed_write());
-            }
-
-            let name = &segments[0];
-            let index = substitute(index, &scalar_env)?;
-            let value = substitute(value, &scalar_env)?;
-            if expr_references_mutable_indexed(&index, ctx)
-                || expr_references_mutable_indexed(&value, ctx)
-            {
-                return Err(RefEncodeError::Unsupported(
-                    "an exclusive-storage write index/value reads an exclusively \
-                     borrowed sequence; the frozen effect subset does not conflate \
-                     its pre-write and final views"
-                        .to_string(),
-                ));
-            }
-
-            let index_is_literal = matches!(index, Expr::IntLit { .. });
-            let index = exec_ref_value(&index, &ctx.exec_ref_ctx())?;
-            let index = if index_is_literal {
-                index
-            } else {
-                format!("({index}) as int")
-            };
-            let value = exec_ref_value(&value, &ctx.exec_ref_ctx())?;
-            let previous = states
-                .get(name)
-                .cloned()
-                .ok_or_else(unsupported_indexed_write)?;
-            states.insert(
-                name.clone(),
-                format!("({previous}).update({index}, {value})"),
-            );
-            changed.insert(name.clone());
-            continue;
-        }
-
-        if stmt_contains_indexed_assignment(stmt) {
-            return Err(RefEncodeError::Unsupported(
-                "exclusive-storage assignment nested under control flow is outside \
-                 the frozen straight-line effect subset"
-                    .to_string(),
-            ));
-        }
-        if !changed.is_empty() && stmt_references_mutable_indexed(stmt, ctx) {
-            return Err(RefEncodeError::Unsupported(
-                "a straight-line statement reads exclusive storage after it was +                 changed; post-write reads require explicit sequence-state +                 substitution and are outside the frozen effect subset"
-                    .to_string(),
-            ));
-        }
-        thread_stmt(stmt, &mut scalar_env, ctx)?;
-    }
-
-    if !changed.is_empty()
-        && block
-            .tail
-            .as_deref()
-            .is_some_and(|tail| expr_references_mutable_indexed(tail, ctx))
-    {
-        return Err(RefEncodeError::Unsupported(
-            "the body tail reads exclusive storage after it was changed; +             post-write reads require explicit sequence-state substitution and +             are outside the frozen effect subset"
-                .to_string(),
-        ));
-    }
-
-    states
-        .into_iter()
-        .map(|(name, state)| Ok(format!("final({name})@ == {state}")))
-        .collect()
-}
-
-fn unsupported_indexed_write() -> RefEncodeError {
-    RefEncodeError::Unsupported(
-        "indexed assignment is outside the exact exclusive-storage subset (the \
-         admitted target is a direct `&mut [T]` or `&mut [T; N]` parameter)"
-            .to_string(),
-    )
-}
-
-fn stmt_contains_indexed_assignment(stmt: &Stmt) -> bool {
-    match stmt {
-        Stmt::Assign {
-            target: Expr::Index { .. },
-            ..
-        } => true,
-        Stmt::If { then, else_, .. } => {
-            then.stmts.iter().any(stmt_contains_indexed_assignment)
-                || else_
-                    .as_ref()
-                    .is_some_and(|block| block.stmts.iter().any(stmt_contains_indexed_assignment))
-        }
-        Stmt::Loop(loop_node) => loop_node
-            .body
-            .stmts
-            .iter()
-            .any(stmt_contains_indexed_assignment),
-        _ => false,
-    }
-}
-
-/// Whether an expression reads any sequence whose post-state is being modeled.
-/// Unsupported value forms are still traversed here; the subsequent independent
-/// value encoder remains responsible for rejecting nodes outside its own subset.
-fn expr_references_mutable_indexed(expr: &Expr, ctx: &BodyRefCtx) -> bool {
-    let any = |items: &[Expr]| {
-        items
-            .iter()
-            .any(|item| expr_references_mutable_indexed(item, ctx))
-    };
-    match expr {
-        Expr::Path(segments) => segments.len() == 1 && ctx.is_mutable_indexed_bound(&segments[0]),
-        Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::StrLit(_) => false,
-        Expr::Array(items) | Expr::Tuple(items) => any(items),
-        Expr::ArrayRepeat { value, .. }
-        | Expr::Unary { expr: value, .. }
-        | Expr::Cast { expr: value, .. }
-        | Expr::Ref { expr: value, .. }
-        | Expr::Deref(value)
-        | Expr::TupleProj {
-            receiver: value, ..
-        } => expr_references_mutable_indexed(value, ctx),
-        Expr::Binary { lhs, rhs, .. } => {
-            expr_references_mutable_indexed(lhs, ctx) || expr_references_mutable_indexed(rhs, ctx)
-        }
-        Expr::Call { callee, args } => expr_references_mutable_indexed(callee, ctx) || any(args),
-        Expr::MethodCall { receiver, args, .. } => {
-            expr_references_mutable_indexed(receiver, ctx) || any(args)
-        }
-        Expr::Field { receiver, .. } => expr_references_mutable_indexed(receiver, ctx),
-        Expr::Closure { body, .. } => expr_references_mutable_indexed(body, ctx),
-        Expr::Match { scrutinee, arms } => {
-            expr_references_mutable_indexed(scrutinee, ctx)
-                || arms.iter().any(|arm| {
-                    arm.guard
-                        .as_ref()
-                        .is_some_and(|guard| expr_references_mutable_indexed(guard, ctx))
-                        || expr_references_mutable_indexed(&arm.body, ctx)
-                })
-        }
-        Expr::If { cond, then, else_ } => {
-            expr_references_mutable_indexed(cond, ctx)
-                || block_references_mutable_indexed(then, ctx)
-                || block_references_mutable_indexed(else_, ctx)
-        }
-        Expr::Index { base, index } => {
-            expr_references_mutable_indexed(base, ctx)
-                || match index {
-                    IndexArg::Single(index)
-                    | IndexArg::RangeTo(index)
-                    | IndexArg::RangeFrom(index) => expr_references_mutable_indexed(index, ctx),
-                    IndexArg::Range(start, end) => {
-                        expr_references_mutable_indexed(start, ctx)
-                            || expr_references_mutable_indexed(end, ctx)
-                    }
-                }
-        }
-        Expr::StructLit { fields, .. } => fields
-            .iter()
-            .any(|(_, value)| expr_references_mutable_indexed(value, ctx)),
-        Expr::Is { scrutinee, .. } => expr_references_mutable_indexed(scrutinee, ctx),
-        Expr::Quantifier { domain, body, .. } => {
-            expr_references_mutable_indexed(domain, ctx)
-                || expr_references_mutable_indexed(body, ctx)
-        }
-    }
-}
-
-fn block_references_mutable_indexed(block: &Block, ctx: &BodyRefCtx) -> bool {
-    block
-        .stmts
-        .iter()
-        .any(|stmt| stmt_references_mutable_indexed(stmt, ctx))
-        || block
-            .tail
-            .as_deref()
-            .is_some_and(|tail| expr_references_mutable_indexed(tail, ctx))
-}
-
-fn stmt_references_mutable_indexed(stmt: &Stmt, ctx: &BodyRefCtx) -> bool {
-    match stmt {
-        Stmt::Let { init, .. } => expr_references_mutable_indexed(init, ctx),
-        Stmt::Assign { target, value } => {
-            expr_references_mutable_indexed(target, ctx)
-                || expr_references_mutable_indexed(value, ctx)
-        }
-        Stmt::Return(value) => value
-            .as_ref()
-            .is_some_and(|value| expr_references_mutable_indexed(value, ctx)),
-        Stmt::If { cond, then, else_ } => {
-            expr_references_mutable_indexed(cond, ctx)
-                || block_references_mutable_indexed(then, ctx)
-                || else_
-                    .as_ref()
-                    .is_some_and(|block| block_references_mutable_indexed(block, ctx))
-        }
-        Stmt::Loop(loop_node) => {
-            if let LoopKind::While(cond) = &loop_node.kind {
-                if expr_references_mutable_indexed(cond, ctx) {
-                    return true;
-                }
-            }
-            block_references_mutable_indexed(&loop_node.body, ctx)
-        }
-        Stmt::Expr(expr) => expr_references_mutable_indexed(expr, ctx),
         Stmt::Break | Stmt::Continue => false,
     }
 }
@@ -2581,10 +2538,9 @@ fn thread_stmt(stmt: &Stmt, env: &mut Env, ctx: &BodyRefCtx) -> Result<(), RefEn
                     ));
                 };
                 // Writes through an exclusive parameter borrow are observable
-                // effects, not local value rebinding. The complete sequence
-                // transition is added by `indexed_write_ensures`; keep the scalar
-                // environment unchanged here so the body's return value is still
-                // denoted independently.
+                // effects, not local value rebinding. Whole-body obligations route
+                // these through the exact lifecycle sequence state; keep this
+                // scalar-only environment unchanged for its non-effect consumers.
                 if segments.len() == 1 && ctx.is_mutable_indexed_bound(&segments[0]) {
                     return Ok(());
                 }
@@ -3523,16 +3479,19 @@ mod tests {
     }
 
     #[test]
-    fn post_write_storage_read_is_honestly_outside_the_frozen_subset() {
+    fn post_write_storage_read_observes_the_exact_sequence_state() {
         let block = Block {
             stmts: vec![index_assign("data", path("at"), path("value"))],
             tail: Some(Box::new(index("data", path("at")))),
         };
         let ctx = BodyRefCtx::with_slice_bound(["data"]).with_mutable_indexed_bound(["data"]);
-        assert!(matches!(
-            body_ref_state_ensures(&block, "result", &ctx),
-            Err(RefEncodeError::Unsupported(reason)) if reason.contains("post-write reads")
-        ));
+        let ensures = body_ref_state_ensures(&block, "result", &ctx).unwrap();
+        assert!(
+            ensures.contains("(old(data)@).update((at) as int, value)"),
+            "{ensures}"
+        );
+        assert!(ensures.contains("result =="), "{ensures}");
+        assert!(ensures.contains("final(data)@ =="), "{ensures}");
     }
 
     /// A loop body is out of the frozen 2.2.1 subset -> an `Err`, never a

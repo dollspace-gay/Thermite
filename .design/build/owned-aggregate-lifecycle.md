@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-decision: a typed mutable local of a finite non-sealed record may be updated and returned only when the independent body semantics reconstruct every field exactly; pure value calls compose through independently derived specifications, while the separate mutable-call extension composes exact direct finite-record effects
+decision: a typed mutable local of a finite non-sealed record may be updated and returned only when the independent body semantics reconstruct every field exactly; pure value calls compose through independently derived specifications, while the separate mutable-call extension composes exact direct finite-record and indexed-storage effects
 governs:
   - thermite-tv/src/exec_encode.rs
   - thermite-tv/src/exec_stmt_encode.rs
@@ -15,7 +15,7 @@ governs:
   - forge/tests/body_tv.rs
   - forge/tests/verified_build.rs
   - conformance/verified-build/owned_aggregate_lifecycle.th
-audited-content-sha256: 49a1e8c1529ea52f8b349856909ba7f67715769a8598553a88f8e6b3011328cc (re-pinned 2026-08-05 after exact shared snapshots in mutable call composition and the no_std vstd-prelude assertion repair; owned aggregate semantics remain regression-covered)
+audited-content-sha256: b5f0ff42b2283f9492985d0dda66cbb04712119373c4818c46e0524e17dfade0 (re-pinned 2026-08-05 after exact mutable-indexed call-state composition joined owned lifecycle TV)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/named-record-lifecycle.md
@@ -141,8 +141,10 @@ inlining production code or trusting the source contract alone.
 This increment's original composition is deliberately limited to value effects.
 `.design/build/mutable-call-effects.md` now supplies the separate exact frame for
 statement-position bodyful calls and direct typed let-bound results over
-pairwise-distinct direct finite-record roots, including nominally exact direct
-shared finite-record snapshots that do not overlap an exclusive actual. Mutable
+pairwise-distinct direct finite-record, mutable-slice, and mutable-fixed-array
+roots, including nominally exact direct shared finite-record snapshots that do
+not overlap an exclusive actual. Complete indexed sequence state is threaded
+through callee writes, later reads, result binding, and copy-back. Shared
 slices/arrays, projected actual roots, nested/general returned-value
 expressions, bodyless boundary functions, platform
 effects, allocation, unresolved calls, recursive effect cycles, and other
@@ -201,9 +203,10 @@ This increment is shipped only when all of the following hold:
    specification;
 5. dropped, wrong-field, wrong-value, reordered, collateral, stale-read, and
    wrong-callee production mutants fail an independent obligation;
-6. exact direct finite-record mutable callees compose statement calls and direct
-   typed let-bound results through the separate source-derived result/effect
-   frame, while wider mutable/alias/expression forms remain rejected;
+6. exact direct finite-record, mutable-slice, and mutable-fixed-array callees
+   compose statement calls and direct typed let-bound results through the
+   separate source-derived result/effect frame, while wider
+   shared/alias/expression forms remain rejected;
 7. a strict freestanding L3/L4-only build, receipt replay, ABI/source tamper
    checks, and a downstream compiled execution test all pass, with no skipped or
    sub-L3 proof row; and
@@ -217,7 +220,7 @@ The exact typed nested-field and terminal fixed-array projection subset is now
 shipped by `.design/build/nested-aggregate-lifecycle.md`; exact record-state
 loops are supplied by `.design/build/record-state-loops.md`. This increment still
 does not claim mutable enum payloads, index-then-field aliasing, projected-root
-or mutable slice/array call effects, nested or
+or shared slice/array call effects, nested or
 general mutable-call result expressions, static global ownership, affine uniqueness, concurrent
 record access, atomic object/machine refinement, or Rust/assembly TPL refinement.
 It does not add or package a kernel.

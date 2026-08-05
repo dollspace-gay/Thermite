@@ -3,19 +3,21 @@
 <!--
 tier: 3-component
 status: shipped
-decision: a statement-position call or direct typed let-bound result call through pairwise-distinct direct mutable finite-record roots and nonoverlapping direct shared finite-record roots composes by independently interpreting the reachable in-language callee body, shared snapshots, result, and every nominal post-state field
+decision: a statement-position call or direct typed let-bound result call through pairwise-distinct direct mutable finite-record, slice, or fixed-array roots and nonoverlapping direct shared finite-record roots composes by independently interpreting the reachable in-language callee body, shared snapshots, result, and every complete post-state field or sequence
 governs:
   - thermite-tv/src/exec_encode.rs
   - thermite-tv/src/exec_stmt_encode.rs
   - thermite-tv/src/obligation.rs
   - thermite-tv/src/lib.rs
   - thermite-tv/tests/mutable_call_effect_tv.rs
+  - thermite-tv/tests/mutable_indexed_call_effect_tv.rs
   - forge/src/body_tv.rs
   - forge/src/exec_tv.rs
   - forge/tests/body_tv.rs
   - forge/tests/verified_build.rs
   - conformance/verified-build/mutable_call_effect.th
-audited-content-sha256: db65a04a99315f652d464a9d2074397ee52e3b2029263a0bcb14112849027757 (re-pinned 2026-08-05 after exact mixed shared/mutable finite-record call composition, overlap rejection, and strict no_std link assertion repair)
+  - conformance/verified-build/mutable_indexed_call_effect.th
+audited-content-sha256: b4258f6a6d8dd6575d0191ac080f90763fead9bb46a98d499c140f3030f58b83 (re-pinned 2026-08-05 after exact mutable-slice/fixed-array call composition, alias/type rejection, and strict L3 runtime evidence)
 extends:
   - .design/build/nested-aggregate-lifecycle.md
   - .design/build/owned-aggregate-lifecycle.md
@@ -32,17 +34,18 @@ closure:
 - the callee has an ordinary in-language body, not a boundary or slag body;
 - the call is bare and has exact arity, appearing either in statement position
   or directly as the initializer of one typed `let` binding;
-- every mutable formal is `&mut Name`, where `Name` belongs to the recursively
-  finite structural-record closure;
-- every corresponding actual is one direct caller record root with the same
-  nominal type; and
-- mutable actual roots are pairwise distinct;
+- every mutable formal is either `&mut Name`, where `Name` belongs to the
+  recursively finite structural-record closure, `&mut [T]`, or
+  `&mut [T; N]`;
+- every corresponding actual is one direct caller root with the same nominal
+  record type or exact parsed element/capacity type; and
+- mutable actual roots are pairwise distinct across record and indexed formals;
 - every shared formal is `&Name` over the same finite structural closure and its
   actual is a direct, nominally exact caller shared or exclusive record root; and
 - no shared actual overlaps any mutable actual in the same call. Shared/shared
   aliasing is harmless and remains admitted.
 
-Other formals are by-value inputs. Shared slices, arrays, projected roots, and
+Other formals are by-value inputs. Shared slices/arrays, projected roots, and
 non-finite records remain rejected rather than receiving an inferred alias or
 snapshot relation.
 
@@ -53,27 +56,33 @@ replace a call with its authored contract.
 ## Independent state composition
 
 Forge derives one `MutableCallEffectFrame` from each reachable bodyful callee. It
-contains the parsed formal order, exact nominal mutable-record frames, and the
-source body. The independent lifecycle semantics applies a call as follows:
+contains the parsed formal order, exact nominal mutable-record frames, exact
+mutable slice/fixed-array pointee types, and the source body. The independent
+lifecycle semantics applies a call as follows:
 
 1. encode every non-mutable actual against the caller's pre-call state and bind
    it as a read-only formal value;
-2. copy every direct field of each exclusive caller root into the matching
-   mutable formal and snapshot every shared formal from the caller's current
+2. copy every direct field of each exclusive record root and the complete
+   current finite sequence of each exclusive slice/array root into the matching
+   mutable formal, and snapshot every shared formal from the caller's current
    lifecycle state;
 3. interpret the callee source body through the independent statement semantics,
    recursively applying any further acyclic mutable-call effects;
 4. encode the callee tail under the exact post-state, either discarding it for a
    statement call or binding it to the typed caller local; and
-5. copy every formal post-state field back to its caller root.
+5. copy every formal post-state field or complete sequence back to its caller
+   root.
 
 The return cell and field copy-back are one transition. A later call can consume
 the bound return value, and body TV relates that data flow to the callee's
 independently interpreted source tail rather than its authored contract. Nested
 writes remain exact because changing a nested leaf reconstructs its
 containing direct field before that field is copied back. Copying the complete
-field inventory makes collateral mutations observable. A repeated actual root,
-shared/exclusive overlap, nominal mismatch, missing field, unsupported body form,
+field inventory and complete sequence equality make collateral mutations
+observable. Sequence writes use exact chained `Seq::update` states, so later
+reads and subsequent calls observe the program-point sequence rather than the
+entry or final view. A repeated actual root, shared/exclusive overlap, nominal or
+indexed pointee/capacity mismatch, missing field/state, unsupported body form,
 or recursive effect cycle returns `Unsupported`; none can silently become a
 no-op effect. A mutable peer may be reborrowed as the shared actual when it is a
 different root; the snapshot observes any preceding caller mutation rather than
@@ -83,10 +92,14 @@ the peer's entry state.
 
 The production obligation includes the ordinary lowered callee and executes the
 real generated call. Mutable callees do not receive a pure
-`when_used_as_spec` surrogate: their independently reconstructed state appears
-only in the body wrapper's postcondition. Consequently, deleting a call,
-changing an argument, reordering dependent calls, or weakening the callee's
-collateral frame changes a Verus obligation.
+`when_used_as_spec` surrogate. For compositional caller TV, Forge adds the
+independently reconstructed exact result/state predicate to that exact lowered
+callee in the obligation unit; Verus must prove it from the emitted body before
+the caller may use it. This closes complete-sequence composition even when an
+authored pointwise contract is logically sufficient but not automatically
+extensional, without assuming a parallel implementation. Consequently,
+deleting a call, changing an argument, reordering dependent calls, or changing
+an unmentioned collateral element changes or fails a Verus obligation.
 
 Per-expression TV preserves a named-record borrow as `&mut Name`. An effectful
 mutable-call initializer is intentionally owned by whole-body TV: placing an
@@ -101,12 +114,14 @@ program-point state; using the unselected mutable name is an adversarial failure
 
 ## Assurance and acceptance
 
-The focused real-Verus suite proves two dependent mutable calls, direct
-let-bound result flow with exact post-state, a distinct two-root call, and mixed
+The focused real-Verus suites prove two dependent mutable-record calls, direct
+let-bound result flow with exact post-state, a distinct two-root call, fixed-
+array and mutable-slice result calls with complete sequence post-state, and mixed
 shared/mutable snapshot-result composition, then
 rejects a wrong/discarded result, nested result use, dropped second call, wrong
 argument, missing collateral callee frame, duplicate exclusive alias, recursive
-effect cycle, shared/exclusive overlap, and missing `final` field selector.
+effect cycle, shared/exclusive overlap, exact array capacity/type mismatch, and
+missing `final` field selector.
 Forge's corpus body-TV test derives the effect from source rather than accepting
 a hand-authored model, proves both a shared caller input and the current snapshot
 of a separately mutable peer, and rejects overlap before invoking Verus.
@@ -120,13 +135,20 @@ every contract, exec, body, and wrapper TV row must be L3/faithful. Bound source
 tampering invalidates verification. There is no bodyless declaration in this
 increment, so every added application primitive is L3; no L1 exception is used.
 
+The sibling `mutable_indexed_call_effect.th` fixture executes a generated
+fixed-array mutation/result call from a linked consumer, checks the untouched
+element at runtime, requires every reachable receipt and TV row at L3/faithful,
+replays the receipt, and rejects source tampering. Forge corpus tests derive
+both fixed-array and slice frames from ordinary Thermite signatures rather than
+accepting hand-authored metadata.
+
 This is reusable language and proof machinery. It adds no scheduler, allocator,
 boot path, firmware runtime, architecture implementation, or kernel artifact.
 
 ## Residual boundary
 
-The frozen subset still excludes mutable slice/array callees, shared slices or
-arrays, an actual such as `outer.inner` or `slots[i]`, nested
+The frozen subset still excludes shared slices or arrays, an actual such as
+`outer.inner` or `slots[i]`, nested
 result use inside arithmetic/conditions/arguments/assignments/tails, untyped
 result bindings, recursive mutable effects, mutable enum payloads, calls inside
 the record-loop theory, dynamically quantified aggregate frames, and concurrent

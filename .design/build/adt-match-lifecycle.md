@@ -16,7 +16,7 @@ governs:
   - forge/src/verified_build.rs
   - forge/tests/verified_composition.rs
   - conformance/verified-composition/probe.th
-audited-content-sha256: 423d374471fae407acb7689c1ad21af6fd7a4c90a0b164f2ee57f5f3d7636278 (re-pinned 2026-08-05 after orthogonal mixed-borrow body-TV framing; ADT semantics remain regression-covered)
+audited-content-sha256: 248cc1705711218948dcf313013580a0d1a2aa75b8110a65a74312e9042a11e3 (re-pinned 2026-08-05 after orthogonal mutable-indexed call-state framing; ADT semantics remain regression-covered)
 extends:
   - .design/build/owned-aggregate-lifecycle.md
   - .design/build/nested-aggregate-lifecycle.md

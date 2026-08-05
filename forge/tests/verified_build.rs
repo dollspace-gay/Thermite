@@ -1267,6 +1267,128 @@ fn main() {
 }
 
 #[test]
+fn mutable_indexed_call_effect_is_strict_l3_replayed_and_executed() {
+    let temp = TempDir::new("mutable-indexed-call-effect");
+    let bundle = temp.0.join("mutable-indexed-call-effect.verified");
+    let bundle_s = bundle.to_string_lossy().to_string();
+    assert_success(&forge(&[
+        "build",
+        "conformance/verified-build/mutable_indexed_call_effect.th",
+        "--level",
+        "l3",
+        "--export",
+        "indexed_call_pipeline",
+        "--crate-name",
+        "mutable_indexed_call_effect",
+        "--target",
+        "kernel",
+        "--out",
+        &bundle_s,
+        "--json",
+    ]));
+    assert_success(&forge(&["verify-build", &bundle_s, "--replay", "--json"]));
+
+    let source = fs::read_to_string(bundle.join("evidence/source.verus.rs")).unwrap();
+    assert!(source.starts_with("#![no_std]\n"), "{source}");
+    assert!(
+        source.contains("data: &mut [u64; INDEXED_CALL_SLOTS]")
+            && source.contains("let next: u64 = value;")
+            && source.contains("let observed: u64 = indexed_call_write_zero(data, next);"),
+        "{source}"
+    );
+    assert!(!source.contains("external_body"), "{source}");
+
+    let consumer_source = temp.0.join("mutable-indexed-call-consumer.rs");
+    fs::write(
+        &consumer_source,
+        r#"
+use mutable_indexed_call_effect::indexed_call_pipeline;
+
+fn main() {
+    let mut data = [3_u64, 77_u64];
+    assert_eq!(indexed_call_pipeline(&mut data, 41), 41);
+    assert_eq!(data, [41, 77]);
+}
+"#,
+    )
+    .unwrap();
+    let consumer = temp.0.join("mutable-indexed-call-consumer");
+    let link = codegen_rustc(&bundle)
+        .current_dir(root())
+        .arg("--edition=2021")
+        .arg(&consumer_source)
+        .arg("--extern")
+        .arg(format!(
+            "mutable_indexed_call_effect={}",
+            bundle
+                .join("artifact/libmutable_indexed_call_effect.rlib")
+                .display()
+        ))
+        .arg("-L")
+        .arg(format!(
+            "dependency={}",
+            bundle.join("artifact/deps").display()
+        ))
+        .args(["-C", "panic=abort"])
+        .arg("-o")
+        .arg(&consumer)
+        .output()
+        .unwrap();
+    assert_success(&link);
+    assert_success(&Command::new(&consumer).output().unwrap());
+
+    let receipt: serde_json::Value =
+        serde_json::from_slice(&fs::read(bundle.join("receipt.json")).unwrap()).unwrap();
+    assert_eq!(receipt["binding"]["assurance"], "L3");
+    assert!(receipt["binding"]["assurance_aggregate"]["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|member| member["achieved"] == "L3"));
+
+    let tv: serde_json::Value = serde_json::from_slice(
+        &fs::read(bundle.join("evidence/translation-validation.json")).unwrap(),
+    )
+    .unwrap();
+    let rows = tv["rows"].as_array().unwrap();
+    assert!(
+        rows.iter().all(|row| row["verdict"] == "faithful"),
+        "strict indexed-call lifecycle admitted a non-faithful row: {tv}"
+    );
+    assert!(rows.iter().any(|row| {
+        row["phase"] == "body"
+            && row["label"] == "indexed_call_pipeline"
+            && row["verdict"] == "faithful"
+    }));
+    assert!(rows.iter().any(|row| {
+        row["phase"] == "exec"
+            && row["label"] == "indexed_call_pipeline.let#1"
+            && row["verdict"] == "faithful"
+    }));
+    assert!(!rows
+        .iter()
+        .any(|row| { row["phase"] == "exec" && row["label"] == "indexed_call_pipeline.let#2" }));
+
+    let tampered = temp.0.join("mutable-indexed-call-effect-tampered.verified");
+    copy_tree(&bundle, &tampered);
+    let input = tampered.join("evidence/input.th");
+    let original = fs::read_to_string(&input).unwrap();
+    let changed = original.replacen(
+        "indexed_call_write_zero(data, next)",
+        "indexed_call_write_zero(data, next + 1)",
+        1,
+    );
+    assert_ne!(changed, original);
+    fs::write(&input, changed).unwrap();
+    assert!(
+        !forge(&["verify-build", tampered.to_string_lossy().as_ref()])
+            .status
+            .success(),
+        "changing the bound indexed-call effect must invalidate the receipt"
+    );
+}
+
+#[test]
 fn aggregate_mutable_storage_is_exported_replayed_and_exactly_validated() {
     let temp = TempDir::new("aggregate-storage");
     let bundle = temp.0.join("aggregate-storage.verified");

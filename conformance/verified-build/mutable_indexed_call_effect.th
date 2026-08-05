@@ -1,0 +1,30 @@
+const INDEXED_CALL_SLOTS: usize = 2;
+
+fn indexed_call_write_zero(
+  data: &mut [u64; INDEXED_CALL_SLOTS],
+  value: u64,
+) -> u64
+  req true
+  ens result == value
+  ens final(data)[0] == value
+  ens final(data)[1] == old(data)[1]
+  fx pure
+{
+  data[0] = value;
+  data[0]
+}
+
+fn indexed_call_pipeline(
+  data: &mut [u64; INDEXED_CALL_SLOTS],
+  value: u64,
+) -> u64
+  req true
+  ens result == value
+  ens final(data)[0] == value
+  ens final(data)[1] == old(data)[1]
+  fx pure
+{
+  let next: u64 = value;
+  let observed: u64 = indexed_call_write_zero(data, next);
+  observed
+}

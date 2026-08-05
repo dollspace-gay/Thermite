@@ -747,6 +747,7 @@ fn copy_from(left: &mut State, right: &State) -> ()
 {
   left.value = right.value;
 }
+
 fn alias(state: &mut State) -> ()
   req true
   ens true
@@ -771,6 +772,79 @@ fn alias(state: &mut State) -> ()
             .contains("aliases exclusive root `state` through shared formal `right`"),
         "{report}"
     );
+}
+
+#[test]
+fn mutable_fixed_array_callee_effects_are_exact_and_faithful() {
+    let source = r#"
+const SLOTS: usize = 2;
+fn write_zero(data: &mut [u64; SLOTS], value: u64) -> u64
+  req true
+  ens result == value
+  ens final(data)[0] == value
+  ens final(data)[1] == old(data)[1]
+  fx pure
+{
+  data[0] = value;
+  data[0]
+}
+fn array_call_pipeline(data: &mut [u64; SLOTS], value: u64) -> u64
+  req true
+  ens result == value
+  ens final(data)[0] == value
+  ens final(data)[1] == old(data)[1]
+  fx pure
+{
+  let observed: u64 = write_zero(data, value);
+  observed
+}
+"#;
+    let file = write_th("mutable_fixed_array_callee", source);
+    let report = run_body_tv_json(&file);
+    assert_eq!(report["counts"]["checked"].as_u64(), Some(2), "{report}");
+    assert_eq!(report["counts"]["faithful"].as_u64(), Some(2), "{report}");
+    assert_eq!(report["counts"]["divergent"].as_u64(), Some(0), "{report}");
+    assert_eq!(report["counts"]["skipped"].as_u64(), Some(0), "{report}");
+    for name in ["write_zero", "array_call_pipeline"] {
+        assert!(
+            report["bodies"].as_array().unwrap().iter().any(|body| {
+                body["body"].as_str() == Some(name) && body["verdict"].as_str() == Some("faithful")
+            }),
+            "{name}: {report}"
+        );
+    }
+}
+
+#[test]
+fn mutable_slice_callee_effects_are_exact_and_faithful() {
+    let source = r#"
+fn slice_write_zero(data: &mut [u64], value: u64) -> u64
+  req data.len() == 2 && data[1] == 77
+  ens result == value
+  ens final(data)[0] == value
+  ens final(data)[1] == 77
+  fx pure
+{
+  data[0] = value;
+  data[0]
+}
+fn slice_call_pipeline(data: &mut [u64], value: u64) -> u64
+  req data.len() == 2 && data[1] == 77
+  ens result == value
+  ens final(data)[0] == value
+  ens final(data)[1] == 77
+  fx pure
+{
+  let observed: u64 = slice_write_zero(data, value);
+  observed
+}
+"#;
+    let file = write_th("mutable_slice_callee", source);
+    let report = run_body_tv_json(&file);
+    assert_eq!(report["counts"]["checked"].as_u64(), Some(2), "{report}");
+    assert_eq!(report["counts"]["faithful"].as_u64(), Some(2), "{report}");
+    assert_eq!(report["counts"]["divergent"].as_u64(), Some(0), "{report}");
+    assert_eq!(report["counts"]["skipped"].as_u64(), Some(0), "{report}");
 }
 
 #[test]

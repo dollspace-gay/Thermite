@@ -107,12 +107,6 @@ fn plan_from_bytes(
         &document.target.target_features,
         valid_feature,
     )?;
-    if !document.target.target_features.is_empty() {
-        return Err(
-            "frozen primitive registry v1 rejects non-empty target_features because the current exact-source codegen path supplies no target-feature flags"
-                .to_string(),
-        );
-    }
     if document.entries.is_empty() {
         return Err("a frozen primitive registry must declare at least one entry".to_string());
     }
@@ -728,7 +722,8 @@ mod tests {
 
     #[test]
     fn exact_registry_closes_the_reachable_boundary_once() {
-        let (_, _, _, registry) = fixture();
+        let (_, _, _, mut registry) = fixture();
+        registry["target"]["target_features"] = serde_json::json!(["sse2"]);
         let planned = plan(&registry).unwrap();
         assert_eq!(planned.bindings.len(), 1);
         assert_eq!(planned.bindings[0].source_name, "platform_identity");
@@ -738,6 +733,30 @@ mod tests {
         );
         assert!(planned.plan.entries[0].reachable);
         assert_eq!(planned.plan.entries[0].proof_obligations.len(), 3);
+        assert_eq!(planned.plan.target.target_features, ["sse2"]);
+    }
+
+    #[test]
+    fn target_features_are_canonical_bare_sorted_names() {
+        let (_, _, _, registry) = fixture();
+
+        let mut changed = registry.clone();
+        changed["target"]["target_features"] = serde_json::json!(["sse2", "sse2"]);
+        assert!(plan(&changed)
+            .unwrap_err()
+            .contains("strictly sorted and unique"));
+
+        let mut changed = registry.clone();
+        changed["target"]["target_features"] = serde_json::json!(["+sse2"]);
+        assert!(plan(&changed)
+            .unwrap_err()
+            .contains("invalid target features value"));
+
+        let mut changed = registry;
+        changed["target"]["target_features"] = serde_json::json!(["zeta", "alpha"]);
+        assert!(plan(&changed)
+            .unwrap_err()
+            .contains("strictly sorted and unique"));
     }
 
     #[test]

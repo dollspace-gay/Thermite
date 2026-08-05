@@ -664,6 +664,7 @@ pub struct CodegenRustcEvidence {
     pub target_triple: String,
     pub target_pointer_width: String,
     pub target_endian: String,
+    pub supported_target_features: Vec<String>,
     pub target_libdir: String,
     pub target_libdir_sha256: String,
     pub target_libdir_file_count: u64,
@@ -694,6 +695,9 @@ impl CodegenRustcEvidence {
         c.field("target_triple", &self.target_triple);
         c.field("target_pointer_width", &self.target_pointer_width);
         c.field("target_endian", &self.target_endian);
+        for feature in &self.supported_target_features {
+            c.field("supported_target_feature", feature);
+        }
         c.field("target_libdir_sha256", &self.target_libdir_sha256);
         c.field(
             "target_libdir_file_count",
@@ -2511,6 +2515,7 @@ pub fn build_file(
         target_triple: &toolchain.target_triple,
         target_pointer_width: &toolchain.target_pointer_width,
         target_endian: &toolchain.target_endian,
+        target_features: &[],
         verus_source: &verus_source,
     });
     let frozen_plan_sha = plan.canonical_sha256();
@@ -2562,15 +2567,16 @@ pub fn build_file(
     if test_fault("before-verus") {
         return Ok(reject("fault-injection", "injected failure before Verus"));
     }
-    let compiled = compile_verus_source(
-        &crate_name,
-        &verus_source,
+    let compiled = compile_verus_source(CompileVerusInput {
+        crate_name: &crate_name,
+        source: &verus_source,
         target,
-        &toolchain.verus_path,
-        &toolchain.environment,
-        &toolchain.artifact_codegen.canonical_identity_sha256(),
-        collected_toolchain.dependency_path("libvstd.rlib"),
-    )?;
+        verus_path: &toolchain.verus_path,
+        environment: &toolchain.environment,
+        codegen_toolchain_sha256: &toolchain.artifact_codegen.canonical_identity_sha256(),
+        kernel_vstd_rlib: collected_toolchain.dependency_path("libvstd.rlib"),
+        target_features: &[],
+    })?;
     if !compiled.evidence.success || compiled.evidence.errors != Some(0) {
         return Ok(reject(
             "whole-crate-verus",
@@ -3172,6 +3178,7 @@ struct PlanInput<'a> {
     target_triple: &'a str,
     target_pointer_width: &'a str,
     target_endian: &'a str,
+    target_features: &'a [String],
     verus_source: &'a str,
 }
 
@@ -3188,6 +3195,7 @@ fn make_plan(input: PlanInput<'_>) -> ArtifactPlanV1 {
         target_triple,
         target_pointer_width,
         target_endian,
+        target_features,
         verus_source,
     } = input;
     let mut nodes = Vec::new();
@@ -3317,7 +3325,7 @@ fn make_plan(input: PlanInput<'_>) -> ArtifactPlanV1 {
         target_endian: target_endian.to_string(),
         crate_type: "rlib".to_string(),
         panic_strategy: "abort".to_string(),
-        expected_verus_args: expected_verus_args(crate_name, target),
+        expected_verus_args: expected_verus_args(crate_name, target, target_features),
         exports: exports.to_vec(),
         closure_nodes: nodes,
         closure_edges: edges,
@@ -4272,6 +4280,12 @@ fn collect_codegen_rustc(
     )?;
     let target_pointer_width = rustc_cfg_value(&cfg, "target_pointer_width")?;
     let target_endian = rustc_cfg_value(&cfg, "target_endian")?;
+    let supported_target_features = parse_rustc_target_features(&rustup_command_text(
+        rustup,
+        &rustup_toolchain,
+        &["rustc", "--print", "target-features"],
+        "Verus codegen rustc --print target-features",
+    )?)?;
     let sysroot_text = rustup_command_text(
         rustup,
         &rustup_toolchain,
@@ -4356,6 +4370,7 @@ fn collect_codegen_rustc(
         target_triple,
         target_pointer_width,
         target_endian,
+        supported_target_features,
         target_libdir: target_libdir.display().to_string(),
         target_libdir_sha256,
         target_libdir_file_count,
@@ -4417,6 +4432,51 @@ fn rustc_cfg_value(cfg: &str, key: &str) -> Result<String, ForgeError> {
         .ok_or_else(|| ForgeError::VerusOutput {
             detail: format!("codegen rustc cfg omitted `{key}`"),
         })
+}
+
+fn parse_rustc_target_features(output: &str) -> Result<Vec<String>, ForgeError> {
+    let mut features = Vec::new();
+    for line in output.lines() {
+        let Some((name, _description)) = line.trim().split_once(" - ") else {
+            continue;
+        };
+        let name = name.trim();
+        if name.is_empty()
+            || !name
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.'))
+        {
+            return Err(ForgeError::VerusOutput {
+                detail: format!(
+                    "codegen rustc --print target-features emitted invalid name `{name}`"
+                ),
+            });
+        }
+        features.push(name.to_string());
+    }
+    features.sort();
+    if features.is_empty() || features.windows(2).any(|pair| pair[0] == pair[1]) {
+        return Err(ForgeError::VerusOutput {
+            detail: "codegen rustc target-feature inventory is empty or contains duplicates"
+                .to_string(),
+        });
+    }
+    Ok(features)
+}
+
+fn require_supported_target_features(
+    requested: &[String],
+    supported: &[String],
+) -> Result<(), String> {
+    if let Some(feature) = requested
+        .iter()
+        .find(|feature| supported.binary_search(feature).is_err())
+    {
+        return Err(format!(
+            "primitive registry target feature `{feature}` is not in the pinned codegen rustc target-feature inventory"
+        ));
+    }
+    Ok(())
 }
 
 fn component_manifest_largest(
@@ -4596,6 +4656,20 @@ fn validate_codegen_evidence(toolchain: &ToolchainEvidence) -> Result<(), String
     {
         return Err("recorded target-library or rlib-linker policy is invalid".to_string());
     }
+    if codegen.supported_target_features.is_empty()
+        || codegen
+            .supported_target_features
+            .windows(2)
+            .any(|pair| pair[0] >= pair[1])
+        || codegen.supported_target_features.iter().any(|feature| {
+            feature.is_empty()
+                || !feature
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.'))
+        })
+    {
+        return Err("recorded target-feature inventory is not canonical".to_string());
+    }
     for (label, digest) in [
         ("host rustc", toolchain.host_rustc.rustc_sha256.as_str()),
         ("codegen rustc", codegen.rustc_sha256.as_str()),
@@ -4690,21 +4764,34 @@ struct CompiledVerus {
     evidence: VerusEvidence,
 }
 
-fn compile_verus_source(
-    crate_name: &str,
-    source: &str,
+struct CompileVerusInput<'a> {
+    crate_name: &'a str,
+    source: &'a str,
     target: VerifiedTarget,
-    verus_path: &str,
-    environment: &BTreeMap<String, String>,
-    codegen_toolchain_sha256: &str,
-    kernel_vstd_rlib: Option<&Path>,
-) -> Result<CompiledVerus, ForgeError> {
+    verus_path: &'a str,
+    environment: &'a BTreeMap<String, String>,
+    codegen_toolchain_sha256: &'a str,
+    kernel_vstd_rlib: Option<&'a Path>,
+    target_features: &'a [String],
+}
+
+fn compile_verus_source(input: CompileVerusInput<'_>) -> Result<CompiledVerus, ForgeError> {
+    let CompileVerusInput {
+        crate_name,
+        source,
+        target,
+        verus_path,
+        environment,
+        codegen_toolchain_sha256,
+        kernel_vstd_rlib,
+        target_features,
+    } = input;
     let scratch = ScratchTree::new_in_temp(&format!("verified_{crate_name}"))?;
     let source_name = format!("{crate_name}.rs");
     let source_path = scratch.path.join(&source_name);
     write_bytes(&source_path, source.as_bytes())?;
     let before = file_sha256(&source_path)?.2;
-    let args = expected_verus_args(crate_name, target);
+    let args = expected_verus_args(crate_name, target, target_features);
     let mut command = Command::new(verus_path);
     for arg in &args[..args.len() - 2] {
         match arg.as_str() {
@@ -4818,7 +4905,11 @@ fn compile_verus_source(
     })
 }
 
-fn expected_verus_args(crate_name: &str, target: VerifiedTarget) -> Vec<String> {
+fn expected_verus_args(
+    crate_name: &str,
+    target: VerifiedTarget,
+    target_features: &[String],
+) -> Vec<String> {
     let mut args = vec!["--output-json".to_string(), "--profile".to_string()];
     if matches!(target, VerifiedTarget::Kernel) {
         args.extend([
@@ -4838,6 +4929,21 @@ fn expected_verus_args(crate_name: &str, target: VerifiedTarget) -> Vec<String> 
         format!("smt.random_seed={DEFAULT_SOLVER_SEED}"),
         "-C".to_string(),
         "panic=abort".to_string(),
+    ]);
+    if !target_features.is_empty() {
+        args.extend([
+            "-C".to_string(),
+            format!(
+                "target-feature={}",
+                target_features
+                    .iter()
+                    .map(|feature| format!("+{feature}"))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ),
+        ]);
+    }
+    args.extend([
         "--remap-path-prefix=<SCRATCH>=.".to_string(),
         format!("{crate_name}.rs"),
     ]);
@@ -5632,6 +5738,7 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
             target_triple: &plan.target_triple,
             target_pointer_width: &plan.target_pointer_width,
             target_endian: &plan.target_endian,
+            target_features: &[],
             verus_source: &emitted,
         });
         (emitted, reconstructed)
@@ -5744,10 +5851,17 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
         serde_json::from_slice(&verus_bytes).map_err(|error| ForgeError::VerusOutput {
             detail: format!("invalid bound whole-crate Verus evidence: {error}"),
         })?;
+    let target_features = plan
+        .composition
+        .as_ref()
+        .and_then(|composition| composition.primitive_registry.as_ref())
+        .map(|registry| registry.target.target_features.as_slice())
+        .unwrap_or(&[]);
     if !verus.success
         || verus.errors != Some(0)
         || verus.args != plan.expected_verus_args
-        || plan.expected_verus_args != expected_verus_args(&plan.crate_name, plan.target)
+        || plan.expected_verus_args
+            != expected_verus_args(&plan.crate_name, plan.target, target_features)
         || verus.source_relative_path != format!("{}.rs", plan.crate_name)
         || verus.source_sha256_before != plan.expected_verus_source_sha256
         || verus.source_sha256_after != plan.expected_verus_source_sha256
@@ -5777,6 +5891,13 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
         .unwrap_or_default();
     validate_codegen_evidence(&toolchain).map_err(|detail| ForgeError::VerusOutput {
         detail: format!("bound artifact-codegen toolchain is invalid: {detail}"),
+    })?;
+    require_supported_target_features(
+        target_features,
+        &toolchain.artifact_codegen.supported_target_features,
+    )
+    .map_err(|detail| ForgeError::VerusOutput {
+        detail: format!("bound primitive target-feature set is invalid: {detail}"),
     })?;
     if toolchain.source_date_epoch != SOURCE_DATE_EPOCH
         || toolchain.forge_version != env!("CARGO_PKG_VERSION")
@@ -5987,15 +6108,16 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
         let replay_kernel_vstd_path = replay_kernel_vstd
             .as_ref()
             .map(|(scratch, _, _)| scratch.path.join("libvstd.rlib"));
-        let compiled = compile_verus_source(
-            &plan.crate_name,
-            &source,
-            plan.target,
-            current_verus.to_string_lossy().as_ref(),
-            &replay_environment,
-            &current_codegen.canonical_identity_sha256(),
-            replay_kernel_vstd_path.as_deref(),
-        )?;
+        let compiled = compile_verus_source(CompileVerusInput {
+            crate_name: &plan.crate_name,
+            source: &source,
+            target: plan.target,
+            verus_path: current_verus.to_string_lossy().as_ref(),
+            environment: &replay_environment,
+            codegen_toolchain_sha256: &current_codegen.canonical_identity_sha256(),
+            kernel_vstd_rlib: replay_kernel_vstd_path.as_deref(),
+            target_features,
+        })?;
         if !compiled.evidence.success || sha256(&compiled.artifact) != artifact.sha256 {
             return Err(ForgeError::VerusOutput {
                 detail: "replay did not reproduce the bound artifact digest".to_string(),
@@ -6458,6 +6580,7 @@ fn state_new(value: u64) -> State
             target_triple: "x86_64-unknown-linux-gnu".to_string(),
             target_pointer_width: "64".to_string(),
             target_endian: "little".to_string(),
+            supported_target_features: vec!["sse2".to_string()],
             target_libdir: format!("{root}/lib/rustlib/x86_64-unknown-linux-gnu/lib"),
             target_libdir_sha256: "6".repeat(64),
             target_libdir_file_count: 62,
@@ -6777,7 +6900,7 @@ fn state_new(value: u64) -> State
         assert!(base.same_identity(&relocated));
 
         let digest = base.canonical_identity_sha256();
-        for field in 0..18 {
+        for field in 0..19 {
             let mut changed = base.clone();
             match field {
                 0 => changed.selection.push_str(" changed"),
@@ -6794,13 +6917,36 @@ fn state_new(value: u64) -> State
                 11 => changed.target_triple.push_str("-changed"),
                 12 => changed.target_pointer_width = "32".to_string(),
                 13 => changed.target_endian = "big".to_string(),
-                14 => changed.target_libdir_sha256 = "9".repeat(64),
-                15 => changed.target_libdir_file_count += 1,
-                16 => changed.target_libdir_total_bytes += 1,
-                17 => changed.linker_identity.push_str(" changed"),
+                14 => changed.supported_target_features.push("xsave".to_string()),
+                15 => changed.target_libdir_sha256 = "9".repeat(64),
+                16 => changed.target_libdir_file_count += 1,
+                17 => changed.target_libdir_total_bytes += 1,
+                18 => changed.linker_identity.push_str(" changed"),
                 _ => unreachable!(),
             }
             assert_ne!(digest, changed.canonical_identity_sha256(), "field {field}");
         }
+    }
+
+    #[test]
+    fn rustc_target_feature_inventory_is_parsed_canonically() {
+        let parsed = parse_rustc_target_features(
+            "Features supported by rustc for this target:\n    sse2 - SSE2.\n    aes - AES.\n",
+        )
+        .unwrap();
+        assert_eq!(parsed, ["aes", "sse2"]);
+        assert!(parse_rustc_target_features("header only\n").is_err());
+        assert!(parse_rustc_target_features("  +sse2 - invalid\n").is_err());
+        assert!(require_supported_target_features(
+            &["sse2".to_string()],
+            &["aes".to_string(), "sse2".to_string()]
+        )
+        .is_ok());
+        assert!(require_supported_target_features(
+            &["imaginary".to_string()],
+            &["aes".to_string(), "sse2".to_string()]
+        )
+        .unwrap_err()
+        .contains("not in the pinned codegen rustc"));
     }
 }

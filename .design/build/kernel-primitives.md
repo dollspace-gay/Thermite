@@ -97,7 +97,7 @@ governs:
   - conformance/verified-composition/frozen_primitive.th
   - conformance/verified-composition/frozen_primitive_shell.rs
   - conformance/verified-composition/frozen_primitive_registry.json
-audited-content-sha256: 693e27529ffa71b66665e9848d7c56c6e8079794ec0fdb175df0f46cb027d835 (re-pinned 2026-08-05 after the strict L3 arbitrary-node intrusive unlink increment; no kernel policy or implementation was added)
+audited-content-sha256: 0593386ece7d82a0308f825cf46c7f3e92b44811f1dab2bd057c3271bcf2215b (re-pinned 2026-08-05 after exact target-feature codegen binding and lint cleanup; no kernel policy or implementation was added)
 extends:
   - .design/build/kernel-target.md
   - .design/build/l3-rich-composition.md
@@ -478,13 +478,14 @@ obligation count. Signature/effect/contract/source/ownership drift, missing or
 extra reachable bindings, post-plan mutation, receipt tampering, and a lying
 implementation all reject without publication.
 
-This v1 path intentionally accepts only the Rust ABI, an empty target-feature
-set, safe direct-Verus shell bodies, and `sequential` concurrency. It rejects
-otherwise well-formed `atomic`, `volatile`, and `privileged` entries because
-the same-crate checked-wrapper proof does not model their object or machine
-semantics. Exact separate Rust/assembly object closure for irreducible machine
-instructions remains; it cannot be claimed as directly refined through this
-schema. The precise contract and limitations are in
+This v1 path intentionally accepts only the Rust ABI, safe direct-Verus shell
+bodies, and `sequential` concurrency. Sorted canonical target features are
+bound into the frozen plan and supplied to the exact proof/codegen and replay
+commands. It rejects otherwise well-formed `atomic`, `volatile`, and
+`privileged` entries because the same-crate checked-wrapper proof does not
+model their object or machine semantics. Exact separate Rust/assembly object
+closure for irreducible machine instructions remains; it cannot be claimed as
+directly refined through this schema. The precise contract and limitations are in
 `.design/build/frozen-primitive-registry.md`.
 
 ### Atomics and memory ordering
@@ -671,7 +672,7 @@ Source: `.design/reqs/registry.toml`
 | REQ-KPRIM-4 | partial | `.design/build/kernel-primitives.md` | Sealed authority and ownership | The sealed-construction barrier, direct and nested opaque lifecycle receipts, typed owned-record local/value-call L3 receipts, exact user-ADT result/match TV, exact direct finite-record mutable-call effects, an opaque receipt-bound 64-slot generation ledger, a generation-bound 64-slot static-storage lease/region protocol, and typed opaque single-use atomic-init slots prove acquisition/renewal/release, stale-token-after-reuse rejection, double-release rejection, monotonic rights, L3 move/clone refusal, initialization-witness matching, committed-region consumption, exact authority/slot/generation transfer, duplicate-init refusal, and foreign-module construction/read/write rejection. Add a complete affine rule if stronger general-purpose uniqueness is required, strictly compose the full owned-ADT lifecycles through exactly refined authority/memory/atomic doors, and add concurrent synchronization consumers that rotate generations through exact atomic transitions. |
 | REQ-KPRIM-5 | partial | `.design/build/kernel-primitives.md` | Sealed atomics and ordering model | The five-module receipt-bound package, typed generation-bound storage-to-slot conversion, enforceable single-use initialization, compound atomic identity, 50 atomic boundary declarations, exact ordering matrix, pre-codegen legality gate, bounded history relations, strict kernel ordering/storage proofs, strict hosted history proof, replay, runtime generated-logic execution, and adversarial tests are present. Add a kernel-target finite-history proof surface, exact atomic object/machine refinement, positive machine-aware lifecycle composition, and verified synchronization consumers. |
 | REQ-KPRIM-6 | partial | `.design/build/kernel-primitives.md` | Verified waiting and synchronization | A receipt-bound bounded-wait trace scan, frozen pause/block/terminal-halt declarations, and fail-closed ticket-lock/barrier/epoch-ack/once/reference-count/seqlock/bounded-MPSC/bounded-work-deque mechanics are shipped with L3 proofs, adversarial claims, strict replay, and tamper rejection. Add registry-level fairness/progress semantics, directly refined wait bodies, atomic integration and machine concurrency composition, then richer reader/writer coordination in .th. |
-| REQ-KPRIM-7 | partial | `.design/build/kernel-primitives.md` | Generic frozen boundary registry | Same-crate safe direct-Verus Rust-ABI entries now close reachable boundaries exactly. Add non-empty codegen-feature binding and exact separate Rust/assembly source, object, machine-model, and refinement closure for irreducible operations without adding an architecture operation table. |
+| REQ-KPRIM-7 | partial | `.design/build/kernel-primitives.md` | Generic frozen boundary registry | Same-crate safe direct-Verus Rust-ABI entries now close reachable boundaries exactly, including canonical non-empty target features checked against the pinned rustc inventory and bound into proof/codegen, validation, and replay. Add exact separate Rust/assembly source, object, machine-model, and refinement closure for irreducible operations without adding an architecture operation table. |
 | REQ-KPRIM-8 | shipped | `.design/build/kernel-primitives.md` | Generic freestanding verified library build |  |
 | REQ-KPRIM-9 | partial | `.design/build/kernel-primitives.md` | Exact platform refinement composition | Safe same-crate direct-Verus operations now receive exact one-to-one checked-wrapper refinement. Add direct machine-operation refinement tied to separate Rust/assembly objects and the atomic/concurrency model before every irreducible platform family is covered. |
 <!-- /generated:reqs -->

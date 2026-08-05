@@ -2,7 +2,9 @@
   "schema": "thermite.frozen-primitive-registry.v1",
   "target": {
     "target_triple": "x86_64-unknown-linux-gnu",
-    "target_features": []
+    "target_features": [
+      "sse2"
+    ]
   },
   "entries": [
     {

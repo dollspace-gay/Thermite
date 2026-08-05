@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: b4a67931ec3ec1c24e4d44159422c244f8ea67e7da803a440b27fc7985d62105 (re-pinned 2026-08-04 after strict ADT TV inventory changes; error accounting remains regression-covered)
+audited-content-sha256: 676fc5b1625c76856b44d92e1d191f27c6b3e30aa504cf1798b0418d0bbf7877 (re-pinned 2026-08-05 after target-feature binding and lint-only iterator cleanup; error accounting remains regression-covered)
 decision: preserve verifier counts when present and represent frontend counts as unknown
 issue: github:dollspace-gay/Thermite#111
 governs:

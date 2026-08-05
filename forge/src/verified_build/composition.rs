@@ -105,6 +105,11 @@ pub(super) fn build_file(
         Ok(assembly) => assembly,
         Err(detail) => return Ok(reject("composition-plan", detail)),
     };
+    let target_features = assembly
+        .primitive_registry
+        .as_ref()
+        .map(|registry| registry.plan.target.target_features.as_slice())
+        .unwrap_or(&[]);
 
     let mut plan = make_plan(PlanInput {
         raw_source,
@@ -118,6 +123,7 @@ pub(super) fn build_file(
         target_triple: &toolchain.target_triple,
         target_pointer_width: &toolchain.target_pointer_width,
         target_endian: &toolchain.target_endian,
+        target_features,
         verus_source: &assembly.combined_source,
     });
     attach_composition_plan(&mut plan, &assembly);
@@ -195,15 +201,16 @@ pub(super) fn build_file(
     if test_fault("before-verus") {
         return Ok(reject("fault-injection", "injected failure before Verus"));
     }
-    let compiled = compile_verus_source(
-        &crate_name,
-        &fresh.combined_source,
+    let compiled = compile_verus_source(CompileVerusInput {
+        crate_name: &crate_name,
+        source: &fresh.combined_source,
         target,
-        &toolchain.verus_path,
-        &toolchain.environment,
-        &toolchain.artifact_codegen.canonical_identity_sha256(),
-        collected_toolchain.dependency_path("libvstd.rlib"),
-    )?;
+        verus_path: &toolchain.verus_path,
+        environment: &toolchain.environment,
+        codegen_toolchain_sha256: &toolchain.artifact_codegen.canonical_identity_sha256(),
+        kernel_vstd_rlib: collected_toolchain.dependency_path("libvstd.rlib"),
+        target_features,
+    })?;
     if !compiled.evidence.success || compiled.evidence.errors != Some(0) {
         return Ok(reject(
             "whole-crate-verus",
@@ -399,7 +406,7 @@ fn assemble_from_paths(
         .map(fs::read)
         .transpose()
         .map_err(|error| format!("could not read frozen primitive registry: {error}"))?;
-    assemble(
+    let assembly = assemble(
         program,
         link_export_names,
         composition_export_names,
@@ -412,7 +419,14 @@ fn assemble_from_paths(
             pointer_width: &toolchain.target_pointer_width,
             endian: &toolchain.target_endian,
         },
-    )
+    )?;
+    if let Some(registry) = &assembly.primitive_registry {
+        require_supported_target_features(
+            &registry.plan.target.target_features,
+            &toolchain.artifact_codegen.supported_target_features,
+        )?;
+    }
+    Ok(assembly)
 }
 
 fn assemble(
@@ -1213,6 +1227,11 @@ pub(super) fn reconstruct_plan(
         target_triple: &plan.target_triple,
         target_pointer_width: &plan.target_pointer_width,
         target_endian: &plan.target_endian,
+        target_features: assembly
+            .primitive_registry
+            .as_ref()
+            .map(|registry| registry.plan.target.target_features.as_slice())
+            .unwrap_or(&[]),
         verus_source: &assembly.combined_source,
     });
     attach_composition_plan(&mut reconstructed, &assembly);

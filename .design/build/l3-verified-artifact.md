@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: 328793d2d63bdc469ab83d36518319554232a50311c64958839160bc1fa5e453 (re-pinned 2026-08-05 after exact two-index freestanding fixed-array lowering)
+audited-content-sha256: bfedc1b20e6c3623578ebc83cac16d5da1b416727a978f12e1dc4ddabc760f71 (re-pinned 2026-08-05 after binding the pinned rustc target-feature inventory into lint-clean codegen identity)
 decision: Option A — compile the canonical Verus executable body that was verified
 issue: github:dollspace-gay/Thermite#101, github:dollspace-gay/Thermite#103, github:dollspace-gay/Thermite#104, github:dollspace-gay/Thermite#108, github:dollspace-gay/Thermite#111
 governs:
@@ -368,8 +368,9 @@ unresolvable selection is a hard build failure.
 - rustc's executable digest, full verbose version, release and commit;
 - the sysroot and the digests of its rustc and rust-std component manifests;
 - the rustc driver and LLVM library digests plus LLVM version;
-- target triple, pointer width, endian, linker identity, and a canonical digest
-  of every file in the selected target library directory.
+- target triple, pointer width, endian, the canonical sorted
+  `rustc --print target-features` inventory, linker identity, and a canonical
+  digest of every file in the selected target library directory.
 
 Install paths remain human-readable provenance but are excluded from the
 path-independent codegen identity. File contents, version identities, target
@@ -377,6 +378,9 @@ facts and tree-relative target-library names are included. This permits replay
 from an equivalent installation prefix without weakening compiler identity.
 The closed Verus environment explicitly sets `RUSTUP_TOOLCHAIN` to this bound
 selection, so both build and replay use the receipt-declared ABI domain.
+Frozen primitive registries may request only names in that bound inventory;
+their canonical `-C target-feature=...` argument is reconstructed on validation
+and replay.
 
 `HostRustcEvidence` separately records the ambient rustc path, digest and
 version for diagnosis. It does not contribute to selection, compatibility or

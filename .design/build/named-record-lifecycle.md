@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: a662b71077b64d75a2af308ef393268b658f2de830c738f9fac5d821fd57a635 (re-pinned 2026-08-05 after exact two-index framing and constructor-if body TV; named-record semantics remain regression-covered)
+audited-content-sha256: f1e1edf55f9038e296d5473a4e3ebc9a60f7f292efe077d292182fe29e9b70ca (re-pinned 2026-08-05 after target-feature binding and lint-only iterator cleanup; named-record semantics remain regression-covered)
 decision: direct mutation through an exclusive borrow of finite non-sealed named record state is admitted only when validator, L3, independent contract/exec/body TV, strict ABI, receipt replay, and representation ownership all describe the same field-exact transition
 governs:
   - thermite-spec/src/validator.rs

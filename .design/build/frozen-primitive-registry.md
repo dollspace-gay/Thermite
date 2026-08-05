@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: partial
-audited-content-sha256: 66f046326881dcf9f88b72e91e786347b344c230b78f20f20fb1c6ca48cf518e (re-pinned 2026-08-05 after exact two-index freestanding lowering; boundary closure semantics are unchanged)
+audited-content-sha256: 1fc7305aed00fb09e0f760b2e37844d0b4379ffcca08ebdf26763bd28c1998b3 (re-pinned 2026-08-05 after exact target-feature inventory, proof/codegen, validation, replay, and lint-clean command binding)
 decision: consumer-owned registry entries close reachable Thermite boundaries through non-exempt same-crate direct-Verus calls
 governs:
   - thermite-lower/src/lower.rs
@@ -48,19 +48,29 @@ contains. Forge resolves those declarations against the source-reachable
 boundary closure selected by the link and composition roots.
 
 Registry v1 deliberately supports exact same-crate Rust-ABI functions authored
-in a direct-Verus shell with `sequential` concurrency semantics. Non-empty
-target-feature sets, foreign ABIs, separate objects, unsafe Rust, assembly,
-atomics, volatile access, and privileged instructions remain unsupported. They
-must fail closed rather than being mislabeled as directly refined. A later
-schema must bind their exact source/object/codegen identities and direct-Verus
-object or machine model before those implementations can receive this assurance
-label.
+in a direct-Verus shell with `sequential` concurrency semantics. Canonical
+non-empty target-feature sets are bound into the frozen plan and supplied to
+the exact Verus/rustc proof-codegen and replay invocations. Foreign ABIs,
+separate objects, unsafe Rust, assembly, atomics, volatile access, and
+privileged instructions remain unsupported. They must fail closed rather than
+being mislabeled as directly refined. A later schema must bind their exact
+separate-source/object identities and direct-Verus object or machine model
+before those implementations can receive this assurance label.
 
 ## Schema v1
 
 The top-level schema is `thermite.frozen-primitive-registry.v1` and contains an
-exact target triple, an explicitly empty v1 feature set, and entries strictly
-sorted by semantic name. Unknown JSON fields are errors.
+exact target triple, a strictly sorted unique list of canonical bare target
+features, and entries strictly sorted by semantic name. Unknown JSON fields are
+errors. Forge renders a non-empty set exactly once as the canonical
+`-C target-feature=+f1,+f2` argument; the argument is part of the artifact plan,
+whole-crate result, receipt root, validation, and replay. Registry values cannot
+carry their own `+`/`-` prefixes or inject an additional compiler option. Every
+requested name must also occur in the pinned codegen rustc's
+`--print target-features` inventory. That sorted inventory is itself recorded
+in `CodegenRustcEvidence`, included in the path-independent toolchain identity,
+validated from the receipt, and reconstructed during replay; an unknown feature
+cannot degrade to a compiler warning and silently disappear.
 
 Each entry declares:
 
@@ -157,6 +167,11 @@ drift rejects.
   contains no `external_body` or synthetic unimplemented body.
 - Signature, contract, effect, target, ABI, ownership, shell-source, proof-list,
   and schema drift fail closed.
+- A non-empty canonical target-feature set is present in the plan and in the
+  exact whole-crate proof/codegen arguments; validation and replay reconstruct
+  the same argument, while duplicate, unsorted, malformed, or post-plan feature
+  changes reject. A syntactically valid feature absent from the pinned rustc
+  inventory rejects before proof/codegen.
 - Registry tampering and a registry change after plan freeze publish nothing.
 - A digest-updated shell whose body violates the Thermite contract reaches the
   real whole-crate proof, fails there, and publishes nothing.
@@ -172,6 +187,6 @@ declaration work. The sealed atomic declaration and finite proof-model package
 now exists, but it deliberately cannot use this schema to claim machine
 refinement. Completion of the larger primitive goal still requires affine
 sealed ownership, separate object/source closure for irreducible Rust/assembly
-machine operations, an atomic object/machine refinement model, non-empty
-codegen-feature binding, waiting/liveness primitives, and verified
+machine operations, an atomic object/machine refinement model,
+waiting/liveness primitives, and verified
 synchronization libraries. None of those are claimed here.

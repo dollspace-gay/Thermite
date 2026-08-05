@@ -143,6 +143,11 @@ fn hosted_bundle_is_exact_private_linkable_tamper_evident_and_reproducible() {
         .as_str()
         .unwrap()
         .contains("release: 1.96.0"));
+    assert!(toolchain["artifact_codegen"]["supported_target_features"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|feature| feature == "sse2"));
     assert_eq!(
         toolchain["environment"]["RUSTUP_TOOLCHAIN"],
         toolchain["artifact_codegen"]["rustup_toolchain"]

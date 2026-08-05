@@ -149,12 +149,62 @@ fn frozen_registry_directly_refines_the_exact_reachable_boundary() {
             .unwrap();
     let registry = &plan["composition"]["primitive_registry"];
     assert_eq!(registry["schema"], "thermite.frozen-primitive-registry.v1");
+    assert_eq!(
+        registry["target"]["target_features"],
+        serde_json::json!(["sse2"])
+    );
     assert_eq!(registry["entries"][0]["thermite_name"], "platform_identity");
     assert_eq!(registry["entries"][0]["reachable"], true);
     assert_eq!(
         registry["entries"][0]["refinement"],
         "same_crate_verus_checked_wrapper"
     );
+    let expected_args = plan["expected_verus_args"].as_array().unwrap();
+    assert!(expected_args
+        .windows(2)
+        .any(|pair| { pair[0] == "-C" && pair[1] == "target-feature=+sse2" }));
+    let verus_result: serde_json::Value =
+        serde_json::from_slice(&fs::read(bundle.join("evidence/verus-result.json")).unwrap())
+            .unwrap();
+    assert_eq!(verus_result["args"], plan["expected_verus_args"]);
+
+    let unsupported_registry_path = temp.0.join("unsupported-feature.registry.json");
+    let mut unsupported_registry: serde_json::Value = serde_json::from_slice(
+        &fs::read(root().join("conformance/verified-composition/frozen_primitive_registry.json"))
+            .unwrap(),
+    )
+    .unwrap();
+    unsupported_registry["target"]["target_features"] =
+        serde_json::json!(["imaginary-thermite-feature"]);
+    fs::write(
+        &unsupported_registry_path,
+        serde_json::to_vec_pretty(&unsupported_registry).unwrap(),
+    )
+    .unwrap();
+    let unsupported_bundle = temp.0.join("unsupported-feature-must-not-publish.verified");
+    let unsupported = forge(&[
+        "build",
+        "conformance/verified-composition/frozen_primitive.th",
+        "--level",
+        "l3",
+        "--compose-export",
+        "primitive_observation",
+        "--compose-shell",
+        "conformance/verified-composition/frozen_primitive_shell.rs",
+        "--primitive-registry",
+        unsupported_registry_path.to_string_lossy().as_ref(),
+        "--crate-name",
+        "thermite_frozen_primitive_unsupported_feature",
+        "--target",
+        "kernel",
+        "--out",
+        unsupported_bundle.to_string_lossy().as_ref(),
+        "--json",
+    ]);
+    assert_eq!(unsupported.status.code(), Some(1));
+    assert!(!unsupported_bundle.exists());
+    assert!(String::from_utf8_lossy(&unsupported.stdout)
+        .contains("not in the pinned codegen rustc target-feature inventory"));
 
     let receipt: serde_json::Value =
         serde_json::from_slice(&fs::read(bundle.join("receipt.json")).unwrap()).unwrap();

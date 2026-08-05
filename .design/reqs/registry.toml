@@ -17840,7 +17840,7 @@ owner = ".design/build/kernel-primitives.md"
 status = "partial"
 scope = "forge"
 summary = "Consumer projects supply versioned platform registries whose exact declarations, implementations, effects, ownership, ABI, models, and evidence are closed from source reachability."
-remaining_scope = "Same-crate safe direct-Verus Rust-ABI entries now close reachable boundaries exactly. Add non-empty codegen-feature binding and exact separate Rust/assembly source, object, machine-model, and refinement closure for irreducible operations without adding an architecture operation table."
+remaining_scope = "Same-crate safe direct-Verus Rust-ABI entries now close reachable boundaries exactly, including canonical non-empty target features checked against the pinned rustc inventory and bound into proof/codegen, validation, and replay. Add exact separate Rust/assembly source, object, machine-model, and refinement closure for irreducible operations without adding an architecture operation table."
 contributors = [".design/boundary/ffi-boundary.md", ".design/build/l3-rich-composition.md", ".design/build/frozen-primitive-registry.md"]
 generated_to = ["status", "forge-kernel-primitives-status"]
 
@@ -17852,7 +17852,7 @@ note = "Strict schema parsing, one-to-one reachable closure, declaration drift c
 [[requirement.evidence]]
 kind = "test"
 target = "forge/tests/verified_composition.rs::frozen_registry_directly_refines_the_exact_reachable_boundary"
-note = "Builds and replays a synthetic primitive, rejects receipt and post-plan registry mutation, and rejects a digest-updated lying implementation at whole-crate Verus."
+note = "Builds and replays a synthetic primitive with a non-empty sse2 feature set bound through the plan and exact Verus/rustc arguments, rejects receipt and post-plan registry mutation, and rejects a digest-updated lying implementation at whole-crate Verus."
 
 [[requirement.evidence]]
 kind = "test"

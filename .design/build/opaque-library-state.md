@@ -13,7 +13,7 @@ governs:
   - forge/src/verified_build.rs
   - forge/tests/ownership_primitives.rs
   - stdlib/kernel-primitives/ownership/generation.th
-audited-content-sha256: c7e31cbba4ec032d52481caaa2a8ee4eb1be2de0eac5556de274468d8212cb8a (re-pinned 2026-08-05 after exact two-index freestanding lowering; opaque semantics remain regression-covered)
+audited-content-sha256: b3da3cd3fe029c35fa32171801a63d1bf460c48fc0f7e1631c4a6591b06382f8 (re-pinned 2026-08-05 after orthogonal target-feature codegen binding; opaque semantics remain regression-covered)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/generation-ownership.md

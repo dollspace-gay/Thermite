@@ -1095,18 +1095,23 @@ pub(crate) fn reference_corpus_req(
     if corpus_req_text(function).is_none() {
         return Ok(None);
     }
-    let fixed_arrays = function.params.iter().filter_map(|parameter| {
-        is_fixed_array_binding(&parameter.ty).then(|| parameter.name.clone())
-    });
-    let bounded = function.params.iter().filter_map(|parameter| {
-        matches!(
-            &parameter.ty,
-            Type::Prim(
-                PrimType::U8 | PrimType::U16 | PrimType::U32 | PrimType::U64 | PrimType::Usize
+    let fixed_arrays = function
+        .params
+        .iter()
+        .filter(|parameter| is_fixed_array_binding(&parameter.ty))
+        .map(|parameter| parameter.name.clone());
+    let bounded = function
+        .params
+        .iter()
+        .filter(|parameter| {
+            matches!(
+                &parameter.ty,
+                Type::Prim(
+                    PrimType::U8 | PrimType::U16 | PrimType::U32 | PrimType::U64 | PrimType::Usize
+                )
             )
-        )
-        .then(|| parameter.name.clone())
-    });
+        })
+        .map(|parameter| parameter.name.clone());
     let call_slices = program.items.iter().filter_map(|item| {
         let (name, params) = match item {
             Item::Fn(item) => (&item.name, &item.params),

@@ -2146,6 +2146,24 @@ design = ".design/build/fixed-collections.md"
 reference = ["stdlib/kernel-primitives/slab.thpkg.json"]
 conformance_ops = ["fixed-slab-l3", "fixed-slab-adversarial", "fixed-slab-kernel-replay", "fixed-slab-tamper"]
 
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/freelist.thpkg.json"
+design = ".design/build/fixed-collections.md"
+reference = ["stdlib/kernel-primitives/collections/freelist.th"]
+conformance_ops = ["fixed-freelist-package-closure"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/collections/freelist.th"
+design = ".design/build/fixed-collections.md"
+reference = ["stdlib/kernel-primitives/freelist.thpkg.json"]
+conformance_ops = ["fixed-freelist-push", "fixed-freelist-pop", "fixed-freelist-reuse", "fixed-freelist-fail-closed"]
+
+[[route]]
+crate_pattern = "forge/tests/fixed_freelist.rs"
+design = ".design/build/fixed-collections.md"
+reference = ["stdlib/kernel-primitives/freelist.thpkg.json"]
+conformance_ops = ["fixed-freelist-l3", "fixed-freelist-adversarial", "fixed-freelist-kernel-replay", "fixed-freelist-tamper"]
+
 # Policy-free bounded waiting and synchronization state mechanics. Frozen
 # machine-facing operations are declarations; no consumer platform is bundled.
 [[route]]

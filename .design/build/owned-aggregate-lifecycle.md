@@ -15,7 +15,7 @@ governs:
   - forge/tests/body_tv.rs
   - forge/tests/verified_build.rs
   - conformance/verified-build/owned_aggregate_lifecycle.th
-audited-content-sha256: 9f6957a4a215a0a8447d919a396c9f8eef01fd4d9fd024f6d007dcb4c60b6983 (re-pinned 2026-08-05 after freestanding fixed-array and exact dependency TV closure; owned aggregate semantics remain regression-covered)
+audited-content-sha256: f108ab594de22bc30381095ecb8bc8d254e889e1cfca42f4e81b7fc6bbf809b6 (re-pinned 2026-08-05 after exec-TV compile-diagnostic hardening; owned aggregate semantics remain regression-covered)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/named-record-lifecycle.md

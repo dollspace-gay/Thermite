@@ -1202,11 +1202,13 @@ fn discharge(program: &str, label: &str, seed: u64, rlimit: f64) -> ExecVerdict 
         // Unverifiable, not Faithful.
         _ => {
             if !output.status.success() {
+                let diagnostic = combined.lines().take(12).collect::<Vec<_>>().join(" | ");
                 ExecVerdict::Divergent {
                     detail: format!(
                         "verus ABORTED (compile/parse) on the exec obligation for `{label}` \
                          — the production exec text did not compile/parse (the #122 `E0308` / \
-                         #146 cast-`<` mis-parse catch shapes): a real exec-lowering infidelity"
+                         #146 cast-`<` mis-parse catch shapes): a real exec-lowering infidelity; \
+                         tool diagnostic: {diagnostic}"
                     ),
                 }
             } else {
@@ -1486,11 +1488,20 @@ mod divergent_teeth {
         let prog = exec_equivalence_obligation(&source, "n - 1 as u8", &frame)
             .expect("non-compiling exec obligation builds");
         let verdict = discharge(&prog, "teeth.noncompile", SEED, RLIMIT);
-        assert!(
-            matches!(verdict, ExecVerdict::Divergent { .. }),
-            "a NON-COMPILING production (the #122 paren-drop -> E0308) must classify \
-             Divergent via the compile/parse-abort branch; got {verdict:?}"
-        );
+        match verdict {
+            ExecVerdict::Divergent { detail } => {
+                assert!(
+                    detail.contains("tool diagnostic:")
+                        && (detail.contains("E0308") || detail.contains("mismatched types")),
+                    "a compile-abort verdict must preserve an actionable Verus diagnostic: \
+                     {detail}"
+                );
+            }
+            other => panic!(
+                "a NON-COMPILING production (the #122 paren-drop -> E0308) must classify \
+                 Divergent via the compile/parse-abort branch; got {other:?}"
+            ),
+        }
     }
 
     /// The Divergent-vs-Unverifiable boundary (the critic's masking-path concern):

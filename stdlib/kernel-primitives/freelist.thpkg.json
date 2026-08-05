@@ -1,0 +1,14 @@
+{
+  "schema": "thermite.package.v1",
+  "name": "thermite_fixed_freelist",
+  "roots": [
+    "freelist"
+  ],
+  "modules": [
+    {
+      "name": "freelist",
+      "path": "collections/freelist.th",
+      "imports": []
+    }
+  ]
+}

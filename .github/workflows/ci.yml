@@ -68,6 +68,8 @@ jobs:
         run: python3 tooling/req-status.py
       - name: req-registry gate (canonical status inventory)
         run: tooling/reqs check
+      - name: rfc gate (front matter, numbering, registry link)
+        run: python3 tooling/rfc-check.py
 
       - name: Rust build cache
         uses: Swatinem/rust-cache@v2

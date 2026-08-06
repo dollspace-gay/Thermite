@@ -17692,3 +17692,63 @@ note = "The kernel-image job builds a fresh tracked-source image, verifies deter
 kind = "file"
 target = "platform/x86_64-pc-uefi-smp-v1/test-qemu.py"
 note = "Fail-closed serial protocol validator for the complete release matrix and terminal power actions."
+
+[[requirement]]
+id = "REQ-RFC-FRONTMATTER"
+title = "RFC front-matter schema"
+owner = ".design/rfcs"
+status = "shipped"
+scope = "docs"
+summary = "Every RFC is a file under .design/rfcs/ carrying rfc/title/status front matter, with optional supersedes, introduces and discussion fields."
+contributors = [".design/rfcs/0005-rfc-process.md", "tooling/rfc-check.py"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = ".design/rfcs/0005-rfc-process.md"
+note = "the schema, and the RFC that defines it"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "parse_front_matter"
+note = "front-matter reader"
+
+[[requirement]]
+id = "REQ-RFC-GATE"
+title = "RFC front-matter gate"
+owner = "tooling/rfc-check.py"
+status = "shipped"
+scope = "docs"
+summary = "CI rejects an RFC with missing or malformed front matter, a status outside the enum, a number disagreeing with its filename, or a number colliding with a non-draft RFC."
+contributors = [".design/rfcs/0005-rfc-process.md", ".github/workflows/ci.yml"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "check"
+note = "the gate"
+
+[[requirement.evidence]]
+kind = "command"
+target = "python3 tooling/rfc-check.py"
+note = "CI step"
+
+[[requirement]]
+id = "REQ-RFC-REGISTRY-LINK"
+title = "RFC to REQ registry link"
+owner = "tooling/rfc-check.py"
+status = "shipped"
+scope = "docs"
+summary = "An RFC declares the requirements it introduces, and the gate rejects a name absent from the registry, so implementation status is derived from the registry rather than declared in the RFC."
+contributors = [".design/reqs/registry.toml", ".design/rfcs/0005-rfc-process.md"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "known_reqs"
+note = "registry reader"
+
+[[requirement.evidence]]
+kind = "file"
+target = ".design/reqs/registry.toml"
+note = "the registry the link resolves against"

@@ -17757,3 +17757,99 @@ note = "registry reader"
 kind = "file"
 target = ".design/reqs/registry.toml"
 note = "the registry the link resolves against"
+
+[[requirement]]
+id = "REQ-SYNTAX-CLAUSE-FULL-WORDS"
+title = "Clause keywords are full words"
+owner = ".design/rfcs"
+status = "not_started"
+scope = "syntax"
+summary = "req/ens/inv/dec are spelled requires/ensures/keeps/measures, so a clause keyword carries the pretraining prior its meaning deserves."
+remaining_scope = "Rename five entries in keyword_kind, keeping the TokKind variant names so downstream references do not move, and rename the clause names carried as strings in parser diagnostics. Proposed by RFC-6; not accepted."
+contributors = [".design/rfcs/0006-full-words.md"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "doc"
+target = ".design/rfcs/0006-full-words.md"
+note = "the proposal, with the rename table and the clause-grammar rule that chose keeps and measures"
+
+[[requirement]]
+id = "REQ-SYNTAX-EFFECT-ROW-LEADING"
+title = "The effect row leads the contract, spelled `!`"
+owner = ".design/rfcs"
+status = "not_started"
+scope = "syntax"
+summary = "fx E becomes ! E at the head of the contract, marking the row as part of the arrow rather than a claim about behaviour."
+remaining_scope = "Accept the row first in parse_contract and drop fx as a keyword; `!` already lexes as TokKind::Bang, so no new token is needed. Proposed by RFC-6; not accepted."
+contributors = [".design/rfcs/0006-full-words.md"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "doc"
+target = ".design/rfcs/0006-full-words.md"
+note = "the position argument, and the measurement that 142 lines open with a row and none open with a `!` that is not one"
+
+[[requirement]]
+id = "REQ-SYNTAX-CLAUSE-ORDER"
+title = "Clause order: row, bare clauses, measures last"
+owner = ".design/rfcs"
+status = "not_started"
+scope = "syntax"
+summary = "The contract is ordered the effect row, then the bare clauses, then measures, and one or more requires is accepted to match ensures."
+remaining_scope = "Reorder the parse_contract state machine. Today it enforces req x1, ens x1+, fx x1, with a recursive fn carrying dec after the row. Proposed by RFC-6; not accepted."
+contributors = [".design/rfcs/0006-full-words.md"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "doc"
+target = ".design/rfcs/0006-full-words.md"
+note = "the ordering rule, checkable without knowing anything semantic"
+
+[[requirement]]
+id = "REQ-SYNTAX-CLAUSE-CONJUNCTS"
+title = "A clause body may be a block of conjuncts"
+owner = ".design/rfcs"
+status = "not_started"
+scope = "syntax"
+summary = "requires { a; b; } desugars to repeated clauses, with the bare single-expression form as sugar, so a per-obligation proof hint has somewhere to attach."
+remaining_scope = "Add the production and desugar it in the parser; nothing downstream of the AST needs to know about it. This is the only part of RFC-6 that adds a production rather than renaming a token. Proposed by RFC-6; not accepted."
+contributors = [".design/rfcs/0006-full-words.md"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "doc"
+target = ".design/rfcs/0006-full-words.md"
+note = "the production, and why it belongs in a syntax-only change"
+
+[[requirement]]
+id = "REQ-SYNTAX-CLAUSE-TRIVIAL"
+title = "`requires nothing` for a trivial clause"
+owner = ".design/rfcs"
+status = "not_started"
+scope = "syntax"
+summary = "requires nothing is clause-level sugar for requires true, leaving true legal inside expressions."
+remaining_scope = "Accept the keyword in clause position. Adoption across the 100 existing req true sites is a second pass rather than a correctness condition, since a naive rewriter emits requires true and that stays legal. Proposed by RFC-6; not accepted."
+contributors = [".design/rfcs/0006-full-words.md"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "doc"
+target = ".design/rfcs/0006-full-words.md"
+note = "the sugar, and the note that ensures nothing parses and is then refused by 7.1(a) as EnsIsTrivial"
+
+[[requirement]]
+id = "REQ-SYNTAX-ADDRESS-CLAUSE-SEGMENTS"
+title = "Address segments follow the clause rename"
+owner = ".design/rfcs"
+status = "not_started"
+scope = "syntax"
+summary = "validate_segments matches the renamed clause keywords, keeping a semantic address and a clause keyword the same word."
+remaining_scope = "Rename the segments in the two fixed allowlists in address.rs. This is also why a clause keyword must be one word: a space-bearing segment is rejected as malformed before any lookup. Proposed by RFC-6; not accepted."
+contributors = [".design/rfcs/0006-full-words.md"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "doc"
+target = ".design/rfcs/0006-full-words.md"
+note = "the allowlist lines, and the address-segment constraint that ruled out `terminates by`"

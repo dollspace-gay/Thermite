@@ -17733,6 +17733,11 @@ kind = "command"
 target = "python3 tooling/rfc-check.py"
 note = "CI step"
 
+[[requirement.evidence]]
+kind = "test"
+target = "tooling/tests/test_rfc_check.py"
+note = "15 oracle tests, asserting on the reported message rather than the exit code"
+
 [[requirement]]
 id = "REQ-RFC-REGISTRY-LINK"
 title = "RFC to REQ registry link"

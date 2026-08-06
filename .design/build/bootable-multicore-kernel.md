@@ -35,7 +35,7 @@ governs:
   - platform/x86_64-pc-uefi-smp-v1/runtime/Cargo.*
   - platform/x86_64-pc-uefi-smp-v1/runtime/src/*
   - .github/workflows/ci.yml
-audited-content-sha256: 57214a2c4c466cb21e007a6e4c0d3f7943a8a63d71f944f265f2c14169025a9c
+audited-content-sha256: dc0cbb1ef5f1f1cdf2c92a3013cec0626dee0d83378927657cdd772e7445342c (re-pinned 2026-08-06: `.github/workflows/ci.yml` gains one step, the RFC front-matter gate (#127). Nothing else this document governs changed, and the pipeline it describes is unaffected)
 extends:
   - .design/build/kernel-target.md
   - .design/build/l3-rich-composition.md

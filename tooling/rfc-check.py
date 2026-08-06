@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.9"
+# dependencies = []
+# ///
 """
 RFC front-matter gate for `.design/rfcs/`.
 
@@ -17,7 +21,14 @@ from the documents:
 
 Usage:
 
-    python3 tooling/rfc-check.py [--root <repo>] [--json]
+    python3 tooling/rfc-check.py [--root <repo>] [--json] [--index]
+    uv run  tooling/rfc-check.py [--root <repo>] [--json] [--index]
+
+The PEP 723 header above pins the interpreter this needs, so `uv run` fetches a
+matching one rather than inheriting whatever `python3` happens to be. This gate
+is stdlib-only and works on 3.9, so the header is a statement rather than a
+requirement — but a gate that skips silently on the wrong interpreter is worse
+than one that fails, and declaring the floor is how that is avoided.
 """
 
 from __future__ import annotations

@@ -201,6 +201,29 @@ non-zero with a specific message.
 The script ships with this RFC. A process proposal that asks the maintainer to
 write its own enforcement is one that does not land.
 
+### The gate declares its interpreter
+
+`rfc-check.py` carries a PEP 723 header, so `uv run tooling/rfc-check.py` fetches
+a matching interpreter rather than inheriting whichever `python3` is on PATH.
+`req-registry.py` and `reqs` get the same header, for a reason this PR ran into.
+
+Those two parse the registry with `tomllib`, standard library from Python 3.11.
+On an older interpreter they report
+
+```
+REQ registry inconclusive: tomllib is unavailable (Python < 3.11)
+```
+
+and exit **3** — so they fail rather than pass, which is right. What they do not
+do is tell you anything about the registry, and the environment error stands in
+front of whatever the real finding was. In this PR the real finding was a fault
+of mine: three requirements added to the registry without regenerating the
+status view they appear in. It was invisible until the gate ran on an
+interpreter that could parse the file.
+
+An inconclusive gate is not a lie, but it is a result nobody can act on. The
+header makes `uv run tooling/reqs check` produce the actual verdict.
+
 ## What this does not change
 
 **Issues stay defect reports**, which is what they are good at. #122–#126 are

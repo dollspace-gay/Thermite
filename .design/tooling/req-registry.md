@@ -4,7 +4,7 @@
 tier: 3-component
 status: draft
 audited-sha: f09f8ca376257cc1e2543b8ebc9fb771bffd04df (content-sha256 re-pinned 2026-07-29 for stage-3 REQ-1..REQ-9 / gate G3 (#80, crosslink #351): the registry and generated status view carry the fixed-width reconstruction requirements and verified evidence; req-registry.py --check is clean (462 requirements, 119 views). The legacy commit pin remains the f09f8ca3 stable-main ancestor; the active content digest tracks the governed files. prior: 2026-06-21 stage-2 REQ-10 / AC-10 (#332), the pin battery and final gate G2 increment)
-audited-content-sha256: 1106ab1e5817d4cbb5928f93b40fce3d262c9482e62e5c7ef86434ef2dc673c2 (re-pinned 2026-08-01 after replacing generated-image evidence with the tracked kernel-image CI gate)
+audited-content-sha256: 16a9da4d652be060b86aa36e0d54e08c7b09425762c1c9e100a14f764ff63ff2 (re-pinned 2026-08-06 for the RFC process (#127): three RFC requirements join the registry and the generated status view, and the tools declare their interpreter floor, described under Interpreter floor. req-registry.py --check is clean (527 requirements, 125 views). prior: 2026-08-01 after replacing generated-image evidence with the tracked kernel-image CI gate)
 governs:
   - .design/reqs/registry.toml
   - .design/reqs/status.md
@@ -244,6 +244,26 @@ scripts that have not switched to the facade.
 6. Keep the bridge tight: `req-status.py` should stay green and any reintroduced
    hand-maintained source status row should be treated as a regression to map or
    remove.
+
+## Interpreter floor
+
+`req-registry.py` parses the registry with `tomllib`, which is standard library
+from Python 3.11. On an older interpreter it reports
+
+```
+REQ registry inconclusive: tomllib is unavailable (Python < 3.11)
+```
+
+and exits **3**. That is correct behaviour — it fails rather than passing — but
+the environment error stands in front of the verdict, so a real finding waits
+behind it. In #127 the finding was requirements added to the registry without
+regenerating the status view they appear in, and it surfaced only once the gate
+ran on an interpreter that could parse the file.
+
+`req-registry.py` and `reqs` therefore carry a PEP 723 header declaring the
+floor, so `uv run tooling/reqs check` fetches a matching interpreter rather than
+inheriting whichever `python3` is on PATH, and returns a verdict instead of an
+excuse.
 
 ## Known Limits
 

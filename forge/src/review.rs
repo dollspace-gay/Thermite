@@ -345,24 +345,20 @@ pub fn review_file(
 ) -> Result<ReviewArtifact, ForgeError> {
     let path = path.as_ref();
 
-    // Parse the file once for the contract surface (REQ-1) and to decide the route
-    // below. A re-parse of a file `check_file` re-validates (deterministic, R-CODE-5),
-    // never a re-verification — the `audit` precedent.
-    let src = std::fs::read_to_string(path).map_err(|e| ForgeError::Io {
-        path: path.display().to_string(),
-        source: e,
-    })?;
-    let parsed = thermite_syntax::parse(&src);
-    if !parsed.is_clean() {
-        return Err(ForgeError::Parse(parsed.errors));
-    }
+    // Resolve the source once for the contract surface (REQ-1) and to decide the
+    // route below. A re-parse of a source `check_file` re-validates (deterministic,
+    // R-CODE-5), never a re-verification — the `audit` precedent. The argument is a
+    // single `.th` file or a canonical `.thpkg.json` manifest; a manifest resolves
+    // its transitive module closure and each item keeps its module-local span.
+    let resolved = crate::thermite_package::load_source(path)?;
+    let program = resolved.program();
 
     // The battery cert collection `review` projects (REQ-2 — re-runs no verus). A
     // bit-vector project (any `@bv`-tagged clause, stage-3 REQ-3 / AC-4) routes through
     // the bv engine so the per-clause shadow flags surface in the artifact's `bv_shadows`
     // section; every tag-free project (the whole v1 corpus) keeps the default `check_file`
     // pipeline byte-identical (the same collection `forge check`/`forge audit` project).
-    let certs = if check::program_has_bv_tag(&parsed.program) {
+    let certs = if check::program_has_bv_tag(program) {
         check::check_file_with_engine(
             path,
             check::CheckOptions {
@@ -374,7 +370,7 @@ pub fn review_file(
         check::check_file(path)?
     };
 
-    Ok(project_artifact(&certs, &parsed.program, item_filter))
+    Ok(project_artifact(&certs, program, item_filter))
 }
 
 /// Project a settled cert collection + parsed program into the [`ReviewArtifact`]

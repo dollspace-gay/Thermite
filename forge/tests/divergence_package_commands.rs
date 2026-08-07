@@ -188,6 +188,20 @@ fn check_accepts_a_package_manifest() {
     assert_accepts_manifest("check", &args, &combined);
 }
 
+/// `review` is source-oriented under the same clause of
+/// `.design/build/kernel-primitives.md` that names the rest: it reads its
+/// argument for the contract surface (`fn review_file` in `forge/src/review.rs`,
+/// governed by `.design/forge/spec-review.md` REQ-1) and projects the battery
+/// verdict over it. A manifest argument must resolve the package closure.
+#[test]
+fn review_accepts_a_package_manifest() {
+    let manifest = ownership_manifest();
+    let path = manifest.to_string_lossy().into_owned();
+    let args = ["review", path.as_str(), "--json"];
+    let (_code, combined) = forge(&args);
+    assert_accepts_manifest("review", &args, &combined);
+}
+
 #[test]
 fn audit_accepts_a_package_manifest() {
     let manifest = ownership_manifest();

@@ -170,19 +170,15 @@ impl BodyCounts {
 /// aggregate mutation, a mid-body return, a non-derivable frame — is Skipped rather than
 /// masking an infidelity).
 pub fn body_tv_file(path: &Path, seed: u64, rlimit: f64) -> Result<BodyTvReport, ForgeError> {
-    let src = std::fs::read_to_string(path).map_err(|e| ForgeError::Io {
-        path: path.display().to_string(),
-        source: e,
-    })?;
-    let parsed = thermite_syntax::parse(&src);
-    if !parsed.is_clean() {
-        return Err(ForgeError::Parse(parsed.errors));
-    }
+    // A single `.th` file or a canonical `.thpkg.json` manifest; the package
+    // closure parses module by module, keeping each diagnostic module-local.
+    let resolved = crate::thermite_package::load_source(path)?;
+    let program = resolved.program();
 
     let mut report = BodyTvReport::default();
-    for item in &parsed.program.items {
+    for item in &program.items {
         match item {
-            Item::Fn(f) => body_tv_fn(&parsed.program, f, seed, rlimit, &mut report),
+            Item::Fn(f) => body_tv_fn(program, f, seed, rlimit, &mut report),
             // A `spec fn` body lowers in spec context (not exec); a struct/enum has no
             // exec body — out of scope for body-TV.
             Item::Const(_) | Item::SpecFn(_) | Item::Struct(_) | Item::Enum(_) => {}
@@ -2268,8 +2264,17 @@ fn recursive_caller(slot: usize) -> usize
             "the independent arithmetic reference must narrow to its parsed bounded return: \
              {definitions}"
         );
+        // `.design/build/mutable-call-effects.md` ("Production and expression
+        // fidelity"): Forge adds the independently reconstructed exact
+        // result/state predicate to the exact lowered callee, and Verus must
+        // prove it from the emitted body. The claim is the predicate's presence
+        // in the dependency's `ensures` list; `inject_dependency_reference_ensures`
+        // wraps each injected clause in parentheses so a compound predicate stays
+        // one list element, so the assertion tracks the predicate rather than the
+        // delimiters around it.
         assert!(
-            definitions.contains("result == thermite_tv_ref_next(slot),"),
+            definitions.contains("    ensures\n")
+                && definitions.contains("result == thermite_tv_ref_next(slot)"),
             "an executable dependency must prove its exact independent reference \
              postcondition in the caller frame: {definitions}"
         );
@@ -2292,9 +2297,18 @@ fn recursive_caller(slot: usize) -> usize
             "a recursive dependency reference must retain its independently encoded source \
              termination measure: {recursive_support}"
         );
+        // The placement claim: inside the executable `descend`, the injected
+        // postcondition sits in the `ensures` list ahead of the `decreases`
+        // measure. Anchoring on the executable function keeps the independently
+        // encoded `spec fn` measure asserted above out of the comparison.
+        let executable = recursive_support
+            .find("\nfn descend(")
+            .map(|start| &recursive_support[start..])
+            .unwrap_or("");
+        let postcondition = executable.find("result == thermite_tv_ref_descend(remaining)");
+        let decreases = executable.find("\n    decreases remaining");
         assert!(
-            recursive_support
-                .contains("result == thermite_tv_ref_descend(remaining),\n    decreases remaining"),
+            matches!((postcondition, decreases), (Some(clause), Some(measure)) if clause < measure),
             "the exact dependency postcondition must precede the executable function's \
              decreases clause: {recursive_support}"
         );

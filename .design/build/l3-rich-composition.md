@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: 7df343d0e18ce519af98360081a0af67542226f02435120f15502c7cbce8b502 (re-pinned 2026-08-05 after orthogonal logical-record value-observer composition changes)
+audited-content-sha256: 7026c48b42ef94217a35a30a9e924c04fa6ad013e15a8a4c34ad641f6127b8d1 (re-pinned 2026-08-07 after source-oriented Forge commands resolved canonical packages through one shared front door; existing single-file behavior remains regression-covered)
 decision: one canonical caller crate with crate-visible rich Thermite roots, public shell exports, and optionally exact separately verified primitive crates
 issue: github:dollspace-gay/Thermite#104
 governs:

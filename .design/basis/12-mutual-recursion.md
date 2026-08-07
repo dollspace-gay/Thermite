@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: cc7b47babbc1011020d9cd9dc92f4d1d1eca41efb9ad6447b47a20e2365fbc72 (re-pinned 2026-08-05 after exact two-index fixed-array framing; recursive record equality remains rejected)
+audited-content-sha256: b1021e880514a094bee1fc533dce46e69ad76c502eef63f4da3b6fa376d492f2 (re-pinned 2026-08-07 after source-oriented Forge commands resolved canonical packages through one shared front door; existing single-file behavior remains regression-covered)
 governs: forge/src/check.rs
 governs: thermite-lower/src/lower.rs
 thesis-refs:

@@ -16,7 +16,7 @@ governs:
   - forge/src/verified_build.rs
   - forge/tests/verified_composition.rs
   - conformance/verified-composition/probe.th
-audited-content-sha256: 689879dce76ad405a621dab5b8fcfcfcec302f440a925f49e2ec5ad74c6a772b (re-pinned 2026-08-05 after logical-record finite-record results joined shared lifecycle files; ADT semantics remain regression-covered)
+audited-content-sha256: cfc026e1433369f33228f51842a7214ce612dfbdb0843c5e0d022f22fff339e4 (re-pinned 2026-08-07 after source-oriented Forge commands resolved canonical packages through one shared front door; existing single-file behavior remains regression-covered)
 extends:
   - .design/build/owned-aggregate-lifecycle.md
   - .design/build/nested-aggregate-lifecycle.md

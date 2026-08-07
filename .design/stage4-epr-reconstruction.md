@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: 3b743f5b9e5e9fd4a34d529c12a7d7bcda32ff8accfb7f11e903658a190100e1 (re-pinned 2026-08-05 after adding the unrelated primitive-only CI gate; Gate G4 identities remain enforced)
+audited-content-sha256: a3ffc2f7b8fa6cc157a2f10ce730796bdb5454ea67ca9275a1580515e589d9a3 (re-pinned 2026-08-07 after source-oriented Forge commands resolved canonical packages through one shared front door; existing single-file behavior remains regression-covered)
 governs: canonical S₂.0 bridge, typed Lean reconstruction, production routing,
          audit boundary, proof tooling, and Gate G4 (see tooling/spec-routes.toml)
 -->

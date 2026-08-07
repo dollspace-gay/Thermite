@@ -12,6 +12,13 @@
 //! `code` at the hole's span (reusing the (ii) splice machinery) and re-checks,
 //! surfacing any new holes the fill introduced (the §5.1 loop).
 //!
+//! Each verb's path argument is a single `.th` source or a canonical
+//! `.thpkg.json` manifest, resolved through `thermite_package::load_source`. On a
+//! package the addressed item's span is module-local, so `edit`/`fill` splice
+//! into the module that declares it and leave the manifest and every sibling
+//! module byte-identical (`.design/build/kernel-primitives.md`, "Modules,
+//! packages, and receipts").
+//!
 //! These verbs add no verification: `goal`/`battery` are renders over the existing
 //! per-item `Vec<Certificate>` (`goal` reads `cert.obligations` + the re-parsed AST
 //! contract for given/want; `battery` reads `cert.contract_quality`, which already
@@ -338,39 +345,46 @@ fn type_spelling(ty: &Type) -> String {
 }
 
 /// Resolve `addr` against `file`, splice the replacement source text at the
-/// addressed node's byte span, write the file back, re-parse, re-check the
-/// affected item, and return the new goal state render (REQ-3). The splice is a
-/// pure function of the span + replacement text (R-CODE-5); a bad/unresolvable
-/// address is a structured `ForgeError::Usage` carrying the `AddressError`
-/// (R-CODE-2, not a panic).
+/// addressed node's byte span, write the declaring module back, re-parse,
+/// re-check the affected item, and return the new goal state render (REQ-3). The
+/// splice is a pure function of the span + replacement text (R-CODE-5); a
+/// bad/unresolvable address is a structured `ForgeError::Usage` carrying the
+/// `AddressError` (R-CODE-2, not a panic). For a package the declaring module is
+/// the file the manifest binds for the addressed item, so the manifest and every
+/// sibling module stay byte-identical.
 pub fn edit_file(file: &Path, addr: &str, replacement: &str) -> Result<String, ForgeError> {
-    let src = read_file(file)?;
-    let program = parse_program(file)?;
+    let resolved = crate::thermite_package::load_source(file)?;
+    let program = resolved.program();
 
     // Resolve the address through the resolver (a bad address →
     // structured AddressError, surfaced as a Usage error, not a panic).
-    address::resolve(&program, addr).map_err(address_usage)?;
+    address::resolve(program, addr).map_err(address_usage)?;
 
     // The resolver confirms the address exists; the byte span is found by walking
     // the AST (the addressing namespace v1 `edit` operates on: a `fn` root, a
     // `loop#N`, an `inv#M`, or a `dec` — semantic-addressing.md REQ-1..REQ-4).
-    let span = span_of_address(&program, addr).ok_or_else(|| {
+    // The walk also returns the declaring item, because a package's spans are
+    // module-local: the splice belongs to that module's file, never to the
+    // manifest and never to a sibling module.
+    let (item_index, span) = located_span_of_address(program, addr).ok_or_else(|| {
         ForgeError::Usage(format!(
             "address `{addr}` resolves but names no `edit`-able span in v1 (editable forms: \
              a loop `inv`/`dec` clause); a `spec fn` measure / a `struct`/`enum` is not yet \
              splice-addressable"
         ))
     })?;
+    let declaring = resolved.declaring_module(item_index)?;
 
     // Splice the replacement text at the addressed span (the pure splice: prefix
     // + replacement + suffix over byte offsets). The spans are byte offsets into
-    // the original source (lexer::Span), so this is UTF-8-boundary safe.
-    let spliced = splice(&src, span, replacement);
+    // the declaring module's source (lexer::Span), so this is UTF-8-boundary safe.
+    let spliced = splice(&declaring.source, span, replacement);
 
-    // Re-emit the file in place, then re-parse + re-check the affected item (the
-    // v0.1 whole-item check; the per-item proof cache §5.3 keeps unaffected items
-    // cheap). A re-parse failure after the splice is a real, reported error.
-    write_file(file, &spliced)?;
+    // Re-emit the declaring module in place, then re-parse + re-check the affected
+    // item (the v0.1 whole-item check; the per-item proof cache §5.3 keeps
+    // unaffected items cheap). A re-parse failure after the splice is a real,
+    // reported error.
+    write_file(&declaring.path, &spliced)?;
 
     let root = address_root(addr);
     render_goal(file, Some(root))
@@ -394,11 +408,11 @@ pub fn edit_file(file: &Path, addr: &str, replacement: &str) -> Result<String, F
 /// target) is a `ForgeError::Usage` (use `forge edit` for those); a bad/unresolvable
 /// hole address is a structured error, not a panic (R-CODE-2).
 pub fn fill_hole(file: &Path, addr: &str, code: &str) -> Result<String, ForgeError> {
-    let src = read_file(file)?;
-    let program = parse_program(file)?;
+    let resolved = crate::thermite_package::load_source(file)?;
+    let program = resolved.program();
 
     // Resolve the address (bad address → structured AddressError, not a panic).
-    let entry = address::resolve(&program, addr).map_err(address_usage)?;
+    let entry = address::resolve(program, addr).map_err(address_usage)?;
 
     // `fill` targets a hole only — a body `?N` or a proof `?pN`. A non-hole address is
     // the `edit` surface; reject it with an actionable message rather than silently
@@ -416,19 +430,21 @@ pub fn fill_hole(file: &Path, addr: &str, code: &str) -> Result<String, ForgeErr
     };
 
     // The hole token's span is the splice target (mirroring `edit`'s span walk; the
-    // `?pN` proof-hole span resolves through the same `span_of_address`).
-    let span = span_of_address(&program, addr).ok_or_else(|| {
+    // `?pN` proof-hole span resolves through the same `located_span_of_address`),
+    // together with the item whose declaring module owns that span.
+    let (item_index, span) = located_span_of_address(program, addr).ok_or_else(|| {
         ForgeError::Usage(format!(
             "hole address `{addr}` resolves but names no hole span (internal: the hole is recorded \
              on its item but its span was not found)"
         ))
     })?;
+    let declaring = resolved.declaring_module(item_index)?;
 
     // Splice the fill code at the hole's position (the pure splice, R-CODE-5), re-emit
-    // in place, then re-check the affected item. A re-parse failure after the splice
-    // (malformed fill code) is a reported error, not swallowed.
-    let spliced = splice(&src, span, code);
-    write_file(file, &spliced)?;
+    // the declaring module in place, then re-check the affected item. A re-parse
+    // failure after the splice (malformed fill code) is a reported error, not swallowed.
+    let spliced = splice(&declaring.source, span, code);
+    write_file(&declaring.path, &spliced)?;
     // Surface a malformed-fill parse error here rather than as a confusing downstream
     // render failure (the filled code may not parse).
     let _ = parse_program(file)?;
@@ -763,7 +779,13 @@ fn holes_of<'p>(program: &'p Program, item: &str) -> &'p [thermite_syntax::Hole]
 /// `inv#M`, or a `dec`. Mirrors the `address::addresses_of` traversal (which
 /// returns no span) so `edit` can splice. Returns `None` for an address that
 /// resolves but names no v1-editable span.
-fn span_of_address(program: &Program, addr: &str) -> Option<Span> {
+///
+/// The walk also returns the index of the top-level item whose source the span
+/// indexes into. A package program's spans are module-local, so a splice needs
+/// both the span and the declaring item to find the module file that owns it
+/// (`.design/build/kernel-primitives.md` — source identity and diagnostic spans
+/// are preserved per module).
+fn located_span_of_address(program: &Program, addr: &str) -> Option<(usize, Span)> {
     let entry_kind = address::resolve(program, addr).ok()?.kind;
 
     // A `?pN` proof hole lives on a forge-tier item (a `lemma`'s proof block or a
@@ -776,12 +798,17 @@ fn span_of_address(program: &Program, addr: &str) -> Option<Span> {
     let mut segs = addr.split('.');
     let root = segs.next()?;
 
-    let fn_item = program.items.iter().find_map(|i| match i {
-        Item::Fn(f) if f.name == root => Some(f),
-        _ => None,
-    })?;
+    let (item_index, fn_item) =
+        program
+            .items
+            .iter()
+            .enumerate()
+            .find_map(|(index, i)| match i {
+                Item::Fn(f) if f.name == root => Some((index, f)),
+                _ => None,
+            })?;
 
-    match entry_kind {
+    let span = match entry_kind {
         AddrKind::Fn => Some(fn_item.span),
         AddrKind::Loop | AddrKind::Inv | AddrKind::Dec => {
             let body = fn_item.body.as_ref()?;
@@ -817,7 +844,8 @@ fn span_of_address(program: &Program, addr: &str) -> Option<Span> {
         // consumers are the proof-view 2e / library 3) — resolve-but-no-span, mirroring
         // the inert `SpecFn => None` arm.
         AddrKind::Forge | AddrKind::ProofHole => None,
-    }
+    };
+    Some((item_index, span?))
 }
 
 /// Resolve a `?pN` proof-hole address to the hole token's byte span (stage1-forge-tier.md
@@ -827,7 +855,7 @@ fn span_of_address(program: &Program, addr: &str) -> Option<Span> {
 /// `address::collect_forge_addresses` enumerates, matching the clause label + hole
 /// number, and returns the matched hole's span. `None` for an address that resolves
 /// but names no recorded hole (a clean miss, never a panic — R-CODE-2).
-fn proof_hole_span(program: &Program, addr: &str) -> Option<Span> {
+fn proof_hole_span(program: &Program, addr: &str) -> Option<(usize, Span)> {
     let segs: Vec<&str> = addr.split('.').collect();
     // `<root> . proof . ?pN`            (lemma — 3 segments)
     // `<root> . proof . <clause> . ?pN` (proof-for — 4 segments)
@@ -838,7 +866,7 @@ fn proof_hole_span(program: &Program, addr: &str) -> Option<Span> {
     let hole_seg = *segs.last()?;
     let number: u32 = hole_seg.strip_prefix("?p")?.parse().ok()?;
 
-    for it in &program.items {
+    for (index, it) in program.items.iter().enumerate() {
         let Item::Forge(forge) = it else { continue };
         match forge {
             // A lemma: `<lemma>.proof.?pN` — exactly 3 segments, no clause.
@@ -848,7 +876,7 @@ fn proof_hole_span(program: &Program, addr: &str) -> Option<Span> {
                     .holes
                     .iter()
                     .find(|h| h.number == number)
-                    .map(|h| h.span);
+                    .map(|h| (index, h.span));
             }
             // A proof-for: `<f>.proof.<clause>.?pN` — 4 segments; the clause segment
             // selects the obligation by its label (`ens#k`/`req`).
@@ -861,7 +889,7 @@ fn proof_hole_span(program: &Program, addr: &str) -> Option<Span> {
                             .holes
                             .iter()
                             .find(|h| h.number == number)
-                            .map(|h| h.span);
+                            .map(|h| (index, h.span));
                     }
                 }
             }
@@ -933,14 +961,6 @@ fn address_usage(e: AddressError) -> ForgeError {
     ForgeError::Usage(format!("address resolution failed: {e}"))
 }
 
-/// Read the source file (IO error → `ForgeError::Io`).
-fn read_file(file: &Path) -> Result<String, ForgeError> {
-    std::fs::read_to_string(file).map_err(|e| ForgeError::Io {
-        path: file.display().to_string(),
-        source: e,
-    })
-}
-
 /// Write the source file back (IO error → `ForgeError::Io`).
 fn write_file(file: &Path, contents: &str) -> Result<(), ForgeError> {
     std::fs::write(file, contents).map_err(|e| ForgeError::Io {
@@ -950,15 +970,14 @@ fn write_file(file: &Path, contents: &str) -> Result<(), ForgeError> {
 }
 
 /// Parse `file` into a clean `Program` (a parse failure is a `ForgeError::Parse`,
-/// surfaced, not swallowed). Re-parse of a known-good corpus file is
-/// deterministic (R-CODE-5).
+/// surfaced, not swallowed). `file` is a single `.th` source or a canonical
+/// `.thpkg.json` manifest, whose declared module closure resolves through the
+/// shared front door. Re-parse of a known-good corpus file is deterministic
+/// (R-CODE-5).
 fn parse_program(file: &Path) -> Result<Program, ForgeError> {
-    let src = read_file(file)?;
-    let parsed = thermite_syntax::parse(&src);
-    if !parsed.is_clean() {
-        return Err(ForgeError::Parse(parsed.errors));
-    }
-    Ok(parsed.program)
+    Ok(crate::thermite_package::load_source(file)?
+        .program()
+        .clone())
 }
 
 /// The string form of a [`Level`] for the goal render.
@@ -1076,8 +1095,8 @@ mod tests {
         let src = std::fs::read_to_string("../conformance/binary_search.th")
             .expect("read binary_search.th");
         let program = parse_ok(&src);
-        let span =
-            span_of_address(&program, "binary_search.loop#1.inv#2").expect("inv#2 has a span");
+        let (_, span) = located_span_of_address(&program, "binary_search.loop#1.inv#2")
+            .expect("inv#2 has a span");
         // The addressed span must cover the verbatim inv#2 clause text.
         let original = &src[span.start..span.end()];
         assert_eq!(original, "forall_below(haystack, lo, |x| x < needle)");
@@ -1117,9 +1136,9 @@ mod tests {
             other => panic!("expected Usage, got {other:?}"),
         }
         // An address that resolves but is not v1-editable (a spec-fn root) → None
-        // from span_of_address (a clean miss, not a panic).
+        // from located_span_of_address (a clean miss, not a panic).
         let spec_program = parse_ok("spec fn m(n: u32) -> u32 dec n { n }");
-        assert!(span_of_address(&spec_program, "m").is_none());
+        assert!(located_span_of_address(&spec_program, "m").is_none());
     }
 
     /// Extract the first `ForgeItem` from a parsed program (test helper).
@@ -1225,18 +1244,19 @@ mod tests {
         // Lemma: `l.proof.?p0` spans the `?p0` token in the proof block.
         let lemma_src = "lemma l(a: u64) req true ens a == a proof { ?p0 }";
         let lp = parse_ok(lemma_src);
-        let span = span_of_address(&lp, "l.proof.?p0").expect("lemma proof-hole span");
+        let (_, span) = located_span_of_address(&lp, "l.proof.?p0").expect("lemma proof-hole span");
         assert_eq!(&lemma_src[span.start..span.end()], "?p0");
 
         // Proof-for: `f.proof.ens#0.?p1` spans the `?p1` token in that obligation.
         let pf_src = "fn f(n: u32) -> u32 req true ens result == n fx pure { n }\n\
                       proof for f { ens#0 by { ?p1 } }";
         let pf = parse_ok(pf_src);
-        let span2 = span_of_address(&pf, "f.proof.ens#0.?p1").expect("proof-for hole span");
+        let (_, span2) =
+            located_span_of_address(&pf, "f.proof.ens#0.?p1").expect("proof-for hole span");
         assert_eq!(&pf_src[span2.start..span2.end()], "?p1");
 
         // A resolvable forge root that is not a hole has no fill span (clean miss).
-        assert!(span_of_address(&lp, "l").is_none());
+        assert!(located_span_of_address(&lp, "l").is_none());
     }
 
     // REQ-7 / R-CODE-2: a `proof for` whose clause selector is out of range renders an

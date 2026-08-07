@@ -22,7 +22,7 @@ governs:
   - conformance/verified-build/projected_record_call_effect.th
   - conformance/verified-build/projected_indexed_call_effect.th
   - conformance/verified-build/record_after_indexed_call_effect.th
-audited-content-sha256: 334a494e3c034119d41397c24b334be399c919fa471c76021dc9101485c8b401 (typed-local and direct-tail logical-record results plus 141-row strict L3 runtime evidence added 2026-08-05)
+audited-content-sha256: 49a28d5ecc1d2cf79e07bbb4acd4153b35c3eca9c977789101e38278d9067770 (re-pinned 2026-08-07 after source-oriented Forge commands resolved canonical packages through one shared front door; existing single-file behavior remains regression-covered)
 extends:
   - .design/build/nested-aggregate-lifecycle.md
   - .design/build/owned-aggregate-lifecycle.md

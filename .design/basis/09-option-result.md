@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: c08ba7fa7770a2fd49a768833d4ea6e5c7a1321923c29300476933a63766f7c7 (re-pinned 2026-08-05 after fixed-array zero mutation synthesis; option/result behavior remains regression-covered)
+audited-content-sha256: dbc8ee2029766c147a4a308f6a22b55f6657cf67abb27d9c841ace0acc6d6c47 (re-pinned 2026-08-07 after source-oriented Forge commands resolved canonical packages through one shared front door; existing single-file behavior remains regression-covered)
 governs: thermite-syntax/src/ast.rs
 governs: thermite-syntax/src/parser.rs
 governs: thermite-spec/src/validator.rs

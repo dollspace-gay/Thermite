@@ -413,23 +413,20 @@ pub fn build_file(
     })
 }
 
-/// Run the shared `check_file` front (parse → validate → check_effects) over
-/// `path`, returning the validated `Program` (REQ-1). Any front-of-pipeline
-/// failure short-circuits into the earliest stage's `ForgeError`, as `check_file`
-/// does. Used by both `emit_source` (the codegen) and `build_file` (the manifest +
-/// entry-fn lookup) so the front is shared verbatim.
+/// Run the shared `check_file` front (resolve → parse → validate →
+/// check_effects) over `path`, returning the validated `Program` (REQ-1). Any
+/// front-of-pipeline failure short-circuits into the earliest stage's
+/// `ForgeError`, as `check_file` does. Used by both `emit_source` (the codegen)
+/// and `build_file` (the manifest + entry-fn lookup) so the front is shared
+/// verbatim. `path` is a single `.th` file or a canonical `.thpkg.json` manifest;
+/// `thermite_package::load_source` owns that distinction for every
+/// source-oriented verb.
 fn parse_program(path: &Path) -> Result<Program, ForgeError> {
-    let src = std::fs::read_to_string(path).map_err(|e| ForgeError::Io {
-        path: path.display().to_string(),
-        source: e,
-    })?;
-    let parsed = thermite_syntax::parse(&src);
-    if !parsed.is_clean() {
-        return Err(ForgeError::Parse(parsed.errors));
-    }
-    thermite_spec::validate(&parsed.program).map_err(ForgeError::Spec)?;
-    thermite_lower::check_effects(&parsed.program).map_err(ForgeError::Effects)?;
-    Ok(parsed.program)
+    let resolved = crate::thermite_package::load_source(path)?;
+    let program = resolved.program();
+    thermite_spec::validate(program).map_err(ForgeError::Spec)?;
+    thermite_lower::check_effects(program).map_err(ForgeError::Effects)?;
+    Ok(program.clone())
 }
 
 /// Emit the full compiled L1 source for `path` (incl. any `--entry` runner)

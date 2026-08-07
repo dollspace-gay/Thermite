@@ -1,4 +1,15 @@
 //! Canonical, source-identity-preserving Thermite package loading.
+//!
+//! [`load`] is the receipt-bound entry the L3 library and composition builds
+//! consume: it returns the canonical backend projection plus the independently
+//! parsed module closure. [`load_source`] is the front door every
+//! source-oriented Forge command shares, so `check`, `audit`, the translation
+//! validators, and the goal REPL resolve a `.thpkg.json` manifest through one
+//! implementation. A single `.th` file keeps its read-and-parse behavior; a
+//! manifest keeps each module's own path and span in every diagnostic, and
+//! [`ResolvedSource::declaring_module`] maps an item back to the file that
+//! declares it so a source rewrite lands there
+//! (`.design/build/kernel-primitives.md`, "Modules, packages, and receipts").
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -6,7 +17,7 @@ use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use thermite_syntax::{parse_package, PackageModuleSource, PackageParseResult};
+use thermite_syntax::{parse_package, PackageModuleSource, PackageParseResult, Program};
 
 use crate::cli::ForgeError;
 
@@ -83,6 +94,166 @@ pub struct LoadedThermiteInput {
     /// independently bound; this byte stream is not the source identity.
     pub bytes: Vec<u8>,
     pub package: Option<LoadedPackage>,
+}
+
+/// The declaring on-disk module of one top-level item, with its exact source.
+///
+/// A source-oriented command that rewrites source text splices into `source` at
+/// the item's module-local span and writes the result back to `path`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeclaringModule {
+    /// The file that declares the item. For a package this is the manifest's
+    /// directory joined with the module's declared relative path.
+    pub path: PathBuf,
+    /// The exact module source the item's span indexes into.
+    pub source: String,
+}
+
+/// One source-oriented Forge command's resolved input.
+///
+/// A single `.th` file resolves to its own text and AST. A canonical
+/// `.thpkg.json` manifest resolves to the whole package closure: [`Self::program`]
+/// carries module-local spans plus per-item module identity, and
+/// [`Self::declaring_module`] maps an item back to the file that declares it.
+/// [`Self::text`] is the canonical backend projection; [`Self::text_program`] is
+/// its own parse, so those two are the pair to use when a consumer slices source
+/// text by an item span.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedSource {
+    path: PathBuf,
+    program: Program,
+    text: String,
+    /// `None` for a single file, where `program` already indexes into `text`.
+    text_program: Option<Program>,
+    package: Option<LoadedPackage>,
+}
+
+impl ResolvedSource {
+    /// The whole-program AST. Package spans are module-local and pair with
+    /// [`Self::declaring_module`].
+    #[must_use]
+    pub fn program(&self) -> &Program {
+        &self.program
+    }
+
+    /// The canonical source text [`Self::text_program`] spans index into.
+    #[must_use]
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    /// The AST parsed from [`Self::text`]. For a single file this is
+    /// [`Self::program`]; for a package it is the backend projection's parse,
+    /// whose spans are offsets into the projection.
+    #[must_use]
+    pub fn text_program(&self) -> &Program {
+        self.text_program.as_ref().unwrap_or(&self.program)
+    }
+
+    /// The file and exact source declaring `program().items[item_index]`.
+    pub fn declaring_module(&self, item_index: usize) -> Result<DeclaringModule, ForgeError> {
+        let Some(package) = &self.package else {
+            return Ok(DeclaringModule {
+                path: self.path.clone(),
+                source: self.text.clone(),
+            });
+        };
+        let origin = package.parsed.origin(item_index).ok_or_else(|| {
+            package_error(format!(
+                "package item index {item_index} has no recorded module origin"
+            ))
+        })?;
+        let module = package
+            .modules
+            .iter()
+            .find(|module| module.declaration.path == origin.path)
+            .ok_or_else(|| {
+                package_error(format!(
+                    "module `{}` ({}) is not bound in the loaded package",
+                    origin.module, origin.path
+                ))
+            })?;
+        let source = String::from_utf8(module.bytes.clone()).map_err(|error| {
+            package_error(format!(
+                "module `{}` ({}) is not UTF-8: {error}",
+                origin.module, origin.path
+            ))
+        })?;
+        let relative = validate_module_path(&origin.path)?;
+        let root = self.path.parent().unwrap_or_else(|| Path::new("."));
+        Ok(DeclaringModule {
+            path: root.join(relative),
+            source,
+        })
+    }
+}
+
+/// Resolve one source-oriented command's path argument.
+///
+/// A path that is not a canonical `.thpkg.json` manifest keeps the single-file
+/// read-and-parse behavior verbatim: the file bytes, `thermite_syntax::parse`,
+/// and a `ForgeError::Parse` carrying the recovered syntax errors. A manifest
+/// routes through [`load`], so each declared module is parsed on its own and a
+/// syntax error names that module's path and a span inside it.
+pub fn load_source(path: &Path) -> Result<ResolvedSource, ForgeError> {
+    if !is_package_path(path) {
+        let text = fs::read_to_string(path).map_err(|source| ForgeError::Io {
+            path: path.display().to_string(),
+            source,
+        })?;
+        let parsed = thermite_syntax::parse(&text);
+        if !parsed.is_clean() {
+            return Err(ForgeError::Parse(parsed.errors));
+        }
+        return Ok(ResolvedSource {
+            path: path.to_path_buf(),
+            program: parsed.program,
+            text,
+            text_program: None,
+            package: None,
+        });
+    }
+
+    let loaded = load(path)?;
+    let text = String::from_utf8(loaded.bytes).map_err(|error| {
+        package_error(format!(
+            "canonical package projection is not UTF-8: {error}"
+        ))
+    })?;
+    let Some(package) = loaded.package else {
+        return Err(package_error(
+            "package loading produced no module closure for a manifest path",
+        ));
+    };
+    let projected = thermite_syntax::parse(&text);
+    if !projected.is_clean() {
+        return Err(ForgeError::Parse(projected.errors));
+    }
+    let program = package.parsed.program.clone();
+    if !declares_same_items(&program, &projected.program) {
+        return Err(package_error(
+            "independent module parsing disagrees with the canonical backend projection",
+        ));
+    }
+    Ok(ResolvedSource {
+        path: path.to_path_buf(),
+        program,
+        text,
+        text_program: Some(projected.program),
+        package: Some(package),
+    })
+}
+
+/// Whether two parses declare the same items in the same order. The projection
+/// parse is used only to pair spans with projection text, so it is bound to the
+/// module-local parse by this agreement check.
+fn declares_same_items(left: &Program, right: &Program) -> bool {
+    left.items.len() == right.items.len()
+        && left
+            .items
+            .iter()
+            .zip(right.items.iter())
+            .all(|(left, right)| left.name() == right.name())
 }
 
 /// Load either a legacy single `.th` file or a canonical `.thpkg.json` package.

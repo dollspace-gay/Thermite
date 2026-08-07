@@ -17731,7 +17731,7 @@ owner = ".design/build/kernel-primitives.md"
 status = "partial"
 scope = "forge"
 summary = "A canonical package manifest resolves explicit module roots and binds the complete transitive source closure into validation and replay."
-remaining_scope = "Independent parsing, module-local identity, direct-import/root-export enforcement, rooted graph validation, opaque construction/read/write ownership, source allowlisting, L3 build/composition, complete receipt binding, validation, and replay are shipped. Extend the remaining source-oriented Forge commands (check, audit, TV, goal/edit/fill) to operate on packages without losing module-local diagnostics."
+remaining_scope = "Independent parsing, module-local identity, direct-import/root-export enforcement, rooted graph validation, opaque construction/read/write ownership, source allowlisting, L3 build/composition, complete receipt binding, validation, and replay are shipped. One shared front door (forge::thermite_package::load_source) now resolves a canonical manifest for check, audit, tv, exec-tv, body-tv, goal, battery, edit, fill, repair, build --level l1, and smt-export: module syntax errors stay module-local and edit/fill splice into the declaring module. Extend forge review (fn review_file in forge/src/review.rs), the remaining single-file source-oriented verb, the same way."
 contributors = [".design/build/l3-rich-composition.md", ".design/build/opaque-library-state.md", "thermite-syntax/src/package.rs", "forge/src/thermite_package.rs", "forge/src/verified_build.rs", "forge/src/verified_build/composition.rs"]
 generated_to = ["status", "forge-kernel-primitives-status"]
 
@@ -17774,6 +17774,11 @@ note = "Rejects typed, inferred, chained, and fail-closed unresolved foreign opa
 kind = "test"
 target = "forge/tests/verified_build.rs::package_build_binds_and_replays_the_complete_source_identified_closure"
 note = "Builds a real cross-module freestanding rlib, records module-local origins, replays it, and rejects manifest/source-map/module tampering."
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/divergence_package_commands.rs"
+note = "Every source-oriented verb accepts a canonical manifest, resolves the transitive module closure, reports a corrupted module by its package-relative path at an in-module offset, and splices an edit into the declaring module while leaving the manifest and sibling modules byte-identical."
 
 [[requirement]]
 id = "REQ-KPRIM-4"
@@ -17975,7 +17980,7 @@ owner = ".design/build/kernel-primitives.md"
 status = "partial"
 scope = "forge"
 summary = "Consumer projects supply versioned platform registries whose exact declarations, implementations, effects, ownership, ABI, models, and evidence are closed from source reachability."
-remaining_scope = "Same-crate and separately emitted safe sequential direct-Verus Rust-ABI entries now close reachable boundaries exactly. The v2 path binds authored and generated sources, exported proof interface, rlib, every object-member digest, target features, two no-cheating proof/codegen layers, validation, runtime linking, and replay. Registry v3 adds an honestly capped atomic machine-model pilot with ten discharged wrapper obligations and three explicit residual assumptions. A policy-free package supplies 74 frozen declarations across boot/runtime, memory/provenance, MMIO/PIO, CPU, IRQ/trap, SMP, DMA, clock, entropy, and power while keeping all 55 non-machine rows at L3. Extend v3 to shared sealed ABIs, the full atomic matrix, assembly and unsafe/irreducible Rust source/object closure, volatile, privileged, and concurrent models without adding an architecture operation table. The registry decides an entry's machine class from the author-written `concurrency` string and never consults the function's source-derived `fx platform(...)` row, so a `sequential` declaration over a `platform(atomic)` door still takes the safe path; enforce the source-derived minimum machine class defined in `.design/build/frozen-primitive-registry.md` (REQ-KPRIM-11)."
+remaining_scope = "Same-crate and separately emitted safe sequential direct-Verus Rust-ABI entries now close reachable boundaries exactly. The v2 path binds authored and generated sources, exported proof interface, rlib, every object-member digest, target features, two no-cheating proof/codegen layers, validation, runtime linking, and replay. Registry v3 adds an honestly capped atomic machine-model pilot with ten discharged wrapper obligations and three explicit residual assumptions. A policy-free package supplies 74 frozen declarations across boot/runtime, memory/provenance, MMIO/PIO, CPU, IRQ/trap, SMP, DMA, clock, entropy, and power while keeping all 55 non-machine rows at L3. Extend v3 to shared sealed ABIs, the full atomic matrix, assembly and unsafe/irreducible Rust source/object closure, volatile, privileged, and concurrent models without adding an architecture operation table. An entry's machine class is now the maximum of its source-derived `fx platform(...)` class and its author-written `concurrency` string, so a safe linkage admits only a door whose effect row carries no platform atom (REQ-KPRIM-11)."
 contributors = [".design/boundary/ffi-boundary.md", ".design/build/l3-rich-composition.md", ".design/build/frozen-primitive-registry.md", ".design/build/platform-primitives.md"]
 generated_to = ["status", "forge-kernel-primitives-status"]
 
@@ -18046,7 +18051,7 @@ owner = ".design/build/kernel-primitives.md"
 status = "partial"
 scope = "verified"
 summary = "Generated Thermite callers compose with consumer-supplied direct-Verus shells, and receipts distinguish exact refinement from boundary assumptions."
-remaining_scope = "Safe same-crate and separately emitted sequential direct-Verus operations receive exact checked-wrapper/import refinement through their emitted Rust objects. The registry-v3 atomic pilot proves an exact checked adapter relative to pinned vstd and binds the emitted object while exposing the literal hardware/codegen trust cap. Extend this honest split to persistent sealed atomic ABIs, unsafe Rust/assembly objects, volatile and privileged operations, and concurrency models before every irreducible platform family is covered. The registry-side machine-class gate that keeps a safe linkage away from those families is defined but unenforced (REQ-KPRIM-11)."
+remaining_scope = "Safe same-crate and separately emitted sequential direct-Verus operations receive exact checked-wrapper/import refinement through their emitted Rust objects. The registry-v3 atomic pilot proves an exact checked adapter relative to pinned vstd and binds the emitted object while exposing the literal hardware/codegen trust cap. Extend this honest split to persistent sealed atomic ABIs, unsafe Rust/assembly objects, volatile and privileged operations, and concurrency models before every irreducible platform family is covered. The registry-side machine-class gate that keeps a safe linkage away from those families is enforced from the source effect row (REQ-KPRIM-11)."
 contributors = [".design/build/l3-rich-composition.md", ".design/build/frozen-primitive-registry.md"]
 generated_to = ["status", "forge-kernel-primitives-status"]
 
@@ -18085,12 +18090,10 @@ note = "Whole-repository positive gate over every tracked path; also wired into 
 id = "REQ-KPRIM-11"
 title = "Source-derived machine-class gate"
 owner = ".design/build/kernel-primitives.md"
-status = "not_started"
+status = "shipped"
 scope = "forge"
 summary = "A frozen-registry entry's effective machine class is the maximum of the class its source platform-effect row implies and its self-declared concurrency, and a safe v1/v2 linkage admits only sequential."
-remaining_scope = "`.design/build/frozen-primitive-registry.md` section \"Source-derived minimum machine class\" defines the total map from the twelve closed platform effect atoms to a minimum class, the order sequential < volatile < atomic < privileged, the maximum rule over an entry's whole effect row, and the reporting rule for a door no schema models. Forge still gates on `entry.concurrency` alone in `fn plan_from_bytes`, so a `sequential` declaration over a `fx platform(atomic)` door publishes an end-to-end L3 artifact with zero residual machine assumptions. No atom maps to sequential, so the shipped `platform(clock)` fixtures `frozen_primitive_registry.json` and `separate_primitive_registry.json` are a second instance of the same laundering and the v1/v2 acceptance evidence needs a synthetic door whose effect row carries no platform atom, of the shape `fn foreign_identity` in `conformance/verified-build/boundary.th`. Implement the gate and turn the two pinned divergence tests green."
 contributors = [".design/build/frozen-primitive-registry.md", ".design/build/platform-primitives.md", ".design/build/sealed-atomics.md"]
-blockers = ["test:forge/tests/divergence_registry_v4_matrix.rs"]
 generated_to = ["status", "forge-kernel-primitives-status"]
 
 [[requirement.evidence]]
@@ -18099,6 +18102,11 @@ target = ".design/build/frozen-primitive-registry.md"
 note = "Defines the twelve-atom minimum machine-class map, the class order, the effective-class maximum rule, the safe-linkage gate, and the visible-L1 reporting rule for unmodeled doors."
 
 [[requirement.evidence]]
+kind = "symbol"
+target = "source_machine_class"
+note = "In forge/src/verified_build/primitive_registry.rs: maps the twelve frozen platform atoms through MachineClass::of_platform_atom and returns the effect row's maximum with the atom that produced it. fn plan_from_bytes takes `let effective_class = source_class.max(declared_class)` and rejects a same_crate or separate_verus_crate entry above sequential, naming the Thermite function, the atom, and the class."
+
+[[requirement.evidence]]
 kind = "test"
 target = "forge/tests/divergence_registry_v4_matrix.rs"
-note = "Pins the laundering divergence for the v1 same_crate and v2 separate_verus_crate linkages over a fx platform(atomic) door; both tests fail until the gate lands."
+note = "Pinned the laundering divergence for the v1 same_crate and v2 separate_verus_crate linkages over a fx platform(atomic) door; both tests pass on the gate. The v1/v2 acceptance fixtures in forge/tests/verified_composition.rs now close a fx pure door, which is the sequential domain the safe linkages keep."

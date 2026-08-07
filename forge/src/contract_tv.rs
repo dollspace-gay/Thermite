@@ -128,14 +128,10 @@ impl TvCounts {
 /// `Faithful` (0 `Divergent`) — the no-false-positive AC. A `Divergent` is a
 /// reported finding.
 pub fn tv_file(path: &Path, seed: u64, rlimit: f64) -> Result<TvReport, ForgeError> {
-    let src = std::fs::read_to_string(path).map_err(|e| ForgeError::Io {
-        path: path.display().to_string(),
-        source: e,
-    })?;
-    let parsed = thermite_syntax::parse(&src);
-    if !parsed.is_clean() {
-        return Err(ForgeError::Parse(parsed.errors));
-    }
+    // A single `.th` file or a canonical `.thpkg.json` manifest; the package
+    // closure parses module by module, keeping each diagnostic module-local.
+    let resolved = crate::thermite_package::load_source(path)?;
+    let parsed = resolved.program();
 
     // The spec-fn / combinator definitions in scope for every clause's obligation:
     // lower the whole program's spec-fn defs (+ auto-emitted combinator defs) once
@@ -143,7 +139,7 @@ pub fn tv_file(path: &Path, seed: u64, rlimit: f64) -> Result<TvReport, ForgeErr
     // of the spec-fn def text (the artifact whose contract semantics the obligation
     // references); the clause-level fidelity is what TV checks. A def-text bug
     // surfaces as a clause counterexample since both sides reference the same def.
-    let preamble = program_spec_preamble(&parsed.program)?;
+    let preamble = program_spec_preamble(parsed)?;
 
     // The program-wide user-`spec fn` param-type map (#228, ref #225/#227): the
     // same map `thermite_lower::lower` threads into the signature path, derived
@@ -153,21 +149,21 @@ pub fn tv_file(path: &Path, seed: u64, rlimit: f64) -> Result<TvReport, ForgeErr
     // param type (`as u32`/`as usize`) as `lower_fn_signature` does
     // (contract-tv.md REQ-2 "verbatim"). Without it the column fell back to the
     // hardcoded `as u64` and TV checked a non-production predicate.
-    let pt_owned = thermite_lower::spec_fn_param_type_map(&parsed.program);
+    let pt_owned = thermite_lower::spec_fn_param_type_map(parsed);
     let spec_fn_param_types: Vec<(&str, &[PrimType])> =
         pt_owned.iter().map(|(n, ps)| (*n, ps.as_slice())).collect();
-    let spec_call_slice_args = spec_fn_slice_arg_positions(&parsed.program);
-    let enum_variants = crate::body_tv::enum_variant_frames(&parsed.program)
+    let spec_call_slice_args = spec_fn_slice_arg_positions(parsed);
+    let enum_variants = crate::body_tv::enum_variant_frames(parsed)
         .map_err(|detail| ForgeError::VerusOutput { detail })?
         .into_iter()
         .map(|variant| (variant.variant_name, variant.enum_name))
         .collect::<Vec<_>>();
 
     let mut report = TvReport::default();
-    for item in &parsed.program.items {
+    for item in &parsed.items {
         match item {
             Item::Fn(f) => tv_fn(
-                &parsed.program,
+                parsed,
                 f,
                 &preamble,
                 &spec_fn_param_types,

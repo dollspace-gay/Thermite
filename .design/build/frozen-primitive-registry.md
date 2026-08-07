@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: partial
-audited-content-sha256: 38ab8f517dfbe60104107ba88ae0ce2a0a49952de76950b70e0254a1a5d38da7 (re-pinned 2026-08-05 after orthogonal logical-record value-observer inventory changes; registry semantics unchanged)
+audited-content-sha256: 91ab137d7049d05d0211560e118326f038b80b143e80ae4b2af97c1df5fc24ee (re-pinned 2026-08-07 after source-oriented Forge commands resolved canonical packages through one shared front door; existing single-file behavior remains regression-covered)
 decision: consumer-owned registry entries close reachable Thermite boundaries through non-exempt same-crate or separately compiled/imported direct-Verus calls
 governs:
   - thermite-lower/src/lower.rs

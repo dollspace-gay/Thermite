@@ -1921,7 +1921,9 @@ fn run_fill(file: &Path, addr: &str, code: &str) -> Result<ExitCode, ForgeError>
 }
 
 /// Run `forge smt-export`: the automated Rust→Lean obligation exporter
-/// (`.design/stage3-bv-reconstruction.md` REQ-7 / AC-8). With a `file`, parses it and
+/// (`.design/stage3-bv-reconstruction.md` REQ-7 / AC-8). With a `file` — a single
+/// `.th` source or a canonical `.thpkg.json` manifest, resolved through
+/// `thermite_package::load_source` — parses it and
 /// exports a `(P_prod) ⟺ (P_ref)` `smt`-discharged Lean theorem per renderable
 /// contract `ens` clause (QF_LIA for an untagged clause; literal `BitVec N` QF_BV
 /// for a `@bvN` clause in a `bv` build); a non-renderable clause is reported as a
@@ -1935,15 +1937,8 @@ fn run_smt_export(file: Option<&Path>, out: Option<&Path>) -> Result<ExitCode, F
     };
 
     let obligations = if let Some(file) = file {
-        let src = std::fs::read_to_string(file).map_err(|e| ForgeError::Io {
-            path: file.display().to_string(),
-            source: e,
-        })?;
-        let parsed = thermite_syntax::parse(&src);
-        if !parsed.is_clean() {
-            return Err(ForgeError::Parse(parsed.errors));
-        }
-        let (obligations, skipped) = obligations_for_program(&parsed.program);
+        let resolved = crate::thermite_package::load_source(file)?;
+        let (obligations, skipped) = obligations_for_program(resolved.program());
         for skip in &skipped {
             eprintln!("forge smt-export: skipping non-renderable clause — {skip}");
         }
@@ -2182,17 +2177,14 @@ fn run_audit(
     meaning: bool,
     metrics: bool,
 ) -> Result<ExitCode, ForgeError> {
-    // Parse the file once for the boundary contracts' enforced req/ens/fx (the
-    // §9 per-function contracts the TCB enumerates) and to decide the route below.
-    // A pure read of the parsed AST (deterministic, R-CODE-5), never a verification.
-    let src = std::fs::read_to_string(file).map_err(|e| ForgeError::Io {
-        path: file.display().to_string(),
-        source: e,
-    })?;
-    let parsed = thermite_syntax::parse(&src);
-    if !parsed.is_clean() {
-        return Err(ForgeError::Parse(parsed.errors));
-    }
+    // Resolve and parse the input once for the boundary contracts' enforced
+    // req/ens/fx (the §9 per-function contracts the TCB enumerates) and to decide
+    // the route below. `file` is a single `.th` source or a canonical
+    // `.thpkg.json` manifest, whose declared module closure resolves through the
+    // shared front door. A pure read of the parsed AST (deterministic, R-CODE-5),
+    // never a verification.
+    let resolved = crate::thermite_package::load_source(file)?;
+    let program = resolved.program();
 
     // The cert collection the audit projects (REQ-4 — aggregation, never re-derivation).
     // A bit-vector project (any `@bv`-tagged clause, stage-3 REQ-3 / AC-4) routes through
@@ -2200,7 +2192,7 @@ fn run_audit(
     // section — auditing a machine-semantics clause via the unbounded Verus path would be
     // wrong. Every tag-free project (the whole v1 corpus) keeps the default `check_file`
     // pipeline byte-identical (the canonical default-config entry that serves the cache).
-    let certs = if check::program_has_bv_tag(&parsed.program) {
+    let certs = if check::program_has_bv_tag(program) {
         check::check_file_with_engine(
             file,
             check::CheckOptions {
@@ -2219,7 +2211,7 @@ fn run_audit(
     let verus_version = audit::resolve_verus_version()?;
     let toolchain = audit::Toolchain::new(verus_version);
 
-    let manifest = AuditManifest::from_certificates(&certs, &parsed.program, toolchain);
+    let manifest = AuditManifest::from_certificates(&certs, program, toolchain);
 
     if json {
         // The stable v1 document on stdout (REQ-1 — the oracle-asserted surface).
@@ -2238,7 +2230,10 @@ fn run_audit(
     // print. In `--json` mode it goes to stderr so the stdout JSON stays a valid v1
     // document; in human mode it appends to the stdout report.
     if meaning {
-        let rendered = render_meaning(&parsed.program, &src);
+        // `render_meaning` slices verbatim `spec fn` text by span, so it takes
+        // the AST and the text that AST was parsed from as a pair: the file's own
+        // program and source, or the package's canonical projection and its parse.
+        let rendered = render_meaning(resolved.text_program(), resolved.text());
         if json {
             eprint!("{rendered}");
         } else {

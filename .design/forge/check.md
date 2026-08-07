@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: f518c981387e0913ddbc971112a9194d7e89122ef1c1e34eec9da8c101532ff9 (re-pinned 2026-08-04 after checked declarations began seeding their own nested ADT dependency graph)
+audited-content-sha256: 6d69b08dc92c4b23dcb305f344e93ef5083ceaf515eb7787e002c2f6e9defe81 (re-pinned 2026-08-07 after source-oriented Forge commands resolved canonical packages through one shared front door; existing single-file behavior remains regression-covered)
 governs: forge/src/check.rs
 thesis-refs:
   - thermite-design.md §5.1

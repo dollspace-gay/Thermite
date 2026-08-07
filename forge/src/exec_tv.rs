@@ -287,19 +287,15 @@ fn clause_frame(clause: &thermite_tv::ExecClause) -> ExecObligationFrame {
 /// not always derivable from the source `req`/`inv` text. Such an expr is
 /// Unverifiable, not a false Faithful.
 pub fn exec_tv_file(path: &Path, seed: u64, rlimit: f64) -> Result<ExecTvReport, ForgeError> {
-    let src = std::fs::read_to_string(path).map_err(|e| ForgeError::Io {
-        path: path.display().to_string(),
-        source: e,
-    })?;
-    let parsed = thermite_syntax::parse(&src);
-    if !parsed.is_clean() {
-        return Err(ForgeError::Parse(parsed.errors));
-    }
+    // A single `.th` file or a canonical `.thpkg.json` manifest; the package
+    // closure parses module by module, keeping each diagnostic module-local.
+    let resolved = crate::thermite_package::load_source(path)?;
+    let program = resolved.program();
 
     let mut report = ExecTvReport::default();
-    for item in &parsed.program.items {
+    for item in &program.items {
         match item {
-            Item::Fn(f) => exec_tv_fn(&parsed.program, f, seed, rlimit, &mut report),
+            Item::Fn(f) => exec_tv_fn(program, f, seed, rlimit, &mut report),
             // A `spec fn` body lowers in spec context (not exec), out of scope for
             // exec-TV; a struct/enum has no exec body.
             Item::Const(_) | Item::SpecFn(_) | Item::Struct(_) | Item::Enum(_) => {}

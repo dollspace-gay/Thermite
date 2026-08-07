@@ -390,7 +390,10 @@ fn divergence_no_registry_fixture_exercises_the_sealed_ownership_transition() {
             serde_json::from_slice(&fs::read(fixture).unwrap()).unwrap();
         let empty = Vec::new();
         for entry in document["entries"].as_array().unwrap_or(&empty) {
-            for parameter in entry["ownership"]["parameters"].as_array().unwrap_or(&empty) {
+            for parameter in entry["ownership"]["parameters"]
+                .as_array()
+                .unwrap_or(&empty)
+            {
                 ownership_vocabulary.insert(parameter.as_str().unwrap_or("?").to_string());
             }
             ownership_vocabulary.insert(

@@ -3,7 +3,7 @@
 tier: 3-component
 status: draft
 audited-sha: a728d95ca3dbd4fbbee1cb496c003f408d82f327 (re-pinned 2026-06-16 for stage-1 increment 2f, REQ-8: the only change to this doc's governed file (goal_repl.rs) is the additive Level::L4 arm in level_str (REQ-S1-8); the v1 goal/fill verbs this doc governs are unchanged.)
-audited-content-sha256: 9f74712b78927572d67adc576a6d783c708fa27c8a1bdf7b100ac265aa69c010
+audited-content-sha256: 17c4adb1d852ea24b91bca862be36dc5fb8e87fb7ebe6cefef91b0bb80441f64 (re-pinned 2026-08-07 after source-oriented Forge commands resolved canonical packages through one shared front door; existing single-file behavior remains regression-covered)
 governs: forge/src/goal_repl.rs, forge/src/cli.rs (verb dispatch), thermite-syntax/src/parser.rs (hole token)
 thesis-refs:
   - thermite-design.md §5

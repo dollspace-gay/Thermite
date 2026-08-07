@@ -2267,14 +2267,15 @@ fn recursive_caller(slot: usize) -> usize
         // `.design/build/mutable-call-effects.md` ("Production and expression
         // fidelity"): Forge adds the independently reconstructed exact
         // result/state predicate to the exact lowered callee, and Verus must
-        // prove it from the emitted body. The claim is the predicate's presence
-        // in the dependency's `ensures` list; `inject_dependency_reference_ensures`
-        // wraps each injected clause in parentheses so a compound predicate stays
-        // one list element, so the assertion tracks the predicate rather than the
-        // delimiters around it.
+        // prove it from the emitted body. The claim is that the predicate is a
+        // complete element of the dependency's `ensures` list, so the assertion
+        // matches the parenthesized, comma-terminated form that
+        // `inject_dependency_reference_ensures` emits for a clause it appends to
+        // an existing list. A bare substring would also match a predicate that
+        // had leaked outside the list.
         assert!(
             definitions.contains("    ensures\n")
-                && definitions.contains("result == thermite_tv_ref_next(slot)"),
+                && definitions.contains("(result == thermite_tv_ref_next(slot)),"),
             "an executable dependency must prove its exact independent reference \
              postcondition in the caller frame: {definitions}"
         );

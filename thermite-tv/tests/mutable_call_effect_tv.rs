@@ -277,6 +277,18 @@ fn observe_bank(bank: Bank) -> u64
 {
   bank.slots[0] + bank.guard
 }
+fn rewrite_bank(bank: Bank, next_guard: u64) -> Bank
+  req bank.slots[0] < 1000 && next_guard < 1000
+  ens result.slots[0] == bank.slots[0]
+  ens result.slots[1] == next_guard + 1
+  ens result.guard == next_guard
+  fx pure
+{
+  let mut rewritten: Bank = bank;
+  rewritten.slots[1] = next_guard + 1;
+  rewritten.guard = next_guard;
+  rewritten
+}
 fn observe_snapshot_after_array(
   outer: &mut ArrayOuter,
   value: u64,
@@ -301,6 +313,57 @@ fn observe_snapshot_after_array(
   snapshot.guard = next_guard;
   let observed: u64 = observe_bank(snapshot);
   observed
+}
+fn rewrite_snapshot_after_array(
+  outer: &mut ArrayOuter,
+  value: u64,
+  next_guard: u64,
+) -> Bank
+  req value < 1000 && next_guard < 1000
+  ens result.slots[0] == value
+  ens result.slots[1] == next_guard + 1
+  ens result.guard == next_guard
+  ens final(outer).left.slots[0] == value
+  ens final(outer).left.slots[1] == old(outer).left.slots[1]
+  ens final(outer).left.guard == old(outer).left.guard
+  ens final(outer).right.slots[0] == old(outer).right.slots[0]
+  ens final(outer).right.slots[1] == old(outer).right.slots[1]
+  ens final(outer).right.guard == old(outer).right.guard
+  ens final(outer).tag == old(outer).tag
+  fx pure
+{
+  let written: u64 = write_array(&mut outer.left.slots, value);
+  let snapshot: Bank = Bank {
+    slots: outer.left.slots,
+    guard: outer.left.guard,
+  };
+  let rewritten: Bank = rewrite_bank(snapshot, next_guard);
+  rewritten
+}
+fn rewrite_snapshot_direct_after_array(
+  outer: &mut ArrayOuter,
+  value: u64,
+  next_guard: u64,
+) -> Bank
+  req value < 1000 && next_guard < 1000
+  ens result.slots[0] == value
+  ens result.slots[1] == next_guard + 1
+  ens result.guard == next_guard
+  ens final(outer).left.slots[0] == value
+  ens final(outer).left.slots[1] == old(outer).left.slots[1]
+  ens final(outer).left.guard == old(outer).left.guard
+  ens final(outer).right.slots[0] == old(outer).right.slots[0]
+  ens final(outer).right.slots[1] == old(outer).right.slots[1]
+  ens final(outer).right.guard == old(outer).right.guard
+  ens final(outer).tag == old(outer).tag
+  fx pure
+{
+  let written: u64 = write_array(&mut outer.left.slots, value);
+  let snapshot: Bank = Bank {
+    slots: outer.left.slots,
+    guard: outer.left.guard,
+  };
+  rewrite_bank(snapshot, next_guard)
 }
 fn staged_snapshot_after_array(
   outer: &mut ArrayOuter,
@@ -413,6 +476,22 @@ fn observe_bank(bank: Bank) -> (result: u64)
         result == bank.slots@[0] + bank.guard,
 {
     bank.slots[0] + bank.guard
+}
+
+fn rewrite_bank(bank: Bank, next_guard: u64) -> (result: Bank)
+    requires
+        bank.slots@[0] < 1000,
+        next_guard < 1000,
+    ensures
+        result.slots@ == bank.slots@.update(1, (next_guard + 1) as u64),
+        result.slots@[0] == bank.slots@[0],
+        result.slots@[1] == next_guard + 1,
+        result.guard == next_guard,
+{
+    let mut rewritten = bank;
+    rewritten.slots[1] = next_guard + 1;
+    rewritten.guard = next_guard;
+    rewritten
 }
 
 fn advance_bank(bank: &mut Bank, next_guard: u64) -> (result: u64)
@@ -663,6 +742,22 @@ fn projected_indexed_frame() -> BodyObligationFrame {
                 bank_fields.clone(),
             )])
             .with_result_type(Type::Prim(PrimType::U64)),
+            MutableCallEffectFrame::new(
+                "rewrite_bank",
+                vec!["bank".to_string(), "next_guard".to_string()],
+                vec![],
+                function_body_in(PROJECTED_INDEXED_SOURCE, "rewrite_bank"),
+            )
+            .with_param_types(vec![
+                Type::Named("Bank".to_string()),
+                Type::Prim(PrimType::U64),
+            ])
+            .with_value_records(vec![ValueRecordFrame::typed(
+                "bank",
+                "Bank",
+                bank_fields.clone(),
+            )])
+            .with_result_type(Type::Named("Bank".to_string())),
         ],
         named_records: vec![
             NamedRecordFrame::new("Bank", bank_fields),
@@ -1063,6 +1158,75 @@ fn logical_record_snapshot_flows_into_source_derived_value_observer_at_l3() {
 }
 
 #[test]
+fn logical_record_snapshot_flows_through_source_derived_record_result_at_l3() {
+    let body = function_body_in(PROJECTED_INDEXED_SOURCE, "rewrite_snapshot_after_array");
+    let mut frame = projected_indexed_frame();
+    frame.params.push(BodyParamDecl::new("next_guard", "u64"));
+    frame.ret_type = "Bank".to_string();
+    frame.req = Some("value < 1000 && next_guard < 1000".to_string());
+    frame.result_record = frame
+        .named_records
+        .iter()
+        .find(|record| record.type_name == "Bank")
+        .cloned();
+    let production = r#"    let written: u64 = write_array(&mut outer.left.slots, value);
+    let snapshot: Bank = Bank {
+        slots: outer.left.slots,
+        guard: outer.left.guard,
+    };
+    let rewritten: Bank = rewrite_bank(snapshot, next_guard);
+    rewritten
+"#;
+    let obligation = body_equivalence_obligation(&body, production, &frame)
+        .expect("logical record snapshot passed through a source-derived record result");
+    assert!(obligation.contains("result.slots@ =="), "{obligation}");
+    assert!(obligation.contains(".update(0, value)"), "{obligation}");
+    assert!(obligation.contains(".update(1,"), "{obligation}");
+    assert!(
+        obligation.contains("result.guard == next_guard"),
+        "{obligation}"
+    );
+    assert_verus("logical_record_value_record_result", &obligation, true);
+
+    let mutant = body_equivalence_obligation(
+        &body,
+        r#"    let snapshot: Bank = Bank {
+        slots: outer.left.slots,
+        guard: outer.left.guard,
+    };
+    let rewritten: Bank = rewrite_bank(snapshot, next_guard);
+    rewritten
+"#,
+        &frame,
+    )
+    .expect("logical record-result mutant obligation");
+    assert_verus("logical_record_value_record_result_mutant", &mutant, false);
+
+    let direct_body = function_body_in(
+        PROJECTED_INDEXED_SOURCE,
+        "rewrite_snapshot_direct_after_array",
+    );
+    let direct_production = r#"    let written: u64 = write_array(&mut outer.left.slots, value);
+    let snapshot: Bank = Bank {
+        slots: outer.left.slots,
+        guard: outer.left.guard,
+    };
+    rewrite_bank(snapshot, next_guard)
+"#;
+    let direct_obligation = body_equivalence_obligation(&direct_body, direct_production, &frame)
+        .expect("direct logical record-result tail obligation");
+    assert!(
+        direct_obligation.contains("result.slots@ =="),
+        "{direct_obligation}"
+    );
+    assert_verus(
+        "logical_record_value_record_result_direct_tail",
+        &direct_obligation,
+        true,
+    );
+}
+
+#[test]
 fn nested_logical_record_value_call_remains_fail_closed() {
     let source = format!(
         r#"{PROJECTED_INDEXED_SOURCE}
@@ -1114,6 +1278,66 @@ fn nested_observe_snapshot_after_array(
         &frame,
     )
     .expect_err("nested logical value-call expressions require a wider evaluation frame");
+    assert!(
+        error
+            .to_string()
+            .contains("materializes logical indexed state at `snapshot`"),
+        "{error}"
+    );
+}
+
+#[test]
+fn nested_logical_record_result_call_remains_fail_closed() {
+    let source = format!(
+        r#"{PROJECTED_INDEXED_SOURCE}
+fn nested_rewrite_snapshot_after_array(
+  outer: &mut ArrayOuter,
+  value: u64,
+  next_guard: u64,
+) -> u64
+  req value < 1000 && next_guard < 1000
+  ens result == next_guard
+  fx pure
+{{
+  let written: u64 = write_array(&mut outer.left.slots, value);
+  let snapshot: Bank = Bank {{
+    slots: outer.left.slots,
+    guard: outer.left.guard,
+  }};
+  let observed: u64 = rewrite_bank(snapshot, next_guard).guard;
+  observed
+}}
+"#
+    );
+    let parsed = thermite_syntax::parse(&source);
+    assert!(parsed.is_clean(), "parse errors: {:?}", parsed.errors);
+    let body = parsed
+        .program
+        .items
+        .iter()
+        .find_map(|item| match item {
+            Item::Fn(function) if function.name == "nested_rewrite_snapshot_after_array" => {
+                function.body.clone()
+            }
+            _ => None,
+        })
+        .expect("nested logical record-result body");
+    let mut frame = projected_indexed_frame();
+    frame.params.push(BodyParamDecl::new("next_guard", "u64"));
+    frame.req = Some("value < 1000 && next_guard < 1000".to_string());
+    let error = body_equivalence_obligation(
+        &body,
+        r#"    let written: u64 = write_array(&mut outer.left.slots, value);
+    let snapshot: Bank = Bank {
+        slots: outer.left.slots,
+        guard: outer.left.guard,
+    };
+    let observed: u64 = rewrite_bank(snapshot, next_guard).guard;
+    observed
+"#,
+        &frame,
+    )
+    .expect_err("nested logical record-result expressions require a wider evaluation frame");
     assert!(
         error
             .to_string()

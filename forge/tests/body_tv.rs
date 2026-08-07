@@ -1131,6 +1131,18 @@ fn observe_bank(bank: Bank) -> u64
 {
   bank.slots[0] + bank.guard
 }
+fn rewrite_bank(bank: Bank, next_guard: u64) -> Bank
+  req bank.slots[0] < 1000 && next_guard < 1000
+  ens result.slots[0] == bank.slots[0]
+  ens result.slots[1] == next_guard + 1
+  ens result.guard == next_guard
+  fx pure
+{
+  let mut rewritten: Bank = bank;
+  rewritten.slots[1] = next_guard + 1;
+  rewritten.guard = next_guard;
+  rewritten
+}
 fn observe_snapshot_after_array(
   outer: &mut ArrayOuter,
   value: u64,
@@ -1155,6 +1167,57 @@ fn observe_snapshot_after_array(
   snapshot.guard = next_guard;
   let observed: u64 = observe_bank(snapshot);
   observed
+}
+fn rewrite_snapshot_after_array(
+  outer: &mut ArrayOuter,
+  value: u64,
+  next_guard: u64,
+) -> Bank
+  req value < 1000 && next_guard < 1000
+  ens result.slots[0] == value
+  ens result.slots[1] == next_guard + 1
+  ens result.guard == next_guard
+  ens final(outer).left.slots[0] == value
+  ens final(outer).left.slots[1] == old(outer).left.slots[1]
+  ens final(outer).left.guard == old(outer).left.guard
+  ens final(outer).right.slots[0] == old(outer).right.slots[0]
+  ens final(outer).right.slots[1] == old(outer).right.slots[1]
+  ens final(outer).right.guard == old(outer).right.guard
+  ens final(outer).tag == old(outer).tag
+  fx pure
+{
+  let written: u64 = write_array(&mut outer.left.slots, value);
+  let snapshot: Bank = Bank {
+    slots: outer.left.slots,
+    guard: outer.left.guard,
+  };
+  let rewritten: Bank = rewrite_bank(snapshot, next_guard);
+  rewritten
+}
+fn rewrite_snapshot_direct_after_array(
+  outer: &mut ArrayOuter,
+  value: u64,
+  next_guard: u64,
+) -> Bank
+  req value < 1000 && next_guard < 1000
+  ens result.slots[0] == value
+  ens result.slots[1] == next_guard + 1
+  ens result.guard == next_guard
+  ens final(outer).left.slots[0] == value
+  ens final(outer).left.slots[1] == old(outer).left.slots[1]
+  ens final(outer).left.guard == old(outer).left.guard
+  ens final(outer).right.slots[0] == old(outer).right.slots[0]
+  ens final(outer).right.slots[1] == old(outer).right.slots[1]
+  ens final(outer).right.guard == old(outer).right.guard
+  ens final(outer).tag == old(outer).tag
+  fx pure
+{
+  let written: u64 = write_array(&mut outer.left.slots, value);
+  let snapshot: Bank = Bank {
+    slots: outer.left.slots,
+    guard: outer.left.guard,
+  };
+  rewrite_bank(snapshot, next_guard)
 }
 fn staged_snapshot_after_array(
   outer: &mut ArrayOuter,
@@ -1187,8 +1250,8 @@ fn staged_snapshot_after_array(
 "#;
     let file = write_th("record_after_projected_indexed", source);
     let report = run_body_tv_json(&file);
-    assert_eq!(report["counts"]["checked"].as_u64(), Some(11), "{report}");
-    assert_eq!(report["counts"]["faithful"].as_u64(), Some(11), "{report}");
+    assert_eq!(report["counts"]["checked"].as_u64(), Some(14), "{report}");
+    assert_eq!(report["counts"]["faithful"].as_u64(), Some(14), "{report}");
     assert_eq!(report["counts"]["divergent"].as_u64(), Some(0), "{report}");
     assert_eq!(report["counts"]["skipped"].as_u64(), Some(0), "{report}");
     for name in [
@@ -1202,6 +1265,9 @@ fn staged_snapshot_after_array(
         "snapshot_after_array",
         "observe_bank",
         "observe_snapshot_after_array",
+        "rewrite_bank",
+        "rewrite_snapshot_after_array",
+        "rewrite_snapshot_direct_after_array",
         "staged_snapshot_after_array",
     ] {
         assert!(

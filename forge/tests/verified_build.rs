@@ -1579,6 +1579,10 @@ fn record_after_indexed_call_effect_is_strict_l3_replayed_and_executed() {
         "--export",
         "record_after_indexed_observe_snapshot",
         "--export",
+        "record_after_indexed_rewrite_snapshot",
+        "--export",
+        "record_after_indexed_rewrite_snapshot_direct",
+        "--export",
         "record_after_indexed_left_zero",
         "--export",
         "record_after_indexed_left_one",
@@ -1612,6 +1616,10 @@ fn record_after_indexed_call_effect_is_strict_l3_replayed_and_executed() {
             && source.contains("pub fn thermite_export_record_after_indexed_staged_snapshot_v1",)
             && source.contains("record_after_indexed_observe_bank(snapshot)")
             && source.contains("pub fn thermite_export_record_after_indexed_observe_snapshot_v1",)
+            && source.contains("record_after_indexed_rewrite_bank(snapshot, next_guard)")
+            && source.contains("pub fn thermite_export_record_after_indexed_rewrite_snapshot_v1",)
+            && source
+                .contains("pub fn thermite_export_record_after_indexed_rewrite_snapshot_direct_v1",)
             && source.contains("Ok(__thermite_export_value)"),
         "{source}"
     );
@@ -1627,6 +1635,8 @@ use record_after_indexed_call_effect::{
     record_after_indexed_right_guard, record_after_indexed_right_one,
     record_after_indexed_right_zero, record_after_indexed_snapshot,
     record_after_indexed_tag, thermite_export_record_after_indexed_observe_snapshot_v1,
+    thermite_export_record_after_indexed_rewrite_snapshot_v1,
+    thermite_export_record_after_indexed_rewrite_snapshot_direct_v1,
     thermite_export_record_after_indexed_staged_snapshot_v1, RecordAfterIndexedBank,
     RecordAfterIndexedOuter,
 };
@@ -1688,6 +1698,40 @@ fn main() {
     assert_eq!(record_after_indexed_right_one(&outer), 7);
     assert_eq!(record_after_indexed_right_guard(&outer), 8);
     assert_eq!(record_after_indexed_tag(&outer), 9);
+    let rewritten = match thermite_export_record_after_indexed_rewrite_snapshot_v1(
+        &mut outer,
+        65,
+        99,
+    ) {
+        Ok(value) => value,
+        Err(_) => panic!("valid record-result inputs were rejected"),
+    };
+    assert_eq!(rewritten.slots, [65, 100]);
+    assert_eq!(rewritten.guard, 99);
+    assert_eq!(record_after_indexed_left_zero(&outer), 65);
+    assert_eq!(record_after_indexed_left_one(&outer), 41);
+    assert_eq!(record_after_indexed_left_guard(&outer), 55);
+    assert_eq!(record_after_indexed_right_zero(&outer), 41);
+    assert_eq!(record_after_indexed_right_one(&outer), 7);
+    assert_eq!(record_after_indexed_right_guard(&outer), 8);
+    assert_eq!(record_after_indexed_tag(&outer), 9);
+    let direct = match thermite_export_record_after_indexed_rewrite_snapshot_direct_v1(
+        &mut outer,
+        66,
+        111,
+    ) {
+        Ok(value) => value,
+        Err(_) => panic!("valid direct record-result inputs were rejected"),
+    };
+    assert_eq!(direct.slots, [66, 112]);
+    assert_eq!(direct.guard, 111);
+    assert_eq!(record_after_indexed_left_zero(&outer), 66);
+    assert_eq!(record_after_indexed_left_one(&outer), 41);
+    assert_eq!(record_after_indexed_left_guard(&outer), 55);
+    assert_eq!(record_after_indexed_right_zero(&outer), 41);
+    assert_eq!(record_after_indexed_right_one(&outer), 7);
+    assert_eq!(record_after_indexed_right_guard(&outer), 8);
+    assert_eq!(record_after_indexed_tag(&outer), 9);
 }
 "#,
     )
@@ -1732,7 +1776,7 @@ fn main() {
     )
     .unwrap();
     let rows = tv["rows"].as_array().unwrap();
-    assert_eq!(rows.len(), 105, "{tv}");
+    assert_eq!(rows.len(), 141, "{tv}");
     assert!(
         rows.iter().all(|row| row["verdict"] == "faithful"),
         "record-after-indexed lifecycle admitted a non-faithful row: {tv}"
@@ -1762,6 +1806,21 @@ fn main() {
             && row["label"] == "record_after_indexed_observe_snapshot"
             && row["verdict"] == "faithful"
     }));
+    assert!(rows.iter().any(|row| {
+        row["phase"] == "body"
+            && row["label"] == "record_after_indexed_rewrite_bank"
+            && row["verdict"] == "faithful"
+    }));
+    assert!(rows.iter().any(|row| {
+        row["phase"] == "body"
+            && row["label"] == "record_after_indexed_rewrite_snapshot"
+            && row["verdict"] == "faithful"
+    }));
+    assert!(rows.iter().any(|row| {
+        row["phase"] == "body"
+            && row["label"] == "record_after_indexed_rewrite_snapshot_direct"
+            && row["verdict"] == "faithful"
+    }));
     for body_owned_let in [
         "record_after_indexed_pipeline.let#1",
         "record_after_indexed_pipeline.let#2",
@@ -1770,6 +1829,9 @@ fn main() {
         "record_after_indexed_staged_snapshot.let#1",
         "record_after_indexed_observe_snapshot.let#1",
         "record_after_indexed_observe_snapshot.let#3",
+        "record_after_indexed_rewrite_snapshot.let#1",
+        "record_after_indexed_rewrite_snapshot.let#3",
+        "record_after_indexed_rewrite_snapshot_direct.let#1",
     ] {
         assert!(!rows
             .iter()

@@ -710,7 +710,20 @@ impl BodyRefCtx {
                             .any(|record| record.name == *param && record.type_name == *type_name),
                         _ => false,
                     })
-                && matches!(effect.result_type, Some(Type::Prim(_)) | Some(Type::Unit))
+        })
+    }
+
+    fn logical_scalar_value_call_effect(&self, name: &str) -> Option<&MutableCallEffectFrame> {
+        self.logical_value_call_effect(name)
+            .filter(|effect| matches!(effect.result_type, Some(Type::Prim(_)) | Some(Type::Unit)))
+    }
+
+    fn logical_record_value_call_effect(&self, name: &str) -> Option<&MutableCallEffectFrame> {
+        self.logical_value_call_effect(name).filter(|effect| {
+            matches!(
+                effect.result_type.as_ref(),
+                Some(Type::Named(type_name)) if self.named_record(type_name).is_some()
+            )
         })
     }
 
@@ -1766,12 +1779,30 @@ fn bind_lifecycle_record_local(
 ) -> Result<LifecycleCell, RefEncodeError> {
     let binding = lifecycle_record_binding(name, type_name, source, state, ctx)?;
 
+    Ok(install_lifecycle_record_binding(
+        name, type_name, mutable, binding, state,
+    ))
+}
+
+fn install_lifecycle_record_binding(
+    name: &str,
+    type_name: &str,
+    mutable: bool,
+    binding: LifecycleRecordBinding,
+    state: &mut LifecycleState,
+) -> LifecycleCell {
+    let LifecycleRecordBinding {
+        whole,
+        direct_fields,
+        indexed,
+    } = binding;
+
     state
         .fields
         .retain(|path, _| !path.starts_with(&format!("{name}.")));
     remove_indexed_at_or_below(state, &[name.to_string()]);
-    state.fields.extend(binding.direct_fields);
-    state.indexed.extend(binding.indexed);
+    state.fields.extend(direct_fields);
+    state.indexed.extend(indexed);
     state.record_locals.insert(
         name.to_string(),
         LifecycleRecordLocal {
@@ -1779,7 +1810,7 @@ fn bind_lifecycle_record_local(
             mutable,
         },
     );
-    Ok(binding.whole)
+    whole
 }
 
 fn expression_materializes_indexed_overlay(expr: &Expr, state: &LifecycleState) -> Option<String> {
@@ -1941,6 +1972,30 @@ fn lifecycle_result_frame(
     }
 
     if let Type::Named(type_name) = ty {
+        if let Some((callee, args)) =
+            direct_logical_record_value_call(source, type_name, state, ctx)
+        {
+            let root = "__thermite_logical_call_result";
+            let binding =
+                apply_logical_record_value_call(root, type_name, callee, args, state, ctx)?;
+            let mut result_state = state.clone();
+            let whole = install_lifecycle_record_binding(
+                root,
+                type_name,
+                false,
+                binding,
+                &mut result_state,
+            );
+            return lifecycle_value_frame(
+                result_value,
+                &whole.text,
+                ty,
+                &mut vec![root.to_string()],
+                &result_state,
+                ctx,
+                ensures,
+            );
+        }
         let record = ctx.named_record(type_name).ok_or_else(|| {
             RefEncodeError::Unsupported(format!(
                 "aggregate lifecycle result type `{type_name}` has no finite record frame"
@@ -2177,11 +2232,23 @@ fn thread_lifecycle_stmt(
                 }
                 apply_mutable_call_effect(callee, args, state, ctx, active_calls)?
             } else if let Some(Type::Named(type_name)) = ty {
-                if ctx.named_record(type_name).is_some()
-                    && (matches!(init, Expr::StructLit { .. })
-                        || lifecycle_field_path(init).is_some())
-                {
-                    bind_lifecycle_record_local(name, type_name, *mutable, init, state, ctx)?
+                if ctx.named_record(type_name).is_some() {
+                    if let Some((callee, args)) =
+                        direct_logical_record_value_call(init, type_name, state, ctx)
+                    {
+                        let binding = apply_logical_record_value_call(
+                            name, type_name, callee, args, state, ctx,
+                        )?;
+                        install_lifecycle_record_binding(
+                            name, type_name, *mutable, binding, state,
+                        )
+                    } else if matches!(init, Expr::StructLit { .. })
+                        || lifecycle_field_path(init).is_some()
+                    {
+                        bind_lifecycle_record_local(name, type_name, *mutable, init, state, ctx)?
+                    } else {
+                        encode_lifecycle_expr(init, state, ctx)?
+                    }
                 } else {
                     encode_lifecycle_expr(init, state, ctx)?
                 }
@@ -3455,30 +3522,24 @@ fn direct_mutable_call<'a>(expr: &'a Expr, ctx: &BodyRefCtx) -> Option<(&'a str,
         .then_some((name.as_str(), args.as_slice()))
 }
 
-/// Interpret one direct pure call whose finite-record by-value argument contains
-/// a logical sequence overlay. Production still executes the ordinary generated
-/// call. The reference side copies every native field and sequence leaf into the
-/// exact formal frame and interprets the reachable source body, avoiding an
-/// unsound `Seq<T>`-to-`[T; N]` reconstruction.
-fn apply_logical_value_call(
+/// Interpret the common source-derived portion of one direct pure call whose
+/// finite-record by-value argument contains a logical sequence overlay.
+/// Production still executes the ordinary generated call. The reference side
+/// copies every native field and sequence leaf into the exact formal frame and
+/// interprets the reachable source body, avoiding an unsound
+/// `Seq<T>`-to-`[T; N]` reconstruction.
+fn interpret_logical_value_call(
     name: &str,
     args: &[Expr],
     state: &LifecycleState,
     ctx: &BodyRefCtx,
-) -> Result<LifecycleCell, RefEncodeError> {
+    effect: &MutableCallEffectFrame,
+) -> Result<(LifecycleState, BodyRefCtx), RefEncodeError> {
     if state.active_value_calls.iter().any(|active| active == name) {
         return Err(RefEncodeError::Unsupported(format!(
             "recursive logical by-value call cycle reaches `{name}`"
         )));
     }
-    let effect = ctx
-        .logical_value_call_effect(name)
-        .cloned()
-        .ok_or_else(|| {
-            RefEncodeError::Unsupported(format!(
-                "logical by-value call `{name}` has no exact scalar-result finite-record source frame"
-            ))
-        })?;
     if effect.params.len() != args.len() {
         return Err(RefEncodeError::Unsupported(format!(
             "logical by-value call `{name}` has {} actual arguments but {} exact formals",
@@ -3561,6 +3622,24 @@ fn apply_logical_value_call(
         false,
         &mut active_mutable_calls,
     )?;
+    Ok((callee_state, callee_ctx))
+}
+
+fn apply_logical_scalar_value_call(
+    name: &str,
+    args: &[Expr],
+    state: &LifecycleState,
+    ctx: &BodyRefCtx,
+) -> Result<LifecycleCell, RefEncodeError> {
+    let effect = ctx
+        .logical_scalar_value_call_effect(name)
+        .cloned()
+        .ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "logical by-value call `{name}` has no exact scalar-result finite-record source frame"
+            ))
+        })?;
+    let (callee_state, callee_ctx) = interpret_logical_value_call(name, args, state, ctx, &effect)?;
     match &effect.body.tail {
         Some(tail) => {
             let value = encode_lifecycle_expr(tail, &callee_state, &callee_ctx)?;
@@ -3581,7 +3660,56 @@ fn apply_logical_value_call(
     }
 }
 
-fn direct_logical_value_call<'a>(
+fn apply_logical_record_value_call(
+    target_name: &str,
+    expected_type: &str,
+    name: &str,
+    args: &[Expr],
+    state: &LifecycleState,
+    ctx: &BodyRefCtx,
+) -> Result<LifecycleRecordBinding, RefEncodeError> {
+    let effect = ctx
+        .logical_record_value_call_effect(name)
+        .cloned()
+        .ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "logical by-value call `{name}` has no exact finite-record result source frame"
+            ))
+        })?;
+    let Some(Type::Named(result_type)) = effect.result_type.as_ref() else {
+        return Err(RefEncodeError::Unsupported(format!(
+            "logical by-value call `{name}` lost its exact finite-record result type"
+        )));
+    };
+    if result_type != expected_type {
+        return Err(RefEncodeError::Unsupported(format!(
+            "logical by-value call `{name}` returns `{result_type}` but typed binding `{target_name}` expects `{expected_type}`"
+        )));
+    }
+    let (callee_state, callee_ctx) = interpret_logical_value_call(name, args, state, ctx, &effect)?;
+    let tail = effect.body.tail.as_ref().ok_or_else(|| {
+        RefEncodeError::Unsupported(format!(
+            "logical by-value call `{name}` has no exact finite-record source result"
+        ))
+    })?;
+    lifecycle_record_binding(target_name, expected_type, tail, &callee_state, &callee_ctx)
+}
+
+fn logical_value_call_has_overlay(
+    args: &[Expr],
+    effect: &MutableCallEffectFrame,
+    state: &LifecycleState,
+) -> bool {
+    args.iter().zip(&effect.params).any(|(actual, formal)| {
+        effect
+            .value_records
+            .iter()
+            .any(|record| record.name == *formal)
+            && expression_materializes_indexed_overlay(actual, state).is_some()
+    })
+}
+
+fn direct_logical_scalar_value_call<'a>(
     expr: &'a Expr,
     state: &LifecycleState,
     ctx: &BodyRefCtx,
@@ -3595,17 +3723,31 @@ fn direct_logical_value_call<'a>(
     let [name] = path.as_slice() else {
         return None;
     };
-    let effect = ctx.logical_value_call_effect(name)?;
-    args.iter()
-        .zip(&effect.params)
-        .any(|(actual, formal)| {
-            effect
-                .value_records
-                .iter()
-                .any(|record| record.name == *formal)
-                && expression_materializes_indexed_overlay(actual, state).is_some()
-        })
-        .then_some((name.as_str(), args.as_slice()))
+    let effect = ctx.logical_scalar_value_call_effect(name)?;
+    logical_value_call_has_overlay(args, effect, state).then_some((name.as_str(), args.as_slice()))
+}
+
+fn direct_logical_record_value_call<'a>(
+    expr: &'a Expr,
+    expected_type: &str,
+    state: &LifecycleState,
+    ctx: &BodyRefCtx,
+) -> Option<(&'a str, &'a [Expr])> {
+    let Expr::Call { callee, args } = expr else {
+        return None;
+    };
+    let Expr::Path(path) = callee.as_ref() else {
+        return None;
+    };
+    let [name] = path.as_slice() else {
+        return None;
+    };
+    let effect = ctx.logical_record_value_call_effect(name)?;
+    if !matches!(effect.result_type.as_ref(), Some(Type::Named(result)) if result == expected_type)
+    {
+        return None;
+    }
+    logical_value_call_has_overlay(args, effect, state).then_some((name.as_str(), args.as_slice()))
 }
 
 fn merge_lifecycle_cells(
@@ -3635,8 +3777,8 @@ fn encode_lifecycle_expr(
             .to_string(),
         ));
     }
-    if let Some((name, args)) = direct_logical_value_call(expr, state, ctx) {
-        return apply_logical_value_call(name, args, state, ctx);
+    if let Some((name, args)) = direct_logical_scalar_value_call(expr, state, ctx) {
+        return apply_logical_scalar_value_call(name, args, state, ctx);
     }
     if let Some(path) = expression_materializes_indexed_overlay(expr, state) {
         return Err(RefEncodeError::Unsupported(format!(

@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: 0eff9d3a9c6e6c9b4bcd832e46bda7fc732ac9bc247362cc911d068f8ea52df8 (re-pinned 2026-08-05 after direct logical-record value observers joined the aggregate lifecycle engine)
+audited-content-sha256: a5acb712bbd92e3b2d12ed12ee5217bae8580d938dc762e968ac63331bb2ca07 (re-pinned 2026-08-05 after direct logical-record finite-record results joined the aggregate lifecycle engine)
 decision: direct mutation through an exclusive borrow of finite non-sealed named record state is admitted only when validator, L3, independent contract/exec/body TV, strict ABI, receipt replay, and representation ownership all describe the same field-exact transition
 governs:
   - thermite-spec/src/validator.rs
@@ -232,9 +232,10 @@ Nested mutable projections and record-state loops are now supplied by
 `.design/build/nested-aggregate-lifecycle.md` and
 `.design/build/record-state-loops.md`. Mutable enum payloads, heap-backed record
 fields, an affine type system, static global ownership, concurrent record access,
-atomic-object machine refinement, array-element-root calls and arbitrary native
-aggregate materialization or by-value call/match use after projected indexed
-state, and separate Rust/assembly TPL
+atomic-object machine refinement, array-element-root calls, arbitrary native
+aggregate materialization, nested/general by-value call use or aggregate results
+outside the exact constructor/access-path tail subset after projected indexed
+state, native aggregate matching, and separate Rust/assembly TPL
 refinement remain explicit later primitive
 increments. Exact statement-position calls over structurally disjoint direct or
 projected finite-record roots are supplied by

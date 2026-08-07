@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-decision: statement-position and direct typed let-bound mutable calls plus direct scalar/unit observers consuming logical finite-record values compose by independently interpreting reachable in-language callee bodies, shared snapshots, logical intermediate finite-record bindings, leafwise finite-record results, and every complete post-state leaf or sequence
+decision: statement-position and direct typed let-bound mutable calls plus direct scalar/unit and exact finite-record functions consuming logical finite-record values compose by independently interpreting reachable in-language callee bodies, shared snapshots, logical intermediate finite-record bindings, leafwise finite-record results, and every complete post-state leaf or sequence
 governs:
   - thermite-tv/src/exec_encode.rs
   - thermite-tv/src/exec_stmt_encode.rs
@@ -22,7 +22,7 @@ governs:
   - conformance/verified-build/projected_record_call_effect.th
   - conformance/verified-build/projected_indexed_call_effect.th
   - conformance/verified-build/record_after_indexed_call_effect.th
-audited-content-sha256: fbfb8cf24099f5ab8b2caf2e6771e0c99952f5433c1aef6e890fca56d38cbe4c (direct scalar logical-record value observers and 105-row strict L3 runtime evidence added 2026-08-05)
+audited-content-sha256: 334a494e3c034119d41397c24b334be399c919fa471c76021dc9101485c8b401 (typed-local and direct-tail logical-record results plus 141-row strict L3 runtime evidence added 2026-08-05)
 extends:
   - .design/build/nested-aggregate-lifecycle.md
   - .design/build/owned-aggregate-lifecycle.md
@@ -60,8 +60,9 @@ closure:
   aliasing is harmless and remains admitted.
 
 Other formals are by-value inputs. A separate exact path admits a bodyful pure
-callee with finite named-record value formals and only scalar/unit peers and
-result when a direct call actually consumes a logical record overlay. Forge
+callee with finite named-record value formals, only scalar/unit peers, and a
+scalar/unit or admitted finite-record result when a direct call actually
+consumes a logical record overlay. Forge
 derives its exact formal/result types, field inventory, and body from the same
 reachable source closure; no authored metadata can opt a foreign call in.
 Array-element roots, implicit field borrowing, and non-finite records remain rejected rather than
@@ -149,19 +150,22 @@ roots reject writes.
 A direct pure value call whose admitted finite-record actual contains a logical
 sequence overlay snapshots that actual leafwise into a fresh read-only formal.
 The independent interpreter runs the exact reachable callee source body over
-the scalar fields and sequence leaves and returns a bounded scalar or unit.
-There is no copy-back. Recursive value-call cycles, shared/reference formals,
-aggregate results, missing exact signature metadata, and nested call placement
-fail closed. The production column continues to execute the generated native
-record call and is connected to the independently reconstructed callee result
-in the same Verus unit.
+the scalar fields and sequence leaves and returns a bounded scalar, unit, or an
+admitted finite record. Record results require an exact constructor/access-path
+callee tail and are rebound leafwise into a direct typed caller local or direct
+body tail; logical arrays remain complete sequences throughout the independent
+column. There is no copy-back. Recursive value-call cycles, shared/reference
+formals, wider result sources, missing exact signature metadata, and nested call
+placement fail closed. The production column continues to execute the generated
+native-record call and is connected to the independently reconstructed callee
+result in the same Verus unit.
 
 The independent theory still never fabricates a native array or enclosing
 record from a logical sequence. Extracting an overlaid field as `[T; N]`,
-passing the logical record through an aggregate-returning or nested/general
-by-value call, matching it as a native aggregate, or otherwise escaping the
-controlled typed binding, direct scalar/unit observer, and leafwise-result paths
-remains fail-closed.
+passing the logical record through a nested/general by-value call, returning an
+aggregate from a non-constructor/access-path source, matching it as a native
+aggregate, or otherwise escaping the controlled typed binding, direct scalar/
+unit observer, and leafwise-result paths remains fail-closed.
 
 ## Production and expression fidelity
 
@@ -212,10 +216,12 @@ independently shared outer record, and repeated shared/shared projections.
 Forge's corpus body-TV test derives the effect from source rather than accepting
 a hand-authored model, proves both a shared caller input and the current snapshot
 of a separately mutable peer, and rejects overlap before invoking Verus.
-It also proves a logical finite-record snapshot flowing into a source-derived
-pure scalar observer after a projected indexed update. The focused suite rejects
-a dropped update and nested observer expression, while Forge's corpus path
-derives and discharges both observer and caller bodies without skipped rows.
+It also proves a logical finite-record snapshot flowing into source-derived pure
+scalar and finite-record functions after a projected indexed update. The record
+result is consumed both through a typed local and as the direct body tail. The
+focused suite rejects a dropped update and nested scalar/record call expressions,
+while Forge's corpus path derives and discharges every callee and caller body
+without skipped rows.
 
 The policy-free `mutable_call_effect.th` fixture copies from a distinct shared
 opaque record through generated mixed-borrow logic, passes that result into the
@@ -266,12 +272,14 @@ snapshot without mutating unrelated caller state. Its strict freestanding
 receipt originally had 88 faithful translation-validation rows. A third
 exported transition passes the current logical record snapshot to a generated
 Thermite scalar observer without converting its sequence overlay back into a
-native array in the independent semantics. The expanded receipt has 105
-faithful translation-validation rows and only L3 reachable members. Replay,
-total-wrapper guard fidelity, linked downstream execution of the observer result,
-exact returned array/scalar leaves, both sequence transitions, local snapshot
-independence, scalar sibling framing, and record-actual tamper rejection are
-mandatory.
+native array in the independent semantics. Two further exports pass the same
+snapshot through a generated finite-record transformation and consume its
+leafwise result through a typed local and a direct body tail. The expanded
+receipt has 141 faithful translation-validation rows and only L3 reachable
+members. Replay, total-wrapper guard fidelity, linked downstream execution of
+the scalar and record results, exact returned array/scalar leaves, both sequence
+transitions, local snapshot independence, scalar sibling framing, and
+record-actual tamper rejection are mandatory.
 
 This is reusable language and proof machinery. It adds no scheduler, allocator,
 boot path, firmware runtime, architecture implementation, or kernel artifact.
@@ -280,8 +288,9 @@ boot path, firmware runtime, architecture implementation, or kernel artifact.
 
 The frozen subset still excludes implicit field borrowing, an array-element
 actual such as `&mut slots[i]`, arbitrary native whole-record/array
-materialization, aggregate-returning or nested/general by-value call use after a
-descendant sequence overlay, and native aggregate matching,
+materialization, aggregate results outside the exact constructor/access-path
+tail subset, nested/general by-value call use after a descendant sequence
+overlay, and native aggregate matching,
 nested result use inside
 arithmetic/conditions/arguments/assignments/tails, untyped
 result bindings, recursive mutable effects, mutable enum payloads, calls inside

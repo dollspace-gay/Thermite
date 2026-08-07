@@ -63,8 +63,8 @@ The eight declarations reach L3 or L4 by no route that exists today. Their
 every machine-facing row in the package. That L1 row is the whole claim available
 for a terminal operation now.
 
-This is the design's position rather than a gap in the implementation. The four
-sections below give the independent grounds.
+The position follows from the design. The four sections below give the
+independent grounds.
 
 ## Why the refusal stands
 

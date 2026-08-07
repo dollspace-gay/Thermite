@@ -629,6 +629,17 @@ design = ".design/build/frozen-primitive-registry.md"
 reference = []
 conformance_ops = ["machine-atomic-pilot", "residual-assurance-cap"]
 
+# The synthetic test platform (.design/build/kernel-primitives.md, "Acceptance
+# matrix": "Compose a synthetic test platform whose bodies are tiny direct-Verus
+# adapters"). It is the only fixture that exercises the shared_borrow /
+# consume_sealed / mint_sealed ownership transitions; the other three registry
+# fixtures are by_value throughout.
+[[route]]
+crate_pattern = "conformance/verified-composition/synthetic_platform*"
+design = ".design/build/frozen-primitive-registry.md"
+reference = []
+conformance_ops = ["synthetic-platform-sealed-ownership"]
+
 [[route]]
 crate_pattern = "stdlib/kernel-primitives/platform.thpkg.json"
 design = ".design/build/frozen-primitive-registry.md"

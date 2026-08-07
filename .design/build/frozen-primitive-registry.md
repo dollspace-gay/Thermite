@@ -87,7 +87,8 @@ instructions, persistent sealed-cell ABIs, and general concurrent execution
 remain unsupported. Separate-crate byte closure cannot be repurposed to claim
 those classes. They continue to fail closed until their exact implementation
 and honest residual/refinement evidence are represented by a later v3
-operation or successor schema.
+operation or successor schema. Which class a declaration falls into is decided
+from its source effect row by "Source-derived minimum machine class" below.
 
 ## Schema v1
 
@@ -207,6 +208,118 @@ residual assumptions, not discharged obligations. The boundary member remains
 `L3-relative-to-pinned-machine-model`, and ordinary Thermite callers retain
 their own L3 certificate.
 
+## Source-derived minimum machine class
+
+`entry.concurrency` is a string the registry author writes. The function's
+`fx platform(...)` row is a source fact that Forge reconstructs from the AST and
+already compares against `entry.effects` in `fn plan_from_bytes` in
+`primitive_registry.rs`. Machine class follows that source fact. A declaration
+may agree with the source-derived class or raise it; it never lowers it.
+
+`.design/build/kernel-primitives.md` §"Sealed authority and platform effects"
+freezes the effect family at twelve atoms, and each one carries a minimum
+machine class in the registry's existing `sequential`, `volatile`, `atomic`,
+`privileged` vocabulary. The map below is total over that family. Each class is
+a floor: it admits nothing on its own, and no self-declaration goes beneath it.
+
+| Effect atom | Minimum class | Basis |
+|---|---|---|
+| `platform(boot)` | `privileged` | `platform-primitives.md` §"Frozen families" gives boot as "normalize a handoff and transfer terminal control". A firmware handoff ABI and a terminal control transfer are the entry/return assembly that this document's Scope lists as unsupported. |
+| `platform(memory)` | `privileged` | The same table's memory/provenance row spans "capability-backed addresses, raw/volatile access, page-table words, activation, local invalidation, cache maintenance". Page-table words and address-space activation are mode-restricted system state. |
+| `platform(mmio)` | `volatile` | `kernel-primitives.md` §"Irreducible platform-operation families" gives MMIO as "aligned volatile reads/writes by width and device barriers". Device rights arrive as a sealed `DeviceRegion`, which the registry already models as ownership. |
+| `platform(pio)` | `volatile` | The same row covers PIO. `kernel-primitives.md` §"Explicit non-goals" forbids a concrete architecture profile, so the class follows the design's own volatile characterization rather than a per-architecture instruction privilege. |
+| `platform(irq)` | `privileged` | `platform-primitives.md` §"Frozen families" gives "state-token acquisition, disable/restore, routing, mask/unmask, EOI" and "checked context entry and terminal return". Interrupt state and trap entry/return are processor-mode state. |
+| `platform(cpu)` | `privileged` | The same table gives "CPU identity/features, control/register access, per-CPU base". Control and model-specific register access is mode-restricted. |
+| `platform(atomic)` | `atomic` | `sealed-atomics.md` §"Source surface": "exactly 50 bodyless L1 declarations with `fx platform(atomic)`". Registry v3's pilot declares concurrency `atomic` for the same family. |
+| `platform(smp)` | `atomic` | `platform-primitives.md` §"Frozen families" gives "AP transport, IPI transport, online snapshot and acknowledgement". Another CPU observes and acknowledges, which needs the inter-agent ordering relation of `sealed-atomics.md` §"Finite concurrency model". |
+| `platform(dma)` | `atomic` | The same table gives "mapping, unmapping, and ownership-direction synchronization". A device agent observes the mapped region while the CPU runs, and the sync operations are that transfer's ordering. |
+| `platform(clock)` | `sequential` | The same table gives "monotonic observation and deadline arm/cancel", and `kernel-primitives.md` groups it under "services". The declared contracts relate clock identity and deadline only, carrying no visibility, ordering, or mode requirement for a refinement to discharge. |
+| `platform(entropy)` | `sequential` | The same table gives "capability-backed fill". The declared contract relates permit identity, generation, and length. |
+| `platform(power)` | `privileged` | The same table gives "terminal reboot and poweroff", and both declarations carry `diverge` in `fn power_reboot_terminal` and `fn power_off_terminal` in `platform/api.th`. |
+
+`clock` and `entropy` are the two atoms that sit at `sequential`, and they are
+why the map is written out in full rather than defaulted. The synthetic
+acceptance primitive in this document is a `platform(clock)` door closed through
+the safe v1 and v2 linkages, and it reports one `L3-direct-refinement` boundary.
+That closure claims the declared contract and nothing beyond it. The atoms above
+`sequential` are the ones whose family meaning carries a machine dimension a
+safe-Rust body does not exhibit, so the same closure over them would claim more
+than the evidence shows.
+
+The class is per atom because the effect row is the only source-derived signal a
+registry entry carries. Where one atom spans doors of different machine
+character, as `platform(memory)` spans a bounded byte copy and an address-space
+activation, the atom takes the strongest class its family reaches. A finer split
+needs a finer effect vocabulary, and the family is frozen at these twelve atoms
+by `kernel-primitives.md` §"Sealed authority and platform effects"; widening it
+is a design amendment, not a registry-local decision.
+
+The four classes are ordered:
+
+```text
+sequential < volatile < atomic < privileged
+```
+
+`volatile` adds a single-agent visibility and non-elision requirement to a
+sequential model. `atomic` adds the inter-agent relation that
+`sealed-atomics.md` §"Finite concurrency model" names (modification order,
+reads-from, release sequences, synchronizes-with, happens-before, and SC
+precedence), which subsumes that visibility requirement. `privileged` adds
+processor-mode and system state, which no shipped schema models at all. The
+order exists so that a whole effect row has a maximum; it grants no admission.
+Registry v3 admits by exact canonical operation, so a `volatile` door gains
+nothing from sitting below the pilot's `atomic`.
+
+### The gate
+
+For a registry entry `e` over Thermite function `f`:
+
+```text
+source_class(f)     = max { class(a) | platform(a) occurs in f's effect row }
+                      sequential, when f's row carries no platform atom
+declared_class(e)   = e.concurrency
+effective_class(e)  = max(source_class(f), declared_class(e))
+```
+
+1. A safe linkage, `same_crate` in v1 and `separate_verus_crate` in v2, admits
+   `e` only when `effective_class(e)` is `sequential`. Any greater class rejects
+   before planning, and the diagnostic names `f`, the atom that produced the
+   class, and the class. This subsumes the existing refusal, which reads
+   `entry.concurrency` alone and therefore misses a door whose source row is
+   `platform(atomic)` under a `sequential` declaration.
+2. A self-declaration raises the effective class and never lowers it.
+   `"concurrency": "sequential"` over a door whose row contains
+   `platform(atomic)` is an entry with effective class `atomic`, and a safe
+   linkage rejects it.
+3. `separate_verus_machine_crate` continues to admit by exact canonical
+   operation. The effective class is computed the same way and enters the plan
+   next to the declared concurrency; the machine evidence the entry must bind is
+   the evidence for the effective class.
+4. The resolved plan records the effective class alongside the declared
+   concurrency, so validation and replay reconstruct the same decision from the
+   same bytes rather than recomputing it from prose.
+
+### Doors no schema models
+
+Registry v1 and v2 model `sequential`. Registry v3 models one canonical atomic
+operation. Every `volatile` and `privileged` door, and every `atomic` door other
+than that pilot, sits outside all three. Such a door has two admissible outcomes:
+
+1. the registry rejects before planning and the build publishes nothing, which
+   is the Acceptance requirement that otherwise well-formed machine classes
+   reject through the safe linkages; or
+2. the door publishes under the machine cap of "Exact checked-wrapper
+   refinement": its boundary member reports `L1-residual-machine-assumption`,
+   the composition binding records the effective class and counts at least one
+   residual machine assumption, and the artifact aggregate is
+   `L1/to_machine_boundary`.
+
+A reachable door that no registry entry covers keeps the existing strict
+refusal. The obligation stays visible in the artifact in every case: a
+registered machine door never reaches `L3-direct-refinement`, and an artifact
+whose reachable registered doors include one above `sequential` never reports
+`assurance = L3` with `scope = end_to_end`.
+
 ## Reachability closure
 
 Forge computes the union closure of every selected link and composition root.
@@ -301,6 +414,22 @@ drift, or receipt drift rejects.
   real whole-crate proof, fails there, and publishes nothing.
 - Otherwise well-formed machine classes reject through the safe v1/v2 linkages;
   v3 admits only the exact canonical atomic roundtrip operation.
+- An entry whose Thermite function carries `platform(atomic)`, `platform(smp)`,
+  or `platform(dma)` rejects under `same_crate` and `separate_verus_crate`
+  linkage whatever its `concurrency` string says, and the build publishes
+  nothing. The same holds for the volatile atoms `mmio` and `pio` and for the
+  privileged atoms `boot`, `memory`, `irq`, `cpu`, and `power`.
+- The rejection diagnostic names the Thermite function, the effect atom that
+  produced the class, and the effective class.
+- A `concurrency` string above the source-derived class raises the effective
+  class; one below it rejects the entry.
+- The `platform(clock)` synthetic primitives keep building, replaying, and
+  reporting one `L3-direct-refinement` boundary through both safe linkages.
+- No artifact reports `assurance = L3` with `scope = end_to_end` while a
+  reachable registered door's effective class exceeds `sequential`, and such an
+  artifact counts at least one residual machine assumption.
+- Validation and replay reconstruct the same effective class from the receipt
+  bytes.
 - A registry-v2 synthetic primitive verifies and compiles as a separate
   freestanding crate, is called by the generated Thermite wrapper, links and
   executes from a downstream consumer, replays both proof layers, inventories
@@ -326,3 +455,19 @@ requires persistent shared ABI types, the remaining atomic operation/order
 matrix, assembly and unsafe/irreducible Rust source/object closure, volatile and
 privileged models, and concurrent/liveness composition. None of those broader
 claims are made by the pilot.
+
+The source-derived machine-class gate above is authority without an
+implementation. Forge still decides the class from `entry.concurrency` alone,
+so the map, the maximum rule, and the reporting rule are unenforced until
+REQ-KPRIM-11 lands.
+
+## REQ status
+
+| REQ | Status | Evidence |
+|---|---|---|
+| REQ-KPRIM-11 (source-derived machine class) | NOT-STARTED | `fn plan_from_bytes` in `primitive_registry.rs` reconstructs the effect row through `fn effect_spellings` and compares it against `entry.effects`, then gates the machine class on `entry.concurrency` alone. A registry that spells `"concurrency": "sequential"` over a `fx platform(atomic)` door therefore takes the safe v1 or v2 path and publishes `assurance="L3"`, `scope="end_to_end"`, `residual_machine_assumptions = 0`. Blocker: the failing tests `divergence_safe_v1_registry_launders_a_platform_atomic_machine_door` and `divergence_safe_v2_registry_launders_a_platform_atomic_machine_door` in `forge/tests/divergence_registry_v4_matrix.rs`, pinned in commit `8ba26f1d`; crosslink issue creation is blocked by the pending hub-v3 migration, so those two tests are the tracking artifact. |
+
+The registry-wide requirements this rule belongs to are REQ-KPRIM-7 (generic
+frozen boundary registry) and REQ-KPRIM-9 (exact platform refinement
+composition) in `.design/reqs/registry.toml`; both remain `partial` and name the
+gate in their remaining scope.

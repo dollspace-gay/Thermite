@@ -18218,3 +18218,130 @@ note = "Defines the twelve-atom minimum machine-class map, the class order, the 
 kind = "test"
 target = "forge/tests/divergence_registry_v4_matrix.rs"
 note = "Pins the laundering divergence for the v1 same_crate and v2 separate_verus_crate linkages over a fx platform(atomic) door; both tests fail until the gate lands."
+
+[[requirement]]
+id = "REQ-DIVTERM-1"
+title = "Termination gate refuses a reachable divergent function"
+owner = ".design/build/divergent-terminal-composition.md"
+status = "shipped"
+scope = "forge"
+summary = "A strict L3 build refuses any reachable function whose effect row carries `diverge` and publishes no bundle, implementing the Termination row of the strict-gate table."
+contributors = [".design/build/l3-verified-artifact.md", ".design/forge/degrade-ladder.md"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "strict_source_checks_with_registered_boundaries"
+note = "Returns the `declares fx diverge` refusal for a reachable Effect::Diverge row in forge/src/verified_build.rs; reached from build_file, validate_bundle, and the composition assembler."
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/verified_build.rs::every_strict_refusal_publishes_nothing"
+note = "Runs conformance/verified-build/diverge.th, asserts exit code 1, asserts no bundle path exists, and asserts the diagnostic names diverge."
+
+[[requirement.evidence]]
+kind = "doc"
+target = ".design/build/l3-verified-artifact.md"
+note = "The strict-gate table lists `fx diverge` as a hard failure of the Termination gate and requires every reachable function certificate at L3 or stronger."
+
+[[requirement]]
+id = "REQ-DIVTERM-2"
+title = "Divergence refusal follows the effect row through the closure"
+owner = ".design/build/divergent-terminal-composition.md"
+status = "shipped"
+scope = "forge"
+summary = "Effect subsumption places `diverge` in every caller's row, so a divergent callee refuses each caller between it and the export root and the diagnostic names the whole path."
+contributors = [".design/lower/effect-subsumption.md"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "closure_path"
+note = "Renders the refused root-to-callee chain in forge/src/verified_build.rs."
+
+[[requirement.evidence]]
+kind = "file"
+target = "conformance/verified-build/transitive_diverge.th"
+note = "Three-deep divergent chain whose refusal names transitive_diverge_root -> diverge_middle -> transitive_diverging."
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/verified_build.rs::every_strict_refusal_publishes_nothing"
+note = "Asserts the transitive path text and that nothing publishes."
+
+[[requirement]]
+id = "REQ-DIVTERM-3"
+title = "Terminal declarations keep a visible divergent effect"
+owner = ".design/build/divergent-terminal-composition.md"
+status = "shipped"
+scope = "forge"
+summary = "The seven platform terminal declarations and cpu_halt_terminal carry `diverge` in source and in every published certificate row."
+contributors = [".design/build/platform-primitives.md", ".design/build/synchronization-primitives.md"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "cpu_halt_terminal"
+note = "The synchronization package's terminal halt declaration, fx platform(cpu), diverge, in stdlib/kernel-primitives/synchronization/wait.th."
+
+[[requirement.evidence]]
+kind = "file"
+target = "stdlib/kernel-primitives/platform/api.th"
+note = "Holds boot_entry_transfer, the three runtime failure terminals, trap_context_return, power_reboot_terminal, and power_off_terminal, each with diverge in its effect row."
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/platform_primitives.rs"
+note = "Asserts diverge in the certificate effects of all seven platform terminal rows."
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/synchronization_primitives.rs"
+note = "Asserts diverge in the cpu_halt_terminal certificate row."
+
+[[requirement]]
+id = "REQ-DIVTERM-4"
+title = "Terminal declarations stay bound while outside the export closure"
+owner = ".design/build/divergent-terminal-composition.md"
+status = "shipped"
+scope = "forge"
+summary = "A package whose modules contain terminal declarations builds and replays a strict freestanding receipt when the export closure excludes them, and the receipt still binds the whole authored module."
+contributors = [".design/build/platform-primitives.md", ".design/build/synchronization-primitives.md", ".design/build/kernel-primitives.md"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "closure_program"
+note = "Selects the emitted crate from the reachable closure in forge/src/verified_build.rs while the receipt binds the complete authored source."
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/platform_primitives.rs"
+note = "Builds and replays the platform package exporting platform_width_legal while the module holds all seven terminal declarations."
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/synchronization_primitives.rs"
+note = "Builds and replays the synchronization package exporting ticket_lock_can_issue while binding all nine modules."
+
+[[requirement]]
+id = "REQ-DIVTERM-5"
+title = "Registry version that admits a divergent terminal door"
+owner = ".design/build/divergent-terminal-composition.md"
+status = "not_started"
+scope = "forge"
+summary = "A registry schema that binds a divergent terminal declaration to exact privileged machine evidence and a named progress assumption, so the operation carries assurance above its L1 boundary certificate."
+remaining_scope = "All eight divergent declarations carry `platform(boot)`, `platform(irq)`, `platform(cpu)`, or `platform(power)`, which `.design/build/frozen-primitive-registry.md` section \"Source-derived minimum machine class\" maps to `privileged`. No shipped schema models a privileged door: v1 and v2 admit only `sequential` and v3 admits one canonical atomic operation. `.design/build/synchronization-primitives.md` section \"Waiting surface\" names the missing artifact as a registry version able to express concurrency and progress semantics, and `.design/build/frozen-primitive-registry.md` section \"Remaining work\" lists the privileged model and concurrent/liveness composition as prerequisites. Such a version settles the caller obligation shape for a call with no continuation, whether a divergent call is admitted in tail position only, the emitted Rust and its caller proof, the receipt record and the artifact assurance once the privileged class rejects a safe linkage, and which divergent shapes stay refused."
+contributors = [".design/build/frozen-primitive-registry.md", ".design/build/platform-primitives.md", ".design/build/synchronization-primitives.md"]
+blockers = ["github:dollspace-gay/Thermite#133"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "doc"
+target = ".design/build/divergent-terminal-composition.md"
+note = "Records the eight terminal declarations, the four independent refusals, the two consumer routes that work today, and the fail-closed boundary that survives a later schema."
+
+[[requirement.evidence]]
+kind = "issue"
+target = "github:dollspace-gay/Thermite#133"
+note = "Tracks the missing admission route and the five questions the schema settles."

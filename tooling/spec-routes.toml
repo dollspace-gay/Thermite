@@ -647,6 +647,33 @@ design = ".design/build/frozen-primitive-registry.md"
 reference = ["stdlib/kernel-primitives/platform.thpkg.json"]
 conformance_ops = ["platform-machine-exception-inventory"]
 
+# Divergent terminal platform operations (issue #133): the eight declarations
+# that carry `diverge`, and the strict-build refusal that keeps them outside a
+# verified closure. The doc records the limit; it proposes no code change.
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/platform/api.th"
+design = ".design/build/divergent-terminal-composition.md"
+reference = ["conformance/verified-build/diverge.th"]
+conformance_ops = ["terminal-declaration-inventory"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/synchronization/wait.th"
+design = ".design/build/divergent-terminal-composition.md"
+reference = ["conformance/verified-build/diverge.th"]
+conformance_ops = ["cpu_halt_terminal"]
+
+[[route]]
+crate_pattern = "conformance/verified-build/diverge.th"
+design = ".design/build/divergent-terminal-composition.md"
+reference = ["stdlib/kernel-primitives/platform/api.th"]
+conformance_ops = ["diverge-refusal"]
+
+[[route]]
+crate_pattern = "conformance/verified-build/transitive_diverge.th"
+design = ".design/build/divergent-terminal-composition.md"
+reference = ["stdlib/kernel-primitives/synchronization/wait.th"]
+conformance_ops = ["transitive-diverge-refusal"]
+
 # Receipt-bound kernel byte-slice proof model (issue #108): Forge explicitly
 # imports the pinned vstd VIR while pairing it with deterministic no_std erased
 # metadata, then proves exact native &[u8] reads in the combined crate.

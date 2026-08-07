@@ -41,10 +41,13 @@ EXCLUDED_CRATES = ("thermite-test-utils",)
 TARGET_EXTENSION = ".rs"
 
 # Repo-relative directory prefixes that count as "reference" reads
-# (the external truth: conformance corpus + golden files). A read under
+# (the external truth: conformance corpus, golden files, and the tracked
+# stdlib packages routes cite as their declaration surface). A read under
 # any of these prefixes satisfies a route's `reference` requirement when
 # the read path starts with one of the route's declared reference paths.
-REFERENCE_PREFIXES = ("conformance/", "tests/golden/")
+# Every prefix a route declares in `reference` must appear here, otherwise
+# the read is dropped and that route's gate can never be satisfied.
+REFERENCE_PREFIXES = ("conformance/", "tests/golden/", "stdlib/")
 
 # Implementation
 

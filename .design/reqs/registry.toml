@@ -18090,10 +18090,12 @@ note = "Whole-repository positive gate over every tracked path; also wired into 
 id = "REQ-KPRIM-11"
 title = "Source-derived machine-class gate"
 owner = ".design/build/kernel-primitives.md"
-status = "shipped"
+status = "not_started"
 scope = "forge"
 summary = "A frozen-registry entry's effective machine class is the maximum of the class its source platform-effect row implies and its self-declared concurrency, and a safe v1/v2 linkage admits only sequential."
+remaining_scope = "`.design/build/frozen-primitive-registry.md` section \"Source-derived minimum machine class\" defines the total map from the twelve closed platform effect atoms to a minimum class, the order sequential < volatile < atomic < privileged, the maximum rule over an entry's whole effect row, and the reporting rule for a door no schema models. Forge still gates on `entry.concurrency` alone in `fn plan_from_bytes`, so a `sequential` declaration over a `fx platform(atomic)` door publishes an end-to-end L3 artifact with zero residual machine assumptions. No atom maps to sequential, so the shipped `platform(clock)` fixtures `frozen_primitive_registry.json` and `separate_primitive_registry.json` are a second instance of the same laundering and the v1/v2 acceptance evidence needs a synthetic door whose effect row carries no platform atom, of the shape `fn foreign_identity` in `conformance/verified-build/boundary.th`. Implement the gate and turn the two pinned divergence tests green."
 contributors = [".design/build/frozen-primitive-registry.md", ".design/build/platform-primitives.md", ".design/build/sealed-atomics.md"]
+blockers = ["test:forge/tests/divergence_registry_v4_matrix.rs"]
 generated_to = ["status", "forge-kernel-primitives-status"]
 
 [[requirement.evidence]]
@@ -18102,11 +18104,6 @@ target = ".design/build/frozen-primitive-registry.md"
 note = "Defines the twelve-atom minimum machine-class map, the class order, the effective-class maximum rule, the safe-linkage gate, and the visible-L1 reporting rule for unmodeled doors."
 
 [[requirement.evidence]]
-kind = "symbol"
-target = "source_machine_class"
-note = "In forge/src/verified_build/primitive_registry.rs: maps the twelve frozen platform atoms through MachineClass::of_platform_atom and returns the effect row's maximum with the atom that produced it. fn plan_from_bytes takes `let effective_class = source_class.max(declared_class)` and rejects a same_crate or separate_verus_crate entry above sequential, naming the Thermite function, the atom, and the class."
-
-[[requirement.evidence]]
 kind = "test"
 target = "forge/tests/divergence_registry_v4_matrix.rs"
-note = "Pinned the laundering divergence for the v1 same_crate and v2 separate_verus_crate linkages over a fx platform(atomic) door; both tests pass on the gate. The v1/v2 acceptance fixtures in forge/tests/verified_composition.rs now close a fx pure door, which is the sequential domain the safe linkages keep."
+note = "Pins the laundering divergence for the v1 same_crate and v2 separate_verus_crate linkages over a fx platform(atomic) door; both tests fail until the gate lands."

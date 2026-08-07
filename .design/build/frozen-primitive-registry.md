@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: partial
-audited-content-sha256: 6f12112b889cd5034f9c8e555beae3bd8ee5e0dfd8a7eeb5eb8e5782197d1c79 (re-pinned 2026-08-07 after the safe-linkage gate read the source platform-effect row and the v1/v2 synthetic primitive moved to a door with no platform atom)
+audited-content-sha256: 2b0dee707121b53ece6e70c5eb8fab68250c865d6f87cb3f5340d2d565f32e68 (re-pinned 2026-08-07 after a source-derived clock row pinned the safe-linkage refusal)
 decision: consumer-owned registry entries close reachable Thermite boundaries through non-exempt same-crate or separately compiled/imported direct-Verus calls
 governs:
   - thermite-lower/src/lower.rs

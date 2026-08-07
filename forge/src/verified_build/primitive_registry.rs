@@ -933,11 +933,28 @@ mod tests {
         Vec<DirectVerusSource>,
         serde_json::Value,
     ) {
-        let parsed = thermite_syntax::parse(
+        fixture_with_effects("pure", &["pure"])
+    }
+
+    /// The [`fixture`] shape with the door's effect row supplied, so a test can
+    /// exercise a source-derived machine class. Both the door and its caller
+    /// carry `fx`, because effect subsumption requires the caller to declare
+    /// what the callee declares. `effects` is the registry's spelling of that
+    /// row.
+    fn fixture_with_effects(
+        fx: &str,
+        effects: &[&str],
+    ) -> (
+        Program,
+        VerifiedClosure,
+        Vec<DirectVerusSource>,
+        serde_json::Value,
+    ) {
+        let parsed = thermite_syntax::parse(&format!(
             "#[boundary(\"platform::identity\")] \
-             fn platform_identity(value: u64) -> u64 req true ens result == value fx pure; \
-             fn observe(value: u64) -> u64 req true ens result == value fx pure { platform_identity(value) }",
-        );
+             fn platform_identity(value: u64) -> u64 req true ens result == value fx {fx}; \
+             fn observe(value: u64) -> u64 req true ens result == value fx {fx} {{ platform_identity(value) }}",
+        ));
         assert!(parsed.is_clean(), "{:?}", parsed.errors);
         let program = parsed.program;
         let closure = closure::verified_closure(&program, &["observe".to_string()]).unwrap();
@@ -975,7 +992,7 @@ mod tests {
                 "signature": function_signature(function).unwrap(),
                 "contract_sha256": semantic_contract_sha256(function),
                 "effects_sha256": sha256(format!("{:#?}", function.contract.fx).as_bytes()),
-                "effects": ["pure"],
+                "effects": effects,
                 "ownership": { "parameters": ["by_value"], "result": "by_value" },
                 "implementation": {
                     "shell_module": "platform_shell",
@@ -1337,5 +1354,35 @@ mod tests {
             assert!(error.contains("can directly refine only sequential safe-Rust"));
             assert!(error.contains("registry v3 machine evidence"));
         }
+    }
+
+    /// The source effect row decides the machine class, so a door declaring
+    /// `fx platform(clock)` is refused by a safe linkage while the entry itself
+    /// self-declares `sequential`. `.design/build/frozen-primitive-registry.md`
+    /// ("Source-derived minimum machine class") puts `clock` at `volatile`: a
+    /// deadline arm programs a timer, and a monotonic read observes a counter
+    /// the program does not compute. That row is what moved the shipped
+    /// `frozen_primitive.th` fixture to `fx pure`. The sibling test above
+    /// varies `entry.concurrency`, so it passes under the older gate that read
+    /// the declaration alone. This test varies the source row instead, and it
+    /// is what keeps `clock` from returning to `sequential` unnoticed.
+    #[test]
+    fn a_source_derived_clock_row_refuses_a_safe_linkage() {
+        let (program, closure, shells, registry) =
+            fixture_with_effects("platform(clock)", &["platform(clock)"]);
+        assert_eq!(
+            registry["entries"][0]["concurrency"], "sequential",
+            "the entry must self-declare sequential, so any refusal comes from the source row"
+        );
+        let error = load_from_evidence(
+            serde_json::to_vec_pretty(&registry).unwrap(),
+            &program,
+            &closure,
+            &shells,
+            "synthetic64-unknown-none",
+        )
+        .expect_err("a safe linkage must refuse a volatile source row");
+        assert!(error.contains("platform(clock)"), "{error}");
+        assert!(error.contains("volatile"), "{error}");
     }
 }

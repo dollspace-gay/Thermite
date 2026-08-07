@@ -233,26 +233,41 @@ a floor: it admits nothing on its own, and no self-declaration goes beneath it.
 | `platform(atomic)` | `atomic` | `sealed-atomics.md` §"Source surface": "exactly 50 bodyless L1 declarations with `fx platform(atomic)`". Registry v3's pilot declares concurrency `atomic` for the same family. |
 | `platform(smp)` | `atomic` | `platform-primitives.md` §"Frozen families" gives "AP transport, IPI transport, online snapshot and acknowledgement". Another CPU observes and acknowledges, which needs the inter-agent ordering relation of `sealed-atomics.md` §"Finite concurrency model". |
 | `platform(dma)` | `atomic` | The same table gives "mapping, unmapping, and ownership-direction synchronization". A device agent observes the mapped region while the CPU runs, and the sync operations are that transfer's ordering. |
-| `platform(clock)` | `sequential` | The same table gives "monotonic observation and deadline arm/cancel", and `kernel-primitives.md` groups it under "services". The declared contracts relate clock identity and deadline only, carrying no visibility, ordering, or mode requirement for a refinement to discharge. |
-| `platform(entropy)` | `sequential` | The same table gives "capability-backed fill". The declared contract relates permit identity, generation, and length. |
+| `platform(clock)` | `volatile` | The same table gives "monotonic observation and deadline arm/cancel". A deadline arm programs a timer that raises an interrupt later, and a monotonic read observes a counter the program does not compute. A safe body that satisfies the declared identity and deadline relation reaches neither. |
+| `platform(entropy)` | `volatile` | The same table gives "capability-backed fill". The operation draws from a machine entropy source and writes through a `RawAddress`. A constant satisfies the declared permit, generation, and length relation without doing either. |
 | `platform(power)` | `privileged` | The same table gives "terminal reboot and poweroff", and both declarations carry `diverge` in `fn power_reboot_terminal` and `fn power_off_terminal` in `platform/api.th`. |
 
-`clock` and `entropy` are the two atoms that sit at `sequential`, and they are
-why the map is written out in full rather than defaulted. The synthetic
-acceptance primitive in this document is a `platform(clock)` door closed through
-the safe v1 and v2 linkages, and it reports one `L3-direct-refinement` boundary.
-That closure claims the declared contract and nothing beyond it. The atoms above
-`sequential` are the ones whose family meaning carries a machine dimension a
-safe-Rust body does not exhibit, so the same closure over them would claim more
-than the evidence shows.
+No atom maps to `sequential`. That follows from what the twelve atoms are.
+`platform-primitives.md` §Scope describes every row carrying one of them as an
+operation whose "meaning ultimately depends on firmware ABI, pointer provenance,
+volatile or privileged machine behavior, concurrent hardware, terminal transfer,
+or a consumer-owned platform resource", and §"Consumer refinement rule" requires
+that for each reachable machine row the receipt bind "an operation-specific
+machine or concurrency model" and "validation/replay of both proof layers
+without substituting a safe reference implementation". A safe v1/v2 linkage
+supplies neither. The absence of a `sequential` row is therefore a result of
+reading the family, not an omission from the map.
+
+`sequential` stays reachable through the empty maximum: a `#[boundary]` whose
+effect row carries no platform atom. `fn foreign_identity` in
+`conformance/verified-build/boundary.th` is that shape, declared `fx pure`.
+Those are the "sequential safe-Rust operations" the Scope above names, and they
+are the domain registry v1 and v2 keep.
+
+The map governs registry entries. An ordinary bodyful Thermite function may
+carry a platform atom in its own row without being a door: `fn write_byte` in
+`conformance/kernel_primitives.th` declares `fx platform(memory)` over a
+verified in-language body, and it is neither a boundary nor a registry entry.
 
 The class is per atom because the effect row is the only source-derived signal a
 registry entry carries. Where one atom spans doors of different machine
-character, as `platform(memory)` spans a bounded byte copy and an address-space
-activation, the atom takes the strongest class its family reaches. A finer split
-needs a finer effect vocabulary, and the family is frozen at these twelve atoms
-by `kernel-primitives.md` §"Sealed authority and platform effects"; widening it
-is a design amendment, not a registry-local decision.
+character, the atom takes the strongest class its family reaches:
+`platform(memory)` spans a bounded byte copy and an address-space activation,
+and `platform(clock)` spans a counter observation and a deadline arm that
+programs a timer. A finer split needs a finer effect vocabulary, and the family
+is frozen at these twelve atoms by `kernel-primitives.md` §"Sealed authority and
+platform effects"; widening it is a design amendment, not a registry-local
+decision.
 
 The four classes are ordered:
 
@@ -319,6 +334,34 @@ refusal. The obligation stays visible in the artifact in every case: a
 registered machine door never reaches `L3-direct-refinement`, and an artifact
 whose reachable registered doors include one above `sequential` never reports
 `assurance = L3` with `scope = end_to_end`.
+
+### Tracked artifacts this map decides
+
+The map settles the standing of every tracked registry fixture and of every
+frozen declaration in the two machine packages.
+
+| Artifact | Atom | Effective class | Standing |
+|---|---|---|---|
+| `conformance/verified-composition/frozen_primitive_registry.json` over `frozen_primitive.th` | `clock` | `volatile` | Invalid. It binds `same_crate` linkage to a `fx platform(clock)` door under a `"sequential"` declaration and publishes one `L3-direct-refinement` boundary end to end. |
+| `conformance/verified-composition/separate_primitive_registry.json` | `clock` | `volatile` | Invalid on the same ground through `separate_verus_crate`. |
+| `conformance/verified-composition/machine_atomic_registry.json` | `atomic` | `atomic` | Valid. It uses `separate_verus_machine_crate`, declares concurrency `atomic`, and reports the L1 machine cap. |
+| the inline `"effects": ["platform(clock)"]` registry in the `mod tests` fixtures of `primitive_registry.rs` | `clock` | `volatile` | Invalid on the same ground as the fixture it mirrors. |
+| the inline `"effects": ["platform(atomic)"]` machine registry in the same fixtures | `atomic` | `atomic` | Valid under the machine linkage. |
+| all 74 declarations in `stdlib/kernel-primitives/platform/api.th` | the eleven non-atomic atoms | `volatile` or `privileged` | No safe linkage closes any of them. |
+| all 50 declarations in `stdlib/kernel-primitives/src/machine.th` | `atomic` | `atomic` | No safe linkage closes any of them; v3 admits only its one canonical operation. |
+| `fn foreign_identity` in `conformance/verified-build/boundary.th` | none | `sequential` | A safe linkage closes it. This is the shape the v1/v2 domain has. |
+
+The two clock fixtures are this document's synthetic identity primitive, and an
+identity body is the right shape for exercising the machinery. The effect row is
+what puts them on the wrong side of the rule: `fx platform(clock)` announces a
+machine row, and `kernel-primitives.md` §"Acceptance matrix" asks the synthetic
+platform to "exercise the registry/refinement machinery without booting or
+implementing a kernel", which a boundary carrying no platform atom already does.
+They are a second instance of the defect the atomic divergence tests pin, found
+through a different atom, and the Acceptance list below states the synthetic
+primitive's effect row accordingly. A gate that lands against the fixtures as
+they stand turns the two safe-linkage acceptance tests red, and that outcome is
+the rule working rather than a regression it caused.
 
 ## Reachability closure
 
@@ -398,8 +441,9 @@ drift, or receipt drift rejects.
 
 ## Acceptance
 
-- The synthetic identity primitive builds as a freestanding composition,
-  validates, replays, and reports one `L3-direct-refinement` boundary.
+- The synthetic identity primitive, whose effect row carries no platform atom,
+  builds as a freestanding composition, validates, replays, and reports one
+  `L3-direct-refinement` boundary.
 - The combined source calls the exact inventoried shell implementation and
   contains no `external_body` or synthetic unimplemented body.
 - Signature, contract, effect, target, ABI, ownership, shell-source, proof-list,
@@ -417,14 +461,20 @@ drift, or receipt drift rejects.
 - An entry whose Thermite function carries `platform(atomic)`, `platform(smp)`,
   or `platform(dma)` rejects under `same_crate` and `separate_verus_crate`
   linkage whatever its `concurrency` string says, and the build publishes
-  nothing. The same holds for the volatile atoms `mmio` and `pio` and for the
-  privileged atoms `boot`, `memory`, `irq`, `cpu`, and `power`.
+  nothing. The same holds for the volatile atoms `mmio`, `pio`, `clock`, and
+  `entropy` and for the privileged atoms `boot`, `memory`, `irq`, `cpu`, and
+  `power`.
 - The rejection diagnostic names the Thermite function, the effect atom that
   produced the class, and the effective class.
 - A `concurrency` string above the source-derived class raises the effective
   class; one below it rejects the entry.
-- The `platform(clock)` synthetic primitives keep building, replaying, and
-  reporting one `L3-direct-refinement` boundary through both safe linkages.
+- A safe linkage over a door declaring `fx platform(clock)` or
+  `fx platform(entropy)` rejects on the same ground as the other nine atoms.
+  The twelve atoms are covered by the volatile, atomic, and privileged groups,
+  so no safe linkage closes any platform door.
+- A `#[boundary]` whose effect row carries no platform atom, of the shape
+  `fn foreign_identity` in `conformance/verified-build/boundary.th` has, keeps
+  closing through both safe linkages at `L3-direct-refinement`.
 - No artifact reports `assurance = L3` with `scope = end_to_end` while a
   reachable registered door's effective class exceeds `sequential`, and such an
   artifact counts at least one residual machine assumption.
@@ -459,13 +509,15 @@ claims are made by the pilot.
 The source-derived machine-class gate above is authority without an
 implementation. Forge still decides the class from `entry.concurrency` alone,
 so the map, the maximum rule, and the reporting rule are unenforced until
-REQ-KPRIM-11 lands.
+REQ-KPRIM-11 lands. Landing it also settles the two `platform(clock)` safe-linkage
+fixtures, which the map places outside the safe domain; the v1 and v2 acceptance
+evidence needs a synthetic door whose effect row carries no platform atom.
 
 ## REQ status
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-KPRIM-11 (source-derived machine class) | NOT-STARTED | `fn plan_from_bytes` in `primitive_registry.rs` reconstructs the effect row through `fn effect_spellings` and compares it against `entry.effects`, then gates the machine class on `entry.concurrency` alone. A registry that spells `"concurrency": "sequential"` over a `fx platform(atomic)` door therefore takes the safe v1 or v2 path and publishes `assurance="L3"`, `scope="end_to_end"`, `residual_machine_assumptions = 0`. Blocker: the failing tests `divergence_safe_v1_registry_launders_a_platform_atomic_machine_door` and `divergence_safe_v2_registry_launders_a_platform_atomic_machine_door` in `forge/tests/divergence_registry_v4_matrix.rs`, pinned in commit `8ba26f1d`; crosslink issue creation is blocked by the pending hub-v3 migration, so those two tests are the tracking artifact. |
+| REQ-KPRIM-11 (source-derived machine class) | NOT-STARTED | `fn plan_from_bytes` in `primitive_registry.rs` reconstructs the effect row through `fn effect_spellings` and compares it against `entry.effects`, then gates the machine class on `entry.concurrency` alone. A registry that spells `"concurrency": "sequential"` over a `fx platform(atomic)` door therefore takes the safe v1 or v2 path and publishes `assurance="L3"`, `scope="end_to_end"`, `residual_machine_assumptions = 0`. The same laundering reaches the shipped `platform(clock)` fixtures `frozen_primitive_registry.json` and `separate_primitive_registry.json`, which the class map places outside the safe domain. Blocker: the failing tests `divergence_safe_v1_registry_launders_a_platform_atomic_machine_door` and `divergence_safe_v2_registry_launders_a_platform_atomic_machine_door` in `forge/tests/divergence_registry_v4_matrix.rs`, pinned in commit `8ba26f1d`; crosslink issue creation is blocked by the pending hub-v3 migration, so those two tests are the tracking artifact. |
 
 The registry-wide requirements this rule belongs to are REQ-KPRIM-7 (generic
 frozen boundary registry) and REQ-KPRIM-9 (exact platform refinement

@@ -17,7 +17,7 @@ governs:
   - forge/tests/verified_build.rs
   - conformance/verified-build/owned_aggregate_lifecycle.th
   - conformance/verified-build/record_after_indexed_call_effect.th
-audited-content-sha256: c764f9aaddfe4caf3e1cf509631204bf43a03ce5a01e38ad5498efcb998443ad (re-pinned 2026-08-07 after source-oriented Forge commands resolved canonical packages through one shared front door; existing single-file behavior remains regression-covered)
+audited-content-sha256: 580f191737d6222eda426efffba187f39f57ad1d17357e148bc38eba8645f1eb (re-pinned 2026-08-07 after the dependency-reference pin reasserted the injected postcondition as a complete ensures list element)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/named-record-lifecycle.md

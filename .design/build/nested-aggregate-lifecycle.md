@@ -14,7 +14,7 @@ governs:
   - forge/tests/body_tv.rs
   - forge/tests/verified_build.rs
   - conformance/verified-build/nested_aggregate_lifecycle.th
-audited-content-sha256: 914abc6dd70bfcf9b3901177c00756880c782cdad51dc53191ddd7921b2d90e9 (re-pinned 2026-08-07 after source-oriented Forge commands resolved canonical packages through one shared front door; existing single-file behavior remains regression-covered)
+audited-content-sha256: f9ffd5560ac2274875a8a53f16ba6ffef83fea9706ae72cc5a57d9f796c7a565 (re-pinned 2026-08-07 after the dependency-reference pin reasserted the injected postcondition as a complete ensures list element)
 extends:
   - .design/build/owned-aggregate-lifecycle.md
   - .design/build/named-record-lifecycle.md

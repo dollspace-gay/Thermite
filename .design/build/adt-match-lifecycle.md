@@ -16,7 +16,7 @@ governs:
   - forge/src/verified_build.rs
   - forge/tests/verified_composition.rs
   - conformance/verified-composition/probe.th
-audited-content-sha256: cfc026e1433369f33228f51842a7214ce612dfbdb0843c5e0d022f22fff339e4 (re-pinned 2026-08-07 after source-oriented Forge commands resolved canonical packages through one shared front door; existing single-file behavior remains regression-covered)
+audited-content-sha256: c92d9d659f37762a6f2d7d213314dbd6d71ce0da5e6cfc3c69ec1fd3686304b6 (re-pinned 2026-08-07 after the dependency-reference pin reasserted the injected postcondition as a complete ensures list element)
 extends:
   - .design/build/owned-aggregate-lifecycle.md
   - .design/build/nested-aggregate-lifecycle.md

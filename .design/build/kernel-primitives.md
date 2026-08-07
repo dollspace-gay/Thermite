@@ -102,7 +102,7 @@ governs:
   - conformance/verified-composition/frozen_primitive.th
   - conformance/verified-composition/frozen_primitive_shell.rs
   - conformance/verified-composition/frozen_primitive_registry.json
-audited-content-sha256: df0030f54f81700f1b04895e89c8cbe96800be05828d4db795b57a851d6069e4 (re-pinned 2026-08-07 after source-oriented Forge commands resolved canonical packages through one shared front door; existing single-file behavior remains regression-covered)
+audited-content-sha256: a99d5fd0c897ffaccdebe715cf23c1a27da788b1949e79c9ba5daa31a257732a (re-pinned 2026-08-07 after the dependency-reference pin reasserted the injected postcondition as a complete ensures list element)
 extends:
   - .design/build/kernel-target.md
   - .design/build/l3-rich-composition.md

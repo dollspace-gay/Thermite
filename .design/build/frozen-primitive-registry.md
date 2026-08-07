@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: partial
-audited-content-sha256: 88eb1781dcd060fc37031cb4e1f05801c1b8a8e50709491f0e818d2b37998e63 (re-pinned 2026-08-07 after the synthetic test platform composed the sealed ownership transition)
+audited-content-sha256: 4704d62c89c5a738c858a9536c9b4e28d60000d510c6ad697a765a594360b4ce (re-pinned 2026-08-07 after the synthetic platform fixtures joined this doc's routed governed set)
 decision: consumer-owned registry entries close reachable Thermite boundaries through non-exempt same-crate or separately compiled/imported direct-Verus calls
 governs:
   - thermite-lower/src/lower.rs

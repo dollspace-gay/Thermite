@@ -764,6 +764,14 @@ region = "forge-kernel-byte-slice-status"
 title = "Forge Kernel Byte-Slice Canonical Status References"
 
 [[view]]
+name = "forge-aggregate-array-relations-status"
+path = ".design/build/aggregate-array-relations.md"
+kind = "reference_list"
+mode = "region"
+region = "forge-aggregate-array-relations-status"
+title = "Forge Aggregate Relation Family Canonical Status References"
+
+[[view]]
 name = "forge-kernel-primitives-status"
 path = ".design/build/kernel-primitives.md"
 kind = "reference_list"
@@ -17384,6 +17392,109 @@ target = "bash scripts/g4-gate.sh"
 note = "Gate G4; exits nonzero on any failed check or missing dependency."
 
 [[requirement]]
+id = "REQ-AGGREL-1"
+title = "Storage-space fixed-array relations"
+owner = ".design/build/aggregate-array-relations.md"
+status = "shipped"
+scope = "verified"
+summary = "`.array_eq`, `.array_same_except`, and `.array_same_except_two` quantify over a fixed array's own index space for scalar and recursively finite plain-record, tuple, and nested-array elements."
+aliases = [".design/build/aggregate-array-relations.md REQ-1 (storage index space)"]
+contributors = ["thermite-spec/src/validator.rs", "thermite-lower/src/lower.rs", "thermite-tv/src/exec_encode.rs", "forge/src/verified_build.rs"]
+generated_to = ["status", "forge-aggregate-array-relations-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "check_array_relation_call"
+note = "arity, operand shape, capacity, and structural-element gate in thermite-spec/src/validator.rs"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "fixed_array_equality_defs_for_program"
+note = "program-shaped const-generic scans and exact element comparators emitted by thermite-lower/src/lower.rs"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/aggregate_array_relations.rs"
+note = "deterministic emitted helpers, a real Verus proof over a nested record array, and a dropped-field comparator mutant"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-spec/tests/fixed_array_validate.rs"
+note = "accepts nested plain records and refuses sealed, opaque, recursive, enum, mismatched, and heap-backed shapes before lowering"
+
+[[requirement]]
+id = "REQ-AGGREL-2"
+title = "Declared logical index space and observer"
+owner = ".design/build/aggregate-array-relations.md"
+status = "not_started"
+scope = "verified"
+summary = "A struct declares its own index space and one-index observation with `#[logical(bound = \"CONST\", observe = \"spec_fn\")]`, so a quantified all-index contract can be stated over a collection state without reading its representation."
+remaining_scope = "Parse the attribute in `fn parse_attribute in thermite-syntax/src/parser.rs`, carry `bound`/`observe` on `StructItem`, resolve the capacity under the existing `[T; N]` const rules, and resolve the observer to a two-parameter `spec fn` typed `(&Self, usize) -> V` with `V` inside the finite structural closure."
+aliases = [".design/build/aggregate-array-relations.md REQ-2 (logical view declaration)"]
+contributors = ["thermite-syntax/src/parser.rs", "thermite-syntax/src/ast.rs", "thermite-spec/src/validator.rs"]
+blockers = ["github:dollspace-gay/Thermite#131"]
+generated_to = ["status", "forge-aggregate-array-relations-status"]
+
+[[requirement.evidence]]
+kind = "doc"
+target = ".design/build/aggregate-array-relations.md"
+note = "declaration surface, typing rule, and admitted receiver shapes"
+
+[[requirement]]
+id = "REQ-AGGREL-3"
+title = "Logical-index relation surface and fail-closed validation"
+owner = ".design/build/aggregate-array-relations.md"
+status = "not_started"
+scope = "verified"
+summary = "`.logical_eq`, `.logical_same_except`, and `.logical_same_except_two` state the three quantifier shapes over a declared index space, with typing selecting one family per receiver."
+remaining_scope = "Extend the relation gate in `fn check_array_relation_call in thermite-spec/src/validator.rs` so a struct receiver carrying a logical view is admitted, and refuse sealed receivers, enums, key-addressed views, mismatched nominal operands, non-path operands, wrong arity, duplicate declarations, executable positions, and a frame relation over a derived-index observer."
+aliases = [".design/build/aggregate-array-relations.md REQ-3 (logical relation surface)"]
+contributors = ["thermite-spec/src/validator.rs", "thermite-spec/tests/fixed_array_validate.rs"]
+blockers = ["github:dollspace-gay/Thermite#131"]
+generated_to = ["status", "forge-aggregate-array-relations-status"]
+
+[[requirement.evidence]]
+kind = "doc"
+target = ".design/build/aggregate-array-relations.md"
+note = "iff semantics, out-of-bounds conventions, and the refusal list"
+
+[[requirement]]
+id = "REQ-AGGREL-4"
+title = "Quantified lowering and index-transparent bridge"
+owner = ".design/build/aggregate-array-relations.md"
+status = "not_started"
+scope = "verified"
+summary = "Each declared view lowers to one first-order `forall` per relation with frozen observer triggers, plus a generated `proof fn` bridging the storage frame to the logical frame for index-transparent observers."
+remaining_scope = "Emit the three `open spec fn` relations and the three bridge `proof fn`s in `thermite-lower/src/lower.rs`, recognise the three method names in `fn lower_inv_expr`, derive the index space independently in contract/expression/body TV, and evaluate the relation at L1 as a bounded loop over the observer's executable twin."
+aliases = [".design/build/aggregate-array-relations.md REQ-4 (quantified lowering)"]
+contributors = ["thermite-lower/src/lower.rs", "thermite-lower/src/l1.rs", "thermite-tv/src/ref_encode.rs", "thermite-tv/src/exec_encode.rs"]
+blockers = ["github:dollspace-gay/Thermite#131"]
+generated_to = ["status", "forge-aggregate-array-relations-status"]
+
+[[requirement.evidence]]
+kind = "doc"
+target = ".design/build/aggregate-array-relations.md"
+note = "emitted shape, trigger contract, and the congruence argument that discharges the bridge"
+
+[[requirement]]
+id = "REQ-AGGREL-5"
+title = "Derived-index logical frames"
+owner = ".design/build/aggregate-array-relations.md"
+status = "not_started"
+scope = "verified"
+summary = "`logical_same_except` and `logical_same_except_two` over a packed view such as the 256-bit membership space of `FixedBitmap256` over `[u64; 4]` storage need Euclidean index bridging and a proof-position bit-preservation witness; `logical_eq` over the same view closes by congruence and lands with REQ-AGGREL-4."
+remaining_scope = "Emit a `proof fn` twin of the bit-preservation witnesses produced by `pub fn u64_bit_defs in thermite-lower/src/lower.rs`, supply the literal-divisor division and modulus facts relating a logical index to its storage slot and offset, and admit a declared index decomposition so the bridge can case-split on the shared slot."
+aliases = [".design/build/aggregate-array-relations.md REQ-5 (packed index space)"]
+contributors = ["thermite-lower/src/lower.rs", "stdlib/kernel-primitives/collections/bitmap.th", ".design/build/fixed-collections.md"]
+blockers = ["github:dollspace-gay/Thermite#132"]
+generated_to = ["status", "forge-aggregate-array-relations-status"]
+
+[[requirement.evidence]]
+kind = "doc"
+target = ".design/build/aggregate-array-relations.md"
+note = "the three missing facts, the congruence bridge that does not need them, and why an exhaustive case split is not the route"
+
+[[requirement]]
 id = "REQ-KPRIM-1"
 title = "Kernel scalar and effect surface"
 owner = ".design/build/kernel-primitives.md"
@@ -17410,7 +17521,7 @@ owner = ".design/build/kernel-primitives.md"
 status = "partial"
 scope = "verified"
 summary = "Thermite provides executable/specification mutation over slices and allocation-free fixed storage and collections."
-remaining_scope = "Mutable borrowed slices/arrays, arbitrary old/final snapshot framing, native fixed arrays, scalar and recursively finite plain-aggregate equality plus exact one- and two-index quantified frames, defining-module opaque state transitions, exact typed root.field(.field)* mutation with an optional final fixed-array index, owned/value-call composition, exact user-ADT result/match contract and body TV with arm scoping, exact record-state loop entry/leaf-preservation/exit/full-result TV, statement-position and direct typed let-bound result mutable-call composition over structurally disjoint direct or explicitly borrowed projected finite-record and indexed-storage actuals with nonoverlapping nominally and structurally exact shared snapshots, leafwise record-formal rebasing after descendant sequence overlays, exact typed intermediate finite-record constructor/access-path snapshots, rebindings, local scalar/indexed mutations, final leafwise results, and direct source-derived scalar/unit or exact finite-record functions over those overlays with leafwise typed-local and direct-tail record results, strict freestanding L3 record/rich-state receipts, digest-bound freestanding fixed-array views and repeat construction, total directly proved u64 bit methods, a receipt-bound packed bitmap with population count/set-bit search/bulk set operations, u64 vector, u64 FIFO ring, collision-explicit direct map, opaque collision-resolving open-addressed map, a generation-safe opaque slab, a duplicate-safe freelist, opaque intrusive doubly linked metadata with arbitrary-live-node unlink and tail relink, and a receipt-bound generation-owned static-storage claim/fill/commit/release protocol are shipped. Add index-then-field aliasing if required, array-element-root calls, arbitrary native aggregate materialization, aggregate results outside the exact constructor/access-path tail subset, nested/general by-value calls after descendant sequence overlays, native aggregate matching, nested/general mutable-call result expressions, enum-payload lvalue mutation, arbitrary-position intrusive insertion/relink if required, chained maps where required, quantified aggregate loops/state framing, and generic library capacities/types."
+remaining_scope = "Mutable borrowed slices/arrays, arbitrary old/final snapshot framing, native fixed arrays, scalar and recursively finite plain-aggregate equality plus exact one- and two-index quantified frames, defining-module opaque state transitions, exact typed root.field(.field)* mutation with an optional final fixed-array index, owned/value-call composition, exact user-ADT result/match contract and body TV with arm scoping, exact record-state loop entry/leaf-preservation/exit/full-result TV, statement-position and direct typed let-bound result mutable-call composition over structurally disjoint direct or explicitly borrowed projected finite-record and indexed-storage actuals with nonoverlapping nominally and structurally exact shared snapshots, leafwise record-formal rebasing after descendant sequence overlays, exact typed intermediate finite-record constructor/access-path snapshots, rebindings, local scalar/indexed mutations, final leafwise results, and direct source-derived scalar/unit or exact finite-record functions over those overlays with leafwise typed-local and direct-tail record results, strict freestanding L3 record/rich-state receipts, digest-bound freestanding fixed-array views and repeat construction, total directly proved u64 bit methods, a receipt-bound packed bitmap with population count/set-bit search/bulk set operations, u64 vector, u64 FIFO ring, collision-explicit direct map, opaque collision-resolving open-addressed map, a generation-safe opaque slab, a duplicate-safe freelist, opaque intrusive doubly linked metadata with arbitrary-live-node unlink and tail relink, and a receipt-bound generation-owned static-storage claim/fill/commit/release protocol are shipped. Add index-then-field aliasing if required, array-element-root calls, arbitrary native aggregate materialization, aggregate results outside the exact constructor/access-path tail subset, nested/general by-value calls after descendant sequence overlays, native aggregate matching, nested/general mutable-call result expressions, enum-payload lvalue mutation, arbitrary-position intrusive insertion/relink if required, chained maps where required, the quantified logical-index relation family specified in `.design/build/aggregate-array-relations.md` (REQ-AGGREL-2 through REQ-AGGREL-5), quantified aggregate loops, and generic library capacities/types."
 contributors = [".design/build/kernel-byte-slice.md", ".design/build/fixed-collections.md", ".design/build/static-storage.md", ".design/build/aggregate-array-relations.md", ".design/build/named-record-lifecycle.md", ".design/build/owned-aggregate-lifecycle.md", ".design/build/nested-aggregate-lifecycle.md", ".design/build/adt-match-lifecycle.md", ".design/build/record-state-loops.md", ".design/build/mutable-call-effects.md", "thermite-syntax/src/parser.rs", "thermite-spec/src/validator.rs", "thermite-lower/src/lower.rs", "thermite-tv/src/ref_encode.rs", "thermite-tv/src/exec_stmt_encode.rs", "thermite-tv/src/obligation.rs", "forge/src/body_tv.rs", "forge/src/contract_tv.rs", "forge/src/exec_tv.rs", "forge/src/verified_build.rs"]
 generated_to = ["status", "forge-kernel-primitives-status"]
 

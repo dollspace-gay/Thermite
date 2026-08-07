@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: partial
-decision: Thermite ships policy-free packed bitmap, vector, FIFO-ring, direct-map, open-addressed map, generation-safe slab, duplicate-safe freelist, and intrusive doubly linked metadata with arbitrary-node unlink in .th; generic capacities and quantified aggregate-state framing remain
+decision: Thermite ships policy-free packed bitmap, vector, FIFO-ring, direct-map, open-addressed map, generation-safe slab, duplicate-safe freelist, and intrusive doubly linked metadata with arbitrary-node unlink in .th; generic capacities remain, and quantified logical-index aggregate-state framing is specified in .design/build/aggregate-array-relations.md ahead of implementation
 governs:
   - stdlib/kernel-primitives/collections.thpkg.json
   - stdlib/kernel-primitives/collections/bitmap.th
@@ -92,8 +92,14 @@ Population count is specified by an exact recursive prefix count. First-set
 search proves both that the returned bit is present and that the preceding
 range is clear; absence proves the complete requested range is clear. Bulk
 union, intersection, and difference pin all four result words through exact
-fixed-array equality. Generic capacities and a quantified all-indices public
-contract remain future work.
+fixed-array equality. Generic capacities remain future work. The quantified
+all-index public contract now has a fixed surface, iff semantics, fail-closed
+boundary, and lowering obligation in
+`.design/build/aggregate-array-relations.md`. The bitmap packs 64 logical
+indices into each of its four storage words, so `fixed_bitmap_contains_spec` is
+a derived-index observer: the declared view admits `logical_eq`, while
+`logical_same_except` and `logical_same_except_two` over it land under
+REQ-AGGREL-5 (blocker #132).
 
 ## Fixed FIFO ring
 
@@ -292,9 +298,10 @@ exact statement-position and direct typed let-bound result calls over finite-rec
 slab, freelist, and intrusive fixed-array states. It closes statement-free
 constructor-field conditionals over prior locals, which keeps the independent
 unlink reference well scoped after multiple array writes. Quantified all-index
-aggregate-state framing remains open, so these increments do not generalize the
-focused results into a claim that every collection lifecycle is already a strict
-public export.
+aggregate-state framing is specified in
+`.design/build/aggregate-array-relations.md` and unimplemented (blockers #131
+and #132), so these increments do not generalize the focused results into a
+claim that every collection lifecycle is already a strict public export.
 
 ## Remaining collection closure
 
@@ -305,7 +312,11 @@ This is a substantial REQ-KPRIM-2 increment, not completion. Remaining work is:
 2. a chained-map variant where consumer workloads require it;
 3. capacity/type parameterization that does not rely on privileged generated
    policy types;
-4. quantified framing and equality for aggregate collection states;
+4. quantified framing and equality for aggregate collection states, whose
+   surface, iff semantics, fail-closed boundary, and lowering obligation are
+   fixed in `.design/build/aggregate-array-relations.md` (REQ-AGGREL-2 through
+   REQ-AGGREL-5); the slot views of the ring, vector, slab, freelist,
+   intrusive metadata, and both maps are index-transparent and land first;
 5. quantified aggregate body TV and strict aggregate receipt/runtime fixtures;
 6. atomic integration for concurrent containers; pure bounded MPSC and
    work-stealing deque state mechanics are supplied by the synchronization

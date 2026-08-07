@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: partial
-audited-content-sha256: 91ab137d7049d05d0211560e118326f038b80b143e80ae4b2af97c1df5fc24ee (re-pinned 2026-08-07 after source-oriented Forge commands resolved canonical packages through one shared front door; existing single-file behavior remains regression-covered)
+audited-content-sha256: 6f12112b889cd5034f9c8e555beae3bd8ee5e0dfd8a7eeb5eb8e5782197d1c79 (re-pinned 2026-08-07 after the safe-linkage gate read the source platform-effect row and the v1/v2 synthetic primitive moved to a door with no platform atom)
 decision: consumer-owned registry entries close reachable Thermite boundaries through non-exempt same-crate or separately compiled/imported direct-Verus calls
 governs:
   - thermite-lower/src/lower.rs
@@ -506,18 +506,18 @@ matrix, assembly and unsafe/irreducible Rust source/object closure, volatile and
 privileged models, and concurrent/liveness composition. None of those broader
 claims are made by the pilot.
 
-The source-derived machine-class gate above is authority without an
-implementation. Forge still decides the class from `entry.concurrency` alone,
-so the map, the maximum rule, and the reporting rule are unenforced until
-REQ-KPRIM-11 lands. Landing it also settles the two `platform(clock)` safe-linkage
-fixtures, which the map places outside the safe domain; the v1 and v2 acceptance
-evidence needs a synthetic door whose effect row carries no platform atom.
+The source-derived machine-class gate above is enforced in planning. The
+resolved plan still records the declared `concurrency` string on its own, so the
+effective class is reconstructed by re-deriving it from the receipt-bound
+registry and source bytes rather than read back from a plan field. Recording it
+next to the declared concurrency, which gate rule 4 asks for, is a
+`PlannedPrimitiveEntryV1` schema change in `verified_build.rs` and remains open.
 
 ## REQ status
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-KPRIM-11 (source-derived machine class) | NOT-STARTED | `fn plan_from_bytes` in `primitive_registry.rs` reconstructs the effect row through `fn effect_spellings` and compares it against `entry.effects`, then gates the machine class on `entry.concurrency` alone. A registry that spells `"concurrency": "sequential"` over a `fx platform(atomic)` door therefore takes the safe v1 or v2 path and publishes `assurance="L3"`, `scope="end_to_end"`, `residual_machine_assumptions = 0`. The same laundering reaches the shipped `platform(clock)` fixtures `frozen_primitive_registry.json` and `separate_primitive_registry.json`, which the class map places outside the safe domain. Blocker: the failing tests `divergence_safe_v1_registry_launders_a_platform_atomic_machine_door` and `divergence_safe_v2_registry_launders_a_platform_atomic_machine_door` in `forge/tests/divergence_registry_v4_matrix.rs`, pinned in commit `8ba26f1d`; crosslink issue creation is blocked by the pending hub-v3 migration, so those two tests are the tracking artifact. |
+| REQ-KPRIM-11 (source-derived machine class) | SHIPPED | `fn source_machine_class` in `primitive_registry.rs` maps the twelve frozen atoms through `fn MachineClass::of_platform_atom` and returns the row maximum with the atom that produced it; `fn plan_from_bytes` takes `let effective_class = source_class.max(declared_class)` and rejects a `same_crate` or `separate_verus_crate` entry whose class is above `sequential`, naming the function, the atom, and the class. Consumer: the composition planner reaches it through `fn load_from_evidence`, so `forge build --primitive-registry` rejects before publication. The two pinned divergence tests `divergence_safe_v1_registry_launders_a_platform_atomic_machine_door` and `divergence_safe_v2_registry_launders_a_platform_atomic_machine_door` in `forge/tests/divergence_registry_v4_matrix.rs` pass, and the v1/v2 acceptance fixtures now close `fn platform_identity` in `conformance/verified-composition/frozen_primitive.th` at `fx pure`, a door whose effect row carries no platform atom. |
 
 The registry-wide requirements this rule belongs to are REQ-KPRIM-7 (generic
 frozen boundary registry) and REQ-KPRIM-9 (exact platform refinement

@@ -468,30 +468,47 @@ fn plan_from_bytes(
                 ));
             }
         }
-        if !matches!(
-            entry.concurrency.as_str(),
-            "sequential" | "atomic" | "volatile" | "privileged"
-        ) {
+        let Some(declared_class) = MachineClass::declared(entry.concurrency.as_str()) else {
             return Err(format!(
                 "primitive entry `{}` has unknown concurrency semantics `{}`",
                 entry.semantic_name, entry.concurrency
             ));
-        }
+        };
         require_sorted_unique(
             "memory orderings",
             &entry.memory_orderings,
             valid_memory_ordering,
         )?;
-        if linkage != "separate_verus_machine_crate" && entry.concurrency != "sequential" {
+        // The effective machine class is the maximum of the class the source
+        // effect row implies and the class the entry declares for itself
+        // (`.design/build/frozen-primitive-registry.md` §"Source-derived
+        // minimum machine class"). A declaration raises the class and leaves
+        // the source-derived floor in place.
+        let (source_class, source_atom) = source_machine_class(&function.contract.fx);
+        let effective_class = source_class.max(declared_class);
+        if linkage != "separate_verus_machine_crate" && effective_class != MachineClass::Sequential
+        {
             return Err(format!(
-                "primitive entry `{}` requests `{}` concurrency, but safe frozen primitive registry linkages can directly refine only sequential safe-Rust operations; atomic, volatile, and privileged implementations require registry v3 machine evidence",
-                entry.semantic_name, entry.concurrency
+                "primitive entry `{}` binds Thermite function `{}`, whose effective machine class is `{}` from its {}, and safe frozen primitive registry linkages can directly refine only sequential safe-Rust operations; atomic, volatile, and privileged implementations require registry v3 machine evidence",
+                entry.semantic_name,
+                function.name,
+                effective_class.surface(),
+                effective_class_basis(source_class, source_atom, declared_class, &entry.concurrency)
             ));
         }
         if entry.concurrency == "sequential" && !entry.memory_orderings.is_empty() {
             return Err(format!(
                 "sequential primitive entry `{}` cannot declare memory orderings",
                 entry.semantic_name
+            ));
+        }
+        if linkage == "separate_verus_machine_crate" && effective_class != MachineClass::Atomic {
+            return Err(format!(
+                "primitive entry `{}` binds Thermite function `{}`, whose effective machine class is `{}` from its {}, and frozen primitive registry v3 binds machine evidence for the atomic class only",
+                entry.semantic_name,
+                function.name,
+                effective_class.surface(),
+                effective_class_basis(source_class, source_atom, declared_class, &entry.concurrency)
             ));
         }
         if linkage == "separate_verus_machine_crate" {
@@ -703,6 +720,104 @@ fn effect_spellings(row: &EffectRow) -> Vec<String> {
     }
 }
 
+/// The four machine classes the registry `concurrency` vocabulary names, in the
+/// order `sequential < volatile < atomic < privileged` that
+/// `.design/build/frozen-primitive-registry.md` §"Source-derived minimum
+/// machine class" fixes. The derived `Ord` is that order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum MachineClass {
+    Sequential,
+    Volatile,
+    Atomic,
+    Privileged,
+}
+
+impl MachineClass {
+    /// The registry surface spelling of a class.
+    fn surface(self) -> &'static str {
+        match self {
+            Self::Sequential => "sequential",
+            Self::Volatile => "volatile",
+            Self::Atomic => "atomic",
+            Self::Privileged => "privileged",
+        }
+    }
+
+    /// The class an entry declares for itself. The vocabulary is the closed set
+    /// the schema accepts, so any other spelling has no class.
+    fn declared(concurrency: &str) -> Option<Self> {
+        match concurrency {
+            "sequential" => Some(Self::Sequential),
+            "volatile" => Some(Self::Volatile),
+            "atomic" => Some(Self::Atomic),
+            "privileged" => Some(Self::Privileged),
+            _ => None,
+        }
+    }
+
+    /// The minimum machine class of one frozen platform effect atom. The map is
+    /// total over the twelve atoms `.design/build/kernel-primitives.md`
+    /// §"Sealed authority and platform effects" freezes, and each row is the
+    /// class table in `.design/build/frozen-primitive-registry.md`
+    /// §"Source-derived minimum machine class". No atom reaches `sequential`.
+    fn of_platform_atom(domain: thermite_syntax::PlatformDomain) -> Self {
+        use thermite_syntax::PlatformDomain;
+        match domain {
+            PlatformDomain::Boot => Self::Privileged,
+            PlatformDomain::Memory => Self::Privileged,
+            PlatformDomain::Mmio => Self::Volatile,
+            PlatformDomain::Pio => Self::Volatile,
+            PlatformDomain::Irq => Self::Privileged,
+            PlatformDomain::Cpu => Self::Privileged,
+            PlatformDomain::Atomic => Self::Atomic,
+            PlatformDomain::Smp => Self::Atomic,
+            PlatformDomain::Dma => Self::Atomic,
+            PlatformDomain::Clock => Self::Volatile,
+            PlatformDomain::Entropy => Self::Volatile,
+            PlatformDomain::Power => Self::Privileged,
+        }
+    }
+}
+
+/// The source-derived minimum machine class of a Thermite effect row, with the
+/// platform atom that produced it. A row carrying no platform atom reaches
+/// `sequential` through the empty maximum, which is the domain the safe v1 and
+/// v2 linkages keep.
+fn source_machine_class(row: &EffectRow) -> (MachineClass, Option<&'static str>) {
+    let EffectRow::Set(effects) = row else {
+        return (MachineClass::Sequential, None);
+    };
+    let mut class = MachineClass::Sequential;
+    let mut atom = None;
+    for effect in effects {
+        if let Effect::Platform(domain) = effect {
+            let candidate = MachineClass::of_platform_atom(*domain);
+            if atom.is_none() || candidate > class {
+                class = candidate;
+                atom = Some(domain.surface());
+            }
+        }
+    }
+    (class, atom)
+}
+
+/// The phrase naming what produced an entry's effective machine class: the
+/// source effect atom when the source row reaches that class, and the entry's
+/// own `concurrency` string when the declaration raises it.
+fn effective_class_basis(
+    source_class: MachineClass,
+    source_atom: Option<&str>,
+    declared_class: MachineClass,
+    declared: &str,
+) -> String {
+    match source_atom {
+        Some(atom) if source_class >= declared_class => {
+            format!("source effect atom `platform({atom})`")
+        }
+        _ => format!("declared concurrency `{declared}`"),
+    }
+}
+
 fn parameter_ownership(ty: &Type, sealed: &BTreeSet<&str>) -> String {
     match ty {
         Type::Ref { mutable: true, .. } => "exclusive_borrow".to_string(),
@@ -820,8 +935,8 @@ mod tests {
     ) {
         let parsed = thermite_syntax::parse(
             "#[boundary(\"platform::identity\")] \
-             fn platform_identity(value: u64) -> u64 req true ens result == value fx platform(clock); \
-             fn observe(value: u64) -> u64 req true ens result == value fx platform(clock) { platform_identity(value) }",
+             fn platform_identity(value: u64) -> u64 req true ens result == value fx pure; \
+             fn observe(value: u64) -> u64 req true ens result == value fx pure { platform_identity(value) }",
         );
         assert!(parsed.is_clean(), "{:?}", parsed.errors);
         let program = parsed.program;
@@ -860,7 +975,7 @@ mod tests {
                 "signature": function_signature(function).unwrap(),
                 "contract_sha256": semantic_contract_sha256(function),
                 "effects_sha256": sha256(format!("{:#?}", function.contract.fx).as_bytes()),
-                "effects": ["platform(clock)"],
+                "effects": ["pure"],
                 "ownership": { "parameters": ["by_value"], "result": "by_value" },
                 "implementation": {
                     "shell_module": "platform_shell",

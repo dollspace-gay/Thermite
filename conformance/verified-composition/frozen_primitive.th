@@ -2,12 +2,12 @@
 fn platform_identity(value: u64) -> u64
   req true
   ens result == value
-  fx platform(clock);
+  fx pure;
 
 fn primitive_observation(value: u64) -> u64
   req true
   ens result == value
-  fx platform(clock)
+  fx pure
 {
   platform_identity(value)
 }

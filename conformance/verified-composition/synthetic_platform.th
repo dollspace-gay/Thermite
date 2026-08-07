@@ -1,0 +1,38 @@
+#[sealed] struct SynRegion {
+  identity: usize,
+  capacity: usize,
+}
+
+#[sealed] struct SynAddress {
+  region: usize,
+  offset: usize,
+  capacity: usize,
+}
+
+#[boundary("synthetic::platform::address_from_region")]
+fn syn_address_from_region(region: &SynRegion, offset: usize) -> SynAddress
+  req offset <= region.capacity
+  ens result.region == region.identity
+    && result.offset == offset
+    && result.capacity == region.capacity
+  fx pure;
+
+#[boundary("synthetic::platform::address_advance")]
+fn syn_address_advance(address: SynAddress, length: usize) -> SynAddress
+  req address.offset <= address.capacity
+    && length <= address.capacity - address.offset
+  ens result.region == address.region
+    && result.offset == address.offset + length
+    && result.capacity == address.capacity
+  fx pure;
+
+fn syn_platform_observation(region: &SynRegion, offset: usize, length: usize) -> usize
+  req offset <= region.capacity
+    && length <= region.capacity - offset
+  ens result == offset + length
+  fx pure
+{
+  let base: SynAddress = syn_address_from_region(region, offset);
+  let advanced: SynAddress = syn_address_advance(base, length);
+  advanced.offset
+}

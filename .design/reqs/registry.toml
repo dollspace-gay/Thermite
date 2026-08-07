@@ -18135,6 +18135,21 @@ kind = "test"
 target = "forge/src/verified_build/primitive_registry.rs::tests::registry_rejects_schema_source_contract_effect_abi_and_ownership_drift"
 note = "Adversarial schema, target, signature, contract, effect, source, ABI, ownership, and proof-evidence matrix."
 
+[[requirement.evidence]]
+kind = "file"
+target = "conformance/verified-composition/synthetic_platform.th"
+note = "Synthetic test platform: two sealed types and two fx pure doors mirroring the declaration shape of raw_address_from_region and raw_address_advance, so the registry composes shared_borrow, consume_sealed, and mint_sealed ownership."
+
+[[requirement.evidence]]
+kind = "file"
+target = "conformance/verified-composition/synthetic_platform_registry.json"
+note = "Registry v1 same_crate document binding both synthetic doors to their direct-Verus adapters with the AST-derived ownership rows and content digests."
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/verified_composition.rs::synthetic_platform_composes_the_sealed_ownership_transition"
+note = "Derives the expected ownership rows from the tracked platform declarations, builds and replays the synthetic platform at L3 end-to-end with six discharged obligations and no residual machine assumption, and rejects contract, effect, shell-source, signature, and both ownership halves plus a lying adapter."
+
 [[requirement]]
 id = "REQ-KPRIM-8"
 title = "Generic freestanding verified library build"

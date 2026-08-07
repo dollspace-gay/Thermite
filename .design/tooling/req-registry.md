@@ -4,7 +4,7 @@
 tier: 3-component
 status: draft
 audited-sha: f09f8ca376257cc1e2543b8ebc9fb771bffd04df (content-sha256 re-pinned 2026-07-29 for stage-3 REQ-1..REQ-9 / gate G3 (#80, crosslink #351): the registry and generated status view carry the fixed-width reconstruction requirements and verified evidence; req-registry.py --check is clean (462 requirements, 119 views). The legacy commit pin remains the f09f8ca3 stable-main ancestor; the active content digest tracks the governed files. prior: 2026-06-21 stage-2 REQ-10 / AC-10 (#332), the pin battery and final gate G2 increment)
-audited-content-sha256: 86bbdcf635a82ce9eb5d15359dae9aa9e83ea5464197b579e17f483a0b0d8c88 (re-pinned 2026-08-07 after registering the REQ-DIVTERM requirement family and routing .design/build/divergent-terminal-composition.md over the four divergent-declaration sources; registry semantics remain registry-tool checked)
+audited-content-sha256: aaf1b64ab266876bfea0e37549189f1dd8cf21e0460ba5e2feb258fc69295c54 (re-pinned 2026-08-07 after the synthetic test platform's registry evidence entered REQ-KPRIM-7 and its generated status view)
 governs:
   - .design/reqs/registry.toml
   - .design/reqs/status.md

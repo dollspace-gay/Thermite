@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: partial
-audited-content-sha256: 2b0dee707121b53ece6e70c5eb8fab68250c865d6f87cb3f5340d2d565f32e68 (re-pinned 2026-08-07 after a source-derived clock row pinned the safe-linkage refusal)
+audited-content-sha256: 88eb1781dcd060fc37031cb4e1f05801c1b8a8e50709491f0e818d2b37998e63 (re-pinned 2026-08-07 after the synthetic test platform composed the sealed ownership transition)
 decision: consumer-owned registry entries close reachable Thermite boundaries through non-exempt same-crate or separately compiled/imported direct-Verus calls
 governs:
   - thermite-lower/src/lower.rs
@@ -17,6 +17,9 @@ governs:
   - conformance/verified-composition/frozen_primitive.th
   - conformance/verified-composition/frozen_primitive_shell.rs
   - conformance/verified-composition/frozen_primitive_registry.json
+  - conformance/verified-composition/synthetic_platform.th
+  - conformance/verified-composition/synthetic_platform_shell.rs
+  - conformance/verified-composition/synthetic_platform_registry.json
   - conformance/verified-composition/separate_primitive_impl.rs
   - conformance/verified-composition/separate_primitive_shell.rs
   - conformance/verified-composition/separate_primitive_registry.json
@@ -350,6 +353,7 @@ frozen declaration in the two machine packages.
 | all 74 declarations in `stdlib/kernel-primitives/platform/api.th` | the eleven non-atomic atoms | `volatile` or `privileged` | No safe linkage closes any of them. |
 | all 50 declarations in `stdlib/kernel-primitives/src/machine.th` | `atomic` | `atomic` | No safe linkage closes any of them; v3 admits only its one canonical operation. |
 | `fn foreign_identity` in `conformance/verified-build/boundary.th` | none | `sequential` | A safe linkage closes it. This is the shape the v1/v2 domain has. |
+| `conformance/verified-composition/synthetic_platform_registry.json` over `synthetic_platform.th` | none | `sequential` | Valid. Two `fx pure` doors carry the sealed ownership transition through `same_crate` linkage. |
 
 The two clock fixtures are this document's synthetic identity primitive, and an
 identity body is the right shape for exercising the machinery. The effect row is
@@ -362,6 +366,46 @@ through a different atom, and the Acceptance list below states the synthetic
 primitive's effect row accordingly. A gate that lands against the fixtures as
 they stand turns the two safe-linkage acceptance tests red, and that outcome is
 the rule working rather than a regression it caused.
+
+## The synthetic test platform
+
+`.design/build/kernel-primitives.md` §"Acceptance matrix" asks for a synthetic
+test platform "whose bodies are tiny direct-Verus adapters", exercising the
+registry and refinement machinery "without booting or implementing a kernel".
+`conformance/verified-composition/synthetic_platform.th` is that platform.
+
+The scalar identity fixtures above close the `by_value` corner of Schema v1's
+ownership vocabulary. The synthetic platform closes the sealed corner. It
+declares two sealed types, `SynRegion` and `SynAddress`, and two `#[boundary]`
+doors that mirror the declaration shape of `fn raw_address_from_region` and
+`fn raw_address_advance` in `stdlib/kernel-primitives/platform/api.th`:
+
+| Door | Parameter ownership | Result ownership |
+|---|---|---|
+| `fn syn_address_from_region(region: &SynRegion, offset: usize) -> SynAddress` | `shared_borrow`, `by_value` | `mint_sealed` |
+| `fn syn_address_advance(address: SynAddress, length: usize) -> SynAddress` | `consume_sealed`, `by_value` | `mint_sealed` |
+
+The mirror stops at the effect row. The two platform doors carry
+`fx platform(memory)`, whose effective class is `privileged`, so no safe linkage
+closes them. The synthetic doors carry `fx pure`, which reaches `sequential`
+through the empty maximum of "Source-derived minimum machine class" above, so
+registry v1 `same_crate` linkage closes both at `L3-direct-refinement`. The
+ownership row and the machine class are independent source facts, and the
+synthetic platform is what shows the registry treating them that way.
+
+Both adapters are direct-Verus functions of the same size as the identity
+shells: each states the door's `requires`/`ensures` and constructs the minted
+`SynAddress` from the fields the contract names.
+`fn syn_platform_observation` composes them, so the frozen closure reaches both
+doors from one composition root and the artifact publishes `assurance = L3` with
+`scope = end_to_end` and zero residual machine assumptions.
+
+The `exclusive_borrow` parameter arm has no fixture. None of the 74 tracked
+platform declarations takes a `&mut` parameter, so there is no declaration for a
+fixture to mirror; a `&mut` door would be an invented shape rather than a
+synthetic stand-in for a real one. `result_ownership` rejects a borrowed return
+type outright, so its remaining arm is a refusal rather than a composable
+transition.
 
 ## Reachability closure
 
@@ -475,6 +519,15 @@ drift, or receipt drift rejects.
 - A `#[boundary]` whose effect row carries no platform atom, of the shape
   `fn foreign_identity` in `conformance/verified-build/boundary.th` has, keeps
   closing through both safe linkages at `L3-direct-refinement`.
+- The synthetic test platform builds, replays, and publishes both of its doors
+  at `L3-direct-refinement` under `assurance = L3` / `scope = end_to_end` with
+  six discharged refinement obligations and zero residual machine assumptions.
+- Its plan carries the ownership spellings `shared_borrow`, `consume_sealed`,
+  `mint_sealed`, and `by_value`, each derived from the AST and matching the
+  ownership row of the platform declaration the door mirrors.
+- Its contract, effect, and shell-source digests, its normalized signature, and
+  both halves of its ownership row fail closed under drift, and a digest-updated
+  adapter that drops the advance fails at the whole-crate proof.
 - No artifact reports `assurance = L3` with `scope = end_to_end` while a
   reachable registered door's effective class exceeds `sequential`, and such an
   artifact counts at least one residual machine assumption.
@@ -519,7 +572,9 @@ next to the declared concurrency, which gate rule 4 asks for, is a
 |---|---|---|
 | REQ-KPRIM-11 (source-derived machine class) | SHIPPED | `fn source_machine_class` in `primitive_registry.rs` maps the twelve frozen atoms through `fn MachineClass::of_platform_atom` and returns the row maximum with the atom that produced it; `fn plan_from_bytes` takes `let effective_class = source_class.max(declared_class)` and rejects a `same_crate` or `separate_verus_crate` entry whose class is above `sequential`, naming the function, the atom, and the class. Consumer: the composition planner reaches it through `fn load_from_evidence`, so `forge build --primitive-registry` rejects before publication. The two pinned divergence tests `divergence_safe_v1_registry_launders_a_platform_atomic_machine_door` and `divergence_safe_v2_registry_launders_a_platform_atomic_machine_door` in `forge/tests/divergence_registry_v4_matrix.rs` pass, and the v1/v2 acceptance fixtures now close `fn platform_identity` in `conformance/verified-composition/frozen_primitive.th` at `fx pure`, a door whose effect row carries no platform atom. |
 
-The registry-wide requirements this rule belongs to are REQ-KPRIM-7 (generic
+| REQ-KPRIM-7 (synthetic test platform) | SHIPPED | `conformance/verified-composition/synthetic_platform.th` declares `fn syn_address_from_region` and `fn syn_address_advance` at `fx pure`; `synthetic_platform_shell.rs` supplies `fn syn_address_from_region_impl` and `fn syn_address_advance_impl` as direct-Verus adapters; `synthetic_platform_registry.json` binds them through `same_crate` linkage with parameter ownership `["shared_borrow","by_value"]` and `["consume_sealed","by_value"]` over `mint_sealed` results. Consumer: `fn syn_platform_observation` composes both doors, so `forge build --primitive-registry` reaches them from one composition root. Verification: `fn synthetic_platform_composes_the_sealed_ownership_transition` in `forge/tests/verified_composition.rs` derives the expected ownership rows from `stdlib/kernel-primitives/platform/api.th`, builds and replays the bundle, requires both members at `L3-direct-refinement` under `L3`/`end_to_end` with six discharged obligations and zero residual assumptions, and runs the six-case drift battery plus the lying-adapter refusal. `fn divergence_no_registry_fixture_exercises_the_sealed_ownership_transition` in `forge/tests/divergence_registry_v4_matrix.rs` passes. |
+
+The registry-wide requirements these rows belong to are REQ-KPRIM-7 (generic
 frozen boundary registry) and REQ-KPRIM-9 (exact platform refinement
 composition) in `.design/reqs/registry.toml`; both remain `partial` and name the
 gate in their remaining scope.

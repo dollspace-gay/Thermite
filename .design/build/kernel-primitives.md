@@ -102,7 +102,7 @@ governs:
   - conformance/verified-composition/frozen_primitive.th
   - conformance/verified-composition/frozen_primitive_shell.rs
   - conformance/verified-composition/frozen_primitive_registry.json
-audited-content-sha256: 585b1ad3ee8da018deb61d624d01cf2d685f9ac5eb53956b713c3c7f2ecd57f5 (re-pinned 2026-08-07 after the exec-position local equation carried its declared bounded type on every branch result; existing rows remain regression-covered)
+audited-content-sha256: 585b1ad3ee8da018deb61d624d01cf2d685f9ac5eb53956b713c3c7f2ecd57f5 (re-pinned 2026-08-07 after the collection mutation pins tracked the fixed-array canonical zero)
 extends:
   - .design/build/kernel-target.md
   - .design/build/l3-rich-composition.md
@@ -380,7 +380,7 @@ collision traversal, and tombstone reuse. Focused sibling packages add an opaque
 generation-tagged 64-slot slab, a duplicate-safe freelist, and doubly linked
 intrusive metadata with arbitrary-live-node unlink. All 234 collection source
 items prove at L3 with no boundary or runtime implementation; their executable
-contracts kill 732/779 generated mutants.
+contracts kill 742/794 generated mutants.
 
 The canonical package builds and replays as a strict freestanding receipt rooted
 at the scalar ring-index transition, binding all five roots and rejecting

@@ -21,7 +21,7 @@ governs:
   - forge/tests/fixed_freelist.rs
   - forge/tests/fixed_intrusive.rs
   - forge/tests/fixed_slab.rs
-audited-content-sha256: f2be4629ea3aa24ddfc8e5ff404ed2d6c384dcadf698e3e7d02908e417c92221 (re-pinned 2026-08-05 after the strict L3 arbitrary-node intrusive unlink increment)
+audited-content-sha256: 7eecc635335f28ad6a7bd79d7efc1ef8f4da70b8db093be345bb7cd93ee56d8c (re-pinned 2026-08-07 after the collection mutation pins tracked the fixed-array canonical zero)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/l3-verified-artifact.md
@@ -338,10 +338,27 @@ At this increment:
 | Thermite functions | 203 (126 executable, 77 specification) |
 | In-language L3 items | 234 |
 | Frozen boundary declarations | 0 |
-| Executable mutants killed | 732/779 |
+| Executable mutants killed | 742/794 |
 | Bodyful Rust/assembly collection implementations | 0 |
 | Ordinary Rust kernel-policy/algorithm LOC | 0 |
 | Direct-Verus TPL LOC shipped by this package | 0 |
 
 The Rust integration test is proof, replay, and tamper harness code; it is not
 linked into the collection artifact.
+
+The mutant figure rose from 732/779 on 2026-08-07. `fn zero_value_for` in
+`forge/src/mutation.rs` gained a canonical zero for a fixed array, so a record
+whose fields are all zero-able has a zero as well and each function returning
+one gained an early-return mutant. Fifteen mutants appeared across the eight
+collection modules and ten of them die.
+
+The five that survive are equivalent mutants. `FixedRing64`, `FixedVec64`,
+`FixedDirectMap64`, `FixedOpenMap64`, and `FixedSlab64` carry no field with a
+nonzero invariant, so each empty constructor's body is literally its own zero
+value and the mutant computes the same result. `fn fixed_open_map_empty` is the
+clearest case, since `OPEN_MAP_EMPTY` is 0. `FixedBitmap256` is the control: its
+`capacity` field must equal `FIXED_BITMAP_BITS`, so its zero is distinguishable
+and all seven of its mutants die. A survivor of this shape reports a limit of
+the score rather than a gap in a contract, and
+`.design/forge/mutation-equivalence.md` covers the classification that removes
+it from the denominator.

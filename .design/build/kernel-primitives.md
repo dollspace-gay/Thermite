@@ -390,9 +390,16 @@ executes the generated middle-unlink logic from a downstream consumer and binds
 72 faithful reachable translation-validation rows. Typed mutable local records,
 pure value calls, exact direct/projected finite-record mutable calls with typed let-bound
 results, and user-ADT
-match/results now have strict L3 composition. Full collection exports remain
-gated by quantified aggregate-state framing and dedicated aggregate
-receipt/runtime coverage. That framing now has a fixed surface and meaning:
+match/results now have strict L3 composition. A plain-record collection root
+already exports: `fixed_ring_empty`, whose return is `FixedRing64`, builds and
+publishes a strict aggregate-rooted L3 `--target kernel` receipt from the
+canonical package with `wrapped=false` and six faithful translation-validation
+rows (measured at HEAD; a committed fixture for that root is listed in the
+REQ-L3BUILD-15 blocker). The enum-returning transitions are governed by
+REQ-L3BUILD-15 and
+REQ-L3BUILD-16; see "Why an enum-returning collection transition does not
+export" below. The quantified aggregate-state framing is a separate line of
+work with a fixed surface and meaning:
 `.logical_eq`, `.logical_same_except`, and `.logical_same_except_two` quantify
 over a `#[logical(bound = "CONST", observe = "spec_fn")]` index space declared
 on the collection struct, so an opaque collection states a complete all-index
@@ -401,6 +408,38 @@ through REQ-AGGREL-5; see `.design/build/aggregate-array-relations.md`. The pack
 bitmap's finite dynamic-bit bridge is
 directly proved and independently translation-validated. Exact claims and
 residual work are in `.design/build/fixed-collections.md`.
+
+#### Why an enum-returning collection transition does not export
+
+`fixed_ring_push` and its siblings return closed result enums
+(`FixedRingPush64`, `FixedVecPop64`, `FixedSlabAllocate64`, and the rest). Two
+named requirements gate their `--export` publication, and neither is the
+quantified logical-index relation family.
+
+`fn supported_public_return_type in forge/src/verified_build.rs` refuses first,
+because the public Rust ABI has no enum arm. That refusal carries the design
+decision recorded in REQ-L3BUILD-15 in `.design/build/l3-verified-artifact.md`,
+which now specifies the admissible closed non-recursive shape, its layout
+preimage, and the shapes that stay refused. Adding the arm reaches the second
+gate.
+
+`fn executable_precondition in forge/src/verified_build.rs` refuses
+`Expr::Call`, and `fixed_ring_push` states `req fixed_ring_wf_spec(&ring)`, as
+the plain-record collection transitions do. `fn
+lower_l3_export_wrapper in thermite-lower/src/lower.rs` emits the guard through
+`lower_expr(..., Ctx::exec(), ...)`, and a `spec fn` has no executable
+translation, so widening the predicate on its own yields `error: cannot call
+function fixed_ring_wf_spec with mode spec`. REQ-L3BUILD-16 governs the whole
+job, including the independent `export_guard` derivation in `fn
+exec_tv_export_guard in forge/src/exec_tv.rs`.
+
+REQ-AGGREL-2 through REQ-AGGREL-5 govern `.logical_eq`,
+`.logical_same_except`, and `.logical_same_except_two`. Those relations appear
+in no shipped collection contract, so they are absent from the export closure of
+`fixed_ring_push` and do not gate it. The doc comment on
+`forge/tests/divergence_aggregate_collection_state.rs` frames the aggregate
+receipt pin as a missing ADT arm and an implementation gap; this subsection is
+the authority for correcting that framing to the two requirements above.
 
 ### Modules, packages, and receipts
 

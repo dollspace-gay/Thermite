@@ -62,13 +62,19 @@ forge build model.th --level l3 \
 
 `--compose-export` and `--compose-shell` are repeatable and must occur together.
 At least one composition export is required for this mode. `--export` uses the
-strict finite-plain-value public ABI (primitives, unit, tuples, fixed arrays,
-and ordinary acyclic records) and may be combined with composition exports;
-sealed, opaque, recursive, enum, reference-bearing, and heap-backed values are
-rejected, and the same Thermite function cannot occupy both tiers. L1 behavior
-and ordinary L3 build behavior are unchanged. The public export fingerprint
-binds the transitive ordered record layout and resolved fixed-array capacities,
-not merely the authored record and constant names.
+public Rust ABI subset defined once in `.design/build/l3-verified-artifact.md`,
+"Exports and ABI", and may be combined with composition exports; the same
+Thermite function cannot occupy both tiers. That subset is the strict
+finite-plain-value surface (primitives, unit, tuples, fixed arrays, ordinary
+acyclic records, and a direct opaque root), and REQ-L3BUILD-15 extends it with a
+closed non-recursive result enum at the direct return root whose every variant
+payload is an already-admitted finite plain value. Sealed values, recursive
+layouts, references, heap-backed values, nested opaque records, and enums
+outside that admission rule are rejected. `fn plan_exports in
+forge/src/verified_build.rs` is the single admission site for both build modes.
+L1 behavior and ordinary L3 build behavior are unchanged. The public export
+fingerprint binds the transitive ordered record layout and resolved fixed-array
+capacities, not merely the authored record and constant names.
 
 `--primitive-registry` is optional and may occur once. When present, it invokes
 the stricter consumer-owned frozen-boundary closure specified by
@@ -85,7 +91,7 @@ There are two distinct roots:
 
 | Root kind | Lowered visibility | Admitted signature | Consumer |
 |---|---|---|---|
-| link export | `pub` or total public wrapper | primitive scalars/unit | another crate |
+| link export | `pub` or total public wrapper | the public ABI subset of `.design/build/l3-verified-artifact.md` | another crate |
 | composition export | `pub(crate)` | full checked Thermite type language | direct-Verus shell in the same crate |
 
 Every root participates in one union closure. Forge resolves and binds every
@@ -167,8 +173,16 @@ inserted after the plan freezes.
 Composition code destructures enum fields through exhaustive patterns. A
 synthetic `value->field` projection on one of these delayed enums is not
 admitted and therefore fails whole-crate verification instead of silently
-reintroducing nondeterministic metadata. Ordinary L3 libraries without a
-crate-visible composition export retain their existing direct enum lowering.
+reintroducing nondeterministic metadata.
+
+The frame covers every L3 library. `fn lower_with_profile in
+thermite-lower/src/lower.rs` sets `deterministic_library_enums` from
+`library.is_some()`, so a plain `--export` library and a composition library
+both emit their enum declarations through `__thermite_deterministic_enum!`.
+Reproducibility of an enum-bearing L3 library therefore does not depend on the
+presence of a crate-visible composition export, which is what lets
+REQ-L3BUILD-15 admit an authored result enum at the public boundary without
+reopening this hazard.
 
 ## Translation validation and proof completion
 

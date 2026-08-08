@@ -317,7 +317,11 @@ This is a substantial REQ-KPRIM-2 increment, not completion. Remaining work is:
    fixed in `.design/build/aggregate-array-relations.md` (REQ-AGGREL-2 through
    REQ-AGGREL-5); the slot views of the ring, vector, slab, freelist,
    intrusive metadata, and both maps are index-transparent and land first;
-5. quantified aggregate body TV and strict aggregate receipt/runtime fixtures;
+5. quantified aggregate body TV and strict aggregate receipt/runtime fixtures.
+   A plain-record root such as `fixed_ring_empty` can root such a fixture
+   today; the enum-returning transitions additionally need REQ-L3BUILD-15
+   (closed result-enum exports) and REQ-L3BUILD-16 (specification-function
+   export guards) in `.design/build/l3-verified-artifact.md`;
 6. atomic integration for concurrent containers; pure bounded MPSC and
    work-stealing deque state mechanics are supplied by the synchronization
    package.

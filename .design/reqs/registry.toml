@@ -12319,6 +12319,50 @@ target = "forge/tests/verified_build.rs::kernel_bundle_final_links_into_a_separa
 note = "kernel ambient-mismatch build and receipt-declared no-std consumer"
 
 [[requirement]]
+id = "REQ-L3BUILD-15"
+title = "Closed result-enum public exports"
+owner = ".design/build/l3-verified-artifact.md"
+status = "not_started"
+scope = "forge"
+summary = "A `--export` return type may be a closed, non-recursive enum at the direct return root whose every variant payload is an already-admitted finite plain value, with a source-order variant layout preimage and a fail-closed boundary for nested, parameter-position, recursive, sealed-payload, opaque-payload, reference-bearing, and heap-backed enums."
+remaining_scope = "Open blocker: `.design/build/l3-verified-artifact.md` \"Blocker: closed result-enum public ABI admission\". The public ABI has no enum arm at HEAD: `fn supported_public_return_type` and `fn abi_layout_type` in forge/src/verified_build.rs both refuse, and `fn plan_exports` reports enum returns as outside the verified public Rust ABI. Add both arms under the admission rule and layout preimage specified in the owner document, update the exports-stage diagnostic, and land the AC-19 through AC-21 fixtures including three-build reproducibility for an enum-bearing plain `--export` library. A reverted probe established that the shape builds to a published strict L3 kernel receipt with faithful TV rows and zero errors; the arms are absent at HEAD."
+aliases = [".design/build/l3-verified-artifact.md REQ-L3BUILD-15 (closed result-enum exports)"]
+contributors = [".design/build/l3-verified-artifact.md", ".design/build/l3-rich-composition.md", ".design/build/kernel-primitives.md"]
+generated_to = ["status", "forge-l3-verified-build-status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = ".design/build/l3-verified-artifact.md"
+note = "admissible shape, layout rule, fail-closed boundary, and blocker scope"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "supported_public_return_type"
+note = "the refusal site that carries this decision at HEAD"
+
+[[requirement]]
+id = "REQ-L3BUILD-16"
+title = "Specification-function export guards"
+owner = ".design/build/l3-verified-artifact.md"
+status = "not_started"
+scope = "forge"
+summary = "An export whose `req` calls a `spec fn` receives a total wrapper only when Forge derives an admitted executable form of that guard, `lower_l3_export_wrapper` emits it, and the independent `export_guard` derivation reproduces it as a faithful translation-validation row."
+remaining_scope = "Open blocker: `.design/build/l3-verified-artifact.md` \"Blocker: executable guard for a specification-function precondition\". `fn executable_precondition` in forge/src/verified_build.rs refuses `Expr::Call`, so every collection transition with a `req <name>_wf_spec(...)` precondition is rejected at the exports stage. `fn lower_l3_export_wrapper` in thermite-lower/src/lower.rs lowers the guard with `lower_expr(..., Ctx::exec(), ...)`, and a spec fn has no executable translation, so widening the predicate alone yields `error: cannot call function fixed_ring_wf_spec with mode spec`. Define the admitted derivation, emit it from the wrapper, reproduce it in `fn exec_tv_export_guard` in forge/src/exec_tv.rs, and land AC-22 and AC-23. This requirement is independent of REQ-L3BUILD-15 and outlives it."
+aliases = [".design/build/l3-verified-artifact.md REQ-L3BUILD-16 (specification-function export guards)"]
+contributors = [".design/build/l3-verified-artifact.md", ".design/build/kernel-primitives.md"]
+generated_to = ["status", "forge-l3-verified-build-status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = ".design/build/l3-verified-artifact.md"
+note = "guard derivation requirement, three refusal sites, and blocker scope"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "executable_precondition"
+note = "the exports-stage refusal that this requirement governs"
+
+[[requirement]]
 id = "REQ-L3COMPOSE-1"
 title = "Explicit rich-state composition surface"
 owner = ".design/build/l3-rich-composition.md"

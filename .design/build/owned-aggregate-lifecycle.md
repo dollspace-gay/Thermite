@@ -17,7 +17,7 @@ governs:
   - forge/tests/verified_build.rs
   - conformance/verified-build/owned_aggregate_lifecycle.th
   - conformance/verified-build/record_after_indexed_call_effect.th
-audited-content-sha256: e449bdf2158bdc1571f4922610314bc301292b4db9ab40022f49ab29ae8de9f8 (re-pinned 2026-08-07 after the exec-position local equation carried its declared bounded type on every branch result; existing rows remain regression-covered)
+audited-content-sha256: 575cc89dcc83de8afb63b40b2d6c21401c7fcc6dfdfa9d43f9054ffc449eb306 (re-pinned 2026-08-07 after the direct record-value-call handoff to body TV narrowed to records reaching a logical sequence leaf; existing rows remain regression-covered)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/named-record-lifecycle.md

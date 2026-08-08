@@ -338,10 +338,24 @@ pub(crate) fn is_direct_mutable_call(program: &thermite_syntax::Program, expr: &
 }
 
 /// Whether `expr` is one direct call that consumes an admitted finite named
-/// record by value. An isolated exec-expression obligation does not carry the
-/// caller's leafwise lifecycle overlays, so body TV owns this call together
-/// with the surrounding record state. The callee's ordinary native-record body
-/// remains independently expression/body validated in its own frame.
+/// record carried by the caller as a logical overlay. Body TV owns such a call
+/// together with the surrounding record state: the caller holds a record that
+/// reaches a native fixed array as a complete logical sequence, and an isolated
+/// exec-expression obligation has no caller lifecycle overlay from which to
+/// build the actual native record (`.design/build/mutable-call-effects.md`,
+/// "Production and expression fidelity"; its Decision scopes the separate path
+/// to a "direct call [that] actually consumes a logical record overlay"). The
+/// callee's ordinary native-record body remains independently expression/body
+/// validated in its own frame.
+///
+/// A record composed of scalar and nested-record leaves alone carries no logical
+/// sequence, so the exec frame binds it as an ordinary native parameter and the
+/// call keeps its own exec row. That is the pure value-call composition
+/// `.design/build/owned-aggregate-lifecycle.md` freezes in "Frozen source
+/// surface" (`open_then_replace` calling `replace_generation(initial, next)`)
+/// and requires in acceptance item 4, and it is what
+/// `.design/build/mutable-call-effects.md` states as "surrounding pure
+/// initializers and the tail retain their normal exec-TV rows".
 pub(crate) fn is_direct_record_value_call(program: &thermite_syntax::Program, expr: &Expr) -> bool {
     let Expr::Call { callee, .. } = expr else {
         return false;
@@ -356,8 +370,7 @@ pub(crate) fn is_direct_record_value_call(program: &thermite_syntax::Program, ex
         .into_iter()
         .map(|record| record.type_name)
         .collect();
-    program.items.iter().any(|item| {
-        match item {
+    program.items.iter().any(|item| match item {
         Item::Fn(function)
             if function.name == *name
                 && function.body.is_some()
@@ -365,12 +378,60 @@ pub(crate) fn is_direct_record_value_call(program: &thermite_syntax::Program, ex
                 && function.slag.is_none() =>
         {
             function.params.iter().any(|parameter| {
-                matches!(&parameter.ty, Type::Named(type_name) if admitted.contains(type_name))
+                matches!(&parameter.ty, Type::Named(type_name)
+                    if admitted.contains(type_name)
+                        && record_reaches_sequence_leaf(program, type_name))
             })
         }
         _ => false,
-    }
     })
+}
+
+/// Whether a declared record reaches a native fixed-array leaf, directly or
+/// through a nested record field or tuple component. Such a leaf is the logical
+/// sequence the independent lifecycle interpreter carries as a complete `Seq`
+/// and never converts back into a native array
+/// (`.design/build/mutable-call-effects.md`, "Independent state composition").
+fn record_reaches_sequence_leaf(program: &thermite_syntax::Program, type_name: &str) -> bool {
+    let mut entered = BTreeSet::new();
+    record_reaches_sequence_leaf_from(program, type_name, &mut entered)
+}
+
+/// The recursive step of [`record_reaches_sequence_leaf`]. `entered` records the
+/// record names the walk has already descended into, so a declaration cycle
+/// terminates instead of recursing without bound.
+fn record_reaches_sequence_leaf_from(
+    program: &thermite_syntax::Program,
+    type_name: &str,
+    entered: &mut BTreeSet<String>,
+) -> bool {
+    if !entered.insert(type_name.to_string()) {
+        return false;
+    }
+    program.items.iter().any(|item| match item {
+        Item::Struct(structure) if structure.name == type_name => structure
+            .fields
+            .iter()
+            .any(|field| type_reaches_sequence_leaf(program, &field.ty, entered)),
+        _ => false,
+    })
+}
+
+/// Whether a declared field type reaches a native fixed-array leaf. A record
+/// name descends into its declaration; a tuple descends into every component.
+fn type_reaches_sequence_leaf(
+    program: &thermite_syntax::Program,
+    ty: &Type,
+    entered: &mut BTreeSet<String>,
+) -> bool {
+    match ty {
+        Type::Array { .. } => true,
+        Type::Named(name) => record_reaches_sequence_leaf_from(program, name, entered),
+        Type::Tuple(components) => components
+            .iter()
+            .any(|component| type_reaches_sequence_leaf(program, component, entered)),
+        _ => false,
+    }
 }
 
 /// Calls whose value cannot be isolated from the complete caller lifecycle are
@@ -1576,45 +1637,87 @@ fn caller(state: &mut State, value: u64) -> u64
         );
     }
 
+    /// A call consuming a record that reaches a native fixed array is owned by
+    /// body TV.
+    ///
+    /// The fixture is the verbatim `RecordAfterIndexedBank`/`RecordAfterIndexedOuter`
+    /// declarations plus `fn record_after_indexed_write`,
+    /// `fn record_after_indexed_observe_bank`, and
+    /// `fn record_after_indexed_observe_snapshot` from
+    /// `conformance/verified-build/record_after_indexed_call_effect.th`. The expected
+    /// routing comes from `.design/build/mutable-call-effects.md`, "Production and
+    /// expression fidelity": "an isolated expression frame has no caller lifecycle
+    /// overlay from which to build the actual native record", so "the caller's exact
+    /// body row proves the state-dependent call". `snapshot` carries the projected
+    /// `slots` sequence overlay, which is exactly that logical record value.
     #[test]
     fn direct_finite_record_value_call_is_owned_by_body_tv_not_frameless_exec_tv() {
         let parsed = thermite_syntax::parse(
             r#"
-struct State { value: u64 }
-fn observe(state: State) -> u64
-  req true
-  ens result == state.value
-  fx pure
-{
-  state.value
+const RECORD_AFTER_INDEXED_SLOTS: usize = 2;
+
+struct RecordAfterIndexedBank {
+  slots: [u64; RECORD_AFTER_INDEXED_SLOTS],
+  guard: u64,
 }
-fn caller(state: State) -> u64
+
+struct RecordAfterIndexedOuter {
+  left: RecordAfterIndexedBank,
+  right: RecordAfterIndexedBank,
+  tag: u64,
+}
+
+fn record_after_indexed_write(
+  slots: &mut [u64; RECORD_AFTER_INDEXED_SLOTS],
+  value: u64,
+) -> u64
   req true
-  ens result == state.value
+  ens result == value
+  ens final(slots)[0] == value
+  ens final(slots)[1] == old(slots)[1]
   fx pure
 {
-  let observed: u64 = observe(state);
+  slots[0] = value;
+  slots[0]
+}
+
+fn record_after_indexed_observe_bank(bank: RecordAfterIndexedBank) -> u64
+  req bank.slots[0] < 1000 && bank.guard < 1000
+  ens result == bank.slots[0] + bank.guard
+  fx pure
+{
+  bank.slots[0] + bank.guard
+}
+
+fn record_after_indexed_observe_snapshot(
+  outer: &mut RecordAfterIndexedOuter,
+  value: u64,
+  next_guard: u64,
+) -> u64
+  req value < 1000 && next_guard < 1000
+  ens result == value + next_guard
+  ens final(outer).left.slots[0] == value
+  ens final(outer).left.slots[1] == old(outer).left.slots[1]
+  ens final(outer).left.guard == old(outer).left.guard
+  ens final(outer).right.slots[0] == old(outer).right.slots[0]
+  ens final(outer).right.slots[1] == old(outer).right.slots[1]
+  ens final(outer).right.guard == old(outer).right.guard
+  ens final(outer).tag == old(outer).tag
+  fx pure
+{
+  let written: u64 = record_after_indexed_write(&mut outer.left.slots, value);
+  let mut snapshot: RecordAfterIndexedBank = RecordAfterIndexedBank {
+    slots: outer.left.slots,
+    guard: outer.left.guard,
+  };
+  snapshot.guard = next_guard;
+  let observed: u64 = record_after_indexed_observe_bank(snapshot);
   observed
 }
 "#,
         );
         assert!(parsed.is_clean(), "parse errors: {:?}", parsed.errors);
-        let init = parsed
-            .program
-            .items
-            .iter()
-            .find_map(|item| match item {
-                Item::Fn(function) if function.name == "caller" => function
-                    .body
-                    .as_ref()
-                    .and_then(|body| body.stmts.first())
-                    .and_then(|statement| match statement {
-                        Stmt::Let { init, .. } => Some(init),
-                        _ => None,
-                    }),
-                _ => None,
-            })
-            .expect("caller let initializer");
+        let init = let_initializer(&parsed.program, "record_after_indexed_observe_snapshot", 3);
         assert!(is_direct_record_value_call(&parsed.program, init));
         assert!(is_direct_body_state_call(&parsed.program, init));
 
@@ -1627,6 +1730,143 @@ fn caller(state: State) -> u64
             !is_direct_record_value_call(&parsed.program, &nested),
             "nested aggregate calls must remain visible to the fail-closed expression/body paths"
         );
+    }
+
+    /// Pure value-call composition over a record of scalar leaves keeps its own
+    /// exec rows.
+    ///
+    /// The fixture is the verbatim `OwnedState` declaration plus
+    /// `fn owned_state_mix_generation`, `fn owned_state_mix_second`, and
+    /// `fn owned_state_pipeline` from
+    /// `conformance/verified-build/owned_aggregate_lifecycle.th`. The expected
+    /// routing comes from `.design/build/owned-aggregate-lifecycle.md`: its "Frozen
+    /// source surface" states this exact composition (`open_then_replace` calling
+    /// `replace_generation(initial, next)`) and acceptance item 4 requires that "a
+    /// caller composes through an independently generated pure value-callee
+    /// specification". `.design/build/mutable-call-effects.md` scopes the body-TV
+    /// handoff to a call that "actually consumes a logical record overlay" and keeps
+    /// the rest: "surrounding pure initializers and the tail retain their normal
+    /// exec-TV rows". `OwnedState` reaches no fixed array, so `initial` and
+    /// `advanced` are ordinary native records the isolated exec frame binds
+    /// directly, and `owned_state_pipeline.let#2` and `owned_state_pipeline.tail`
+    /// are exec rows rather than absent rows.
+    #[test]
+    fn pure_value_call_over_a_scalar_leaf_record_keeps_its_exec_rows() {
+        let parsed = thermite_syntax::parse(
+            r#"
+struct OwnedState {
+  generation: u64,
+  occupied: bool,
+  first: u64,
+  second: u64,
+}
+
+fn owned_state_mix_generation(state: OwnedState, next: u64) -> OwnedState
+  req true
+  ens (state.generation == 0 && result.generation == next)
+    || (state.generation != 0 && result.generation == state.generation)
+  ens result.occupied == state.occupied
+  ens result.first == state.first
+  ens result.second == state.second
+  fx pure
+{
+  let mixed: u64 = if state.generation == 0 {
+    next
+  } else {
+    state.generation
+  };
+  let mut updated: OwnedState = state;
+  updated.generation = mixed;
+  updated
+}
+
+fn owned_state_mix_second(state: OwnedState, replacement: u64) -> OwnedState
+  req true
+  ens result.generation == state.generation
+  ens result.occupied == state.occupied
+  ens result.first == state.first
+  ens (state.second == 5 && result.second == replacement)
+    || (state.second != 5 && result.second == state.second)
+  fx pure
+{
+  let mixed: u64 = if state.second == 5 {
+    replacement
+  } else {
+    state.second
+  };
+  let mut updated: OwnedState = state;
+  updated.second = mixed;
+  updated
+}
+
+fn owned_state_pipeline(next: u64, replacement: u64) -> OwnedState
+  req next > 0
+  ens result.generation == next
+  ens result.occupied
+  ens result.first == 3
+  ens result.second == replacement
+  fx pure
+{
+  let initial: OwnedState = OwnedState {
+    generation: 0,
+    occupied: true,
+    first: 3,
+    second: 5,
+  };
+  let advanced: OwnedState = owned_state_mix_generation(initial, next);
+  owned_state_mix_second(advanced, replacement)
+}
+"#,
+        );
+        assert!(parsed.is_clean(), "parse errors: {:?}", parsed.errors);
+        let advanced = let_initializer(&parsed.program, "owned_state_pipeline", 2);
+        assert!(
+            !is_direct_record_value_call(&parsed.program, advanced),
+            "a record of scalar leaves carries no logical sequence overlay, so `owned_state_pipeline.let#2` stays an exec row"
+        );
+        assert!(!is_direct_body_state_call(&parsed.program, advanced));
+
+        let tail = parsed
+            .program
+            .items
+            .iter()
+            .find_map(|item| match item {
+                Item::Fn(function) if function.name == "owned_state_pipeline" => {
+                    function.body.as_ref().and_then(|body| body.tail.as_deref())
+                }
+                _ => None,
+            })
+            .expect("owned_state_pipeline tail");
+        assert!(
+            !is_direct_body_state_call(&parsed.program, tail),
+            "`owned_state_pipeline.tail` is a pure value call and keeps its exec row"
+        );
+    }
+
+    /// The `position`th top-level `let` initializer of `function` (1-based, in
+    /// source order — the numbering the `<fn>.let#<n>` TV label uses).
+    fn let_initializer<'a>(
+        program: &'a thermite_syntax::Program,
+        function: &str,
+        position: usize,
+    ) -> &'a Expr {
+        program
+            .items
+            .iter()
+            .find_map(|item| match item {
+                Item::Fn(candidate) if candidate.name == function => candidate.body.as_ref(),
+                _ => None,
+            })
+            .and_then(|body| {
+                body.stmts
+                    .iter()
+                    .filter_map(|statement| match statement {
+                        Stmt::Let { init, .. } => Some(init),
+                        _ => None,
+                    })
+                    .nth(position - 1)
+            })
+            .expect("the requested let initializer")
     }
 
     /// A bounded typed local whose initializer is a conditional records its

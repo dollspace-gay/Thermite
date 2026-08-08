@@ -102,7 +102,7 @@ governs:
   - conformance/verified-composition/frozen_primitive.th
   - conformance/verified-composition/frozen_primitive_shell.rs
   - conformance/verified-composition/frozen_primitive_registry.json
-audited-content-sha256: 585b1ad3ee8da018deb61d624d01cf2d685f9ac5eb53956b713c3c7f2ecd57f5 (re-pinned 2026-08-07 after the collection mutation pins tracked the fixed-array canonical zero)
+audited-content-sha256: 437853436645c3cbeb6e67d16a21b7701cc17fb371204e34191882972a4062a1 (re-pinned 2026-08-07 after the direct record-value-call handoff to body TV narrowed to records reaching a logical sequence leaf; existing rows remain regression-covered)
 extends:
   - .design/build/kernel-target.md
   - .design/build/l3-rich-composition.md

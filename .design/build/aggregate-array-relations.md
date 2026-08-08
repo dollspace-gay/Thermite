@@ -30,7 +30,7 @@ governs:
   - forge/tests/exec_tv_conformance.rs
   - forge/tests/verified_build.rs
   - conformance/verified-build/aggregate_array_relations.th
-audited-content-sha256: aa42ab6ddaf2b8717776f71c919ccfd925a40649304bb20ba71eaa2ac411347f (re-pinned 2026-08-07 after the exec-position local equation carried its declared bounded type on every branch result; existing rows remain regression-covered)
+audited-content-sha256: 6851435d3f961b22740ce5a230b7e4625d100ab118d545880cd96fd26cfb8cc5 (re-pinned 2026-08-07 after the direct record-value-call handoff to body TV narrowed to records reaching a logical sequence leaf; existing rows remain regression-covered)
 extends:
   - .design/build/kernel-primitives.md
   - .design/verified/exec-tv.md

@@ -22,7 +22,7 @@ governs:
   - conformance/verified-build/projected_record_call_effect.th
   - conformance/verified-build/projected_indexed_call_effect.th
   - conformance/verified-build/record_after_indexed_call_effect.th
-audited-content-sha256: 5519e6b0c64e64cb449aed42c6e3631bc5f02c45c68cccdeb4a5c6cd0859cceb (re-pinned 2026-08-07 after the direct record-value-call handoff to body TV narrowed to records reaching a logical sequence leaf; existing rows remain regression-covered)
+audited-content-sha256: 0f2ad78371e379cf62c043ba6dbade034e960b4f6cc2453218de9678fda14cec (re-pinned 2026-08-08 after the closed result-enum public ABI landed at the L3 export admission site)
 extends:
   - .design/build/nested-aggregate-lifecycle.md
   - .design/build/owned-aggregate-lifecycle.md

@@ -30,7 +30,7 @@ governs:
   - forge/tests/exec_tv_conformance.rs
   - forge/tests/verified_build.rs
   - conformance/verified-build/aggregate_array_relations.th
-audited-content-sha256: 6851435d3f961b22740ce5a230b7e4625d100ab118d545880cd96fd26cfb8cc5 (re-pinned 2026-08-07 after the direct record-value-call handoff to body TV narrowed to records reaching a logical sequence leaf; existing rows remain regression-covered)
+audited-content-sha256: 7151e3b3e473d284524303281aa7373d9c3bbfe744ff0914d140ef47096404e2 (re-pinned 2026-08-08 after the closed result-enum public ABI landed at the L3 export admission site)
 extends:
   - .design/build/kernel-primitives.md
   - .design/verified/exec-tv.md

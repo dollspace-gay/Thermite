@@ -102,7 +102,7 @@ governs:
   - conformance/verified-composition/frozen_primitive.th
   - conformance/verified-composition/frozen_primitive_shell.rs
   - conformance/verified-composition/frozen_primitive_registry.json
-audited-content-sha256: 437853436645c3cbeb6e67d16a21b7701cc17fb371204e34191882972a4062a1 (re-pinned 2026-08-07 after the direct record-value-call handoff to body TV narrowed to records reaching a logical sequence leaf; existing rows remain regression-covered)
+audited-content-sha256: 1abf891d1c4e0099e76e18324b03b5890c7bd0481e43336e688aae24a76032c2 (re-pinned 2026-08-08 after the closed result-enum public ABI landed at the L3 export admission site)
 extends:
   - .design/build/kernel-target.md
   - .design/build/l3-rich-composition.md
@@ -416,12 +416,12 @@ residual work are in `.design/build/fixed-collections.md`.
 named requirements gate their `--export` publication, and neither is the
 quantified logical-index relation family.
 
-`fn supported_public_return_type in forge/src/verified_build.rs` refuses first,
-because the public Rust ABI has no enum arm. That refusal carries the design
-decision recorded in REQ-L3BUILD-15 in `.design/build/l3-verified-artifact.md`,
-which now specifies the admissible closed non-recursive shape, its layout
-preimage, and the shapes that stay refused. Adding the arm reaches the second
-gate.
+The first gate is closed. REQ-L3BUILD-15 in
+`.design/build/l3-verified-artifact.md` admits a closed non-recursive result
+enum at the direct return root, and `fn result_enum_admission in
+forge/src/verified_build.rs` carries that rule. `FixedRingPush64`'s payloads are
+the finite plain record `FixedRing64` and a `u64`, so the enum is admitted and
+the build reaches the second gate.
 
 `fn executable_precondition in forge/src/verified_build.rs` refuses
 `Expr::Call`, and `fixed_ring_push` states `req fixed_ring_wf_spec(&ring)`, as
@@ -431,15 +431,26 @@ lower_l3_export_wrapper in thermite-lower/src/lower.rs` emits the guard through
 translation, so widening the predicate on its own yields `error: cannot call
 function fixed_ring_wf_spec with mode spec`. REQ-L3BUILD-16 governs the whole
 job, including the independent `export_guard` derivation in `fn
-exec_tv_export_guard in forge/src/exec_tv.rs`.
+exec_tv_export_guard in forge/src/exec_tv.rs`. `forge build
+stdlib/kernel-primitives/collections.thpkg.json --level l3 --export
+fixed_ring_push` therefore stops at "has a non-executable precondition and
+cannot receive a total wrapper".
+
+An opaque-rooted observer meets a third condition that neither requirement
+states. `fixed_slab_get`, `fixed_slab_find_free`, `fixed_open_map_lookup`, and
+their siblings state postconditions that read the fields of an `#[opaque]`
+state record, and Verus disallows a field expression on an opaque datatype in
+the `ensures` clause of a public function. Those observers clear the ABI gate
+and then fail the whole-crate Verus gate; restating their postconditions through
+publicly visible specification functions is the work that makes them
+exportable.
 
 REQ-AGGREL-2 through REQ-AGGREL-5 govern `.logical_eq`,
 `.logical_same_except`, and `.logical_same_except_two`. Those relations appear
 in no shipped collection contract, so they are absent from the export closure of
 `fixed_ring_push` and do not gate it. The doc comment on
-`forge/tests/divergence_aggregate_collection_state.rs` frames the aggregate
-receipt pin as a missing ADT arm and an implementation gap; this subsection is
-the authority for correcting that framing to the two requirements above.
+`forge/tests/divergence_aggregate_collection_state.rs` cites this subsection and
+the two requirements above.
 
 ### Modules, packages, and receipts
 

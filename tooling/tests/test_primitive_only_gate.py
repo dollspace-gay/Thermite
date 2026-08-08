@@ -17,6 +17,9 @@ PINNED_FIXTURE_HASHES = {
     "conformance/verified-build/kernel_consumer.rs": (
         "33c80731f3c68c6784e9c50aa324ddd885251f363b75c43ffd34a250fc02b511"
     ),
+    "conformance/verified-build/closed_result_enum_consumer.rs": (
+        "bf1459e9e86312e714cee2c400a3ca741daf1588729de55ab40f676f517175bd"
+    ),
     "conformance/verified-composition/kernel_bytes_freestanding.rs": (
         "0dc072e81e8bed5094ac1b6fd11c1a8ffd42e1e888b0d5533e1dcf3e270e6978"
     ),

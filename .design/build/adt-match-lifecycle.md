@@ -16,7 +16,7 @@ governs:
   - forge/src/verified_build.rs
   - forge/tests/verified_composition.rs
   - conformance/verified-composition/probe.th
-audited-content-sha256: 9a89f3213cb0814e9c21a02d959064d0c9f195521a290657fb584d837c2dfcc6 (re-pinned 2026-08-07 after the direct record-value-call handoff to body TV narrowed to records reaching a logical sequence leaf; existing rows remain regression-covered)
+audited-content-sha256: f9ff6875374f59bdc3fa6fc80931cf5108088c2a1fcb23adce6e0941af650c80 (re-pinned 2026-08-08 after the closed result-enum public ABI landed at the L3 export admission site)
 extends:
   - .design/build/owned-aggregate-lifecycle.md
   - .design/build/nested-aggregate-lifecycle.md

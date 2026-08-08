@@ -12322,10 +12322,9 @@ note = "kernel ambient-mismatch build and receipt-declared no-std consumer"
 id = "REQ-L3BUILD-15"
 title = "Closed result-enum public exports"
 owner = ".design/build/l3-verified-artifact.md"
-status = "not_started"
+status = "shipped"
 scope = "forge"
 summary = "A `--export` return type may be a closed, non-recursive enum at the direct return root whose every variant payload is an already-admitted finite plain value, with a source-order variant layout preimage and a fail-closed boundary for nested, parameter-position, recursive, sealed-payload, opaque-payload, reference-bearing, and heap-backed enums."
-remaining_scope = "Open blocker: `.design/build/l3-verified-artifact.md` \"Blocker: closed result-enum public ABI admission\". The public ABI has no enum arm at HEAD: `fn supported_public_return_type` and `fn abi_layout_type` in forge/src/verified_build.rs both refuse, and `fn plan_exports` reports enum returns as outside the verified public Rust ABI. Add both arms under the admission rule and layout preimage specified in the owner document, update the exports-stage diagnostic, and land the AC-19 through AC-21 fixtures including three-build reproducibility for an enum-bearing plain `--export` library. A reverted probe established that the shape builds to a published strict L3 kernel receipt with faithful TV rows and zero errors; the arms are absent at HEAD."
 aliases = [".design/build/l3-verified-artifact.md REQ-L3BUILD-15 (closed result-enum exports)"]
 contributors = [".design/build/l3-verified-artifact.md", ".design/build/l3-rich-composition.md", ".design/build/kernel-primitives.md"]
 generated_to = ["status", "forge-l3-verified-build-status"]
@@ -12333,12 +12332,37 @@ generated_to = ["status", "forge-l3-verified-build-status"]
 [[requirement.evidence]]
 kind = "file"
 target = ".design/build/l3-verified-artifact.md"
-note = "admissible shape, layout rule, fail-closed boundary, and blocker scope"
+note = "admissible shape, layout rule, fail-closed boundary, and shipped record"
 
 [[requirement.evidence]]
 kind = "symbol"
-target = "supported_public_return_type"
-note = "the refusal site that carries this decision at HEAD"
+target = "result_enum_admission"
+note = "the direct-return-root admission decision"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "named_abi_layout"
+note = "the source-order variant layout preimage under the shared recursion guard"
+
+[[requirement.evidence]]
+kind = "file"
+target = "conformance/verified-build/closed_result_enum.th"
+note = "the AC-19 acceptance fixture: record and scalar payloads plus a unit variant"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/verified_build.rs::closed_result_enum_export_is_a_strict_l3_kernel_receipt_replayed_and_matched"
+note = "strict kernel receipt, three-build reproducibility, replay, freestanding link, and execution"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/verified_build.rs::closed_result_enum_boundary_fails_closed_and_publishes_nothing"
+note = "AC-21 fail-closed matrix and the AC-22 separately observable guard refusal"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/src/verified_build.rs::public_abi_enum_fingerprint_binds_variant_order_names_and_payloads"
+note = "AC-20 fingerprint sensitivity"
 
 [[requirement]]
 id = "REQ-L3BUILD-16"

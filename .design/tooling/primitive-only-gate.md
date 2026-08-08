@@ -6,7 +6,7 @@ status: shipped
 governs: tooling/primitive-only-gate.py,
          tooling/tests/test_primitive_only_gate.py, the `make primitive-only`
          target, and the primitive-only CI step
-audited-content-sha256: 55b373a541513580b91e5abe1676b133862c4a0c457f3d867bdc29838f7db445
+audited-content-sha256: a37807854a3e978f28e9c837de1b38887cc2210374126a950240e64763c7056c (re-pinned 2026-08-08 after the closed result-enum public ABI landed at the L3 export admission site)
 goal-refs:
   - kernel-primitives goal item 6 (permanent no concrete kernel/firmware/image gate)
   - user directive (primitives only; no bundled kernel)

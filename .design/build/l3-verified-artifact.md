@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: 53896d99d3f8629d72c8528f2c1cb51b503450021e6f277ab73c4757d2faadf5 (re-pinned 2026-08-07 after the quantified declared-index relation family landed the `#[logical]` attribute, its admission and relation gate, and the per-view `forall` emission)
+audited-content-sha256: 066f9070f1a30126f189e55537053987ef3df450074d7dd901329e10a6c83743 (re-pinned 2026-08-08 after the closed result-enum public ABI landed at the L3 export admission site)
 decision: Option A — compile the canonical Verus executable body that was verified
 issue: github:dollspace-gay/Thermite#101, github:dollspace-gay/Thermite#103, github:dollspace-gay/Thermite#104, github:dollspace-gay/Thermite#108, github:dollspace-gay/Thermite#111
 governs:
@@ -424,10 +424,10 @@ shared/exclusive borrow. An opaque direct root may be returned, observed, or
 mutated through generated public functions while its fields remain crate-
 private; opaque records still fail closed when nested inside ambient arrays or
 derived structural relations. Sealed, recursive, reference-bearing, and
-heap-backed records fail closed. A returned `enum` is refused today by
-`fn supported_public_return_type in forge/src/verified_build.rs`; the admitted
-extension, its layout rule, and its fail-closed boundary are specified under
-"Closed result enums at the public boundary" below and governed by
+heap-backed records fail closed. A returned `enum` is admitted at the direct
+return root by `fn result_enum_admission in forge/src/verified_build.rs`; the
+admission rule, its layout rule, and its fail-closed boundary are specified
+under "Closed result enums at the public boundary" below and governed by
 REQ-L3BUILD-15. Borrowed returns remain rejected because the
 public lifetime relation is not yet represented in the receipt. Each parameter records `by_value`,
 `shared_borrow`, or `exclusive_borrow`; those ownership modes participate in
@@ -438,13 +438,11 @@ opaque/sealed markers.
 
 Each fallible transition and observer in `stdlib/kernel-primitives` returns a
 closed result enum: `FixedRingPush64`, `FixedRingPop64`, `FixedVecPush64`,
-`FixedSlabAllocate64`, `FixedOpenMapLookup64`, and the rest. The subset above
-refuses all of them at `fn supported_public_return_type in
-forge/src/verified_build.rs`. A consumer therefore reaches such a transition
-through a Thermite function that matches the result and returns a finite plain
-value; `fn fixed_slab_allocate_get_probe in
+`FixedSlabAllocate64`, `FixedOpenMapLookup64`, and the rest. A consumer may also
+reach such a transition through a Thermite function that matches the result and
+returns a finite plain value; `fn fixed_slab_allocate_get_probe in
 stdlib/kernel-primitives/collections/slab.th` has that shape and builds,
-replays, and executes as a strict freestanding L3 export today.
+replays, and executes as a strict freestanding L3 export.
 
 The public boundary already carries one closed result enum. REQ-L3BUILD-7's
 total wrapper returns `Result<ReturnType, ContractError>`;
@@ -488,6 +486,20 @@ refused by REQ-L3BUILD-16: `fixed_ring_push`, `fixed_ring_pop`,
 Rows whose payloads name an opaque record stay refused by rule 3;
 `fixed_slab_allocate`, `fixed_slab_release`, `fixed_freelist_push`,
 `fixed_open_map_insert`, and the intrusive family are in that class.
+
+Shape admission is necessary and not sufficient for the five observers above.
+Each of them sits on an `#[opaque]` state record and states an `ens` clause that
+reads that record's fields, and Verus refuses a field expression on an opaque
+datatype inside the postcondition of a public function: "this field expression
+is disallowed because of datatype opaqueness … because this is a 'ensures'
+clause of public function, this field expression must be well-formed everywhere".
+`--export fixed_slab_get` therefore clears the ABI gate under REQ-L3BUILD-15 and
+then fails the whole-crate Verus gate. This is the representation-barrier
+consequence of the opaque direct root, not a REQ-L3BUILD-15 or REQ-L3BUILD-16
+refusal: an opaque observer becomes publicly exportable when its postcondition
+is stated through publicly visible specification functions rather than field
+reads. `conformance/verified-build/closed_result_enum.th` carries the admitted
+shape on a non-opaque state record and is the acceptance fixture.
 
 #### Layout rule
 
@@ -537,13 +549,17 @@ uses, so the recursion diagnostic stays one mechanism.
   reference-bearing returns stay outside the receipt's lifetime relation, and
   heap-backed values stay outside the allocation-free kernel profile.
 
-Measured evidence for dischargeability: a reverted probe added the
-corresponding arms to `fn supported_public_return_type` and
-`fn abi_layout_type`, and a closed two-variant result enum whose payloads are
-one finite plain record plus a `u64` then built to a published strict L3
-`--target kernel` receipt with every contract and body translation-validation
-row faithful and `errors: 0`. The probe was reverted and the arms are absent at
-HEAD, so REQ-L3BUILD-15 carries the registry status `not_started`.
+Shipped evidence: `fn result_enum_admission in forge/src/verified_build.rs`
+classifies the return root, `fn named_abi_layout in forge/src/verified_build.rs`
+emits the preimage above under the `visiting` guard `fn abi_layout_type` owns,
+and `fn plan_exports in forge/src/verified_build.rs` consumes both. The
+three-variant result enum in `conformance/verified-build/closed_result_enum.th`,
+whose payloads are one finite plain record plus a `usize` and a `u64` alongside
+a unit variant, builds to a published strict L3 `--target kernel` receipt with
+every translation-validation row faithful and `errors: 0`, reproduces its
+binding and rlib digests across three builds, replays, links into a freestanding
+`no_std` consumer that matches every variant, and is executed through the
+published rlib.
 
 ### Preconditions at an unverified caller boundary
 
@@ -946,12 +962,17 @@ must not print a successful artifact path before the rename completes.
 - **AC-18 (codegen closure tampering).** Mutating the recorded codegen
   selection or any compiler, sysroot, component-manifest, driver, LLVM, target
   or target-library identity causes structural validation or replay to fail.
-- **AC-19 (closed enum export builds and replays).** `fixed_slab_get`, whose
-  `req` is `true` and whose result enum has one scalar payload variant and one
-  unit variant, builds from `stdlib/kernel-primitives/slab.thpkg.json` under
-  `--target kernel`, publishes a strict receipt, replays to the same artifact
-  digest across three builds, and is called from a separate `no_std` consumer
-  that matches both variants.
+- **AC-19 (closed enum export builds and replays).** `ring_offer` in
+  `conformance/verified-build/closed_result_enum.th`, whose `req` is `true` and
+  whose result enum has two record-payload variants and one unit variant, builds
+  under `--target kernel`, publishes a strict receipt with every
+  translation-validation row faithful and `errors: 0`, reproduces its binding and
+  artifact digests across three builds, replays to the same artifact digest, and
+  is called from a separate `no_std` consumer that matches every variant. This
+  criterion previously named `fixed_slab_get`; that observer clears the ABI gate
+  and then fails whole-crate Verus on the opaque-postcondition rule recorded
+  under "Closed result enums at the public boundary", so the acceptance fixture
+  carries the same admitted shape on a non-opaque state record.
 - **AC-20 (enum fingerprint sensitivity).** Renaming a variant, reordering two
   variants, changing a payload field type or order, and changing a resolved
   payload capacity each change the export `abi_fingerprint` independently of
@@ -1047,32 +1068,40 @@ present. No intermediate increment emitted an artifact labeled L3.
   generated `Result<T, ThermiteContractError>`, so the shape is not new; the
   admission rule keeps the payload alphabet and the layout preimage closed.
 - **Does admitting that shape export `fixed_ring_push`?** No. Its `req` calls
-  `fixed_ring_wf_spec`, which REQ-L3BUILD-16 governs. The ABI amendment and
+  `fixed_ring_wf_spec`, which REQ-L3BUILD-16 governs. The ABI admission and
   the guard are separate requirements with separate blockers.
+- **Does admitting that shape export an opaque-rooted observer?** Not on its
+  own. `fixed_slab_get` and its siblings state postconditions that read the
+  fields of an `#[opaque]` record, and Verus disallows such a field expression
+  in the `ensures` clause of a public function. Restating those postconditions
+  through publicly visible specification functions is the work that makes them
+  exportable; it belongs to the owning primitive, not to REQ-L3BUILD-15.
 - **What does Forge publish on a failed build?** Nothing at the requested
   destination.
 
-## Blocker: closed result-enum public ABI admission
+## Shipped: closed result-enum public ABI admission
 
-Filed by the orchestrator; referenced by REQ-L3BUILD-15. Scope:
+REQ-L3BUILD-15's admission rule is implemented at the single `exports`
+admission site:
 
-- add the enum arm to `fn supported_public_return_type in
-  forge/src/verified_build.rs`, restricted to the direct return root, and keep
-  `fn supported_public_param_type` refusing enums;
-- add the enum arm to `fn abi_layout_type in forge/src/verified_build.rs` using
-  the source-order variant preimage above, reusing the existing `visiting`
-  recursion guard;
-- update the `exports`-stage diagnostic in `fn plan_exports`, which currently
-  lists `enum` among the rejected shapes, so it names the admitted subset and
-  the reason a given enum was refused;
-- confirm that the closure planner already binds every reachable enum
-  declaration and its `item_sha256`, and extend it if a public enum reaches the
-  plan by a path the current walk misses;
-- add the AC-19 through AC-21 fixtures, including the three-build reproducibility
-  check that exercises the `__thermite_deterministic_enum!` frame in a plain
-  `--export` library;
-- pin the measured `fixed_ring_empty` aggregate-rooted kernel receipt as a
-  conformance fixture, since no shipped test covers it today.
+- `fn result_enum_admission in forge/src/verified_build.rs` classifies the
+  direct return root, returning `NotAnEnum`, `Admitted`, or a `Refused` cause
+  that names the variant and payload;
+- `fn reachable_enum_name in forge/src/verified_build.rs` gives parameter
+  positions and nested return positions their own diagnostic, and
+  `fn supported_public_param_type` continues to refuse every enum;
+- `fn named_abi_layout in forge/src/verified_build.rs` emits the source-order
+  variant preimage under the `visiting` guard `fn abi_layout_type` owns, so the
+  recursion diagnostic stays one mechanism for records and enums;
+- `fn plan_exports in forge/src/verified_build.rs` consumes all three and its
+  general refusal now names the admitted direct-return-root subset;
+- the closure planner already binds every reachable `Item::Enum` declaration and
+  its `item_sha256`; the fixture's `RingOffer` appears in the plan closure with
+  no change to the walk.
+
+Remaining in this area, unblocked by REQ-L3BUILD-15: pin the measured
+`fixed_ring_empty` aggregate-rooted kernel receipt as a conformance fixture,
+since no shipped test covers it today.
 
 ## Blocker: executable guard for a specification-function precondition
 
@@ -1107,7 +1136,7 @@ Source: `.design/reqs/registry.toml`
 | REQ-L3BUILD-12 | shipped | `.design/build/l3-verified-artifact.md` | Post-freeze mutation and tampering rejection |  |
 | REQ-L3BUILD-13 | shipped | `.design/build/l3-verified-artifact.md` | Strict separation from the L1 build |  |
 | REQ-L3BUILD-14 | shipped | `.design/build/l3-verified-artifact.md` | Authoritative Verus codegen-toolchain binding |  |
-| REQ-L3BUILD-15 | not_started | `.design/build/l3-verified-artifact.md` | Closed result-enum public exports | Open blocker: `.design/build/l3-verified-artifact.md` "Blocker: closed result-enum public ABI admission". The public ABI has no enum arm at HEAD: `fn supported_public_return_type` and `fn abi_layout_type` in forge/src/verified_build.rs both refuse, and `fn plan_exports` reports enum returns as outside the verified public Rust ABI. Add both arms under the admission rule and layout preimage specified in the owner document, update the exports-stage diagnostic, and land the AC-19 through AC-21 fixtures including three-build reproducibility for an enum-bearing plain `--export` library. A reverted probe established that the shape builds to a published strict L3 kernel receipt with faithful TV rows and zero errors; the arms are absent at HEAD. |
+| REQ-L3BUILD-15 | shipped | `.design/build/l3-verified-artifact.md` | Closed result-enum public exports |  |
 | REQ-L3BUILD-16 | not_started | `.design/build/l3-verified-artifact.md` | Specification-function export guards | Open blocker: `.design/build/l3-verified-artifact.md` "Blocker: executable guard for a specification-function precondition". `fn executable_precondition` in forge/src/verified_build.rs refuses `Expr::Call`, so every collection transition with a `req <name>_wf_spec(...)` precondition is rejected at the exports stage. `fn lower_l3_export_wrapper` in thermite-lower/src/lower.rs lowers the guard with `lower_expr(..., Ctx::exec(), ...)`, and a spec fn has no executable translation, so widening the predicate alone yields `error: cannot call function fixed_ring_wf_spec with mode spec`. Define the admitted derivation, emit it from the wrapper, reproduce it in `fn exec_tv_export_guard` in forge/src/exec_tv.rs, and land AC-22 and AC-23. This requirement is independent of REQ-L3BUILD-15 and outlives it. |
 | REQ-L3BUILD-2 | shipped | `.design/build/l3-verified-artifact.md` | Frozen canonical artifact plan |  |
 | REQ-L3BUILD-3 | shipped | `.design/build/l3-verified-artifact.md` | Strict end-to-end reachable closure |  |

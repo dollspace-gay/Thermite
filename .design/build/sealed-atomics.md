@@ -16,7 +16,7 @@ governs:
   - thermite-spec/tests/atomic_ordering_validate.rs
   - forge/src/verified_build/primitive_registry.rs
   - forge/tests/verified_build.rs
-audited-content-sha256: 3ac62bee98f3cd95b030a473ce84764be53a6495e9aa4d9fe2a4694a447c9d8f (re-pinned 2026-08-07 after the quantified declared-index relation family landed the `#[logical]` attribute, its admission and relation gate, and the per-view `forall` emission)
+audited-content-sha256: 9cf13fa106a9c2523f6c890ec41717799cfdfcecd174da821af76477869261e1 (re-pinned 2026-08-08 after the closed result-enum public ABI landed at the L3 export admission site)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/frozen-primitive-registry.md

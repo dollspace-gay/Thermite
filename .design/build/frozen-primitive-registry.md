@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: partial
-audited-content-sha256: 62a6be218d661252dd910e89d1e6befdc3ad74f26ca798ec85b087192bee8cd9 (re-pinned 2026-08-07 after the quantified declared-index relation family landed the `#[logical]` attribute, its admission and relation gate, and the per-view `forall` emission)
+audited-content-sha256: b49260f17d4ef0af03b0951af404e5a1e52b5b4dfacce6ece1bc3453ec1962fd (re-pinned 2026-08-08 after the closed result-enum public ABI landed at the L3 export admission site)
 decision: consumer-owned registry entries close reachable Thermite boundaries through non-exempt same-crate or separately compiled/imported direct-Verus calls
 governs:
   - thermite-lower/src/lower.rs

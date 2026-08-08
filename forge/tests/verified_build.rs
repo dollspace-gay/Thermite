@@ -3162,3 +3162,340 @@ fn every_non_l3_certificate_class_blocks_publication() {
         assert!(stdout.contains(expected), "{fault}: {stdout}");
     }
 }
+
+/// AC-19 of `.design/build/l3-verified-artifact.md`: a closed result enum at the
+/// direct return root builds under `--target kernel`, publishes a strict
+/// receipt, reproduces across three builds, replays to the same artifact digest,
+/// and is matched variant-by-variant from a separate consumer.
+///
+/// The export is `ring_offer` in `conformance/verified-build/closed_result_enum.th`.
+/// AC-19 names `fixed_slab_get`; no shipped `stdlib/kernel-primitives` function
+/// clears every gate today. The collection transitions state a `spec fn`
+/// precondition, which REQ-L3BUILD-16 governs, and the observers that state a
+/// plain `req` sit on `#[opaque]` records whose `ens` clauses read the record's
+/// fields, which Verus refuses in a public postcondition ("disallowed: field
+/// expression for an opaque datatype"). The corpus fixture carries the same
+/// shape the design measured: a two-payload result enum over one finite plain
+/// record plus a `u64`, and a unit variant.
+#[test]
+fn closed_result_enum_export_is_a_strict_l3_kernel_receipt_replayed_and_matched() {
+    let temp = TempDir::new("closed-result-enum");
+    let bundles: Vec<PathBuf> = (0..3)
+        .map(|index| temp.0.join(format!("closed-result-enum-{index}.verified")))
+        .collect();
+    for bundle in &bundles {
+        assert_success(&forge(&[
+            "build",
+            "conformance/verified-build/closed_result_enum.th",
+            "--level",
+            "l3",
+            "--export",
+            "ring_empty",
+            "--export",
+            "ring_offer",
+            "--crate-name",
+            "closed_result_enum",
+            "--target",
+            "kernel",
+            "--out",
+            bundle.to_string_lossy().as_ref(),
+            "--json",
+        ]));
+    }
+    let bundle = &bundles[0];
+
+    // The enum crosses the boundary through the deterministic item frame that
+    // REQ-L3COMPOSE-11 installs for every L3 library, so the rlib reproduces.
+    let source = fs::read_to_string(bundle.join("evidence/source.verus.rs")).unwrap();
+    assert!(
+        source.starts_with("#![no_std]\n#![crate_type = \"rlib\"]"),
+        "{source}"
+    );
+    assert!(
+        source.contains("__thermite_deterministic_enum! {\npub enum RingOffer {"),
+        "{source}"
+    );
+    let receipts: Vec<serde_json::Value> = bundles
+        .iter()
+        .map(|bundle| {
+            serde_json::from_slice(&fs::read(bundle.join("receipt.json")).unwrap()).unwrap()
+        })
+        .collect();
+    for repeat in &receipts[1..] {
+        assert_eq!(
+            receipts[0]["binding_sha256"], repeat["binding_sha256"],
+            "an enum-bearing plain --export library must reproduce"
+        );
+        assert_eq!(
+            receipts[0]["binding"]["artifact"], repeat["binding"]["artifact"],
+            "an enum-bearing plain --export library must reproduce its rlib"
+        );
+    }
+
+    // The two exports are the ones the source declares, with the enum at the
+    // direct return root and no generated wrapper (both state `req true`).
+    let exports = receipts[0]["binding"]["exports"].as_array().unwrap();
+    assert_eq!(exports.len(), 2);
+    assert_eq!(exports[0]["thermite_name"], "ring_empty");
+    assert_eq!(exports[0]["return_type"], "RingState");
+    assert_eq!(exports[1]["thermite_name"], "ring_offer");
+    assert_eq!(exports[1]["public_name"], "ring_offer");
+    assert_eq!(exports[1]["wrapped"], false);
+    assert_eq!(exports[1]["return_type"], "RingOffer");
+    assert_eq!(
+        exports[1]["signature"],
+        "fn ring_offer(ring:RingState,stamp:u64)->RingOffer"
+    );
+    assert_ne!(exports[0]["abi_sha256"], exports[1]["abi_sha256"]);
+
+    let verus: serde_json::Value =
+        serde_json::from_slice(&fs::read(bundle.join("evidence/verus-result.json")).unwrap())
+            .unwrap();
+    assert_eq!(verus["errors"], 0);
+    assert_eq!(verus["success"], true);
+    assert_eq!(verus["source_sha256_before"], verus["source_sha256_after"]);
+
+    let tv: serde_json::Value = serde_json::from_slice(
+        &fs::read(bundle.join("evidence/translation-validation.json")).unwrap(),
+    )
+    .unwrap();
+    let rows = tv["rows"].as_array().unwrap();
+    assert!(!rows.is_empty(), "the enum export needs TV rows: {tv}");
+    assert!(
+        rows.iter().all(|row| row["verdict"] == "faithful"),
+        "every closed result-enum row must be faithful: {tv}"
+    );
+
+    assert_success(&forge(&[
+        "verify-build",
+        bundle.to_string_lossy().as_ref(),
+        "--replay",
+        "--json",
+    ]));
+
+    // A freestanding consumer matches every declared variant and finally links.
+    let freestanding = temp.0.join("closed-result-enum-kernel");
+    let link = codegen_rustc(bundle)
+        .current_dir(root())
+        .args([
+            "--edition=2021",
+            "conformance/verified-build/closed_result_enum_consumer.rs",
+        ])
+        .arg("--extern")
+        .arg(format!(
+            "closed_result_enum={}",
+            bundle.join("artifact/libclosed_result_enum.rlib").display()
+        ))
+        .arg("-L")
+        .arg(format!(
+            "dependency={}",
+            bundle.join("artifact/deps").display()
+        ))
+        .args(["-C", "panic=abort", "-C", "link-arg=-nostartfiles"])
+        .arg("-o")
+        .arg(&freestanding)
+        .output()
+        .unwrap();
+    assert_success(&link);
+    assert!(freestanding.is_file());
+
+    // The same rlib, executed. Every expectation below is the contract stated in
+    // `conformance/verified-build/closed_result_enum.th`, not Forge output.
+    let runner_source = temp.0.join("closed-result-enum-runner.rs");
+    fs::write(
+        &runner_source,
+        r#"
+use closed_result_enum::{ring_empty, ring_offer, RingOffer, RingState, RING_SLOTS};
+
+fn main() {
+    let empty = ring_empty();
+    assert_eq!(empty.head, 0);
+    assert_eq!(empty.len, 0);
+    assert_eq!(empty.slots[RING_SLOTS - 1], 0);
+    match ring_offer(empty, 41) {
+        RingOffer::Accepted { ring, slot } => {
+            assert_eq!(slot, 0);
+            assert_eq!(ring.len, 1);
+            assert_eq!(ring.slots[0], 41);
+        }
+        RingOffer::Rejected { .. } | RingOffer::Closed => panic!("an empty ring accepts"),
+    }
+    let full = RingState { slots: [9; RING_SLOTS], head: 0, len: RING_SLOTS };
+    match ring_offer(full, 7) {
+        RingOffer::Rejected { ring, stamp } => {
+            assert_eq!(stamp, 7);
+            assert_eq!(ring.len, RING_SLOTS);
+            assert_eq!(ring.slots[0], 9);
+        }
+        RingOffer::Accepted { .. } | RingOffer::Closed => panic!("a full ring rejects"),
+    }
+    let past_end = RingState { slots: [0; RING_SLOTS], head: RING_SLOTS, len: 0 };
+    match ring_offer(past_end, 7) {
+        RingOffer::Closed => {}
+        RingOffer::Accepted { .. } | RingOffer::Rejected { .. } => {
+            panic!("a head past the last slot closes")
+        }
+    }
+}
+"#,
+    )
+    .unwrap();
+    let runner = temp.0.join("closed-result-enum-runner");
+    let build_runner = codegen_rustc(bundle)
+        .current_dir(root())
+        .arg("--edition=2021")
+        .arg(&runner_source)
+        .arg("--extern")
+        .arg(format!(
+            "closed_result_enum={}",
+            bundle.join("artifact/libclosed_result_enum.rlib").display()
+        ))
+        .arg("-L")
+        .arg(format!(
+            "dependency={}",
+            bundle.join("artifact/deps").display()
+        ))
+        .args(["-C", "panic=abort"])
+        .arg("-o")
+        .arg(&runner)
+        .output()
+        .unwrap();
+    assert_success(&build_runner);
+    assert_success(&Command::new(&runner).output().unwrap());
+}
+
+/// AC-21 and AC-22 of `.design/build/l3-verified-artifact.md`: every shape
+/// outside the closed result-enum rule rejects at the `exports` stage with a
+/// named diagnostic and publishes nothing, and the specification-function guard
+/// stays a separately observable refusal.
+#[test]
+fn closed_result_enum_boundary_fails_closed_and_publishes_nothing() {
+    let temp = TempDir::new("closed-result-enum-refusals");
+    let sources = temp.0.join("sources");
+    fs::create_dir(&sources).unwrap();
+
+    for (name, source, expected) in [
+        (
+            "parameter_position",
+            "enum Verdict { Yes, No }\n\
+             fn decide(verdict: Verdict) -> bool\nreq true\nens result\nfx pure\n\
+             { match verdict { Verdict::Yes => true, Verdict::No => true } }\n",
+            "parameter `verdict` reaches enum `Verdict`",
+        ),
+        (
+            "array_element",
+            "enum Verdict { Yes, No }\n\
+             fn decide(flag: bool) -> [Verdict; 2]\nreq true\nens true\nfx pure\n\
+             { if flag { [Verdict::Yes, Verdict::Yes] } else { [Verdict::No, Verdict::No] } }\n",
+            "reaching enum `Verdict` below the return root",
+        ),
+        (
+            "tuple_component",
+            "enum Verdict { Yes, No }\n\
+             fn decide(flag: bool) -> (Verdict, u64)\nreq true\nens true\nfx pure\n\
+             { if flag { (Verdict::Yes, 1) } else { (Verdict::No, 0) } }\n",
+            "reaching enum `Verdict` below the return root",
+        ),
+        (
+            "record_field",
+            "enum Verdict { Yes, No }\nstruct Wrap { verdict: Verdict }\n\
+             fn decide(flag: bool) -> Wrap\nreq true\nens true\nfx pure\n\
+             { if flag { Wrap { verdict: Verdict::Yes } } else { Wrap { verdict: Verdict::No } } }\n",
+            "reaching enum `Verdict` below the return root",
+        ),
+        (
+            "variant_payload",
+            "enum Inner { Lo, Hi }\nenum Outer { Wrapped { inner: Inner }, Bare }\n\
+             fn decide(flag: bool) -> Outer\nreq true\nens true\nfx pure\n\
+             { if flag { Outer::Wrapped { inner: Inner::Lo } } else { Outer::Bare } }\n",
+            "payload `inner` has type `Inner`, which is a type reaching enum `Inner`",
+        ),
+        (
+            "sealed_payload",
+            "#[sealed] struct Token { raw: u64 }\n\
+             enum Verdict { Held { token: Token }, Absent }\n\
+             fn decide(token: Token) -> Verdict\nreq true\nens true\nfx pure\n\
+             { Verdict::Held { token: token } }\n",
+            "payload `token` has type `Token`, which is a sealed record",
+        ),
+        (
+            "opaque_payload",
+            "#[opaque] struct State { raw: u64 }\n\
+             enum Verdict { Held { state: State }, Absent }\n\
+             fn decide(state: State) -> Verdict\nreq true\nens true\nfx pure\n\
+             { Verdict::Held { state: state } }\n",
+            "payload `state` has type `State`, which is an opaque record",
+        ),
+        (
+            "recursive_payload",
+            "enum List { Cons { head: u64, tail: Box<List> }, Nil }\n\
+             fn decide(flag: bool) -> List\nreq true\nens true\nfx alloc\n\
+             { if flag { List::Nil } else { List::Nil } }\n",
+            "payload `tail` has type `Box<List>`, which is a type reaching enum `List`",
+        ),
+    ] {
+        let path = sources.join(format!("{name}.th"));
+        fs::write(&path, source).unwrap();
+        let bundle = temp.0.join(format!("{name}.verified"));
+        let output = forge(&[
+            "build",
+            path.to_string_lossy().as_ref(),
+            "--level",
+            "l3",
+            "--export",
+            "decide",
+            "--crate-name",
+            "closed_enum_refusal",
+            "--target",
+            "kernel",
+            "--out",
+            bundle.to_string_lossy().as_ref(),
+        ]);
+        assert_eq!(output.status.code(), Some(1), "{name} did not reject");
+        assert!(!bundle.exists(), "{name} published a bundle");
+        let rendered = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            rendered.contains("rejected at exports") && rendered.contains(expected),
+            "{name}: {rendered}"
+        );
+    }
+
+    // AC-22: `fixed_ring_push` returns the admitted `FixedRingPush64`, so the
+    // only remaining refusal is its `req fixed_ring_wf_spec(&ring)` guard, which
+    // REQ-L3BUILD-16 governs. The two gates are separately observable.
+    let bundle = temp.0.join("guarded-collection.verified");
+    let output = forge(&[
+        "build",
+        "stdlib/kernel-primitives/collections.thpkg.json",
+        "--level",
+        "l3",
+        "--export",
+        "fixed_ring_push",
+        "--target",
+        "kernel",
+        "--out",
+        bundle.to_string_lossy().as_ref(),
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(!bundle.exists());
+    let rendered = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        rendered.contains(
+            "export `fixed_ring_push` has a non-executable precondition \
+             and cannot receive a total wrapper"
+        ),
+        "{rendered}"
+    );
+    assert!(
+        !rendered.contains("verified public Rust ABI"),
+        "the ABI gate no longer refuses an admitted result enum: {rendered}"
+    );
+}

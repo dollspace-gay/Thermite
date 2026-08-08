@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thermite_lower::{L3Export, L3ExportVisibility, L3LibraryTarget};
 use thermite_syntax::{
-    Block, Effect, EffectRow, Expr, ForgeItem, Item, PrimType, Program, Stmt, Type,
+    Block, Effect, EffectRow, Expr, ForgeItem, Item, PrimType, Program, Stmt, Type, VariantShape,
 };
 
 use crate::body_tv::{BodyTvReport, BodyVerdict};
@@ -3066,19 +3066,55 @@ fn plan_exports(
         let Some(function) = function else {
             return Err(format!("unknown executable export `{name}`"));
         };
+        // REQ-L3BUILD-15 rule 2: a closed result enum is admitted at the direct
+        // return root and nowhere else. Naming the offending enum here keeps the
+        // parameter, nested-return, and payload positions separately diagnosable
+        // from the general ABI refusal below.
+        for param in &function.params {
+            if let Some(enumeration) = reachable_enum_name(program, &param.ty) {
+                return Err(format!(
+                    "export `{name}` parameter `{}` reaches enum `{enumeration}`; \
+                     a closed result enum is admitted only as the direct return root",
+                    param.name
+                ));
+            }
+        }
+        let return_admission = result_enum_admission(program, &function.ret, &structural_structs);
+        match &return_admission {
+            ResultEnumAdmission::Refused(cause) => {
+                return Err(format!(
+                    "export `{name}` returns an enum outside the closed result-enum \
+                     public ABI: {cause}"
+                ));
+            }
+            ResultEnumAdmission::NotAnEnum => {
+                if let Some(enumeration) = reachable_enum_name(program, &function.ret) {
+                    return Err(format!(
+                        "export `{name}` returns a type reaching enum `{enumeration}` below \
+                         the return root; a closed result enum is admitted only as the \
+                         direct return root"
+                    ));
+                }
+            }
+            ResultEnumAdmission::Admitted => {}
+        }
+        let return_admitted = matches!(return_admission, ResultEnumAdmission::Admitted)
+            || supported_public_return_type(
+                &function.ret,
+                &structural_structs,
+                &mutable_record_structs,
+            );
         if !function.params.iter().all(|p| {
             supported_public_param_type(&p.ty, &structural_structs, &mutable_record_structs)
-        }) || !supported_public_return_type(
-            &function.ret,
-            &structural_structs,
-            &mutable_record_structs,
-        ) {
+        }) || !return_admitted
+        {
             return Err(format!(
                 "export `{name}` has a type outside the verified public Rust ABI \
                  (finite plain values and shared/exclusive borrows of primitives, \
-                 slices, fixed arrays with finite plain elements, and direct \
-                 finite non-sealed record roots are supported; sealed, recursive, \
-                 enum, reference-bearing, heap-backed, and nested opaque records \
+                 slices, fixed arrays with finite plain elements, direct finite \
+                 non-sealed record roots, and a direct-return-root closed enum whose \
+                 variant payloads are finite plain values are supported; sealed, \
+                 recursive, reference-bearing, heap-backed, and nested opaque records \
                  are rejected)"
             ));
         }
@@ -3203,6 +3239,175 @@ fn supported_public_storage_element(ty: &Type, structural_structs: &BTreeSet<Str
     supported_public_value_type(ty, structural_structs)
 }
 
+/// The closed result-enum decision for one `--export` return type
+/// (`.design/build/l3-verified-artifact.md` REQ-L3BUILD-15, "Admissible
+/// shape").
+enum ResultEnumAdmission {
+    /// The type names no declared `enum`; the record and finite-plain-value
+    /// rules decide it.
+    NotAnEnum,
+    /// The type names a declared `enum` whose every variant payload is an
+    /// already-admitted finite plain value.
+    Admitted,
+    /// The type names a declared `enum` outside the admission rule. The payload
+    /// carries the variant and the stated cause for the `exports` diagnostic.
+    Refused(String),
+}
+
+/// Classify a return-position type against the four-part admission rule.
+///
+/// Rule 1 is the declared-`enum` lookup: Thermite has no open, extensible, or
+/// generic enums, so every variant of a declared name is present in the frozen
+/// plan. Rule 2 belongs to `plan_exports`, which reaches this function only at
+/// the direct return root. Rule 3 is the payload alphabet below. Rule 4 needs no
+/// separate test: `supported_public_value_type` admits a `Type::Named` only when
+/// it is in the finite plain struct closure, and that closure contains no enum
+/// name, so no payload can reach `E` or any other enum.
+fn result_enum_admission(
+    program: &Program,
+    ty: &Type,
+    structural_structs: &BTreeSet<String>,
+) -> ResultEnumAdmission {
+    let Type::Named(name) = ty else {
+        return ResultEnumAdmission::NotAnEnum;
+    };
+    let Some(declaration) = declared_enum(program, name) else {
+        return ResultEnumAdmission::NotAnEnum;
+    };
+    for variant in &declaration.variants {
+        let payloads: Vec<(String, &Type)> = match &variant.shape {
+            VariantShape::Unit => Vec::new(),
+            VariantShape::Tuple(types) => types
+                .iter()
+                .enumerate()
+                .map(|(index, payload)| (index.to_string(), payload))
+                .collect(),
+            VariantShape::Struct(fields) => fields
+                .iter()
+                .map(|field| (field.name.clone(), &field.ty))
+                .collect(),
+        };
+        for (slot, payload) in payloads {
+            if supported_public_value_type(payload, structural_structs) {
+                continue;
+            }
+            return ResultEnumAdmission::Refused(format!(
+                "enum `{name}` variant `{}` payload `{slot}` has type `{}`, which is {}",
+                variant.name,
+                diagnostic_type(payload),
+                public_value_refusal_cause(program, payload, structural_structs)
+            ));
+        }
+    }
+    ResultEnumAdmission::Admitted
+}
+
+/// The stated cause behind refusing one type from the finite plain value
+/// alphabet, in the vocabulary of `.design/build/l3-verified-artifact.md`
+/// "Exports and ABI".
+fn public_value_refusal_cause(
+    program: &Program,
+    ty: &Type,
+    structural_structs: &BTreeSet<String>,
+) -> String {
+    // Rule 4 first, so a payload that cycles back through `Box<E>` reports the
+    // enum it reaches rather than its heap indirection.
+    if let Some(enumeration) = reachable_enum_name(program, ty) {
+        return format!(
+            "a type reaching enum `{enumeration}`; a variant payload may reach no enum"
+        );
+    }
+    match ty {
+        Type::Named(name) => match declared_struct(program, name) {
+            Some(structure) if structure.sealed => "a sealed record".to_string(),
+            Some(structure) if structure.opaque => "an opaque record".to_string(),
+            Some(_) => "a record outside the finite plain value closure".to_string(),
+            None => "an undeclared name".to_string(),
+        },
+        Type::Ref { .. } => "a reference-bearing type".to_string(),
+        Type::Slice(_) => "an unsized slice".to_string(),
+        Type::Box(_) | Type::Vec(_) | Type::String | Type::Map(_, _) => {
+            "a heap-backed type".to_string()
+        }
+        Type::Array { elem, .. } => format!(
+            "an array whose element is {}",
+            public_value_refusal_cause(program, elem, structural_structs)
+        ),
+        Type::Tuple(elements) => elements
+            .iter()
+            .find(|element| !supported_public_value_type(element, structural_structs))
+            .map(|element| {
+                format!(
+                    "a tuple whose component is {}",
+                    public_value_refusal_cause(program, element, structural_structs)
+                )
+            })
+            .unwrap_or_else(|| "a type outside the finite plain value alphabet".to_string()),
+        _ => "a type outside the finite plain value alphabet".to_string(),
+    }
+}
+
+/// The first `enum` name a type reaches in any position, or `None`. This gives
+/// parameter positions and nested return positions the REQ-L3BUILD-15
+/// direct-return-root diagnostic instead of the general ABI refusal. The
+/// `visiting` set bounds a record field cycle the same way `abi_layout_type`
+/// does.
+fn reachable_enum_name(program: &Program, ty: &Type) -> Option<String> {
+    fn walk(program: &Program, ty: &Type, visiting: &mut BTreeSet<String>) -> Option<String> {
+        match ty {
+            Type::Named(name) => {
+                if declared_enum(program, name).is_some() {
+                    return Some(name.clone());
+                }
+                if !visiting.insert(name.clone()) {
+                    return None;
+                }
+                let structure = declared_struct(program, name);
+                let found = structure.and_then(|structure| {
+                    structure
+                        .fields
+                        .iter()
+                        .find_map(|field| walk(program, &field.ty, visiting))
+                });
+                visiting.remove(name);
+                found
+            }
+            Type::Array { elem, .. }
+            | Type::Ref { inner: elem, .. }
+            | Type::Slice(elem)
+            | Type::Box(elem)
+            | Type::Vec(elem)
+            | Type::Option(elem)
+            | Type::Generic { arg: elem, .. } => walk(program, elem, visiting),
+            Type::Tuple(elements) => elements
+                .iter()
+                .find_map(|element| walk(program, element, visiting)),
+            Type::Result(left, right) | Type::Map(left, right) => {
+                walk(program, left, visiting).or_else(|| walk(program, right, visiting))
+            }
+            Type::Prim(_) | Type::Unit | Type::String => None,
+        }
+    }
+    walk(program, ty, &mut BTreeSet::new())
+}
+
+fn declared_enum<'a>(program: &'a Program, name: &str) -> Option<&'a thermite_syntax::EnumItem> {
+    program.items.iter().find_map(|item| match item {
+        Item::Enum(declaration) if declaration.name == name => Some(declaration),
+        _ => None,
+    })
+}
+
+fn declared_struct<'a>(
+    program: &'a Program,
+    name: &str,
+) -> Option<&'a thermite_syntax::StructItem> {
+    program.items.iter().find_map(|item| match item {
+        Item::Struct(structure) if structure.name == name => Some(structure),
+        _ => None,
+    })
+}
+
 fn abi_ownership(ty: &Type) -> &'static str {
     match ty {
         Type::Ref { mutable: true, .. } => "exclusive_borrow",
@@ -3239,6 +3444,49 @@ fn abi_type(ty: &Type) -> String {
         ),
         Type::Named(name) => name.clone(),
         other => format!("unsupported:{other:?}"),
+    }
+}
+
+/// A readable source-level spelling of a type for an `exports`-stage refusal.
+/// `abi_type` renders the admitted alphabet and tags everything else
+/// `unsupported:<debug>`, which keeps a fingerprint preimage fail-loud but reads
+/// poorly in a diagnostic. This function stays out of every hashed preimage.
+fn diagnostic_type(ty: &Type) -> String {
+    match ty {
+        Type::Prim(_) | Type::Unit | Type::Named(_) => abi_type(ty),
+        Type::Array { elem, len } => format!(
+            "[{};{}]",
+            diagnostic_type(elem),
+            match len {
+                thermite_syntax::ArrayLen::Literal { value, .. } => value.to_string(),
+                thermite_syntax::ArrayLen::Const(name) => name.clone(),
+            }
+        ),
+        Type::Ref { mutable, inner } => format!(
+            "{}{}",
+            if *mutable { "&mut " } else { "&" },
+            diagnostic_type(inner)
+        ),
+        Type::Slice(elem) => format!("[{}]", diagnostic_type(elem)),
+        Type::Tuple(elements) => format!(
+            "({})",
+            elements
+                .iter()
+                .map(diagnostic_type)
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
+        Type::Box(inner) => format!("Box<{}>", diagnostic_type(inner)),
+        Type::Vec(inner) => format!("Vec<{}>", diagnostic_type(inner)),
+        Type::Option(inner) => format!("Option<{}>", diagnostic_type(inner)),
+        Type::Generic { name, arg } => format!("{name}<{}>", diagnostic_type(arg)),
+        Type::Result(ok, err) => {
+            format!("Result<{},{}>", diagnostic_type(ok), diagnostic_type(err))
+        }
+        Type::Map(key, value) => {
+            format!("Map<{},{}>", diagnostic_type(key), diagnostic_type(value))
+        }
+        Type::String => "String".to_string(),
     }
 }
 
@@ -3303,29 +3551,9 @@ fn abi_layout_type(
                     "public ABI record layout is recursive through `{name}`"
                 ));
             }
-            let structure = program.items.iter().find_map(|item| match item {
-                Item::Struct(structure) if structure.name == *name => Some(structure),
-                _ => None,
-            });
-            let Some(structure) = structure else {
-                visiting.remove(name);
-                return Err(format!("public ABI names undeclared record `{name}`"));
-            };
-            let fields = structure
-                .fields
-                .iter()
-                .map(|field| {
-                    abi_layout_type(program, &field.ty, visiting)
-                        .map(|layout| format!("{}:{layout}", field.name))
-                })
-                .collect::<Result<Vec<_>, _>>();
+            let layout = named_abi_layout(program, name, visiting);
             visiting.remove(name);
-            Ok(format!(
-                "struct:{name}:sealed={}:opaque={}{{{}}}",
-                structure.sealed,
-                structure.opaque,
-                fields?.join(",")
-            ))
+            layout
         }
         Type::Ref { mutable, inner } => Ok(format!(
             "ref:{}({})",
@@ -3340,6 +3568,69 @@ fn abi_layout_type(
             "public ABI layout cannot encode unsupported type {other:?}"
         )),
     }
+}
+
+/// The layout preimage for one declared `struct` or `enum` name. The caller owns
+/// the `visiting` guard, so a cycle through either kind reports one recursion
+/// diagnostic. The enum form follows `.design/build/l3-verified-artifact.md`
+/// "Layout rule": source-order variant tags with recursively expanded payloads,
+/// so renaming a variant, reordering variants, changing a payload type or field
+/// order, and changing a resolved capacity each change the export fingerprint.
+fn named_abi_layout(
+    program: &Program,
+    name: &str,
+    visiting: &mut BTreeSet<String>,
+) -> Result<String, String> {
+    if let Some(structure) = declared_struct(program, name) {
+        let fields = structure
+            .fields
+            .iter()
+            .map(|field| {
+                abi_layout_type(program, &field.ty, visiting)
+                    .map(|layout| format!("{}:{layout}", field.name))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        return Ok(format!(
+            "struct:{name}:sealed={}:opaque={}{{{}}}",
+            structure.sealed,
+            structure.opaque,
+            fields.join(",")
+        ));
+    }
+    if let Some(declaration) = declared_enum(program, name) {
+        let entries = declaration
+            .variants
+            .iter()
+            .enumerate()
+            .map(|(index, variant)| {
+                let payload = match &variant.shape {
+                    VariantShape::Unit => "unit".to_string(),
+                    VariantShape::Tuple(types) => format!(
+                        "tuple({})",
+                        types
+                            .iter()
+                            .map(|ty| abi_layout_type(program, ty, visiting))
+                            .collect::<Result<Vec<_>, _>>()?
+                            .join(",")
+                    ),
+                    VariantShape::Struct(fields) => format!(
+                        "struct{{{}}}",
+                        fields
+                            .iter()
+                            .map(|field| {
+                                abi_layout_type(program, &field.ty, visiting)
+                                    .map(|layout| format!("{}:{layout}", field.name))
+                            })
+                            .collect::<Result<Vec<_>, _>>()?
+                            .join(",")
+                    ),
+                };
+                Ok(format!("{index}:{}:{payload}", variant.name))
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        return Ok(format!("enum:{name}{{{}}}", entries.join(",")));
+    }
+    Err(format!("public ABI names undeclared record `{name}`"))
 }
 
 fn executable_precondition(expr: &Expr) -> bool {
@@ -7740,6 +8031,214 @@ fn state_new(value: u64) -> State
         assert_ne!(base, changed_capacity, "resolved capacity is ABI data");
         assert_ne!(base, changed_field, "transitive field type is ABI data");
         assert_ne!(base, reordered_fields, "record field order is ABI data");
+    }
+
+    /// The layout preimage grammar in `.design/build/l3-verified-artifact.md`,
+    /// "Layout rule": `enum:<E>{<i>:<Variant>:unit|tuple(..)|struct{..}}` in
+    /// source order, with `<layout>` the existing `abi_layout_type` output and a
+    /// named array capacity resolved to its integer value.
+    #[test]
+    fn public_abi_layout_spells_a_closed_result_enum_in_source_order() {
+        let program = parse(
+            "const CAP: usize = 3; \
+             struct Cell { owner: usize, flags: (bool, u8) } \
+             enum Outcome { \
+               Bare, \
+               Pair(u64, bool), \
+               Full { cell: Cell, window: [u64; CAP] } \
+             } \
+             fn decide(flag: bool) -> Outcome \
+             req true ens true fx pure { Outcome::Bare }",
+        );
+        let function = program
+            .items
+            .iter()
+            .find_map(|item| match item {
+                Item::Fn(function) if function.name == "decide" => Some(function),
+                _ => None,
+            })
+            .expect("the fixture declares `decide`");
+        assert_eq!(
+            public_abi_layout(&program, function).expect("the closed enum has a layout"),
+            "params(flag:bool)->enum:Outcome{\
+             0:Bare:unit,\
+             1:Pair:tuple(u64,bool),\
+             2:Full:struct{cell:struct:Cell:sealed=false:opaque=false\
+             {owner:usize,flags:tuple2(bool,u8)},window:array[3;u64]}}"
+        );
+    }
+
+    /// AC-20: renaming a variant, reordering two variants, changing a payload
+    /// field type or order, and changing a resolved payload capacity each change
+    /// the export fingerprint on their own.
+    #[test]
+    fn public_abi_enum_fingerprint_binds_variant_order_names_and_payloads() {
+        let fingerprint = |source: &str| {
+            let program = parse(source);
+            plan_exports(
+                &program,
+                &["decide".to_string()],
+                "enum_bound",
+                VerifiedTarget::Std,
+                "x86_64-unknown-linux-gnu",
+                "64",
+                "little",
+            )
+            .expect("a closed result enum should plan")
+            .remove(0)
+            .abi_sha256
+        };
+        let base = fingerprint(
+            "const CAP: usize = 3; \
+             struct Cell { owner: usize, stamp: u64 } \
+             enum Outcome { Found { cell: Cell, window: [u64; CAP] }, Absent } \
+             fn decide(flag: bool) -> Outcome req true ens true fx pure { Outcome::Absent }",
+        );
+        let renamed_variant = fingerprint(
+            "const CAP: usize = 3; \
+             struct Cell { owner: usize, stamp: u64 } \
+             enum Outcome { Found { cell: Cell, window: [u64; CAP] }, Missing } \
+             fn decide(flag: bool) -> Outcome req true ens true fx pure { Outcome::Missing }",
+        );
+        let reordered_variants = fingerprint(
+            "const CAP: usize = 3; \
+             struct Cell { owner: usize, stamp: u64 } \
+             enum Outcome { Absent, Found { cell: Cell, window: [u64; CAP] } } \
+             fn decide(flag: bool) -> Outcome req true ens true fx pure { Outcome::Absent }",
+        );
+        let changed_payload_type = fingerprint(
+            "const CAP: usize = 3; \
+             struct Cell { owner: u64, stamp: u64 } \
+             enum Outcome { Found { cell: Cell, window: [u64; CAP] }, Absent } \
+             fn decide(flag: bool) -> Outcome req true ens true fx pure { Outcome::Absent }",
+        );
+        let reordered_payload_fields = fingerprint(
+            "const CAP: usize = 3; \
+             struct Cell { owner: usize, stamp: u64 } \
+             enum Outcome { Found { window: [u64; CAP], cell: Cell }, Absent } \
+             fn decide(flag: bool) -> Outcome req true ens true fx pure { Outcome::Absent }",
+        );
+        let changed_capacity = fingerprint(
+            "const CAP: usize = 5; \
+             struct Cell { owner: usize, stamp: u64 } \
+             enum Outcome { Found { cell: Cell, window: [u64; CAP] }, Absent } \
+             fn decide(flag: bool) -> Outcome req true ens true fx pure { Outcome::Absent }",
+        );
+
+        assert_ne!(base, renamed_variant, "a variant name is ABI data");
+        assert_ne!(base, reordered_variants, "variant order is ABI data");
+        assert_ne!(base, changed_payload_type, "a payload type is ABI data");
+        assert_ne!(
+            base, reordered_payload_fields,
+            "payload field order is ABI data"
+        );
+        assert_ne!(
+            base, changed_capacity,
+            "a resolved payload capacity is ABI data"
+        );
+    }
+
+    /// AC-21 at the admission site: each shape outside the REQ-L3BUILD-15 rule
+    /// is refused with a diagnostic naming its cause.
+    #[test]
+    fn public_abi_refuses_every_closed_result_enum_shape_outside_the_rule() {
+        let refusal = |source: &str| {
+            let program = parse(source);
+            plan_exports(
+                &program,
+                &["decide".to_string()],
+                "enum_refused",
+                VerifiedTarget::Std,
+                "x86_64-unknown-linux-gnu",
+                "64",
+                "little",
+            )
+            .expect_err("the enum boundary must fail closed")
+        };
+
+        for (source, expected) in [
+            (
+                "enum Verdict { Yes, No } \
+                 fn decide(verdict: Verdict) -> bool req true ens result fx pure { true }",
+                "parameter `verdict` reaches enum `Verdict`",
+            ),
+            (
+                "enum Verdict { Yes, No } \
+                 fn decide(flag: bool) -> [Verdict; 2] req true ens true fx pure \
+                 { [Verdict::Yes, Verdict::No] }",
+                "reaching enum `Verdict` below the return root",
+            ),
+            (
+                "enum Verdict { Yes, No } \
+                 fn decide(flag: bool) -> (Verdict, u64) req true ens true fx pure \
+                 { (Verdict::Yes, 1) }",
+                "reaching enum `Verdict` below the return root",
+            ),
+            (
+                "enum Verdict { Yes, No } struct Wrap { verdict: Verdict } \
+                 fn decide(flag: bool) -> Wrap req true ens true fx pure \
+                 { Wrap { verdict: Verdict::Yes } }",
+                "reaching enum `Verdict` below the return root",
+            ),
+            (
+                "enum Inner { Lo, Hi } enum Outer { Wrapped { inner: Inner }, Bare } \
+                 fn decide(flag: bool) -> Outer req true ens true fx pure { Outer::Bare }",
+                "payload `inner` has type `Inner`, which is a type reaching enum `Inner`",
+            ),
+            (
+                "#[sealed] struct Token { raw: u64 } \
+                 enum Verdict { Held { token: Token }, Absent } \
+                 fn decide(token: Token) -> Verdict req true ens true fx pure \
+                 { Verdict::Held { token: token } }",
+                "payload `token` has type `Token`, which is a sealed record",
+            ),
+            (
+                "#[opaque] struct State { raw: u64 } \
+                 enum Verdict { Held { state: State }, Absent } \
+                 fn decide(state: State) -> Verdict req true ens true fx pure \
+                 { Verdict::Held { state: state } }",
+                "payload `state` has type `State`, which is an opaque record",
+            ),
+            (
+                "enum List { Cons { head: u64, tail: Box<List> }, Nil } \
+                 fn decide(flag: bool) -> List req true ens true fx alloc { List::Nil }",
+                "payload `tail` has type `Box<List>`, which is a type reaching enum `List`",
+            ),
+            (
+                "enum Held { Borrowed { view: &u64 }, Absent } \
+                 fn decide(flag: bool) -> Held req true ens true fx pure { Held::Absent }",
+                "payload `view` has type `&u64`, which is a reference-bearing type",
+            ),
+            (
+                "enum Held { Owned { bytes: Vec<u64> }, Absent } \
+                 fn decide(flag: bool) -> Held req true ens true fx alloc { Held::Absent }",
+                "payload `bytes` has type `Vec<u64>`, which is a heap-backed type",
+            ),
+        ] {
+            let error = refusal(source);
+            assert!(
+                error.contains(expected),
+                "expected `{expected}` in the refusal, got `{error}`"
+            );
+        }
+    }
+
+    /// The `visiting` guard in `abi_layout_type` is one mechanism for records and
+    /// enums alike: a cycle through either name reports the same diagnostic.
+    #[test]
+    fn public_abi_layout_rejects_a_cycle_through_an_enum_name() {
+        let program = parse(
+            "enum List { Cons { head: u64, tail: Box<List> }, Nil } \
+             fn decide(flag: bool) -> List req true ens true fx alloc { List::Nil }",
+        );
+        let mut visiting = BTreeSet::new();
+        visiting.insert("List".to_string());
+        let error = abi_layout_type(&program, &Type::Named("List".to_string()), &mut visiting)
+            .expect_err("a cycle through an enum name must be rejected");
+        assert_eq!(
+            error,
+            "public ABI record layout is recursive through `List`"
+        );
     }
 
     #[test]

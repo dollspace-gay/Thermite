@@ -13,7 +13,7 @@ governs:
   - forge/src/verified_build.rs
   - forge/tests/ownership_primitives.rs
   - stdlib/kernel-primitives/ownership/generation.th
-audited-content-sha256: 7f629e0f73f168e5f830654041a586a3055d8eaa2d9e503711b173bf9653ab36 (re-pinned 2026-08-07 after the quantified declared-index relation family landed the `#[logical]` attribute, its admission and relation gate, and the per-view `forall` emission)
+audited-content-sha256: eb5f586f5c80d790ac3cb6f81683a98ce2f71130ae9a9dee00c17f846b779645 (re-pinned 2026-08-08 after the closed result-enum public ABI landed at the L3 export admission site)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/generation-ownership.md

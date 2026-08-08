@@ -15,7 +15,7 @@ governs:
   - forge/src/body_tv.rs
   - forge/tests/verified_build.rs
   - conformance/verified-build/record_state_loop.th
-audited-content-sha256: 18587acd07d5af1c27656e136614a5082d6f80e25afd1e8462add249a9829027 (re-pinned 2026-08-07 after the quantified declared-index relation family landed the `#[logical]` attribute, its admission and relation gate, and the per-view `forall` emission)
+audited-content-sha256: 15777fc605a65740848c984253a18440a245826f6bdb87e00c8995a6c3c1fd8b (re-pinned 2026-08-08 after the closed result-enum public ABI landed at the L3 export admission site)
 extends:
   - .design/verified/loop-tv.md
   - .design/build/nested-aggregate-lifecycle.md

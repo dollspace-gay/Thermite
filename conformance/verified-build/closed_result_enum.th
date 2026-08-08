@@ -1,0 +1,81 @@
+const RING_SLOTS: usize = 8;
+
+struct RingState {
+  slots: [u64; RING_SLOTS],
+  head: usize,
+  len: usize,
+}
+
+enum RingOffer {
+  Accepted {
+    ring: RingState,
+    slot: usize,
+  },
+  Rejected {
+    ring: RingState,
+    stamp: u64,
+  },
+  Closed,
+}
+
+fn ring_empty() -> RingState
+  req true
+  ens result.head == 0
+  ens result.len == 0
+  ens result.slots[0] == 0
+  ens result.slots[RING_SLOTS - 1] == 0
+  fx pure
+{
+  RingState {
+    slots: [0; RING_SLOTS],
+    head: 0,
+    len: 0,
+  }
+}
+
+fn ring_offer(ring: RingState, stamp: u64) -> RingOffer
+  req true
+  ens match result {
+    RingOffer::Accepted { ring: next, slot } =>
+      ring.head < RING_SLOTS
+        && ring.len < RING_SLOTS
+        && slot == ring.len
+        && next.head == ring.head
+        && next.len == ring.len + 1
+        && next.slots[ring.len] == stamp,
+    RingOffer::Rejected { ring: next, stamp: echoed } =>
+      ring.head < RING_SLOTS
+        && ring.len >= RING_SLOTS
+        && echoed == stamp
+        && next.head == ring.head
+        && next.len == ring.len,
+    RingOffer::Closed => ring.head >= RING_SLOTS,
+  }
+  fx pure
+{
+  if ring.head >= RING_SLOTS {
+    RingOffer::Closed
+  } else {
+    if ring.len < RING_SLOTS {
+      let mut slots: [u64; RING_SLOTS] = ring.slots;
+      slots[ring.len] = stamp;
+      RingOffer::Accepted {
+        ring: RingState {
+          slots: slots,
+          head: ring.head,
+          len: ring.len + 1,
+        },
+        slot: ring.len,
+      }
+    } else {
+      RingOffer::Rejected {
+        ring: RingState {
+          slots: ring.slots,
+          head: ring.head,
+          len: ring.len,
+        },
+        stamp: stamp,
+      }
+    }
+  }
+}

@@ -14,7 +14,7 @@ governs:
   - forge/tests/body_tv.rs
   - forge/tests/verified_build.rs
   - conformance/verified-build/nested_aggregate_lifecycle.th
-audited-content-sha256: f84cf2bbbe79d4e5c9735a78a00cb8054b08fae3ffcb08322a22a193e02529c3 (re-pinned 2026-08-07 after the quantified declared-index relation family landed the `#[logical]` attribute, its admission and relation gate, and the per-view `forall` emission)
+audited-content-sha256: 9e2e95337ed2a4bf0b57c49613e68e539a0762238a7c2de0e0ea55708cc6006d (re-pinned 2026-08-08 after the closed result-enum public ABI landed at the L3 export admission site)
 extends:
   - .design/build/owned-aggregate-lifecycle.md
   - .design/build/named-record-lifecycle.md

@@ -498,11 +498,24 @@ fn packed_collection_state_frame_reaches_l3() {
 /// replays, the plan names the aggregate root, and every translation-validation
 /// row is `faithful`.
 ///
-/// Actual (today): `fn supported_public_return_type in
-/// forge/src/verified_build.rs` has no ADT arm, so `plan_exports` refuses at the
-/// `exports` stage before any proof runs. A named red pin for REQ-KPRIM-2 item 5
-/// (goal.md R-DEFER-3), outside the declared-index relation family this file's
-/// first three rows cover.
+/// Actual (today): `plan_exports` refuses at the `exports` stage before any
+/// proof runs, on the second of the two gates
+/// `.design/build/kernel-primitives.md`, "Why an enum-returning collection
+/// transition does not export", names. The first gate is closed: `fn
+/// supported_public_return_type in forge/src/verified_build.rs` now admits the
+/// closed result enum `FixedRingPush64` under REQ-L3BUILD-15, whose payloads are
+/// the finite plain record `FixedRing64` and a `u64`. The second gate holds: `fn
+/// executable_precondition in forge/src/verified_build.rs` refuses `Expr::Call`,
+/// and `fixed_ring_push` states `req fixed_ring_wf_spec(&ring)`, so the build
+/// stops with "has a non-executable precondition and cannot receive a total
+/// wrapper". REQ-L3BUILD-16 in `.design/build/l3-verified-artifact.md` governs
+/// that gate: the executable form of a `spec fn` guard must be derived, emitted
+/// from `fn lower_l3_export_wrapper in thermite-lower/src/lower.rs`, and
+/// reproduced independently in `fn exec_tv_export_guard in
+/// forge/src/exec_tv.rs`, because widening the predicate alone yields `error:
+/// cannot call function fixed_ring_wf_spec with mode spec`. A named red pin for
+/// REQ-KPRIM-2 item 5 (goal.md R-DEFER-3), outside the declared-index relation
+/// family this file's first three rows cover.
 #[test]
 fn aggregate_rooted_collection_export_is_a_strict_l3_receipt() {
     let temp = TempDir::new("receipt");

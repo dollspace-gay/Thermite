@@ -80,7 +80,20 @@ fn fixed_slab_is_l3_generation_safe_and_receipt_bound() {
             .all(|row| row["level"] == "L3" && row["boundary"] == false),
         "a slab item fell below boundary-free L3: {rows:?}"
     );
-    assert_eq!(mutation_total(rows), (70, 73));
+    // `fixed_slab_empty` returns `FixedSlab64`, whose array fields became
+    // zero-able when `zero_value_for` in `mutation.rs` learned to zero a fixed
+    // array. It gained one early-return zero mutant, so the generated count rises
+    // by one while the killed count holds.
+    //
+    // That survivor is an equivalent mutant, not a weak contract. `FixedSlab64`
+    // holds `slab_used`, `slab_generation`, and `slab_values` and carries no
+    // scalar field, so its zero is `{ [false; N], [0; N], [0; N] }` — the empty
+    // slab itself. `fixed_slab_empty` states exactly that in its postconditions,
+    // so the mutant computes the same value as the body and no contract can
+    // distinguish it. `FixedBitmap256` shows the contrast: it carries
+    // `capacity: usize`, its zero violates `ens result.capacity ==
+    // FIXED_BITMAP_BITS`, and all seven of its mutants die.
+    assert_eq!(mutation_total(rows), (70, 74));
     for name in [
         "fixed_slab_empty",
         "fixed_slab_handle_live",

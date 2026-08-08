@@ -91,7 +91,12 @@ fn fixed_intrusive_is_l3_fail_closed_receipt_bound_and_executable() {
             .all(|row| row["level"] == "L3" && row["boundary"] == false),
         "an intrusive-metadata item fell below boundary-free L3: {rows:?}",
     );
-    assert_eq!(mutation_total(rows), (271, 281));
+    // `fixed_intrusive_empty` returns `FixedIntrusiveList64`, whose array fields
+    // became zero-able when `zero_value_for` in `mutation.rs` learned to zero a
+    // fixed array. It gained one early-return zero mutant, which dies on the
+    // declared head, tail, and length. `FixedIntrusiveEndpoints64` holds only
+    // scalars, so it already had a zero and gained nothing.
+    assert_eq!(mutation_total(rows), (272, 282));
     for name in [
         "fixed_intrusive_empty",
         "fixed_intrusive_link_reason",

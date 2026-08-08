@@ -80,7 +80,11 @@ fn fixed_freelist_is_l3_fail_closed_and_receipt_bound() {
             .all(|row| row["level"] == "L3" && row["boundary"] == false),
         "a freelist item fell below boundary-free L3: {rows:?}"
     );
-    assert_eq!(mutation_total(rows), (49, 53));
+    // `fixed_freelist_empty` returns `FixedFreelist64`, whose array fields became
+    // zero-able when `zero_value_for` in `mutation.rs` learned to zero a fixed
+    // array. It gained one early-return zero mutant, which dies on the declared
+    // length. The two result enums have no zero, so they gained none.
+    assert_eq!(mutation_total(rows), (50, 54));
     for name in [
         "fixed_freelist_empty",
         "fixed_freelist_contains",

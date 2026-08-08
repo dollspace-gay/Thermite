@@ -155,7 +155,13 @@ fn fixed_collections_are_l3_freestanding_receipt_bound_primitives() {
         ],
     );
     assert_eq!(bitmap_rows.len(), 36);
-    assert_eq!(mutation_total(&bitmap_rows), (107, 114));
+    // Seven functions return `FixedBitmap256`: `fixed_bitmap_empty` and the six
+    // owned transitions. Each gained one early-return zero mutant when
+    // `zero_value_for` in `mutation.rs` learned to zero a fixed array, so a
+    // record whose fields are all zero-able has a zero as well. All seven die on
+    // `ens result.capacity == FIXED_BITMAP_BITS`, because the zeroed record
+    // carries `capacity == 0`. The pin therefore rises by seven in both places.
+    assert_eq!(mutation_total(&bitmap_rows), (114, 121));
 
     let ring_rows = checked_rows(ring_source);
     assert_l3_functions(
@@ -172,7 +178,23 @@ fn fixed_collections_are_l3_freestanding_receipt_bound_primitives() {
             "fixed_ring_full_reject_probe",
         ],
     );
-    assert_eq!(mutation_total(&ring_rows), (64, 71));
+    // The remaining four collections gained early-return zero mutants from the
+    // same `zero_value_for` change, one per function that returns the collection
+    // record. Every such mutant on an EMPTY CONSTRUCTOR survives, because
+    // `FixedRing64`, `FixedVec64`, `FixedDirectMap64`, and `FixedOpenMap64` carry
+    // no field with a nonzero invariant: each constructor's body is literally its
+    // own zero value, so the mutant computes the same result and no contract can
+    // separate them. `fixed_open_map_empty` is the clearest case, since
+    // `OPEN_MAP_EMPTY` is 0. The bitmap above is the control: its `capacity` must
+    // equal `FIXED_BITMAP_BITS`, so its zero is distinguishable and all seven of
+    // its mutants die.
+    //
+    // A mutant on a TRANSITION dies, because the transition's postconditions
+    // relate the result to its input. Vector is the only collection here with
+    // both shapes: two functions return `FixedVec64`, so it gained two mutants,
+    // of which the constructor's survives and the transition's dies. Ring,
+    // direct map, and open map have one returning function each.
+    assert_eq!(mutation_total(&ring_rows), (64, 72));
 
     let vector_rows = checked_rows(vector_source);
     assert_l3_functions(
@@ -188,7 +210,7 @@ fn fixed_collections_are_l3_freestanding_receipt_bound_primitives() {
             "fixed_vec_set_probe",
         ],
     );
-    assert_eq!(mutation_total(&vector_rows), (45, 49));
+    assert_eq!(mutation_total(&vector_rows), (46, 51));
 
     let direct_map_rows = checked_rows(direct_map_source);
     assert_l3_functions(
@@ -205,7 +227,7 @@ fn fixed_collections_are_l3_freestanding_receipt_bound_primitives() {
             "fixed_direct_map_remove_probe",
         ],
     );
-    assert_eq!(mutation_total(&direct_map_rows), (54, 58));
+    assert_eq!(mutation_total(&direct_map_rows), (54, 59));
 
     let open_map_rows = checked_rows(open_map_source);
     assert_l3_functions(
@@ -225,7 +247,7 @@ fn fixed_collections_are_l3_freestanding_receipt_bound_primitives() {
         ],
     );
     assert_eq!(open_map_rows.len(), 43);
-    assert_eq!(mutation_total(&open_map_rows), (72, 80));
+    assert_eq!(mutation_total(&open_map_rows), (72, 81));
 
     let mut false_bitmap = fs::read_to_string(root().join(bitmap_source)).unwrap();
     false_bitmap.push_str(

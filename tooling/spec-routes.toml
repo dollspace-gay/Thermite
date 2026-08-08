@@ -1612,6 +1612,37 @@ design = ".design/build/aggregate-array-relations.md"
 reference = ["conformance/verified-build/aggregate_array_relations.th"]
 conformance_ops = ["aggregate-array-direct-verus", "aggregate-array-dropped-field-mutant"]
 
+# The quantified declared-index relation family (REQ-AGGREL-2 through
+# REQ-AGGREL-4): the `#[logical]` attribute parse, the admission and relation
+# gate, the emitted per-view `forall`s, and the collection-state fixtures that
+# certify them at strict L3.
+[[route]]
+crate_pattern = "thermite-syntax/tests/logical_attribute.rs"
+design = ".design/build/aggregate-array-relations.md"
+reference = ["stdlib/kernel-primitives/collections/ring.th"]
+conformance_ops = ["logical-view-parse"]
+
+[[route]]
+crate_pattern = "thermite-spec/tests/logical_view_validate.rs"
+design = ".design/build/aggregate-array-relations.md"
+reference = ["stdlib/kernel-primitives/collections/bitmap.th"]
+conformance_ops = ["logical-view-admission", "logical-relation-gate"]
+
+[[route]]
+crate_pattern = "thermite-lower/tests/logical_index_relations.rs"
+design = ".design/build/aggregate-array-relations.md"
+reference = ["stdlib/kernel-primitives/collections/ring.th"]
+conformance_ops = ["logical-relation-emission", "logical-relation-direct-verus"]
+
+[[route]]
+crate_pattern = "forge/tests/divergence_aggregate_collection_state.rs"
+design = ".design/build/aggregate-array-relations.md"
+reference = [
+  "stdlib/kernel-primitives/collections/bitmap.th",
+  "stdlib/kernel-primitives/collections/ring.th",
+]
+conformance_ops = ["collection-state-equality-l3", "collection-state-frame-l3"]
+
 [[route]]
 crate_pattern = "thermite-tv/src/exec_encode.rs"
 design = ".design/build/aggregate-array-relations.md"

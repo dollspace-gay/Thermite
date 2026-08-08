@@ -868,6 +868,18 @@ fn lower_with_profile(
         out.push_str(&fixed_array_equality_defs_for_program(program)?);
     }
 
+    // The declared-index relation family
+    // (`.design/build/aggregate-array-relations.md`, "Lowering the relation").
+    // A collection is addressed twice over: the storage relations above
+    // quantify over a fixed array's own indices, while these quantify over the
+    // index space a `#[logical]` struct declares, which is the vocabulary an
+    // exported contract uses when the representation is opaque. Emitted only for
+    // a program that names the family, and only for the declarations the
+    // validator admitted.
+    if program_uses_logical_relations(program) {
+        out.push_str(&logical_relation_defs_for_program(program));
+    }
+
     // Packed `u64` bit access needs more than emitting Rust's operators: Verus's
     // ordinary SMT mode treats dynamic shifts/bit algebra opaquely. Emit a
     // finite, directly verified 64-way helper only for programs that use the
@@ -1913,6 +1925,27 @@ fn lower_inv_expr(
                 return Ok(format!(
                     "({r}).__thermite_fixed_array_same_except_two_spec(&({right}), {first}, {second})"
                 ));
+            }
+            // The declared-index relations in a struct type invariant, the third
+            // contract position the family reaches
+            // (`.design/build/aggregate-array-relations.md`, "Surface"). Same
+            // emission as the `req`/`ens`/`spec fn` path, so one relation has
+            // one lowering across every contract position (R-DEFER-8).
+            if let Some(arity) = logical_relation_arity(name) {
+                if args.len() == arity {
+                    let mut lowered = Vec::with_capacity(arity);
+                    for arg in args {
+                        lowered.push(lower_inv_expr(
+                            arg,
+                            field_names,
+                            string_fields,
+                            spec_fn_param_types,
+                            d,
+                            span,
+                        )?);
+                    }
+                    return Ok(logical_relation_call(name, &r, &lowered));
+                }
             }
             if args.len() == 1 && matches!(name.as_str(), "bit_test" | "bit_set" | "bit_clear") {
                 let index = lower_inv_expr(
@@ -5607,6 +5640,216 @@ pub fn fixed_array_equality_defs_for_program(program: &Program) -> Result<String
         emit_structural_array_impl(&ty, &mut out)?;
     }
     Ok(out)
+}
+
+/// The operand count of a declared-index relation, or `None` for any other
+/// method name.
+fn logical_relation_arity(name: &str) -> Option<usize> {
+    match name {
+        "logical_eq" => Some(1),
+        "logical_same_except" => Some(2),
+        "logical_same_except_two" => Some(3),
+        _ => None,
+    }
+}
+
+/// Emit one declared-index relation call. The receiver's view selects the
+/// implementation through the generated `__thermite_LogicalRelations` trait, so
+/// the call site needs no nominal type resolution; the trait method forwards to
+/// the per-view quantified `spec fn` the emitter names after the struct.
+fn logical_relation_call(name: &str, receiver: &str, args: &[String]) -> String {
+    let rendered: Vec<String> = args
+        .iter()
+        .enumerate()
+        .map(|(position, arg)| {
+            if position == 0 {
+                format!("&({arg})")
+            } else {
+                arg.clone()
+            }
+        })
+        .collect();
+    format!(
+        "({receiver}).__thermite_{name}_spec({})",
+        rendered.join(", ")
+    )
+}
+
+/// Whether an expression names one of the three declared-index relations
+/// (`.design/build/aggregate-array-relations.md`, "Surface"). Keyed on the same
+/// name and arity pair the validator gates, so the emitter fires for exactly the
+/// programs the source gate admitted.
+fn expr_uses_logical_relation(expr: &Expr) -> bool {
+    if matches!(expr, Expr::MethodCall { name, args, .. }
+        if (name == "logical_eq" && args.len() == 1)
+            || (name == "logical_same_except" && args.len() == 2)
+            || (name == "logical_same_except_two" && args.len() == 3))
+    {
+        return true;
+    }
+    let mut found = false;
+    let _ = each_subexpr(expr, &mut |child| {
+        if expr_uses_logical_relation(child) {
+            found = true;
+        }
+        Ok(())
+    });
+    found
+}
+
+fn stmt_uses_logical_relation(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Let { init, .. } => expr_uses_logical_relation(init),
+        Stmt::Assign { target, value } => {
+            expr_uses_logical_relation(target) || expr_uses_logical_relation(value)
+        }
+        Stmt::Return(value) => value.as_ref().is_some_and(expr_uses_logical_relation),
+        Stmt::If {
+            cond, then, else_, ..
+        } => {
+            expr_uses_logical_relation(cond)
+                || block_uses_logical_relation(then)
+                || else_.as_ref().is_some_and(block_uses_logical_relation)
+        }
+        Stmt::Loop(loop_) => block_uses_logical_relation(&loop_.body),
+        Stmt::Expr(expr) => expr_uses_logical_relation(expr),
+        Stmt::Break | Stmt::Continue => false,
+    }
+}
+
+fn block_uses_logical_relation(block: &Block) -> bool {
+    block.stmts.iter().any(stmt_uses_logical_relation)
+        || block
+            .tail
+            .as_deref()
+            .is_some_and(expr_uses_logical_relation)
+}
+
+/// Whether a program names the declared-index relation family anywhere a
+/// contract can reach.
+fn program_uses_logical_relations(program: &Program) -> bool {
+    program.items.iter().any(|item| match item {
+        Item::Fn(function) => {
+            expr_uses_logical_relation(&function.contract.req.expr)
+                || function
+                    .contract
+                    .ens
+                    .iter()
+                    .any(|clause| expr_uses_logical_relation(&clause.expr))
+                || function
+                    .body
+                    .as_ref()
+                    .is_some_and(block_uses_logical_relation)
+        }
+        Item::SpecFn(function) => block_uses_logical_relation(&function.body),
+        Item::Struct(structure) => structure
+            .inv
+            .as_ref()
+            .is_some_and(|clause| expr_uses_logical_relation(&clause.expr)),
+        Item::Const(_) | Item::Enum(_) | Item::Forge(_) => false,
+    })
+}
+
+/// The three quantified relations of every admitted `#[logical]` view, plus the
+/// trait that dispatches a relation call to the receiver's view
+/// (`.design/build/aggregate-array-relations.md`, "Lowering the relation").
+///
+/// Each relation is one first-order `forall` over `usize` whose triggers are the
+/// declared observer applied to each operand, written as alternatives so either
+/// term fires on its own. There is no recursion and no unfolding budget: a
+/// consumer that mentions the observer at a concrete index gets the
+/// instantiation at that index with no author-written hint. The emitter shares
+/// [`thermite_spec::logical_views`] with the validator, so code generation
+/// cannot admit a declaration the source gate rejected. A view whose
+/// representation reaches `#[opaque]` state emits `pub closed`, matching the
+/// visibility tier `lower_spec_fn` applies to an opaque-reaching observer.
+pub fn logical_relation_defs_for_program(program: &Program) -> String {
+    let views = thermite_spec::logical_views(program);
+    if views.is_empty() {
+        return String::new();
+    }
+    let opaque_types = opaque_type_closure(program);
+    let opaque_spec_fns = opaque_spec_fn_closure(program, &opaque_types);
+
+    let mut out = String::from(
+        "\npub trait __thermite_LogicalRelations {\n\
+         \x20   spec fn __thermite_logical_eq_spec(&self, right: &Self) -> bool;\n\
+         \x20   spec fn __thermite_logical_same_except_spec(&self, right: &Self, except: usize) -> bool;\n\
+         \x20   spec fn __thermite_logical_same_except_two_spec(&self, right: &Self, first: usize, second: usize) -> bool;\n\
+         }\n",
+    );
+    for view in views.values() {
+        let name = &view.struct_name;
+        let observer = &view.observer;
+        let bound = &view.bound;
+        let openness = if opaque_types.contains(name.as_str())
+            || opaque_spec_fns.contains(observer.as_str())
+        {
+            "closed"
+        } else {
+            "open"
+        };
+        for (suffix, extra_params, extra_guard) in [
+            ("eq", String::new(), String::new()),
+            (
+                "same_except",
+                ", except: usize".to_string(),
+                " && i != except".to_string(),
+            ),
+            (
+                "same_except_two",
+                ", first: usize, second: usize".to_string(),
+                " && i != first && i != second".to_string(),
+            ),
+        ] {
+            writeln!(
+                out,
+                "pub {openness} spec fn __thermite_logical_{suffix}_{name}(left: &{name}, right: &{name}{extra_params}) -> bool {{"
+            )
+            .ok();
+            out.push_str("    forall|i: usize|\n");
+            writeln!(out, "        #![trigger {observer}(left, i)]").ok();
+            writeln!(out, "        #![trigger {observer}(right, i)]").ok();
+            writeln!(
+                out,
+                "        i < {bound}{extra_guard} ==> {observer}(left, i) == {observer}(right, i)"
+            )
+            .ok();
+            out.push_str("}\n");
+        }
+        writeln!(out, "impl __thermite_LogicalRelations for {name} {{").ok();
+        writeln!(
+            out,
+            "    {openness} spec fn __thermite_logical_eq_spec(&self, right: &{name}) -> bool {{"
+        )
+        .ok();
+        writeln!(out, "        __thermite_logical_eq_{name}(self, right)").ok();
+        out.push_str("    }\n");
+        writeln!(
+            out,
+            "    {openness} spec fn __thermite_logical_same_except_spec(&self, right: &{name}, except: usize) -> bool {{"
+        )
+        .ok();
+        writeln!(
+            out,
+            "        __thermite_logical_same_except_{name}(self, right, except)"
+        )
+        .ok();
+        out.push_str("    }\n");
+        writeln!(
+            out,
+            "    {openness} spec fn __thermite_logical_same_except_two_spec(&self, right: &{name}, first: usize, second: usize) -> bool {{"
+        )
+        .ok();
+        writeln!(
+            out,
+            "        __thermite_logical_same_except_two_{name}(self, right, first, second)"
+        )
+        .ok();
+        out.push_str("    }\n");
+        out.push_str("}\n");
+    }
+    out
 }
 
 /// Structs whose generated L1 declarations may derive `PartialEq`/`Eq`. This
@@ -9626,6 +9869,28 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
                 return Ok(format!(
                     "({r}).__thermite_fixed_array_same_except_two(&({right}), {first}, {second})"
                 ));
+            }
+            // The declared-index relations
+            // (`.design/build/aggregate-array-relations.md`, "Surface"). The
+            // family is a specification relation: the validator refuses it in an
+            // executable body, and lowering fails closed for the same position
+            // rather than emitting a method no generated impl provides.
+            if let Some(arity) = logical_relation_arity(name) {
+                if args.len() == arity {
+                    if !ctx.is_spec() {
+                        return Err(LowerError::Unsupported {
+                            what: format!(
+                                "`.{name}()` is a specification relation over a declared index space and has no executable form"
+                            ),
+                            span,
+                        });
+                    }
+                    let mut lowered = Vec::with_capacity(arity);
+                    for arg in args {
+                        lowered.push(lower_expr(arg, ctx, d, span)?);
+                    }
+                    return Ok(logical_relation_call(name, &r, &lowered));
+                }
             }
             if args.len() == 1 && matches!(name.as_str(), "bit_test" | "bit_set" | "bit_clear") {
                 let index = lower_expr(&args[0], ctx, d, span)?;

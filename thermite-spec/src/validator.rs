@@ -140,12 +140,12 @@
 //! | REQ-SPEC-VALIDATOR-ERGONOMICS-OR-PATTERN | shipped | `thermite-spec/src/validator.rs` | Or-pattern exhaustiveness validation |  |
 //! <!-- /generated:reqs -->
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt;
 
 use thermite_syntax::{
-    ArrayLen, Block, Clause, Expr, ForgeItem, IndexArg, Item, MatchArm, Pattern, Program, Span,
-    Stmt, Type, VariantShape,
+    ArrayLen, Block, Clause, Expr, ForgeItem, IndexArg, Item, MatchArm, Pattern, PrimType, Program,
+    Span, SpecFnItem, Stmt, StructItem, Type, VariantShape,
 };
 
 use crate::combinators::{self, ArgKind, CombinatorSig};
@@ -243,6 +243,14 @@ const BUILTIN_METHODS: &[&str] = &[
     "array_eq",
     "array_same_except",
     "array_same_except_two",
+    // The declared-index relation family
+    // (`.design/build/aggregate-array-relations.md`, "Surface"). A `#[logical]`
+    // struct receiver quantifies over its declared index space rather than a
+    // storage array's; typing is disjoint from the three names above, so the
+    // pair is one relation set over two index spaces, not an overload.
+    "logical_eq",
+    "logical_same_except",
+    "logical_same_except_two",
     // Total `u64` packed-bit operations. An index at least 64 leaves a word
     // unchanged for updates and observes `false`; the directly verified L3
     // helpers supply the ordinary contract bridge and distinct-bit framing
@@ -391,6 +399,19 @@ pub enum SpecError {
     /// non-sealed/non-opaque acyclic structs are admitted. Authority-bearing,
     /// recursive, enum, reference, and heap-backed shapes fail closed.
     ArrayEqualityRequiresStructuralArrays { detail: String, span: Span },
+    /// A `#[logical(bound = …, observe = …)]` declaration fails one of the
+    /// admission rules of `.design/build/aggregate-array-relations.md`,
+    /// "Admitted shapes and fail-closed boundary": a sealed or recursive
+    /// receiver, a bound that is not a `usize` constant inside the Forge element
+    /// bound, or an observer that is not a two-parameter `(&Self, usize)`
+    /// `spec fn` with a finite structural result type. The detail names the rule.
+    InvalidLogicalView { detail: String, span: Span },
+    /// A `.logical_eq(..)` / `.logical_same_except(..)` /
+    /// `.logical_same_except_two(..)` call is outside the declared-index
+    /// relation family: a receiver with no `#[logical]`, mismatched nominal
+    /// operands, a computed operand, the wrong arity, an executable position, or
+    /// a frame relation over a derived-index observer.
+    LogicalRelationRefused { detail: String, span: Span },
     /// A direct named-record field assignment does not belong to the frozen
     /// finite lifecycle subset. The target must be `root.field`, the root must
     /// be an exclusive named-record borrow or a mutable typed local, and the
@@ -585,6 +606,8 @@ impl SpecError {
             | SpecError::ArrayLengthMismatch { span, .. }
             | SpecError::ArrayRepeatRequiresCopy { span }
             | SpecError::ArrayEqualityRequiresStructuralArrays { span, .. }
+            | SpecError::InvalidLogicalView { span, .. }
+            | SpecError::LogicalRelationRefused { span, .. }
             | SpecError::InvalidNamedRecordMutation { span, .. }
             | SpecError::IllegalAtomicOrdering { span, .. }
             | SpecError::UnknownCombinator { span, .. }
@@ -643,6 +666,14 @@ impl fmt::Display for SpecError {
             SpecError::ArrayEqualityRequiresStructuralArrays { detail, .. } => write!(
                 f,
                 "fixed-array relations require equally typed structurally comparable arrays: {detail}"
+            ),
+            SpecError::InvalidLogicalView { detail, .. } => write!(
+                f,
+                "`#[logical]` declaration is outside the admitted index-space shapes: {detail}"
+            ),
+            SpecError::LogicalRelationRefused { detail, .. } => write!(
+                f,
+                "declared-index relations require a `#[logical]` receiver: {detail}"
             ),
             SpecError::InvalidNamedRecordMutation { detail, .. } => write!(
                 f,
@@ -884,6 +915,383 @@ pub fn structural_record_mutation_structs(program: &Program) -> BTreeSet<String>
         .collect()
 }
 
+/// One admitted `#[logical(bound = …, observe = …)]` declaration
+/// (`.design/build/aggregate-array-relations.md`, "Declaring a logical view").
+///
+/// `bound` keeps the source spelling — a `const NAME: usize` or a decimal
+/// literal — so lowering emits the same symbol the author wrote, while
+/// `bound_value` is its resolved size for the element-bound check. `observer`
+/// names the `spec fn obs(&Self, usize) -> V` the relations apply, and
+/// `index_transparent` records whether every occurrence of that observer's
+/// index parameter is a fixed-array projection index rooted at its receiver,
+/// which is the condition under which the two frame relations are admitted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LogicalView {
+    pub struct_name: String,
+    pub bound: String,
+    pub bound_value: u128,
+    pub observer: String,
+    pub index_transparent: bool,
+}
+
+/// The admitted declared logical index spaces of a program, keyed by struct
+/// name. A declaration failing any admission rule is absent here and carries a
+/// `SpecError` from [`validate`]; lowering therefore never emits a relation for
+/// a declaration the source gate rejected.
+pub fn logical_views(program: &Program) -> BTreeMap<String, LogicalView> {
+    resolve_logical_views(program).0
+}
+
+/// Whether an expression names one of the three declared-index relations.
+fn is_logical_relation(name: &str) -> bool {
+    matches!(
+        name,
+        "logical_eq" | "logical_same_except" | "logical_same_except_two"
+    )
+}
+
+/// Resolve every `#[logical]` declaration, returning the admitted views plus one
+/// diagnostic per rejected declaration. The five admission rules are the ones
+/// `.design/build/aggregate-array-relations.md`, "Admitted shapes and
+/// fail-closed boundary", fixes: a non-sealed acyclic finite struct receiver,
+/// one declaration per struct (the parser's rule), a `usize` bound inside the
+/// Forge element bound, and a two-parameter `(&Self, usize)` observer whose
+/// result type is inside the finite structural closure.
+fn resolve_logical_views(program: &Program) -> (BTreeMap<String, LogicalView>, Vec<SpecError>) {
+    let mut admitted = BTreeMap::new();
+    let mut errors = Vec::new();
+    let declarations: Vec<&StructItem> = program
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Struct(structure) if structure.logical.is_some() => Some(structure),
+            _ => None,
+        })
+        .collect();
+    if declarations.is_empty() {
+        return (admitted, errors);
+    }
+
+    let capacities: HashMap<&str, u128> = program
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Const(value) => Some((value.name.as_str(), value.value)),
+            _ => None,
+        })
+        .collect();
+    let structural = structural_array_equality_structs(program);
+    let finite_roots = structural_record_mutation_structs(program);
+    let transparent = index_transparent_observers(program);
+
+    for structure in declarations {
+        let Some(logical) = &structure.logical else {
+            continue;
+        };
+        let span = logical.span;
+        let name = &structure.name;
+        let mut reject = |detail: String| {
+            errors.push(SpecError::InvalidLogicalView { detail, span });
+        };
+        if structure.sealed {
+            reject(format!(
+                "`{name}` is `#[sealed]`; sealed values are platform-minted and their observations come from bodyless boundary declarations, so a quantified claim over them ranges over facts no rung has proved"
+            ));
+            continue;
+        }
+        if !finite_roots.contains(name) {
+            reject(format!(
+                "`{name}` is recursive or carries a field outside the finite structural closure; a declared index space requires an acyclic struct whose fields are scalars, unit, fixed arrays, tuples, or plain records"
+            ));
+            continue;
+        }
+        let Some(bound) = &logical.bound else {
+            reject(format!(
+                "`{name}` declares no `bound`; `#[logical]` requires `bound = \"<usize constant>\"`"
+            ));
+            continue;
+        };
+        let bound_value = match bound.parse::<u128>() {
+            Ok(literal) => literal,
+            Err(_) => match capacities.get(bound.as_str()) {
+                Some(value) => *value,
+                None => {
+                    reject(format!(
+                        "`{name}` declares `bound = \"{bound}\"`, which is neither a non-negative integer literal nor a `const {bound}: usize` visible in this module"
+                    ));
+                    continue;
+                }
+            },
+        };
+        if bound_value > MAX_FIXED_ARRAY_ELEMENTS {
+            reject(format!(
+                "`{name}` declares an index space of {bound_value}, above the {MAX_FIXED_ARRAY_ELEMENTS}-element bound"
+            ));
+            continue;
+        }
+        let Some(observe) = &logical.observe else {
+            reject(format!(
+                "`{name}` declares no `observe`; `#[logical]` requires `observe = \"<spec fn>\"`"
+            ));
+            continue;
+        };
+        let observer = program.items.iter().find_map(|item| match item {
+            Item::SpecFn(function) if function.name == *observe => Some(function),
+            _ => None,
+        });
+        let Some(observer) = observer else {
+            reject(format!(
+                "`{name}` declares `observe = \"{observe}\"`, which names no `spec fn` in this module"
+            ));
+            continue;
+        };
+        if observer.params.len() != 2
+            || !parameter_borrows_named(&observer.params[0].ty, name)
+            || !matches!(observer.params[1].ty, Type::Prim(PrimType::Usize))
+        {
+            reject(format!(
+                "observer `{observe}` must take exactly `(&{name}, usize)`"
+            ));
+            continue;
+        }
+        if !array_equality_type_is_structural(&observer.ret, &structural) {
+            reject(format!(
+                "observer `{observe}` returns a type outside the finite structural closure; a `Vec`, `String`, `Map`, `Box`, `Option`, `Result`, enum, reference-bearing, generic, sealed, or foreign-opaque result is refused"
+            ));
+            continue;
+        }
+        admitted.insert(
+            name.clone(),
+            LogicalView {
+                struct_name: name.clone(),
+                bound: bound.clone(),
+                bound_value,
+                observer: observe.clone(),
+                index_transparent: transparent.contains(observe),
+            },
+        );
+    }
+    (admitted, errors)
+}
+
+/// Whether a parameter type is `&Name` (any borrow depth) for the given struct.
+fn parameter_borrows_named(ty: &Type, name: &str) -> bool {
+    match ty {
+        Type::Ref { inner, mutable } => !*mutable && parameter_borrows_named(inner, name),
+        Type::Named(declared) => declared == name,
+        _ => false,
+    }
+}
+
+/// The least fixed point of one-index observer `spec fn`s whose index parameter
+/// is used only as a fixed-array projection index rooted at the receiver
+/// parameter (`.design/build/aggregate-array-relations.md`,
+/// "Index-transparency"). An observer that forwards its index to another such
+/// `spec fn` joins once that callee has joined, so the set grows monotonically
+/// over the acyclic declaration closure in the same shape as
+/// [`structural_array_equality_structs`].
+fn index_transparent_observers(program: &Program) -> BTreeSet<String> {
+    let array_fields: HashMap<&str, BTreeSet<&str>> = program
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Struct(structure) => Some((
+                structure.name.as_str(),
+                structure
+                    .fields
+                    .iter()
+                    .filter(|field| matches!(field.ty, Type::Array { .. }))
+                    .map(|field| field.name.as_str())
+                    .collect(),
+            )),
+            _ => None,
+        })
+        .collect();
+    let candidates: Vec<&SpecFnItem> = program
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::SpecFn(function)
+                if function.params.len() == 2
+                    && matches!(function.params[1].ty, Type::Prim(PrimType::Usize))
+                    && receiver_struct_name(&function.params[0].ty).is_some() =>
+            {
+                Some(function)
+            }
+            _ => None,
+        })
+        .collect();
+
+    let mut transparent: BTreeSet<String> = BTreeSet::new();
+    loop {
+        let before = transparent.len();
+        for function in &candidates {
+            if transparent.contains(&function.name) {
+                continue;
+            }
+            let Some(receiver_struct) = receiver_struct_name(&function.params[0].ty) else {
+                continue;
+            };
+            let empty = BTreeSet::new();
+            let fields = array_fields.get(receiver_struct).unwrap_or(&empty);
+            if block_index_uses_are_transparent(
+                &function.body,
+                &function.params[0].name,
+                &function.params[1].name,
+                fields,
+                &transparent,
+            ) {
+                transparent.insert(function.name.clone());
+            }
+        }
+        if transparent.len() == before {
+            return transparent;
+        }
+    }
+}
+
+/// The struct a `&Name`/`Name` observer receiver parameter names.
+fn receiver_struct_name(ty: &Type) -> Option<&str> {
+    match ty {
+        Type::Ref { inner, .. } => receiver_struct_name(inner),
+        Type::Named(name) => Some(name.as_str()),
+        _ => None,
+    }
+}
+
+fn block_index_uses_are_transparent(
+    block: &Block,
+    receiver: &str,
+    index: &str,
+    array_fields: &BTreeSet<&str>,
+    transparent: &BTreeSet<String>,
+) -> bool {
+    let expr_ok =
+        |expr: &Expr| index_uses_are_transparent(expr, receiver, index, array_fields, transparent);
+    let block_ok = |inner: &Block| {
+        block_index_uses_are_transparent(inner, receiver, index, array_fields, transparent)
+    };
+    block.stmts.iter().all(|stmt| match stmt {
+        Stmt::Let { init, .. } => expr_ok(init),
+        Stmt::Assign { target, value } => expr_ok(target) && expr_ok(value),
+        Stmt::Return(value) => value.as_ref().is_none_or(expr_ok),
+        Stmt::If {
+            cond, then, else_, ..
+        } => expr_ok(cond) && block_ok(then) && else_.as_ref().is_none_or(block_ok),
+        Stmt::Loop(node) => block_ok(&node.body),
+        Stmt::Expr(expr) => expr_ok(expr),
+        Stmt::Break | Stmt::Continue => true,
+    }) && block.tail.as_deref().is_none_or(expr_ok)
+}
+
+/// Whether every occurrence of the observer's index parameter inside one
+/// expression is an admitted transparent position: the index of a fixed-array
+/// projection rooted at the receiver parameter, or the index argument of a
+/// call to an already index-transparent observer over the same receiver.
+fn index_uses_are_transparent(
+    expr: &Expr,
+    receiver: &str,
+    index: &str,
+    array_fields: &BTreeSet<&str>,
+    transparent: &BTreeSet<String>,
+) -> bool {
+    if is_bare_path(expr, index) {
+        return false;
+    }
+    if let Expr::Index {
+        base,
+        index: IndexArg::Single(position),
+    } = expr
+    {
+        if is_bare_path(position, index)
+            && is_receiver_array_projection(base, receiver, array_fields)
+        {
+            return true;
+        }
+    }
+    if let Expr::Call { callee, args } = expr {
+        if let Expr::Path(segments) = callee.as_ref() {
+            if segments.len() == 1
+                && transparent.contains(&segments[0])
+                && args.len() == 2
+                && is_receiver_operand(&args[0], receiver)
+                && is_bare_path(&args[1], index)
+            {
+                return true;
+            }
+        }
+    }
+    let recurse = |child: &Expr| {
+        index_uses_are_transparent(child, receiver, index, array_fields, transparent)
+    };
+    let recurse_block = |block: &Block| {
+        block_index_uses_are_transparent(block, receiver, index, array_fields, transparent)
+    };
+    match expr {
+        Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::StrLit(_) | Expr::Path(_) => true,
+        Expr::Array(elements) | Expr::Tuple(elements) => elements.iter().all(recurse),
+        Expr::ArrayRepeat { value, .. } => recurse(value),
+        Expr::Call { callee, args } => recurse(callee) && args.iter().all(recurse),
+        Expr::MethodCall { receiver, args, .. } => recurse(receiver) && args.iter().all(recurse),
+        Expr::Field { receiver, .. } => recurse(receiver),
+        Expr::Closure { body, .. } => recurse(body),
+        Expr::Match { scrutinee, arms } => {
+            recurse(scrutinee)
+                && arms
+                    .iter()
+                    .all(|arm| arm.guard.as_ref().is_none_or(recurse) && recurse(&arm.body))
+        }
+        Expr::If { cond, then, else_ } => {
+            recurse(cond) && recurse_block(then) && recurse_block(else_)
+        }
+        Expr::Binary { lhs, rhs, .. } => recurse(lhs) && recurse(rhs),
+        Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::Ref { expr, .. } => {
+            recurse(expr)
+        }
+        Expr::Index { base, index } => {
+            recurse(base)
+                && match index {
+                    IndexArg::Single(one) | IndexArg::RangeTo(one) | IndexArg::RangeFrom(one) => {
+                        recurse(one)
+                    }
+                    IndexArg::Range(lo, hi) => recurse(lo) && recurse(hi),
+                }
+        }
+        Expr::StructLit { fields, .. } => fields.iter().all(|(_, value)| recurse(value)),
+        Expr::Is { scrutinee, .. } => recurse(scrutinee),
+        Expr::Deref(inner) => recurse(inner),
+        Expr::TupleProj { receiver, .. } => recurse(receiver),
+        Expr::Quantifier { domain, body, .. } => recurse(domain) && recurse(body),
+    }
+}
+
+fn is_bare_path(expr: &Expr, name: &str) -> bool {
+    matches!(expr, Expr::Path(segments) if segments.len() == 1 && segments[0] == name)
+}
+
+/// A `receiver.field` projection whose field is a fixed array of the receiver.
+fn is_receiver_array_projection(
+    expr: &Expr,
+    receiver: &str,
+    array_fields: &BTreeSet<&str>,
+) -> bool {
+    match expr {
+        Expr::Field {
+            receiver: base,
+            name,
+        } => array_fields.contains(name.as_str()) && is_receiver_operand(base, receiver),
+        _ => false,
+    }
+}
+
+/// A bare, borrowed, or dereferenced mention of the observer's receiver.
+fn is_receiver_operand(expr: &Expr, receiver: &str) -> bool {
+    match expr {
+        Expr::Ref { expr, .. } | Expr::Deref(expr) => is_receiver_operand(expr, receiver),
+        _ => is_bare_path(expr, receiver),
+    }
+}
+
 /// Validate every contract position of a parsed program against the SpecTherm
 /// cage (REQ-3). Returns `Ok(())` if every contract expression is accepted, else
 /// `Err` with one `SpecError` per violation (accumulated, not first-stop, for
@@ -1082,6 +1490,10 @@ struct Validator {
     /// all have finite structural equality. Used only by the explicit fixed-
     /// array relation built-ins; it grants no ambient equality operation.
     array_equality_structs: BTreeSet<String>,
+    /// Admitted declared logical index spaces, keyed by struct name. Only these
+    /// receivers may carry a `logical_*` relation, and only an index-transparent
+    /// entry may carry one of the two frame relations.
+    logical_views: BTreeMap<String, LogicalView>,
     /// Exact struct-name -> direct field types. Nested lifecycle mutation walks
     /// this table independently from lowering so every field and the optional
     /// terminal fixed-array index are resolved at the source type.
@@ -1351,6 +1763,13 @@ impl Validator {
             }
         }
 
+        // The declared logical index spaces are resolved once, in the same
+        // pre-pass shape as the sealed-factory resolution above: a rejected
+        // declaration seeds a diagnostic, and only the admitted views reach the
+        // relation gate and lowering.
+        let (logical_views, logical_errors) = resolve_logical_views(program);
+        prepass_errors.extend(logical_errors);
+
         Validator {
             spec_fns,
             atomic_functions,
@@ -1362,6 +1781,7 @@ impl Validator {
             sealed_factories,
             active_function: None,
             array_equality_structs: structural_array_equality_structs(program),
+            logical_views,
             record_field_types,
             record_mutation_structs: structural_record_mutation_structs(program),
             array_equality_types: HashMap::new(),
@@ -1677,6 +2097,81 @@ impl Validator {
             current = inner;
         }
         Some(current)
+    }
+
+    /// Validate one call of the declared-index relation family
+    /// (`.design/build/aggregate-array-relations.md`, "Surface"). Typing selects
+    /// the family, so this arm never overlaps
+    /// [`Self::check_array_relation_call`]: a `[T; N]` receiver takes the
+    /// storage relations, a `#[logical]` struct receiver takes these, and every
+    /// other receiver is refused before lowering.
+    fn check_logical_relation_call(
+        &mut self,
+        name: &str,
+        receiver: &Expr,
+        args: &[Expr],
+        span: Span,
+    ) {
+        let expected_arity = match name {
+            "logical_eq" => 1,
+            "logical_same_except" => 2,
+            "logical_same_except_two" => 3,
+            _ => return,
+        };
+        let mut refuse = |detail: String| {
+            self.errors
+                .push(SpecError::LogicalRelationRefused { detail, span });
+        };
+        if args.len() != expected_arity {
+            refuse(format!(
+                "`.{name}()` expects {expected_arity} argument(s), found {}",
+                args.len()
+            ));
+            return;
+        }
+        let left = self.array_equality_operand_type(receiver).cloned();
+        let right = self.array_equality_operand_type(&args[0]).cloned();
+        let (Some(Type::Named(left)), Some(Type::Named(right))) = (left, right) else {
+            self.errors.push(SpecError::LogicalRelationRefused {
+                detail: format!(
+                    "both operands of `.{name}()` must be a bare name, `&name`, or `*name` whose type is a struct carrying `#[logical]`; a fixed array, tuple, scalar, enum, `Option`, `Result`, `Vec`, `Map`, `String`, `Box`, or computed operand is refused"
+                ),
+                span,
+            });
+            return;
+        };
+        if left != right {
+            self.errors.push(SpecError::LogicalRelationRefused {
+                detail: format!(
+                    "`.{name}()` relates two values of one declared index space; `{left}` and `{right}` are different types"
+                ),
+                span,
+            });
+            return;
+        }
+        let Some(view) = self.logical_views.get(&left) else {
+            self.errors.push(SpecError::LogicalRelationRefused {
+                detail: format!(
+                    "`{left}` declares no admitted `#[logical(bound = …, observe = …)]` index space"
+                ),
+                span,
+            });
+            return;
+        };
+        // The two frame relations close by congruence plus one instantiation of
+        // the storage frame only when the observer reads storage at the index
+        // the logical space uses. A derived-index observer needs the Euclidean
+        // decomposition REQ-AGGREL-5 owns, so the relation is refused here
+        // rather than lowered into an obligation no rung can discharge.
+        if name != "logical_eq" && !view.index_transparent {
+            let observer = view.observer.clone();
+            self.errors.push(SpecError::LogicalRelationRefused {
+                detail: format!(
+                    "observer `{observer}` of `{left}` is derived-index, so `.{name}()` is refused until REQ-AGGREL-5 supplies the literal-divisor decomposition; state the frame over the storage arrays and export `.logical_eq()`"
+                ),
+                span,
+            });
+        }
     }
 
     fn check_array_relation_call(
@@ -2184,6 +2679,18 @@ impl Validator {
                 ) {
                     self.check_array_relation_call(name, receiver, args, span);
                 }
+                // The declared-index family is a specification relation. An
+                // executable body naming it is refused before lowering
+                // (`.design/build/aggregate-array-relations.md`, "Admitted
+                // shapes and fail-closed boundary").
+                if is_logical_relation(name) {
+                    self.errors.push(SpecError::LogicalRelationRefused {
+                        detail: format!(
+                            "`.{name}()` is a specification relation and appears only in `req`, `ens`, `inv`, and `spec fn` bodies"
+                        ),
+                        span,
+                    });
+                }
                 self.check_u64_bit_method_call(name, args, span);
                 self.scan_expr_for_loops(receiver, span);
                 for arg in args {
@@ -2384,6 +2891,9 @@ impl Validator {
                     "array_eq" | "array_same_except" | "array_same_except_two"
                 ) {
                     self.check_array_relation_call(name, receiver, args, span);
+                }
+                if is_logical_relation(name) {
+                    self.check_logical_relation_call(name, receiver, args, span);
                 }
                 self.check_u64_bit_method_call(name, args, span);
                 if !BUILTIN_METHODS.contains(&name.as_str()) {

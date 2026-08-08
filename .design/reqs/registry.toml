@@ -17426,14 +17426,32 @@ note = "accepts nested plain records and refuses sealed, opaque, recursive, enum
 id = "REQ-AGGREL-2"
 title = "Declared logical index space and observer"
 owner = ".design/build/aggregate-array-relations.md"
-status = "not_started"
+status = "shipped"
 scope = "verified"
 summary = "A struct declares its own index space and one-index observation with `#[logical(bound = \"CONST\", observe = \"spec_fn\")]`, so a quantified all-index contract can be stated over a collection state without reading its representation."
-remaining_scope = "Parse the attribute in `fn parse_attribute in thermite-syntax/src/parser.rs`, carry `bound`/`observe` on `StructItem`, resolve the capacity under the existing `[T; N]` const rules, and resolve the observer to a two-parameter `spec fn` typed `(&Self, usize) -> V` with `V` inside the finite structural closure."
 aliases = [".design/build/aggregate-array-relations.md REQ-2 (logical view declaration)"]
 contributors = ["thermite-syntax/src/parser.rs", "thermite-syntax/src/ast.rs", "thermite-spec/src/validator.rs"]
-blockers = ["github:dollspace-gay/Thermite#131"]
 generated_to = ["status", "forge-aggregate-array-relations-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "parse_logical_body"
+note = "the `ident = \"string\"` attribute body parsed by thermite-syntax/src/parser.rs onto StructItem::logical"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "resolve_logical_views"
+note = "sealed/recursive receiver, usize bound inside the Forge element bound, and (&Self, usize) observer admission in thermite-spec/src/validator.rs"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-syntax/tests/logical_attribute.rs"
+note = "declaration parse, barrier composition in either order, one declaration per struct, and struct-only attachment"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-spec/tests/logical_view_validate.rs"
+note = "resolved bound/observer, index-transparency classification, and every admission refusal with the rule named"
 
 [[requirement.evidence]]
 kind = "doc"
@@ -17444,14 +17462,22 @@ note = "declaration surface, typing rule, and admitted receiver shapes"
 id = "REQ-AGGREL-3"
 title = "Logical-index relation surface and fail-closed validation"
 owner = ".design/build/aggregate-array-relations.md"
-status = "not_started"
+status = "shipped"
 scope = "verified"
 summary = "`.logical_eq`, `.logical_same_except`, and `.logical_same_except_two` state the three quantifier shapes over a declared index space, with typing selecting one family per receiver."
-remaining_scope = "Extend the relation gate in `fn check_array_relation_call in thermite-spec/src/validator.rs` so a struct receiver carrying a logical view is admitted, and refuse sealed receivers, enums, key-addressed views, mismatched nominal operands, non-path operands, wrong arity, duplicate declarations, executable positions, and a frame relation over a derived-index observer."
 aliases = [".design/build/aggregate-array-relations.md REQ-3 (logical relation surface)"]
-contributors = ["thermite-spec/src/validator.rs", "thermite-spec/tests/fixed_array_validate.rs"]
-blockers = ["github:dollspace-gay/Thermite#131"]
+contributors = ["thermite-spec/src/validator.rs", "thermite-spec/tests/logical_view_validate.rs"]
 generated_to = ["status", "forge-aggregate-array-relations-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "check_logical_relation_call"
+note = "arity, nominal-operand, operand-shape, and derived-index frame gate in thermite-spec/src/validator.rs"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-spec/tests/logical_view_validate.rs"
+note = "admits the three relations over an index-transparent view and refuses array receivers, mismatched operands, computed operands, wrong arity, executable position, and derived-index frames"
 
 [[requirement.evidence]]
 kind = "doc"
@@ -17465,7 +17491,7 @@ owner = ".design/build/aggregate-array-relations.md"
 status = "not_started"
 scope = "verified"
 summary = "Each declared view lowers to one first-order `forall` per relation with frozen observer triggers, plus a generated `proof fn` bridging the storage frame to the logical frame for index-transparent observers."
-remaining_scope = "Emit the three `open spec fn` relations and the three bridge `proof fn`s in `thermite-lower/src/lower.rs`, recognise the three method names in `fn lower_inv_expr`, derive the index space independently in contract/expression/body TV, and evaluate the relation at L1 as a bounded loop over the observer's executable twin."
+remaining_scope = "`pub fn logical_relation_defs_for_program in thermite-lower/src/lower.rs` emits the three per-view `forall` relations with their alternative observer triggers, and both `fn lower_expr` and `fn lower_inv_expr` recognise the three method names, so an index-transparent frame and whole-state equality discharge at L3 with no author-written hint. Remaining: derive the index space independently in contract/expression/body TV (`thermite-tv/src/ref_encode.rs`, `thermite-tv/src/exec_encode.rs`, `forge/src/contract_tv.rs`), evaluate the relation at L1 as a bounded loop over the observer's executable twin (`fn lower_expr_exec in thermite-lower/src/l1.rs`), and weave a relation's declared observer into the checked `spec fn` sub-program (`fn reachable_spec_fn_deps in forge/src/check.rs`) so a wrapper `spec fn` naming the relation resolves."
 aliases = [".design/build/aggregate-array-relations.md REQ-4 (quantified lowering)"]
 contributors = ["thermite-lower/src/lower.rs", "thermite-lower/src/l1.rs", "thermite-tv/src/ref_encode.rs", "thermite-tv/src/exec_encode.rs"]
 blockers = ["github:dollspace-gay/Thermite#131"]
@@ -18216,12 +18242,10 @@ note = "Whole-repository positive gate over every tracked path; also wired into 
 id = "REQ-KPRIM-11"
 title = "Source-derived machine-class gate"
 owner = ".design/build/kernel-primitives.md"
-status = "not_started"
+status = "shipped"
 scope = "forge"
 summary = "A frozen-registry entry's effective machine class is the maximum of the class its source platform-effect row implies and its self-declared concurrency, and a safe v1/v2 linkage admits only sequential."
-remaining_scope = "`.design/build/frozen-primitive-registry.md` section \"Source-derived minimum machine class\" defines the total map from the twelve closed platform effect atoms to a minimum class, the order sequential < volatile < atomic < privileged, the maximum rule over an entry's whole effect row, and the reporting rule for a door no schema models. Forge still gates on `entry.concurrency` alone in `fn plan_from_bytes`, so a `sequential` declaration over a `fx platform(atomic)` door publishes an end-to-end L3 artifact with zero residual machine assumptions. No atom maps to sequential, so the shipped `platform(clock)` fixtures `frozen_primitive_registry.json` and `separate_primitive_registry.json` are a second instance of the same laundering and the v1/v2 acceptance evidence needs a synthetic door whose effect row carries no platform atom, of the shape `fn foreign_identity` in `conformance/verified-build/boundary.th`. Implement the gate and turn the two pinned divergence tests green."
 contributors = [".design/build/frozen-primitive-registry.md", ".design/build/platform-primitives.md", ".design/build/sealed-atomics.md"]
-blockers = ["test:forge/tests/divergence_registry_v4_matrix.rs"]
 generated_to = ["status", "forge-kernel-primitives-status"]
 
 [[requirement.evidence]]
@@ -18230,9 +18254,14 @@ target = ".design/build/frozen-primitive-registry.md"
 note = "Defines the twelve-atom minimum machine-class map, the class order, the effective-class maximum rule, the safe-linkage gate, and the visible-L1 reporting rule for unmodeled doors."
 
 [[requirement.evidence]]
+kind = "symbol"
+target = "source_machine_class"
+note = "In forge/src/verified_build/primitive_registry.rs: maps the twelve frozen platform atoms through MachineClass::of_platform_atom and returns the effect row's maximum with the atom that produced it. fn plan_from_bytes takes `let effective_class = source_class.max(declared_class)` and rejects a same_crate or separate_verus_crate entry above sequential, naming the Thermite function, the atom, and the class."
+
+[[requirement.evidence]]
 kind = "test"
 target = "forge/tests/divergence_registry_v4_matrix.rs"
-note = "Pins the laundering divergence for the v1 same_crate and v2 separate_verus_crate linkages over a fx platform(atomic) door; both tests fail until the gate lands."
+note = "Pinned the laundering divergence for the v1 same_crate and v2 separate_verus_crate linkages over a fx platform(atomic) door; both tests pass on the gate. The v1/v2 acceptance fixtures in forge/tests/verified_composition.rs now close a fx pure door, which is the sequential domain the safe linkages keep."
 
 [[requirement]]
 id = "REQ-DIVTERM-1"

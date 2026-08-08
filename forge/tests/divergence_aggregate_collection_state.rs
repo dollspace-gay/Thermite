@@ -1,62 +1,60 @@
-//! Divergence pins for the two load-bearing residuals of REQ-KPRIM-2.
+//! Quantified aggregate collection-state framing and equality, and the two
+//! residuals of REQ-KPRIM-2 that remain open behind it.
 //!
 //! `.design/build/fixed-collections.md`, "Remaining collection closure", names
-//! the residual work verbatim. Items 4 and 5 are pinned here:
+//! the residual work verbatim. Items 4 and 5 are the subject of this file:
 //!
-//! > 4. quantified framing and equality for aggregate collection states;
-//! > 5. quantified aggregate body TV and strict aggregate receipt/runtime
-//! >    fixtures;
+//! > 4. quantified framing and equality for aggregate collection states, whose
+//! >    surface, iff semantics, fail-closed boundary, and lowering obligation are
+//! >    fixed in `.design/build/aggregate-array-relations.md` (REQ-AGGREL-2 through
+//! >    REQ-AGGREL-5); the slot views of the ring, vector, slab, freelist,
+//! >    intrusive metadata, and both maps are index-transparent and land first;
+//! > 5. quantified aggregate body TV and strict aggregate receipt/runtime fixtures;
 //!
-//! Those two items are the stated gate on the collection package's public
-//! surface. `.design/build/kernel-primitives.md`, "Fixed-collection package":
-//!
-//! > The canonical package builds and replays as a strict freestanding receipt
-//! > rooted at the scalar ring-index transition, binding all five roots and
-//! > rejecting receipt-source tampering. ... Full collection exports remain
-//! > gated by quantified aggregate-state framing and dedicated aggregate
-//! > receipt/runtime coverage.
-//!
-//! `.design/build/fixed-collections.md`, "Fixed bitset", states the missing
-//! quantified form for the aggregate collection state directly:
-//!
-//! > Bulk union, intersection, and difference pin all four result words through
-//! > exact fixed-array equality. Generic capacities and a quantified
-//! > all-indices public contract remain future work.
-//!
-//! and "Assurance and adversarial evidence" ties it to the export gate:
-//!
-//! > Quantified all-index aggregate-state framing remains open, so these
-//! > increments do not generalize the focused results into a claim that every
-//! > collection lifecycle is already a strict public export.
-//!
-//! What ships today is one rung below that. `.design/build/aggregate-array-
-//! relations.md`, "Validation", scopes the shipped relation family to a single
-//! array with at most two excluded indices:
+//! The shipped storage relations quantify over one fixed array with at most two
+//! excluded indices. `.design/build/aggregate-array-relations.md`, "Validation":
 //!
 //! > Every relation operand must still be a named array (or direct
 //! > reference/deref of them) with exactly the same element type and capacity.
 //!
-//! So `.array_eq` / `.array_same_except` / `.array_same_except_two` quantify
-//! over the 4-word `[u64; 4]` storage of `FixedBitmap256`. The design's
-//! quantified aggregate-state form quantifies over the collection state's own
-//! 256-bit logical index space, which no shipped relation reaches.
+//! The declared-index family quantifies over the collection's own index space
+//! instead. `.design/build/aggregate-array-relations.md`, "Meaning":
+//!
+//! > `left.logical_same_except(right, except)` is true exactly when, for every
+//! > `i: usize` with `i < C` and `i != except`, `obs(&left, i) == obs(&right, i)`.
+//!
+//! Its dischargeability splits three ways, and this file is organized on that
+//! split. `.design/build/aggregate-array-relations.md`, "What makes the form
+//! dischargeable":
+//!
+//! > The body is congruence. For a skolem `i`, both sides unfold to the observer
+//! > applied to arguments that are equal by the premise, so the two terms are
+//! > equal whatever the observer does with `i`. No arithmetic, no bit-vector
+//! > reasoning, and no index-transparency requirement. … which is why
+//! > `logical_eq` is admitted for every declared view.
+//!
+//! and, for a frame:
+//!
+//! > Index-transparency is what discharges that body. Every field the observer
+//! > reads is indexed by `i` directly, so each storage relation instantiated at
+//! > `j = i` gives the field equality, and the observer's two applications then
+//! > differ only in arguments that are equal.
 //!
 //! The expected assurance level is the design constant, not a Forge reading.
 //! `.design/build/kernel-primitives.md`, "Completion rule":
 //!
 //! > Every Thermite-authored language semantic, model, and reusable algorithm
-//! > has an L3-or-L4 assurance floor. ... L2, L1, L0, an unrun proof, or a
+//! > has an L3-or-L4 assurance floor. … L2, L1, L0, an unrun proof, or a
 //! > skipped translation-validation row is not a completed primitive.
 //!
 //! R-CHAR-3: every collection declaration used below is sliced verbatim out of
-//! `stdlib/kernel-primitives/collections/bitmap.th` and checked against that
-//! file before the fixture is assembled; the expected outcomes (`L3`, a
-//! successful strict aggregate-rooted build, a replayed receipt) are design
-//! constants. No expected value is copied from Forge output.
-//!
-//! Tracking: the crosslink hub refuses writes on this checkout
-//! (`this hub uses the legacy v2 layout`), so both divergences carry their
-//! authority inline rather than an issue number.
+//! `stdlib/kernel-primitives/collections/bitmap.th` or
+//! `stdlib/kernel-primitives/collections/ring.th` and checked against those
+//! files before the fixture is assembled; the `#[logical(bound = …, observe =
+//! …)]` declaration line comes from `.design/build/aggregate-array-relations.md`,
+//! "Declaring a logical view"; and the expected outcomes (`L3`, a successful
+//! strict aggregate-rooted build, a replayed receipt) are design constants. No
+//! expected value is copied from Forge output.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -101,6 +99,9 @@ impl Drop for TempDir {
 
 /// The shipped collection module that owns the packed 256-bit state.
 const SHIPPED_BITMAP: &str = "stdlib/kernel-primitives/collections/bitmap.th";
+
+/// The shipped collection module that owns the 64-slot FIFO ring.
+const SHIPPED_RING: &str = "stdlib/kernel-primitives/collections/ring.th";
 
 /// Verbatim capacity, state, and membership declarations from
 /// `stdlib/kernel-primitives/collections/bitmap.th`.
@@ -173,163 +174,120 @@ const BITMAP_INSERT_BODY: &str = "\
     capacity: bitmap.capacity,
   }";
 
-/// The verbatim body of the shipped `fixed_bitmap_union` transition.
-const BITMAP_UNION_BODY: &str = "\
-  FixedBitmap256 {
-    words: [
-      left.words[0] | right.words[0],
-      left.words[1] | right.words[1],
-      left.words[2] | right.words[2],
-      left.words[3] | right.words[3],
-    ],
-    capacity: left.capacity,
-  }";
+/// Verbatim capacity and state declarations from
+/// `stdlib/kernel-primitives/collections/ring.th`.
+const RING_STATE_DECLS: &str = "\
+const FIXED_RING_CAPACITY: usize = 64;
 
-/// The two quantified all-index contracts the design owes for an aggregate
-/// collection state, expressed over the shipped membership observer rather
-/// than over the 4-word storage array.
-///
-/// `fixed_bitmap_state_same_except_spec` is the quantified frame: every bit of
-/// the collection state other than the one written keeps its membership.
-/// `fixed_bitmap_union_all_bits_spec` is the quantified equality: membership in
-/// the union agrees with the disjunction at every bit of the state.
-const QUANTIFIED_AGGREGATE_STATE_CONTRACTS: &str = "\
-spec fn fixed_bitmap_state_same_except_spec(
-  result: &FixedBitmap256,
-  before: &FixedBitmap256,
-  changed: usize,
-  count: usize,
-) -> bool
-  dec count
-{
-  if count == 0 {
-    true
-  } else {
-    if count <= FIXED_BITMAP_BITS {
-      (count - 1 == changed
-        || fixed_bitmap_contains_spec(result, count - 1)
-          == fixed_bitmap_contains_spec(before, count - 1))
-        && fixed_bitmap_state_same_except_spec(result, before, changed, count - 1)
-    } else {
-      false
-    }
-  }
-}
-
-spec fn fixed_bitmap_union_all_bits_spec(
-  result: &FixedBitmap256,
-  left: &FixedBitmap256,
-  right: &FixedBitmap256,
-  count: usize,
-) -> bool
-  dec count
-{
-  if count == 0 {
-    true
-  } else {
-    if count <= FIXED_BITMAP_BITS {
-      (fixed_bitmap_contains_spec(result, count - 1)
-        == (fixed_bitmap_contains_spec(left, count - 1)
-          || fixed_bitmap_contains_spec(right, count - 1)))
-        && fixed_bitmap_union_all_bits_spec(result, left, right, count - 1)
-    } else {
-      false
-    }
-  }
+struct FixedRing64 {
+  slots: [u64; FIXED_RING_CAPACITY],
+  head: usize,
+  len: usize,
 }";
 
-fn shipped_bitmap_source() -> String {
-    fs::read_to_string(root().join(SHIPPED_BITMAP)).unwrap()
+/// The verbatim well-formedness predicate of the shipped ring.
+const RING_WF_SPEC: &str = "\
+spec fn fixed_ring_wf_spec(ring: &FixedRing64) -> bool
+  dec ring.len
+{
+  ring.head < FIXED_RING_CAPACITY && ring.len <= FIXED_RING_CAPACITY
+}";
+
+/// The verbatim storage-copy step of the shipped `fixed_ring_push` transition.
+const RING_SLOT_COPY: &str = "    let mut slots: [u64; FIXED_RING_CAPACITY] = ring.slots;";
+
+/// The declaration line `.design/build/aggregate-array-relations.md`,
+/// "Declaring a logical view", fixes: `bound` names the size of the index space
+/// and `observe` names the `spec fn` that reads one index. The bitmap's 256
+/// logical indices share four storage words, so its bound is
+/// `FIXED_BITMAP_BITS`, not `FIXED_BITMAP_WORDS` — "the two numbers are
+/// unrelated by construction".
+const BITMAP_LOGICAL_DECL: &str =
+    "#[logical(bound = \"FIXED_BITMAP_BITS\", observe = \"fixed_bitmap_contains_spec\")]";
+
+/// The same declaration for the ring's index-transparent slot view. The design
+/// lists `FixedRing64` among the views that "store one element per logical
+/// index, so their slot observers are index-transparent".
+const RING_LOGICAL_DECL: &str =
+    "#[logical(bound = \"FIXED_RING_CAPACITY\", observe = \"fixed_ring_slot_spec\")]";
+
+/// The ring's one-index observer, written to the shape the design fixes:
+/// `spec fn obs(value: &L, index: usize) -> V`.
+const RING_SLOT_OBSERVER: &str = "\
+spec fn fixed_ring_slot_spec(ring: &FixedRing64, slot: usize) -> u64
+  dec slot
+{
+  ring.slots[slot]
+}";
+
+fn shipped(module: &str) -> String {
+    fs::read_to_string(root().join(module)).unwrap()
 }
 
-/// Build the quantified aggregate-state fixture out of the shipped collection
-/// declarations. Every borrowed block must still occur verbatim in the shipped
-/// module, so the fixture cannot drift into a private dialect (R-CHAR-3).
-fn quantified_aggregate_state_fixture() -> String {
-    let shipped = shipped_bitmap_source();
-    for block in [
-        BITMAP_STATE_DECLS,
-        BITMAP_INDEX_HELPERS,
-        BITMAP_INSERT_BODY,
-        BITMAP_UNION_BODY,
-    ] {
+/// Every borrowed block must still occur verbatim in its shipped module, so a
+/// fixture cannot drift into a private dialect (R-CHAR-3).
+fn assert_verbatim(module: &str, blocks: &[&str]) {
+    let source = shipped(module);
+    for block in blocks {
         assert!(
-            shipped.contains(block),
-            "fixture block is no longer verbatim in `{SHIPPED_BITMAP}`:\n{block}"
+            source.contains(block),
+            "fixture block is no longer verbatim in `{module}`:\n{block}"
         );
     }
-    format!(
-        "{BITMAP_STATE_DECLS}\n\n{BITMAP_INDEX_HELPERS}\n\n\
-         {QUANTIFIED_AGGREGATE_STATE_CONTRACTS}\n\n\
-         fn fixed_bitmap_insert_quantified_frame(\n\
-         \x20 bitmap: FixedBitmap256,\n\
-         \x20 bit: usize,\n\
-         ) -> FixedBitmap256\n\
-         \x20 req fixed_bitmap_wf_spec(&bitmap) && bit < FIXED_BITMAP_BITS\n\
-         \x20 ens fixed_bitmap_wf_spec(&result)\n\
-         \x20 ens fixed_bitmap_contains_spec(&result, bit)\n\
-         \x20 ens fixed_bitmap_state_same_except_spec(\n\
-         \x20   &result,\n\
-         \x20   &bitmap,\n\
-         \x20   bit,\n\
-         \x20   FIXED_BITMAP_BITS,\n\
-         \x20 )\n\
-         \x20 fx pure\n\
-         {{\n{BITMAP_INSERT_BODY}\n}}\n\n\
-         fn fixed_bitmap_union_quantified_equality(\n\
-         \x20 left: FixedBitmap256,\n\
-         \x20 right: &FixedBitmap256,\n\
-         ) -> FixedBitmap256\n\
-         \x20 req fixed_bitmap_wf_spec(&left) && fixed_bitmap_wf_spec(right)\n\
-         \x20 ens fixed_bitmap_wf_spec(&result)\n\
-         \x20 ens fixed_bitmap_union_all_bits_spec(&result, &left, right, FIXED_BITMAP_BITS)\n\
-         \x20 fx pure\n\
-         {{\n{BITMAP_UNION_BODY}\n}}\n"
+}
+
+/// Declare the packed 256-bit view over the verbatim shipped state. The
+/// attribute line is inserted immediately above the shipped `struct`, leaving
+/// every borrowed declaration byte-identical to the module.
+fn bitmap_declarations_with_logical_view() -> String {
+    assert_verbatim(SHIPPED_BITMAP, &[BITMAP_STATE_DECLS, BITMAP_INDEX_HELPERS]);
+    BITMAP_STATE_DECLS.replace(
+        "struct FixedBitmap256 {",
+        &format!("{BITMAP_LOGICAL_DECL}\nstruct FixedBitmap256 {{"),
     )
 }
 
-/// Divergence 1 — REQ-KPRIM-2 / `.design/build/fixed-collections.md`
-/// "Remaining collection closure" item 4: "quantified framing and equality for
-/// aggregate collection states".
-///
-/// The shipped relation family quantifies over one storage array with at most
-/// two excluded indices. The design owes a quantified contract over the
-/// aggregate collection state's own index space: "a quantified all-indices
-/// public contract" (`.design/build/fixed-collections.md`, "Fixed bitset").
-///
-/// Expected (design): every row of the fixture certifies at `L3`
-/// (`.design/build/kernel-primitives.md`, "Completion rule").
-///
-/// Actual (today): the two quantified transitions certify at `L0` with
-/// `postcondition not satisfied`. The word-level rows around them are `L3`, so
-/// the gap is the lift from storage-array framing to collection-state framing,
-/// not the fixture.
-#[test]
-#[ignore = "divergence: quantified aggregate collection-state framing/equality certifies at L0, not the design's L3 floor; .design/build/fixed-collections.md 'Remaining collection closure' item 4"]
-fn quantified_aggregate_collection_state_framing_and_equality_reach_l3() {
-    let temp = TempDir::new("quantified");
-    let fixture = temp.0.join("quantified_aggregate_state.th");
-    fs::write(&fixture, quantified_aggregate_state_fixture()).unwrap();
+/// Declare the index-transparent 64-slot view over the verbatim shipped ring
+/// state.
+fn ring_declarations_with_logical_view() -> String {
+    assert_verbatim(
+        SHIPPED_RING,
+        &[RING_STATE_DECLS, RING_WF_SPEC, RING_SLOT_COPY],
+    );
+    format!(
+        "{}\n\n{RING_WF_SPEC}\n\n{RING_SLOT_OBSERVER}\n",
+        RING_STATE_DECLS.replace(
+            "struct FixedRing64 {",
+            &format!("{RING_LOGICAL_DECL}\nstruct FixedRing64 {{"),
+        )
+    )
+}
+
+/// Run `forge check --level l3 --json` over a fixture and return its output.
+fn check_fixture(name: &str, fixture_name: &str, source: &str) -> Output {
+    let temp = TempDir::new(name);
+    let fixture = temp.0.join(fixture_name);
+    fs::write(&fixture, source).unwrap();
     let fixture_s = fixture.to_string_lossy().to_string();
+    forge(&["check", &fixture_s, "--level", "l3", "--json"])
+}
 
-    let checked = forge(&["check", &fixture_s, "--level", "l3", "--json"]);
-    let rows: Vec<serde_json::Value> =
-        serde_json::from_slice(&checked.stdout).unwrap_or_else(|_| {
-            panic!(
-                "forge check emitted no certificate array\nstdout:\n{}\nstderr:\n{}",
-                String::from_utf8_lossy(&checked.stdout),
-                String::from_utf8_lossy(&checked.stderr)
-            )
-        });
-
-    // The two quantified aggregate-state rows must exist and must be L3.
-    for item in [
-        "fixed_bitmap_insert_quantified_frame",
-        "fixed_bitmap_union_quantified_equality",
-    ] {
+/// Require every certificate row of a checked fixture to reach the design's L3
+/// assurance floor, naming the rows the acceptance criterion calls out.
+fn assert_rows_reach_l3(checked: &Output, items: &[&str]) {
+    let rows: Vec<serde_json::Value> = match serde_json::from_slice(&checked.stdout) {
+        Ok(rows) => rows,
+        Err(_) => panic!(
+            "the fixture produced no certificate at all, so the required rows {items:?} \
+             cannot reach L3\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&checked.stdout),
+            String::from_utf8_lossy(&checked.stderr)
+        ),
+    };
+    for item in items {
         let row = rows
             .iter()
-            .find(|row| row["item"] == item)
+            .find(|row| row["item"] == *item)
             .unwrap_or_else(|| panic!("missing certificate row for `{item}`"));
         assert_eq!(
             row["level"], "L3",
@@ -337,22 +295,193 @@ fn quantified_aggregate_collection_state_framing_and_equality_reach_l3() {
              aggregate collection-state contract; certificate was: {row}"
         );
     }
-
     assert!(
         rows.iter().all(|row| row["level"] == "L3"),
         "a quantified aggregate collection-state row fell below L3: {rows:?}"
     );
-    assert!(
-        checked.status.success(),
-        "forge check rejected the quantified aggregate collection-state fixture\nstdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&checked.stdout),
-        String::from_utf8_lossy(&checked.stderr)
+}
+
+/// REQ-KPRIM-2 / `.design/build/fixed-collections.md` "Remaining collection
+/// closure" item 4, the whole-state half:
+/// `.design/build/aggregate-array-relations.md`, "What makes the form
+/// dischargeable", admits `logical_eq` "for every declared view" because its
+/// bridge "is congruence … whatever the observer does with `i`".
+///
+/// The packed bitmap is the hardest case for that claim: its observer reads
+/// `bitmap.words[bit / 64].bit_test(bit % 64)`, so the relation quantifies over
+/// 256 logical indices while the storage array holds four words. A transition
+/// that adopts another bitmap's state must therefore export the complete
+/// 256-index membership agreement in the collection's own vocabulary, without
+/// naming `words`.
+///
+/// Expected (design): every row of the fixture certifies at `L3`
+/// (`.design/build/kernel-primitives.md`, "Completion rule").
+#[test]
+fn packed_collection_state_equality_reaches_l3() {
+    let source = format!(
+        "{}\n\n{BITMAP_INDEX_HELPERS}\n\n\
+         fn fixed_bitmap_adopt_state(\n\
+         \x20 target: FixedBitmap256,\n\
+         \x20 source: &FixedBitmap256,\n\
+         ) -> FixedBitmap256\n\
+         \x20 req fixed_bitmap_wf_spec(&target) && fixed_bitmap_wf_spec(source)\n\
+         \x20 ens fixed_bitmap_wf_spec(&result)\n\
+         \x20 ens result.logical_eq(source)\n\
+         \x20 fx pure\n\
+         {{\n\
+         \x20 FixedBitmap256 {{\n\
+         \x20   words: source.words,\n\
+         \x20   capacity: target.capacity,\n\
+         \x20 }}\n\
+         }}\n",
+        bitmap_declarations_with_logical_view()
+    );
+    let checked = check_fixture("packed_equality", "packed_state_equality.th", &source);
+    assert_rows_reach_l3(&checked, &["fixed_bitmap_adopt_state"]);
+}
+
+/// REQ-KPRIM-2 / `.design/build/fixed-collections.md` "Remaining collection
+/// closure" item 4, the frame half. The design fixes which collections land
+/// first: "the slot views of the ring, vector, slab, freelist, intrusive
+/// metadata, and both maps are index-transparent and land first".
+///
+/// `FixedRing64` stores one `u64` per logical index, so its slot observer reads
+/// storage at the index the logical space uses and both frame relations close
+/// "by congruence plus one instantiation per read field, with no arithmetic".
+///
+/// Expected (design): every row certifies at `L3`, including the one-index and
+/// two-index frames and whole-state equality over the same declared view.
+#[test]
+fn index_transparent_collection_state_frames_reach_l3() {
+    let source = format!(
+        "{}\n\
+         fn fixed_ring_write_slot(\n\
+         \x20 ring: FixedRing64,\n\
+         \x20 slot: usize,\n\
+         \x20 value: u64,\n\
+         ) -> FixedRing64\n\
+         \x20 req fixed_ring_wf_spec(&ring) && slot < FIXED_RING_CAPACITY\n\
+         \x20 ens fixed_ring_wf_spec(&result)\n\
+         \x20 ens fixed_ring_slot_spec(&result, slot) == value\n\
+         \x20 ens result.logical_same_except(&ring, slot)\n\
+         \x20 fx pure\n\
+         {{\n{RING_SLOT_COPY}\n\
+         \x20 slots[slot] = value;\n\
+         \x20 FixedRing64 {{\n\
+         \x20   slots: slots,\n\
+         \x20   head: ring.head,\n\
+         \x20   len: ring.len,\n\
+         \x20 }}\n\
+         }}\n\n\
+         fn fixed_ring_write_two_slots(\n\
+         \x20 ring: FixedRing64,\n\
+         \x20 first: usize,\n\
+         \x20 second: usize,\n\
+         \x20 value: u64,\n\
+         ) -> FixedRing64\n\
+         \x20 req fixed_ring_wf_spec(&ring)\n\
+         \x20   && first < FIXED_RING_CAPACITY\n\
+         \x20   && second < FIXED_RING_CAPACITY\n\
+         \x20   && first != second\n\
+         \x20 ens fixed_ring_wf_spec(&result)\n\
+         \x20 ens fixed_ring_slot_spec(&result, first) == value\n\
+         \x20 ens fixed_ring_slot_spec(&result, second) == value\n\
+         \x20 ens result.logical_same_except_two(&ring, first, second)\n\
+         \x20 fx pure\n\
+         {{\n{RING_SLOT_COPY}\n\
+         \x20 slots[first] = value;\n\
+         \x20 slots[second] = value;\n\
+         \x20 FixedRing64 {{\n\
+         \x20   slots: slots,\n\
+         \x20   head: ring.head,\n\
+         \x20   len: ring.len,\n\
+         \x20 }}\n\
+         }}\n\n\
+         fn fixed_ring_adopt_state(\n\
+         \x20 target: FixedRing64,\n\
+         \x20 source: &FixedRing64,\n\
+         ) -> FixedRing64\n\
+         \x20 req fixed_ring_wf_spec(&target) && fixed_ring_wf_spec(source)\n\
+         \x20 ens fixed_ring_wf_spec(&result)\n\
+         \x20 ens result.logical_eq(source)\n\
+         \x20 fx pure\n\
+         {{\n\
+         \x20 FixedRing64 {{\n\
+         \x20   slots: source.slots,\n\
+         \x20   head: source.head,\n\
+         \x20   len: source.len,\n\
+         \x20 }}\n\
+         }}\n",
+        ring_declarations_with_logical_view()
+    );
+    let checked = check_fixture("transparent_frames", "index_transparent_frames.th", &source);
+    assert_rows_reach_l3(
+        &checked,
+        &[
+            "fixed_ring_write_slot",
+            "fixed_ring_write_two_slots",
+            "fixed_ring_adopt_state",
+        ],
     );
 }
 
-/// Divergence 2 — REQ-KPRIM-2 / `.design/build/fixed-collections.md`
-/// "Remaining collection closure" item 5: "quantified aggregate body TV and
-/// strict aggregate receipt/runtime fixtures".
+/// Divergence — `.design/build/aggregate-array-relations.md` AC-5, tracked as
+/// GitHub issue #132 (REQ-AGGREL-5, "Derived-index logical frames").
+///
+/// The design refuses the two frame relations over a derived-index observer
+/// until that requirement lands, and states exactly what is missing
+/// (`.design/build/aggregate-array-relations.md`, "The packed frame and what it
+/// needs"):
+///
+/// > `fixed_bitmap_contains_spec` reads
+/// > `bitmap.words[bit / 64].bit_test(bit % 64)`. Its 256 logical indices share
+/// > four storage words, so the frame bridge above does not apply and the two
+/// > frame relations are refused on that receiver. Establishing
+/// > `result.logical_same_except(&bitmap, bit)` from the postconditions
+/// > `fixed_bitmap_insert` already proves needs three facts the toolchain does
+/// > not supply:
+/// >
+/// > 1. `i < 256 ==> i / 64 < 4`, to instantiate the storage frame at the
+/// >    derived word.
+/// > 2. `i / 64 == bit / 64 && i != bit ==> i % 64 != bit % 64`, to reach the
+/// >    case where the observed bit shares the written word.
+/// > 3. A proof-position form of the bit-preservation witness.
+///
+/// AC-5 is the acceptance criterion this pins: "`FixedBitmap256`'s
+/// `fixed_bitmap_insert`, `fixed_bitmap_remove`, and `fixed_bitmap_set_to`
+/// export `logical_same_except` against the requested bit at strict L3".
+///
+/// Expected (design): the insert transition's row certifies at `L3`.
+///
+/// Actual (today): the relation is refused before lowering, because no rung can
+/// discharge it — `pub fn u64_bit_defs in thermite-lower/src/lower.rs` emits the
+/// bit-preservation witnesses as executable functions, and a generated bridge
+/// proof cannot call an executable function. A named red pin, not a hidden one
+/// (goal.md R-DEFER-3): it goes green when issue #132 lands.
+#[test]
+fn packed_collection_state_frame_reaches_l3() {
+    let source = format!(
+        "{}\n\n{BITMAP_INDEX_HELPERS}\n\n\
+         fn fixed_bitmap_insert_logical_frame(\n\
+         \x20 bitmap: FixedBitmap256,\n\
+         \x20 bit: usize,\n\
+         ) -> FixedBitmap256\n\
+         \x20 req fixed_bitmap_wf_spec(&bitmap) && bit < FIXED_BITMAP_BITS\n\
+         \x20 ens fixed_bitmap_wf_spec(&result)\n\
+         \x20 ens fixed_bitmap_contains_spec(&result, bit)\n\
+         \x20 ens result.logical_same_except(&bitmap, bit)\n\
+         \x20 fx pure\n\
+         {{\n{BITMAP_INSERT_BODY}\n}}\n",
+        bitmap_declarations_with_logical_view()
+    );
+    assert_verbatim(SHIPPED_BITMAP, &[BITMAP_INSERT_BODY]);
+    let checked = check_fixture("packed_frame", "packed_state_frame.th", &source);
+    assert_rows_reach_l3(&checked, &["fixed_bitmap_insert_logical_frame"]);
+}
+
+/// Divergence — REQ-KPRIM-2 / `.design/build/fixed-collections.md` "Remaining
+/// collection closure" item 5: "quantified aggregate body TV and strict
+/// aggregate receipt/runtime fixtures".
 ///
 /// `.design/build/kernel-primitives.md`, "Fixed-collection package", records
 /// that the canonical package receipt is "rooted at the scalar ring-index
@@ -369,9 +498,12 @@ fn quantified_aggregate_collection_state_framing_and_equality_reach_l3() {
 /// replays, the plan names the aggregate root, and every translation-validation
 /// row is `faithful`.
 ///
-/// Actual (today): Forge refuses at the `exports` stage before any proof runs.
+/// Actual (today): `fn supported_public_return_type in
+/// forge/src/verified_build.rs` has no ADT arm, so `plan_exports` refuses at the
+/// `exports` stage before any proof runs. A named red pin for REQ-KPRIM-2 item 5
+/// (goal.md R-DEFER-3), outside the declared-index relation family this file's
+/// first three rows cover.
 #[test]
-#[ignore = "divergence: aggregate-rooted collection exports are refused at the plan stage, so no strict aggregate receipt/runtime fixture exists; .design/build/fixed-collections.md 'Remaining collection closure' item 5"]
 fn aggregate_rooted_collection_export_is_a_strict_l3_receipt() {
     let temp = TempDir::new("receipt");
     let bundle = temp.0.join("collections_aggregate.verified");

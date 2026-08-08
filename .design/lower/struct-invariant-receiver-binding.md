@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: 7197c71efadcd7bc4fbceda470bcefac1f01d5d4e583e3fa232520a038835f8d (re-pinned 2026-08-05 after exact two-index fixed-array lowering; invariant receiver binding remains regression-covered)
+audited-content-sha256: 2a5bb3dbb4756b465e25087755d8a3bdf4dd15a1a82ee354b6c9fc55d581c178 (re-pinned 2026-08-07 after the quantified declared-index relation family landed the `#[logical]` attribute, its admission and relation gate, and the per-view `forall` emission)
 decision: qualify invariant field paths in the canonical invariant lowerer
 issue: github:dollspace-gay/Thermite#110
 governs:

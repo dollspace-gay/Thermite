@@ -379,6 +379,22 @@ enum ParsedAttr {
     /// `#[opaque]` on a `struct`: package construction is restricted to the
     /// module that declares the type.
     Opaque,
+    /// `#[logical(bound = "…", observe = "…")]` on a `struct`: the declared
+    /// quantified index space and its one-index observer
+    /// (`.design/build/aggregate-array-relations.md`, "Declaring a logical
+    /// view").
+    Logical(LogicalAttr),
+}
+
+/// The barrier and index-space attributes a `struct` item carries, reduced from
+/// the parsed attribute list. `#[logical]` combines with either barrier, so a
+/// struct accepts a list rather than a single attribute; `#[sealed]` and
+/// `#[opaque]` remain mutually exclusive.
+struct StructAttrs {
+    sealed: bool,
+    sealed_factory: Option<String>,
+    opaque: bool,
+    logical: Option<LogicalAttr>,
 }
 
 struct Parser<'a> {
@@ -650,13 +666,32 @@ impl<'a> Parser<'a> {
 
     fn parse_item(&mut self) -> PResult<Item> {
         let start_span = self.peek_span();
-        // An optional leading `#[...]` attribute (`#[slag(...)]` or
+        // The leading `#[...]` attribute list (`#[slag(...)]`,
         // `#[boundary("...")]`; ffi-boundary.md REQ-3). `parse_attribute`
-        // dispatches on the name; `parse_item` routes the result to the fn.
-        let attr = if self.check(&TokKind::HashBracket) {
-            Some(self.parse_attribute()?)
+        // dispatches on the name; `parse_item` routes the result to the item
+        // kind. A `struct` accepts two attributes — one barrier plus one
+        // `#[logical(...)]` index-space declaration
+        // (`.design/build/aggregate-array-relations.md`, "Declaring a logical
+        // view") — and every other item kind accepts at most one.
+        let mut attrs: Vec<ParsedAttr> = Vec::new();
+        while self.check(&TokKind::HashBracket) {
+            let parsed = self.parse_attribute()?;
+            if matches!(parsed, ParsedAttr::Logical(_))
+                && attrs
+                    .iter()
+                    .any(|prior| matches!(prior, ParsedAttr::Logical(_)))
+            {
+                return Err(self.unexpected("one `#[logical(...)]` attribute per struct"));
+            }
+            attrs.push(parsed);
+        }
+        let attr = if attrs.len() > 1 && !self.check(&TokKind::Struct) {
+            return Err(self.unexpected("one leading attribute outside a `struct` item"));
         } else {
-            None
+            attrs
+                .iter()
+                .find(|candidate| !matches!(candidate, ParsedAttr::Logical(_)))
+                .or_else(|| attrs.first())
         };
 
         // Fixed-storage capacity declaration. `const` is contextual so it does
@@ -670,21 +705,45 @@ impl<'a> Parser<'a> {
 
         // A `struct` item (`.design/basis/01-adts.md` REQ-1) accepts either the
         // bare `#[sealed]` boundary-only barrier, its exact verified-factory
-        // form, or the `#[opaque]` module-construction barrier. An enum carries
-        // none of them.
+        // form, or the `#[opaque]` module-construction barrier, each optionally
+        // preceded or followed by one `#[logical(...)]`. An enum carries none of
+        // them.
         if self.check(&TokKind::Struct) {
-            let (sealed, sealed_factory, opaque) = match &attr {
-                Some(ParsedAttr::Sealed(factory)) => (true, factory.clone(), false),
-                Some(ParsedAttr::Opaque) => (false, None, true),
-                Some(ParsedAttr::Slag(_)) => {
-                    return Err(self.unexpected("`fn` after `#[slag(...)]`"));
-                }
-                Some(ParsedAttr::Boundary(_)) => {
-                    return Err(self.unexpected("`fn` after `#[boundary(\"...\")]`"));
-                }
-                None => (false, None, false),
+            let mut declared = StructAttrs {
+                sealed: false,
+                sealed_factory: None,
+                opaque: false,
+                logical: None,
             };
-            return self.parse_struct(start_span, sealed, sealed_factory, opaque);
+            for parsed in &attrs {
+                match parsed {
+                    ParsedAttr::Sealed(factory) => {
+                        if declared.sealed || declared.opaque {
+                            return Err(
+                                self.unexpected("one construction barrier per `struct` item")
+                            );
+                        }
+                        declared.sealed = true;
+                        declared.sealed_factory = factory.clone();
+                    }
+                    ParsedAttr::Opaque => {
+                        if declared.sealed || declared.opaque {
+                            return Err(
+                                self.unexpected("one construction barrier per `struct` item")
+                            );
+                        }
+                        declared.opaque = true;
+                    }
+                    ParsedAttr::Logical(logical) => declared.logical = Some(logical.clone()),
+                    ParsedAttr::Slag(_) => {
+                        return Err(self.unexpected("`fn` after `#[slag(...)]`"));
+                    }
+                    ParsedAttr::Boundary(_) => {
+                        return Err(self.unexpected("`fn` after `#[boundary(\"...\")]`"));
+                    }
+                }
+            }
+            return self.parse_struct(start_span, declared);
         }
         if self.check(&TokKind::Enum) {
             match &attr {
@@ -701,6 +760,11 @@ impl<'a> Parser<'a> {
                 }
                 Some(ParsedAttr::Opaque) => {
                     return Err(self.unexpected("`struct` after `#[opaque]`"));
+                }
+                // A declared index space is a property of a `struct`
+                // representation; an `enum` has no index space of its own.
+                Some(ParsedAttr::Logical(_)) => {
+                    return Err(self.unexpected("`struct` after `#[logical(...)]`"));
                 }
                 None => {}
             }
@@ -754,13 +818,16 @@ impl<'a> Parser<'a> {
                 Some(ParsedAttr::Opaque) => {
                     return Err(self.unexpected("`struct` after `#[opaque]`"));
                 }
+                Some(ParsedAttr::Logical(_)) => {
+                    return Err(self.unexpected("`struct` after `#[logical(...)]`"));
+                }
                 None => {}
             }
             self.parse_spec_fn(start_span)
         } else if self.check(&TokKind::Fn) {
             let (slag, boundary) = match attr {
-                Some(ParsedAttr::Slag(s)) => (Some(s), None),
-                Some(ParsedAttr::Boundary(b)) => (None, Some(b)),
+                Some(ParsedAttr::Slag(s)) => (Some(s.clone()), None),
+                Some(ParsedAttr::Boundary(b)) => (None, Some(b.clone())),
                 // `#[sealed]` is a `struct`-only abstraction barrier (REQ-8); a
                 // door is a `#[boundary]` fn, never `#[sealed]`.
                 Some(ParsedAttr::Sealed(_)) => {
@@ -768,6 +835,9 @@ impl<'a> Parser<'a> {
                 }
                 Some(ParsedAttr::Opaque) => {
                     return Err(self.unexpected("`struct` after `#[opaque]`"));
+                }
+                Some(ParsedAttr::Logical(_)) => {
+                    return Err(self.unexpected("`struct` after `#[logical(...)]`"));
                 }
                 None => (None, None),
             };
@@ -812,10 +882,15 @@ impl<'a> Parser<'a> {
     fn parse_attribute(&mut self) -> PResult<ParsedAttr> {
         let start = self.peek_span();
         self.consume(&TokKind::HashBracket, "`#[`")?;
-        let name = self.take_ident("`slag`, `boundary`, `sealed`, or `opaque`")?;
+        let name = self.take_ident("`slag`, `boundary`, `sealed`, `opaque`, or `logical`")?;
         match name.as_str() {
             "slag" => Ok(ParsedAttr::Slag(self.parse_slag_body(start)?)),
             "boundary" => Ok(ParsedAttr::Boundary(self.parse_boundary_body(start)?)),
+            // `#[logical(bound = "…", observe = "…")]`
+            // (`.design/build/aggregate-array-relations.md`, "Declaring a
+            // logical view"): the same `ident = "string"` field list `#[slag]`
+            // uses, so one body parser shape serves both.
+            "logical" => Ok(ParsedAttr::Logical(self.parse_logical_body(start)?)),
             // `#[sealed]` (`.design/basis/06-provenance-and-sinks.md` REQ-8): the
             // bare form closes at `]`; the explicit verified-factory form carries
             // exactly one string name.
@@ -835,11 +910,50 @@ impl<'a> Parser<'a> {
                 Ok(ParsedAttr::Opaque)
             }
             _ => Err(SyntaxError::Unexpected {
-                expected: "`slag`, `boundary`, `sealed`, or `opaque`".to_string(),
+                expected: "`slag`, `boundary`, `sealed`, `opaque`, or `logical`".to_string(),
                 found: format!("identifier `{name}`"),
                 span: start,
             }),
         }
+    }
+
+    /// Parse a `#[logical(bound = "CAP", observe = "obs")]` attribute body — the
+    /// `key = "value"` field list `#[slag]` already uses
+    /// (`.design/build/aggregate-array-relations.md`, "Declaring a logical
+    /// view"). `start` is the span of the opening `#[`; the `#[` and the
+    /// `logical` name are already consumed by `parse_attribute`. An absent or
+    /// unknown field is left for `thermite-spec`'s admission rules, which own
+    /// the diagnostic that names the failing rule.
+    fn parse_logical_body(&mut self, start: Span) -> PResult<LogicalAttr> {
+        self.consume(&TokKind::LParen, "`(`")?;
+        let mut bound = None;
+        let mut observe = None;
+        if !self.check(&TokKind::RParen) {
+            loop {
+                let field = self.take_ident("`bound` or `observe`")?;
+                self.consume(&TokKind::Eq, "`=`")?;
+                let value = self.take_string("a string value")?;
+                match field.as_str() {
+                    "bound" => bound = Some(value),
+                    "observe" => observe = Some(value),
+                    _ => {}
+                }
+                if !self.eat(&TokKind::Comma) {
+                    break;
+                }
+                if self.check(&TokKind::RParen) {
+                    break;
+                }
+            }
+        }
+        let end = self.peek_span();
+        self.consume(&TokKind::RParen, "`)`")?;
+        self.consume(&TokKind::RBracket, "`]`")?;
+        Ok(LogicalAttr {
+            bound,
+            observe,
+            span: start.to(end),
+        })
     }
 
     /// Parse a `#[boundary("crate::path")]` attribute body: a single positional
@@ -1032,16 +1146,17 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    /// Parse a `[#[sealed]|#[opaque]] struct NAME { field: type, … } [inv <expr>]`
-    /// item. The caller has already reduced the optional attribute to the two
-    /// mutually exclusive barrier flags.
-    fn parse_struct(
-        &mut self,
-        start_span: Span,
-        sealed: bool,
-        sealed_factory: Option<String>,
-        opaque: bool,
-    ) -> PResult<Item> {
+    /// Parse a `[#[logical(...)]] [#[sealed]|#[opaque]] struct NAME { field:
+    /// type, … } [inv <expr>]` item. The caller has already reduced the
+    /// attribute list to the two mutually exclusive barrier flags plus the
+    /// optional declared index space.
+    fn parse_struct(&mut self, start_span: Span, declared: StructAttrs) -> PResult<Item> {
+        let StructAttrs {
+            sealed,
+            sealed_factory,
+            opaque,
+            logical,
+        } = declared;
         self.consume(&TokKind::Struct, "`struct`")?;
         let name = self.take_ident("a struct name")?;
         let fields = self.parse_field_defs()?;
@@ -1060,6 +1175,7 @@ impl<'a> Parser<'a> {
             sealed,
             sealed_factory,
             opaque,
+            logical,
             span,
         }))
     }

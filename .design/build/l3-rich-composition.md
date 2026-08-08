@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: 2fa76fdeae3e85e35759058ed82425dde2c028d76d47a4e2b2f7a7e0d2a24d0c (re-pinned 2026-08-07 after the synthetic test platform acceptance test joined the governed composition suite)
+audited-content-sha256: cdecf6299ada97e986a4032ae17d7b415ba8830a279d4d7b716306b7c447e630 (re-pinned 2026-08-07 after the quantified declared-index relation family landed the `#[logical]` attribute, its admission and relation gate, and the per-view `forall` emission)
 decision: one canonical caller crate with crate-visible rich Thermite roots, public shell exports, and optionally exact separately verified primitive crates
 issue: github:dollspace-gay/Thermite#104
 governs:

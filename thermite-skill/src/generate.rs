@@ -1008,6 +1008,7 @@ fn item_inventory() -> Vec<Item> {
             sealed: false,
             sealed_factory: None,
             opaque: false,
+            logical: None,
             span,
         }),
         Item::Enum(EnumItem {

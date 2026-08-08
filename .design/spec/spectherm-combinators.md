@@ -3,7 +3,7 @@
 tier: 3-component
 status: draft
 audited-sha: 92396428567edc6940a9e2845217f5ff4c2ea3c6 (re-pinned 2026-06-16, user-authorized: the only change to this doc's governed files since the prior pin is the additive stage-1 forge-tier increment 2a — the new Item::Forge surface + inert Item::Forge match arms, verified net-additive with no substantive removal of existing v1 logic (git log <main>..HEAD = the 8 forge commits); the v1 behavior this doc governs is unchanged, and the new forge-tier surface is specified in .design/stage1-forge-tier.md / REQ-S1-3)
-audited-content-sha256: 0911551398ee827fb4d80ad744a7262ddbab60bcad7107945ea5e0cff5057bf6 (re-pinned 2026-08-05 after exact two-index relation validation; combinator semantics are unchanged)
+audited-content-sha256: a0bf49700373ce432ae3049b3b3ae6c479e648f0de6179f8da50a5c266d0511b (re-pinned 2026-08-07 after the quantified declared-index relation family landed the `#[logical]` attribute, its admission and relation gate, and the per-view `forall` emission)
 governs: thermite-spec/src/combinators.rs, thermite-spec/src/validator.rs
 thesis-refs:
   - thermite-design.md §4.1

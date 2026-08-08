@@ -413,6 +413,14 @@ pub struct Falsify {
 /// module's verified functions. Lowering also prevents external Rust field
 /// construction. A plain struct has both flags false, and the parser cannot
 /// produce both flags true.
+///
+/// `logical` carries the `#[logical(bound = "…", observe = "…")]` declaration of
+/// a quantified index space over the value
+/// (`.design/build/aggregate-array-relations.md`, "Declaring a logical view").
+/// It is `None` for a struct that declares no index space. The parser admits at
+/// most one such attribute per struct and combines it with `#[sealed]` or
+/// `#[opaque]`; `thermite_spec::logical_views` resolves the two names and
+/// decides admission.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StructItem {
     pub name: Ident,
@@ -421,6 +429,23 @@ pub struct StructItem {
     pub sealed: bool,
     pub sealed_factory: Option<Ident>,
     pub opaque: bool,
+    pub logical: Option<LogicalAttr>,
+    pub span: Span,
+}
+
+/// A `#[logical(bound = "CAPACITY", observe = "observer_spec_fn")]` attribute on
+/// a `struct` (`.design/build/aggregate-array-relations.md`, "Declaring a
+/// logical view"). `bound` names the size of the declared index space, which is
+/// `0 <= i < bound` over `usize`; `observe` names the `spec fn obs(&Self,
+/// usize) -> V` that reads one index. Both fields are `Option` because the
+/// parser accepts the `ident = "string"` field list that `#[slag(...)]` already
+/// uses and leaves resolution — and the diagnostic for a missing, unresolvable,
+/// or wrongly typed name — to `thermite-spec`'s validator, which owns the
+/// admission rules.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LogicalAttr {
+    pub bound: Option<String>,
+    pub observe: Option<String>,
     pub span: Span,
 }
 

@@ -3,12 +3,18 @@
 <!--
 tier: 3-component
 status: partial
-decision: array_eq, array_same_except, and array_same_except_two derive exact structural equality and quantified one/two-index frames over a fixed array's own index space for finite plain record elements without granting equality to sealed or opaque authority; the sibling logical_eq, logical_same_except, and logical_same_except_two relations quantify over a struct's declared logical index space and are specified here ahead of implementation
+decision: array_eq, array_same_except, and array_same_except_two derive exact structural equality and quantified one/two-index frames over a fixed array's own index space for finite plain record elements without granting equality to sealed or opaque authority; the sibling logical_eq, logical_same_except, and logical_same_except_two relations quantify over a struct's declared logical index space, reach strict L3 for index-transparent frames and for whole-state equality over any observer, and refuse a frame over a derived-index observer until the packed decomposition lands
 governs:
+  - thermite-syntax/src/ast.rs
+  - thermite-syntax/src/parser.rs
+  - thermite-syntax/tests/logical_attribute.rs
   - thermite-spec/src/lib.rs
   - thermite-spec/src/validator.rs
   - thermite-spec/tests/fixed_array_validate.rs
+  - thermite-spec/tests/logical_view_validate.rs
   - thermite-lower/src/lower.rs
+  - thermite-lower/tests/logical_index_relations.rs
+  - forge/tests/divergence_aggregate_collection_state.rs
   - thermite-lower/src/l1.rs
   - thermite-lower/src/lib.rs
   - thermite-lower/tests/fixed_array.rs
@@ -24,7 +30,7 @@ governs:
   - forge/tests/exec_tv_conformance.rs
   - forge/tests/verified_build.rs
   - conformance/verified-build/aggregate_array_relations.th
-audited-content-sha256: 636388e96cde6b8dea18e097d83eb55c4664d14e5fcb4896f3e9ad7a60dfcedc (re-pinned 2026-08-07 after the dependency-reference pin reasserted the injected postcondition as a complete ensures list element)
+audited-content-sha256: 0008191e6e3d52f5588c6f4fc98df344c4b93c3921495897cf3315d5c525ecfb (re-pinned 2026-08-07 after the quantified declared-index relation family landed the `#[logical]` attribute, its admission and relation gate, and the per-view `forall` emission)
 extends:
   - .design/build/kernel-primitives.md
   - .design/verified/exec-tv.md
@@ -198,13 +204,16 @@ the first exception twice or otherwise drops the second exception.
 
 ## Quantified logical-index relations
 
-Everything from here to the requirements table is specification ahead of
-implementation. `fn check_array_relation_call in thermite-spec/src/validator.rs`
-requires both operands to be `Type::Array`, and `fn lower_inv_expr in
-thermite-lower/src/lower.rs` recognises three method names, so no part of this
-form exists in the toolchain today. The surface, meaning, admitted shapes, and
-lowering obligation are fixed here so an implementation is written against a
-contract. The requirement rows carry the open blockers.
+The declaration surface, the relation surface, the fail-closed boundary, and the
+L3 emission are implemented: `fn parse_logical_body in
+thermite-syntax/src/parser.rs` reads the attribute, `pub fn logical_views in
+thermite-spec/src/validator.rs` resolves and admits the declarations,
+`fn check_logical_relation_call in thermite-spec/src/validator.rs` gates the
+relation calls, and `pub fn logical_relation_defs_for_program in
+thermite-lower/src/lower.rs` emits the quantifiers. Independent translation
+validation and the L1 executable evaluation are the remaining part of
+REQ-AGGREL-4; derived-index frames are REQ-AGGREL-5. The requirement rows carry
+the open blockers.
 
 ### Declaring a logical view
 
@@ -408,7 +417,7 @@ emits three `open spec fn`s, one per relation, each carrying a single
 first-order quantifier:
 
 ```text
-open spec fn __thermite_logical_same_except_FixedSlab64(
+pub open spec fn __thermite_logical_same_except_FixedSlab64(
     left: &FixedSlab64,
     right: &FixedSlab64,
     except: usize,
@@ -416,10 +425,20 @@ open spec fn __thermite_logical_same_except_FixedSlab64(
     forall|i: usize|
         #![trigger fixed_slab_slot_spec(left, i)]
         #![trigger fixed_slab_slot_spec(right, i)]
-        i < FIXED_SLAB_CAPACITY && i != except
-            ==> fixed_slab_slot_spec(left, i) == fixed_slab_slot_spec(right, i)
+        i < FIXED_SLAB_CAPACITY && i != except ==> fixed_slab_slot_spec(left, i) == fixed_slab_slot_spec(right, i)
 }
 ```
+
+A relation call site names no nominal type, so the emitter also produces one
+closed trait, `__thermite_LogicalRelations`, with a per-view implementation whose
+three methods forward to the three functions above. This is the dispatch shape
+the storage family already uses for `__thermite_FixedArrayEq`, and it keeps
+`fn lower_expr` and `fn lower_inv_expr` free of type resolution:
+`result.logical_same_except(&ring, at)` lowers to
+`(result).__thermite_logical_same_except_spec(&(&ring), at)` and Verus's method
+resolution selects the receiver's view. A view whose representation reaches
+`#[opaque]` state emits `pub closed`, the visibility tier `fn lower_spec_fn`
+already applies to an opaque-reaching observer.
 
 Three properties of that shape carry the proof.
 
@@ -451,6 +470,19 @@ lowering emits a `proof { }` invocation of the bridge in the generated body when
 a postcondition names the relation. A lowering that discharges the same
 implication by another route satisfies AC-4 as long as no author-written hint is
 required and the golden lowering matches.
+
+The shipped emission takes that second route. The alternative triggers put both
+observer applications in the SMT context at the skolem index, and the storage
+facts the transition's body already establishes — a `Seq` update for a direct
+write, or a callee's storage frame for a composed transition — instantiate the
+quantifier directly. `thermite-lower/tests/logical_index_relations.rs` runs the
+real Verus binary over the three relations at a 64-slot index-transparent view
+and over `logical_eq` at the packed 256-bit view, and
+`forge/tests/divergence_aggregate_collection_state.rs` certifies both fixtures at
+strict L3, in both cases with no author-written hint and no generated bridge
+invocation. Emitting the bridges as standalone lemmas remains open under
+REQ-AGGREL-4 alongside the golden lowering that pins them; the two bridge shapes
+below stay the normative statement of what the implication is.
 
 The equality bridge takes value equality of the fields the observer reads:
 
@@ -559,9 +591,9 @@ Source: `.design/reqs/registry.toml`
 | ID | Status | Owner | Title | Follow-up |
 |---|---|---|---|---|
 | REQ-AGGREL-1 | shipped | `.design/build/aggregate-array-relations.md` | Storage-space fixed-array relations |  |
-| REQ-AGGREL-2 | not_started | `.design/build/aggregate-array-relations.md` | Declared logical index space and observer | Parse the attribute in `fn parse_attribute in thermite-syntax/src/parser.rs`, carry `bound`/`observe` on `StructItem`, resolve the capacity under the existing `[T; N]` const rules, and resolve the observer to a two-parameter `spec fn` typed `(&Self, usize) -> V` with `V` inside the finite structural closure.<br>blockers: github:dollspace-gay/Thermite#131 |
-| REQ-AGGREL-3 | not_started | `.design/build/aggregate-array-relations.md` | Logical-index relation surface and fail-closed validation | Extend the relation gate in `fn check_array_relation_call in thermite-spec/src/validator.rs` so a struct receiver carrying a logical view is admitted, and refuse sealed receivers, enums, key-addressed views, mismatched nominal operands, non-path operands, wrong arity, duplicate declarations, executable positions, and a frame relation over a derived-index observer.<br>blockers: github:dollspace-gay/Thermite#131 |
-| REQ-AGGREL-4 | not_started | `.design/build/aggregate-array-relations.md` | Quantified lowering and index-transparent bridge | Emit the three `open spec fn` relations and the three bridge `proof fn`s in `thermite-lower/src/lower.rs`, recognise the three method names in `fn lower_inv_expr`, derive the index space independently in contract/expression/body TV, and evaluate the relation at L1 as a bounded loop over the observer's executable twin.<br>blockers: github:dollspace-gay/Thermite#131 |
+| REQ-AGGREL-2 | shipped | `.design/build/aggregate-array-relations.md` | Declared logical index space and observer |  |
+| REQ-AGGREL-3 | shipped | `.design/build/aggregate-array-relations.md` | Logical-index relation surface and fail-closed validation |  |
+| REQ-AGGREL-4 | not_started | `.design/build/aggregate-array-relations.md` | Quantified lowering and index-transparent bridge | `pub fn logical_relation_defs_for_program in thermite-lower/src/lower.rs` emits the three per-view `forall` relations with their alternative observer triggers, and both `fn lower_expr` and `fn lower_inv_expr` recognise the three method names, so an index-transparent frame and whole-state equality discharge at L3 with no author-written hint. Remaining: derive the index space independently in contract/expression/body TV (`thermite-tv/src/ref_encode.rs`, `thermite-tv/src/exec_encode.rs`, `forge/src/contract_tv.rs`), evaluate the relation at L1 as a bounded loop over the observer's executable twin (`fn lower_expr_exec in thermite-lower/src/l1.rs`), and weave a relation's declared observer into the checked `spec fn` sub-program (`fn reachable_spec_fn_deps in forge/src/check.rs`) so a wrapper `spec fn` naming the relation resolves.<br>blockers: github:dollspace-gay/Thermite#131 |
 | REQ-AGGREL-5 | not_started | `.design/build/aggregate-array-relations.md` | Derived-index logical frames | Emit a `proof fn` twin of the bit-preservation witnesses produced by `pub fn u64_bit_defs in thermite-lower/src/lower.rs`, supply the literal-divisor division and modulus facts relating a logical index to its storage slot and offset, and admit a declared index decomposition so the bridge can case-split on the shared slot.<br>blockers: github:dollspace-gay/Thermite#132 |
 <!-- /generated:reqs -->
 
@@ -570,10 +602,10 @@ Source: `.design/reqs/registry.toml`
 | REQ | Status | Evidence |
 |---|---|---|
 | REQ-AGGREL-1 (storage index space) | SHIPPED | impl `fn check_array_relation_call in thermite-spec/src/validator.rs` gates arity, operand shape, capacity, and element closure; `pub fn fixed_array_equality_defs_for_program in thermite-lower/src/lower.rs` emits the const-generic scans whose `ensures` carries `result <==> forall j, 0 <= j < N && j != except ==> self@[j] == right@[j]`. Non-test consumers: `fn lower_inv_expr in thermite-lower/src/lower.rs` (the three method arms) and `stdlib/kernel-primitives/collections/bitmap.th` (`fixed_bitmap_words_same_except_spec`). Verification: `thermite-lower/tests/aggregate_array_relations.rs`, `thermite-spec/tests/fixed_array_validate.rs`, `thermite-tv/tests/fixed_array_tv.rs`, and `conformance/verified-build/aggregate_array_relations.th`. |
-| REQ-AGGREL-2 (logical view declaration) | NOT-STARTED | open prereq blocker #131. `fn parse_attribute in thermite-syntax/src/parser.rs` accepts `slag`, `boundary`, `sealed`, and `opaque` only, so `#[logical(bound = …, observe = …)]` has no parse, no AST field, and no capacity or observer resolution. |
-| REQ-AGGREL-3 (logical relation surface) | NOT-STARTED | open prereq blocker #131. `fn check_array_relation_call in thermite-spec/src/validator.rs` matches `(Some(Type::Array), Some(Type::Array))`, so a struct receiver is refused and the three `logical_*` names are unknown to the validator. |
-| REQ-AGGREL-4 (quantified lowering and bridges) | NOT-STARTED | open prereq blocker #131. `fn lower_inv_expr in thermite-lower/src/lower.rs` recognises `array_eq`, `array_same_except`, and `array_same_except_two`; no emitter produces a per-view `forall` relation or the congruence `proof fn` bridges, and no TV encoder derives a logical index space. |
-| REQ-AGGREL-5 (packed frame) | NOT-STARTED | open prereq blocker #132. The bitmap's 256-over-4 decomposition needs a proof-position twin of the witnesses emitted by `pub fn u64_bit_defs in thermite-lower/src/lower.rs` plus literal-divisor division and modulus facts; neither exists, so `logical_same_except` and `logical_same_except_two` are refused on `fixed_bitmap_contains_spec` until it lands. `forge/tests/divergence_aggregate_collection_state.rs` holds the pinned L0 outcome for the recursive encoding. |
+| REQ-AGGREL-2 (logical view declaration) | SHIPPED | impl `fn parse_attribute` → `fn parse_logical_body in thermite-syntax/src/parser.rs` reads the `ident = "string"` field list onto `StructItem::logical`, and `pub fn logical_views in thermite-spec/src/validator.rs` (through `fn resolve_logical_views`) resolves `bound` under the `[T; N]` const rules, resolves `observe` to a `(&Self, usize) -> V` `spec fn` with `V` inside the finite structural closure, and refuses a sealed or recursive receiver. Non-test consumer: `pub fn logical_relation_defs_for_program in thermite-lower/src/lower.rs` reads the same map to emit the quantifiers. Verification: `thermite-syntax/tests/logical_attribute.rs` (8 rows), `thermite-spec/tests/logical_view_validate.rs` (15 rows). |
+| REQ-AGGREL-3 (logical relation surface) | SHIPPED | impl `fn check_logical_relation_call in thermite-spec/src/validator.rs` gates arity, nominal-operand agreement, bare-name/`&name`/`*name` operand shape, and refuses a frame relation over a derived-index observer; `Validator::scan_expr_for_loops` refuses the family in executable position; the three names join `BUILTIN_METHODS` so the §4.2 cage can spell them. Non-test consumer: `pub fn validate in thermite-spec/src/validator.rs`, the gate `thermite-lower` and `forge` call before lowering. Verification: `thermite-spec/tests/logical_view_validate.rs` covers the array receiver, mismatched nominal operands, a computed operand, wrong arity, executable position, a sealed receiver, an unresolvable and an oversized bound, three observer shapes, and the derived-index frame refusal. |
+| REQ-AGGREL-4 (quantified lowering and bridges) | NOT-STARTED | open prereq blocker #131. `pub fn logical_relation_defs_for_program in thermite-lower/src/lower.rs` emits the three per-view `forall` relations with their alternative observer triggers and the `__thermite_LogicalRelations` dispatch, and `fn lower_expr` / `fn lower_inv_expr` recognise the three method names, so an index-transparent frame and whole-state equality reach strict L3 with no author-written hint (`thermite-lower/tests/logical_index_relations.rs`, 6 rows, two of them real-Verus mutants). The REQ still owns three unstarted pieces: no TV encoder derives a logical index space (`thermite-tv/src/ref_encode.rs`, `thermite-tv/src/exec_encode.rs`), `fn lower_expr_exec in thermite-lower/src/l1.rs` has no bounded-loop evaluation so an L1 build of a relation-bearing program fails at `rustc`, and `fn reachable_spec_fn_deps in forge/src/check.rs` does not weave a relation's declared observer into a checked `spec fn` sub-program, so a wrapper `spec fn` naming the relation certifies at L0. |
+| REQ-AGGREL-5 (packed frame) | NOT-STARTED | open prereq blocker #132. The bitmap's 256-over-4 decomposition needs a proof-position twin of the witnesses emitted by `pub fn u64_bit_defs in thermite-lower/src/lower.rs` plus literal-divisor division and modulus facts; neither exists, so `logical_same_except` and `logical_same_except_two` are refused on `fixed_bitmap_contains_spec` until it lands. `fn packed_collection_state_frame_reaches_l3 in forge/tests/divergence_aggregate_collection_state.rs` is the named red pin. |
 
 ## Acceptance criteria
 
@@ -581,16 +613,18 @@ Source: `.design/reqs/registry.toml`
   and `cargo test -p thermite-spec --test fixed_array_validate` pass, and
   `conformance/verified-build/aggregate_array_relations.th` builds and replays at
   strict L3.
-- AC-2 (REQ-AGGREL-2): a `#[logical]` whose `bound` is unknown, cyclic,
+- AC-2 (REQ-AGGREL-2, met): a `#[logical]` whose `bound` is unknown, cyclic,
   non-`usize`, or outside `0..=1_048_576`, whose `observe` has the wrong arity
   or an inadmissible result type, or which appears twice on one struct, fails
-  validation with the rule named, and a `#[sealed]` receiver is refused.
-- AC-3 (REQ-AGGREL-3): for a declared view with `bound = C`, a program stating
+  validation with the rule named, and a `#[sealed]` receiver is refused
+  (`thermite-syntax/tests/logical_attribute.rs`,
+  `thermite-spec/tests/logical_view_validate.rs`).
+- AC-3 (REQ-AGGREL-3, met): for a declared view with `bound = C`, a program stating
   `left.logical_same_except(right, k)` over an index-transparent observer
   validates, while a fixed-array receiver, a mismatched nominal argument, a
   computed operand, a key-addressed view, an enum receiver, an
   executable-position use, and a frame relation over a derived-index observer
-  each fail before lowering.
+  each fail before lowering (`thermite-spec/tests/logical_view_validate.rs`).
 - AC-4 (REQ-AGGREL-4): a golden lowering under `tests/golden/lower/` pins the
   emitted `forall` with its two alternative observer triggers and both bridge
   `proof fn`s; a real-Verus fixture over an index-transparent 64-slot view
@@ -627,6 +661,12 @@ Completion evidence for the shipped storage increment must include:
 
 This increment does not complete static ownership, aggregate mutation through
 named borrows, enum equality, full aggregate lifecycle body TV, affine
-authority, atomic integration, or machine-operation refinement. The quantified
-logical-index family above is specified and unimplemented; blockers #131 and
-#132 own its two stages.
+authority, atomic integration, or machine-operation refinement.
+
+The quantified logical-index family reaches strict L3 for the shapes
+REQ-AGGREL-2 and REQ-AGGREL-3 admit. Three pieces remain under blocker #131:
+independent contract, expression, and body translation validation of the index
+space; L1 evaluation as a bounded loop over the observer's executable twin; and
+weaving a relation's declared observer into a checked `spec fn` sub-program so a
+wrapper `spec fn` naming the relation resolves rather than certifying at L0.
+Derived-index frames remain under blocker #132.

@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-content-sha256: 9ca8a88667105a4ea67b2bf0f707ff257b47e8ead433630ca3bcccb1bf33f0bf (re-pinned 2026-08-07 after `forge review` resolved canonical packages through the shared source front door)
+audited-content-sha256: 7b6a4ac61bceadef31f9d2b97570527bac0f96cabac1bdb57e3fb74d492e0a99 (re-pinned 2026-08-07 after the quantified declared-index relation family landed the `#[logical]` attribute, its admission and relation gate, and the per-view `forall` emission)
 governs: thermite-syntax/src/ast.rs
 governs: thermite-syntax/src/parser.rs
 governs: thermite-spec/src/validator.rs

@@ -301,7 +301,11 @@ unlink reference well scoped after multiple array writes. Quantified all-index
 aggregate-state framing is specified in
 `.design/build/aggregate-array-relations.md` and unimplemented (blockers #131
 and #132), so these increments do not generalize the focused results into a
-claim that every collection lifecycle is already a strict public export.
+claim that every collection lifecycle is already a strict public export. No
+shipped collection state transition or state observer publishes an L3 bundle
+today; the exports that publish are scalar helpers, plain-record constructors,
+observers stated through specification functions, and probes whose state
+lifecycle stays inside one exported function.
 
 ## Remaining collection closure
 
@@ -319,9 +323,14 @@ This is a substantial REQ-KPRIM-2 increment, not completion. Remaining work is:
    intrusive metadata, and both maps are index-transparent and land first;
 5. quantified aggregate body TV and strict aggregate receipt/runtime fixtures.
    A plain-record root such as `fixed_ring_empty` can root such a fixture
-   today; the enum-returning transitions additionally need REQ-L3BUILD-15
-   (closed result-enum exports) and REQ-L3BUILD-16 (specification-function
-   export guards) in `.design/build/l3-verified-artifact.md`;
+   today. The enum-returning transitions sit behind three export gates in
+   `.design/build/l3-verified-artifact.md`: REQ-L3BUILD-15 (closed result-enum
+   exports, shipped), REQ-L3BUILD-16 (specification-function export guards), and
+   REQ-L3BUILD-17 (opaque-rooted export contracts). The plain-record rows need
+   REQ-L3BUILD-16. The opaque rows need REQ-L3BUILD-17 for their observers, and
+   their state-returning transitions stay behind REQ-L3BUILD-15's stated
+   opaque-payload refusal. `.design/build/kernel-primitives.md`, "What a
+   collection export reaches today", carries the measured per-row split;
 6. atomic integration for concurrent containers; pure bounded MPSC and
    work-stealing deque state mechanics are supplied by the synchronization
    package.

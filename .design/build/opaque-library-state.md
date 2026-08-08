@@ -108,6 +108,25 @@ L1 already emits user structs and fields module-private, so no additional L1
 visibility widening is needed. L2 continues to reject algebraic data types
 rather than inventing a lower-assurance opacity claim.
 
+### Public contract clauses
+
+Verus reads the `pub(crate)` field visibility as datatype opacity, and every
+clause of a public function's contract must be well-formed outside the declaring
+crate. A `requires` or `ensures` clause that selects a field of an opaque record
+is refused with "disallowed: field expression for an opaque datatype". The same
+expression stays legal in the function body, in a module-internal contract, and
+inside the body of a `pub closed spec fn`, so a library that intends to export an
+observer or a transition over opaque state states that contract through the
+closed specification functions above.
+
+The condition binds at the L3 export boundary rather than at `forge check`,
+because a function that is not exported is not public in the emitted crate.
+REQ-L3BUILD-17 in `.design/build/l3-verified-artifact.md` governs it, records
+the measured diagnostic and the shipped rows it holds, and chooses the
+specification-surface resolution. `fixed_slab_handle_live` and
+`fixed_intrusive_contains` already have that shape and publish strict L3 kernel
+bundles.
+
 ## Ownership claim boundary
 
 Opacity controls construction, not value multiplicity. It does not by itself:

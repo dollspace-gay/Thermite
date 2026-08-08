@@ -422,8 +422,10 @@ fixed arrays, and ordinary acyclic structs recursively composed from those
 forms. It also admits a direct finite non-sealed named-record root by value or
 shared/exclusive borrow. An opaque direct root may be returned, observed, or
 mutated through generated public functions while its fields remain crate-
-private; opaque records still fail closed when nested inside ambient arrays or
-derived structural relations. Sealed, recursive, reference-bearing, and
+private, provided the exported function's own `req` and `ens` clauses name no
+field of that record; REQ-L3BUILD-17 governs that condition. Opaque records
+still fail closed when nested inside ambient arrays or derived structural
+relations. Sealed, recursive, reference-bearing, and
 heap-backed records fail closed. A returned `enum` is admitted at the direct
 return root by `fn result_enum_admission in forge/src/verified_build.rs`; the
 admission rule, its layout rule, and its fail-closed boundary are specified
@@ -488,18 +490,12 @@ Rows whose payloads name an opaque record stay refused by rule 3;
 `fixed_open_map_insert`, and the intrusive family are in that class.
 
 Shape admission is necessary and not sufficient for the five observers above.
-Each of them sits on an `#[opaque]` state record and states an `ens` clause that
-reads that record's fields, and Verus refuses a field expression on an opaque
-datatype inside the postcondition of a public function: "this field expression
-is disallowed because of datatype opaqueness … because this is a 'ensures'
-clause of public function, this field expression must be well-formed everywhere".
-`--export fixed_slab_get` therefore clears the ABI gate under REQ-L3BUILD-15 and
-then fails the whole-crate Verus gate. This is the representation-barrier
-consequence of the opaque direct root, not a REQ-L3BUILD-15 or REQ-L3BUILD-16
-refusal: an opaque observer becomes publicly exportable when its postcondition
-is stated through publicly visible specification functions rather than field
-reads. `conformance/verified-build/closed_result_enum.th` carries the admitted
-shape on a non-opaque state record and is the acceptance fixture.
+Each sits on an `#[opaque]` state record and states an `ens` clause that reads
+that record's fields. `--export fixed_slab_get` clears this ABI gate and then
+fails the whole-crate Verus gate on that clause. REQ-L3BUILD-17 carries the
+cause and the repair under "Opaque state at the public contract boundary" below.
+`conformance/verified-build/closed_result_enum.th` carries the admitted shape on
+a non-opaque state record and is the acceptance fixture.
 
 #### Layout rule
 
@@ -560,6 +556,160 @@ every translation-validation row faithful and `errors: 0`, reproduces its
 binding and rlib digests across three builds, replays, links into a freestanding
 `no_std` consumer that matches every variant, and is executed through the
 published rlib.
+
+### Opaque state at the public contract boundary
+
+`.design/build/opaque-library-state.md` lowers an `#[opaque]` Thermite record as
+a public Rust/Verus type whose fields are `pub(crate)`. Verus reads that
+visibility as datatype opacity and requires every clause of a public function's
+contract to be well-formed outside the declaring crate, so a clause that selects
+a field of such a record is refused. The same expression stays legal in the
+function's body, in a module-internal contract, and inside the body of a
+`pub closed spec fn`.
+
+The refusal arrives at the whole-crate Verus gate, after the export ABI gate has
+already admitted the signature. Measured at HEAD against the shipped slab
+package:
+
+```text
+$ forge build stdlib/kernel-primitives/slab.thpkg.json --level l3 \
+    --export fixed_slab_get --target kernel --out dist/slab-get.verified
+verified build rejected at whole-crate-verus: strict Verus proof/codegen failed: error: disallowed: field expression for an opaque datatype
+  --> thermite_fixed_slab.rs:52:108
+   |
+14 | / pub struct FixedSlab64 {
+15 | |     pub(crate) slab_used: [bool; FIXED_SLAB_CAPACITY],
+16 | |     pub(crate) slab_generation: [u64; FIXED_SLAB_CAPACITY],
+17 | |     pub(crate) slab_values: [u64; FIXED_SLAB_CAPACITY],
+18 | | }
+   | |_- Verus treats this datatype as 'opaque' outside `thermite_fixed_slab` (note that Verus always considers the most restrictive field for determining this)
+...
+52 |               FixedSlabGet64::SlabValue64 { value } => fixed_slab_handle_live_spec(slab, handle) && value == slab.slab_values@[handl...
+   |                                                                                                              ^^^^^^^^^^^^^^^^ this field expression is disallowed because of datatype opaqueness
+   |
+   = help: note that because this is a 'ensures' clause of public function, this field expression must be well-formed everywhere, which is wider than `thermite_fixed_slab`
+
+error: aborting due to 1 previous error
+```
+
+`fixed_slab_get` states `req true`, so REQ-L3BUILD-7 and REQ-L3BUILD-16 never
+reach it, and REQ-L3BUILD-15 admits its return type `FixedSlabGet64`. The single
+cause is the clause `value == slab.slab_values[handle.slab_slot]`. That makes it
+a third export gate with its own cause and its own repair; REQ-L3BUILD-17
+carries it. `fixed_slab_find_free` reproduces the same rejection on
+`!slab.slab_used[found]`.
+
+The package path matters when reproducing this. `fixed_slab_get` is declared by
+`stdlib/kernel-primitives/slab.thpkg.json`; `collections.thpkg.json` declares the
+bitmap, direct-map, open-map, ring, and vector roots and does not contain it.
+
+#### Scope of the gate
+
+The refused shape is a field expression in an exported function's contract. An
+observer over an `#[opaque]` record exports when its contract names
+specification functions instead. Two shipped observers publish a strict L3
+`--target kernel` bundle at HEAD:
+
+```text
+$ forge build stdlib/kernel-primitives/slab.thpkg.json --level l3 \
+    --export fixed_slab_handle_live --target kernel --out dist/slab-live.verified
+verified L3 bundle: dist/slab-live.verified
+
+$ forge build stdlib/kernel-primitives/intrusive.thpkg.json --level l3 \
+    --export fixed_intrusive_contains --target kernel \
+    --out dist/int-contains.verified
+verified L3 bundle: dist/int-contains.verified
+```
+
+`fn fixed_slab_handle_live in stdlib/kernel-primitives/collections/slab.th`
+takes `&FixedSlab64` and `&FixedSlabHandle64`, both opaque, and states
+`ens result == fixed_slab_handle_live_spec(slab, handle)`. Its receipt export row
+records `wrapped: false`, ownership `["shared_borrow", "shared_borrow"]`, and the
+postcondition identifier `fixed_slab_handle_live.ens#1`. The emitted crate
+carries `pub closed spec fn fixed_slab_handle_live_spec`, which
+`fn lower_with_profile in thermite-lower/src/lower.rs` produces for every
+specification function whose signature, construction, or calls reach an opaque
+representation. The first build also shows that the refusal is scoped to the
+export closure: the same `slab.thpkg.json` package publishes when the export
+list omits `fixed_slab_get`.
+
+#### Resolution
+
+Three repairs were considered.
+
+- **(a) State the public contract through specification functions over the
+  opaque record.** The declaring module adds one `spec fn` for each quantity the
+  exported contract needs — for `fixed_slab_get`, a
+  `fixed_slab_value_at_spec(slab, handle) -> u64` whose body is
+  `slab.slab_values[handle.slab_slot]` — and the `ens` names that function. The
+  lowerer already places such a function in the opaque specification closure and
+  emits it `pub closed spec fn`.
+- **(b) Derive the public postcondition from a module-internal contract.** Forge
+  generates a private predicate holding the authored clause and publishes a
+  wrapper whose `ensures` calls it, so the public clause never names a field.
+- **(c) Treat an opaque record's observer as permanently unexportable**, and
+  direct a consumer to a probe that completes the state lifecycle inside one
+  exported function.
+
+This design chooses **(a)**.
+
+Measurement rules out (c). `fixed_slab_handle_live` and
+`fixed_intrusive_contains` are observers over opaque records and both publish
+today, so the limit stands on the field expression rather than on the observer.
+An authored specification function removes it with no toolchain change.
+
+(b) fails on its own terms for this class. REQ-L3BUILD-7 generates a wrapper only
+for a nontrivial precondition, and every observer in this class states
+`req true`; a wrapper would have to be manufactured for the sole purpose of
+concealing a field expression, which widens the total-wrapper rule past its
+stated cause. It also moves postcondition identity off the source: the receipt
+export row records `postcondition_ids` that trace to authored clauses, and a
+generated predicate would put a Forge-invented name in that record.
+
+(a) carries a cost, and (b) carries the same one: a `pub closed spec fn`
+publishes a symbol and withholds its body, so an out-of-crate reader learns the
+name of the property without being able to unfold it. For a downstream Rust
+consumer this changes nothing, because Verus erases `ensures` at the Rust
+boundary. For a foreign Thermite module the named symbol is the gain.
+`.design/build/opaque-library-state.md` already admits calls to a public closed
+specification, so the restated contract composes in a place where a field
+expression cannot be written at all.
+
+#### What a builder does
+
+1. In the module that declares the opaque record, add one `spec fn` per field
+   expression the exported contract needs. Keep it nonrecursive, or give it a
+   `dec` measure valid on the public abstract surface: lowering omits the
+   decreases clause for a nonrecursive opaque observer because a measure such as
+   `state.field` would republish the field expression.
+2. Restate the exported function's `req` and `ens` through those functions. The
+   body is unchanged, since a body field expression is private and stays legal.
+3. Reject the shape early. Forge walks each exported function's `req` and `ens`
+   for a field selection whose resolved receiver type is an `#[opaque]` record
+   and rejects at the `exports` stage, naming the function, the clause, and the
+   field path. The walk covers exported functions only; a module-internal
+   contract and a non-exported function keep their field expressions.
+4. Land the AC-24 and AC-25 fixtures.
+
+#### A row can stop before this gate
+
+The build stages run in order, and the first stage that holds is the one a
+builder sees: parameter and return admission at `exports`, then the executable
+precondition at `exports`, then translation validation, then the whole-crate
+Verus gate this requirement governs. `fixed_slab_get` and `fixed_slab_find_free`
+reach the last of those. `fixed_open_map_lookup` carries the same opaque clause
+and stops earlier:
+
+```text
+$ forge build stdlib/kernel-primitives/collections.thpkg.json --level l3 \
+    --export fixed_open_map_lookup --target kernel --out dist/om-lookup.verified
+verified build rejected at translation-validation: body TV `fixed_open_map_find` is unverifiable: verus ABORTED (compile/parse) on the obligation for `fixed_open_map_find` with no parseable results line — a FRAME compile abort (the obligation's `req`/wrapper did not compile, e.g. a spec-fn-helper `req` the frame does not carry), not a body-lowering infidelity; tool diagnostic: error[E0308]: mismatched types … expected `usize`, found `int`
+```
+
+No requirement in this document names that stage failure. The REQ-L3BUILD-17
+blocker carries it as a discovered prerequisite for the open-map rows, so
+landing this requirement alone leaves them held.
+
 
 ### Preconditions at an unverified caller boundary
 
@@ -902,6 +1052,13 @@ must not print a successful artifact path before the rename completes.
   and the independent `export_guard` derivation reproduces it as a faithful
   translation-validation row. A guard outside the executable fragment keeps
   the REQ-L3BUILD-7 refusal.
+- **REQ-L3BUILD-17 (opaque-rooted export contracts).** An export whose
+  parameters or return type reach an `#[opaque]` record states every `req` and
+  `ens` clause through publicly visible specification functions over that
+  record. A field expression on an opaque datatype inside an exported function's
+  contract is refused at the `exports` stage with the function, the clause, and
+  the field path named, before the whole-crate Verus gate runs. Bodies,
+  module-internal contracts, and non-exported functions are unaffected.
 
 ## Acceptance criteria
 
@@ -970,9 +1127,9 @@ must not print a successful artifact path before the rename completes.
   artifact digests across three builds, replays to the same artifact digest, and
   is called from a separate `no_std` consumer that matches every variant. This
   criterion previously named `fixed_slab_get`; that observer clears the ABI gate
-  and then fails whole-crate Verus on the opaque-postcondition rule recorded
-  under "Closed result enums at the public boundary", so the acceptance fixture
-  carries the same admitted shape on a non-opaque state record.
+  and then fails whole-crate Verus under REQ-L3BUILD-17, recorded under "Opaque
+  state at the public contract boundary", so the acceptance fixture carries the
+  same admitted shape on a non-opaque state record.
 - **AC-20 (enum fingerprint sensitivity).** Renaming a variant, reordering two
   variants, changing a payload field type or order, and changing a resolved
   payload capacity each change the export `abi_fingerprint` independently of
@@ -992,6 +1149,22 @@ must not print a successful artifact path before the rename completes.
   that returns `Err(Precondition)` without calling the implementation on a
   violating input, its `wrapper_guard` translation-validation row is faithful,
   and a `spec fn` outside the executable fragment rejects at build time.
+- **AC-24 (opaque-rooted observer exports through a specification surface).** An
+  observer over an `#[opaque]` state record whose `req` and `ens` name only
+  publicly visible specification functions builds under `--target kernel`,
+  publishes a strict receipt with `errors: 0` and every translation-validation
+  row faithful, reproduces across builds, replays to the same artifact digest,
+  and is called from a separate `no_std` consumer. `fixed_slab_handle_live` and
+  `fixed_intrusive_contains` have that shape and publish at HEAD; no committed
+  test pins either one, so both measurements are currently unguarded.
+- **AC-25 (opaque field in an exported clause is refused early).** An export
+  whose `req` or `ens` selects a field of an `#[opaque]` record is rejected at
+  the `exports` stage naming the function, the clause, and the field path, and
+  publishes nothing; the rejection precedes the Verus invocation.
+  `fixed_slab_get` and `fixed_slab_find_free` are the measured shipped rows,
+  `fixed_open_map_lookup`, `fixed_open_map_find`, and `fixed_open_map_search`
+  carry the same shape, and the same package still publishes when the export
+  list omits them.
 
 ## Verification matrix
 
@@ -1004,6 +1177,7 @@ must not print a successful artifact path before the rename completes.
 | Contract/exec/body/loop TV completeness | phase-specific positive and refusal fixtures |
 | Export wrapper proof and behavior | real Verus compile plus downstream Rust consumer |
 | Closed result-enum ABI and fail-closed matrix | `forge/tests/verified_build.rs` export planning plus a kernel consumer that matches every variant |
+| Opaque-rooted export contracts | `forge/tests/verified_build.rs` positive specification-surface export plus the exports-stage field-expression refusal |
 | Receipt canonicalization/tampering | field-by-field mutation/property tests |
 | Verus codegen binding and Rust ABI | ambient-mismatch hosted/kernel builds, receipt-declared consumers and incompatible-consumer rejection |
 | Atomic publication and cleanup | injected-stage failure integration tests |
@@ -1073,9 +1247,15 @@ present. No intermediate increment emitted an artifact labeled L3.
 - **Does admitting that shape export an opaque-rooted observer?** Not on its
   own. `fixed_slab_get` and its siblings state postconditions that read the
   fields of an `#[opaque]` record, and Verus disallows such a field expression
-  in the `ensures` clause of a public function. Restating those postconditions
-  through publicly visible specification functions is the work that makes them
-  exportable; it belongs to the owning primitive, not to REQ-L3BUILD-15.
+  in the `ensures` clause of a public function. REQ-L3BUILD-17 governs that
+  gate: restating those postconditions through publicly visible specification
+  functions is the work that makes them exportable, and it belongs to the owning
+  primitive.
+- **Is an opaque record's observer exportable at all?** Yes.
+  `fixed_slab_handle_live` and `fixed_intrusive_contains` take shared borrows of
+  `#[opaque]` records and publish strict L3 kernel bundles at HEAD, because each
+  states its contract through a specification function. The gate refuses a field
+  expression in an exported clause, and it leaves the opaque root admitted.
 - **What does Forge publish on a failed build?** Nothing at the requested
   destination.
 
@@ -1123,6 +1303,42 @@ Filed by the orchestrator; referenced by REQ-L3BUILD-16. Scope:
 - add the AC-22 and AC-23 fixtures, including the refusal for a `spec fn` guard
   outside the executable fragment.
 
+## Blocker: opaque-rooted export contracts
+
+Filed by the orchestrator; referenced by REQ-L3BUILD-17. `gh` cannot open an
+issue in this environment, so this section is the blocker of record until the
+orchestrator files it and adds the reference here. Scope:
+
+- restate the `req` and `ens` clauses of `fixed_slab_get`,
+  `fixed_slab_find_free`, `fixed_open_map_lookup`, `fixed_open_map_find`, and
+  `fixed_open_map_search` through specification functions declared in
+  `stdlib/kernel-primitives/collections/slab.th` and
+  `stdlib/kernel-primitives/collections/open_map.th`, keeping every existing L3
+  proof, mutation pin, and translation-validation row green;
+- add the exports-stage refusal beside `fn executable_precondition` and
+  `fn result_enum_admission` in `forge/src/verified_build.rs`, so a field
+  expression on an opaque datatype is named with its function, clause, and field
+  path before Verus runs;
+- pin AC-24 with a committed fixture. No shipped test exports
+  `fixed_slab_handle_live` or `fixed_intrusive_contains`, so the two positive
+  measurements recorded above have no regression guard;
+- pin AC-25 with the negative fixture and its diagnostic, including the case
+  where the same package publishes once the offending export is dropped;
+- resolve the discovered prerequisite for the open-map rows before claiming
+  them. `--export fixed_open_map_lookup` stops at translation validation with
+  "body TV `fixed_open_map_find` is unverifiable … a FRAME compile abort" and
+  `error[E0308]: mismatched types … expected \`usize\`, found \`int\`` on the
+  recursive `remaining - 1` argument. That is a body-TV frame gap with no
+  requirement of its own, and it sits ahead of this gate;
+- update `.design/build/kernel-primitives.md` and
+  `.design/build/fixed-collections.md` when the first opaque collection state
+  observer publishes.
+
+The three export gates are separate. REQ-L3BUILD-15 is closed. REQ-L3BUILD-16
+governs a `req` that calls a `spec fn`. REQ-L3BUILD-17 governs a field
+expression on an opaque datatype in an exported clause. Landing one of the two
+open requirements does not release the rows the other one holds.
+
 ## REQ status
 
 <!-- generated:reqs view=forge-l3-verified-build-status -->
@@ -1138,6 +1354,7 @@ Source: `.design/reqs/registry.toml`
 | REQ-L3BUILD-14 | shipped | `.design/build/l3-verified-artifact.md` | Authoritative Verus codegen-toolchain binding |  |
 | REQ-L3BUILD-15 | shipped | `.design/build/l3-verified-artifact.md` | Closed result-enum public exports |  |
 | REQ-L3BUILD-16 | not_started | `.design/build/l3-verified-artifact.md` | Specification-function export guards | Open blocker: `.design/build/l3-verified-artifact.md` "Blocker: executable guard for a specification-function precondition". `fn executable_precondition` in forge/src/verified_build.rs refuses `Expr::Call`, so every collection transition with a `req <name>_wf_spec(...)` precondition is rejected at the exports stage. `fn lower_l3_export_wrapper` in thermite-lower/src/lower.rs lowers the guard with `lower_expr(..., Ctx::exec(), ...)`, and a spec fn has no executable translation, so widening the predicate alone yields `error: cannot call function fixed_ring_wf_spec with mode spec`. Define the admitted derivation, emit it from the wrapper, reproduce it in `fn exec_tv_export_guard` in forge/src/exec_tv.rs, and land AC-22 and AC-23. This requirement is independent of REQ-L3BUILD-15 and outlives it. |
+| REQ-L3BUILD-17 | not_started | `.design/build/l3-verified-artifact.md` | Opaque-rooted export contracts | Open blocker: `.design/build/l3-verified-artifact.md` "Blocker: opaque-rooted export contracts". Verus requires every clause of a public function's contract to be well-formed outside the declaring crate, so an exported `req`/`ens` that selects a field of an `#[opaque]` record fails the whole-crate Verus gate after the ABI gate has already admitted the signature. Measured at HEAD: `forge build stdlib/kernel-primitives/slab.thpkg.json --level l3 --export fixed_slab_get --target kernel` reports `error: disallowed: field expression for an opaque datatype ... this field expression is disallowed because of datatype opaqueness ... because this is a 'ensures' clause of public function, this field expression must be well-formed everywhere`. `fixed_slab_find_free` reproduces it. Resolution (a): restate the clause through a specification function over the opaque record, which `fn lower_with_profile` in thermite-lower/src/lower.rs already emits as `pub closed spec fn`; `fixed_slab_handle_live` and `fixed_intrusive_contains` have that shape and publish strict L3 kernel bundles today. Restate the slab and open-map observer contracts, add the exports-stage refusal beside `fn executable_precondition` and `fn result_enum_admission` in forge/src/verified_build.rs, and land AC-24 and AC-25. This requirement is independent of REQ-L3BUILD-15 and REQ-L3BUILD-16; the open-map rows also sit behind a body-TV frame abort recorded in the blocker. |
 | REQ-L3BUILD-2 | shipped | `.design/build/l3-verified-artifact.md` | Frozen canonical artifact plan |  |
 | REQ-L3BUILD-3 | shipped | `.design/build/l3-verified-artifact.md` | Strict end-to-end reachable closure |  |
 | REQ-L3BUILD-4 | shipped | `.design/build/l3-verified-artifact.md` | Compile the exact verified source |  |

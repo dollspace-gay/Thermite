@@ -395,10 +395,15 @@ already exports: `fixed_ring_empty`, whose return is `FixedRing64`, builds and
 publishes a strict aggregate-rooted L3 `--target kernel` receipt from the
 canonical package with `wrapped=false` and six faithful translation-validation
 rows (measured at HEAD; a committed fixture for that root is listed in the
-REQ-L3BUILD-15 blocker). The enum-returning transitions are governed by
-REQ-L3BUILD-15 and
-REQ-L3BUILD-16; see "Why an enum-returning collection transition does not
-export" below. The quantified aggregate-state framing is a separate line of
+REQ-L3BUILD-15 blocker). Three named export gates in
+`.design/build/l3-verified-artifact.md` stand between that root and a usable
+collection surface: REQ-L3BUILD-15 admits a closed result enum at the direct
+return root and is shipped, REQ-L3BUILD-16 governs a `req` that calls a
+`spec fn`, and REQ-L3BUILD-17 governs a field expression on an `#[opaque]`
+datatype inside an exported clause. The last two are open and independent, and
+neither is the quantified logical-index relation family. See "Why an
+enum-returning collection transition does not export" and "What a collection
+export reaches today" below. The quantified aggregate-state framing is a separate line of
 work with a fixed surface and meaning:
 `.logical_eq`, `.logical_same_except`, and `.logical_same_except_two` quantify
 over a `#[logical(bound = "CONST", observe = "spec_fn")]` index space declared
@@ -412,9 +417,9 @@ residual work are in `.design/build/fixed-collections.md`.
 #### Why an enum-returning collection transition does not export
 
 `fixed_ring_push` and its siblings return closed result enums
-(`FixedRingPush64`, `FixedVecPop64`, `FixedSlabAllocate64`, and the rest). Two
-named requirements gate their `--export` publication, and neither is the
-quantified logical-index relation family.
+(`FixedRingPush64`, `FixedVecPop64`, `FixedSlabAllocate64`, and the rest).
+Three named requirements gate the `--export` publication of the collection
+surface, and none of them is the quantified logical-index relation family.
 
 The first gate is closed. REQ-L3BUILD-15 in
 `.design/build/l3-verified-artifact.md` admits a closed non-recursive result
@@ -436,21 +441,87 @@ stdlib/kernel-primitives/collections.thpkg.json --level l3 --export
 fixed_ring_push` therefore stops at "has a non-executable precondition and
 cannot receive a total wrapper".
 
-An opaque-rooted observer meets a third condition that neither requirement
-states. `fixed_slab_get`, `fixed_slab_find_free`, `fixed_open_map_lookup`, and
-their siblings state postconditions that read the fields of an `#[opaque]`
-state record, and Verus disallows a field expression on an opaque datatype in
-the `ensures` clause of a public function. Those observers clear the ABI gate
-and then fail the whole-crate Verus gate; restating their postconditions through
-publicly visible specification functions is the work that makes them
-exportable.
+The third gate is REQ-L3BUILD-17. `fixed_slab_get` states a plain `req`, so
+REQ-L3BUILD-16 does not reach it, and its return enum `FixedSlabGet64` carries a
+`u64` payload and a unit variant, so REQ-L3BUILD-15 admits it. Its `ens` reads a
+field of the `#[opaque]` record `FixedSlab64`. Verus requires every clause of a
+public function's contract to be well-formed outside the declaring crate, so
+`forge build stdlib/kernel-primitives/slab.thpkg.json --level l3 --export
+fixed_slab_get --target kernel` clears the ABI gate and then fails whole-crate
+Verus:
+
+```text
+verified build rejected at whole-crate-verus: strict Verus proof/codegen failed: error: disallowed: field expression for an opaque datatype
+...
+52 |               FixedSlabGet64::SlabValue64 { value } => fixed_slab_handle_live_spec(slab, handle) && value == slab.slab_values@[handl...
+   |                                                                                                              ^^^^^^^^^^^^^^^^ this field expression is disallowed because of datatype opaqueness
+   |
+   = help: note that because this is a 'ensures' clause of public function, this field expression must be well-formed everywhere, which is wider than `thermite_fixed_slab`
+```
+
+The repair is to state the exported contract through specification functions
+over the opaque record, which is what the two opaque observers that already
+publish do. `.design/build/l3-verified-artifact.md`, "Opaque state at the public
+contract boundary", records the gate, the three repairs considered, the reason
+for that choice, and the builder's steps.
 
 REQ-AGGREL-2 through REQ-AGGREL-5 govern `.logical_eq`,
 `.logical_same_except`, and `.logical_same_except_two`. Those relations appear
 in no shipped collection contract, so they are absent from the export closure of
 `fixed_ring_push` and do not gate it. The doc comment on
-`forge/tests/divergence_aggregate_collection_state.rs` cites this subsection and
-the two requirements above.
+`forge/tests/divergence_aggregate_collection_state.rs` cites this subsection.
+
+#### What a collection export reaches today
+
+No shipped `stdlib/kernel-primitives` collection state transition or state
+observer publishes an L3 bundle. A consumer can obtain a state value and call a
+self-contained probe over it. It cannot push, pop, insert, remove, or read a
+stored element across the boundary.
+
+What publishes at HEAD is the scalar helper layer, the plain-record constructor
+layer, an observer whose whole contract is stated through specification
+functions, and a probe whose state lifecycle stays inside the exported function.
+
+| Export that publishes | Shape | Regression guard |
+|---|---|---|
+| `fixed_ring_advance` | scalar helper | `forge/tests/fixed_collections.rs` |
+| `fixed_slab_allocate_get_probe` | probe over an opaque slab | `forge/tests/fixed_slab.rs` |
+| `fixed_intrusive_unlink_middle_probe` | probe over opaque metadata | `forge/tests/fixed_intrusive.rs` |
+| `fixed_ring_empty` | plain-record constructor | measured; no committed fixture |
+| `fixed_slab_handle_live`, `fixed_intrusive_contains` | opaque observer stated through a `spec fn` | measured; no committed fixture |
+
+A `--export` passes the gates in a fixed order, and the first one that holds is
+the one a builder sees. Naming a single gate understates the work, because a row
+released from one gate can stop at the next.
+
+| Order | Condition | Requirement | Measured row and stage |
+|---|---|---|---|
+| 1 | return type outside the public ABI subset, including an enum variant payload naming an opaque record and a built-in `Option` return | REQ-L3BUILD-15 rule 3 and the REQ-L3BUILD-6 subset, both shipped and fail-closed by design | not separately measured here |
+| 2 | `req` calls a `spec fn` | REQ-L3BUILD-16, not started | `fixed_ring_push` at `exports`: "has a non-executable precondition and cannot receive a total wrapper" |
+| 3 | `req` selects a record field | the REQ-L3BUILD-7 executable-precondition alphabet, shipped | `fixed_freelist_len` at `exports`: the same rejection |
+| 4 | a reachable recursive helper has an unverifiable body-TV row | no requirement names it; recorded in the REQ-L3BUILD-17 blocker as a discovered prerequisite | `fixed_open_map_lookup` at `translation-validation`: "body TV `fixed_open_map_find` is unverifiable … a FRAME compile abort" |
+| 5 | an exported clause reads a field of an `#[opaque]` record | REQ-L3BUILD-17, not started | `fixed_slab_get` and `fixed_slab_find_free` at `whole-crate-verus`: "disallowed: field expression for an opaque datatype" |
+
+Order 2 holds the transitions and observers whose `req` names a well-formedness
+specification: `fixed_ring_push`, `fixed_ring_pop`, `fixed_vec_push`,
+`fixed_vec_pop`, `fixed_vec_set`, `fixed_direct_map_insert`,
+`fixed_direct_map_remove`, `fixed_bitmap_insert`, `fixed_bitmap_remove`, and
+`fixed_bitmap_set_to`. Order 5 holds the observers over `#[opaque]` records whose
+clauses read fields: `fixed_slab_get`, `fixed_slab_find_free`,
+`fixed_open_map_lookup`, `fixed_open_map_find`, and `fixed_open_map_search`. The
+three open-map rows reach order 4 first, through the recursive
+`fixed_open_map_find` body their closures share, so releasing order 5 alone
+leaves them held.
+
+Both lists are classified from the shipped `.th` contracts by the rule each gate
+states. Only the rows named in the table above were run.
+
+The plain-record collections — bitmap, ring, vector, and direct map — need
+REQ-L3BUILD-16 alone. The opaque collections — open map, slab, freelist, and
+intrusive metadata — need REQ-L3BUILD-17 for their observers, and their
+state-returning transitions additionally sit behind REQ-L3BUILD-15's stated
+opaque-payload refusal. Landing either open requirement releases part of the
+surface and leaves the rest held.
 
 ### Modules, packages, and receipts
 

@@ -12387,6 +12387,38 @@ target = "executable_precondition"
 note = "the exports-stage refusal that this requirement governs"
 
 [[requirement]]
+id = "REQ-L3BUILD-17"
+title = "Opaque-rooted export contracts"
+owner = ".design/build/l3-verified-artifact.md"
+status = "not_started"
+scope = "forge"
+summary = "An export whose parameters or return type reach an `#[opaque]` record states every `req` and `ens` clause through publicly visible specification functions over that record, and a field expression on an opaque datatype inside an exported clause is refused at the `exports` stage with the function, clause, and field path named."
+remaining_scope = "Open blocker: `.design/build/l3-verified-artifact.md` \"Blocker: opaque-rooted export contracts\". Verus requires every clause of a public function's contract to be well-formed outside the declaring crate, so an exported `req`/`ens` that selects a field of an `#[opaque]` record fails the whole-crate Verus gate after the ABI gate has already admitted the signature. Measured at HEAD: `forge build stdlib/kernel-primitives/slab.thpkg.json --level l3 --export fixed_slab_get --target kernel` reports `error: disallowed: field expression for an opaque datatype ... this field expression is disallowed because of datatype opaqueness ... because this is a 'ensures' clause of public function, this field expression must be well-formed everywhere`. `fixed_slab_find_free` reproduces it. Resolution (a): restate the clause through a specification function over the opaque record, which `fn lower_with_profile` in thermite-lower/src/lower.rs already emits as `pub closed spec fn`; `fixed_slab_handle_live` and `fixed_intrusive_contains` have that shape and publish strict L3 kernel bundles today. Restate the slab and open-map observer contracts, add the exports-stage refusal beside `fn executable_precondition` and `fn result_enum_admission` in forge/src/verified_build.rs, and land AC-24 and AC-25. This requirement is independent of REQ-L3BUILD-15 and REQ-L3BUILD-16; the open-map rows also sit behind a body-TV frame abort recorded in the blocker."
+aliases = [".design/build/l3-verified-artifact.md REQ-L3BUILD-17 (opaque-rooted export contracts)"]
+contributors = [".design/build/l3-verified-artifact.md", ".design/build/kernel-primitives.md", ".design/build/fixed-collections.md", ".design/build/opaque-library-state.md"]
+generated_to = ["status", "forge-l3-verified-build-status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = ".design/build/l3-verified-artifact.md"
+note = "the gate, its literal Verus diagnostic, the three repairs considered, the chosen resolution, and the blocker scope"
+
+[[requirement.evidence]]
+kind = "file"
+target = ".design/build/opaque-library-state.md"
+note = "the public-contract-clause rule for an opaque record"
+
+[[requirement.evidence]]
+kind = "file"
+target = "stdlib/kernel-primitives/collections/slab.th"
+note = "`fixed_slab_get` and `fixed_slab_find_free` hold behind the gate; `fixed_slab_handle_live` shows the specification-surface shape that publishes"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "plan_exports"
+note = "the exports-stage admission site that must name the refusal before Verus runs"
+
+[[requirement]]
 id = "REQ-L3COMPOSE-1"
 title = "Explicit rich-state composition surface"
 owner = ".design/build/l3-rich-composition.md"

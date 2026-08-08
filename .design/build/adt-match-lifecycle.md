@@ -16,7 +16,7 @@ governs:
   - forge/src/verified_build.rs
   - forge/tests/verified_composition.rs
   - conformance/verified-composition/probe.th
-audited-content-sha256: 6eb43aa390b47fb0c36837dd1fd628ef8a8d0bcd96b88b6300063ada4f493c52 (re-pinned 2026-08-07 after the synthetic test platform acceptance test joined the governed composition suite)
+audited-content-sha256: 5860810a81a7be5794df3efcd14c32441645f811478f7d858ded0f5a0666c41a (re-pinned 2026-08-07 after the exec-position local equation carried its declared bounded type on every branch result; existing rows remain regression-covered)
 extends:
   - .design/build/owned-aggregate-lifecycle.md
   - .design/build/nested-aggregate-lifecycle.md

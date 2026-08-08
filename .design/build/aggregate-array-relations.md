@@ -30,7 +30,7 @@ governs:
   - forge/tests/exec_tv_conformance.rs
   - forge/tests/verified_build.rs
   - conformance/verified-build/aggregate_array_relations.th
-audited-content-sha256: 0008191e6e3d52f5588c6f4fc98df344c4b93c3921495897cf3315d5c525ecfb (re-pinned 2026-08-07 after the quantified declared-index relation family landed the `#[logical]` attribute, its admission and relation gate, and the per-view `forall` emission)
+audited-content-sha256: aa42ab6ddaf2b8717776f71c919ccfd925a40649304bb20ba71eaa2ac411347f (re-pinned 2026-08-07 after the exec-position local equation carried its declared bounded type on every branch result; existing rows remain regression-covered)
 extends:
   - .design/build/kernel-primitives.md
   - .design/verified/exec-tv.md

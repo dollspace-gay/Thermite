@@ -17,7 +17,7 @@ governs:
   - forge/tests/verified_build.rs
   - conformance/verified-build/owned_aggregate_lifecycle.th
   - conformance/verified-build/record_after_indexed_call_effect.th
-audited-content-sha256: 580f191737d6222eda426efffba187f39f57ad1d17357e148bc38eba8645f1eb (re-pinned 2026-08-07 after the dependency-reference pin reasserted the injected postcondition as a complete ensures list element)
+audited-content-sha256: e449bdf2158bdc1571f4922610314bc301292b4db9ab40022f49ab29ae8de9f8 (re-pinned 2026-08-07 after the exec-position local equation carried its declared bounded type on every branch result; existing rows remain regression-covered)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/named-record-lifecycle.md

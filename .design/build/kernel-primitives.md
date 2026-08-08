@@ -102,7 +102,7 @@ governs:
   - conformance/verified-composition/frozen_primitive.th
   - conformance/verified-composition/frozen_primitive_shell.rs
   - conformance/verified-composition/frozen_primitive_registry.json
-audited-content-sha256: b337551674d531ad94ef3d1e665312169df53d4150e27947cf14371f0336895a (re-pinned 2026-08-07 after the quantified declared-index relation family landed the `#[logical]` attribute, its admission and relation gate, and the per-view `forall` emission)
+audited-content-sha256: 585b1ad3ee8da018deb61d624d01cf2d685f9ac5eb53956b713c3c7f2ecd57f5 (re-pinned 2026-08-07 after the exec-position local equation carried its declared bounded type on every branch result; existing rows remain regression-covered)
 extends:
   - .design/build/kernel-target.md
   - .design/build/l3-rich-composition.md

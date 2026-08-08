@@ -521,13 +521,13 @@ impl ExecEnv {
         let context = ExecRefCtx::with_slice_bound(self.slice_params.iter().cloned())
             .with_fixed_array_bound(self.fixed_array_params.iter().cloned())
             .with_fixed_array_fields(self.fixed_array_fields.iter().cloned());
-        let Ok(reference) = exec_ref_value(init, &context) else {
-            return;
-        };
         let value = if bounded {
-            format!("({reference}) as {ty}")
+            bounded_local_reference(init, ty, &context)
         } else {
-            reference
+            exec_ref_value(init, &context).ok()
+        };
+        let Some(value) = value else {
+            return;
         };
         let mut dependencies = Vec::new();
         collect_free_paths(init, &mut dependencies);
@@ -540,6 +540,36 @@ impl ExecEnv {
             dependencies,
         });
     }
+}
+
+/// The independently encoded value of a bounded typed local, carrying the declared
+/// type on each branch result.
+///
+/// A cast written around a whole conditional leaves each branch result without a
+/// type, so a Verus integer literal in a branch has an uninferable type parameter
+/// and the obligation aborts before it can be discharged. The declared type
+/// therefore descends into every branch result, which is the annotated bounded
+/// result rule the body reference already applies (`.design/build/static-storage.md`,
+/// "Translation validation"). Casting each branch result denotes the same value as
+/// casting the whole conditional, so the recorded equation keeps its meaning.
+/// A branch carrying statements, or an encoding the exec reference does not admit,
+/// records no equation at all.
+fn bounded_local_reference(init: &Expr, ty: &str, context: &ExecRefCtx) -> Option<String> {
+    if let Expr::If { cond, then, else_ } = init {
+        if then.stmts.is_empty() && else_.stmts.is_empty() {
+            if let (Some(then_value), Some(else_value)) =
+                (then.tail.as_deref(), else_.tail.as_deref())
+            {
+                return Some(format!(
+                    "(if {} {{ {} }} else {{ {} }})",
+                    exec_ref_value(cond, context).ok()?,
+                    bounded_local_reference(then_value, ty, context)?,
+                    bounded_local_reference(else_value, ty, context)?,
+                ));
+            }
+        }
+    }
+    Some(format!("({}) as {ty}", exec_ref_value(init, context).ok()?))
 }
 
 /// TV the derivable pure exec exprs of one fn body (REQ-5, best-effort). Builds the
@@ -1596,6 +1626,151 @@ fn caller(state: State) -> u64
         assert!(
             !is_direct_record_value_call(&parsed.program, &nested),
             "nested aggregate calls must remain visible to the fail-closed expression/body paths"
+        );
+    }
+
+    /// A bounded typed local whose initializer is a conditional records its
+    /// defining equation with the declared type on every branch result.
+    ///
+    /// The fixture is the verbatim `fn static_storage_claim_reason` declaration from
+    /// `stdlib/kernel-primitives/storage/static_storage.th`; the expected shape comes
+    /// from `.design/build/static-storage.md`, "Translation validation": the
+    /// annotated bounded integer type is propagated "through every `if` and `match`
+    /// result arm" and bare literals are cast "at the leaves". The source states five
+    /// outcomes (1, 2, 3, 4, 0), so five leaves carry the declared `u8`, and the
+    /// conditional as a whole carries no cast — a cast there leaves each branch
+    /// literal without a type, which Verus reports as an uninferable
+    /// `spec_literal_integer` parameter and aborts the obligation.
+    #[test]
+    fn conditional_local_equation_types_every_branch_result() {
+        let parsed = thermite_syntax::parse(
+            r#"
+fn static_storage_claim_reason(
+  reserved: bool,
+  initialized: bool,
+  generation: u64,
+  capacity: usize,
+) -> u8
+  req true
+  ens result == static_storage_claim_reason_spec(
+    reserved,
+    initialized,
+    generation,
+    capacity,
+  )
+  fx pure
+{
+  let reason: u8 = if capacity == 0 {
+    1
+  } else {
+    if reserved {
+      2
+    } else {
+      if initialized {
+        3
+      } else {
+        if generation == 18_446_744_073_709_551_614 + 1 {
+          4
+        } else {
+          0
+        }
+      }
+    }
+  };
+  reason
+}
+"#,
+        );
+        assert!(parsed.is_clean(), "parse errors: {:?}", parsed.errors);
+        let init = parsed
+            .program
+            .items
+            .iter()
+            .find_map(|item| match item {
+                Item::Fn(function) if function.name == "static_storage_claim_reason" => function
+                    .body
+                    .as_ref()
+                    .and_then(|body| body.stmts.first())
+                    .and_then(|statement| match statement {
+                        Stmt::Let { init, .. } => Some(init),
+                        _ => None,
+                    }),
+                _ => None,
+            })
+            .expect("the `let reason: u8` initializer");
+
+        let mut env = ExecEnv::default();
+        for (name, ty) in [
+            ("reserved", "bool"),
+            ("initialized", "bool"),
+            ("generation", "u64"),
+            ("capacity", "usize"),
+        ] {
+            env.bind(name, ty.to_string(), false);
+        }
+        env.bind_local_relation("reason", "u8", init);
+        let relation = env
+            .local_relations
+            .iter()
+            .find(|relation| relation.name == "reason")
+            .expect("the `reason` local relation");
+        let predicate = &relation.predicate;
+
+        // Every source outcome carries the declared type at its leaf. Either leaf
+        // cast spelling satisfies the rule; the property is that the branch result
+        // is typed, not how the cast is parenthesized.
+        for outcome in ["1", "2", "3", "4", "0"] {
+            assert!(
+                predicate.contains(&format!("({outcome}) as u8"))
+                    || predicate.contains(&format!("{outcome} as u8")),
+                "the branch result `{outcome}` of the source conditional must carry the \
+                 declared `u8`; got `{predicate}`"
+            );
+        }
+        assert_eq!(
+            predicate.matches("as u8").count(),
+            5,
+            "the source states five outcomes, so the equation carries the declared type \
+             five times — once per branch result; got `{predicate}`"
+        );
+        assert!(
+            !predicate.contains("} as u8") && !predicate.contains("}) as u8"),
+            "casting the conditional as a whole leaves its branch literals untyped, which \
+             Verus cannot infer; got `{predicate}`"
+        );
+
+        // The obligation the relation frames must compile under real Verus. This is
+        // the property the structural assertions stand for: an untypeable `requires`
+        // aborts the discharge before any counterexample can be reported.
+        if !verus_on_path() {
+            eprintln!("SKIP: verus not on PATH — the compile grounding did not run");
+            return;
+        }
+        let frame = ExecObligationFrame {
+            params: vec![
+                ExecParamDecl::new("reason", "u8"),
+                ExecParamDecl::new("reserved", "bool"),
+                ExecParamDecl::new("initialized", "bool"),
+                ExecParamDecl::new("generation", "u64"),
+                ExecParamDecl::new("capacity", "usize"),
+            ],
+            ret_type: "u8".to_string(),
+            req: Some(predicate.clone()),
+            ..Default::default()
+        };
+        let obligation = exec_equivalence_obligation(&path("reason"), "reason", &frame)
+            .expect("the tail obligation for the bound local");
+        let verdict = discharge(
+            &obligation,
+            "static_storage_claim_reason.tail",
+            SEED,
+            RLIMIT,
+        );
+        assert_eq!(
+            verdict,
+            ExecVerdict::Faithful,
+            "the framed tail obligation must discharge; a Divergent verdict here is the \
+             verus abort on an untypeable branch literal"
         );
     }
 

@@ -22,7 +22,7 @@ governs:
   - conformance/verified-build/projected_record_call_effect.th
   - conformance/verified-build/projected_indexed_call_effect.th
   - conformance/verified-build/record_after_indexed_call_effect.th
-audited-content-sha256: 8389a96abdeedf7c8201567ba503a0796ee6755c279feb25b6f5d277a04655c4 (re-pinned 2026-08-07 after the dependency-reference pin reasserted the injected postcondition as a complete ensures list element)
+audited-content-sha256: c0553e3a54a9d143c2830081763e8703eac87871a7f77b1a77d570e70f4ca319 (re-pinned 2026-08-07 after the exec-position local equation carried its declared bounded type on every branch result; existing rows remain regression-covered)
 extends:
   - .design/build/nested-aggregate-lifecycle.md
   - .design/build/owned-aggregate-lifecycle.md

@@ -16,7 +16,7 @@ governs:
   - stdlib/kernel-primitives/synchronization/wait.th
   - stdlib/kernel-primitives/synchronization/work_deque.th
   - forge/tests/synchronization_primitives.rs
-audited-content-sha256: ac71262f18e20c8acc8ada370887f5ed9a00b4d1ad322ec03725df52f2bd3c72 (re-pinned 2026-08-04 after complete-certificate L3-floor enforcement)
+audited-content-sha256: bba483916f19ad288ff6833ae1aa8ccad3875193ef41ffa8f753da1c7a096927 (re-pinned 2026-08-08 after the synchronization mutation pins tracked the fixed-array canonical zero)
 extends:
   - .design/build/kernel-primitives.md
   - .design/build/sealed-atomics.md
@@ -276,10 +276,25 @@ fairness assumptions in the registry, and richer reader/writer coordination.
 | Thermite functions | 176 (135 executable, 38 specification, 3 frozen declarations) |
 | In-language L3 items | 222 |
 | Frozen boundary declarations | 3 at L1 |
-| Executable mutants killed | 756/834 |
+| Executable mutants killed | 757/837 |
 | Bodyful Rust/assembly synchronization implementations | 0 |
 | Ordinary Rust kernel-policy/algorithm LOC | 0 |
 | Direct-Verus TPL LOC shipped by this package | 0 |
 
 The Rust acceptance test is proof, replay, and tamper harness code; it is not
 linked into the artifact.
+
+The mutant figure rose from 756/834 on 2026-08-07. `fn zero_value_for` in
+`forge/src/mutation.rs` gained a canonical zero for a fixed array, so a record
+whose fields are all zero-able has a zero as well, and each function returning
+one gained an early-return mutant. Three modules hold such a record:
+`EpochAckState64`, `MpscQueue64`, and `WorkDeque64`, each returned by one
+constructor. `WaitTrace64` carries an array field that no function returns, so
+the wait module is unchanged.
+
+The epoch-acknowledgement mutant dies on the declared epoch and generation. The
+other two survive as equivalent mutants, because neither record carries a field
+with a nonzero invariant and each constructor's body is its own zero value.
+`.design/build/fixed-collections.md` records the same shape across the
+collection modules, and `.design/forge/mutation-equivalence.md` covers the
+classification that removes an equivalent mutant from the denominator.

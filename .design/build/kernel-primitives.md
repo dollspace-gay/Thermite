@@ -676,7 +676,7 @@ mechanics, a generation-tagged 64-participant epoch-acknowledgement set, plus
 two-phase owner/thief work-deque mechanics. Two hundred twenty-two
 in-language items prove at L3; the three
 machine-facing declarations remain honest L1 boundaries, and executable
-contracts kill 756/834 mutants.
+contracts kill 757/837 mutants.
 Probes cover FIFO handoff, frozen barrier membership, stale generations,
 stale tickets and once tokens, poison, last-reference retirement without
 resurrection, stale seqlock reads, out-of-order MPSC publication with FIFO

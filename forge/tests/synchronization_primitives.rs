@@ -217,7 +217,11 @@ fn synchronization_mechanics_are_receipt_bound_and_fail_closed() {
             .unwrap_or_else(|| panic!("missing epoch/ack certificate `{name}`"));
         assert_ne!(row["contract_quality"]["mutants_killed"], "0/0");
     }
-    assert_eq!(mutation_total(&epoch_ack_rows), (96, 100));
+    // `epoch_ack_empty` returns `EpochAckState64`, whose array fields became
+    // zero-able when `zero_value_for` in `mutation.rs` learned to zero a fixed
+    // array. It gained one early-return zero mutant, which the declared epoch and
+    // generation postconditions kill.
+    assert_eq!(mutation_total(&epoch_ack_rows), (97, 101));
 
     let mpsc_rows = checked_rows(mpsc_source);
     assert_eq!(mpsc_rows.len(), 32);
@@ -241,7 +245,11 @@ fn synchronization_mechanics_are_receipt_bound_and_fail_closed() {
             .unwrap_or_else(|| panic!("missing MPSC queue certificate `{name}`"));
         assert_ne!(row["contract_quality"]["mutants_killed"], "0/0");
     }
-    assert_eq!(mutation_total(&mpsc_rows), (100, 119));
+    // `mpsc_queue_empty` returns `MpscQueue64`, whose array fields became
+    // zero-able with the same `zero_value_for` change. Its early-return zero
+    // mutant is equivalent, because the constructor's body is its own zero
+    // value, so the generated count rises and the killed count holds.
+    assert_eq!(mutation_total(&mpsc_rows), (100, 120));
 
     let ticket_rows = checked_rows(ticket_source);
     assert_eq!(ticket_rows.len(), 18);
@@ -353,7 +361,9 @@ fn synchronization_mechanics_are_receipt_bound_and_fail_closed() {
             .unwrap_or_else(|| panic!("missing work-deque certificate `{name}`"));
         assert_ne!(row["contract_quality"]["mutants_killed"], "0/0");
     }
-    assert_eq!(mutation_total(&work_deque_rows), (211, 247));
+    // `work_deque_empty` returns `WorkDeque64`, the last array-bearing record
+    // in this package. Same equivalent-mutant shape as the queue above.
+    assert_eq!(mutation_total(&work_deque_rows), (211, 248));
 
     let mut false_wait = fs::read_to_string(root().join(wait_source)).unwrap();
     false_wait.push_str(

@@ -1,0 +1,314 @@
+struct SeqLockState64 {
+  sequence: u64,
+  writer_active: bool,
+}
+
+enum SeqWriteBegin64 {
+  SeqWriteStarted64 {
+    state: SeqLockState64,
+    token: u64,
+  },
+  SeqWriteBusy64 {
+    state: SeqLockState64,
+  },
+  SeqWriteExhausted64 {
+    state: SeqLockState64,
+  },
+}
+
+enum SeqWriteFinish64 {
+  SeqWriteFinished64 {
+    state: SeqLockState64,
+  },
+  SeqWriteFinishRejected64 {
+    state: SeqLockState64,
+    token: u64,
+  },
+  SeqWriteFinishExhausted64 {
+    state: SeqLockState64,
+    token: u64,
+  },
+}
+
+enum SeqReadBegin64 {
+  SeqReadReady64 {
+    stamp: u64,
+  },
+  SeqReadRetry64 {
+    observed: u64,
+  },
+}
+
+spec fn seqlock_wf_spec(state: &SeqLockState64) -> bool
+  dec state.sequence
+{
+  state.writer_active == (state.sequence % 2 == 1)
+}
+
+fn seqlock_wf(state: &SeqLockState64) -> bool
+  req true
+  ens result == seqlock_wf_spec(state)
+  fx pure
+{
+  state.writer_active == (state.sequence % 2 == 1)
+}
+
+fn seqlock_from_even(sequence: u64) -> SeqLockState64
+  req sequence % 2 == 0
+  ens seqlock_wf_spec(&result)
+  ens result.sequence == sequence && !result.writer_active
+  fx pure
+{
+  SeqLockState64 {
+    sequence: sequence,
+    writer_active: false,
+  }
+}
+
+fn seqlock_can_begin(sequence: u64) -> bool
+  req sequence % 2 == 0
+  ens result == (sequence < u64::MAX - 1)
+  fx pure
+{
+  sequence < u64::MAX - 1
+}
+
+fn seqlock_begin_write(state: SeqLockState64) -> SeqWriteBegin64
+  req seqlock_wf_spec(&state)
+  ens match result {
+    SeqWriteBegin64::SeqWriteStarted64 { state: next, token } =>
+      !state.writer_active
+        && state.sequence < u64::MAX - 1
+        && seqlock_wf_spec(&next)
+        && next.sequence == state.sequence + 1
+        && next.writer_active
+        && token == next.sequence,
+    SeqWriteBegin64::SeqWriteBusy64 { state: next } =>
+      state.writer_active
+        && next.sequence == state.sequence
+        && next.writer_active == state.writer_active,
+    SeqWriteBegin64::SeqWriteExhausted64 { state: next } =>
+      !state.writer_active
+        && state.sequence >= u64::MAX - 1
+        && next.sequence == state.sequence
+        && next.writer_active == state.writer_active,
+  }
+  fx pure
+{
+  if state.writer_active {
+    SeqWriteBegin64::SeqWriteBusy64 { state: state }
+  } else {
+    if seqlock_can_begin(state.sequence) {
+      let sequence: u64 = state.sequence + 1;
+      SeqWriteBegin64::SeqWriteStarted64 {
+        state: SeqLockState64 {
+          sequence: sequence,
+          writer_active: true,
+        },
+        token: sequence,
+      }
+    } else {
+      SeqWriteBegin64::SeqWriteExhausted64 { state: state }
+    }
+  }
+}
+
+fn seqlock_finish_write(
+  state: SeqLockState64,
+  token: u64,
+) -> SeqWriteFinish64
+  req seqlock_wf_spec(&state)
+  ens match result {
+    SeqWriteFinish64::SeqWriteFinished64 { state: next } =>
+      state.writer_active
+        && state.sequence < u64::MAX
+        && token == state.sequence
+        && seqlock_wf_spec(&next)
+        && next.sequence == state.sequence + 1
+        && !next.writer_active,
+    SeqWriteFinish64::SeqWriteFinishRejected64 { state: next, token: returned } =>
+      (!state.writer_active || token != state.sequence)
+        && next.sequence == state.sequence
+        && next.writer_active == state.writer_active
+        && returned == token,
+    SeqWriteFinish64::SeqWriteFinishExhausted64 { state: next, token: returned } =>
+      state.writer_active
+        && token == state.sequence
+        && state.sequence == u64::MAX
+        && next.sequence == state.sequence
+        && next.writer_active == state.writer_active
+        && returned == token,
+  }
+  fx pure
+{
+  if !state.writer_active || token != state.sequence {
+    SeqWriteFinish64::SeqWriteFinishRejected64 {
+      state: state,
+      token: token,
+    }
+  } else {
+    if state.sequence == u64::MAX {
+      SeqWriteFinish64::SeqWriteFinishExhausted64 {
+        state: state,
+        token: token,
+      }
+    } else {
+      SeqWriteFinish64::SeqWriteFinished64 {
+        state: SeqLockState64 {
+          sequence: state.sequence + 1,
+          writer_active: false,
+        },
+      }
+    }
+  }
+}
+
+fn seqlock_read_begin(state: &SeqLockState64) -> SeqReadBegin64
+  req seqlock_wf_spec(state)
+  ens match result {
+    SeqReadBegin64::SeqReadReady64 { stamp } =>
+      !state.writer_active
+        && state.sequence % 2 == 0
+        && stamp == state.sequence,
+    SeqReadBegin64::SeqReadRetry64 { observed } =>
+      state.writer_active
+        && state.sequence % 2 == 1
+        && observed == state.sequence,
+  }
+  fx pure
+{
+  if state.writer_active {
+    SeqReadBegin64::SeqReadRetry64 {
+      observed: state.sequence,
+    }
+  } else {
+    SeqReadBegin64::SeqReadReady64 {
+      stamp: state.sequence,
+    }
+  }
+}
+
+fn seqlock_read_validate(state: &SeqLockState64, stamp: u64) -> bool
+  req seqlock_wf_spec(state)
+  ens result == (!state.writer_active && state.sequence == stamp)
+  fx pure
+{
+  !state.writer_active && state.sequence == stamp
+}
+
+fn seqlock_fresh_after_finish(
+  state: &SeqLockState64,
+  old_stamp: u64,
+) -> bool
+  req seqlock_wf_spec(state)
+    && !state.writer_active
+    && state.sequence > old_stamp
+  ens result
+  fx pure
+{
+  if seqlock_read_validate(state, old_stamp) {
+    false
+  } else {
+    match seqlock_read_begin(state) {
+      SeqReadBegin64::SeqReadReady64 { stamp: fresh } =>
+        seqlock_read_validate(state, fresh),
+      SeqReadBegin64::SeqReadRetry64 { observed: _ } => false,
+    }
+  }
+}
+
+fn seqlock_finish_after_retry(
+  state: SeqLockState64,
+  token: u64,
+  old_stamp: u64,
+) -> bool
+  req seqlock_wf_spec(&state)
+    && state.writer_active
+    && token == state.sequence
+    && old_stamp < u64::MAX
+    && token == old_stamp + 1
+    && token < u64::MAX
+  ens result
+  fx pure
+{
+  match seqlock_finish_write(state, token) {
+    SeqWriteFinish64::SeqWriteFinished64 { state: finished } =>
+      seqlock_fresh_after_finish(&finished, old_stamp),
+    SeqWriteFinish64::SeqWriteFinishRejected64 { state: _, token: _ } => false,
+    SeqWriteFinish64::SeqWriteFinishExhausted64 { state: _, token: _ } => false,
+  }
+}
+
+fn seqlock_after_read_stamp(
+  state: SeqLockState64,
+  stamp: u64,
+) -> bool
+  req seqlock_wf_spec(&state)
+    && !state.writer_active
+    && stamp == state.sequence
+    && state.sequence < u64::MAX - 1
+  ens result
+  fx pure
+{
+  match seqlock_begin_write(state) {
+    SeqWriteBegin64::SeqWriteStarted64 { state: writing, token } =>
+      match seqlock_read_begin(&writing) {
+        SeqReadBegin64::SeqReadReady64 { stamp: _ } => false,
+        SeqReadBegin64::SeqReadRetry64 { observed } =>
+          if observed == token {
+            seqlock_finish_after_retry(writing, token, stamp)
+          } else {
+            false
+          },
+      },
+    SeqWriteBegin64::SeqWriteBusy64 { state: _ } => false,
+    SeqWriteBegin64::SeqWriteExhausted64 { state: _ } => false,
+  }
+}
+
+fn seqlock_stale_read_probe() -> bool
+  req true
+  ens result
+  fx pure
+{
+  let empty: SeqLockState64 = seqlock_from_even(0);
+  match seqlock_read_begin(&empty) {
+    SeqReadBegin64::SeqReadReady64 { stamp } =>
+      seqlock_after_read_stamp(empty, stamp),
+    SeqReadBegin64::SeqReadRetry64 { observed: _ } => false,
+  }
+}
+
+fn seqlock_begin_exhaustion_probe() -> bool
+  req true
+  ens result
+  fx pure
+{
+  let exhausted: SeqLockState64 = SeqLockState64 {
+    sequence: u64::MAX - 1,
+    writer_active: false,
+  };
+  match seqlock_begin_write(exhausted) {
+    SeqWriteBegin64::SeqWriteStarted64 { state: _, token: _ } => false,
+    SeqWriteBegin64::SeqWriteBusy64 { state: _ } => false,
+    SeqWriteBegin64::SeqWriteExhausted64 { state } =>
+      state.sequence == u64::MAX - 1 && !state.writer_active,
+  }
+}
+
+fn seqlock_finish_exhaustion_probe() -> bool
+  req true
+  ens result
+  fx pure
+{
+  let exhausted: SeqLockState64 = SeqLockState64 {
+    sequence: u64::MAX,
+    writer_active: true,
+  };
+  match seqlock_finish_write(exhausted, u64::MAX) {
+    SeqWriteFinish64::SeqWriteFinished64 { state: _ } => false,
+    SeqWriteFinish64::SeqWriteFinishRejected64 { state: _, token: _ } => false,
+    SeqWriteFinish64::SeqWriteFinishExhausted64 { state, token } =>
+      state.sequence == u64::MAX && state.writer_active && token == u64::MAX,
+  }
+}

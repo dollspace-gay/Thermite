@@ -1,0 +1,118 @@
+struct ProjectedCallLeaf {
+  value: u64,
+  guard: u64,
+}
+
+struct ProjectedCallPair {
+  left: ProjectedCallLeaf,
+  right: ProjectedCallLeaf,
+}
+
+struct ProjectedCallOuter {
+  pair: ProjectedCallPair,
+  tag: u64,
+}
+
+fn projected_call_new(
+  left_value: u64,
+  left_guard: u64,
+  right_value: u64,
+  right_guard: u64,
+  tag: u64,
+) -> ProjectedCallOuter
+  req true
+  ens result.pair.left.value == left_value
+  ens result.pair.left.guard == left_guard
+  ens result.pair.right.value == right_value
+  ens result.pair.right.guard == right_guard
+  ens result.tag == tag
+  fx pure
+{
+  ProjectedCallOuter {
+    pair: ProjectedCallPair {
+      left: ProjectedCallLeaf { value: left_value, guard: left_guard },
+      right: ProjectedCallLeaf { value: right_value, guard: right_guard },
+    },
+    tag: tag,
+  }
+}
+
+fn projected_call_set(leaf: &mut ProjectedCallLeaf, value: u64) -> u64
+  req true
+  ens result == value
+  ens final(leaf).value == value
+  ens final(leaf).guard == old(leaf).guard
+  fx pure
+{
+  leaf.value = value;
+  leaf.value
+}
+
+fn projected_call_copy(
+  destination: &mut ProjectedCallLeaf,
+  source: &ProjectedCallLeaf,
+) -> u64
+  req true
+  ens result == source.value
+  ens final(destination).value == source.value
+  ens final(destination).guard == old(destination).guard
+  fx pure
+{
+  destination.value = source.value;
+  destination.value
+}
+
+fn projected_call_pipeline(outer: &mut ProjectedCallOuter, value: u64) -> u64
+  req true
+  ens result == value
+  ens final(outer).pair.left.value == value
+  ens final(outer).pair.left.guard == old(outer).pair.left.guard
+  ens final(outer).pair.right.value == value
+  ens final(outer).pair.right.guard == old(outer).pair.right.guard
+  ens final(outer).tag == old(outer).tag
+  fx pure
+{
+  let written: u64 = projected_call_set(&mut outer.pair.left, value);
+  let observed: u64 = projected_call_copy(&mut outer.pair.right, &outer.pair.left);
+  observed
+}
+
+fn projected_call_left_value(outer: &ProjectedCallOuter) -> u64
+  req true
+  ens result == outer.pair.left.value
+  fx pure
+{
+  outer.pair.left.value
+}
+
+fn projected_call_left_guard(outer: &ProjectedCallOuter) -> u64
+  req true
+  ens result == outer.pair.left.guard
+  fx pure
+{
+  outer.pair.left.guard
+}
+
+fn projected_call_right_value(outer: &ProjectedCallOuter) -> u64
+  req true
+  ens result == outer.pair.right.value
+  fx pure
+{
+  outer.pair.right.value
+}
+
+fn projected_call_right_guard(outer: &ProjectedCallOuter) -> u64
+  req true
+  ens result == outer.pair.right.guard
+  fx pure
+{
+  outer.pair.right.guard
+}
+
+fn projected_call_tag(outer: &ProjectedCallOuter) -> u64
+  req true
+  ens result == outer.tag
+  fx pure
+{
+  outer.tag
+}

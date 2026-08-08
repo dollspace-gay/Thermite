@@ -38,10 +38,10 @@
 //! | REQ-TV-CONTRACT-REF-ENCODER | shipped | `thermite-tv/src/ref_encode.rs` | Contract-TV independent reference encoder |  |
 //! <!-- /generated:reqs -->
 
-use std::collections::BTreeSet;
-use std::fmt;
+use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::{self, Write as _};
 
-use thermite_syntax::ast::{BinOp, Expr, IndexArg, MatchArm, Pattern, UnaryOp};
+use thermite_syntax::ast::{ArrayLen, BinOp, Expr, IndexArg, MatchArm, Pattern, UnaryOp};
 
 /// An failure to encode a construct outside the frozen contract
 /// sublanguage (REQ-1). The reference encoder never panics and never silently
@@ -59,6 +59,15 @@ pub enum RefEncodeError {
     /// encode. (A non-registry path callee IS encodable as a plain spec-fn call;
     /// this fires only for a shape the encoder cannot represent.)
     UnknownCallee(String),
+}
+
+/// Which Verus state view a symbolic contract-TV snapshot represents.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StateViewKind {
+    /// The pre-state selected by `old(parameter)`.
+    Old,
+    /// The post-state selected by `final(parameter)`.
+    Final,
 }
 
 impl fmt::Display for RefEncodeError {
@@ -110,6 +119,20 @@ pub struct RefCtx {
     /// spec rewrite (`lower.rs`) independently (the wrapper spec fns are the shared
     /// frozen ground truth, in the preamble). The receiver is emitted bare.
     map_bound: BTreeSet<String>,
+    /// Names bound as native fixed arrays. Their frozen length operation is
+    /// independently encoded through the finite `@` view.
+    fixed_array_bound: BTreeSet<String>,
+    /// Direct `root.field` paths whose independently parsed source type is a
+    /// native fixed array. Contract/body frames need this to encode
+    /// `state.slots[i]` as `state.slots@[i as int]`, rather than attempting an
+    /// executable array index in specification position.
+    fixed_array_fields: BTreeSet<String>,
+    /// User `spec fn` declarations keyed to the argument positions whose source
+    /// type is a slice view. Other argument positions remain values or references.
+    spec_call_slice_args: BTreeMap<String, BTreeSet<usize>>,
+    /// User-enum variant ownership used to qualify unqualified patterns and
+    /// constructors independently of production lowering.
+    enum_variants: BTreeMap<String, String>,
     /// Names that are a bounded integer (`u64`/`u32`/`usize`) and must be coerced
     /// `as nat` when they appear as a top-level operand of a comparison against a
     /// `nat`-valued term (a `nat`-returning spec-fn call). This re-implements,
@@ -122,6 +145,10 @@ pub struct RefCtx {
     /// (rather than importing production's rule) keeps independence: a
     /// production coercion bug would still be caught.
     nat_coerce: BTreeSet<String>,
+    /// Source `old(x)` bindings reified as arbitrary proof parameters.
+    old_state_views: BTreeMap<String, String>,
+    /// Source `final(x)` bindings reified as arbitrary proof parameters.
+    final_state_views: BTreeMap<String, String>,
 }
 
 impl RefCtx {
@@ -137,8 +164,80 @@ impl RefCtx {
             seq_bound: names.into_iter().map(Into::into).collect(),
             string_bound: BTreeSet::new(),
             map_bound: BTreeSet::new(),
+            fixed_array_bound: BTreeSet::new(),
+            fixed_array_fields: BTreeSet::new(),
+            spec_call_slice_args: BTreeMap::new(),
+            enum_variants: BTreeMap::new(),
             nat_coerce: BTreeSet::new(),
+            old_state_views: BTreeMap::new(),
+            final_state_views: BTreeMap::new(),
         }
+    }
+
+    /// Bind source state-view calls to arbitrary obligation snapshot values.
+    pub fn with_state_views<I, S, B>(mut self, views: I) -> Self
+    where
+        I: IntoIterator<Item = (StateViewKind, S, B)>,
+        S: Into<String>,
+        B: Into<String>,
+    {
+        for (kind, source, binding) in views {
+            let target = match kind {
+                StateViewKind::Old => &mut self.old_state_views,
+                StateViewKind::Final => &mut self.final_state_views,
+            };
+            target.insert(source.into(), binding.into());
+        }
+        self
+    }
+
+    /// Declare native fixed-array bindings for finite-view length.
+    pub fn with_fixed_array_bound<I, S>(mut self, names: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.fixed_array_bound = names.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Declare exact direct named-record fields whose values are native fixed
+    /// arrays. The inventory comes from parsed record declarations rather than
+    /// production lowering.
+    pub fn with_fixed_array_fields<I, S>(mut self, paths: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.fixed_array_fields = paths.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Declare the slice-view positions for every user `spec fn` in the source
+    /// program. An empty position list records a known all-value signature.
+    pub fn with_spec_call_slice_args<I>(mut self, entries: I) -> Self
+    where
+        I: IntoIterator<Item = (String, Vec<usize>)>,
+    {
+        self.spec_call_slice_args = entries
+            .into_iter()
+            .map(|(name, positions)| (name, positions.into_iter().collect()))
+            .collect();
+        self
+    }
+
+    /// Declare the exact parsed owner of every user-enum variant.
+    pub fn with_enum_variants<I, V, E>(mut self, variants: I) -> Self
+    where
+        I: IntoIterator<Item = (V, E)>,
+        V: Into<String>,
+        E: Into<String>,
+    {
+        self.enum_variants = variants
+            .into_iter()
+            .map(|(variant, enumeration)| (variant.into(), enumeration.into()))
+            .collect();
+        self
     }
 
     /// Declare names bound as the `Map` wrapper (`TMap…`) — a `Map<K,V>` param/
@@ -190,8 +289,39 @@ impl RefCtx {
         self.map_bound.contains(name)
     }
 
+    fn is_fixed_array_bound(&self, name: &str) -> bool {
+        self.fixed_array_bound.contains(name)
+    }
+
+    fn is_fixed_array_field(&self, root: &str, field: &str) -> bool {
+        self.fixed_array_fields.contains(&format!("{root}.{field}"))
+            || self.fixed_array_fields.contains(field)
+    }
+
+    fn spec_call_slice_positions(&self, name: &str) -> Option<&BTreeSet<usize>> {
+        self.spec_call_slice_args.get(name)
+    }
+
+    fn qualify_variant_path(&self, path: &[String]) -> String {
+        if let [variant] = path {
+            if let Some(enumeration) = self.enum_variants.get(variant) {
+                return format!("{enumeration}::{variant}");
+            }
+        }
+        path.join("::")
+    }
+
     fn needs_nat_coerce(&self, name: &str) -> bool {
         self.nat_coerce.contains(name)
+    }
+
+    fn state_view_binding(&self, kind: &str, source: &str) -> Option<&str> {
+        match kind {
+            "old" => self.old_state_views.get(source),
+            "final" => self.final_state_views.get(source),
+            _ => None,
+        }
+        .map(String::as_str)
     }
 }
 
@@ -226,6 +356,17 @@ fn encode(expr: &Expr, ctx: &RefCtx) -> Result<String, RefEncodeError> {
     match expr {
         Expr::IntLit { value, .. } => Ok(value.to_string()),
         Expr::BoolLit(b) => Ok(b.to_string()),
+        Expr::Array(elements) => {
+            let elements = elements
+                .iter()
+                .map(|element| encode(element, ctx))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(format!("[{}]", elements.join(", ")))
+        }
+        Expr::ArrayRepeat { value, len } => {
+            let value = encode(value, ctx)?;
+            Ok(format!("[{value}; {}]", encode_array_len(len)))
+        }
         Expr::Path(segments) => encode_path(segments),
         Expr::Binary { op, lhs, rhs } => encode_binary(*op, lhs, rhs, ctx),
         Expr::Unary { op, expr } => encode_unary(*op, expr, ctx),
@@ -246,6 +387,10 @@ fn encode(expr: &Expr, ctx: &RefCtx) -> Result<String, RefEncodeError> {
         // base's view. This matches production's `Expr::Ref` spec arm (which
         // delegates `&xs[..i]` to its `lower_index`) without calling it.
         Expr::Ref { expr: inner, .. } => encode_ref(inner, ctx),
+        Expr::Deref(inner) => {
+            let inner = encode(inner, ctx)?;
+            Ok(format!("(*{inner})"))
+        }
         Expr::Cast { expr, ty } => encode_cast(expr, ty, ctx),
         Expr::Field { receiver, name } => {
             let r = encode(receiver, ctx)?;
@@ -257,10 +402,17 @@ fn encode(expr: &Expr, ctx: &RefCtx) -> Result<String, RefEncodeError> {
         }
         Expr::Is { scrutinee, variant } => {
             let s = encode(scrutinee, ctx)?;
-            Ok(format!("({s} is {})", variant.join("::")))
+            Ok(format!("({s} is {})", ctx.qualify_variant_path(variant)))
         }
         Expr::Match { scrutinee, arms } => encode_match(scrutinee, arms, ctx),
         other => Err(RefEncodeError::Unsupported(node_kind(other))),
+    }
+}
+
+fn encode_array_len(len: &ArrayLen) -> String {
+    match len {
+        ArrayLen::Literal { value, .. } => value.to_string(),
+        ArrayLen::Const(name) => name.clone(),
     }
 }
 
@@ -450,6 +602,13 @@ fn encode_call(callee: &Expr, args: &[Expr], ctx: &RefCtx) -> Result<String, Ref
                 args.len()
             )));
         };
+        if let Expr::Path(path) = arg {
+            if path.len() == 1 {
+                if let Some(binding) = ctx.state_view_binding("final", &path[0]) {
+                    return Ok(binding.to_string());
+                }
+            }
+        }
         let inner = encode(arg, ctx)?;
         return Ok(format!("final({inner})"));
     }
@@ -461,6 +620,13 @@ fn encode_call(callee: &Expr, args: &[Expr], ctx: &RefCtx) -> Result<String, Ref
                 "old/{} (expected exactly 1 arg)",
                 args.len()
             )));
+        }
+        if let Expr::Path(path) = &args[0] {
+            if path.len() == 1 {
+                if let Some(binding) = ctx.state_view_binding("old", &path[0]) {
+                    return Ok(binding.to_string());
+                }
+            }
         }
         let inner = encode(&args[0], ctx)?;
         // The prev-state value is bound as a distinct param `old_<name>`; a bare
@@ -476,11 +642,36 @@ fn encode_call(callee: &Expr, args: &[Expr], ctx: &RefCtx) -> Result<String, Ref
     }
 
     // (3) a named spec-fn call.
-    let encoded_args = args
-        .iter()
-        .map(|a| encode_call_arg(a, ctx))
-        .collect::<Result<Vec<_>, _>>()?;
+    let encoded_args = if let Some(slice_positions) = ctx.spec_call_slice_positions(&name) {
+        args.iter()
+            .enumerate()
+            .map(|(index, arg)| {
+                if matches!(arg, Expr::Closure { .. }) {
+                    encode_pred_arg(arg, ctx)
+                } else if slice_positions.contains(&index) {
+                    encode_slice_arg(arg, ctx)
+                } else {
+                    encode_non_slice_call_arg(arg, ctx)
+                }
+            })
+            .collect::<Result<Vec<_>, _>>()?
+    } else {
+        args.iter()
+            .map(|arg| encode_call_arg(arg, ctx))
+            .collect::<Result<Vec<_>, _>>()?
+    };
     Ok(format!("{name}({})", encoded_args.join(", ")))
+}
+
+/// Encode an argument at a source-declared non-slice position. A shared
+/// reference here is an actual Verus borrow of a named record, scalar, or fixed
+/// array; it must not take the slice-only `@` view used by [`encode_ref`]'s
+/// historical unknown-call fallback.
+fn encode_non_slice_call_arg(arg: &Expr, ctx: &RefCtx) -> Result<String, RefEncodeError> {
+    match arg {
+        Expr::Ref { expr, .. } => Ok(format!("&({})", encode(expr, ctx)?)),
+        _ => encode(arg, ctx),
+    }
 }
 
 /// Encode a frozen-combinator call (F2). The combinator's `verus_l3` body is the
@@ -618,6 +809,18 @@ fn encode_method_call(
     args: &[Expr],
     ctx: &RefCtx,
 ) -> Result<String, RefEncodeError> {
+    let is_fixed_array_value = |expr: &Expr| {
+        matches!(expr, Expr::Path(segs)
+            if segs.len() == 1 && ctx.is_fixed_array_bound(&segs[0]))
+            || matches!(expr, Expr::Field { receiver, name }
+                if matches!(receiver.as_ref(), Expr::Path(root)
+                    if matches!(root.as_slice(), [root]
+                        if ctx.is_fixed_array_field(root, name))))
+            || matches!(expr, Expr::Array(_) | Expr::ArrayRepeat { .. })
+            || matches!(expr, Expr::Call { callee, .. }
+                if matches!(callee.as_ref(), Expr::Path(path)
+                    if path.join("::") == "vstd::array::spec_array_update"))
+    };
     // A `String`/`&String` receiver (#150 gap #2): the byte-view dispatch is the
     // wrapper spec fns (`.spec_len()` / `.spec_byte_at(i as int)`), keyed on the
     // receiver being a `string_bound` bare path, mirroring production's
@@ -631,6 +834,58 @@ fn encode_method_call(
         if segs.len() == 1 && ctx.is_map_bound(&segs[0]) {
             return encode_map_accessor(&segs[0], name, args, ctx);
         }
+    }
+
+    if args.len() == 1 && matches!(name, "bit_test" | "bit_set" | "bit_clear") {
+        let word = encode(receiver, ctx)?;
+        let offset = encode(&args[0], ctx)?;
+        return Ok(encode_u64_bit_reference(&word, &offset, name));
+    }
+    if args.len() == 2
+        && matches!(
+            name,
+            "bit_set_preserves_other" | "bit_clear_preserves_other"
+        )
+    {
+        let word = encode(receiver, ctx)?;
+        let changed = encode(&args[0], ctx)?;
+        let observed = encode(&args[1], ctx)?;
+        return Ok(encode_u64_bit_preservation_reference(
+            &word, &changed, &observed, name,
+        ));
+    }
+
+    if is_fixed_array_value(receiver) {
+        if name == "len" && args.is_empty() {
+            let array = encode(receiver, ctx)?;
+            return Ok(format!("(({array})@.len() as usize)"));
+        }
+        if name == "array_eq" && args.len() == 1 && is_fixed_array_value(&args[0]) {
+            let left = encode(receiver, ctx)?;
+            let right = encode(&args[0], ctx)?;
+            return Ok(format!("(({left})@ =~= ({right})@)"));
+        }
+        if name == "array_same_except" && args.len() == 2 && is_fixed_array_value(&args[0]) {
+            let left = encode(receiver, ctx)?;
+            let right = encode(&args[0], ctx)?;
+            let except = encode(&args[1], ctx)?;
+            return Ok(format!(
+                "(forall|__thermite_i: int| 0 <= __thermite_i < ({left})@.len() && __thermite_i != ({except}) as int ==> ({left})@[__thermite_i] == ({right})@[__thermite_i])"
+            ));
+        }
+        if name == "array_same_except_two" && args.len() == 3 && is_fixed_array_value(&args[0]) {
+            let left = encode(receiver, ctx)?;
+            let right = encode(&args[0], ctx)?;
+            let first = encode(&args[1], ctx)?;
+            let second = encode(&args[2], ctx)?;
+            return Ok(format!(
+                "(forall|__thermite_i: int| 0 <= __thermite_i < ({left})@.len() && __thermite_i != ({first}) as int && __thermite_i != ({second}) as int ==> ({left})@[__thermite_i] == ({right})@[__thermite_i])"
+            ));
+        }
+        return Err(RefEncodeError::Unsupported(format!(
+            "spec method `.{name}()` on a fixed array (only `.len()` and the \
+             fixed-array relations are frozen)"
+        )));
     }
 
     match name {
@@ -683,6 +938,49 @@ fn encode_method_call(
             "spec method `.{other}()` (not in the frozen byte-view set)"
         ))),
     }
+}
+
+/// Independent contract semantics for the total packed-`u64` bit methods.
+/// The finite mask table is re-derived here so contract TV can catch a wrong
+/// production arm or operation without importing the production lowerer.
+fn encode_u64_bit_reference(word: &str, offset: &str, method: &str) -> String {
+    let mut out = format!("(match ({offset}) {{ ");
+    for bit in 0..64usize {
+        let mask = 1u64 << bit;
+        let value = match method {
+            "bit_test" => format!("({word}) & {mask}u64 != 0u64"),
+            "bit_set" => format!("({word}) | {mask}u64"),
+            "bit_clear" => format!("({word}) & !{mask}u64"),
+            _ => unreachable!("caller restricts the frozen bit method"),
+        };
+        write!(out, "{bit} => {value}, ").ok();
+    }
+    let fallback = if method == "bit_test" {
+        "false".to_string()
+    } else {
+        format!("({word})")
+    };
+    write!(out, "_ => {fallback} }})").ok();
+    out
+}
+
+fn encode_u64_bit_preservation_reference(
+    word: &str,
+    changed: &str,
+    observed: &str,
+    method: &str,
+) -> String {
+    let update = if method == "bit_set_preserves_other" {
+        "bit_set"
+    } else {
+        "bit_clear"
+    };
+    let updated = encode_u64_bit_reference(word, changed, update);
+    let after = encode_u64_bit_reference(&updated, observed, "bit_test");
+    let before = encode_u64_bit_reference(word, observed, "bit_test");
+    format!(
+        "(({changed}) < 64usize && ({observed}) < 64usize && ({changed}) != ({observed}) && (({after}) == ({before})))"
+    )
 }
 
 /// Encode a `String`/`&String`-receiver byte-view method (#150 gap #2). The
@@ -832,7 +1130,7 @@ fn encode_match(
     let s = encode(scrutinee, ctx)?;
     let mut out = format!("match {s} {{\n");
     for arm in arms {
-        let pat = encode_pattern(&arm.pattern)?;
+        let pat = encode_pattern(&arm.pattern, ctx)?;
         let body = encode(&arm.body, ctx)?;
         match &arm.guard {
             Some(guard) => {
@@ -849,52 +1147,55 @@ fn encode_match(
 }
 
 /// Encode a contract-position match pattern independently of production's
-/// `lower_pattern` (#150 gap #1). The frozen contract-`match` covers the C7
-/// payload-in-contract patterns: the built-in `Option`/`Result` variants
-/// (`Some(x)`/`None`/`Ok(x)`/`Err(e)`, unqualified — Verus knows `Option`/`Result`,
-/// as production's `qualify_variant_path` leaves a built-in unqualified),
-/// a binding (`x`), and a wildcard (`_`). A nested/struct/slice/or pattern, or a
-/// user enum variant (which production would enum-qualify via its `variants` map —
-/// the reference has no such map, so qualifying it would risk a silent wrong
-/// encoding) is an [`RefEncodeError`].
-fn encode_pattern(pat: &Pattern) -> Result<String, RefEncodeError> {
+/// pattern lowerer. Built-in Option/Result variants stay unqualified; user-enum
+/// variants are qualified from the exact parsed owner map. Tuple, struct,
+/// literal, binding, wildcard, and or-patterns are recursive. Slice patterns
+/// remain exclusive to head-fold specification functions and fail closed here.
+fn encode_pattern(pat: &Pattern, ctx: &RefCtx) -> Result<String, RefEncodeError> {
     match pat {
         Pattern::Wildcard => Ok("_".to_string()),
         Pattern::Binding(name) => Ok(name.clone()),
+        Pattern::Literal(value) => encode(value, ctx),
         Pattern::Enum { path, fields } => {
-            let head = path.join("::");
-            // Only the built-in Option/Result variants are encodable unqualified
-            // (production leaves a built-in unqualified; a user variant would need
-            // the enum-qualification map this encoder does not import).
-            if !is_builtin_variant(&head) {
-                return Err(RefEncodeError::Unsupported(format!(
-                    "match pattern over the user/non-built-in variant `{head}` \
-                     (the frozen contract-`match` covers the built-in \
-                     Some/None/Ok/Err payload patterns)"
-                )));
-            }
+            let head = ctx.qualify_variant_path(path);
             if fields.is_empty() {
                 Ok(head)
             } else {
                 let mut fs = Vec::with_capacity(fields.len());
                 for f in fields {
-                    fs.push(encode_pattern(f)?);
+                    fs.push(encode_pattern(f, ctx)?);
                 }
                 Ok(format!("{head}({})", fs.join(", ")))
             }
         }
-        other => Err(RefEncodeError::Unsupported(format!(
-            "match pattern {other:?} (the frozen contract-`match` covers the \
-             built-in Some/None/Ok/Err payload patterns + bindings/wildcards)"
-        ))),
+        Pattern::Struct { path, fields, rest } => {
+            let head = ctx.qualify_variant_path(path);
+            let mut parts = Vec::with_capacity(fields.len() + usize::from(*rest));
+            for (name, pattern) in fields {
+                if matches!(pattern, Pattern::Binding(binding) if binding == name) {
+                    parts.push(name.clone());
+                } else {
+                    parts.push(format!("{name}: {}", encode_pattern(pattern, ctx)?));
+                }
+            }
+            if *rest {
+                parts.push("..".to_string());
+            }
+            if parts.is_empty() {
+                Ok(format!("{head} {{}}"))
+            } else {
+                Ok(format!("{head} {{ {} }}", parts.join(", ")))
+            }
+        }
+        Pattern::Or(alternatives) => alternatives
+            .iter()
+            .map(|alternative| encode_pattern(alternative, ctx))
+            .collect::<Result<Vec<_>, _>>()
+            .map(|parts| parts.join(" | ")),
+        Pattern::Slice(_) => Err(RefEncodeError::Unsupported(
+            "slice pattern outside a head-fold specification function".to_string(),
+        )),
     }
-}
-
-/// Is `head` a built-in `Option`/`Result` variant constructor (unqualified in
-/// Verus)? These are the only variants a contract-position `match` patterns over
-/// in the frozen sublanguage (#150 gap #1).
-fn is_builtin_variant(head: &str) -> bool {
-    matches!(head, "Some" | "None" | "Ok" | "Err")
 }
 
 /// Encode a method-call receiver. A bare slice/string param name takes its
@@ -905,6 +1206,34 @@ fn encode_receiver(receiver: &Expr, ctx: &RefCtx) -> Result<String, RefEncodeErr
     if let Expr::Path(segments) = receiver {
         if segments.len() == 1 && !ctx.is_seq_bound(&segments[0]) {
             return Ok(format!("{}@", segments[0]));
+        }
+    }
+    if let Expr::Field {
+        receiver: root,
+        name,
+    } = receiver
+    {
+        if let Expr::Path(segments) = root.as_ref() {
+            if let [root] = segments.as_slice() {
+                if ctx.is_fixed_array_field(root, name) {
+                    return Ok(format!("{}@", encode(receiver, ctx)?));
+                }
+            }
+        }
+    }
+    if let Expr::Call { callee, args } = receiver {
+        if let Expr::Path(operator) = callee.as_ref() {
+            if let ([kind], [Expr::Path(source)]) = (operator.as_slice(), args.as_slice()) {
+                if source.len() == 1 {
+                    if let Some(binding) = ctx.state_view_binding(kind, &source[0]) {
+                        return if ctx.is_seq_bound(binding) {
+                            Ok(binding.to_string())
+                        } else {
+                            Ok(format!("{binding}@"))
+                        };
+                    }
+                }
+            }
         }
     }
     if matches!(receiver, Expr::Call { callee, .. } if matches!(callee.as_ref(), Expr::Path(segs) if segs.as_slice() == ["final"]))
@@ -980,6 +1309,16 @@ fn encode_index(base: &Expr, index: &IndexArg, ctx: &RefCtx) -> Result<String, R
 /// encoding).
 fn encode_ref(inner: &Expr, ctx: &RefCtx) -> Result<String, RefEncodeError> {
     match inner {
+        Expr::Path(path) if matches!(path.as_slice(), [name] if ctx.is_fixed_array_bound(name)) => {
+            Ok(format!("&({})", encode(inner, ctx)?))
+        }
+        Expr::Field { receiver, name }
+            if matches!(receiver.as_ref(), Expr::Path(path)
+                if matches!(path.as_slice(), [root]
+                    if ctx.is_fixed_array_field(root, name))) =>
+        {
+            Ok(format!("&({})", encode(inner, ctx)?))
+        }
         // `&xs[..i]` / `&xs[a..b]` / `&xs[i]` — the slice-range/element borrow is
         // the inner index/subrange itself (production routes `&`-of-`Index`
         // straight through `lower_index`).
@@ -1037,6 +1376,8 @@ fn node_kind(e: &Expr) -> String {
     match e {
         Expr::IntLit { .. } => "int literal".to_string(),
         Expr::BoolLit(_) => "bool literal".to_string(),
+        Expr::Array(_) => "array literal".to_string(),
+        Expr::ArrayRepeat { .. } => "array repeat initializer".to_string(),
         Expr::Path(_) => "path".to_string(),
         Expr::Call { .. } => "call".to_string(),
         Expr::MethodCall { .. } => "method call".to_string(),

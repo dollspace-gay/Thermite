@@ -47,10 +47,10 @@
 //! | REQ-TV-EXEC-REF-ENCODER | shipped | `thermite-tv/src/exec_encode.rs` | Exec-TV independent reference encoder |  |
 //! <!-- /generated:reqs -->
 
-use std::collections::BTreeSet;
-use std::fmt;
+use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::{self, Write as _};
 
-use thermite_syntax::ast::{BinOp, Expr, IndexArg, PrimType, Type, UnaryOp};
+use thermite_syntax::ast::{ArrayLen, BinOp, Expr, IndexArg, PrimType, Type, UnaryOp};
 
 /// An failure to encode a construct outside the pure-exec subset (REQ-1).
 /// The exec reference encoder never panics and never silently emits a wrong
@@ -95,9 +95,24 @@ impl std::error::Error for RefEncodeError {}
 pub struct ExecRefCtx {
     /// Names bound as a slice (`&[T]`) param in the obligation. An `Index` over
     /// such a name encodes to the spec-view element `xs[i as int]` (the bounded
-    /// element value the production `xs[i]` computes); a non-slice base is indexed
-    /// verbatim.
+    /// element value the production `xs[i]` computes). Native fixed arrays are
+    /// tracked separately and indexed through their finite `@` view.
     slice_bound: BTreeSet<String>,
+    /// Names bound as native fixed arrays. Their executable index is compared
+    /// through the array's finite `@` view in an `ensures` predicate.
+    fixed_array_bound: BTreeSet<String>,
+    /// Direct `root.field` paths whose independently parsed field type is a
+    /// native fixed array.
+    fixed_array_fields: BTreeSet<String>,
+    /// Closed-form scalar bindings threaded by aggregate lifecycle TV. A path
+    /// in this map denotes the value captured at that source program point.
+    value_bindings: BTreeMap<String, String>,
+    /// Closed-form direct record-field cells, keyed as `root.field`.
+    field_bindings: BTreeMap<String, String>,
+    /// Closed-form finite-sequence states for exclusive slice/fixed-array roots.
+    /// An index over a bound root observes this program-point state rather than
+    /// the entry or final borrow view.
+    indexed_bindings: BTreeMap<String, String>,
 }
 
 impl ExecRefCtx {
@@ -111,11 +126,123 @@ impl ExecRefCtx {
     {
         ExecRefCtx {
             slice_bound: names.into_iter().map(Into::into).collect(),
+            fixed_array_bound: BTreeSet::new(),
+            fixed_array_fields: BTreeSet::new(),
+            value_bindings: BTreeMap::new(),
+            field_bindings: BTreeMap::new(),
+            indexed_bindings: BTreeMap::new(),
         }
+    }
+
+    /// Add native fixed-array bindings to this reference frame.
+    pub fn with_fixed_array_bound<I, S>(mut self, names: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.fixed_array_bound = names.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Add exact direct record-field paths whose declared value is a native
+    /// fixed array.
+    pub fn with_fixed_array_fields<I, S>(mut self, paths: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.fixed_array_fields = paths.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Add exact closed-form local bindings for lifecycle state threading.
+    pub fn with_value_bindings<I, K, V>(mut self, bindings: I) -> Self
+    where
+        I: IntoIterator<Item = (K, V)>,
+        K: Into<String>,
+        V: Into<String>,
+    {
+        self.value_bindings = bindings
+            .into_iter()
+            .map(|(name, value)| (name.into(), value.into()))
+            .collect();
+        self
+    }
+
+    /// Add exact closed-form direct named-record field cells.
+    pub fn with_field_bindings<I, K, V>(mut self, bindings: I) -> Self
+    where
+        I: IntoIterator<Item = (K, V)>,
+        K: Into<String>,
+        V: Into<String>,
+    {
+        self.field_bindings = bindings
+            .into_iter()
+            .map(|(name, value)| (name.into(), value.into()))
+            .collect();
+        self
+    }
+
+    /// Add exact closed-form sequence states for exclusive indexed storage.
+    pub fn with_indexed_bindings<I, K, V>(mut self, bindings: I) -> Self
+    where
+        I: IntoIterator<Item = (K, V)>,
+        K: Into<String>,
+        V: Into<String>,
+    {
+        self.indexed_bindings = bindings
+            .into_iter()
+            .map(|(name, value)| (name.into(), value.into()))
+            .collect();
+        self
     }
 
     fn is_slice_bound(&self, name: &str) -> bool {
         self.slice_bound.contains(name)
+    }
+
+    fn is_fixed_array_bound(&self, name: &str) -> bool {
+        self.fixed_array_bound.contains(name)
+    }
+
+    fn is_fixed_array_field(&self, root: &str, field: &str) -> bool {
+        self.fixed_array_fields.contains(&format!("{root}.{field}"))
+            || self.fixed_array_fields.contains(field)
+    }
+
+    fn is_fixed_array_path(&self, path: &str) -> bool {
+        self.fixed_array_fields.contains(path)
+    }
+
+    fn value_binding(&self, name: &str) -> Option<&str> {
+        self.value_bindings.get(name).map(String::as_str)
+    }
+
+    fn field_binding(&self, root: &str, field: &str) -> Option<&str> {
+        self.field_bindings
+            .get(&format!("{root}.{field}"))
+            .map(String::as_str)
+    }
+
+    fn indexed_binding(&self, path: &str) -> Option<&str> {
+        self.indexed_bindings.get(path).map(String::as_str)
+    }
+}
+
+/// Return the exact dotted access path of a bare binding followed only by field
+/// projections. Lifecycle TV uses the same structural path for projected
+/// indexed-storage snapshots, so an index after a mutable call observes the
+/// current sequence overlay instead of the native array's stale entry value.
+fn field_access_path(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Path(segments) => match segments.as_slice() {
+            [root] => Some(root.clone()),
+            _ => None,
+        },
+        Expr::Field { receiver, name } => {
+            field_access_path(receiver).map(|prefix| format!("{prefix}.{name}"))
+        }
+        _ => None,
     }
 }
 
@@ -137,9 +264,10 @@ impl ExecRefCtx {
 /// - indexing ([`Expr::Index`] single-element over a slice param → `xs[i as int]`,
 ///   the bounded element value).
 ///
-/// Anything else (a method call, a Vec/String accessor, a struct literal, an `if`/
-/// `match`, a closure, …) is an [`RefEncodeError::Unsupported`] (never a
-/// panic, never a silent wrong encoding — #154/#156 territory).
+/// Anything else (a method call other than borrowed-slice/fixed-array `.len()` or
+/// fixed-array `.array_eq(other)`, a Vec/String accessor, a struct literal, an `if`/`match`, a closure, …) is an
+/// [`RefEncodeError::Unsupported`] (never a panic, never a silent wrong encoding —
+/// #154/#156 territory).
 pub fn exec_ref_value(expr: &Expr, ctx: &ExecRefCtx) -> Result<String, RefEncodeError> {
     encode(expr, ctx)
 }
@@ -148,14 +276,246 @@ fn encode(expr: &Expr, ctx: &ExecRefCtx) -> Result<String, RefEncodeError> {
     match expr {
         Expr::IntLit { value, .. } => Ok(value.to_string()),
         Expr::BoolLit(b) => Ok(b.to_string()),
-        Expr::Path(segments) => encode_path(segments),
+        Expr::Array(elements) => {
+            let elements = elements
+                .iter()
+                .map(|element| encode(element, ctx))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(format!("[{}]", elements.join(", ")))
+        }
+        Expr::ArrayRepeat { value, len } => {
+            let value = encode(value, ctx)?;
+            Ok(format!("[{value}; {}]", encode_array_len(len)))
+        }
+        Expr::Path(segments) => {
+            if let [name] = segments.as_slice() {
+                if let Some(value) = ctx.value_binding(name) {
+                    return Ok(value.to_string());
+                }
+            }
+            encode_path(segments)
+        }
         Expr::Binary { op, lhs, rhs } => encode_binary(*op, lhs, rhs, ctx),
         Expr::Unary { op, expr } => encode_unary(*op, expr, ctx),
         Expr::Call { callee, args } => encode_call(callee, args, ctx),
+        Expr::MethodCall {
+            receiver,
+            name,
+            args,
+        } => encode_method_call(receiver, name, args, ctx),
+        Expr::Field { receiver, name } => {
+            if let Expr::Path(path) = receiver.as_ref() {
+                if let [root] = path.as_slice() {
+                    if let Some(value) = ctx.field_binding(root, name) {
+                        return Ok(value.to_string());
+                    }
+                }
+            }
+            let receiver = encode(receiver, ctx)?;
+            Ok(format!("{receiver}.{name}"))
+        }
+        Expr::StructLit { path, fields } => {
+            if path.is_empty() {
+                return Err(RefEncodeError::Unsupported(
+                    "struct literal with an empty type path".to_string(),
+                ));
+            }
+            let fields = fields
+                .iter()
+                .map(|(name, value)| Ok(format!("{name}: {}", encode(value, ctx)?)))
+                .collect::<Result<Vec<_>, RefEncodeError>>()?;
+            Ok(format!("({} {{ {} }})", path.join("::"), fields.join(", ")))
+        }
+        Expr::Tuple(elements) => {
+            let elements = elements
+                .iter()
+                .map(|element| encode(element, ctx))
+                .collect::<Result<Vec<_>, _>>()?;
+            let trailing = if elements.len() == 1 { "," } else { "" };
+            Ok(format!("({}{trailing})", elements.join(", ")))
+        }
+        Expr::TupleProj { receiver, index } => {
+            let receiver = encode(receiver, ctx)?;
+            Ok(format!("({receiver}).{index}"))
+        }
+        Expr::Ref {
+            mutable: false,
+            expr,
+        } => {
+            let value = encode(expr, ctx)?;
+            Ok(format!("&({value})"))
+        }
+        Expr::Ref { mutable: true, .. } => Err(RefEncodeError::Unsupported(
+            "mutable reference construction requires an exact call-effect state frame".to_string(),
+        )),
+        Expr::Deref(inner) => {
+            let inner = encode(inner, ctx)?;
+            Ok(format!("*({inner})"))
+        }
+        Expr::If { cond, then, else_ } => {
+            if !then.stmts.is_empty() || !else_.stmts.is_empty() {
+                return Err(RefEncodeError::Unsupported(
+                    "if expression with branch statements requires body-state threading"
+                        .to_string(),
+                ));
+            }
+            let then_value = then.tail.as_deref().ok_or_else(|| {
+                RefEncodeError::Unsupported("if expression then-branch has no value".to_string())
+            })?;
+            let else_value = else_.tail.as_deref().ok_or_else(|| {
+                RefEncodeError::Unsupported("if expression else-branch has no value".to_string())
+            })?;
+            Ok(format!(
+                "if {} {{ {} }} else {{ {} }}",
+                encode(cond, ctx)?,
+                encode(then_value, ctx)?,
+                encode(else_value, ctx)?
+            ))
+        }
         Expr::Index { base, index } => encode_index(base, index, ctx),
         Expr::Cast { expr, ty } => encode_cast(expr, ty, ctx),
         other => Err(RefEncodeError::Unsupported(node_kind(other))),
     }
+}
+
+fn encode_method_call(
+    receiver: &Expr,
+    name: &str,
+    args: &[Expr],
+    ctx: &ExecRefCtx,
+) -> Result<String, RefEncodeError> {
+    let indexed_receiver = field_access_path(receiver)
+        .and_then(|path| ctx.indexed_binding(&path))
+        .map(str::to_string);
+    let is_fixed_array_value = |expr: &Expr| {
+        let is_bound_array = matches!(expr, Expr::Path(segments)
+        if segments.len() == 1 && ctx.is_fixed_array_bound(&segments[0]));
+        let is_array_value = matches!(expr, Expr::Array(_) | Expr::ArrayRepeat { .. })
+            || matches!(expr, Expr::Call { callee, .. }
+            if matches!(callee.as_ref(), Expr::Path(path)
+                if path.join("::") == "vstd::array::spec_array_update"));
+        is_bound_array || is_array_value
+    };
+    let is_slice_value = |expr: &Expr| {
+        matches!(expr, Expr::Path(segments)
+            if segments.len() == 1 && ctx.is_slice_bound(&segments[0]))
+    };
+
+    if args.len() == 1 && matches!(name, "bit_test" | "bit_set" | "bit_clear") {
+        let word = encode(receiver, ctx)?;
+        let offset = encode(&args[0], ctx)?;
+        return Ok(encode_u64_bit_reference(&word, &offset, name));
+    }
+    if args.len() == 2
+        && matches!(
+            name,
+            "bit_set_preserves_other" | "bit_clear_preserves_other"
+        )
+    {
+        let word = encode(receiver, ctx)?;
+        let changed = encode(&args[0], ctx)?;
+        let observed = encode(&args[1], ctx)?;
+        return Ok(encode_u64_bit_preservation_reference(
+            &word, &changed, &observed, name,
+        ));
+    }
+
+    match name {
+        "len" if args.is_empty() && indexed_receiver.is_some() => Ok(format!(
+            "({}.len() as usize)",
+            indexed_receiver.expect("guarded projected sequence binding")
+        )),
+        "len" if args.is_empty() && is_slice_value(receiver) => {
+            let slice = encode(receiver, ctx)?;
+            Ok(format!("({slice}@.len() as usize)"))
+        }
+        "len" if args.is_empty() && is_fixed_array_value(receiver) => {
+            let array = encode(receiver, ctx)?;
+            Ok(format!("({array}@.len() as usize)"))
+        }
+        "array_eq"
+            if args.len() == 1
+                && is_fixed_array_value(receiver)
+                && is_fixed_array_value(&args[0]) =>
+        {
+            let left = encode(receiver, ctx)?;
+            let right = encode(&args[0], ctx)?;
+            Ok(format!("(({left})@ =~= ({right})@)"))
+        }
+        "array_same_except"
+            if args.len() == 2
+                && is_fixed_array_value(receiver)
+                && is_fixed_array_value(&args[0]) =>
+        {
+            let left = encode(receiver, ctx)?;
+            let right = encode(&args[0], ctx)?;
+            let except = encode(&args[1], ctx)?;
+            Ok(format!(
+                "(forall|__thermite_i: int| 0 <= __thermite_i < ({left})@.len() && __thermite_i != ({except}) as int ==> ({left})@[__thermite_i] == ({right})@[__thermite_i])"
+            ))
+        }
+        "array_same_except_two"
+            if args.len() == 3
+                && is_fixed_array_value(receiver)
+                && is_fixed_array_value(&args[0]) =>
+        {
+            let left = encode(receiver, ctx)?;
+            let right = encode(&args[0], ctx)?;
+            let first = encode(&args[1], ctx)?;
+            let second = encode(&args[2], ctx)?;
+            Ok(format!(
+                "(forall|__thermite_i: int| 0 <= __thermite_i < ({left})@.len() && __thermite_i != ({first}) as int && __thermite_i != ({second}) as int ==> ({left})@[__thermite_i] == ({right})@[__thermite_i])"
+            ))
+        }
+        _ => Err(RefEncodeError::Unsupported(format!(
+            "exec method `.{name}()` outside the borrowed-slice/fixed-array \
+             `.len()` / fixed-array relation subset, or with an \
+             unsupported operand"
+        ))),
+    }
+}
+
+/// Independent finite semantics for the total packed-`u64` bit methods. This
+/// intentionally spells the 64 masks from the surface meaning rather than
+/// importing the production helper generator.
+fn encode_u64_bit_reference(word: &str, offset: &str, method: &str) -> String {
+    let mut out = format!("(match ({offset}) {{ ");
+    for bit in 0..64usize {
+        let mask = 1u64 << bit;
+        let value = match method {
+            "bit_test" => format!("({word}) & {mask}u64 != 0u64"),
+            "bit_set" => format!("({word}) | {mask}u64"),
+            "bit_clear" => format!("({word}) & !{mask}u64"),
+            _ => unreachable!("caller restricts the frozen bit method"),
+        };
+        write!(out, "{bit} => {value}, ").ok();
+    }
+    let fallback = if method == "bit_test" {
+        "false".to_string()
+    } else {
+        format!("({word})")
+    };
+    write!(out, "_ => {fallback} }})").ok();
+    out
+}
+
+fn encode_u64_bit_preservation_reference(
+    word: &str,
+    changed: &str,
+    observed: &str,
+    method: &str,
+) -> String {
+    let update = if method == "bit_set_preserves_other" {
+        "bit_set"
+    } else {
+        "bit_clear"
+    };
+    let updated = encode_u64_bit_reference(word, changed, update);
+    let after = encode_u64_bit_reference(&updated, observed, "bit_test");
+    let before = encode_u64_bit_reference(word, observed, "bit_test");
+    format!(
+        "(({changed}) < 64usize && ({observed}) < 64usize && ({changed}) != ({observed}) && (({after}) == ({before})))"
+    )
 }
 
 /// A path reference: a var or a `::`-qualified name. A pure exec value path is a
@@ -165,6 +525,13 @@ fn encode_path(segments: &[String]) -> Result<String, RefEncodeError> {
         return Err(RefEncodeError::Unsupported("empty path".to_string()));
     }
     Ok(segments.join("::"))
+}
+
+fn encode_array_len(len: &ArrayLen) -> String {
+    match len {
+        ArrayLen::Literal { value, .. } => value.to_string(),
+        ArrayLen::Const(name) => name.clone(),
+    }
 }
 
 /// The faithful 1-to-1 binary-operator map (`thermite-design.md` §4.1). Re-stated
@@ -265,7 +632,14 @@ fn encode_call(callee: &Expr, args: &[Expr], ctx: &ExecRefCtx) -> Result<String,
     let name = segments.join("::");
     let encoded_args = args
         .iter()
-        .map(|a| encode(a, ctx))
+        .enumerate()
+        .map(|(index, arg)| {
+            if name == "vstd::array::spec_array_update" && index == 1 {
+                encode_index_value(arg, ctx)
+            } else {
+                encode(arg, ctx)
+            }
+        })
         .collect::<Result<Vec<_>, _>>()?;
     Ok(format!("{name}({})", encoded_args.join(", ")))
 }
@@ -276,8 +650,8 @@ fn encode_call(callee: &Expr, args: &[Expr], ctx: &ExecRefCtx) -> Result<String,
 /// `xs[i as int]`; the obligation `ensures result == xs[i as int]` is the
 /// element-value equality, grounded `exec-tv.md` AC-5/E4). A `RangeTo`/`RangeFrom`/
 /// `Range` slice index produces a sub-slice (not a scalar value), outside the
-/// pure-exec scalar-value subset of step 2.1 → an `Err`. A non-slice base
-/// index is also unsupported (no scalar-value denotation in the frozen subset).
+/// pure-exec scalar-value subset of step 2.1 → an `Err`. Native fixed arrays
+/// use their finite `@` view; every other non-slice base is unsupported.
 fn encode_index(base: &Expr, index: &IndexArg, ctx: &ExecRefCtx) -> Result<String, RefEncodeError> {
     let IndexArg::Single(i) = index else {
         return Err(RefEncodeError::Unsupported(
@@ -286,18 +660,57 @@ fn encode_index(base: &Expr, index: &IndexArg, ctx: &ExecRefCtx) -> Result<Strin
                 .to_string(),
         ));
     };
-    // Only a slice-bound base has the spec-view element-value denotation; a
-    // non-slice base index is outside the frozen pure-exec value subset.
+    // Slice and fixed-array bindings both expose a finite sequence view in the
+    // obligation. Keep the historical slice spelling stable; native arrays use
+    // their explicit `@` view.
+    if let Some(path) = field_access_path(base) {
+        if let Some(sequence) = ctx.indexed_binding(&path) {
+            let idx = encode_index_value(i, ctx)?;
+            return Ok(format!("({sequence})[{idx}]"));
+        }
+        if ctx.is_fixed_array_path(&path) {
+            let array = encode(base, ctx)?;
+            let idx = encode_index_value(i, ctx)?;
+            return Ok(format!("({array})@[{idx}]"));
+        }
+    }
     if let Expr::Path(segments) = base {
         if segments.len() == 1 && ctx.is_slice_bound(&segments[0]) {
             let idx = encode_index_value(i, ctx)?;
             return Ok(format!("{}[{idx}]", segments[0]));
         }
+        if segments.len() == 1 && ctx.is_fixed_array_bound(&segments[0]) {
+            let idx = encode_index_value(i, ctx)?;
+            return Ok(format!("{}@[{idx}]", segments[0]));
+        }
     }
+    if let Expr::Field { receiver, name } = base {
+        if let Expr::Path(segments) = receiver.as_ref() {
+            if let [root] = segments.as_slice() {
+                if ctx.is_fixed_array_field(root, name) {
+                    let array = encode(base, ctx)?;
+                    let idx = encode_index_value(i, ctx)?;
+                    return Ok(format!("({array})@[{idx}]"));
+                }
+            }
+        }
+    }
+    // State threading substitutes a local fixed array with its initializer or
+    // an exact `spec_array_update` expression. Index those values through their
+    // native array view as well.
+    if matches!(base, Expr::Array(_) | Expr::ArrayRepeat { .. })
+        || matches!(base, Expr::Call { callee, .. }
+            if matches!(callee.as_ref(), Expr::Path(path)
+                if path.join("::") == "vstd::array::spec_array_update"))
+    {
+        let array = encode(base, ctx)?;
+        let idx = encode_index_value(i, ctx)?;
+        return Ok(format!("({array})@[{idx}]"));
+    }
+    let base_detail = field_access_path(base).unwrap_or_else(|| node_kind(base).to_string());
     Err(RefEncodeError::Unsupported(format!(
-        "index over a non-slice base ({}) — the frozen exec index subset is \
-         `xs[i]` over a slice param",
-        node_kind(base)
+        "index over a non-slice / non-fixed-array base `{base_detail}` — the frozen exec \
+         index subset is `xs[i]` over a slice or native fixed-array binding"
     )))
 }
 
@@ -310,6 +723,11 @@ fn encode_index_value(expr: &Expr, ctx: &ExecRefCtx) -> Result<String, RefEncode
     match expr {
         Expr::IntLit { value, .. } => Ok(value.to_string()),
         Expr::Path(segments) => {
+            if let [name] = segments.as_slice() {
+                if let Some(value) = ctx.value_binding(name) {
+                    return Ok(format!("({value}) as int"));
+                }
+            }
             let p = encode_path(segments)?;
             Ok(format!("{p} as int"))
         }
@@ -369,6 +787,8 @@ fn node_kind(e: &Expr) -> String {
     match e {
         Expr::IntLit { .. } => "int literal".to_string(),
         Expr::BoolLit(_) => "bool literal".to_string(),
+        Expr::Array(_) => "array literal".to_string(),
+        Expr::ArrayRepeat { .. } => "array repeat initializer".to_string(),
         Expr::Path(_) => "path".to_string(),
         Expr::Call { .. } => "call".to_string(),
         Expr::MethodCall { .. } => "method call (exec method / Vec-String accessor \
@@ -470,7 +890,20 @@ mod tests {
         assert_eq!(exec_ref_value(&e, &ctx).unwrap(), "xs[i as int]");
     }
 
-    /// A method call (exec / Vec-String accessor) is out of scope for step 2.1 →
+    /// A borrowed slice's executable length is related directly to the length of
+    /// its mathematical sequence view (used by total export guards).
+    #[test]
+    fn borrowed_slice_len_uses_finite_view() {
+        let e = Expr::MethodCall {
+            receiver: Box::new(path("xs")),
+            name: "len".to_string(),
+            args: vec![],
+        };
+        let ctx = ExecRefCtx::with_slice_bound(["xs"]);
+        assert_eq!(exec_ref_value(&e, &ctx).unwrap(), "(xs@.len() as usize)");
+    }
+
+    /// An unclassified method call (exec / Vec-String accessor) is out of scope →
     /// an `Err`, never a silent wrong encoding (REQ-1 / R-CODE-2).
     #[test]
     fn method_call_is_unsupported_not_panic() {
@@ -485,8 +918,8 @@ mod tests {
         ));
     }
 
-    /// A bare index over a non-slice base has no scalar-value denotation in the
-    /// frozen subset → an `Err`.
+    /// A bare index over a non-slice, non-fixed-array base has no scalar-value
+    /// denotation in the frozen subset → an `Err`.
     #[test]
     fn non_slice_index_is_unsupported() {
         let e = Expr::Index {

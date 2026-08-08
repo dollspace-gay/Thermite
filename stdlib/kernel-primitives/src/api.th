@@ -1,0 +1,976 @@
+#[sealed("atomic_bool_init")] struct AtomicBool { identity: AtomicIdentity, machine_handle: usize }
+#[sealed("atomic_u32_init")] struct AtomicU32 { identity: AtomicIdentity, machine_handle: usize }
+#[sealed("atomic_u64_init")] struct AtomicU64 { identity: AtomicIdentity, machine_handle: usize }
+#[sealed("atomic_usize_init")] struct AtomicUsize { identity: AtomicIdentity, machine_handle: usize }
+
+struct AtomicBoolObservation {
+  value: bool,
+  cell: AtomicIdentity,
+  order: u8,
+}
+
+struct AtomicU32Observation {
+  value: u32,
+  cell: AtomicIdentity,
+  order: u8,
+}
+
+struct AtomicU64Observation {
+  value: u64,
+  cell: AtomicIdentity,
+  order: u8,
+}
+
+struct AtomicUsizeObservation {
+  value: usize,
+  cell: AtomicIdentity,
+  order: u8,
+}
+
+struct AtomicBoolTransition {
+  previous: bool,
+  next: bool,
+  exchanged: bool,
+  cell: AtomicIdentity,
+  success_order: u8,
+  failure_order: u8,
+}
+
+struct AtomicU32Transition {
+  previous: u32,
+  next: u32,
+  exchanged: bool,
+  cell: AtomicIdentity,
+  success_order: u8,
+  failure_order: u8,
+}
+
+struct AtomicU64Transition {
+  previous: u64,
+  next: u64,
+  exchanged: bool,
+  cell: AtomicIdentity,
+  success_order: u8,
+  failure_order: u8,
+}
+
+struct AtomicUsizeTransition {
+  previous: usize,
+  next: usize,
+  exchanged: bool,
+  cell: AtomicIdentity,
+  success_order: u8,
+  failure_order: u8,
+}
+
+struct AtomicWrite {
+  cell: AtomicIdentity,
+  width: u8,
+  order: u8,
+  value: u64,
+}
+
+struct AtomicFence {
+  kind: u8,
+  order: u8,
+}
+
+fn atomic_bool_rmw_result(
+  cell: &AtomicBool,
+  previous: bool,
+  next: bool,
+  order: AtomicOrdering,
+) -> AtomicBoolTransition
+  req true
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity)
+    && result.previous == previous && result.next == next && result.exchanged
+    && result.success_order == atomic_order_code(order) && result.failure_order == 0
+  fx pure
+{
+  AtomicBoolTransition {
+    previous: previous,
+    next: next,
+    exchanged: true,
+    cell: atomic_identity_copy(&cell.identity),
+    success_order: atomic_order_to_code(&order),
+    failure_order: 0,
+  }
+}
+
+fn atomic_u32_rmw_result(
+  cell: &AtomicU32,
+  previous: u32,
+  next: u32,
+  order: AtomicOrdering,
+) -> AtomicU32Transition
+  req true
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity)
+    && result.previous == previous && result.next == next && result.exchanged
+    && result.success_order == atomic_order_code(order) && result.failure_order == 0
+  fx pure
+{
+  AtomicU32Transition {
+    previous: previous,
+    next: next,
+    exchanged: true,
+    cell: atomic_identity_copy(&cell.identity),
+    success_order: atomic_order_to_code(&order),
+    failure_order: 0,
+  }
+}
+
+fn atomic_u64_rmw_result(
+  cell: &AtomicU64,
+  previous: u64,
+  next: u64,
+  order: AtomicOrdering,
+) -> AtomicU64Transition
+  req true
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity)
+    && result.previous == previous && result.next == next && result.exchanged
+    && result.success_order == atomic_order_code(order) && result.failure_order == 0
+  fx pure
+{
+  AtomicU64Transition {
+    previous: previous,
+    next: next,
+    exchanged: true,
+    cell: atomic_identity_copy(&cell.identity),
+    success_order: atomic_order_to_code(&order),
+    failure_order: 0,
+  }
+}
+
+fn atomic_usize_rmw_result(
+  cell: &AtomicUsize,
+  previous: usize,
+  next: usize,
+  order: AtomicOrdering,
+) -> AtomicUsizeTransition
+  req true
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity)
+    && result.previous == previous && result.next == next && result.exchanged
+    && result.success_order == atomic_order_code(order) && result.failure_order == 0
+  fx pure
+{
+  AtomicUsizeTransition {
+    previous: previous,
+    next: next,
+    exchanged: true,
+    cell: atomic_identity_copy(&cell.identity),
+    success_order: atomic_order_to_code(&order),
+    failure_order: 0,
+  }
+}
+
+fn atomic_bool_init(slot: AtomicBoolSlot, initial: bool) -> AtomicBool
+  req true
+  ens atomic_bool_slot_identity_matches_spec(&slot, &result.identity)
+  fx platform(atomic)
+{
+  let identity: (usize, usize, u64) = atomic_bool_slot_identity_values(&slot);
+  let handle: usize = atomic_machine_bool_init(identity.0, identity.1, identity.2, initial).0;
+  AtomicBool {
+    identity: AtomicIdentity { authority: identity.0, slot: identity.1, generation: identity.2 },
+    machine_handle: handle,
+  }
+}
+
+fn atomic_u32_init(slot: AtomicU32Slot, initial: u32) -> AtomicU32
+  req true
+  ens atomic_u32_slot_identity_matches_spec(&slot, &result.identity)
+  fx platform(atomic)
+{
+  let identity: (usize, usize, u64) = atomic_u32_slot_identity_values(&slot);
+  let handle: usize = atomic_machine_u32_init(identity.0, identity.1, identity.2, initial).0;
+  AtomicU32 {
+    identity: AtomicIdentity { authority: identity.0, slot: identity.1, generation: identity.2 },
+    machine_handle: handle,
+  }
+}
+
+fn atomic_u64_init(slot: AtomicU64Slot, initial: u64) -> AtomicU64
+  req true
+  ens atomic_u64_slot_identity_matches_spec(&slot, &result.identity)
+  fx platform(atomic)
+{
+  let identity: (usize, usize, u64) = atomic_u64_slot_identity_values(&slot);
+  let handle: usize = atomic_machine_u64_init(identity.0, identity.1, identity.2, initial).0;
+  AtomicU64 {
+    identity: AtomicIdentity { authority: identity.0, slot: identity.1, generation: identity.2 },
+    machine_handle: handle,
+  }
+}
+
+fn atomic_usize_init(slot: AtomicUsizeSlot, initial: usize) -> AtomicUsize
+  req true
+  ens atomic_usize_slot_identity_matches_spec(&slot, &result.identity)
+  fx platform(atomic)
+{
+  let identity: (usize, usize, u64) = atomic_usize_slot_identity_values(&slot);
+  let handle: usize = atomic_machine_usize_init(identity.0, identity.1, identity.2, initial).0;
+  AtomicUsize {
+    identity: AtomicIdentity { authority: identity.0, slot: identity.1, generation: identity.2 },
+    machine_handle: handle,
+  }
+}
+
+fn atomic_bool_load(cell: &AtomicBool, order: AtomicOrdering) -> AtomicBoolObservation
+  req atomic_load_order_legal_spec(order)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity) && result.order == atomic_order_code(order)
+  fx platform(atomic)
+{
+  AtomicBoolObservation {
+    value: atomic_machine_bool_load(cell.machine_handle, atomic_order_to_code(&order)).0,
+    cell: atomic_identity_copy(&cell.identity),
+    order: atomic_order_to_code(&order),
+  }
+}
+
+fn atomic_u32_load(cell: &AtomicU32, order: AtomicOrdering) -> AtomicU32Observation
+  req atomic_load_order_legal_spec(order)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity) && result.order == atomic_order_code(order)
+  fx platform(atomic)
+{
+  AtomicU32Observation {
+    value: atomic_machine_u32_load(cell.machine_handle, atomic_order_to_code(&order)).0,
+    cell: atomic_identity_copy(&cell.identity),
+    order: atomic_order_to_code(&order),
+  }
+}
+
+fn atomic_u64_load(cell: &AtomicU64, order: AtomicOrdering) -> AtomicU64Observation
+  req atomic_load_order_legal_spec(order)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity) && result.order == atomic_order_code(order)
+  fx platform(atomic)
+{
+  AtomicU64Observation {
+    value: atomic_machine_u64_load(cell.machine_handle, atomic_order_to_code(&order)).0,
+    cell: atomic_identity_copy(&cell.identity),
+    order: atomic_order_to_code(&order),
+  }
+}
+
+fn atomic_usize_load(cell: &AtomicUsize, order: AtomicOrdering) -> AtomicUsizeObservation
+  req atomic_load_order_legal_spec(order)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity) && result.order == atomic_order_code(order)
+  fx platform(atomic)
+{
+  AtomicUsizeObservation {
+    value: atomic_machine_usize_load(cell.machine_handle, atomic_order_to_code(&order)).0,
+    cell: atomic_identity_copy(&cell.identity),
+    order: atomic_order_to_code(&order),
+  }
+}
+
+fn atomic_bool_store(cell: &AtomicBool, value: bool, order: AtomicOrdering) -> AtomicWrite
+  req atomic_store_order_legal_spec(order)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity) && result.width == 0
+    && result.order == atomic_order_code(order) && result.value == value as u64
+  fx platform(atomic)
+{
+  let stored: bool = atomic_machine_bool_store(cell.machine_handle, value, atomic_order_to_code(&order)).0;
+  AtomicWrite {
+    cell: atomic_identity_copy(&cell.identity),
+    width: 0,
+    order: atomic_order_to_code(&order),
+    value: stored as u64,
+  }
+}
+
+fn atomic_u32_store(cell: &AtomicU32, value: u32, order: AtomicOrdering) -> AtomicWrite
+  req atomic_store_order_legal_spec(order)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity) && result.width == 1
+    && result.order == atomic_order_code(order) && result.value == value as u64
+  fx platform(atomic)
+{
+  let stored: u32 = atomic_machine_u32_store(cell.machine_handle, value, atomic_order_to_code(&order)).0;
+  AtomicWrite {
+    cell: atomic_identity_copy(&cell.identity),
+    width: 1,
+    order: atomic_order_to_code(&order),
+    value: stored as u64,
+  }
+}
+
+fn atomic_u64_store(cell: &AtomicU64, value: u64, order: AtomicOrdering) -> AtomicWrite
+  req atomic_store_order_legal_spec(order)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity) && result.width == 2
+    && result.order == atomic_order_code(order) && result.value == value
+  fx platform(atomic)
+{
+  let stored: u64 = atomic_machine_u64_store(cell.machine_handle, value, atomic_order_to_code(&order)).0;
+  AtomicWrite {
+    cell: atomic_identity_copy(&cell.identity),
+    width: 2,
+    order: atomic_order_to_code(&order),
+    value: stored,
+  }
+}
+
+fn atomic_usize_store(cell: &AtomicUsize, value: usize, order: AtomicOrdering) -> AtomicWrite
+  req atomic_store_order_legal_spec(order)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity) && result.width == 3
+    && result.order == atomic_order_code(order) && result.value == value as u64
+  fx platform(atomic)
+{
+  let stored: usize = atomic_machine_usize_store(cell.machine_handle, value, atomic_order_to_code(&order)).0;
+  AtomicWrite {
+    cell: atomic_identity_copy(&cell.identity),
+    width: 3,
+    order: atomic_order_to_code(&order),
+    value: stored as u64,
+  }
+}
+
+fn atomic_bool_swap(cell: &AtomicBool, value: bool, order: AtomicOrdering) -> AtomicBoolTransition
+  req atomic_rmw_order_legal_spec(order)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity) && result.next == value && result.exchanged
+    && result.success_order == atomic_order_code(order) && result.failure_order == 0
+  fx platform(atomic)
+{
+  AtomicBoolTransition {
+    previous: atomic_machine_bool_swap(cell.machine_handle, value, atomic_order_to_code(&order)).0,
+    next: value,
+    exchanged: true,
+    cell: atomic_identity_copy(&cell.identity),
+    success_order: atomic_order_to_code(&order),
+    failure_order: 0,
+  }
+}
+
+fn atomic_u32_swap(cell: &AtomicU32, value: u32, order: AtomicOrdering) -> AtomicU32Transition
+  req atomic_rmw_order_legal_spec(order)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity) && result.next == value && result.exchanged
+    && result.success_order == atomic_order_code(order) && result.failure_order == 0
+  fx platform(atomic)
+{
+  AtomicU32Transition {
+    previous: atomic_machine_u32_swap(cell.machine_handle, value, atomic_order_to_code(&order)).0,
+    next: value,
+    exchanged: true,
+    cell: atomic_identity_copy(&cell.identity),
+    success_order: atomic_order_to_code(&order),
+    failure_order: 0,
+  }
+}
+
+fn atomic_u64_swap(cell: &AtomicU64, value: u64, order: AtomicOrdering) -> AtomicU64Transition
+  req atomic_rmw_order_legal_spec(order)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity) && result.next == value && result.exchanged
+    && result.success_order == atomic_order_code(order) && result.failure_order == 0
+  fx platform(atomic)
+{
+  AtomicU64Transition {
+    previous: atomic_machine_u64_swap(cell.machine_handle, value, atomic_order_to_code(&order)).0,
+    next: value,
+    exchanged: true,
+    cell: atomic_identity_copy(&cell.identity),
+    success_order: atomic_order_to_code(&order),
+    failure_order: 0,
+  }
+}
+
+fn atomic_usize_swap(cell: &AtomicUsize, value: usize, order: AtomicOrdering) -> AtomicUsizeTransition
+  req atomic_rmw_order_legal_spec(order)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity) && result.next == value && result.exchanged
+    && result.success_order == atomic_order_code(order) && result.failure_order == 0
+  fx platform(atomic)
+{
+  AtomicUsizeTransition {
+    previous: atomic_machine_usize_swap(cell.machine_handle, value, atomic_order_to_code(&order)).0,
+    next: value,
+    exchanged: true,
+    cell: atomic_identity_copy(&cell.identity),
+    success_order: atomic_order_to_code(&order),
+    failure_order: 0,
+  }
+}
+
+fn atomic_bool_compare_exchange(
+  cell: &AtomicBool,
+  current: bool,
+  value: bool,
+  success: AtomicOrdering,
+  failure: AtomicOrdering,
+) -> AtomicBoolTransition
+  req atomic_cas_order_legal_spec(success, failure)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity)
+    && result.success_order == atomic_order_code(success)
+    && result.failure_order == atomic_order_code(failure)
+    && result.exchanged == (result.previous == current)
+    && result.next == if result.exchanged { value } else { result.previous }
+  fx platform(atomic)
+{
+  let transition: (bool, bool, usize) = atomic_machine_bool_compare_exchange(
+    cell.machine_handle,
+    current,
+    value,
+    atomic_order_to_code(&success),
+    atomic_order_to_code(&failure),
+  );
+  AtomicBoolTransition {
+    previous: transition.0,
+    next: if transition.1 { value } else { transition.0 },
+    exchanged: transition.1,
+    cell: atomic_identity_copy(&cell.identity),
+    success_order: atomic_order_to_code(&success),
+    failure_order: atomic_order_to_code(&failure),
+  }
+}
+
+fn atomic_u32_compare_exchange(
+  cell: &AtomicU32,
+  current: u32,
+  value: u32,
+  success: AtomicOrdering,
+  failure: AtomicOrdering,
+) -> AtomicU32Transition
+  req atomic_cas_order_legal_spec(success, failure)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity)
+    && result.success_order == atomic_order_code(success)
+    && result.failure_order == atomic_order_code(failure)
+    && result.exchanged == (result.previous == current)
+    && result.next == if result.exchanged { value } else { result.previous }
+  fx platform(atomic)
+{
+  let transition: (u32, bool, usize) = atomic_machine_u32_compare_exchange(
+    cell.machine_handle,
+    current,
+    value,
+    atomic_order_to_code(&success),
+    atomic_order_to_code(&failure),
+  );
+  AtomicU32Transition {
+    previous: transition.0,
+    next: if transition.1 { value } else { transition.0 },
+    exchanged: transition.1,
+    cell: atomic_identity_copy(&cell.identity),
+    success_order: atomic_order_to_code(&success),
+    failure_order: atomic_order_to_code(&failure),
+  }
+}
+
+fn atomic_u64_compare_exchange(
+  cell: &AtomicU64,
+  current: u64,
+  value: u64,
+  success: AtomicOrdering,
+  failure: AtomicOrdering,
+) -> AtomicU64Transition
+  req atomic_cas_order_legal_spec(success, failure)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity)
+    && result.success_order == atomic_order_code(success)
+    && result.failure_order == atomic_order_code(failure)
+    && result.exchanged == (result.previous == current)
+    && result.next == if result.exchanged { value } else { result.previous }
+  fx platform(atomic)
+{
+  let transition: (u64, bool, usize) = atomic_machine_u64_compare_exchange(
+    cell.machine_handle,
+    current,
+    value,
+    atomic_order_to_code(&success),
+    atomic_order_to_code(&failure),
+  );
+  AtomicU64Transition {
+    previous: transition.0,
+    next: if transition.1 { value } else { transition.0 },
+    exchanged: transition.1,
+    cell: atomic_identity_copy(&cell.identity),
+    success_order: atomic_order_to_code(&success),
+    failure_order: atomic_order_to_code(&failure),
+  }
+}
+
+fn atomic_usize_compare_exchange(
+  cell: &AtomicUsize,
+  current: usize,
+  value: usize,
+  success: AtomicOrdering,
+  failure: AtomicOrdering,
+) -> AtomicUsizeTransition
+  req atomic_cas_order_legal_spec(success, failure)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity)
+    && result.success_order == atomic_order_code(success)
+    && result.failure_order == atomic_order_code(failure)
+    && result.exchanged == (result.previous == current)
+    && result.next == if result.exchanged { value } else { result.previous }
+  fx platform(atomic)
+{
+  let transition: (usize, bool, usize) = atomic_machine_usize_compare_exchange(
+    cell.machine_handle,
+    current,
+    value,
+    atomic_order_to_code(&success),
+    atomic_order_to_code(&failure),
+  );
+  AtomicUsizeTransition {
+    previous: transition.0,
+    next: if transition.1 { value } else { transition.0 },
+    exchanged: transition.1,
+    cell: atomic_identity_copy(&cell.identity),
+    success_order: atomic_order_to_code(&success),
+    failure_order: atomic_order_to_code(&failure),
+  }
+}
+
+fn atomic_bool_compare_exchange_weak(
+  cell: &AtomicBool,
+  current: bool,
+  value: bool,
+  success: AtomicOrdering,
+  failure: AtomicOrdering,
+) -> AtomicBoolTransition
+  req atomic_cas_order_legal_spec(success, failure)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity)
+    && result.success_order == atomic_order_code(success)
+    && result.failure_order == atomic_order_code(failure)
+    && (!result.exchanged || result.previous == current)
+    && result.next == if result.exchanged { value } else { result.previous }
+  fx platform(atomic)
+{
+  let transition: (bool, bool, usize) = atomic_machine_bool_compare_exchange_weak(
+    cell.machine_handle,
+    current,
+    value,
+    atomic_order_to_code(&success),
+    atomic_order_to_code(&failure),
+  );
+  AtomicBoolTransition {
+    previous: transition.0,
+    next: if transition.1 { value } else { transition.0 },
+    exchanged: transition.1,
+    cell: atomic_identity_copy(&cell.identity),
+    success_order: atomic_order_to_code(&success),
+    failure_order: atomic_order_to_code(&failure),
+  }
+}
+
+fn atomic_u32_compare_exchange_weak(
+  cell: &AtomicU32,
+  current: u32,
+  value: u32,
+  success: AtomicOrdering,
+  failure: AtomicOrdering,
+) -> AtomicU32Transition
+  req atomic_cas_order_legal_spec(success, failure)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity)
+    && result.success_order == atomic_order_code(success)
+    && result.failure_order == atomic_order_code(failure)
+    && (!result.exchanged || result.previous == current)
+    && result.next == if result.exchanged { value } else { result.previous }
+  fx platform(atomic)
+{
+  let transition: (u32, bool, usize) = atomic_machine_u32_compare_exchange_weak(
+    cell.machine_handle,
+    current,
+    value,
+    atomic_order_to_code(&success),
+    atomic_order_to_code(&failure),
+  );
+  AtomicU32Transition {
+    previous: transition.0,
+    next: if transition.1 { value } else { transition.0 },
+    exchanged: transition.1,
+    cell: atomic_identity_copy(&cell.identity),
+    success_order: atomic_order_to_code(&success),
+    failure_order: atomic_order_to_code(&failure),
+  }
+}
+
+fn atomic_u64_compare_exchange_weak(
+  cell: &AtomicU64,
+  current: u64,
+  value: u64,
+  success: AtomicOrdering,
+  failure: AtomicOrdering,
+) -> AtomicU64Transition
+  req atomic_cas_order_legal_spec(success, failure)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity)
+    && result.success_order == atomic_order_code(success)
+    && result.failure_order == atomic_order_code(failure)
+    && (!result.exchanged || result.previous == current)
+    && result.next == if result.exchanged { value } else { result.previous }
+  fx platform(atomic)
+{
+  let transition: (u64, bool, usize) = atomic_machine_u64_compare_exchange_weak(
+    cell.machine_handle,
+    current,
+    value,
+    atomic_order_to_code(&success),
+    atomic_order_to_code(&failure),
+  );
+  AtomicU64Transition {
+    previous: transition.0,
+    next: if transition.1 { value } else { transition.0 },
+    exchanged: transition.1,
+    cell: atomic_identity_copy(&cell.identity),
+    success_order: atomic_order_to_code(&success),
+    failure_order: atomic_order_to_code(&failure),
+  }
+}
+
+fn atomic_usize_compare_exchange_weak(
+  cell: &AtomicUsize,
+  current: usize,
+  value: usize,
+  success: AtomicOrdering,
+  failure: AtomicOrdering,
+) -> AtomicUsizeTransition
+  req atomic_cas_order_legal_spec(success, failure)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity)
+    && result.success_order == atomic_order_code(success)
+    && result.failure_order == atomic_order_code(failure)
+    && (!result.exchanged || result.previous == current)
+    && result.next == if result.exchanged { value } else { result.previous }
+  fx platform(atomic)
+{
+  let transition: (usize, bool, usize) = atomic_machine_usize_compare_exchange_weak(
+    cell.machine_handle,
+    current,
+    value,
+    atomic_order_to_code(&success),
+    atomic_order_to_code(&failure),
+  );
+  AtomicUsizeTransition {
+    previous: transition.0,
+    next: if transition.1 { value } else { transition.0 },
+    exchanged: transition.1,
+    cell: atomic_identity_copy(&cell.identity),
+    success_order: atomic_order_to_code(&success),
+    failure_order: atomic_order_to_code(&failure),
+  }
+}
+
+fn atomic_bool_fetch_and(cell: &AtomicBool, value: bool, order: AtomicOrdering) -> AtomicBoolTransition
+  req atomic_rmw_order_legal_spec(order)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity) && result.next == (result.previous && value)
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic)
+{
+  let previous: bool = atomic_machine_bool_fetch_and(cell.machine_handle, value, atomic_order_to_code(&order)).0;
+  atomic_bool_rmw_result(cell, previous, previous && value, order)
+}
+
+fn atomic_bool_fetch_or(cell: &AtomicBool, value: bool, order: AtomicOrdering) -> AtomicBoolTransition
+  req atomic_rmw_order_legal_spec(order)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity) && result.next == (result.previous || value)
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic)
+{
+  let previous: bool = atomic_machine_bool_fetch_or(cell.machine_handle, value, atomic_order_to_code(&order)).0;
+  atomic_bool_rmw_result(cell, previous, previous || value, order)
+}
+
+fn atomic_bool_fetch_xor(cell: &AtomicBool, value: bool, order: AtomicOrdering) -> AtomicBoolTransition
+  req atomic_rmw_order_legal_spec(order)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity) && result.next == (result.previous != value)
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic)
+{
+  let previous: bool = atomic_machine_bool_fetch_xor(cell.machine_handle, value, atomic_order_to_code(&order)).0;
+  atomic_bool_rmw_result(cell, previous, previous != value, order)
+}
+
+fn atomic_u32_fetch_add(cell: &AtomicU32, value: u32, order: AtomicOrdering) -> AtomicU32Transition
+  req atomic_rmw_order_legal_spec(order)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity) && result.next == atomic_u32_wrapping_add(result.previous, value)
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic)
+{
+  let previous: u32 = atomic_machine_u32_fetch_add(cell.machine_handle, value, atomic_order_to_code(&order)).0;
+  atomic_u32_rmw_result(cell, previous, atomic_u32_wrapping_add_exec(previous, value), order)
+}
+
+fn atomic_u32_fetch_sub(cell: &AtomicU32, value: u32, order: AtomicOrdering) -> AtomicU32Transition
+  req atomic_rmw_order_legal_spec(order)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity) && result.next == atomic_u32_wrapping_sub(result.previous, value)
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic)
+{
+  let previous: u32 = atomic_machine_u32_fetch_sub(cell.machine_handle, value, atomic_order_to_code(&order)).0;
+  atomic_u32_rmw_result(cell, previous, atomic_u32_wrapping_sub_exec(previous, value), order)
+}
+
+fn atomic_u64_fetch_add(cell: &AtomicU64, value: u64, order: AtomicOrdering) -> AtomicU64Transition
+  req atomic_rmw_order_legal_spec(order)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity) && result.next == atomic_u64_wrapping_add(result.previous, value)
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic)
+{
+  let previous: u64 = atomic_machine_u64_fetch_add(cell.machine_handle, value, atomic_order_to_code(&order)).0;
+  atomic_u64_rmw_result(cell, previous, atomic_u64_wrapping_add_exec(previous, value), order)
+}
+
+fn atomic_u64_fetch_sub(cell: &AtomicU64, value: u64, order: AtomicOrdering) -> AtomicU64Transition
+  req atomic_rmw_order_legal_spec(order)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity) && result.next == atomic_u64_wrapping_sub(result.previous, value)
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic)
+{
+  let previous: u64 = atomic_machine_u64_fetch_sub(cell.machine_handle, value, atomic_order_to_code(&order)).0;
+  atomic_u64_rmw_result(cell, previous, atomic_u64_wrapping_sub_exec(previous, value), order)
+}
+
+fn atomic_usize_fetch_add(cell: &AtomicUsize, value: usize, order: AtomicOrdering) -> AtomicUsizeTransition
+  req atomic_rmw_order_legal_spec(order)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity) && result.next == atomic_usize_wrapping_add(result.previous, value)
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic)
+{
+  let previous: usize = atomic_machine_usize_fetch_add(cell.machine_handle, value, atomic_order_to_code(&order)).0;
+  atomic_usize_rmw_result(cell, previous, atomic_usize_wrapping_add_exec(previous, value), order)
+}
+
+fn atomic_usize_fetch_sub(cell: &AtomicUsize, value: usize, order: AtomicOrdering) -> AtomicUsizeTransition
+  req atomic_rmw_order_legal_spec(order)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity) && result.next == atomic_usize_wrapping_sub(result.previous, value)
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic)
+{
+  let previous: usize = atomic_machine_usize_fetch_sub(cell.machine_handle, value, atomic_order_to_code(&order)).0;
+  atomic_usize_rmw_result(cell, previous, atomic_usize_wrapping_sub_exec(previous, value), order)
+}
+
+fn atomic_u32_fetch_and(cell: &AtomicU32, value: u32, order: AtomicOrdering) -> AtomicU32Transition
+  req atomic_rmw_order_legal_spec(order)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity) && result.next == (result.previous & value)
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic)
+{
+  let previous: u32 = atomic_machine_u32_fetch_and(cell.machine_handle, value, atomic_order_to_code(&order)).0;
+  atomic_u32_rmw_result(cell, previous, previous & value, order)
+}
+
+fn atomic_u32_fetch_or(cell: &AtomicU32, value: u32, order: AtomicOrdering) -> AtomicU32Transition
+  req atomic_rmw_order_legal_spec(order)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity) && result.next == (result.previous | value)
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic)
+{
+  let previous: u32 = atomic_machine_u32_fetch_or(cell.machine_handle, value, atomic_order_to_code(&order)).0;
+  atomic_u32_rmw_result(cell, previous, previous | value, order)
+}
+
+fn atomic_u32_fetch_xor(cell: &AtomicU32, value: u32, order: AtomicOrdering) -> AtomicU32Transition
+  req atomic_rmw_order_legal_spec(order)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity) && result.next == (result.previous ^ value)
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic)
+{
+  let previous: u32 = atomic_machine_u32_fetch_xor(cell.machine_handle, value, atomic_order_to_code(&order)).0;
+  atomic_u32_rmw_result(cell, previous, previous ^ value, order)
+}
+
+fn atomic_u64_fetch_and(cell: &AtomicU64, value: u64, order: AtomicOrdering) -> AtomicU64Transition
+  req atomic_rmw_order_legal_spec(order)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity) && result.next == (result.previous & value)
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic)
+{
+  let previous: u64 = atomic_machine_u64_fetch_and(cell.machine_handle, value, atomic_order_to_code(&order)).0;
+  atomic_u64_rmw_result(cell, previous, previous & value, order)
+}
+
+fn atomic_u64_fetch_or(cell: &AtomicU64, value: u64, order: AtomicOrdering) -> AtomicU64Transition
+  req atomic_rmw_order_legal_spec(order)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity) && result.next == (result.previous | value)
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic)
+{
+  let previous: u64 = atomic_machine_u64_fetch_or(cell.machine_handle, value, atomic_order_to_code(&order)).0;
+  atomic_u64_rmw_result(cell, previous, previous | value, order)
+}
+
+fn atomic_u64_fetch_xor(cell: &AtomicU64, value: u64, order: AtomicOrdering) -> AtomicU64Transition
+  req atomic_rmw_order_legal_spec(order)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity) && result.next == (result.previous ^ value)
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic)
+{
+  let previous: u64 = atomic_machine_u64_fetch_xor(cell.machine_handle, value, atomic_order_to_code(&order)).0;
+  atomic_u64_rmw_result(cell, previous, previous ^ value, order)
+}
+
+fn atomic_usize_fetch_and(cell: &AtomicUsize, value: usize, order: AtomicOrdering) -> AtomicUsizeTransition
+  req atomic_rmw_order_legal_spec(order)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity) && result.next == (result.previous & value)
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic)
+{
+  let previous: usize = atomic_machine_usize_fetch_and(cell.machine_handle, value, atomic_order_to_code(&order)).0;
+  atomic_usize_rmw_result(cell, previous, previous & value, order)
+}
+
+fn atomic_usize_fetch_or(cell: &AtomicUsize, value: usize, order: AtomicOrdering) -> AtomicUsizeTransition
+  req atomic_rmw_order_legal_spec(order)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity) && result.next == (result.previous | value)
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic)
+{
+  let previous: usize = atomic_machine_usize_fetch_or(cell.machine_handle, value, atomic_order_to_code(&order)).0;
+  atomic_usize_rmw_result(cell, previous, previous | value, order)
+}
+
+fn atomic_usize_fetch_xor(cell: &AtomicUsize, value: usize, order: AtomicOrdering) -> AtomicUsizeTransition
+  req atomic_rmw_order_legal_spec(order)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity) && result.next == (result.previous ^ value)
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic)
+{
+  let previous: usize = atomic_machine_usize_fetch_xor(cell.machine_handle, value, atomic_order_to_code(&order)).0;
+  atomic_usize_rmw_result(cell, previous, previous ^ value, order)
+}
+
+fn atomic_u32_fetch_min(cell: &AtomicU32, value: u32, order: AtomicOrdering) -> AtomicU32Transition
+  req atomic_rmw_order_legal_spec(order)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity)
+    && result.next == if result.previous < value { result.previous } else { value }
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic)
+{
+  let previous: u32 = atomic_machine_u32_fetch_min(cell.machine_handle, value, atomic_order_to_code(&order)).0;
+  atomic_u32_rmw_result(cell, previous, if previous < value { previous } else { value }, order)
+}
+
+fn atomic_u32_fetch_max(cell: &AtomicU32, value: u32, order: AtomicOrdering) -> AtomicU32Transition
+  req atomic_rmw_order_legal_spec(order)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity)
+    && result.next == if result.previous > value { result.previous } else { value }
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic)
+{
+  let previous: u32 = atomic_machine_u32_fetch_max(cell.machine_handle, value, atomic_order_to_code(&order)).0;
+  atomic_u32_rmw_result(cell, previous, if previous > value { previous } else { value }, order)
+}
+
+fn atomic_u64_fetch_min(cell: &AtomicU64, value: u64, order: AtomicOrdering) -> AtomicU64Transition
+  req atomic_rmw_order_legal_spec(order)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity)
+    && result.next == if result.previous < value { result.previous } else { value }
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic)
+{
+  let previous: u64 = atomic_machine_u64_fetch_min(cell.machine_handle, value, atomic_order_to_code(&order)).0;
+  atomic_u64_rmw_result(cell, previous, if previous < value { previous } else { value }, order)
+}
+
+fn atomic_u64_fetch_max(cell: &AtomicU64, value: u64, order: AtomicOrdering) -> AtomicU64Transition
+  req atomic_rmw_order_legal_spec(order)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity)
+    && result.next == if result.previous > value { result.previous } else { value }
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic)
+{
+  let previous: u64 = atomic_machine_u64_fetch_max(cell.machine_handle, value, atomic_order_to_code(&order)).0;
+  atomic_u64_rmw_result(cell, previous, if previous > value { previous } else { value }, order)
+}
+
+fn atomic_usize_fetch_min(cell: &AtomicUsize, value: usize, order: AtomicOrdering) -> AtomicUsizeTransition
+  req atomic_rmw_order_legal_spec(order)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity)
+    && result.next == if result.previous < value { result.previous } else { value }
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic)
+{
+  let previous: usize = atomic_machine_usize_fetch_min(cell.machine_handle, value, atomic_order_to_code(&order)).0;
+  atomic_usize_rmw_result(cell, previous, if previous < value { previous } else { value }, order)
+}
+
+fn atomic_usize_fetch_max(cell: &AtomicUsize, value: usize, order: AtomicOrdering) -> AtomicUsizeTransition
+  req atomic_rmw_order_legal_spec(order)
+  ens atomic_identity_eq_spec(&result.cell, &cell.identity)
+    && result.next == if result.previous > value { result.previous } else { value }
+    && result.exchanged && result.success_order == atomic_order_code(order)
+  fx platform(atomic)
+{
+  let previous: usize = atomic_machine_usize_fetch_max(cell.machine_handle, value, atomic_order_to_code(&order)).0;
+  atomic_usize_rmw_result(cell, previous, if previous > value { previous } else { value }, order)
+}
+
+fn atomic_compiler_fence(order: AtomicOrdering) -> AtomicFence
+  req atomic_fence_order_legal_spec(order)
+  ens result.kind == 0 && result.order == atomic_order_code(order)
+  fx platform(atomic)
+{
+  let completed: bool = atomic_machine_compiler_fence(atomic_order_to_code(&order));
+  AtomicFence { kind: if completed { 0 } else { 1 }, order: atomic_order_to_code(&order) }
+}
+
+fn atomic_hardware_fence(order: AtomicOrdering) -> AtomicFence
+  req atomic_fence_order_legal_spec(order)
+  ens result.kind == 1 && result.order == atomic_order_code(order)
+  fx platform(atomic)
+{
+  let completed: bool = atomic_machine_hardware_fence(atomic_order_to_code(&order));
+  AtomicFence { kind: if completed { 1 } else { 0 }, order: atomic_order_to_code(&order) }
+}
+
+fn atomic_load_order_probe(order: AtomicOrdering) -> bool
+  req true
+  ens result == atomic_load_order_legal_spec(order)
+  fx pure
+{
+  atomic_load_order_legal(order)
+}
+
+fn atomic_cas_order_probe(success: AtomicOrdering, failure: AtomicOrdering) -> bool
+  req true
+  ens result == atomic_cas_order_legal_spec(success, failure)
+  fx pure
+{
+  atomic_cas_order_legal(success, failure)
+}
+
+fn atomic_happens_before_probe(history: &AtomicHistory, event: usize) -> bool
+  req event > 0 && event <= history.len
+  ens result && atomic_happens_before(history, event, event, history.len)
+  fx pure
+{
+  atomic_happens_before_reflexive(history, event)
+}
+
+fn atomic_ordering_matrix_probe(case: u8) -> bool
+  req case < 45
+  ens result == atomic_ordering_matrix_spec(case)
+  fx pure
+{
+  (case < 5 && atomic_load_code_legal(case))
+    || (case >= 5 && case < 10 && atomic_store_code_legal((case - 5) as u8))
+    || (case >= 10 && case < 15 && atomic_fence_code_legal((case - 10) as u8))
+    || (case >= 15 && case < 40 && atomic_cas_code_legal(
+      ((case - 15) / 5) as u8,
+      ((case - 15) % 5) as u8,
+    ))
+    || (case >= 40 && atomic_rmw_code_legal((case - 40) as u8))
+}
+
+fn atomic_history_model_probe(
+  program_parent: &[usize; ATOMIC_HISTORY_CAPACITY],
+  synchronize_parent: &[usize; ATOMIC_HISTORY_CAPACITY],
+  release_parent: &[usize; ATOMIC_HISTORY_CAPACITY],
+  len: usize,
+  event: usize,
+) -> bool
+  req len <= ATOMIC_HISTORY_CAPACITY && event > 0 && event <= len
+  ens result
+    && atomic_happens_before_edges(
+      program_parent,
+      synchronize_parent,
+      len,
+      event,
+      event,
+      len,
+    )
+    && atomic_release_sequence_edges(
+      release_parent,
+      len,
+      event,
+      event,
+      len,
+    )
+  fx pure
+{
+  true
+}

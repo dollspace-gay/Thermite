@@ -1,0 +1,14 @@
+{
+  "schema": "thermite.package.v1",
+  "name": "thermite_fixed_intrusive",
+  "roots": [
+    "intrusive"
+  ],
+  "modules": [
+    {
+      "name": "intrusive",
+      "path": "collections/intrusive.th",
+      "imports": []
+    }
+  ]
+}

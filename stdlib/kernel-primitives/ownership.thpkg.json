@@ -1,0 +1,14 @@
+{
+  "schema": "thermite.package.v1",
+  "name": "thermite_ownership_primitives",
+  "roots": [
+    "generation"
+  ],
+  "modules": [
+    {
+      "name": "generation",
+      "path": "ownership/generation.th",
+      "imports": []
+    }
+  ]
+}

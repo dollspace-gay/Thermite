@@ -1,0 +1,324 @@
+struct TicketLockState64 {
+  next: u64,
+  serving: u64,
+}
+
+enum TicketIssue64 {
+  TicketIssued64 {
+    lock: TicketLockState64,
+    ticket: u64,
+  },
+  TicketSpaceExhausted64 {
+    lock: TicketLockState64,
+  },
+}
+
+enum TicketEnter64 {
+  TicketEntered64 {
+    guard: u64,
+  },
+  TicketWaiting64 {
+    ticket: u64,
+  },
+  TicketStale64 {
+    ticket: u64,
+  },
+  TicketUnknown64 {
+    ticket: u64,
+  },
+}
+
+enum TicketRelease64 {
+  TicketReleased64 {
+    lock: TicketLockState64,
+  },
+  TicketReleaseRejected64 {
+    lock: TicketLockState64,
+    guard: u64,
+  },
+}
+
+spec fn ticket_lock_wf_spec(lock: &TicketLockState64) -> bool
+  dec lock.next
+{
+  lock.serving <= lock.next
+}
+
+fn ticket_lock_wf(lock: &TicketLockState64) -> bool
+  req true
+  ens result == ticket_lock_wf_spec(lock)
+  fx pure
+{
+  lock.serving <= lock.next
+}
+
+fn ticket_lock_empty() -> TicketLockState64
+  req true
+  ens ticket_lock_wf_spec(&result)
+  ens result.next == 0 && result.serving == 0
+  fx pure
+{
+  TicketLockState64 {
+    next: 0,
+    serving: 0,
+  }
+}
+
+fn ticket_lock_next_number(current: u64) -> Option<u64>
+  req true
+  ens match result {
+    Some(next) => current < u64::MAX && next == current + 1,
+    None => current == u64::MAX,
+  }
+  fx pure
+{
+  if current == u64::MAX {
+    None
+  } else {
+    Some(current + 1)
+  }
+}
+
+fn ticket_lock_can_issue(current: u64) -> bool
+  req true
+  ens result == (current < u64::MAX)
+  fx pure
+{
+  current != u64::MAX
+}
+
+fn ticket_lock_issue(lock: TicketLockState64) -> TicketIssue64
+  req ticket_lock_wf_spec(&lock)
+  ens match result {
+    TicketIssue64::TicketIssued64 { lock: next, ticket } =>
+      lock.next < u64::MAX
+        && ticket_lock_wf_spec(&next)
+        && ticket == lock.next
+        && next.next == lock.next + 1
+        && next.serving == lock.serving,
+    TicketIssue64::TicketSpaceExhausted64 { lock: next } =>
+      lock.next == u64::MAX
+        && ticket_lock_wf_spec(&next)
+        && next.next == lock.next
+        && next.serving == lock.serving,
+  }
+  fx pure
+{
+  if ticket_lock_can_issue(lock.next) {
+    TicketIssue64::TicketIssued64 {
+      lock: TicketLockState64 {
+        next: lock.next + 1,
+        serving: lock.serving,
+      },
+      ticket: lock.next,
+    }
+  } else {
+    TicketIssue64::TicketSpaceExhausted64 { lock: lock }
+  }
+}
+
+fn ticket_lock_try_enter(
+  lock: &TicketLockState64,
+  ticket: u64,
+) -> TicketEnter64
+  req ticket_lock_wf_spec(lock)
+  ens match result {
+    TicketEnter64::TicketEntered64 { guard } =>
+      ticket == lock.serving
+        && ticket < lock.next
+        && guard == ticket,
+    TicketEnter64::TicketWaiting64 { ticket: returned } =>
+      ticket > lock.serving
+        && ticket < lock.next
+        && returned == ticket,
+    TicketEnter64::TicketStale64 { ticket: returned } =>
+      ticket < lock.serving
+        && returned == ticket,
+    TicketEnter64::TicketUnknown64 { ticket: returned } =>
+      ticket >= lock.next
+        && returned == ticket,
+  }
+  fx pure
+{
+  if ticket == lock.serving && ticket < lock.next {
+    TicketEnter64::TicketEntered64 {
+      guard: ticket,
+    }
+  } else {
+    if ticket < lock.serving {
+      TicketEnter64::TicketStale64 { ticket: ticket }
+    } else {
+      if ticket < lock.next {
+        TicketEnter64::TicketWaiting64 { ticket: ticket }
+      } else {
+        TicketEnter64::TicketUnknown64 { ticket: ticket }
+      }
+    }
+  }
+}
+
+fn ticket_lock_release(
+  lock: TicketLockState64,
+  guard: u64,
+) -> TicketRelease64
+  req ticket_lock_wf_spec(&lock)
+  ens match result {
+    TicketRelease64::TicketReleased64 { lock: next } =>
+      guard == lock.serving
+        && lock.serving < lock.next
+        && ticket_lock_wf_spec(&next)
+        && next.serving == lock.serving + 1
+        && next.next == lock.next,
+    TicketRelease64::TicketReleaseRejected64 {
+      lock: next,
+      guard: returned,
+    } =>
+      (guard != lock.serving || lock.serving == lock.next)
+        && ticket_lock_wf_spec(&next)
+        && next.serving == lock.serving
+        && next.next == lock.next
+        && returned == guard,
+  }
+  fx pure
+{
+  if guard == lock.serving && lock.serving < lock.next {
+    TicketRelease64::TicketReleased64 {
+      lock: TicketLockState64 {
+        next: lock.next,
+        serving: lock.serving + 1,
+      },
+    }
+  } else {
+    TicketRelease64::TicketReleaseRejected64 {
+      lock: lock,
+      guard: guard,
+    }
+  }
+}
+
+fn ticket_lock_second_waits(
+  lock: TicketLockState64,
+  first: u64,
+  second: u64,
+) -> bool
+  req ticket_lock_wf_spec(&lock)
+    && first == lock.serving
+    && first < lock.next
+    && second == lock.serving + 1
+    && second < lock.next
+  ens result
+  fx pure
+{
+  match ticket_lock_try_enter(&lock, second) {
+    TicketEnter64::TicketEntered64 { guard: _ } => false,
+    TicketEnter64::TicketWaiting64 { ticket: waiting } =>
+      match ticket_lock_try_enter(&lock, first) {
+        TicketEnter64::TicketEntered64 { guard } =>
+          match ticket_lock_release(lock, guard) {
+            TicketRelease64::TicketReleased64 { lock: advanced } =>
+              match ticket_lock_try_enter(&advanced, waiting) {
+                TicketEnter64::TicketEntered64 { guard: next_guard } =>
+                  next_guard == second,
+                TicketEnter64::TicketWaiting64 { ticket: _ } => false,
+                TicketEnter64::TicketStale64 { ticket: _ } => false,
+                TicketEnter64::TicketUnknown64 { ticket: _ } => false,
+              },
+            TicketRelease64::TicketReleaseRejected64 { lock: _, guard: _ } => false,
+          },
+        TicketEnter64::TicketWaiting64 { ticket: _ } => false,
+        TicketEnter64::TicketStale64 { ticket: _ } => false,
+        TicketEnter64::TicketUnknown64 { ticket: _ } => false,
+      },
+    TicketEnter64::TicketStale64 { ticket: _ } => false,
+    TicketEnter64::TicketUnknown64 { ticket: _ } => false,
+  }
+}
+
+fn ticket_lock_fifo_after_first_issue(
+  lock: TicketLockState64,
+  first: u64,
+) -> bool
+  req ticket_lock_wf_spec(&lock)
+    && first == lock.serving
+    && lock.next == first + 1
+    && lock.next < u64::MAX
+  ens result
+  fx pure
+{
+  match ticket_lock_issue(lock) {
+    TicketIssue64::TicketIssued64 { lock: two, ticket: second } =>
+      ticket_lock_second_waits(two, first, second),
+    TicketIssue64::TicketSpaceExhausted64 { lock: _ } => false,
+  }
+}
+
+fn ticket_lock_fifo_probe() -> bool
+  req true
+  ens result
+  fx pure
+{
+  let empty: TicketLockState64 = ticket_lock_empty();
+  match ticket_lock_issue(empty) {
+    TicketIssue64::TicketIssued64 { lock: one, ticket: first } =>
+      ticket_lock_fifo_after_first_issue(one, first),
+    TicketIssue64::TicketSpaceExhausted64 { lock: _ } => false,
+  }
+}
+
+fn ticket_lock_stale_after_release(
+  lock: TicketLockState64,
+  ticket: u64,
+) -> bool
+  req ticket_lock_wf_spec(&lock)
+    && ticket == lock.serving
+    && ticket < lock.next
+  ens result
+  fx pure
+{
+  match ticket_lock_try_enter(&lock, ticket) {
+    TicketEnter64::TicketEntered64 { guard } =>
+      match ticket_lock_release(lock, guard) {
+        TicketRelease64::TicketReleased64 { lock: advanced } =>
+          match ticket_lock_try_enter(&advanced, ticket) {
+            TicketEnter64::TicketEntered64 { guard: _ } => false,
+            TicketEnter64::TicketWaiting64 { ticket: _ } => false,
+            TicketEnter64::TicketStale64 { ticket: stale } =>
+              stale == ticket,
+            TicketEnter64::TicketUnknown64 { ticket: _ } => false,
+          },
+        TicketRelease64::TicketReleaseRejected64 { lock: _, guard: _ } => false,
+      },
+    TicketEnter64::TicketWaiting64 { ticket: _ } => false,
+    TicketEnter64::TicketStale64 { ticket: _ } => false,
+    TicketEnter64::TicketUnknown64 { ticket: _ } => false,
+  }
+}
+
+fn ticket_lock_stale_probe() -> bool
+  req true
+  ens result
+  fx pure
+{
+  let empty: TicketLockState64 = ticket_lock_empty();
+  match ticket_lock_issue(empty) {
+    TicketIssue64::TicketIssued64 { lock, ticket } =>
+      ticket_lock_stale_after_release(lock, ticket),
+    TicketIssue64::TicketSpaceExhausted64 { lock: _ } => false,
+  }
+}
+
+fn ticket_lock_exhaustion_probe() -> bool
+  req true
+  ens result
+  fx pure
+{
+  let exhausted: TicketLockState64 = TicketLockState64 {
+    next: u64::MAX,
+    serving: u64::MAX,
+  };
+  match ticket_lock_issue(exhausted) {
+    TicketIssue64::TicketIssued64 { lock: _, ticket: _ } => false,
+    TicketIssue64::TicketSpaceExhausted64 { lock } =>
+      lock.next == u64::MAX && lock.serving == u64::MAX,
+  }
+}

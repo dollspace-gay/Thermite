@@ -1,0 +1,1305 @@
+const EPOCH_ACK_CAPACITY: usize = 64;
+
+struct EpochAckState64 {
+  active: u64,
+  pending: u64,
+  generations: [u64; EPOCH_ACK_CAPACITY],
+  epoch: u64,
+  open: bool,
+  capacity: usize,
+}
+
+struct EpochAckParticipant64 {
+  slot: usize,
+  generation: u64,
+}
+
+struct EpochAckRound64 {
+  epoch: u64,
+}
+
+enum EpochAckRegister64 {
+  EpochAckRegistered64 {
+    state: EpochAckState64,
+    participant: EpochAckParticipant64,
+  },
+  EpochAckAlreadyActive64 {
+    state: EpochAckState64,
+    participant: EpochAckParticipant64,
+  },
+  EpochAckRegisterRoundOpen64 {
+    state: EpochAckState64,
+    slot: usize,
+  },
+  EpochAckRegisterGenerationExhausted64 {
+    state: EpochAckState64,
+    slot: usize,
+  },
+}
+
+enum EpochAckUnregister64 {
+  EpochAckUnregistered64 {
+    state: EpochAckState64,
+    participant: EpochAckParticipant64,
+  },
+  EpochAckUnregisterRoundOpen64 {
+    state: EpochAckState64,
+    participant: EpochAckParticipant64,
+  },
+  EpochAckUnregisterInactive64 {
+    state: EpochAckState64,
+    participant: EpochAckParticipant64,
+  },
+  EpochAckUnregisterStale64 {
+    state: EpochAckState64,
+    participant: EpochAckParticipant64,
+  },
+}
+
+enum EpochAckBegin64 {
+  EpochAckStarted64 {
+    state: EpochAckState64,
+    round: EpochAckRound64,
+  },
+  EpochAckBeginRoundOpen64 {
+    state: EpochAckState64,
+  },
+  EpochAckBeginEpochExhausted64 {
+    state: EpochAckState64,
+  },
+}
+
+enum EpochAckRecord64 {
+  EpochAckRecorded64 {
+    state: EpochAckState64,
+    participant: EpochAckParticipant64,
+    round: EpochAckRound64,
+  },
+  EpochAckRecordNoRound64 {
+    state: EpochAckState64,
+    participant: EpochAckParticipant64,
+    round: EpochAckRound64,
+  },
+  EpochAckRecordStaleEpoch64 {
+    state: EpochAckState64,
+    participant: EpochAckParticipant64,
+    round: EpochAckRound64,
+  },
+  EpochAckRecordFutureEpoch64 {
+    state: EpochAckState64,
+    participant: EpochAckParticipant64,
+    round: EpochAckRound64,
+  },
+  EpochAckRecordStaleParticipant64 {
+    state: EpochAckState64,
+    participant: EpochAckParticipant64,
+    round: EpochAckRound64,
+  },
+  EpochAckRecordNotPending64 {
+    state: EpochAckState64,
+    participant: EpochAckParticipant64,
+    round: EpochAckRound64,
+  },
+}
+
+enum EpochAckWithdraw64 {
+  EpochAckWithdrawn64 {
+    state: EpochAckState64,
+    participant: EpochAckParticipant64,
+    round: EpochAckRound64,
+  },
+  EpochAckWithdrawNoRound64 {
+    state: EpochAckState64,
+    participant: EpochAckParticipant64,
+    round: EpochAckRound64,
+  },
+  EpochAckWithdrawStaleEpoch64 {
+    state: EpochAckState64,
+    participant: EpochAckParticipant64,
+    round: EpochAckRound64,
+  },
+  EpochAckWithdrawFutureEpoch64 {
+    state: EpochAckState64,
+    participant: EpochAckParticipant64,
+    round: EpochAckRound64,
+  },
+  EpochAckWithdrawStaleParticipant64 {
+    state: EpochAckState64,
+    participant: EpochAckParticipant64,
+    round: EpochAckRound64,
+  },
+  EpochAckWithdrawNotPending64 {
+    state: EpochAckState64,
+    participant: EpochAckParticipant64,
+    round: EpochAckRound64,
+  },
+}
+
+enum EpochAckClose64 {
+  EpochAckClosed64 {
+    state: EpochAckState64,
+    round: EpochAckRound64,
+  },
+  EpochAckCloseNoRound64 {
+    state: EpochAckState64,
+    round: EpochAckRound64,
+  },
+  EpochAckCloseStaleEpoch64 {
+    state: EpochAckState64,
+    round: EpochAckRound64,
+  },
+  EpochAckCloseFutureEpoch64 {
+    state: EpochAckState64,
+    round: EpochAckRound64,
+  },
+  EpochAckClosePending64 {
+    state: EpochAckState64,
+    round: EpochAckRound64,
+    pending: u64,
+  },
+}
+
+spec fn epoch_ack_wf_spec(state: &EpochAckState64) -> bool
+  dec state.capacity
+{
+  state.capacity == EPOCH_ACK_CAPACITY
+    && (state.open || state.pending == 0)
+}
+
+spec fn epoch_ack_generations_equal_spec(
+  left: &[u64; EPOCH_ACK_CAPACITY],
+  right: &[u64; EPOCH_ACK_CAPACITY],
+) -> bool
+  dec EPOCH_ACK_CAPACITY
+{
+  left.array_eq(right)
+}
+
+spec fn epoch_ack_generations_same_except_spec(
+  left: &[u64; EPOCH_ACK_CAPACITY],
+  right: &[u64; EPOCH_ACK_CAPACITY],
+  except: usize,
+) -> bool
+  dec except
+{
+  left.array_same_except(right, except)
+}
+
+spec fn epoch_ack_generations_clear_spec(
+  generations: &[u64; EPOCH_ACK_CAPACITY],
+) -> bool
+  dec EPOCH_ACK_CAPACITY
+{
+  let expected: [u64; EPOCH_ACK_CAPACITY] = [0; EPOCH_ACK_CAPACITY];
+  generations.array_eq(expected)
+}
+
+spec fn epoch_ack_state_equal_spec(
+  left: &EpochAckState64,
+  right: &EpochAckState64,
+) -> bool
+  dec left.capacity
+{
+  left.active == right.active
+    && left.pending == right.pending
+    && epoch_ack_generations_equal_spec(&left.generations, &right.generations)
+    && left.epoch == right.epoch
+    && left.open == right.open
+    && left.capacity == right.capacity
+}
+
+spec fn epoch_ack_participant_current_spec(
+  state: &EpochAckState64,
+  participant: &EpochAckParticipant64,
+) -> bool
+  dec participant.slot
+{
+  participant.slot < EPOCH_ACK_CAPACITY
+    && state.active.bit_test(participant.slot)
+    && state.generations[participant.slot] == participant.generation
+}
+
+spec fn epoch_ack_round_current_spec(
+  state: &EpochAckState64,
+  round: &EpochAckRound64,
+) -> bool
+  dec round.epoch
+{
+  state.open && state.epoch == round.epoch
+}
+
+spec fn epoch_ack_complete_spec(
+  state: &EpochAckState64,
+  round: &EpochAckRound64,
+) -> bool
+  dec round.epoch
+{
+  epoch_ack_round_current_spec(state, round) && state.pending == 0
+}
+
+fn epoch_ack_wf(state: &EpochAckState64) -> bool
+  req true
+  ens result == epoch_ack_wf_spec(state)
+  fx pure
+{
+  state.capacity == EPOCH_ACK_CAPACITY
+    && (state.open || state.pending == 0)
+}
+
+fn epoch_ack_capacity() -> usize
+  req true
+  ens result == EPOCH_ACK_CAPACITY
+  fx pure
+{
+  EPOCH_ACK_CAPACITY
+}
+
+fn epoch_ack_empty() -> EpochAckState64
+  req true
+  ens epoch_ack_wf_spec(&result)
+  ens result.active == 0
+  ens result.pending == 0
+  ens result.epoch == 0
+  ens !result.open
+  ens result.capacity == EPOCH_ACK_CAPACITY
+  ens epoch_ack_generations_clear_spec(&result.generations)
+  fx pure
+{
+  EpochAckState64 {
+    active: 0,
+    pending: 0,
+    generations: [0; EPOCH_ACK_CAPACITY],
+    epoch: 0,
+    open: false,
+    capacity: EPOCH_ACK_CAPACITY,
+  }
+}
+
+fn epoch_ack_active_mask(state: &EpochAckState64) -> u64
+  req epoch_ack_wf_spec(state)
+  ens result == state.active
+  fx pure
+{
+  state.active
+}
+
+fn epoch_ack_pending_mask(state: &EpochAckState64) -> u64
+  req epoch_ack_wf_spec(state)
+  ens result == state.pending
+  fx pure
+{
+  state.pending
+}
+
+fn epoch_ack_epoch(state: &EpochAckState64) -> u64
+  req epoch_ack_wf_spec(state)
+  ens result == state.epoch
+  fx pure
+{
+  state.epoch
+}
+
+fn epoch_ack_is_open(state: &EpochAckState64) -> bool
+  req epoch_ack_wf_spec(state)
+  ens result == state.open
+  fx pure
+{
+  state.open
+}
+
+fn epoch_ack_is_active(state: &EpochAckState64, slot: usize) -> bool
+  req epoch_ack_wf_spec(state) && slot < EPOCH_ACK_CAPACITY
+  ens result == state.active.bit_test(slot)
+  fx pure
+{
+  state.active.bit_test(slot)
+}
+
+fn epoch_ack_is_pending(state: &EpochAckState64, slot: usize) -> bool
+  req epoch_ack_wf_spec(state) && slot < EPOCH_ACK_CAPACITY
+  ens result == state.pending.bit_test(slot)
+  fx pure
+{
+  state.pending.bit_test(slot)
+}
+
+fn epoch_ack_participant_current(
+  state: &EpochAckState64,
+  participant: &EpochAckParticipant64,
+) -> bool
+  req epoch_ack_wf_spec(state)
+    && participant.slot < EPOCH_ACK_CAPACITY
+  ens result == epoch_ack_participant_current_spec(state, participant)
+  fx pure
+{
+  state.active.bit_test(participant.slot)
+    && state.generations[participant.slot] == participant.generation
+}
+
+fn epoch_ack_round_current(
+  state: &EpochAckState64,
+  round: &EpochAckRound64,
+) -> bool
+  req epoch_ack_wf_spec(state)
+  ens result == epoch_ack_round_current_spec(state, round)
+  fx pure
+{
+  state.open && state.epoch == round.epoch
+}
+
+fn epoch_ack_complete(
+  state: &EpochAckState64,
+  round: &EpochAckRound64,
+) -> bool
+  req epoch_ack_wf_spec(state)
+  ens result == epoch_ack_complete_spec(state, round)
+  fx pure
+{
+  state.open && state.epoch == round.epoch && state.pending == 0
+}
+
+fn epoch_ack_register(
+  state: EpochAckState64,
+  slot: usize,
+) -> EpochAckRegister64
+  req epoch_ack_wf_spec(&state) && slot < EPOCH_ACK_CAPACITY
+  ens match result {
+    EpochAckRegister64::EpochAckRegistered64 {
+      state: next,
+      participant,
+    } =>
+      !state.open
+        && !state.active.bit_test(slot)
+        && state.generations[slot] < u64::MAX
+        && epoch_ack_wf_spec(&next)
+        && next.active == state.active.bit_set(slot)
+        && next.pending == state.pending
+        && next.generations[slot] == state.generations[slot] + 1
+        && epoch_ack_generations_same_except_spec(
+          &next.generations,
+          &state.generations,
+          slot,
+        )
+        && next.epoch == state.epoch
+        && next.open == state.open
+        && next.capacity == state.capacity
+        && participant.slot == slot
+        && participant.generation == next.generations[slot],
+    EpochAckRegister64::EpochAckAlreadyActive64 {
+      state: next,
+      participant,
+    } =>
+      !state.open
+        && state.active.bit_test(slot)
+        && epoch_ack_state_equal_spec(&next, &state)
+        && participant.slot == slot
+        && participant.generation == state.generations[slot],
+    EpochAckRegister64::EpochAckRegisterRoundOpen64 {
+      state: next,
+      slot: returned,
+    } =>
+      state.open
+        && epoch_ack_state_equal_spec(&next, &state)
+        && returned == slot,
+    EpochAckRegister64::EpochAckRegisterGenerationExhausted64 {
+      state: next,
+      slot: returned,
+    } =>
+      !state.open
+        && !state.active.bit_test(slot)
+        && state.generations[slot] == u64::MAX
+        && epoch_ack_state_equal_spec(&next, &state)
+        && returned == slot,
+  }
+  fx pure
+{
+  if state.open {
+    EpochAckRegister64::EpochAckRegisterRoundOpen64 {
+      state: state,
+      slot: slot,
+    }
+  } else {
+    if state.active.bit_test(slot) {
+      EpochAckRegister64::EpochAckAlreadyActive64 {
+        participant: EpochAckParticipant64 {
+          slot: slot,
+          generation: state.generations[slot],
+        },
+        state: state,
+      }
+    } else {
+      if state.generations[slot] == u64::MAX {
+        EpochAckRegister64::EpochAckRegisterGenerationExhausted64 {
+          state: state,
+          slot: slot,
+        }
+      } else {
+        let generation: u64 = state.generations[slot] + 1;
+        let mut generations: [u64; EPOCH_ACK_CAPACITY] = state.generations;
+        generations[slot] = generation;
+        EpochAckRegister64::EpochAckRegistered64 {
+          participant: EpochAckParticipant64 {
+            slot: slot,
+            generation: generation,
+          },
+          state: EpochAckState64 {
+            active: state.active.bit_set(slot),
+            pending: state.pending,
+            generations: generations,
+            epoch: state.epoch,
+            open: state.open,
+            capacity: state.capacity,
+          },
+        }
+      }
+    }
+  }
+}
+
+fn epoch_ack_unregister(
+  state: EpochAckState64,
+  participant: EpochAckParticipant64,
+) -> EpochAckUnregister64
+  req epoch_ack_wf_spec(&state)
+    && participant.slot < EPOCH_ACK_CAPACITY
+  ens match result {
+    EpochAckUnregister64::EpochAckUnregistered64 {
+      state: next,
+      participant: returned,
+    } =>
+      !state.open
+        && state.active.bit_test(participant.slot)
+        && state.generations[participant.slot] == participant.generation
+        && epoch_ack_wf_spec(&next)
+        && next.active == state.active.bit_clear(participant.slot)
+        && next.pending == state.pending
+        && epoch_ack_generations_equal_spec(
+          &next.generations,
+          &state.generations,
+        )
+        && next.epoch == state.epoch
+        && next.open == state.open
+        && next.capacity == state.capacity
+        && returned.slot == participant.slot
+        && returned.generation == participant.generation,
+    EpochAckUnregister64::EpochAckUnregisterRoundOpen64 {
+      state: next,
+      participant: returned,
+    } =>
+      state.open
+        && epoch_ack_state_equal_spec(&next, &state)
+        && returned.slot == participant.slot
+        && returned.generation == participant.generation,
+    EpochAckUnregister64::EpochAckUnregisterInactive64 {
+      state: next,
+      participant: returned,
+    } =>
+      !state.open
+        && !state.active.bit_test(participant.slot)
+        && epoch_ack_state_equal_spec(&next, &state)
+        && returned.slot == participant.slot
+        && returned.generation == participant.generation,
+    EpochAckUnregister64::EpochAckUnregisterStale64 {
+      state: next,
+      participant: returned,
+    } =>
+      !state.open
+        && state.active.bit_test(participant.slot)
+        && state.generations[participant.slot] != participant.generation
+        && epoch_ack_state_equal_spec(&next, &state)
+        && returned.slot == participant.slot
+        && returned.generation == participant.generation,
+  }
+  fx pure
+{
+  if state.open {
+    EpochAckUnregister64::EpochAckUnregisterRoundOpen64 {
+      state: state,
+      participant: participant,
+    }
+  } else {
+    if !state.active.bit_test(participant.slot) {
+      EpochAckUnregister64::EpochAckUnregisterInactive64 {
+        state: state,
+        participant: participant,
+      }
+    } else {
+      if state.generations[participant.slot] != participant.generation {
+        EpochAckUnregister64::EpochAckUnregisterStale64 {
+          state: state,
+          participant: participant,
+        }
+      } else {
+        EpochAckUnregister64::EpochAckUnregistered64 {
+          state: EpochAckState64 {
+            active: state.active.bit_clear(participant.slot),
+            pending: state.pending,
+            generations: state.generations,
+            epoch: state.epoch,
+            open: state.open,
+            capacity: state.capacity,
+          },
+          participant: participant,
+        }
+      }
+    }
+  }
+}
+
+fn epoch_ack_begin(state: EpochAckState64) -> EpochAckBegin64
+  req epoch_ack_wf_spec(&state)
+  ens match result {
+    EpochAckBegin64::EpochAckStarted64 { state: next, round } =>
+      !state.open
+        && state.epoch < u64::MAX
+        && epoch_ack_wf_spec(&next)
+        && next.active == state.active
+        && next.pending == state.active
+        && epoch_ack_generations_equal_spec(
+          &next.generations,
+          &state.generations,
+        )
+        && next.epoch == state.epoch + 1
+        && next.open
+        && next.capacity == state.capacity
+        && round.epoch == next.epoch,
+    EpochAckBegin64::EpochAckBeginRoundOpen64 { state: next } =>
+      state.open && epoch_ack_state_equal_spec(&next, &state),
+    EpochAckBegin64::EpochAckBeginEpochExhausted64 { state: next } =>
+      !state.open
+        && state.epoch == u64::MAX
+        && epoch_ack_state_equal_spec(&next, &state),
+  }
+  fx pure
+{
+  if state.open {
+    EpochAckBegin64::EpochAckBeginRoundOpen64 { state: state }
+  } else {
+    if state.epoch == u64::MAX {
+      EpochAckBegin64::EpochAckBeginEpochExhausted64 { state: state }
+    } else {
+      let epoch: u64 = state.epoch + 1;
+      EpochAckBegin64::EpochAckStarted64 {
+        state: EpochAckState64 {
+          active: state.active,
+          pending: state.active,
+          generations: state.generations,
+          epoch: epoch,
+          open: true,
+          capacity: state.capacity,
+        },
+        round: EpochAckRound64 { epoch: epoch },
+      }
+    }
+  }
+}
+
+fn epoch_ack_record(
+  state: EpochAckState64,
+  participant: EpochAckParticipant64,
+  round: EpochAckRound64,
+) -> EpochAckRecord64
+  req epoch_ack_wf_spec(&state)
+    && participant.slot < EPOCH_ACK_CAPACITY
+  ens match result {
+    EpochAckRecord64::EpochAckRecorded64 {
+      state: next,
+      participant: returned,
+      round: returned_round,
+    } =>
+      state.open
+        && round.epoch == state.epoch
+        && epoch_ack_participant_current_spec(&state, &participant)
+        && state.pending.bit_test(participant.slot)
+        && epoch_ack_wf_spec(&next)
+        && next.active == state.active
+        && next.pending == state.pending.bit_clear(participant.slot)
+        && !next.pending.bit_test(participant.slot)
+        && epoch_ack_generations_equal_spec(
+          &next.generations,
+          &state.generations,
+        )
+        && next.epoch == state.epoch
+        && next.open == state.open
+        && next.capacity == state.capacity
+        && returned.slot == participant.slot
+        && returned.generation == participant.generation
+        && returned_round.epoch == round.epoch,
+    EpochAckRecord64::EpochAckRecordNoRound64 {
+      state: next,
+      participant: returned,
+      round: returned_round,
+    } =>
+      !state.open
+        && epoch_ack_state_equal_spec(&next, &state)
+        && returned.slot == participant.slot
+        && returned.generation == participant.generation
+        && returned_round.epoch == round.epoch,
+    EpochAckRecord64::EpochAckRecordStaleEpoch64 {
+      state: next,
+      participant: returned,
+      round: returned_round,
+    } =>
+      state.open
+        && round.epoch < state.epoch
+        && epoch_ack_state_equal_spec(&next, &state)
+        && returned.slot == participant.slot
+        && returned.generation == participant.generation
+        && returned_round.epoch == round.epoch,
+    EpochAckRecord64::EpochAckRecordFutureEpoch64 {
+      state: next,
+      participant: returned,
+      round: returned_round,
+    } =>
+      state.open
+        && round.epoch > state.epoch
+        && epoch_ack_state_equal_spec(&next, &state)
+        && returned.slot == participant.slot
+        && returned.generation == participant.generation
+        && returned_round.epoch == round.epoch,
+    EpochAckRecord64::EpochAckRecordStaleParticipant64 {
+      state: next,
+      participant: returned,
+      round: returned_round,
+    } =>
+      state.open
+        && round.epoch == state.epoch
+        && !epoch_ack_participant_current_spec(&state, &participant)
+        && epoch_ack_state_equal_spec(&next, &state)
+        && returned.slot == participant.slot
+        && returned.generation == participant.generation
+        && returned_round.epoch == round.epoch,
+    EpochAckRecord64::EpochAckRecordNotPending64 {
+      state: next,
+      participant: returned,
+      round: returned_round,
+    } =>
+      state.open
+        && round.epoch == state.epoch
+        && epoch_ack_participant_current_spec(&state, &participant)
+        && !state.pending.bit_test(participant.slot)
+        && epoch_ack_state_equal_spec(&next, &state)
+        && returned.slot == participant.slot
+        && returned.generation == participant.generation
+        && returned_round.epoch == round.epoch,
+  }
+  fx pure
+{
+  if !state.open {
+    EpochAckRecord64::EpochAckRecordNoRound64 {
+      state: state,
+      participant: participant,
+      round: round,
+    }
+  } else {
+    if round.epoch < state.epoch {
+      EpochAckRecord64::EpochAckRecordStaleEpoch64 {
+        state: state,
+        participant: participant,
+        round: round,
+      }
+    } else {
+      if round.epoch > state.epoch {
+        EpochAckRecord64::EpochAckRecordFutureEpoch64 {
+          state: state,
+          participant: participant,
+          round: round,
+        }
+      } else {
+        if !state.active.bit_test(participant.slot)
+          || state.generations[participant.slot] != participant.generation
+        {
+          EpochAckRecord64::EpochAckRecordStaleParticipant64 {
+            state: state,
+            participant: participant,
+            round: round,
+          }
+        } else {
+          if !state.pending.bit_test(participant.slot) {
+            EpochAckRecord64::EpochAckRecordNotPending64 {
+              state: state,
+              participant: participant,
+              round: round,
+            }
+          } else {
+            EpochAckRecord64::EpochAckRecorded64 {
+              state: EpochAckState64 {
+                active: state.active,
+                pending: state.pending.bit_clear(participant.slot),
+                generations: state.generations,
+                epoch: state.epoch,
+                open: state.open,
+                capacity: state.capacity,
+              },
+              participant: participant,
+              round: round,
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+fn epoch_ack_withdraw(
+  state: EpochAckState64,
+  participant: EpochAckParticipant64,
+  round: EpochAckRound64,
+) -> EpochAckWithdraw64
+  req epoch_ack_wf_spec(&state)
+    && participant.slot < EPOCH_ACK_CAPACITY
+  ens match result {
+    EpochAckWithdraw64::EpochAckWithdrawn64 {
+      state: next,
+      participant: returned,
+      round: returned_round,
+    } =>
+      state.open
+        && round.epoch == state.epoch
+        && epoch_ack_participant_current_spec(&state, &participant)
+        && state.pending.bit_test(participant.slot)
+        && epoch_ack_wf_spec(&next)
+        && next.active == state.active
+        && next.pending == state.pending.bit_clear(participant.slot)
+        && !next.pending.bit_test(participant.slot)
+        && epoch_ack_generations_equal_spec(
+          &next.generations,
+          &state.generations,
+        )
+        && next.epoch == state.epoch
+        && next.open == state.open
+        && next.capacity == state.capacity
+        && returned.slot == participant.slot
+        && returned.generation == participant.generation
+        && returned_round.epoch == round.epoch,
+    EpochAckWithdraw64::EpochAckWithdrawNoRound64 {
+      state: next,
+      participant: returned,
+      round: returned_round,
+    } =>
+      !state.open
+        && epoch_ack_state_equal_spec(&next, &state)
+        && returned.slot == participant.slot
+        && returned.generation == participant.generation
+        && returned_round.epoch == round.epoch,
+    EpochAckWithdraw64::EpochAckWithdrawStaleEpoch64 {
+      state: next,
+      participant: returned,
+      round: returned_round,
+    } =>
+      state.open
+        && round.epoch < state.epoch
+        && epoch_ack_state_equal_spec(&next, &state)
+        && returned.slot == participant.slot
+        && returned.generation == participant.generation
+        && returned_round.epoch == round.epoch,
+    EpochAckWithdraw64::EpochAckWithdrawFutureEpoch64 {
+      state: next,
+      participant: returned,
+      round: returned_round,
+    } =>
+      state.open
+        && round.epoch > state.epoch
+        && epoch_ack_state_equal_spec(&next, &state)
+        && returned.slot == participant.slot
+        && returned.generation == participant.generation
+        && returned_round.epoch == round.epoch,
+    EpochAckWithdraw64::EpochAckWithdrawStaleParticipant64 {
+      state: next,
+      participant: returned,
+      round: returned_round,
+    } =>
+      state.open
+        && round.epoch == state.epoch
+        && !epoch_ack_participant_current_spec(&state, &participant)
+        && epoch_ack_state_equal_spec(&next, &state)
+        && returned.slot == participant.slot
+        && returned.generation == participant.generation
+        && returned_round.epoch == round.epoch,
+    EpochAckWithdraw64::EpochAckWithdrawNotPending64 {
+      state: next,
+      participant: returned,
+      round: returned_round,
+    } =>
+      state.open
+        && round.epoch == state.epoch
+        && epoch_ack_participant_current_spec(&state, &participant)
+        && !state.pending.bit_test(participant.slot)
+        && epoch_ack_state_equal_spec(&next, &state)
+        && returned.slot == participant.slot
+        && returned.generation == participant.generation
+        && returned_round.epoch == round.epoch,
+  }
+  fx pure
+{
+  if !state.open {
+    EpochAckWithdraw64::EpochAckWithdrawNoRound64 {
+      state: state,
+      participant: participant,
+      round: round,
+    }
+  } else {
+    if round.epoch < state.epoch {
+      EpochAckWithdraw64::EpochAckWithdrawStaleEpoch64 {
+        state: state,
+        participant: participant,
+        round: round,
+      }
+    } else {
+      if round.epoch > state.epoch {
+        EpochAckWithdraw64::EpochAckWithdrawFutureEpoch64 {
+          state: state,
+          participant: participant,
+          round: round,
+        }
+      } else {
+        if !state.active.bit_test(participant.slot)
+          || state.generations[participant.slot] != participant.generation
+        {
+          EpochAckWithdraw64::EpochAckWithdrawStaleParticipant64 {
+            state: state,
+            participant: participant,
+            round: round,
+          }
+        } else {
+          if !state.pending.bit_test(participant.slot) {
+            EpochAckWithdraw64::EpochAckWithdrawNotPending64 {
+              state: state,
+              participant: participant,
+              round: round,
+            }
+          } else {
+            EpochAckWithdraw64::EpochAckWithdrawn64 {
+              state: EpochAckState64 {
+                active: state.active,
+                pending: state.pending.bit_clear(participant.slot),
+                generations: state.generations,
+                epoch: state.epoch,
+                open: state.open,
+                capacity: state.capacity,
+              },
+              participant: participant,
+              round: round,
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+fn epoch_ack_close(
+  state: EpochAckState64,
+  round: EpochAckRound64,
+) -> EpochAckClose64
+  req epoch_ack_wf_spec(&state)
+  ens match result {
+    EpochAckClose64::EpochAckClosed64 {
+      state: next,
+      round: returned,
+    } =>
+      state.open
+        && round.epoch == state.epoch
+        && state.pending == 0
+        && epoch_ack_wf_spec(&next)
+        && next.active == state.active
+        && next.pending == 0
+        && epoch_ack_generations_equal_spec(
+          &next.generations,
+          &state.generations,
+        )
+        && next.epoch == state.epoch
+        && !next.open
+        && next.capacity == state.capacity
+        && returned.epoch == round.epoch,
+    EpochAckClose64::EpochAckCloseNoRound64 {
+      state: next,
+      round: returned,
+    } =>
+      !state.open
+        && epoch_ack_state_equal_spec(&next, &state)
+        && returned.epoch == round.epoch,
+    EpochAckClose64::EpochAckCloseStaleEpoch64 {
+      state: next,
+      round: returned,
+    } =>
+      state.open
+        && round.epoch < state.epoch
+        && epoch_ack_state_equal_spec(&next, &state)
+        && returned.epoch == round.epoch,
+    EpochAckClose64::EpochAckCloseFutureEpoch64 {
+      state: next,
+      round: returned,
+    } =>
+      state.open
+        && round.epoch > state.epoch
+        && epoch_ack_state_equal_spec(&next, &state)
+        && returned.epoch == round.epoch,
+    EpochAckClose64::EpochAckClosePending64 {
+      state: next,
+      round: returned,
+      pending,
+    } =>
+      state.open
+        && round.epoch == state.epoch
+        && state.pending != 0
+        && epoch_ack_state_equal_spec(&next, &state)
+        && returned.epoch == round.epoch
+        && pending == state.pending,
+  }
+  fx pure
+{
+  if !state.open {
+    EpochAckClose64::EpochAckCloseNoRound64 {
+      state: state,
+      round: round,
+    }
+  } else {
+    if round.epoch < state.epoch {
+      EpochAckClose64::EpochAckCloseStaleEpoch64 {
+        state: state,
+        round: round,
+      }
+    } else {
+      if round.epoch > state.epoch {
+        EpochAckClose64::EpochAckCloseFutureEpoch64 {
+          state: state,
+          round: round,
+        }
+      } else {
+        if state.pending != 0 {
+          EpochAckClose64::EpochAckClosePending64 {
+            pending: state.pending,
+            state: state,
+            round: round,
+          }
+        } else {
+          EpochAckClose64::EpochAckClosed64 {
+            state: EpochAckState64 {
+              active: state.active,
+              pending: 0,
+              generations: state.generations,
+              epoch: state.epoch,
+              open: false,
+              capacity: state.capacity,
+            },
+            round: round,
+          }
+        }
+      }
+    }
+  }
+}
+
+fn epoch_ack_record_preserves_other_probe(
+  state: EpochAckState64,
+  participant: EpochAckParticipant64,
+  round: EpochAckRound64,
+  other: usize,
+) -> bool
+  req epoch_ack_wf_spec(&state)
+    && epoch_ack_round_current_spec(&state, &round)
+    && epoch_ack_participant_current_spec(&state, &participant)
+    && participant.slot < EPOCH_ACK_CAPACITY
+    && other < EPOCH_ACK_CAPACITY
+    && participant.slot != other
+    && state.pending.bit_test(participant.slot)
+    && state.pending.bit_test(other)
+  ens result
+  fx pure
+{
+  let preserves: bool = state.pending.bit_clear_preserves_other(
+    participant.slot,
+    other,
+  );
+  if preserves {
+    match epoch_ack_record(state, participant, round) {
+      EpochAckRecord64::EpochAckRecorded64 {
+        state: next,
+        participant: returned,
+        round: returned_round,
+      } => epoch_ack_is_pending(&next, other),
+      _ => false,
+    }
+  } else {
+    false
+  }
+}
+
+fn epoch_ack_withdraw_preserves_other_probe(
+  state: EpochAckState64,
+  participant: EpochAckParticipant64,
+  round: EpochAckRound64,
+  other: usize,
+) -> bool
+  req epoch_ack_wf_spec(&state)
+    && epoch_ack_round_current_spec(&state, &round)
+    && epoch_ack_participant_current_spec(&state, &participant)
+    && participant.slot < EPOCH_ACK_CAPACITY
+    && other < EPOCH_ACK_CAPACITY
+    && participant.slot != other
+    && state.pending.bit_test(participant.slot)
+    && state.pending.bit_test(other)
+  ens result
+  fx pure
+{
+  let preserves: bool = state.pending.bit_clear_preserves_other(
+    participant.slot,
+    other,
+  );
+  if preserves {
+    match epoch_ack_withdraw(state, participant, round) {
+      EpochAckWithdraw64::EpochAckWithdrawn64 {
+        state: next,
+        participant: returned,
+        round: returned_round,
+      } => epoch_ack_is_pending(&next, other),
+      _ => false,
+    }
+  } else {
+    false
+  }
+}
+
+fn epoch_ack_duplicate_after_record_probe(
+  state: EpochAckState64,
+  participant: EpochAckParticipant64,
+  round: EpochAckRound64,
+) -> bool
+  req epoch_ack_wf_spec(&state)
+    && epoch_ack_round_current_spec(&state, &round)
+    && epoch_ack_participant_current_spec(&state, &participant)
+    && participant.slot < EPOCH_ACK_CAPACITY
+    && !state.pending.bit_test(participant.slot)
+  ens result
+  fx pure
+{
+  match epoch_ack_record(state, participant, round) {
+    EpochAckRecord64::EpochAckRecordNotPending64 {
+      state: unchanged,
+      participant: returned,
+      round: returned_round,
+    } => !epoch_ack_is_pending(&unchanged, returned.slot),
+    _ => false,
+  }
+}
+
+fn epoch_ack_duplicate_probe(
+  state: EpochAckState64,
+  participant: EpochAckParticipant64,
+  round: EpochAckRound64,
+) -> bool
+  req epoch_ack_wf_spec(&state)
+    && epoch_ack_round_current_spec(&state, &round)
+    && epoch_ack_participant_current_spec(&state, &participant)
+    && participant.slot < EPOCH_ACK_CAPACITY
+    && state.pending.bit_test(participant.slot)
+  ens result
+  fx pure
+{
+  match epoch_ack_record(state, participant, round) {
+    EpochAckRecord64::EpochAckRecorded64 {
+      state: next,
+      participant: returned,
+      round: returned_round,
+    } => epoch_ack_duplicate_after_record_probe(
+      next,
+      returned,
+      returned_round,
+    ),
+    _ => false,
+  }
+}
+
+fn epoch_ack_stale_epoch_probe(
+  state: EpochAckState64,
+  participant: EpochAckParticipant64,
+  round: EpochAckRound64,
+) -> bool
+  req epoch_ack_wf_spec(&state)
+    && state.open
+    && round.epoch < state.epoch
+    && participant.slot < EPOCH_ACK_CAPACITY
+  ens result
+  fx pure
+{
+  match epoch_ack_record(state, participant, round) {
+    EpochAckRecord64::EpochAckRecordStaleEpoch64 {
+      state: unchanged,
+      participant: returned,
+      round: returned_round,
+    } => returned_round.epoch != epoch_ack_epoch(&unchanged),
+    _ => false,
+  }
+}
+
+fn epoch_ack_future_epoch_probe(
+  state: EpochAckState64,
+  participant: EpochAckParticipant64,
+  round: EpochAckRound64,
+) -> bool
+  req epoch_ack_wf_spec(&state)
+    && state.open
+    && round.epoch > state.epoch
+    && participant.slot < EPOCH_ACK_CAPACITY
+  ens result
+  fx pure
+{
+  match epoch_ack_record(state, participant, round) {
+    EpochAckRecord64::EpochAckRecordFutureEpoch64 {
+      state: unchanged,
+      participant: returned,
+      round: returned_round,
+    } => returned_round.epoch != epoch_ack_epoch(&unchanged),
+    _ => false,
+  }
+}
+
+fn epoch_ack_register_frozen_probe(
+  state: EpochAckState64,
+  slot: usize,
+) -> bool
+  req epoch_ack_wf_spec(&state)
+    && state.open
+    && slot < EPOCH_ACK_CAPACITY
+  ens result
+  fx pure
+{
+  match epoch_ack_register(state, slot) {
+    EpochAckRegister64::EpochAckRegisterRoundOpen64 {
+      state: unchanged,
+      slot: returned,
+    } => epoch_ack_wf(&unchanged) && returned == slot,
+    _ => false,
+  }
+}
+
+fn epoch_ack_unregister_frozen_probe(
+  state: EpochAckState64,
+  participant: EpochAckParticipant64,
+) -> bool
+  req epoch_ack_wf_spec(&state)
+    && state.open
+    && participant.slot < EPOCH_ACK_CAPACITY
+  ens result
+  fx pure
+{
+  let slot: usize = participant.slot;
+  match epoch_ack_unregister(state, participant) {
+    EpochAckUnregister64::EpochAckUnregisterRoundOpen64 {
+      state: unchanged,
+      participant: returned,
+    } => returned.slot == slot,
+    _ => false,
+  }
+}
+
+fn epoch_ack_begin_snapshot_probe(
+  state: EpochAckState64,
+  participant: EpochAckParticipant64,
+) -> bool
+  req epoch_ack_wf_spec(&state)
+    && !state.open
+    && state.epoch < u64::MAX
+    && epoch_ack_participant_current_spec(&state, &participant)
+    && participant.slot < EPOCH_ACK_CAPACITY
+  ens result
+  fx pure
+{
+  match epoch_ack_begin(state) {
+    EpochAckBegin64::EpochAckStarted64 {
+      state: started,
+      round,
+    } => epoch_ack_is_pending(&started, participant.slot),
+    _ => false,
+  }
+}
+
+fn epoch_ack_epoch_exhaustion_probe(state: EpochAckState64) -> bool
+  req epoch_ack_wf_spec(&state)
+    && !state.open
+    && state.epoch == u64::MAX
+  ens result
+  fx pure
+{
+  match epoch_ack_begin(state) {
+    EpochAckBegin64::EpochAckBeginEpochExhausted64 { state: unchanged } =>
+      epoch_ack_wf(&unchanged)
+        && epoch_ack_epoch(&unchanged) == u64::MAX,
+    _ => false,
+  }
+}
+
+fn epoch_ack_generation_exhaustion_probe(
+  state: EpochAckState64,
+  slot: usize,
+) -> bool
+  req epoch_ack_wf_spec(&state)
+    && !state.open
+    && slot < EPOCH_ACK_CAPACITY
+    && !state.active.bit_test(slot)
+    && state.generations[slot] == u64::MAX
+  ens result
+  fx pure
+{
+  match epoch_ack_register(state, slot) {
+    EpochAckRegister64::EpochAckRegisterGenerationExhausted64 {
+      state: unchanged,
+      slot: returned,
+    } => epoch_ack_wf(&unchanged) && returned == slot,
+    _ => false,
+  }
+}
+
+fn epoch_ack_close_complete_probe(
+  state: EpochAckState64,
+  round: EpochAckRound64,
+) -> bool
+  req epoch_ack_wf_spec(&state)
+    && epoch_ack_complete_spec(&state, &round)
+  ens result
+  fx pure
+{
+  match epoch_ack_close(state, round) {
+    EpochAckClose64::EpochAckClosed64 {
+      state: closed,
+      round: returned,
+    } => !epoch_ack_is_open(&closed),
+    _ => false,
+  }
+}
+
+fn epoch_ack_close_pending_probe(
+  state: EpochAckState64,
+  round: EpochAckRound64,
+) -> bool
+  req epoch_ack_wf_spec(&state)
+    && epoch_ack_round_current_spec(&state, &round)
+    && state.pending != 0
+  ens result
+  fx pure
+{
+  match epoch_ack_close(state, round) {
+    EpochAckClose64::EpochAckClosePending64 {
+      state: unchanged,
+      round: returned,
+      pending,
+    } =>
+      epoch_ack_round_current(&unchanged, &returned)
+        && pending == epoch_ack_pending_mask(&unchanged),
+    _ => false,
+  }
+}
+
+fn epoch_ack_empty_round_probe() -> bool
+  req true
+  ens result
+  fx pure
+{
+  let empty: EpochAckState64 = epoch_ack_empty();
+  match epoch_ack_begin(empty) {
+    EpochAckBegin64::EpochAckStarted64 { state: open, round } =>
+      epoch_ack_complete(&open, &round),
+    _ => false,
+  }
+}

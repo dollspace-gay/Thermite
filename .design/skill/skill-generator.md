@@ -4,7 +4,7 @@
 tier: 3-component
 status: draft
 audited-sha: 92396428567edc6940a9e2845217f5ff4c2ea3c6 (re-pinned 2026-06-16, user-authorized: the only change to this doc's governed files since the prior pin is the additive stage-1 forge-tier increment 2a — the new Item::Forge surface + inert Item::Forge match arms, verified net-additive with no substantive removal of existing v1 logic (git log <main>..HEAD = the 8 forge commits); the v1 behavior this doc governs is unchanged, and the new forge-tier surface is specified in .design/stage1-forge-tier.md / REQ-S1-3)
-audited-content-sha256: 8aa61468b27badfd855e56329d70b032526b4b77ce68ff5350d787b2f2e2f516 (re-pinned 2026-08-01 after auditing the bootable multicore kernel integration; existing behavior remains regression-covered)
+audited-content-sha256: eea0ec702726081751d537b2facf723a04cfd1530ee5b89722cdc5b810396fe3 (re-pinned 2026-08-07 after the quantified declared-index relation family landed the `#[logical]` attribute, its admission and relation gate, and the per-view `forall` emission)
 governs: thermite-skill/src/generate.rs
 thesis-refs:
   - thermite-design.md §2.2
@@ -56,8 +56,10 @@ write the skill. The dependency already points from Forge to `thermite-skill`,
 so this removes the old cycle concern without exposing Forge's private parsed
 `Command` values. The build record now advertises the paired
 `--compose-export`/`--compose-shell` rich-state L3 surface and describes its
-output as an exact-source link/composition bundle (#104); regenerating the skill
-keeps that synopsis identical in the CLI and agent reference.
+output as an exact-source link/composition bundle (#104). It also advertises the
+optional `--primitive-registry <registry.json>` refinement input inside that
+composition surface; regenerating the skill keeps the synopsis identical in the
+CLI and agent reference.
 
 The crate exposes `generate() -> String` (the library API) and a `thermite-skill`
 binary (`--emit`, `--check-budget`) that the CI gauntlet runs. The committed
@@ -164,8 +166,16 @@ SkillEntry` impl or a `static SKILL: &[…]` table. Rationale:
   — a shared/exclusive reference"), so the rendered text is a deterministic
   function of the variant set, not of any particular value's payload (R-CODE-5,
   AC-6). `BinOp` and `PrimType` (the leaf operator/primitive enums) are likewise
-  rendered by exhaustive `match` so a new operator/primitive also compile-forces
-  a skill entry.
+rendered by exhaustive `match` so a new operator/primitive also compile-forces
+a skill entry.
+
+**Struct-barrier prose.** `sealed` and `opaque` are boolean attributes on the
+existing `StructItem` variant rather than new `Item` variants, so enum
+exhaustiveness cannot describe their semantic difference. The curated grammar
+framing must therefore state it directly and remains freshness-tested as REQ-11:
+sealed values are boundary-only, opaque values are constructible only by their
+declaring package module, and opacity is not an affine/linear claim. The
+normative behavior is `.design/build/opaque-library-state.md`.
 
 **The Forge command list.** `thermite-skill` owns a small public
 `ForgeMethod` enum plus one metadata record per variant (verb, synopsis, and
@@ -471,8 +481,9 @@ refactor.
 
 At the pre-#84 baseline the committed skill measured **2,560 tokens** (issue #7
 result comment; ~3.4k headroom under 6,000); after the #84 refactor + the
-#199/#257 currency passes it measures **5,988** (`--check-budget`, verified at
-the #262 re-audit) — under the ceiling, the estimate below having been roughly
+#199/#257 currency passes it measured **5,988** at the #262 re-audit. After the
+packed-`u64` bit-method and packed-bitmap authoring guidance, it measures
+**5,990** (`--check-budget`, 2026-08-04) — under the ceiling, the estimate below having been roughly
 2x optimistic but directionally right. The dynamic refactor ADDS: the recursion-scheme
 section (5 schemes × ~1 line + 1 example ≈ ~15 lines), and a per-variant line for
 the previously-omitted constructs (the ADT items, `Vec`/`String`/`Box`/`Named`

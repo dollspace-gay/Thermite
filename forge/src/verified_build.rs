@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thermite_lower::{L3Export, L3ExportVisibility, L3LibraryTarget};
 use thermite_syntax::{
-    Block, Effect, EffectRow, Expr, ForgeItem, Item, PrimType, Program, Stmt, Type,
+    Block, Effect, EffectRow, Expr, ForgeItem, Item, PrimType, Program, Stmt, Type, VariantShape,
 };
 
 use crate::body_tv::{BodyTvReport, BodyVerdict};
@@ -27,8 +27,10 @@ use crate::closure::{self, VerifiedClosure};
 use crate::contract_tv::{ClauseVerdict, TvReport};
 use crate::exec_tv::{ExecTvReport, ExecVerdict};
 use crate::manifest::{AssuranceScope, Certificate, Level, ObligationStatus};
+use crate::thermite_package::{self, LoadedPackage};
 
 mod composition;
+mod primitive_registry;
 
 const PLAN_SCHEMA: &str = "thermite.artifact-plan.v1";
 const RECEIPT_SCHEMA: &str = "thermite.verified-build-receipt.v1";
@@ -37,6 +39,8 @@ const COMPOSITION_RECEIPT_SCHEMA: &str = "thermite.verified-composition-receipt.
 const SOURCE_DATE_EPOCH: &str = "0";
 const KERNEL_VSTD_LINK_SOURCE_NAME: &str = "kernel-vstd-link.rs";
 const KERNEL_VSTD_LINK_SOURCE: &str = include_str!("kernel_vstd_link.rs");
+const MACHINE_ATOMIC_MODEL_SOURCE_PATH: &str = "evidence/machine-models/pinned-vstd-atomic.rs";
+const MACHINE_VSTD_RLIB_PATH: &str = "artifact/deps/libvstd.rlib";
 const STRICT_GATES: &[&str] = &[
     "parse-spec-effects",
     "complete-end-to-end-closure",
@@ -66,7 +70,30 @@ const COMPOSITION_STRICT_GATES: &[&str] = &[
     "rich-composition-visibility",
     "direct-verus-source-policy",
     "combined-source-inventory",
+    "frozen-primitive-registry-closure",
+    "exact-boundary-refinement",
     "whole-crate-no-cheating",
+    "verus-codegen",
+    "cryptographic-binding",
+];
+const MACHINE_COMPOSITION_STRICT_GATES: &[&str] = &[
+    "parse-spec-effects",
+    "complete-to-machine-boundary-closure",
+    "source-completeness",
+    "no-escape-hatches-in-checked-layers",
+    "termination",
+    "l3-application-function-certificates",
+    "contract-tv-complete",
+    "exec-tv-complete",
+    "body-loop-tv-complete",
+    "total-export-wrappers",
+    "rich-composition-visibility",
+    "direct-verus-source-policy",
+    "combined-source-inventory",
+    "frozen-primitive-registry-closure",
+    "exact-checked-wrapper-refinement",
+    "explicit-residual-machine-assumptions",
+    "whole-checked-crate-no-cheating",
     "verus-codegen",
     "cryptographic-binding",
 ];
@@ -103,10 +130,34 @@ pub struct PlannedNode {
     pub kind: String,
     pub source_start: Option<u64>,
     pub source_end: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_module: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_path: Option<String>,
     pub item_sha256: String,
     pub body_sha256: Option<String>,
     pub contract_sha256: Option<String>,
     pub effects_sha256: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PackagePlanV1 {
+    pub schema: String,
+    pub name: String,
+    pub manifest_sha256: String,
+    pub source_map_sha256: String,
+    pub roots: Vec<String>,
+    pub modules: Vec<PlannedPackageModuleV1>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlannedPackageModuleV1 {
+    pub name: String,
+    pub path: String,
+    pub imports: Vec<String>,
+    pub length: u64,
+    pub sha256: String,
+    pub projection_source_start: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -161,11 +212,84 @@ pub struct CompositionInventoryRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlannedPrimitiveTargetV1 {
+    pub target_triple: String,
+    pub target_features: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlannedPrimitiveEntryV1 {
+    pub semantic_name: String,
+    pub version: u64,
+    pub required: bool,
+    pub reachable: bool,
+    pub thermite_name: String,
+    pub semantic_address: String,
+    pub boundary_target: String,
+    pub signature: String,
+    pub contract_sha256: String,
+    pub effects_sha256: String,
+    pub effects: Vec<String>,
+    pub parameter_ownership: Vec<String>,
+    pub result_ownership: String,
+    pub implementation_shell: String,
+    pub implementation_item: String,
+    pub implementation_source_sha256: String,
+    pub implementation_linkage: String,
+    pub implementation_abi: String,
+    pub implementation_symbol: String,
+    pub alignment: u64,
+    pub model: String,
+    pub refinement: String,
+    pub proof_obligations: Vec<String>,
+    pub concurrency: String,
+    pub memory_orderings: Vec<String>,
+    pub failure: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub machine_family: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub machine_operation: Option<String>,
+    #[serde(default)]
+    pub residual_assumptions: Vec<String>,
+}
+
+fn default_primitive_proof_basis() -> String {
+    "verus_builtins".to_string()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlannedPrimitiveCrateV1 {
+    pub name: String,
+    pub authored_source_path: String,
+    pub authored_source_length: u64,
+    pub authored_source_sha256: String,
+    pub crate_source_path: String,
+    pub crate_source_sha256: String,
+    #[serde(default = "default_primitive_proof_basis")]
+    pub proof_basis: String,
+    pub items: Vec<PlannedShellItem>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlannedPrimitiveRegistryV1 {
+    pub schema: String,
+    pub path: String,
+    pub length: u64,
+    pub sha256: String,
+    pub target: PlannedPrimitiveTargetV1,
+    pub entries: Vec<PlannedPrimitiveEntryV1>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CompositionPlanV1 {
     pub schema: String,
     pub composition_exports: Vec<PlannedCompositionExport>,
     pub shell_modules: Vec<PlannedShellModule>,
+    #[serde(default)]
+    pub primitive_crates: Vec<PlannedPrimitiveCrateV1>,
     pub inventory: Vec<CompositionInventoryRow>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub primitive_registry: Option<PlannedPrimitiveRegistryV1>,
     pub lowered_thermite_sha256: String,
     pub combined_source_sha256: String,
 }
@@ -174,6 +298,13 @@ pub struct CompositionPlanV1 {
 struct DirectVerusSource {
     plan: PlannedShellModule,
     bytes: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PrimitiveCrateSource {
+    plan: PlannedPrimitiveCrateV1,
+    authored_bytes: Vec<u8>,
+    crate_source: String,
 }
 
 fn canonical_shell_set_sha256(modules: &[PlannedShellModule]) -> String {
@@ -230,6 +361,8 @@ pub struct ArtifactPlanV1 {
     pub strict_gates: Vec<String>,
     pub expected_tv_inventory: Vec<PlannedTvGate>,
     pub expected_verus_source_sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub package: Option<PackagePlanV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub composition: Option<CompositionPlanV1>,
 }
@@ -292,6 +425,8 @@ impl ArtifactPlanV1 {
                         .map(|value| value.to_string())
                         .unwrap_or_default(),
                 );
+                c.field("source_module", node.source_module.as_deref().unwrap_or(""));
+                c.field("source_path", node.source_path.as_deref().unwrap_or(""));
                 c.field("item_sha256", &node.item_sha256);
                 c.field("body_sha256", node.body_sha256.as_deref().unwrap_or(""));
                 c.field(
@@ -331,6 +466,32 @@ impl ArtifactPlanV1 {
             "expected_verus_source_sha256",
             &self.expected_verus_source_sha256,
         );
+        if let Some(package) = &self.package {
+            c.record("package", |c| {
+                c.field("schema", &package.schema);
+                c.field("name", &package.name);
+                c.field("manifest_sha256", &package.manifest_sha256);
+                c.field("source_map_sha256", &package.source_map_sha256);
+                for root in &package.roots {
+                    c.field("root", root);
+                }
+                for module in &package.modules {
+                    c.record("module", |c| {
+                        c.field("name", &module.name);
+                        c.field("path", &module.path);
+                        for import in &module.imports {
+                            c.field("import", import);
+                        }
+                        c.field("length", &module.length.to_string());
+                        c.field("sha256", &module.sha256);
+                        c.field(
+                            "projection_source_start",
+                            &module.projection_source_start.to_string(),
+                        );
+                    });
+                }
+            });
+        }
         if let Some(composition) = &self.composition {
             c.record("composition", |c| {
                 c.field("schema", &composition.schema);
@@ -375,6 +536,33 @@ impl ArtifactPlanV1 {
                         }
                     });
                 }
+                for primitive_crate in &composition.primitive_crates {
+                    c.record("primitive_crate", |c| {
+                        c.field("name", &primitive_crate.name);
+                        c.field(
+                            "authored_source_path",
+                            &primitive_crate.authored_source_path,
+                        );
+                        c.field(
+                            "authored_source_length",
+                            &primitive_crate.authored_source_length.to_string(),
+                        );
+                        c.field(
+                            "authored_source_sha256",
+                            &primitive_crate.authored_source_sha256,
+                        );
+                        c.field("crate_source_path", &primitive_crate.crate_source_path);
+                        c.field("crate_source_sha256", &primitive_crate.crate_source_sha256);
+                        c.field("proof_basis", &primitive_crate.proof_basis);
+                        for item in &primitive_crate.items {
+                            c.record("item", |c| {
+                                c.field("name", &item.name);
+                                c.field("kind", &item.kind);
+                                c.field("visibility", &item.visibility);
+                            });
+                        }
+                    });
+                }
                 for item in &composition.inventory {
                     c.record("inventory", |c| {
                         c.field("origin", &item.origin);
@@ -382,6 +570,73 @@ impl ArtifactPlanV1 {
                         c.field("kind", &item.kind);
                         c.field("visibility", &item.visibility);
                         c.field("sha256", &item.sha256);
+                    });
+                }
+                if let Some(registry) = &composition.primitive_registry {
+                    c.record("primitive_registry", |c| {
+                        c.field("schema", &registry.schema);
+                        c.field("path", &registry.path);
+                        c.field("length", &registry.length.to_string());
+                        c.field("sha256", &registry.sha256);
+                        c.field("target_triple", &registry.target.target_triple);
+                        for feature in &registry.target.target_features {
+                            c.field("target_feature", feature);
+                        }
+                        for entry in &registry.entries {
+                            c.record("entry", |c| {
+                                c.field("semantic_name", &entry.semantic_name);
+                                c.field("version", &entry.version.to_string());
+                                c.field("required", if entry.required { "true" } else { "false" });
+                                c.field(
+                                    "reachable",
+                                    if entry.reachable { "true" } else { "false" },
+                                );
+                                c.field("thermite_name", &entry.thermite_name);
+                                c.field("semantic_address", &entry.semantic_address);
+                                c.field("boundary_target", &entry.boundary_target);
+                                c.field("signature", &entry.signature);
+                                c.field("contract_sha256", &entry.contract_sha256);
+                                c.field("effects_sha256", &entry.effects_sha256);
+                                for effect in &entry.effects {
+                                    c.field("effect", effect);
+                                }
+                                for ownership in &entry.parameter_ownership {
+                                    c.field("parameter_ownership", ownership);
+                                }
+                                c.field("result_ownership", &entry.result_ownership);
+                                c.field("implementation_shell", &entry.implementation_shell);
+                                c.field("implementation_item", &entry.implementation_item);
+                                c.field(
+                                    "implementation_source_sha256",
+                                    &entry.implementation_source_sha256,
+                                );
+                                c.field("implementation_linkage", &entry.implementation_linkage);
+                                c.field("implementation_abi", &entry.implementation_abi);
+                                c.field("implementation_symbol", &entry.implementation_symbol);
+                                c.field("alignment", &entry.alignment.to_string());
+                                c.field("model", &entry.model);
+                                c.field("refinement", &entry.refinement);
+                                for obligation in &entry.proof_obligations {
+                                    c.field("proof_obligation", obligation);
+                                }
+                                c.field("concurrency", &entry.concurrency);
+                                for ordering in &entry.memory_orderings {
+                                    c.field("memory_ordering", ordering);
+                                }
+                                c.field("failure", &entry.failure);
+                                c.field(
+                                    "machine_family",
+                                    entry.machine_family.as_deref().unwrap_or(""),
+                                );
+                                c.field(
+                                    "machine_operation",
+                                    entry.machine_operation.as_deref().unwrap_or(""),
+                                );
+                                for assumption in &entry.residual_assumptions {
+                                    c.field("residual_assumption", assumption);
+                                }
+                            });
+                        }
                     });
                 }
             });
@@ -461,6 +716,10 @@ pub struct KernelVstdModelEvidence {
     pub source_file_count: u64,
     pub source_total_bytes: u64,
     pub source_sha256: String,
+    pub atomic_source_path: String,
+    pub atomic_source_sha256: String,
+    pub full_rlib_path: String,
+    pub full_rlib_sha256: String,
     pub link_source_name: String,
     pub link_source_sha256: String,
     pub link_build_args: Vec<String>,
@@ -504,6 +763,7 @@ pub struct CodegenRustcEvidence {
     pub target_triple: String,
     pub target_pointer_width: String,
     pub target_endian: String,
+    pub supported_target_features: Vec<String>,
     pub target_libdir: String,
     pub target_libdir_sha256: String,
     pub target_libdir_file_count: u64,
@@ -534,6 +794,9 @@ impl CodegenRustcEvidence {
         c.field("target_triple", &self.target_triple);
         c.field("target_pointer_width", &self.target_pointer_width);
         c.field("target_endian", &self.target_endian);
+        for feature in &self.supported_target_features {
+            c.field("supported_target_feature", feature);
+        }
         c.field("target_libdir_sha256", &self.target_libdir_sha256);
         c.field(
             "target_libdir_file_count",
@@ -562,12 +825,47 @@ pub struct ToolchainDependency {
 struct CollectedToolchain {
     evidence: ToolchainEvidence,
     dependency_paths: BTreeMap<String, PathBuf>,
+    kernel_machine_vstd_rlib: Option<PathBuf>,
     _kernel_vstd_scratch: Option<ScratchTree>,
 }
 
 impl CollectedToolchain {
     fn dependency_path(&self, name: &str) -> Option<&Path> {
         self.dependency_paths.get(name).map(PathBuf::as_path)
+    }
+
+    fn activate_machine_vstd(&mut self) -> Result<(), ForgeError> {
+        let path =
+            self.kernel_machine_vstd_rlib
+                .as_ref()
+                .ok_or_else(|| ForgeError::VerusOutput {
+                    detail: "machine-aware build has no pinned full vstd rlib".to_string(),
+                })?;
+        let model =
+            self.evidence
+                .kernel_vstd_model
+                .as_ref()
+                .ok_or_else(|| ForgeError::VerusOutput {
+                    detail: "machine-aware build has no pinned kernel vstd model".to_string(),
+                })?;
+        if file_sha256(path)?.2 != model.full_rlib_sha256 {
+            return Err(ForgeError::VerusOutput {
+                detail: "pinned full vstd rlib drifted before machine-aware build".to_string(),
+            });
+        }
+        let dependency = self
+            .evidence
+            .link_dependencies
+            .iter_mut()
+            .find(|dependency| dependency.name == "libvstd.rlib")
+            .ok_or_else(|| ForgeError::VerusOutput {
+                detail: "machine-aware build has no vstd link dependency row".to_string(),
+            })?;
+        dependency.source_path = model.full_rlib_path.clone();
+        dependency.sha256 = model.full_rlib_sha256.clone();
+        self.dependency_paths
+            .insert("libvstd.rlib".to_string(), path.clone());
+        Ok(())
     }
 }
 
@@ -632,6 +930,38 @@ pub struct CompositionReceiptBindingV1 {
     pub direct_verus_set_sha256: String,
     pub inventory_sha256: String,
     pub combined_source_sha256: String,
+    #[serde(default)]
+    pub primitive_crates: Vec<BoundPrimitiveCrateV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub primitive_registry_sha256: Option<String>,
+    #[serde(default)]
+    pub reachable_primitive_count: u64,
+    #[serde(default)]
+    pub discharged_refinement_obligations: u64,
+    #[serde(default)]
+    pub residual_machine_assumptions: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BoundPrimitiveObjectV1 {
+    pub name: String,
+    pub length: u64,
+    pub sha256: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BoundPrimitiveCrateV1 {
+    pub name: String,
+    pub authored_source_sha256: String,
+    pub crate_source_sha256: String,
+    pub verus_result_sha256: String,
+    pub vir_path: String,
+    pub vir_length: u64,
+    pub vir_sha256: String,
+    pub rlib_path: String,
+    pub rlib_length: u64,
+    pub rlib_sha256: String,
+    pub object_members: Vec<BoundPrimitiveObjectV1>,
 }
 
 impl ReceiptBindingV1 {
@@ -722,6 +1052,49 @@ impl ReceiptBindingV1 {
                 c.field(
                     "combined_source_sha256",
                     &composition.combined_source_sha256,
+                );
+                for primitive_crate in &composition.primitive_crates {
+                    c.record("primitive_crate", |c| {
+                        c.field("name", &primitive_crate.name);
+                        c.field(
+                            "authored_source_sha256",
+                            &primitive_crate.authored_source_sha256,
+                        );
+                        c.field("crate_source_sha256", &primitive_crate.crate_source_sha256);
+                        c.field("verus_result_sha256", &primitive_crate.verus_result_sha256);
+                        c.field("vir_path", &primitive_crate.vir_path);
+                        c.field("vir_length", &primitive_crate.vir_length.to_string());
+                        c.field("vir_sha256", &primitive_crate.vir_sha256);
+                        c.field("rlib_path", &primitive_crate.rlib_path);
+                        c.field("rlib_length", &primitive_crate.rlib_length.to_string());
+                        c.field("rlib_sha256", &primitive_crate.rlib_sha256);
+                        for object in &primitive_crate.object_members {
+                            c.record("object", |c| {
+                                c.field("name", &object.name);
+                                c.field("length", &object.length.to_string());
+                                c.field("sha256", &object.sha256);
+                            });
+                        }
+                    });
+                }
+                c.field(
+                    "primitive_registry_sha256",
+                    composition
+                        .primitive_registry_sha256
+                        .as_deref()
+                        .unwrap_or(""),
+                );
+                c.field(
+                    "reachable_primitive_count",
+                    &composition.reachable_primitive_count.to_string(),
+                );
+                c.field(
+                    "discharged_refinement_obligations",
+                    &composition.discharged_refinement_obligations.to_string(),
+                );
+                c.field(
+                    "residual_machine_assumptions",
+                    &composition.residual_machine_assumptions.to_string(),
                 );
             });
         }
@@ -864,6 +1237,1364 @@ fn reject(stage: &str, detail: impl Into<String>) -> VerifiedBuildOutcome {
     }
 }
 
+struct PreparedThermiteInput {
+    raw_source: Vec<u8>,
+    program: Program,
+    package: Option<LoadedPackage>,
+}
+
+/// Freeze either a single source or a canonical package into the exact backend
+/// projection while keeping package-local AST spans as the planning identity.
+fn prepare_thermite_input(path: &Path) -> Result<PreparedThermiteInput, ForgeError> {
+    let loaded = thermite_package::load(path)?;
+    let source_text =
+        std::str::from_utf8(&loaded.bytes).map_err(|error| ForgeError::VerusOutput {
+            detail: format!("Thermite source is not UTF-8: {error}"),
+        })?;
+    let projected = thermite_syntax::parse(source_text);
+    if !projected.is_clean() {
+        return Err(ForgeError::Parse(projected.errors));
+    }
+    let program = match &loaded.package {
+        Some(package) => {
+            if normalized_program_sha256(&package.parsed.program)
+                != normalized_program_sha256(&projected.program)
+            {
+                return Err(ForgeError::Package {
+                    detail:
+                        "independent module parsing disagrees with the canonical backend projection"
+                            .to_string(),
+                });
+            }
+            package.parsed.program.clone()
+        }
+        None => projected.program,
+    };
+    thermite_spec::validate(&program).map_err(ForgeError::Spec)?;
+    thermite_lower::check_effects(&program).map_err(ForgeError::Effects)?;
+    if let Some(package) = &loaded.package {
+        validate_package_resolution(package, &program)?;
+    }
+    Ok(PreparedThermiteInput {
+        raw_source: loaded.bytes,
+        program,
+        package: loaded.package,
+    })
+}
+
+fn default_crate_name(path: &Path, package: Option<&LoadedPackage>) -> String {
+    package.map_or_else(
+        || sanitized_crate_name(path),
+        |package| package.manifest.name.clone(),
+    )
+}
+
+fn validate_package_resolution(
+    package: &LoadedPackage,
+    program: &Program,
+) -> Result<(), ForgeError> {
+    let item_modules: BTreeMap<&str, &str> = program
+        .items
+        .iter()
+        .enumerate()
+        .map(|(index, item)| {
+            let origin = package
+                .parsed
+                .origin(index)
+                .expect("package origins are aligned with package items");
+            (item.name(), origin.module.as_str())
+        })
+        .collect();
+    let imports: BTreeMap<&str, BTreeSet<&str>> = package
+        .manifest
+        .modules
+        .iter()
+        .map(|module| {
+            (
+                module.name.as_str(),
+                module.imports.iter().map(String::as_str).collect(),
+            )
+        })
+        .collect();
+    let require_import = |from_item: &str, referenced_item: &str| -> Result<(), ForgeError> {
+        let Some(from_module) = item_modules.get(from_item).copied() else {
+            return Ok(());
+        };
+        let Some(to_module) = item_modules.get(referenced_item).copied() else {
+            return Ok(());
+        };
+        if from_module != to_module && !imports[from_module].contains(to_module) {
+            return Err(ForgeError::Package {
+                detail: format!(
+                    "module `{from_module}` uses `{referenced_item}` from module `{to_module}` without declaring that import"
+                ),
+            });
+        }
+        Ok(())
+    };
+
+    // Resolve every executable function, not only the requested export closure,
+    // so an allowlisted package cannot hide an unresolved or undeclared
+    // cross-module call in a sibling item.
+    let roots: Vec<String> = program
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Fn(function) => Some(function.name.clone()),
+            _ => None,
+        })
+        .collect();
+    let closure =
+        closure::verified_closure(program, &roots).map_err(|error| ForgeError::Package {
+            detail: error.to_string(),
+        })?;
+    for (from, to) in &closure.edges {
+        require_import(from, to)?;
+    }
+
+    let type_modules: BTreeMap<&str, &str> = program
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Struct(_) | Item::Enum(_) => Some((item.name(), item_modules[item.name()])),
+            _ => None,
+        })
+        .collect();
+    for item in &program.items {
+        let mut referenced = BTreeSet::new();
+        collect_item_named_types(item, &mut referenced);
+        for name in referenced {
+            if type_modules.contains_key(name) {
+                require_import(item.name(), name)?;
+            }
+        }
+    }
+
+    let capacity_modules: BTreeMap<&str, &str> = program
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Const(_) => Some((item.name(), item_modules[item.name()])),
+            _ => None,
+        })
+        .collect();
+    for item in &program.items {
+        let mut referenced = BTreeSet::new();
+        collect_item_capacity_refs(item, &mut referenced);
+        for name in referenced {
+            if capacity_modules.contains_key(name) {
+                require_import(item.name(), name)?;
+            }
+        }
+    }
+
+    // `#[opaque]` is a package construction barrier: verified code in the
+    // declaring module may build the state, while every other module must obtain
+    // it through that module's functions. Resolve the complete item expression
+    // tree, not only the requested export closure, so an unreachable sibling
+    // cannot hide a forged opaque value in a receipt-bound package.
+    let opaque_modules: BTreeMap<&str, &str> = program
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Struct(structure) if structure.opaque => Some((
+                structure.name.as_str(),
+                item_modules[structure.name.as_str()],
+            )),
+            _ => None,
+        })
+        .collect();
+    for (index, item) in program.items.iter().enumerate() {
+        let from_module = package
+            .parsed
+            .origin(index)
+            .expect("package origins are aligned with package items")
+            .module
+            .as_str();
+        let mut constructed = BTreeSet::new();
+        collect_item_struct_literals(item, &mut constructed);
+        for name in constructed {
+            let Some(defining_module) = opaque_modules.get(name).copied() else {
+                continue;
+            };
+            if from_module != defining_module {
+                return Err(ForgeError::Package {
+                    detail: format!(
+                        "module `{from_module}` constructs `#[opaque]` type `{name}` declared in module `{defining_module}`; opaque struct literals are permitted only in the defining module"
+                    ),
+                });
+            }
+        }
+    }
+
+    // Opaque state owns its representation, not only its constructors. Reject
+    // direct field projection/mutation from every foreign package module. A
+    // foreign module may carry the abstract type and call a verified observer or
+    // transition, but it may not depend on the generated crate-visible fields.
+    let record_fields: BTreeMap<String, BTreeMap<String, Type>> = program
+        .items
+        .iter()
+        .filter_map(|item| {
+            let Item::Struct(structure) = item else {
+                return None;
+            };
+            Some((
+                structure.name.clone(),
+                structure
+                    .fields
+                    .iter()
+                    .map(|field| (field.name.clone(), field.ty.clone()))
+                    .collect(),
+            ))
+        })
+        .collect();
+    let call_returns: BTreeMap<String, Type> = program
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Fn(function) => Some((function.name.clone(), function.ret.clone())),
+            Item::SpecFn(function) => Some((function.name.clone(), function.ret.clone())),
+            _ => None,
+        })
+        .collect();
+    let opaque_field_owners: BTreeMap<String, BTreeSet<String>> = program
+        .items
+        .iter()
+        .filter_map(|item| {
+            let Item::Struct(structure) = item else {
+                return None;
+            };
+            structure.opaque.then_some(structure)
+        })
+        .flat_map(|structure| {
+            structure
+                .fields
+                .iter()
+                .map(move |field| (field.name.clone(), structure.name.clone()))
+        })
+        .fold(BTreeMap::new(), |mut fields, (field, owner)| {
+            fields.entry(field).or_default().insert(owner);
+            fields
+        });
+    for (index, item) in program.items.iter().enumerate() {
+        let from_module = package
+            .parsed
+            .origin(index)
+            .expect("package origins are aligned with package items")
+            .module
+            .as_str();
+        let mut accessed = BTreeSet::new();
+        let mut unresolved = BTreeSet::new();
+        collect_item_record_field_owners(
+            item,
+            &record_fields,
+            &call_returns,
+            &mut accessed,
+            &mut unresolved,
+        );
+        for name in accessed {
+            let Some(defining_module) = opaque_modules.get(name.as_str()).copied() else {
+                continue;
+            };
+            if from_module != defining_module {
+                return Err(ForgeError::Package {
+                    detail: format!(
+                        "module `{from_module}` accesses a field of `#[opaque]` type `{name}` declared in module `{defining_module}`; opaque representation reads and writes are permitted only in the defining module"
+                    ),
+                });
+            }
+        }
+        for field in unresolved {
+            let Some(possible_owners) = opaque_field_owners.get(&field) else {
+                continue;
+            };
+            let foreign: Vec<_> = possible_owners
+                .iter()
+                .filter(|owner| {
+                    opaque_modules
+                        .get(owner.as_str())
+                        .is_some_and(|module| *module != from_module)
+                })
+                .cloned()
+                .collect();
+            if !foreign.is_empty() {
+                return Err(ForgeError::Package {
+                    detail: format!(
+                        "module `{from_module}` accesses field `{field}` through a receiver whose record type cannot be resolved before code generation; the field belongs to foreign `#[opaque]` type(s) {}, so the package fails closed rather than permitting an unverified representation access",
+                        foreign.join(", ")
+                    ),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+fn collect_item_record_field_owners(
+    item: &Item,
+    records: &BTreeMap<String, BTreeMap<String, Type>>,
+    call_returns: &BTreeMap<String, Type>,
+    owners: &mut BTreeSet<String>,
+    unresolved: &mut BTreeSet<String>,
+) {
+    match item {
+        Item::Fn(function) => {
+            let mut env: BTreeMap<String, Type> = function
+                .params
+                .iter()
+                .map(|param| (param.name.clone(), param.ty.clone()))
+                .collect();
+            env.insert("result".to_string(), function.ret.clone());
+            collect_expr_record_field_owners(
+                &function.contract.req.expr,
+                &env,
+                records,
+                call_returns,
+                owners,
+                unresolved,
+            );
+            for clause in &function.contract.ens {
+                collect_expr_record_field_owners(
+                    &clause.expr,
+                    &env,
+                    records,
+                    call_returns,
+                    owners,
+                    unresolved,
+                );
+            }
+            if let Some(dec) = &function.dec {
+                collect_expr_record_field_owners(
+                    &dec.expr,
+                    &env,
+                    records,
+                    call_returns,
+                    owners,
+                    unresolved,
+                );
+            }
+            if let Some(body) = &function.body {
+                collect_block_record_field_owners(
+                    body,
+                    &mut env,
+                    records,
+                    call_returns,
+                    owners,
+                    unresolved,
+                );
+            }
+        }
+        Item::SpecFn(function) => {
+            let mut env: BTreeMap<String, Type> = function
+                .params
+                .iter()
+                .map(|param| (param.name.clone(), param.ty.clone()))
+                .collect();
+            collect_expr_record_field_owners(
+                &function.dec.expr,
+                &env,
+                records,
+                call_returns,
+                owners,
+                unresolved,
+            );
+            collect_block_record_field_owners(
+                &function.body,
+                &mut env,
+                records,
+                call_returns,
+                owners,
+                unresolved,
+            );
+        }
+        Item::Struct(structure) => {
+            let env: BTreeMap<String, Type> = structure
+                .fields
+                .iter()
+                .map(|field| (field.name.clone(), field.ty.clone()))
+                .collect();
+            if let Some(inv) = &structure.inv {
+                collect_expr_record_field_owners(
+                    &inv.expr,
+                    &env,
+                    records,
+                    call_returns,
+                    owners,
+                    unresolved,
+                );
+            }
+        }
+        Item::Enum(_) | Item::Const(_) | Item::Forge(_) => {}
+    }
+}
+
+fn collect_block_record_field_owners(
+    block: &Block,
+    env: &mut BTreeMap<String, Type>,
+    records: &BTreeMap<String, BTreeMap<String, Type>>,
+    call_returns: &BTreeMap<String, Type>,
+    owners: &mut BTreeSet<String>,
+    unresolved: &mut BTreeSet<String>,
+) {
+    for statement in &block.stmts {
+        match statement {
+            Stmt::Let { name, ty, init, .. } => {
+                collect_expr_record_field_owners(
+                    init,
+                    env,
+                    records,
+                    call_returns,
+                    owners,
+                    unresolved,
+                );
+                if let Some(ty) = ty
+                    .clone()
+                    .or_else(|| record_value_type(init, env, records, call_returns))
+                {
+                    env.insert(name.clone(), ty);
+                }
+            }
+            Stmt::Assign { target, value } => {
+                collect_expr_record_field_owners(
+                    target,
+                    env,
+                    records,
+                    call_returns,
+                    owners,
+                    unresolved,
+                );
+                collect_expr_record_field_owners(
+                    value,
+                    env,
+                    records,
+                    call_returns,
+                    owners,
+                    unresolved,
+                );
+            }
+            Stmt::Return(Some(value)) | Stmt::Expr(value) => collect_expr_record_field_owners(
+                value,
+                env,
+                records,
+                call_returns,
+                owners,
+                unresolved,
+            ),
+            Stmt::Return(None) | Stmt::Break | Stmt::Continue => {}
+            Stmt::If { cond, then, else_ } => {
+                collect_expr_record_field_owners(
+                    cond,
+                    env,
+                    records,
+                    call_returns,
+                    owners,
+                    unresolved,
+                );
+                collect_block_record_field_owners(
+                    then,
+                    &mut env.clone(),
+                    records,
+                    call_returns,
+                    owners,
+                    unresolved,
+                );
+                if let Some(else_) = else_ {
+                    collect_block_record_field_owners(
+                        else_,
+                        &mut env.clone(),
+                        records,
+                        call_returns,
+                        owners,
+                        unresolved,
+                    );
+                }
+            }
+            Stmt::Loop(node) => {
+                if let thermite_syntax::LoopKind::While(cond) = &node.kind {
+                    collect_expr_record_field_owners(
+                        cond,
+                        env,
+                        records,
+                        call_returns,
+                        owners,
+                        unresolved,
+                    );
+                }
+                for invariant in &node.invs {
+                    collect_expr_record_field_owners(
+                        &invariant.expr,
+                        env,
+                        records,
+                        call_returns,
+                        owners,
+                        unresolved,
+                    );
+                }
+                collect_expr_record_field_owners(
+                    &node.dec.expr,
+                    env,
+                    records,
+                    call_returns,
+                    owners,
+                    unresolved,
+                );
+                collect_block_record_field_owners(
+                    &node.body,
+                    &mut env.clone(),
+                    records,
+                    call_returns,
+                    owners,
+                    unresolved,
+                );
+            }
+        }
+    }
+    if let Some(tail) = &block.tail {
+        collect_expr_record_field_owners(tail, env, records, call_returns, owners, unresolved);
+    }
+}
+
+fn collect_expr_record_field_owners(
+    expr: &Expr,
+    env: &BTreeMap<String, Type>,
+    records: &BTreeMap<String, BTreeMap<String, Type>>,
+    call_returns: &BTreeMap<String, Type>,
+    owners: &mut BTreeSet<String>,
+    unresolved: &mut BTreeSet<String>,
+) {
+    if let Expr::Field { receiver, name } = expr {
+        match record_value_type(receiver, env, records, call_returns).and_then(record_type_name) {
+            Some(owner) => {
+                owners.insert(owner);
+            }
+            None => {
+                unresolved.insert(name.clone());
+            }
+        }
+    }
+    match expr {
+        Expr::Array(values) | Expr::Tuple(values) => {
+            for value in values {
+                collect_expr_record_field_owners(
+                    value,
+                    env,
+                    records,
+                    call_returns,
+                    owners,
+                    unresolved,
+                );
+            }
+        }
+        Expr::ArrayRepeat { value, .. }
+        | Expr::Unary { expr: value, .. }
+        | Expr::Cast { expr: value, .. }
+        | Expr::Ref { expr: value, .. }
+        | Expr::Deref(value)
+        | Expr::TupleProj {
+            receiver: value, ..
+        } => {
+            collect_expr_record_field_owners(value, env, records, call_returns, owners, unresolved)
+        }
+        Expr::Call { callee, args } => {
+            collect_expr_record_field_owners(
+                callee,
+                env,
+                records,
+                call_returns,
+                owners,
+                unresolved,
+            );
+            for arg in args {
+                collect_expr_record_field_owners(
+                    arg,
+                    env,
+                    records,
+                    call_returns,
+                    owners,
+                    unresolved,
+                );
+            }
+        }
+        Expr::MethodCall { receiver, args, .. } => {
+            collect_expr_record_field_owners(
+                receiver,
+                env,
+                records,
+                call_returns,
+                owners,
+                unresolved,
+            );
+            for arg in args {
+                collect_expr_record_field_owners(
+                    arg,
+                    env,
+                    records,
+                    call_returns,
+                    owners,
+                    unresolved,
+                );
+            }
+        }
+        Expr::Field { receiver, .. } => collect_expr_record_field_owners(
+            receiver,
+            env,
+            records,
+            call_returns,
+            owners,
+            unresolved,
+        ),
+        Expr::Binary { lhs, rhs, .. } => {
+            collect_expr_record_field_owners(lhs, env, records, call_returns, owners, unresolved);
+            collect_expr_record_field_owners(rhs, env, records, call_returns, owners, unresolved);
+        }
+        Expr::Index { base, index } => {
+            collect_expr_record_field_owners(base, env, records, call_returns, owners, unresolved);
+            match index {
+                thermite_syntax::IndexArg::Single(index)
+                | thermite_syntax::IndexArg::RangeTo(index)
+                | thermite_syntax::IndexArg::RangeFrom(index) => collect_expr_record_field_owners(
+                    index,
+                    env,
+                    records,
+                    call_returns,
+                    owners,
+                    unresolved,
+                ),
+                thermite_syntax::IndexArg::Range(start, end) => {
+                    collect_expr_record_field_owners(
+                        start,
+                        env,
+                        records,
+                        call_returns,
+                        owners,
+                        unresolved,
+                    );
+                    collect_expr_record_field_owners(
+                        end,
+                        env,
+                        records,
+                        call_returns,
+                        owners,
+                        unresolved,
+                    );
+                }
+            }
+        }
+        Expr::Closure { body, .. } => {
+            collect_expr_record_field_owners(body, env, records, call_returns, owners, unresolved)
+        }
+        Expr::Match { scrutinee, arms } => {
+            collect_expr_record_field_owners(
+                scrutinee,
+                env,
+                records,
+                call_returns,
+                owners,
+                unresolved,
+            );
+            for arm in arms {
+                if let Some(guard) = &arm.guard {
+                    collect_expr_record_field_owners(
+                        guard,
+                        env,
+                        records,
+                        call_returns,
+                        owners,
+                        unresolved,
+                    );
+                }
+                collect_expr_record_field_owners(
+                    &arm.body,
+                    env,
+                    records,
+                    call_returns,
+                    owners,
+                    unresolved,
+                );
+            }
+        }
+        Expr::If { cond, then, else_ } => {
+            collect_expr_record_field_owners(cond, env, records, call_returns, owners, unresolved);
+            collect_block_record_field_owners(
+                then,
+                &mut env.clone(),
+                records,
+                call_returns,
+                owners,
+                unresolved,
+            );
+            collect_block_record_field_owners(
+                else_,
+                &mut env.clone(),
+                records,
+                call_returns,
+                owners,
+                unresolved,
+            );
+        }
+        Expr::StructLit { fields, .. } => {
+            for (_, value) in fields {
+                collect_expr_record_field_owners(
+                    value,
+                    env,
+                    records,
+                    call_returns,
+                    owners,
+                    unresolved,
+                );
+            }
+        }
+        Expr::Is { scrutinee, .. } => collect_expr_record_field_owners(
+            scrutinee,
+            env,
+            records,
+            call_returns,
+            owners,
+            unresolved,
+        ),
+        Expr::Quantifier { domain, body, .. } => {
+            collect_expr_record_field_owners(
+                domain,
+                env,
+                records,
+                call_returns,
+                owners,
+                unresolved,
+            );
+            collect_expr_record_field_owners(body, env, records, call_returns, owners, unresolved);
+        }
+        Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) | Expr::StrLit(_) => {}
+    }
+}
+
+fn record_type_name(ty: Type) -> Option<String> {
+    match ty {
+        Type::Named(name) => Some(name),
+        Type::Ref { inner, .. } => record_type_name(*inner),
+        _ => None,
+    }
+}
+
+fn record_value_type(
+    expr: &Expr,
+    env: &BTreeMap<String, Type>,
+    records: &BTreeMap<String, BTreeMap<String, Type>>,
+    call_returns: &BTreeMap<String, Type>,
+) -> Option<Type> {
+    match expr {
+        Expr::Path(path) if path.len() == 1 => env.get(&path[0]).cloned(),
+        Expr::Ref { mutable, expr } => Some(Type::Ref {
+            mutable: *mutable,
+            inner: Box::new(record_value_type(expr, env, records, call_returns)?),
+        }),
+        Expr::Deref(expr) => match record_value_type(expr, env, records, call_returns)? {
+            Type::Ref { inner, .. } | Type::Box(inner) => Some(*inner),
+            _ => None,
+        },
+        Expr::Call { callee, args }
+            if matches!(callee.as_ref(), Expr::Path(path)
+                if path.len() == 1 && matches!(path[0].as_str(), "old" | "final")) =>
+        {
+            let [arg] = args.as_slice() else {
+                return None;
+            };
+            match record_value_type(arg, env, records, call_returns)? {
+                Type::Ref { inner, .. } => Some(*inner),
+                other => Some(other),
+            }
+        }
+        Expr::Call { callee, .. } => {
+            let Expr::Path(path) = callee.as_ref() else {
+                return None;
+            };
+            let name = path.last()?;
+            call_returns.get(name).cloned()
+        }
+        Expr::Field { receiver, name } => {
+            let receiver = record_value_type(receiver, env, records, call_returns)?;
+            let owner = match receiver {
+                Type::Named(owner) => owner,
+                Type::Ref { inner, .. } => match *inner {
+                    Type::Named(owner) => owner,
+                    _ => return None,
+                },
+                _ => return None,
+            };
+            records.get(&owner)?.get(name).cloned()
+        }
+        Expr::StructLit { path, .. } => {
+            let name = path.last()?;
+            records
+                .contains_key(name)
+                .then(|| Type::Named(name.clone()))
+        }
+        Expr::Tuple(values) => values
+            .iter()
+            .map(|value| record_value_type(value, env, records, call_returns))
+            .collect::<Option<Vec<_>>>()
+            .map(Type::Tuple),
+        Expr::TupleProj { receiver, index } => {
+            let Type::Tuple(elements) = record_value_type(receiver, env, records, call_returns)?
+            else {
+                return None;
+            };
+            elements.get(*index).cloned()
+        }
+        Expr::Index {
+            base,
+            index: thermite_syntax::IndexArg::Single(_),
+        } => {
+            let base = match record_value_type(base, env, records, call_returns)? {
+                Type::Ref { inner, .. } => *inner,
+                other => other,
+            };
+            match base {
+                Type::Array { elem, .. } | Type::Slice(elem) | Type::Vec(elem) => Some(*elem),
+                _ => None,
+            }
+        }
+        Expr::Cast { ty, .. } => Some(ty.clone()),
+        Expr::If { then, else_, .. } => {
+            let then_ty = block_value_type(then, env, records, call_returns)?;
+            let else_ty = block_value_type(else_, env, records, call_returns)?;
+            (then_ty == else_ty).then_some(then_ty)
+        }
+        Expr::Match { arms, .. } => {
+            let mut types = arms
+                .iter()
+                .map(|arm| record_value_type(&arm.body, env, records, call_returns));
+            let first = types.next()??;
+            types
+                .all(|candidate| candidate.as_ref() == Some(&first))
+                .then_some(first)
+        }
+        _ => None,
+    }
+}
+
+fn block_value_type(
+    block: &Block,
+    env: &BTreeMap<String, Type>,
+    records: &BTreeMap<String, BTreeMap<String, Type>>,
+    call_returns: &BTreeMap<String, Type>,
+) -> Option<Type> {
+    let mut env = env.clone();
+    for statement in &block.stmts {
+        if let Stmt::Let { name, ty, init, .. } = statement {
+            let ty = ty
+                .clone()
+                .or_else(|| record_value_type(init, &env, records, call_returns));
+            if let Some(ty) = ty {
+                env.insert(name.clone(), ty);
+            }
+        }
+    }
+    record_value_type(block.tail.as_deref()?, &env, records, call_returns)
+}
+
+fn collect_item_named_types<'a>(item: &'a Item, names: &mut BTreeSet<&'a str>) {
+    match item {
+        Item::Const(_) => {}
+        Item::Fn(function) => collect_signature_named_types(&function.params, &function.ret, names),
+        Item::SpecFn(function) => {
+            collect_signature_named_types(&function.params, &function.ret, names)
+        }
+        Item::Struct(structure) => {
+            for field in &structure.fields {
+                collect_named_types(&field.ty, names);
+            }
+        }
+        Item::Enum(enumeration) => {
+            for variant in &enumeration.variants {
+                match &variant.shape {
+                    thermite_syntax::VariantShape::Unit => {}
+                    thermite_syntax::VariantShape::Tuple(types) => {
+                        for ty in types {
+                            collect_named_types(ty, names);
+                        }
+                    }
+                    thermite_syntax::VariantShape::Struct(fields) => {
+                        for field in fields {
+                            collect_named_types(&field.ty, names);
+                        }
+                    }
+                }
+            }
+        }
+        Item::Forge(ForgeItem::PropFn(function)) => {
+            collect_signature_named_types(&function.params, &function.ret, names)
+        }
+        Item::Forge(ForgeItem::Lemma(lemma)) => {
+            for param in &lemma.params {
+                collect_named_types(&param.ty, names);
+            }
+        }
+        Item::Forge(ForgeItem::Proof(_) | ForgeItem::Witness(_)) => {}
+    }
+}
+
+fn collect_signature_named_types<'a>(
+    params: &'a [thermite_syntax::Param],
+    ret: &'a Type,
+    names: &mut BTreeSet<&'a str>,
+) {
+    for param in params {
+        collect_named_types(&param.ty, names);
+    }
+    collect_named_types(ret, names);
+}
+
+fn collect_named_types<'a>(ty: &'a Type, names: &mut BTreeSet<&'a str>) {
+    match ty {
+        Type::Named(name) => {
+            names.insert(name);
+        }
+        Type::Ref { inner, .. }
+        | Type::Slice(inner)
+        | Type::Generic { arg: inner, .. }
+        | Type::Box(inner)
+        | Type::Vec(inner)
+        | Type::Option(inner) => collect_named_types(inner, names),
+        Type::Array { elem, .. } => collect_named_types(elem, names),
+        Type::Result(ok, err) | Type::Map(ok, err) => {
+            collect_named_types(ok, names);
+            collect_named_types(err, names);
+        }
+        Type::Tuple(types) => {
+            for ty in types {
+                collect_named_types(ty, names);
+            }
+        }
+        Type::Prim(_) | Type::Unit | Type::String => {}
+    }
+}
+
+fn collect_item_capacity_refs<'a>(item: &'a Item, names: &mut BTreeSet<&'a str>) {
+    match item {
+        Item::Const(_) => {}
+        Item::Fn(function) => {
+            collect_signature_capacity_refs(&function.params, &function.ret, names);
+            collect_expr_capacity_refs(&function.contract.req.expr, names);
+            for clause in &function.contract.ens {
+                collect_expr_capacity_refs(&clause.expr, names);
+            }
+            if let Some(clause) = &function.dec {
+                collect_expr_capacity_refs(&clause.expr, names);
+            }
+            if let Some(body) = &function.body {
+                collect_block_capacity_refs(body, names);
+            }
+        }
+        Item::SpecFn(function) => {
+            collect_signature_capacity_refs(&function.params, &function.ret, names);
+            collect_expr_capacity_refs(&function.dec.expr, names);
+            collect_block_capacity_refs(&function.body, names);
+        }
+        Item::Struct(structure) => {
+            for field in &structure.fields {
+                collect_type_capacity_refs(&field.ty, names);
+            }
+            if let Some(inv) = &structure.inv {
+                collect_expr_capacity_refs(&inv.expr, names);
+            }
+        }
+        Item::Enum(enumeration) => {
+            for variant in &enumeration.variants {
+                match &variant.shape {
+                    thermite_syntax::VariantShape::Unit => {}
+                    thermite_syntax::VariantShape::Tuple(types) => {
+                        for ty in types {
+                            collect_type_capacity_refs(ty, names);
+                        }
+                    }
+                    thermite_syntax::VariantShape::Struct(fields) => {
+                        for field in fields {
+                            collect_type_capacity_refs(&field.ty, names);
+                        }
+                    }
+                }
+            }
+        }
+        Item::Forge(ForgeItem::PropFn(function)) => {
+            collect_signature_capacity_refs(&function.params, &function.ret, names);
+            if let Some(dec) = &function.dec {
+                collect_expr_capacity_refs(&dec.expr, names);
+            }
+            collect_block_capacity_refs(&function.body, names);
+        }
+        Item::Forge(ForgeItem::Lemma(lemma)) => {
+            for param in &lemma.params {
+                collect_type_capacity_refs(&param.ty, names);
+            }
+            collect_expr_capacity_refs(&lemma.req.expr, names);
+            for clause in &lemma.ens {
+                collect_expr_capacity_refs(&clause.expr, names);
+            }
+        }
+        Item::Forge(ForgeItem::Proof(_) | ForgeItem::Witness(_)) => {}
+    }
+}
+
+fn collect_signature_capacity_refs<'a>(
+    params: &'a [thermite_syntax::Param],
+    ret: &'a Type,
+    names: &mut BTreeSet<&'a str>,
+) {
+    for param in params {
+        collect_type_capacity_refs(&param.ty, names);
+    }
+    collect_type_capacity_refs(ret, names);
+}
+
+fn collect_array_len_ref<'a>(len: &'a thermite_syntax::ArrayLen, names: &mut BTreeSet<&'a str>) {
+    if let thermite_syntax::ArrayLen::Const(name) = len {
+        names.insert(name);
+    }
+}
+
+fn collect_type_capacity_refs<'a>(ty: &'a Type, names: &mut BTreeSet<&'a str>) {
+    match ty {
+        Type::Array { elem, len } => {
+            collect_array_len_ref(len, names);
+            collect_type_capacity_refs(elem, names);
+        }
+        Type::Ref { inner, .. }
+        | Type::Slice(inner)
+        | Type::Generic { arg: inner, .. }
+        | Type::Box(inner)
+        | Type::Vec(inner)
+        | Type::Option(inner) => collect_type_capacity_refs(inner, names),
+        Type::Result(ok, err) | Type::Map(ok, err) => {
+            collect_type_capacity_refs(ok, names);
+            collect_type_capacity_refs(err, names);
+        }
+        Type::Tuple(types) => {
+            for ty in types {
+                collect_type_capacity_refs(ty, names);
+            }
+        }
+        Type::Prim(_) | Type::Unit | Type::String | Type::Named(_) => {}
+    }
+}
+
+fn collect_block_capacity_refs<'a>(block: &'a Block, names: &mut BTreeSet<&'a str>) {
+    for statement in &block.stmts {
+        collect_stmt_capacity_refs(statement, names);
+    }
+    if let Some(tail) = &block.tail {
+        collect_expr_capacity_refs(tail, names);
+    }
+}
+
+fn collect_stmt_capacity_refs<'a>(statement: &'a Stmt, names: &mut BTreeSet<&'a str>) {
+    match statement {
+        Stmt::Let { ty, init, .. } => {
+            if let Some(ty) = ty {
+                collect_type_capacity_refs(ty, names);
+            }
+            collect_expr_capacity_refs(init, names);
+        }
+        Stmt::Assign { target, value } => {
+            collect_expr_capacity_refs(target, names);
+            collect_expr_capacity_refs(value, names);
+        }
+        Stmt::Return(Some(value)) | Stmt::Expr(value) => {
+            collect_expr_capacity_refs(value, names);
+        }
+        Stmt::Return(None) | Stmt::Break | Stmt::Continue => {}
+        Stmt::If { cond, then, else_ } => {
+            collect_expr_capacity_refs(cond, names);
+            collect_block_capacity_refs(then, names);
+            if let Some(else_) = else_ {
+                collect_block_capacity_refs(else_, names);
+            }
+        }
+        Stmt::Loop(node) => {
+            for inv in &node.invs {
+                collect_expr_capacity_refs(&inv.expr, names);
+            }
+            collect_expr_capacity_refs(&node.dec.expr, names);
+            if let thermite_syntax::LoopKind::While(cond) = &node.kind {
+                collect_expr_capacity_refs(cond, names);
+            }
+            collect_block_capacity_refs(&node.body, names);
+        }
+    }
+}
+
+fn collect_expr_capacity_refs<'a>(expr: &'a Expr, names: &mut BTreeSet<&'a str>) {
+    match expr {
+        Expr::Array(elements) | Expr::Tuple(elements) => {
+            for element in elements {
+                collect_expr_capacity_refs(element, names);
+            }
+        }
+        Expr::ArrayRepeat { value, len } => {
+            collect_array_len_ref(len, names);
+            collect_expr_capacity_refs(value, names);
+        }
+        Expr::Call { callee, args } => {
+            collect_expr_capacity_refs(callee, names);
+            for arg in args {
+                collect_expr_capacity_refs(arg, names);
+            }
+        }
+        Expr::MethodCall { receiver, args, .. } => {
+            collect_expr_capacity_refs(receiver, names);
+            for arg in args {
+                collect_expr_capacity_refs(arg, names);
+            }
+        }
+        Expr::Field { receiver, .. }
+        | Expr::TupleProj { receiver, .. }
+        | Expr::Closure { body: receiver, .. }
+        | Expr::Ref { expr: receiver, .. }
+        | Expr::Deref(receiver)
+        | Expr::Unary { expr: receiver, .. }
+        | Expr::Is {
+            scrutinee: receiver,
+            ..
+        } => collect_expr_capacity_refs(receiver, names),
+        Expr::Match { scrutinee, arms } => {
+            collect_expr_capacity_refs(scrutinee, names);
+            for arm in arms {
+                if let Some(guard) = &arm.guard {
+                    collect_expr_capacity_refs(guard, names);
+                }
+                collect_expr_capacity_refs(&arm.body, names);
+            }
+        }
+        Expr::If { cond, then, else_ } => {
+            collect_expr_capacity_refs(cond, names);
+            collect_block_capacity_refs(then, names);
+            collect_block_capacity_refs(else_, names);
+        }
+        Expr::Binary { lhs, rhs, .. } => {
+            collect_expr_capacity_refs(lhs, names);
+            collect_expr_capacity_refs(rhs, names);
+        }
+        Expr::Index { base, index } => {
+            collect_expr_capacity_refs(base, names);
+            match index {
+                thermite_syntax::IndexArg::Single(index)
+                | thermite_syntax::IndexArg::RangeTo(index)
+                | thermite_syntax::IndexArg::RangeFrom(index) => {
+                    collect_expr_capacity_refs(index, names)
+                }
+                thermite_syntax::IndexArg::Range(start, end) => {
+                    collect_expr_capacity_refs(start, names);
+                    collect_expr_capacity_refs(end, names);
+                }
+            }
+        }
+        Expr::Cast { expr, ty } => {
+            collect_expr_capacity_refs(expr, names);
+            collect_type_capacity_refs(ty, names);
+        }
+        Expr::StructLit { fields, .. } => {
+            for (_, value) in fields {
+                collect_expr_capacity_refs(value, names);
+            }
+        }
+        Expr::Quantifier { domain, body, .. } => {
+            collect_expr_capacity_refs(domain, names);
+            collect_expr_capacity_refs(body, names);
+        }
+        Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) | Expr::StrLit(_) => {}
+    }
+}
+
+fn collect_item_struct_literals<'a>(item: &'a Item, names: &mut BTreeSet<&'a str>) {
+    match item {
+        Item::Const(_) | Item::Enum(_) => {}
+        Item::Fn(function) => {
+            collect_expr_struct_literals(&function.contract.req.expr, names);
+            for clause in &function.contract.ens {
+                collect_expr_struct_literals(&clause.expr, names);
+            }
+            if let Some(dec) = &function.dec {
+                collect_expr_struct_literals(&dec.expr, names);
+            }
+            if let Some(body) = &function.body {
+                collect_block_struct_literals(body, names);
+            }
+        }
+        Item::SpecFn(function) => {
+            collect_expr_struct_literals(&function.dec.expr, names);
+            collect_block_struct_literals(&function.body, names);
+        }
+        Item::Struct(structure) => {
+            if let Some(inv) = &structure.inv {
+                collect_expr_struct_literals(&inv.expr, names);
+            }
+        }
+        Item::Forge(ForgeItem::PropFn(function)) => {
+            if let Some(dec) = &function.dec {
+                collect_expr_struct_literals(&dec.expr, names);
+            }
+            collect_block_struct_literals(&function.body, names);
+        }
+        Item::Forge(ForgeItem::Lemma(lemma)) => {
+            collect_expr_struct_literals(&lemma.req.expr, names);
+            for clause in &lemma.ens {
+                collect_expr_struct_literals(&clause.expr, names);
+            }
+        }
+        // Proof blocks are opaque tactic text at this AST layer and cannot
+        // contain executable Thermite expressions. Witness inhabitants are
+        // parsed expressions and therefore participate in the barrier.
+        Item::Forge(ForgeItem::Proof(_)) => {}
+        Item::Forge(ForgeItem::Witness(witness)) => {
+            for inhabit in &witness.inhabits {
+                for argument in &inhabit.args {
+                    collect_expr_struct_literals(argument, names);
+                }
+            }
+        }
+    }
+}
+
+fn collect_block_struct_literals<'a>(block: &'a Block, names: &mut BTreeSet<&'a str>) {
+    for statement in &block.stmts {
+        match statement {
+            Stmt::Let { init, .. } | Stmt::Expr(init) | Stmt::Return(Some(init)) => {
+                collect_expr_struct_literals(init, names);
+            }
+            Stmt::Assign { target, value } => {
+                collect_expr_struct_literals(target, names);
+                collect_expr_struct_literals(value, names);
+            }
+            Stmt::Return(None) | Stmt::Break | Stmt::Continue => {}
+            Stmt::If { cond, then, else_ } => {
+                collect_expr_struct_literals(cond, names);
+                collect_block_struct_literals(then, names);
+                if let Some(else_) = else_ {
+                    collect_block_struct_literals(else_, names);
+                }
+            }
+            Stmt::Loop(node) => {
+                for inv in &node.invs {
+                    collect_expr_struct_literals(&inv.expr, names);
+                }
+                collect_expr_struct_literals(&node.dec.expr, names);
+                if let thermite_syntax::LoopKind::While(cond) = &node.kind {
+                    collect_expr_struct_literals(cond, names);
+                }
+                collect_block_struct_literals(&node.body, names);
+            }
+        }
+    }
+    if let Some(tail) = &block.tail {
+        collect_expr_struct_literals(tail, names);
+    }
+}
+
+fn collect_expr_struct_literals<'a>(expr: &'a Expr, names: &mut BTreeSet<&'a str>) {
+    match expr {
+        Expr::Array(elements) | Expr::Tuple(elements) => {
+            for element in elements {
+                collect_expr_struct_literals(element, names);
+            }
+        }
+        Expr::ArrayRepeat { value, .. } => collect_expr_struct_literals(value, names),
+        Expr::Call { callee, args } => {
+            collect_expr_struct_literals(callee, names);
+            for argument in args {
+                collect_expr_struct_literals(argument, names);
+            }
+        }
+        Expr::MethodCall { receiver, args, .. } => {
+            collect_expr_struct_literals(receiver, names);
+            for argument in args {
+                collect_expr_struct_literals(argument, names);
+            }
+        }
+        Expr::Field { receiver, .. }
+        | Expr::TupleProj { receiver, .. }
+        | Expr::Closure { body: receiver, .. }
+        | Expr::Ref { expr: receiver, .. }
+        | Expr::Deref(receiver)
+        | Expr::Unary { expr: receiver, .. }
+        | Expr::Is {
+            scrutinee: receiver,
+            ..
+        } => collect_expr_struct_literals(receiver, names),
+        Expr::Match { scrutinee, arms } => {
+            collect_expr_struct_literals(scrutinee, names);
+            for arm in arms {
+                if let Some(guard) = &arm.guard {
+                    collect_expr_struct_literals(guard, names);
+                }
+                collect_expr_struct_literals(&arm.body, names);
+            }
+        }
+        Expr::If { cond, then, else_ } => {
+            collect_expr_struct_literals(cond, names);
+            collect_block_struct_literals(then, names);
+            collect_block_struct_literals(else_, names);
+        }
+        Expr::Binary { lhs, rhs, .. } => {
+            collect_expr_struct_literals(lhs, names);
+            collect_expr_struct_literals(rhs, names);
+        }
+        Expr::Index { base, index } => {
+            collect_expr_struct_literals(base, names);
+            match index {
+                thermite_syntax::IndexArg::Single(index)
+                | thermite_syntax::IndexArg::RangeTo(index)
+                | thermite_syntax::IndexArg::RangeFrom(index) => {
+                    collect_expr_struct_literals(index, names)
+                }
+                thermite_syntax::IndexArg::Range(start, end) => {
+                    collect_expr_struct_literals(start, names);
+                    collect_expr_struct_literals(end, names);
+                }
+            }
+        }
+        Expr::Cast { expr, .. } => collect_expr_struct_literals(expr, names),
+        Expr::StructLit { path, fields } => {
+            if let Some(name) = path.last() {
+                names.insert(name);
+            }
+            for (_, value) in fields {
+                collect_expr_struct_literals(value, names);
+            }
+        }
+        Expr::Quantifier { domain, body, .. } => {
+            collect_expr_struct_literals(domain, names);
+            collect_expr_struct_literals(body, names);
+        }
+        Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) | Expr::StrLit(_) => {}
+    }
+}
+
+fn package_exports_are_roots(package: &LoadedPackage, exports: &[String]) -> Result<(), String> {
+    let roots: BTreeSet<&str> = package.manifest.roots.iter().map(String::as_str).collect();
+    let item_modules: BTreeMap<&str, &str> = package
+        .parsed
+        .program
+        .items
+        .iter()
+        .enumerate()
+        .map(|(index, item)| {
+            (
+                item.name(),
+                package.parsed.origin(index).unwrap().module.as_str(),
+            )
+        })
+        .collect();
+    for export in exports {
+        if let Some(module) = item_modules.get(export.as_str()) {
+            if !roots.contains(module) {
+                return Err(format!(
+                    "export `{export}` is declared in non-root module `{module}`; add that module to package roots or export a root-module API"
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Construct, prove, compile, bind, self-validate, and atomically publish one
 /// correspondence-backed L3 bundle.
 pub fn build_file(
@@ -873,20 +2604,9 @@ pub fn build_file(
     out: Option<&Path>,
     target: VerifiedTarget,
 ) -> Result<VerifiedBuildOutcome, ForgeError> {
-    let raw_source = fs::read(path).map_err(|source| ForgeError::Io {
-        path: path.display().to_string(),
-        source,
-    })?;
-    let source_text =
-        std::str::from_utf8(&raw_source).map_err(|error| ForgeError::VerusOutput {
-            detail: format!("Thermite source is not UTF-8: {error}"),
-        })?;
-    let parsed = thermite_syntax::parse(source_text);
-    if !parsed.is_clean() {
-        return Err(ForgeError::Parse(parsed.errors));
-    }
-    thermite_spec::validate(&parsed.program).map_err(ForgeError::Spec)?;
-    thermite_lower::check_effects(&parsed.program).map_err(ForgeError::Effects)?;
+    let prepared = prepare_thermite_input(path)?;
+    let raw_source = &prepared.raw_source;
+    let program = &prepared.program;
 
     let crate_name = match crate_name {
         Some(name) if valid_crate_name(name) => name.to_string(),
@@ -896,13 +2616,18 @@ pub fn build_file(
                 format!("invalid crate name `{name}`; expected [A-Za-z_][A-Za-z0-9_]*"),
             ))
         }
-        None => sanitized_crate_name(path),
+        None => default_crate_name(path, prepared.package.as_ref()),
     };
     if exports.is_empty() {
         return Ok(reject(
             "plan",
             "an L3 build requires at least one explicit export",
         ));
+    }
+    if let Some(package) = &prepared.package {
+        if let Err(detail) = package_exports_are_roots(package, exports) {
+            return Ok(reject("package-exports", detail));
+        }
     }
     let destination = match out {
         Some(path) => path.to_path_buf(),
@@ -920,18 +2645,18 @@ pub fn build_file(
         ));
     }
 
-    let closure = match closure::verified_closure(&parsed.program, exports) {
+    let closure = match closure::verified_closure(program, exports) {
         Ok(closure) => closure,
         Err(error) => return Ok(reject("closure", error.to_string())),
     };
-    if let Some(detail) = strict_source_checks(&parsed.program, &closure, target) {
+    if let Some(detail) = strict_source_checks(program, &closure, target) {
         return Ok(reject("closure", detail));
     }
 
     let collected_toolchain = collect_toolchain(target)?;
     let toolchain = &collected_toolchain.evidence;
     let planned_exports = match plan_exports(
-        &parsed.program,
+        program,
         &closure.roots,
         &crate_name,
         target,
@@ -942,7 +2667,7 @@ pub fn build_file(
         Ok(exports) => exports,
         Err(detail) => return Ok(reject("exports", detail)),
     };
-    let subprogram = closure_program(&parsed.program, &closure);
+    let subprogram = closure_program(program, &closure);
     let lowering_exports: Vec<L3Export> = planned_exports
         .iter()
         .map(|export| L3Export {
@@ -967,8 +2692,9 @@ pub fn build_file(
     }
 
     let plan = make_plan(PlanInput {
-        raw_source: &raw_source,
-        program: &parsed.program,
+        raw_source,
+        program,
+        package: prepared.package.as_ref(),
         selected_program: &subprogram,
         closure: &closure,
         exports: &planned_exports,
@@ -977,6 +2703,8 @@ pub fn build_file(
         target_triple: &toolchain.target_triple,
         target_pointer_width: &toolchain.target_pointer_width,
         target_endian: &toolchain.target_endian,
+        target_features: &[],
+        verus_imports: &[],
         verus_source: &verus_source,
     });
     let frozen_plan_sha = plan.canonical_sha256();
@@ -1009,44 +2737,38 @@ pub fn build_file(
     // path here would permit a filesystem race between planning and the
     // per-item proof passes even though the final Verus source itself is frozen.
     let frozen_input = ScratchTree::new_in_temp(&format!("verified_input_{crate_name}"))?;
-    let input_name = path
-        .file_name()
-        .filter(|name| !name.is_empty())
-        .unwrap_or_else(|| std::ffi::OsStr::new("input.th"));
-    let frozen_input_path = frozen_input.path.join(input_name);
-    write_bytes(&frozen_input_path, &raw_source)?;
+    let frozen_input_path = frozen_input.path.join("input.th");
+    write_bytes(&frozen_input_path, raw_source)?;
 
     let mut certificates = check::check_file(&frozen_input_path)?;
     inject_certificate_fault(&mut certificates);
-    if let Some(detail) = reject_certificates(&certificates, &closure, &parsed.program) {
+    if let Some(detail) = reject_certificates(&certificates, &closure, program) {
         return Ok(reject("certificates", detail));
     }
 
-    let mut tv = collect_translation_validation(
-        &frozen_input_path,
-        &parsed.program,
-        &closure,
-        &planned_exports,
-    )?;
+    let mut tv =
+        collect_translation_validation(&frozen_input_path, program, &closure, &planned_exports)?;
     inject_tv_fault(&mut tv);
-    if let Some(detail) =
-        reject_translation_validation(&tv, &parsed.program, &closure, &planned_exports)
-    {
+    if let Some(detail) = reject_translation_validation(&tv, program, &closure, &planned_exports) {
         return Ok(reject("translation-validation", detail));
     }
 
     if test_fault("before-verus") {
         return Ok(reject("fault-injection", "injected failure before Verus"));
     }
-    let compiled = compile_verus_source(
-        &crate_name,
-        &verus_source,
+    let compiled = compile_verus_source(CompileVerusInput {
+        crate_name: &crate_name,
+        source: &verus_source,
         target,
-        &toolchain.verus_path,
-        &toolchain.environment,
-        &toolchain.artifact_codegen.canonical_identity_sha256(),
-        collected_toolchain.dependency_path("libvstd.rlib"),
-    )?;
+        verus_path: &toolchain.verus_path,
+        environment: &toolchain.environment,
+        codegen_toolchain_sha256: &toolchain.artifact_codegen.canonical_identity_sha256(),
+        kernel_vstd_rlib: collected_toolchain.dependency_path("libvstd.rlib"),
+        target_features: &[],
+        imports: &[],
+        export_vir: false,
+        kernel_vstd_model: true,
+    })?;
     if !compiled.evidence.success || compiled.evidence.errors != Some(0) {
         return Ok(reject(
             "whole-crate-verus",
@@ -1072,7 +2794,8 @@ pub fn build_file(
         destination: &destination,
         crate_name: &crate_name,
         target,
-        raw_source: &raw_source,
+        raw_source,
+        package: prepared.package.as_ref(),
         plan: &plan,
         plan_sha256: &frozen_plan_sha,
         verus_source: &verus_source,
@@ -1092,11 +2815,17 @@ pub fn build_file(
 
 /// Build one exact-source L3 crate containing canonical Thermite lowering and
 /// one or more closed direct-Verus shell modules.
+#[derive(Clone, Copy)]
+pub struct CompositionSourcePaths<'a> {
+    pub shells: &'a [PathBuf],
+    pub primitive_registry: Option<&'a Path>,
+}
+
 pub fn build_composition_file(
     path: &Path,
     link_exports: &[String],
     composition_exports: &[String],
-    shell_paths: &[PathBuf],
+    sources: CompositionSourcePaths<'_>,
     crate_name: Option<&str>,
     out: Option<&Path>,
     target: VerifiedTarget,
@@ -1105,7 +2834,7 @@ pub fn build_composition_file(
         path,
         link_exports,
         composition_exports,
-        shell_paths,
+        sources,
         crate_name,
         out,
         target,
@@ -1144,6 +2873,7 @@ fn closure_program(program: &Program, closure: &VerifiedClosure) -> Program {
         .items
         .iter()
         .filter(|item| match item {
+            Item::Const(_) => false,
             Item::Fn(f) => closure.functions.contains(&f.name),
             Item::SpecFn(s) => closure.spec_functions.contains(&s.name),
             Item::Struct(_) | Item::Enum(_) | Item::Forge(_) => false,
@@ -1158,6 +2888,10 @@ fn closure_program(program: &Program, closure: &VerifiedClosure) -> Program {
             .items
             .iter()
             .filter(|item| match item {
+                // Capacity declarations are closed compile-time inputs. Keep all
+                // of them in the selected program so isolated lowering never
+                // drops a named length used by a reachable declaration or body.
+                Item::Const(_) => true,
                 Item::Fn(f) => closure.functions.contains(&f.name),
                 Item::SpecFn(s) => closure.spec_functions.contains(&s.name),
                 Item::Struct(s) => adt_names.contains(&s.name),
@@ -1174,6 +2908,15 @@ fn strict_source_checks(
     closure: &VerifiedClosure,
     target: VerifiedTarget,
 ) -> Option<String> {
+    strict_source_checks_with_registered_boundaries(program, closure, target, &BTreeSet::new())
+}
+
+fn strict_source_checks_with_registered_boundaries(
+    program: &Program,
+    closure: &VerifiedClosure,
+    target: VerifiedTarget,
+    registered_boundaries: &BTreeSet<String>,
+) -> Option<String> {
     for item in &program.items {
         match item {
             Item::Fn(f) if closure.functions.contains(&f.name) => {
@@ -1184,7 +2927,9 @@ fn strict_source_checks(
                         f.name
                     ));
                 }
-                if f.boundary.is_some() || f.body.is_none() {
+                if (f.boundary.is_some() || f.body.is_none())
+                    && !registered_boundaries.contains(&f.name)
+                {
                     return Some(format!(
                         "reachable path `{}` crosses #[boundary] function `{}`",
                         closure_path(closure, &f.name).join(" -> "),
@@ -1311,6 +3056,8 @@ fn plan_exports(
     target_endian: &str,
 ) -> Result<Vec<PlannedExport>, String> {
     let mut rows = Vec::new();
+    let structural_structs = thermite_spec::structural_array_equality_structs(program);
+    let mutable_record_structs = thermite_spec::structural_record_mutation_structs(program);
     for name in roots {
         let function = program.items.iter().find_map(|item| match item {
             Item::Fn(f) if &f.name == name => Some(f),
@@ -1319,11 +3066,56 @@ fn plan_exports(
         let Some(function) = function else {
             return Err(format!("unknown executable export `{name}`"));
         };
-        if !function.params.iter().all(|p| supported_public_type(&p.ty))
-            || !supported_public_type(&function.ret)
+        // REQ-L3BUILD-15 rule 2: a closed result enum is admitted at the direct
+        // return root and nowhere else. Naming the offending enum here keeps the
+        // parameter, nested-return, and payload positions separately diagnosable
+        // from the general ABI refusal below.
+        for param in &function.params {
+            if let Some(enumeration) = reachable_enum_name(program, &param.ty) {
+                return Err(format!(
+                    "export `{name}` parameter `{}` reaches enum `{enumeration}`; \
+                     a closed result enum is admitted only as the direct return root",
+                    param.name
+                ));
+            }
+        }
+        let return_admission = result_enum_admission(program, &function.ret, &structural_structs);
+        match &return_admission {
+            ResultEnumAdmission::Refused(cause) => {
+                return Err(format!(
+                    "export `{name}` returns an enum outside the closed result-enum \
+                     public ABI: {cause}"
+                ));
+            }
+            ResultEnumAdmission::NotAnEnum => {
+                if let Some(enumeration) = reachable_enum_name(program, &function.ret) {
+                    return Err(format!(
+                        "export `{name}` returns a type reaching enum `{enumeration}` below \
+                         the return root; a closed result enum is admitted only as the \
+                         direct return root"
+                    ));
+                }
+            }
+            ResultEnumAdmission::Admitted => {}
+        }
+        let return_admitted = matches!(return_admission, ResultEnumAdmission::Admitted)
+            || supported_public_return_type(
+                &function.ret,
+                &structural_structs,
+                &mutable_record_structs,
+            );
+        if !function.params.iter().all(|p| {
+            supported_public_param_type(&p.ty, &structural_structs, &mutable_record_structs)
+        }) || !return_admitted
         {
             return Err(format!(
-                "export `{name}` has a type outside the v1 verified public ABI (primitive scalars and unit only)"
+                "export `{name}` has a type outside the verified public Rust ABI \
+                 (finite plain values and shared/exclusive borrows of primitives, \
+                 slices, fixed arrays with finite plain elements, direct finite \
+                 non-sealed record roots, and a direct-return-root closed enum whose \
+                 variant payloads are finite plain values are supported; sealed, \
+                 recursive, reference-bearing, heap-backed, and nested opaque records \
+                 are rejected)"
             ));
         }
         let wrapped = !matches!(function.contract.req.expr, Expr::BoolLit(true));
@@ -1355,10 +3147,11 @@ fn plan_exports(
             abi_type(&function.ret)
         };
         let signature = format!("fn {public_name}({params})->{return_type}");
+        let layout = public_abi_layout(program, function)?;
         let ownership = function
             .params
             .iter()
-            .map(|_| "by_value".to_string())
+            .map(|param| abi_ownership(&param.ty).to_string())
             .collect::<Vec<_>>();
         let postcondition_ids = function
             .contract
@@ -1368,7 +3161,7 @@ fn plan_exports(
             .map(|(index, _)| format!("{}.ens#{}", function.name, index + 1))
             .collect::<Vec<_>>();
         let abi_preimage = format!(
-            "thermite-rust-abi-v1\0crate={crate_name}\0profile={}\0triple={target_triple}\0pointer_width={target_pointer_width}\0endian={target_endian}\0ownership={}\0{signature}",
+            "thermite-rust-abi-v1\0crate={crate_name}\0profile={}\0triple={target_triple}\0pointer_width={target_pointer_width}\0endian={target_endian}\0ownership={}\0layout={layout}\0{signature}",
             target_name(target),
             ownership.join(",")
         );
@@ -1397,8 +3190,230 @@ fn plan_exports(
     Ok(rows)
 }
 
-fn supported_public_type(ty: &Type) -> bool {
-    matches!(ty, Type::Prim(_) | Type::Unit)
+fn supported_public_param_type(
+    ty: &Type,
+    structural_structs: &BTreeSet<String>,
+    mutable_record_structs: &BTreeSet<String>,
+) -> bool {
+    match ty {
+        Type::Prim(_) | Type::Unit | Type::Tuple(_) | Type::Array { .. } => {
+            supported_public_value_type(ty, structural_structs)
+        }
+        Type::Named(name) => mutable_record_structs.contains(name),
+        Type::Ref { inner, .. } => match inner.as_ref() {
+            Type::Slice(elem) | Type::Array { elem, .. } => {
+                supported_public_storage_element(elem, structural_structs)
+            }
+            Type::Prim(_) => true,
+            Type::Named(name) => mutable_record_structs.contains(name),
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+fn supported_public_return_type(
+    ty: &Type,
+    structural_structs: &BTreeSet<String>,
+    mutable_record_structs: &BTreeSet<String>,
+) -> bool {
+    match ty {
+        Type::Named(name) => mutable_record_structs.contains(name),
+        _ => supported_public_value_type(ty, structural_structs),
+    }
+}
+
+fn supported_public_value_type(ty: &Type, structural_structs: &BTreeSet<String>) -> bool {
+    match ty {
+        Type::Prim(_) | Type::Unit => true,
+        Type::Array { elem, .. } => supported_public_storage_element(elem, structural_structs),
+        Type::Tuple(elements) => elements
+            .iter()
+            .all(|element| supported_public_value_type(element, structural_structs)),
+        Type::Named(name) => structural_structs.contains(name),
+        _ => false,
+    }
+}
+
+fn supported_public_storage_element(ty: &Type, structural_structs: &BTreeSet<String>) -> bool {
+    supported_public_value_type(ty, structural_structs)
+}
+
+/// The closed result-enum decision for one `--export` return type
+/// (`.design/build/l3-verified-artifact.md` REQ-L3BUILD-15, "Admissible
+/// shape").
+enum ResultEnumAdmission {
+    /// The type names no declared `enum`; the record and finite-plain-value
+    /// rules decide it.
+    NotAnEnum,
+    /// The type names a declared `enum` whose every variant payload is an
+    /// already-admitted finite plain value.
+    Admitted,
+    /// The type names a declared `enum` outside the admission rule. The payload
+    /// carries the variant and the stated cause for the `exports` diagnostic.
+    Refused(String),
+}
+
+/// Classify a return-position type against the four-part admission rule.
+///
+/// Rule 1 is the declared-`enum` lookup: Thermite has no open, extensible, or
+/// generic enums, so every variant of a declared name is present in the frozen
+/// plan. Rule 2 belongs to `plan_exports`, which reaches this function only at
+/// the direct return root. Rule 3 is the payload alphabet below. Rule 4 needs no
+/// separate test: `supported_public_value_type` admits a `Type::Named` only when
+/// it is in the finite plain struct closure, and that closure contains no enum
+/// name, so no payload can reach `E` or any other enum.
+fn result_enum_admission(
+    program: &Program,
+    ty: &Type,
+    structural_structs: &BTreeSet<String>,
+) -> ResultEnumAdmission {
+    let Type::Named(name) = ty else {
+        return ResultEnumAdmission::NotAnEnum;
+    };
+    let Some(declaration) = declared_enum(program, name) else {
+        return ResultEnumAdmission::NotAnEnum;
+    };
+    for variant in &declaration.variants {
+        let payloads: Vec<(String, &Type)> = match &variant.shape {
+            VariantShape::Unit => Vec::new(),
+            VariantShape::Tuple(types) => types
+                .iter()
+                .enumerate()
+                .map(|(index, payload)| (index.to_string(), payload))
+                .collect(),
+            VariantShape::Struct(fields) => fields
+                .iter()
+                .map(|field| (field.name.clone(), &field.ty))
+                .collect(),
+        };
+        for (slot, payload) in payloads {
+            if supported_public_value_type(payload, structural_structs) {
+                continue;
+            }
+            return ResultEnumAdmission::Refused(format!(
+                "enum `{name}` variant `{}` payload `{slot}` has type `{}`, which is {}",
+                variant.name,
+                diagnostic_type(payload),
+                public_value_refusal_cause(program, payload, structural_structs)
+            ));
+        }
+    }
+    ResultEnumAdmission::Admitted
+}
+
+/// The stated cause behind refusing one type from the finite plain value
+/// alphabet, in the vocabulary of `.design/build/l3-verified-artifact.md`
+/// "Exports and ABI".
+fn public_value_refusal_cause(
+    program: &Program,
+    ty: &Type,
+    structural_structs: &BTreeSet<String>,
+) -> String {
+    // Rule 4 first, so a payload that cycles back through `Box<E>` reports the
+    // enum it reaches rather than its heap indirection.
+    if let Some(enumeration) = reachable_enum_name(program, ty) {
+        return format!(
+            "a type reaching enum `{enumeration}`; a variant payload may reach no enum"
+        );
+    }
+    match ty {
+        Type::Named(name) => match declared_struct(program, name) {
+            Some(structure) if structure.sealed => "a sealed record".to_string(),
+            Some(structure) if structure.opaque => "an opaque record".to_string(),
+            Some(_) => "a record outside the finite plain value closure".to_string(),
+            None => "an undeclared name".to_string(),
+        },
+        Type::Ref { .. } => "a reference-bearing type".to_string(),
+        Type::Slice(_) => "an unsized slice".to_string(),
+        Type::Box(_) | Type::Vec(_) | Type::String | Type::Map(_, _) => {
+            "a heap-backed type".to_string()
+        }
+        Type::Array { elem, .. } => format!(
+            "an array whose element is {}",
+            public_value_refusal_cause(program, elem, structural_structs)
+        ),
+        Type::Tuple(elements) => elements
+            .iter()
+            .find(|element| !supported_public_value_type(element, structural_structs))
+            .map(|element| {
+                format!(
+                    "a tuple whose component is {}",
+                    public_value_refusal_cause(program, element, structural_structs)
+                )
+            })
+            .unwrap_or_else(|| "a type outside the finite plain value alphabet".to_string()),
+        _ => "a type outside the finite plain value alphabet".to_string(),
+    }
+}
+
+/// The first `enum` name a type reaches in any position, or `None`. This gives
+/// parameter positions and nested return positions the REQ-L3BUILD-15
+/// direct-return-root diagnostic instead of the general ABI refusal. The
+/// `visiting` set bounds a record field cycle the same way `abi_layout_type`
+/// does.
+fn reachable_enum_name(program: &Program, ty: &Type) -> Option<String> {
+    fn walk(program: &Program, ty: &Type, visiting: &mut BTreeSet<String>) -> Option<String> {
+        match ty {
+            Type::Named(name) => {
+                if declared_enum(program, name).is_some() {
+                    return Some(name.clone());
+                }
+                if !visiting.insert(name.clone()) {
+                    return None;
+                }
+                let structure = declared_struct(program, name);
+                let found = structure.and_then(|structure| {
+                    structure
+                        .fields
+                        .iter()
+                        .find_map(|field| walk(program, &field.ty, visiting))
+                });
+                visiting.remove(name);
+                found
+            }
+            Type::Array { elem, .. }
+            | Type::Ref { inner: elem, .. }
+            | Type::Slice(elem)
+            | Type::Box(elem)
+            | Type::Vec(elem)
+            | Type::Option(elem)
+            | Type::Generic { arg: elem, .. } => walk(program, elem, visiting),
+            Type::Tuple(elements) => elements
+                .iter()
+                .find_map(|element| walk(program, element, visiting)),
+            Type::Result(left, right) | Type::Map(left, right) => {
+                walk(program, left, visiting).or_else(|| walk(program, right, visiting))
+            }
+            Type::Prim(_) | Type::Unit | Type::String => None,
+        }
+    }
+    walk(program, ty, &mut BTreeSet::new())
+}
+
+fn declared_enum<'a>(program: &'a Program, name: &str) -> Option<&'a thermite_syntax::EnumItem> {
+    program.items.iter().find_map(|item| match item {
+        Item::Enum(declaration) if declaration.name == name => Some(declaration),
+        _ => None,
+    })
+}
+
+fn declared_struct<'a>(
+    program: &'a Program,
+    name: &str,
+) -> Option<&'a thermite_syntax::StructItem> {
+    program.items.iter().find_map(|item| match item {
+        Item::Struct(structure) if structure.name == name => Some(structure),
+        _ => None,
+    })
+}
+
+fn abi_ownership(ty: &Type) -> &'static str {
+    match ty {
+        Type::Ref { mutable: true, .. } => "exclusive_borrow",
+        Type::Ref { mutable: false, .. } => "shared_borrow",
+        _ => "by_value",
+    }
 }
 
 fn abi_type(ty: &Type) -> String {
@@ -1410,8 +3425,212 @@ fn abi_type(ty: &Type) -> String {
         Type::Prim(PrimType::Usize) => "usize".to_string(),
         Type::Prim(PrimType::Bool) => "bool".to_string(),
         Type::Unit => "()".to_string(),
+        Type::Array { elem, len } => format!(
+            "[{};{}]",
+            abi_type(elem),
+            match len {
+                thermite_syntax::ArrayLen::Literal { value, .. } => value.to_string(),
+                thermite_syntax::ArrayLen::Const(name) => name.clone(),
+            }
+        ),
+        Type::Ref { mutable, inner } => {
+            let borrow = if *mutable { "&mut " } else { "&" };
+            format!("{borrow}{}", abi_type(inner))
+        }
+        Type::Slice(elem) => format!("[{}]", abi_type(elem)),
+        Type::Tuple(elements) => format!(
+            "({})",
+            elements.iter().map(abi_type).collect::<Vec<_>>().join(",")
+        ),
+        Type::Named(name) => name.clone(),
         other => format!("unsupported:{other:?}"),
     }
+}
+
+/// A readable source-level spelling of a type for an `exports`-stage refusal.
+/// `abi_type` renders the admitted alphabet and tags everything else
+/// `unsupported:<debug>`, which keeps a fingerprint preimage fail-loud but reads
+/// poorly in a diagnostic. This function stays out of every hashed preimage.
+fn diagnostic_type(ty: &Type) -> String {
+    match ty {
+        Type::Prim(_) | Type::Unit | Type::Named(_) => abi_type(ty),
+        Type::Array { elem, len } => format!(
+            "[{};{}]",
+            diagnostic_type(elem),
+            match len {
+                thermite_syntax::ArrayLen::Literal { value, .. } => value.to_string(),
+                thermite_syntax::ArrayLen::Const(name) => name.clone(),
+            }
+        ),
+        Type::Ref { mutable, inner } => format!(
+            "{}{}",
+            if *mutable { "&mut " } else { "&" },
+            diagnostic_type(inner)
+        ),
+        Type::Slice(elem) => format!("[{}]", diagnostic_type(elem)),
+        Type::Tuple(elements) => format!(
+            "({})",
+            elements
+                .iter()
+                .map(diagnostic_type)
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
+        Type::Box(inner) => format!("Box<{}>", diagnostic_type(inner)),
+        Type::Vec(inner) => format!("Vec<{}>", diagnostic_type(inner)),
+        Type::Option(inner) => format!("Option<{}>", diagnostic_type(inner)),
+        Type::Generic { name, arg } => format!("{name}<{}>", diagnostic_type(arg)),
+        Type::Result(ok, err) => {
+            format!("Result<{},{}>", diagnostic_type(ok), diagnostic_type(err))
+        }
+        Type::Map(key, value) => {
+            format!("Map<{},{}>", diagnostic_type(key), diagnostic_type(value))
+        }
+        Type::String => "String".to_string(),
+    }
+}
+
+/// Canonical transitive layout preimage for one public Rust export. Display
+/// types intentionally preserve authored capacity names for diagnostics, but an
+/// ABI fingerprint must change when the bound value of such a name or any field
+/// in a reachable plain record changes. The exact compiler and target are added
+/// by `plan_exports`; this function binds the source-level layout graph.
+fn public_abi_layout(
+    program: &Program,
+    function: &thermite_syntax::FnItem,
+) -> Result<String, String> {
+    let mut visiting = BTreeSet::new();
+    let params = function
+        .params
+        .iter()
+        .map(|param| {
+            abi_layout_type(program, &param.ty, &mut visiting)
+                .map(|layout| format!("{}:{layout}", param.name))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let result = abi_layout_type(program, &function.ret, &mut visiting)?;
+    Ok(format!("params({})->{result}", params.join(",")))
+}
+
+fn abi_layout_type(
+    program: &Program,
+    ty: &Type,
+    visiting: &mut BTreeSet<String>,
+) -> Result<String, String> {
+    match ty {
+        Type::Prim(_) | Type::Unit => Ok(abi_type(ty)),
+        Type::Array { elem, len } => {
+            let length = match len {
+                thermite_syntax::ArrayLen::Literal { value, .. } => *value,
+                thermite_syntax::ArrayLen::Const(name) => program
+                    .items
+                    .iter()
+                    .find_map(|item| match item {
+                        Item::Const(value) if value.name == *name => Some(value.value),
+                        _ => None,
+                    })
+                    .ok_or_else(|| format!("public ABI references unresolved capacity `{name}`"))?,
+            };
+            Ok(format!(
+                "array[{length};{}]",
+                abi_layout_type(program, elem, visiting)?
+            ))
+        }
+        Type::Tuple(elements) => Ok(format!(
+            "tuple{}({})",
+            elements.len(),
+            elements
+                .iter()
+                .map(|element| abi_layout_type(program, element, visiting))
+                .collect::<Result<Vec<_>, _>>()?
+                .join(",")
+        )),
+        Type::Named(name) => {
+            if !visiting.insert(name.clone()) {
+                return Err(format!(
+                    "public ABI record layout is recursive through `{name}`"
+                ));
+            }
+            let layout = named_abi_layout(program, name, visiting);
+            visiting.remove(name);
+            layout
+        }
+        Type::Ref { mutable, inner } => Ok(format!(
+            "ref:{}({})",
+            if *mutable { "mut" } else { "shared" },
+            abi_layout_type(program, inner, visiting)?
+        )),
+        Type::Slice(elem) => Ok(format!(
+            "slice({})",
+            abi_layout_type(program, elem, visiting)?
+        )),
+        other => Err(format!(
+            "public ABI layout cannot encode unsupported type {other:?}"
+        )),
+    }
+}
+
+/// The layout preimage for one declared `struct` or `enum` name. The caller owns
+/// the `visiting` guard, so a cycle through either kind reports one recursion
+/// diagnostic. The enum form follows `.design/build/l3-verified-artifact.md`
+/// "Layout rule": source-order variant tags with recursively expanded payloads,
+/// so renaming a variant, reordering variants, changing a payload type or field
+/// order, and changing a resolved capacity each change the export fingerprint.
+fn named_abi_layout(
+    program: &Program,
+    name: &str,
+    visiting: &mut BTreeSet<String>,
+) -> Result<String, String> {
+    if let Some(structure) = declared_struct(program, name) {
+        let fields = structure
+            .fields
+            .iter()
+            .map(|field| {
+                abi_layout_type(program, &field.ty, visiting)
+                    .map(|layout| format!("{}:{layout}", field.name))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        return Ok(format!(
+            "struct:{name}:sealed={}:opaque={}{{{}}}",
+            structure.sealed,
+            structure.opaque,
+            fields.join(",")
+        ));
+    }
+    if let Some(declaration) = declared_enum(program, name) {
+        let entries = declaration
+            .variants
+            .iter()
+            .enumerate()
+            .map(|(index, variant)| {
+                let payload = match &variant.shape {
+                    VariantShape::Unit => "unit".to_string(),
+                    VariantShape::Tuple(types) => format!(
+                        "tuple({})",
+                        types
+                            .iter()
+                            .map(|ty| abi_layout_type(program, ty, visiting))
+                            .collect::<Result<Vec<_>, _>>()?
+                            .join(",")
+                    ),
+                    VariantShape::Struct(fields) => format!(
+                        "struct{{{}}}",
+                        fields
+                            .iter()
+                            .map(|field| {
+                                abi_layout_type(program, &field.ty, visiting)
+                                    .map(|layout| format!("{}:{layout}", field.name))
+                            })
+                            .collect::<Result<Vec<_>, _>>()?
+                            .join(",")
+                    ),
+                };
+                Ok(format!("{index}:{}:{payload}", variant.name))
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        return Ok(format!("enum:{name}{{{}}}", entries.join(",")));
+    }
+    Err(format!("public ABI names undeclared record `{name}`"))
 }
 
 fn executable_precondition(expr: &Expr) -> bool {
@@ -1421,6 +3640,11 @@ fn executable_precondition(expr: &Expr) -> bool {
             executable_precondition(lhs) && executable_precondition(rhs)
         }
         Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => executable_precondition(expr),
+        Expr::MethodCall {
+            receiver,
+            name,
+            args,
+        } if name == "len" && args.is_empty() => executable_precondition(receiver),
         _ => false,
     }
 }
@@ -1428,6 +3652,7 @@ fn executable_precondition(expr: &Expr) -> bool {
 struct PlanInput<'a> {
     raw_source: &'a [u8],
     program: &'a Program,
+    package: Option<&'a LoadedPackage>,
     selected_program: &'a Program,
     closure: &'a VerifiedClosure,
     exports: &'a [PlannedExport],
@@ -1436,6 +3661,8 @@ struct PlanInput<'a> {
     target_triple: &'a str,
     target_pointer_width: &'a str,
     target_endian: &'a str,
+    target_features: &'a [String],
+    verus_imports: &'a [String],
     verus_source: &'a str,
 }
 
@@ -1443,6 +3670,7 @@ fn make_plan(input: PlanInput<'_>) -> ArtifactPlanV1 {
     let PlanInput {
         raw_source,
         program,
+        package,
         selected_program,
         closure,
         exports,
@@ -1451,12 +3679,20 @@ fn make_plan(input: PlanInput<'_>) -> ArtifactPlanV1 {
         target_triple,
         target_pointer_width,
         target_endian,
+        target_features,
+        verus_imports,
         verus_source,
     } = input;
     let mut nodes = Vec::new();
     let mut dispositions = Vec::new();
-    for item in &program.items {
+    for (item_index, item) in program.items.iter().enumerate() {
         let (included, kind) = match item {
+            Item::Const(c) => (
+                selected_program.items.iter().any(
+                    |candidate| matches!(candidate, Item::Const(other) if other.name == c.name),
+                ),
+                "const",
+            ),
             Item::Fn(f) => (closure.functions.contains(&f.name), "fn"),
             Item::SpecFn(s) => (closure.spec_functions.contains(&s.name), "spec_fn"),
             Item::Struct(s) => (
@@ -1498,6 +3734,12 @@ fn make_plan(input: PlanInput<'_>) -> ArtifactPlanV1 {
                 kind: kind.to_string(),
                 source_start,
                 source_end,
+                source_module: package
+                    .and_then(|package| package.parsed.origin(item_index))
+                    .map(|origin| origin.module.clone()),
+                source_path: package
+                    .and_then(|package| package.parsed.origin(item_index))
+                    .map(|origin| origin.path.clone()),
                 item_sha256: sha256(format!("{item:#?}").as_bytes()),
                 body_sha256,
                 contract_sha256,
@@ -1512,6 +3754,8 @@ fn make_plan(input: PlanInput<'_>) -> ArtifactPlanV1 {
             kind: "verified_export_wrapper".to_string(),
             source_start: None,
             source_end: None,
+            source_module: None,
+            source_path: None,
             item_sha256: sha256(export.signature.as_bytes()),
             body_sha256: Some(sha256(
                 format!("total-result-wrapper:{}", export.thermite_name).as_bytes(),
@@ -1533,6 +3777,8 @@ fn make_plan(input: PlanInput<'_>) -> ArtifactPlanV1 {
             kind: "generated_runtime_type".to_string(),
             source_start: None,
             source_end: None,
+            source_module: None,
+            source_path: None,
             item_sha256: sha256(b"pub enum ThermiteContractError { Precondition }"),
             body_sha256: None,
             contract_sha256: None,
@@ -1564,7 +3810,14 @@ fn make_plan(input: PlanInput<'_>) -> ArtifactPlanV1 {
         target_endian: target_endian.to_string(),
         crate_type: "rlib".to_string(),
         panic_strategy: "abort".to_string(),
-        expected_verus_args: expected_verus_args(crate_name, target),
+        expected_verus_args: expected_verus_args(
+            crate_name,
+            target,
+            target_features,
+            verus_imports,
+            false,
+            true,
+        ),
         exports: exports.to_vec(),
         closure_nodes: nodes,
         closure_edges: edges,
@@ -1575,7 +3828,39 @@ fn make_plan(input: PlanInput<'_>) -> ArtifactPlanV1 {
             .collect(),
         expected_tv_inventory,
         expected_verus_source_sha256: sha256(verus_source.as_bytes()),
+        package: package.map(package_plan),
         composition: None,
+    }
+}
+
+fn package_plan(package: &LoadedPackage) -> PackagePlanV1 {
+    let mapped: BTreeMap<&str, &thermite_package::PackageSourceMapModuleV1> = package
+        .source_map
+        .modules
+        .iter()
+        .map(|module| (module.name.as_str(), module))
+        .collect();
+    PackagePlanV1 {
+        schema: package.manifest.schema.clone(),
+        name: package.manifest.name.clone(),
+        manifest_sha256: sha256(&package.manifest_bytes),
+        source_map_sha256: sha256(&package.source_map_bytes),
+        roots: package.manifest.roots.clone(),
+        modules: package
+            .modules
+            .iter()
+            .map(|module| {
+                let source_map = mapped[module.declaration.name.as_str()];
+                PlannedPackageModuleV1 {
+                    name: module.declaration.name.clone(),
+                    path: module.declaration.path.clone(),
+                    imports: module.declaration.imports.clone(),
+                    length: module.bytes.len() as u64,
+                    sha256: source_map.source_sha256.clone(),
+                    projection_source_start: source_map.projection_source_start,
+                }
+            })
+            .collect(),
     }
 }
 
@@ -1589,6 +3874,13 @@ struct PlannedNodeParts {
 
 fn planned_node_parts(item: &Item) -> PlannedNodeParts {
     match item {
+        Item::Const(item) => PlannedNodeParts {
+            source_start: Some(item.span.start as u64),
+            source_end: Some(item.span.end() as u64),
+            body_sha256: Some(sha256(format!("{}:{}", item.name, item.value).as_bytes())),
+            contract_sha256: None,
+            effects_sha256: None,
+        },
         Item::Fn(function) => PlannedNodeParts {
             source_start: Some(function.span.start as u64),
             source_end: Some(function.span.end() as u64),
@@ -1640,6 +3932,15 @@ fn reject_certificates(
     closure: &VerifiedClosure,
     program: &Program,
 ) -> Option<String> {
+    reject_certificates_with_registered_boundaries(certs, closure, program, &BTreeSet::new())
+}
+
+fn reject_certificates_with_registered_boundaries(
+    certs: &[Certificate],
+    closure: &VerifiedClosure,
+    program: &Program,
+    registered_boundaries: &BTreeSet<String>,
+) -> Option<String> {
     let required: BTreeSet<&str> = closure
         .functions
         .iter()
@@ -1652,6 +3953,7 @@ fn reject_certificates(
             .iter()
             .find(|item| item.name() == name)
             .and_then(|item| match item {
+                Item::Const(item) => Some((item.span.start, item.span.end())),
                 Item::Fn(item) => Some((item.span.start, item.span.end())),
                 Item::SpecFn(item) => Some((item.span.start, item.span.end())),
                 Item::Struct(item) => Some((item.span.start, item.span.end())),
@@ -1665,6 +3967,23 @@ fn reject_certificates(
                 "missing certificate for reachable node `{name}`{source_range}"
             ));
         };
+        if registered_boundaries.contains(name) {
+            if cert.level != Level::L1
+                || !cert.boundary
+                || cert.slag
+                || cert.lowered_assurance
+                || cert.reject.is_some()
+                || cert
+                    .obligations
+                    .iter()
+                    .any(|obligation| obligation.status == ObligationStatus::Failed)
+            {
+                return Some(format!(
+                    "registered boundary `{name}` does not carry the exact declared L1 boundary certificate completed by composition"
+                ));
+            }
+            continue;
+        }
         if cert.level < Level::L3 {
             let proof_diagnostic = cert
                 .obligations
@@ -1694,8 +4013,14 @@ fn reject_certificates(
                 "reachable node `{name}` has degraded, rejected, slag, or boundary evidence"
             ));
         }
-        if !matches!(cert.assurance_scope, None | Some(AssuranceScope::EndToEnd)) {
-            return Some(format!("reachable node `{name}` is not end-to-end"));
+        match &cert.assurance_scope {
+            None | Some(AssuranceScope::EndToEnd) => {}
+            Some(AssuranceScope::ToBoundary { via }) if registered_boundaries.contains(via) => {}
+            Some(AssuranceScope::ToBoundary { .. }) => {
+                return Some(format!(
+                    "reachable node `{name}` crosses an unregistered boundary"
+                ));
+            }
         }
         if cert
             .obligations
@@ -1759,10 +4084,12 @@ fn inject_certificate_fault(certificates: &mut Vec<Certificate>) {
     }
 }
 
-fn assurance_aggregate(
+fn assurance_aggregate_with_registered_boundaries(
     certificates: &[Certificate],
     closure: &VerifiedClosure,
     exports: &[PlannedExport],
+    registered_boundaries: &BTreeSet<String>,
+    machine_boundaries: &BTreeSet<String>,
 ) -> Result<AssuranceAggregate, ForgeError> {
     let required: BTreeSet<&str> = closure
         .functions
@@ -1779,16 +4106,36 @@ fn assurance_aggregate(
             .ok_or_else(|| ForgeError::VerusOutput {
                 detail: format!("missing certificate while aggregating `{name}`"),
             })?;
-        minimum = minimum.min(certificate.level);
+        let achieved = if machine_boundaries.contains(name) {
+            minimum = minimum.min(Level::L1);
+            "L1-residual-machine-assumption".to_string()
+        } else if registered_boundaries.contains(name) {
+            minimum = minimum.min(Level::L3);
+            "L3-direct-refinement".to_string()
+        } else {
+            minimum = minimum.min(certificate.level);
+            level_name(certificate.level).to_string()
+        };
         members.push(AssuranceMember {
             name: name.to_string(),
-            kind: if closure.functions.contains(name) {
+            kind: if machine_boundaries.contains(name) {
+                "frozen_machine_boundary".to_string()
+            } else if registered_boundaries.contains(name) {
+                "frozen_primitive_boundary".to_string()
+            } else if closure.functions.contains(name) {
                 "executable".to_string()
             } else {
                 "specification".to_string()
             },
-            achieved: level_name(certificate.level).to_string(),
+            achieved,
         });
+        if machine_boundaries.contains(name) {
+            members.push(AssuranceMember {
+                name: format!("{name}::checked_wrapper"),
+                kind: "machine_refinement_wrapper".to_string(),
+                achieved: "L3-relative-to-pinned-machine-model".to_string(),
+            });
+        }
     }
     for export in exports.iter().filter(|export| export.wrapped) {
         minimum = minimum.min(Level::L3);
@@ -1800,16 +4147,35 @@ fn assurance_aggregate(
     }
     members.sort_by(|left, right| left.name.cmp(&right.name).then(left.kind.cmp(&right.kind)));
     let minimum_reachable = level_name(minimum).to_string();
-    if minimum < Level::L3 {
+    if machine_boundaries.is_empty() && minimum < Level::L3 {
         return Err(ForgeError::VerusOutput {
             detail: format!("verified artifact aggregate fell below L3 at {minimum_reachable}"),
         });
     }
+    if !machine_boundaries.is_empty() && minimum != Level::L1 {
+        return Err(ForgeError::VerusOutput {
+            detail: format!(
+                "machine-aware artifact must retain an L1 residual boundary, observed {minimum_reachable}"
+            ),
+        });
+    }
     Ok(AssuranceAggregate {
-        headline: "L3".to_string(),
-        cap: "L3".to_string(),
+        headline: if machine_boundaries.is_empty() {
+            "L3".to_string()
+        } else {
+            "L1".to_string()
+        },
+        cap: if machine_boundaries.is_empty() {
+            "L3".to_string()
+        } else {
+            "L1-machine-residual".to_string()
+        },
         minimum_reachable,
-        scope: "end_to_end".to_string(),
+        scope: if machine_boundaries.is_empty() {
+            "end_to_end".to_string()
+        } else {
+            "to_machine_boundary".to_string()
+        },
         members,
     })
 }
@@ -1844,8 +4210,12 @@ fn collect_translation_validation(
         }) else {
             continue;
         };
-        let result =
-            crate::exec_tv::exec_tv_export_guard(function, DEFAULT_SOLVER_SEED, DEFAULT_RLIMIT);
+        let result = crate::exec_tv::exec_tv_export_guard(
+            program,
+            function,
+            DEFAULT_SOLVER_SEED,
+            DEFAULT_RLIMIT,
+        );
         let (verdict, detail) = match result.verdict {
             ExecVerdict::Faithful => ("faithful", None),
             ExecVerdict::Divergent { detail } => ("divergent", Some(detail)),
@@ -2031,7 +4401,11 @@ fn expected_tv_inventory(
             let mut let_index = 0;
             for stmt in &body.stmts {
                 match stmt {
-                    Stmt::Let { .. } => {
+                    Stmt::Let {
+                        ty: Some(_), init, ..
+                    } if !crate::exec_tv::expr_contains_body_control(init)
+                        && !crate::exec_tv::is_direct_body_state_call(program, init) =>
+                    {
                         let_index += 1;
                         expect_tv(
                             &mut expected,
@@ -2039,13 +4413,24 @@ fn expected_tv_inventory(
                             format!("{}.let#{let_index}", function.name),
                         );
                     }
-                    Stmt::Return(Some(_)) => {
+                    Stmt::Let { .. } => {
+                        // Body-TV owns control-flow values; still advance the
+                        // source-order label counter used for later leaf lets.
+                        let_index += 1;
+                    }
+                    Stmt::Return(Some(value))
+                        if !crate::exec_tv::expr_contains_body_control(value)
+                            && !crate::exec_tv::is_direct_body_state_call(program, value) =>
+                    {
                         expect_tv(&mut expected, "exec", format!("{}.return", function.name))
                     }
                     _ => {}
                 }
             }
-            if body.tail.is_some() {
+            if body.tail.as_deref().is_some_and(|tail| {
+                !crate::exec_tv::expr_contains_body_control(tail)
+                    && !crate::exec_tv::is_direct_body_state_call(program, tail)
+            }) {
                 expect_tv(&mut expected, "exec", format!("{}.tail", function.name));
             }
             let body_label = if matches!(body.stmts.last(), Some(Stmt::Loop(_))) {
@@ -2159,6 +4544,7 @@ fn collect_toolchain(target: VerifiedTarget) -> Result<CollectedToolchain, Forge
     let mut dependency_paths = BTreeMap::new();
     let mut kernel_vstd_model = None;
     let mut kernel_vstd_scratch = None;
+    let mut kernel_machine_vstd_rlib = None;
     let verus_dir = verus.parent().ok_or_else(|| ForgeError::VerusOutput {
         detail: "the resolved Verus binary has no installation directory".to_string(),
     })?;
@@ -2168,6 +4554,7 @@ fn collect_toolchain(target: VerifiedTarget) -> Result<CollectedToolchain, Forge
         link_dependencies.push(dependency);
         kernel_vstd_model = Some(model);
         kernel_vstd_scratch = Some(scratch);
+        kernel_machine_vstd_rlib = Some(verus_dir.join("libvstd.rlib"));
     } else {
         let path = verus_dir.join("libvstd.rlib");
         if !path.is_file() {
@@ -2243,6 +4630,7 @@ fn collect_toolchain(target: VerifiedTarget) -> Result<CollectedToolchain, Forge
     Ok(CollectedToolchain {
         evidence,
         dependency_paths,
+        kernel_machine_vstd_rlib,
         _kernel_vstd_scratch: kernel_vstd_scratch,
     })
 }
@@ -2269,7 +4657,9 @@ fn build_kernel_vstd_link(
 ) -> Result<(ScratchTree, ToolchainDependency, KernelVstdModelEvidence), ForgeError> {
     let vir = verus_dir.join("vstd.vir");
     let source_root = verus_dir.join("vstd");
-    if !vir.is_file() || !source_root.is_dir() {
+    let atomic_source = source_root.join("atomic.rs");
+    let full_rlib = verus_dir.join("libvstd.rlib");
+    if !vir.is_file() || !source_root.is_dir() || !atomic_source.is_file() || !full_rlib.is_file() {
         return Err(ForgeError::VerusOutput {
             detail: format!(
                 "kernel slice model requires `{}` and `{}`",
@@ -2331,6 +4721,10 @@ fn build_kernel_vstd_link(
         source_file_count,
         source_total_bytes,
         source_sha256,
+        atomic_source_path: atomic_source.display().to_string(),
+        atomic_source_sha256: file_sha256(&atomic_source)?.2,
+        full_rlib_path: full_rlib.display().to_string(),
+        full_rlib_sha256: file_sha256(&full_rlib)?.2,
         link_source_name: KERNEL_VSTD_LINK_SOURCE_NAME.to_string(),
         link_source_sha256: sha256(KERNEL_VSTD_LINK_SOURCE.as_bytes()),
         link_build_args: kernel_vstd_link_build_args(),
@@ -2423,6 +4817,12 @@ fn collect_codegen_rustc(
     )?;
     let target_pointer_width = rustc_cfg_value(&cfg, "target_pointer_width")?;
     let target_endian = rustc_cfg_value(&cfg, "target_endian")?;
+    let supported_target_features = parse_rustc_target_features(&rustup_command_text(
+        rustup,
+        &rustup_toolchain,
+        &["rustc", "--print", "target-features"],
+        "Verus codegen rustc --print target-features",
+    )?)?;
     let sysroot_text = rustup_command_text(
         rustup,
         &rustup_toolchain,
@@ -2507,6 +4907,7 @@ fn collect_codegen_rustc(
         target_triple,
         target_pointer_width,
         target_endian,
+        supported_target_features,
         target_libdir: target_libdir.display().to_string(),
         target_libdir_sha256,
         target_libdir_file_count,
@@ -2568,6 +4969,51 @@ fn rustc_cfg_value(cfg: &str, key: &str) -> Result<String, ForgeError> {
         .ok_or_else(|| ForgeError::VerusOutput {
             detail: format!("codegen rustc cfg omitted `{key}`"),
         })
+}
+
+fn parse_rustc_target_features(output: &str) -> Result<Vec<String>, ForgeError> {
+    let mut features = Vec::new();
+    for line in output.lines() {
+        let Some((name, _description)) = line.trim().split_once(" - ") else {
+            continue;
+        };
+        let name = name.trim();
+        if name.is_empty()
+            || !name
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.'))
+        {
+            return Err(ForgeError::VerusOutput {
+                detail: format!(
+                    "codegen rustc --print target-features emitted invalid name `{name}`"
+                ),
+            });
+        }
+        features.push(name.to_string());
+    }
+    features.sort();
+    if features.is_empty() || features.windows(2).any(|pair| pair[0] == pair[1]) {
+        return Err(ForgeError::VerusOutput {
+            detail: "codegen rustc target-feature inventory is empty or contains duplicates"
+                .to_string(),
+        });
+    }
+    Ok(features)
+}
+
+fn require_supported_target_features(
+    requested: &[String],
+    supported: &[String],
+) -> Result<(), String> {
+    if let Some(feature) = requested
+        .iter()
+        .find(|feature| supported.binary_search(feature).is_err())
+    {
+        return Err(format!(
+            "primitive registry target feature `{feature}` is not in the pinned codegen rustc target-feature inventory"
+        ));
+    }
+    Ok(())
 }
 
 fn component_manifest_largest(
@@ -2747,6 +5193,20 @@ fn validate_codegen_evidence(toolchain: &ToolchainEvidence) -> Result<(), String
     {
         return Err("recorded target-library or rlib-linker policy is invalid".to_string());
     }
+    if codegen.supported_target_features.is_empty()
+        || codegen
+            .supported_target_features
+            .windows(2)
+            .any(|pair| pair[0] >= pair[1])
+        || codegen.supported_target_features.iter().any(|feature| {
+            feature.is_empty()
+                || !feature
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.'))
+        })
+    {
+        return Err("recorded target-feature inventory is not canonical".to_string());
+    }
     for (label, digest) in [
         ("host rustc", toolchain.host_rustc.rustc_sha256.as_str()),
         ("codegen rustc", codegen.rustc_sha256.as_str()),
@@ -2838,24 +5298,73 @@ fn command_text(command: &mut Command, label: &str) -> Result<String, ForgeError
 struct CompiledVerus {
     artifact: Vec<u8>,
     artifact_name: String,
+    exported_vir: Option<Vec<u8>>,
+    object_members: Vec<BoundPrimitiveObjectV1>,
     evidence: VerusEvidence,
 }
 
-fn compile_verus_source(
-    crate_name: &str,
-    source: &str,
+struct VerusImportBytes<'a> {
+    name: &'a str,
+    vir: &'a [u8],
+    rlib: &'a [u8],
+}
+
+struct CompileVerusInput<'a> {
+    crate_name: &'a str,
+    source: &'a str,
     target: VerifiedTarget,
-    verus_path: &str,
-    environment: &BTreeMap<String, String>,
-    codegen_toolchain_sha256: &str,
-    kernel_vstd_rlib: Option<&Path>,
-) -> Result<CompiledVerus, ForgeError> {
+    verus_path: &'a str,
+    environment: &'a BTreeMap<String, String>,
+    codegen_toolchain_sha256: &'a str,
+    kernel_vstd_rlib: Option<&'a Path>,
+    target_features: &'a [String],
+    imports: &'a [VerusImportBytes<'a>],
+    export_vir: bool,
+    kernel_vstd_model: bool,
+}
+
+fn compile_verus_source(input: CompileVerusInput<'_>) -> Result<CompiledVerus, ForgeError> {
+    let CompileVerusInput {
+        crate_name,
+        source,
+        target,
+        verus_path,
+        environment,
+        codegen_toolchain_sha256,
+        kernel_vstd_rlib,
+        target_features,
+        imports,
+        export_vir,
+        kernel_vstd_model,
+    } = input;
+    let import_names: Vec<String> = imports
+        .iter()
+        .map(|import| import.name.to_string())
+        .collect();
+    let args = expected_verus_args(
+        crate_name,
+        target,
+        target_features,
+        &import_names,
+        export_vir,
+        kernel_vstd_model,
+    );
     let scratch = ScratchTree::new_in_temp(&format!("verified_{crate_name}"))?;
     let source_name = format!("{crate_name}.rs");
     let source_path = scratch.path.join(&source_name);
     write_bytes(&source_path, source.as_bytes())?;
     let before = file_sha256(&source_path)?.2;
-    let args = expected_verus_args(crate_name, target);
+    if !imports.is_empty() {
+        let deps = scratch.path.join("deps");
+        fs::create_dir(&deps).map_err(|source| ForgeError::Io {
+            path: deps.display().to_string(),
+            source,
+        })?;
+        for import in imports {
+            write_bytes(&deps.join(format!("{}.vir", import.name)), import.vir)?;
+            write_bytes(&deps.join(format!("lib{}.rlib", import.name)), import.rlib)?;
+        }
+    }
     let mut command = Command::new(verus_path);
     for arg in &args[..args.len() - 2] {
         match arg.as_str() {
@@ -2925,6 +5434,8 @@ fn compile_verus_source(
         return Ok(CompiledVerus {
             artifact: Vec::new(),
             artifact_name: format!("lib{crate_name}.rlib"),
+            exported_vir: None,
+            object_members: Vec::new(),
             evidence,
         });
     }
@@ -2962,22 +5473,54 @@ fn compile_verus_source(
         path: artifact_path.display().to_string(),
         source,
     })?;
+    let exported_vir = if export_vir {
+        let path = scratch.path.join(format!("{crate_name}.vir"));
+        Some(fs::read(&path).map_err(|source| ForgeError::Io {
+            path: path.display().to_string(),
+            source,
+        })?)
+    } else {
+        None
+    };
+    let object_members = archive_object_members(&artifact)?;
     Ok(CompiledVerus {
         artifact,
         artifact_name,
+        exported_vir,
+        object_members,
         evidence,
     })
 }
 
-fn expected_verus_args(crate_name: &str, target: VerifiedTarget) -> Vec<String> {
+fn expected_verus_args(
+    crate_name: &str,
+    target: VerifiedTarget,
+    target_features: &[String],
+    imports: &[String],
+    export_vir: bool,
+    kernel_vstd_model: bool,
+) -> Vec<String> {
     let mut args = vec!["--output-json".to_string(), "--profile".to_string()];
+    if export_vir {
+        args.extend(["--export".to_string(), format!("{crate_name}.vir")]);
+    }
     if matches!(target, VerifiedTarget::Kernel) {
+        args.push("--no-vstd".to_string());
+        if kernel_vstd_model {
+            args.extend([
+                "--import".to_string(),
+                "vstd=<KERNEL_VSTD_VIR>".to_string(),
+                "--extern".to_string(),
+                "vstd=<KERNEL_VSTD_RLIB>".to_string(),
+            ]);
+        }
+    }
+    for import in imports {
         args.extend([
-            "--no-vstd".to_string(),
             "--import".to_string(),
-            "vstd=<KERNEL_VSTD_VIR>".to_string(),
+            format!("{import}=deps/{import}.vir"),
             "--extern".to_string(),
-            "vstd=<KERNEL_VSTD_RLIB>".to_string(),
+            format!("{import}=deps/lib{import}.rlib"),
         ]);
     }
     args.extend([
@@ -2989,10 +5532,165 @@ fn expected_verus_args(crate_name: &str, target: VerifiedTarget) -> Vec<String> 
         format!("smt.random_seed={DEFAULT_SOLVER_SEED}"),
         "-C".to_string(),
         "panic=abort".to_string(),
+    ]);
+    if !target_features.is_empty() {
+        args.extend([
+            "-C".to_string(),
+            format!(
+                "target-feature={}",
+                target_features
+                    .iter()
+                    .map(|feature| format!("+{feature}"))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ),
+        ]);
+    }
+    args.extend([
         "--remap-path-prefix=<SCRATCH>=.".to_string(),
         format!("{crate_name}.rs"),
     ]);
     args
+}
+
+fn archive_object_members(bytes: &[u8]) -> Result<Vec<BoundPrimitiveObjectV1>, ForgeError> {
+    const MAGIC: &[u8] = b"!<arch>\n";
+    if !bytes.starts_with(MAGIC) {
+        return Err(ForgeError::VerusOutput {
+            detail: "Verus rlib is not a canonical ar archive".to_string(),
+        });
+    }
+    struct RawMember<'a> {
+        name: String,
+        data: &'a [u8],
+    }
+    let mut raw_members = Vec::new();
+    let mut string_table: Option<&[u8]> = None;
+    let mut offset = MAGIC.len();
+    while offset < bytes.len() {
+        if bytes.len() - offset < 60 {
+            return Err(ForgeError::VerusOutput {
+                detail: "Verus rlib has a truncated ar member header".to_string(),
+            });
+        }
+        let header = &bytes[offset..offset + 60];
+        if &header[58..60] != b"`\n" {
+            return Err(ForgeError::VerusOutput {
+                detail: "Verus rlib has an invalid ar member header".to_string(),
+            });
+        }
+        let raw_name = std::str::from_utf8(&header[..16])
+            .map_err(|_| ForgeError::VerusOutput {
+                detail: "Verus rlib has a non-UTF-8 ar member name".to_string(),
+            })?
+            .trim()
+            .to_string();
+        let size = std::str::from_utf8(&header[48..58])
+            .ok()
+            .map(str::trim)
+            .and_then(|value| value.parse::<usize>().ok())
+            .ok_or_else(|| ForgeError::VerusOutput {
+                detail: "Verus rlib has an invalid ar member size".to_string(),
+            })?;
+        let data_start = offset + 60;
+        let data_end = data_start
+            .checked_add(size)
+            .ok_or_else(|| ForgeError::VerusOutput {
+                detail: "Verus rlib ar member size overflow".to_string(),
+            })?;
+        if data_end > bytes.len() {
+            return Err(ForgeError::VerusOutput {
+                detail: "Verus rlib has a truncated ar member".to_string(),
+            });
+        }
+        let data = &bytes[data_start..data_end];
+        if raw_name == "//" {
+            string_table = Some(data);
+        } else {
+            raw_members.push(RawMember {
+                name: raw_name,
+                data,
+            });
+        }
+        offset = data_end + (size & 1);
+    }
+    if offset != bytes.len() {
+        return Err(ForgeError::VerusOutput {
+            detail: "Verus rlib has invalid ar alignment padding".to_string(),
+        });
+    }
+
+    let mut rows = Vec::new();
+    let mut names = BTreeSet::new();
+    for member in raw_members {
+        let (name, data) =
+            if let Some(length) = member.name.strip_prefix("#1/") {
+                let length = length
+                    .parse::<usize>()
+                    .map_err(|_| ForgeError::VerusOutput {
+                        detail: "Verus rlib has an invalid BSD extended member name".to_string(),
+                    })?;
+                if length > member.data.len() {
+                    return Err(ForgeError::VerusOutput {
+                        detail: "Verus rlib has a truncated BSD extended member name".to_string(),
+                    });
+                }
+                let name = std::str::from_utf8(&member.data[..length])
+                    .map_err(|_| ForgeError::VerusOutput {
+                        detail: "Verus rlib has a non-UTF-8 BSD extended member name".to_string(),
+                    })?
+                    .trim_end_matches('\0')
+                    .to_string();
+                (name, &member.data[length..])
+            } else if let Some(table_offset) = member.name.strip_prefix('/').filter(|suffix| {
+                !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_digit())
+            }) {
+                let table_offset =
+                    table_offset
+                        .parse::<usize>()
+                        .map_err(|_| ForgeError::VerusOutput {
+                            detail: "Verus rlib has an invalid GNU name-table offset".to_string(),
+                        })?;
+                let table = string_table.ok_or_else(|| ForgeError::VerusOutput {
+                    detail: "Verus rlib references a missing GNU name table".to_string(),
+                })?;
+                let tail = table
+                    .get(table_offset..)
+                    .ok_or_else(|| ForgeError::VerusOutput {
+                        detail: "Verus rlib GNU name-table offset is out of bounds".to_string(),
+                    })?;
+                let end = tail
+                    .windows(2)
+                    .position(|window| window == b"/\n")
+                    .or_else(|| tail.iter().position(|byte| *byte == 0))
+                    .ok_or_else(|| ForgeError::VerusOutput {
+                        detail: "Verus rlib has an unterminated GNU member name".to_string(),
+                    })?;
+                let name = std::str::from_utf8(&tail[..end])
+                    .map_err(|_| ForgeError::VerusOutput {
+                        detail: "Verus rlib has a non-UTF-8 GNU member name".to_string(),
+                    })?
+                    .to_string();
+                (name, member.data)
+            } else {
+                (member.name.trim_end_matches('/').to_string(), member.data)
+            };
+        if !name.ends_with(".o") {
+            continue;
+        }
+        if !names.insert(name.clone()) {
+            return Err(ForgeError::VerusOutput {
+                detail: format!("Verus rlib has duplicate object member `{name}`"),
+            });
+        }
+        rows.push(BoundPrimitiveObjectV1 {
+            name,
+            length: data.len() as u64,
+            sha256: sha256(data),
+        });
+    }
+    rows.sort_by(|left, right| left.name.cmp(&right.name));
+    Ok(rows)
 }
 
 fn parse_verus_summary(stdout: &str) -> (bool, Option<u64>) {
@@ -3047,6 +5745,7 @@ struct StageInput<'a> {
     crate_name: &'a str,
     target: VerifiedTarget,
     raw_source: &'a [u8],
+    package: Option<&'a LoadedPackage>,
     plan: &'a ArtifactPlanV1,
     plan_sha256: &'a str,
     verus_source: &'a str,
@@ -3061,6 +5760,9 @@ struct StageInput<'a> {
 struct CompositionStageInput<'a> {
     lowered_thermite: &'a str,
     shell_sources: &'a [DirectVerusSource],
+    primitive_registry: Option<&'a primitive_registry::PrimitiveRegistrySource>,
+    primitive_crates: &'a [PrimitiveCrateSource],
+    compiled_primitive_crates: &'a [CompiledVerus],
 }
 
 fn stage_and_publish(input: StageInput<'_>) -> Result<VerifiedBuildReceiptV1, ForgeError> {
@@ -3069,6 +5771,7 @@ fn stage_and_publish(input: StageInput<'_>) -> Result<VerifiedBuildReceiptV1, Fo
         crate_name,
         target,
         raw_source,
+        package,
         plan,
         plan_sha256,
         verus_source,
@@ -3113,8 +5816,12 @@ fn stage_and_publish(input: StageInput<'_>) -> Result<VerifiedBuildReceiptV1, Fo
     let verus_json = pretty_json(&compiled.evidence, "whole-crate Verus evidence")?;
     let toolchain_json = pretty_json(toolchain, "toolchain evidence")?;
     write_bytes(&evidence.join("input.th"), raw_source)?;
+    if let Some(package) = package {
+        thermite_package::write_evidence(&stage.path, package)?;
+    }
     write_bytes(&evidence.join("artifact-plan.v1"), plan_json.as_bytes())?;
     write_bytes(&evidence.join("source.verus.rs"), verus_source.as_bytes())?;
+    let mut bound_primitive_crates = Vec::new();
     if let Some(composition) = &composition {
         let shell_dir = evidence.join("direct-verus");
         fs::create_dir_all(&shell_dir).map_err(|source| ForgeError::Io {
@@ -3127,6 +5834,134 @@ fn stage_and_publish(input: StageInput<'_>) -> Result<VerifiedBuildReceiptV1, Fo
         )?;
         for shell in composition.shell_sources {
             write_bytes(&stage.path.join(&shell.plan.path), &shell.bytes)?;
+        }
+        if composition.primitive_crates.len() != composition.compiled_primitive_crates.len() {
+            return Err(ForgeError::VerusOutput {
+                detail: "separate primitive source/codegen cardinality mismatch".to_string(),
+            });
+        }
+        for (source, compiled_primitive) in composition
+            .primitive_crates
+            .iter()
+            .zip(composition.compiled_primitive_crates)
+        {
+            let primitive_dir = stage.path.join(
+                Path::new(&source.plan.authored_source_path)
+                    .parent()
+                    .ok_or_else(|| ForgeError::VerusOutput {
+                        detail: "separate primitive authored source has no parent".to_string(),
+                    })?,
+            );
+            fs::create_dir_all(&primitive_dir).map_err(|source_error| ForgeError::Io {
+                path: primitive_dir.display().to_string(),
+                source: source_error,
+            })?;
+            write_bytes(
+                &stage.path.join(&source.plan.authored_source_path),
+                &source.authored_bytes,
+            )?;
+            write_bytes(
+                &stage.path.join(&source.plan.crate_source_path),
+                source.crate_source.as_bytes(),
+            )?;
+            let verus_result_path = format!(
+                "{}/verus-result.json",
+                Path::new(&source.plan.authored_source_path)
+                    .parent()
+                    .unwrap()
+                    .to_string_lossy()
+                    .replace('\\', "/")
+            );
+            let verus_result = pretty_json(
+                &compiled_primitive.evidence,
+                "separate primitive Verus evidence",
+            )?;
+            write_bytes(
+                &stage.path.join(&verus_result_path),
+                verus_result.as_bytes(),
+            )?;
+            let vir = compiled_primitive.exported_vir.as_ref().ok_or_else(|| {
+                ForgeError::VerusOutput {
+                    detail: format!(
+                        "separate primitive crate `{}` has no exported Verus interface",
+                        source.plan.name
+                    ),
+                }
+            })?;
+            let vir_path = format!(
+                "{}/interface.vir",
+                Path::new(&source.plan.authored_source_path)
+                    .parent()
+                    .unwrap()
+                    .to_string_lossy()
+                    .replace('\\', "/")
+            );
+            write_bytes(&stage.path.join(&vir_path), vir)?;
+            let rlib_path = format!("artifact/deps/lib{}.rlib", source.plan.name);
+            if compiled_primitive.artifact_name != format!("lib{}.rlib", source.plan.name) {
+                return Err(ForgeError::VerusOutput {
+                    detail: format!(
+                        "separate primitive crate `{}` emitted unexpected artifact `{}`",
+                        source.plan.name, compiled_primitive.artifact_name
+                    ),
+                });
+            }
+            write_bytes(&stage.path.join(&rlib_path), &compiled_primitive.artifact)?;
+            bound_primitive_crates.push(BoundPrimitiveCrateV1 {
+                name: source.plan.name.clone(),
+                authored_source_sha256: source.plan.authored_source_sha256.clone(),
+                crate_source_sha256: source.plan.crate_source_sha256.clone(),
+                verus_result_sha256: sha256(verus_result.as_bytes()),
+                vir_path,
+                vir_length: vir.len() as u64,
+                vir_sha256: sha256(vir),
+                rlib_path,
+                rlib_length: compiled_primitive.artifact.len() as u64,
+                rlib_sha256: sha256(&compiled_primitive.artifact),
+                object_members: compiled_primitive.object_members.clone(),
+            });
+        }
+        if composition
+            .primitive_crates
+            .iter()
+            .any(|source| source.plan.proof_basis == "pinned_vstd_machine_model")
+        {
+            let model =
+                toolchain
+                    .kernel_vstd_model
+                    .as_ref()
+                    .ok_or_else(|| ForgeError::VerusOutput {
+                        detail: "machine primitive composition has no pinned kernel vstd model"
+                            .to_string(),
+                    })?;
+            let atomic_source =
+                fs::read(&model.atomic_source_path).map_err(|source| ForgeError::Io {
+                    path: model.atomic_source_path.clone(),
+                    source,
+                })?;
+            if sha256(&atomic_source) != model.atomic_source_sha256 {
+                return Err(ForgeError::VerusOutput {
+                    detail: "pinned vstd atomic source or full codegen rlib changed during machine composition"
+                        .to_string(),
+                });
+            }
+            fs::create_dir_all(stage.path.join("evidence/machine-models")).map_err(|source| {
+                ForgeError::Io {
+                    path: stage
+                        .path
+                        .join("evidence/machine-models")
+                        .display()
+                        .to_string(),
+                    source,
+                }
+            })?;
+            write_bytes(
+                &stage.path.join(MACHINE_ATOMIC_MODEL_SOURCE_PATH),
+                &atomic_source,
+            )?;
+        }
+        if let Some(registry) = composition.primitive_registry {
+            write_bytes(&stage.path.join(&registry.plan.path), &registry.bytes)?;
         }
     }
     write_bytes(&evidence.join("certificates.json"), cert_json.as_bytes())?;
@@ -3194,29 +6029,58 @@ fn stage_and_publish(input: StageInput<'_>) -> Result<VerifiedBuildReceiptV1, Fo
         length: artifact_file.length,
         sha256: artifact_file.sha256,
     };
-    let assurance_aggregate = assurance_aggregate(
+    let staged_closure = VerifiedClosure {
+        roots: plan_roots(plan),
+        functions: plan
+            .closure_nodes
+            .iter()
+            .filter(|node| node.kind == "fn")
+            .map(|node| node.name.clone())
+            .collect(),
+        spec_functions: plan
+            .closure_nodes
+            .iter()
+            .filter(|node| node.kind == "spec_fn")
+            .map(|node| node.name.clone())
+            .collect(),
+        edges: plan
+            .closure_edges
+            .iter()
+            .map(|edge| (edge[0].clone(), edge[1].clone()))
+            .collect(),
+    };
+    let registered_boundaries: BTreeSet<String> = plan
+        .composition
+        .as_ref()
+        .and_then(|composition| composition.primitive_registry.as_ref())
+        .map(|registry| {
+            registry
+                .entries
+                .iter()
+                .filter(|entry| entry.reachable)
+                .map(|entry| entry.thermite_name.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+    let machine_boundaries: BTreeSet<String> = plan
+        .composition
+        .as_ref()
+        .and_then(|composition| composition.primitive_registry.as_ref())
+        .map(|registry| {
+            registry
+                .entries
+                .iter()
+                .filter(|entry| entry.reachable && entry.machine_family.is_some())
+                .map(|entry| entry.thermite_name.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+    let assurance_aggregate = assurance_aggregate_with_registered_boundaries(
         certificates,
-        &VerifiedClosure {
-            roots: plan_roots(plan),
-            functions: plan
-                .closure_nodes
-                .iter()
-                .filter(|node| node.kind == "fn")
-                .map(|node| node.name.clone())
-                .collect(),
-            spec_functions: plan
-                .closure_nodes
-                .iter()
-                .filter(|node| node.kind == "spec_fn")
-                .map(|node| node.name.clone())
-                .collect(),
-            edges: plan
-                .closure_edges
-                .iter()
-                .map(|edge| (edge[0].clone(), edge[1].clone()))
-                .collect(),
-        },
+        &staged_closure,
         &plan.exports,
+        &registered_boundaries,
+        &machine_boundaries,
     )?;
     let injected_mutation = match std::env::var("THERMITE_L3_TEST_FAULT").as_deref() {
         Ok("after-artifact-hash") if cfg!(debug_assertions) => Some(artifact_relative.as_str()),
@@ -3247,11 +6111,51 @@ fn stage_and_publish(input: StageInput<'_>) -> Result<VerifiedBuildReceiptV1, Fo
                 direct_verus_set_sha256: canonical_shell_set_sha256(&composition.shell_modules),
                 inventory_sha256: canonical_composition_inventory_sha256(&composition.inventory),
                 combined_source_sha256: composition.combined_source_sha256.clone(),
+                primitive_crates: bound_primitive_crates.clone(),
+                primitive_registry_sha256: composition
+                    .primitive_registry
+                    .as_ref()
+                    .map(|registry| registry.sha256.clone()),
+                reachable_primitive_count: composition
+                    .primitive_registry
+                    .as_ref()
+                    .map(|registry| {
+                        registry
+                            .entries
+                            .iter()
+                            .filter(|entry| entry.reachable)
+                            .count() as u64
+                    })
+                    .unwrap_or(0),
+                discharged_refinement_obligations: composition
+                    .primitive_registry
+                    .as_ref()
+                    .map(|registry| {
+                        registry
+                            .entries
+                            .iter()
+                            .filter(|entry| entry.reachable)
+                            .map(|entry| entry.proof_obligations.len() as u64)
+                            .sum()
+                    })
+                    .unwrap_or(0),
+                residual_machine_assumptions: composition
+                    .primitive_registry
+                    .as_ref()
+                    .map(|registry| {
+                        registry
+                            .entries
+                            .iter()
+                            .filter(|entry| entry.reachable)
+                            .map(|entry| entry.residual_assumptions.len() as u64)
+                            .sum()
+                    })
+                    .unwrap_or(0),
             });
     let binding = ReceiptBindingV1 {
         schema: receipt_schema.to_string(),
-        assurance: "L3".to_string(),
-        scope: "end_to_end".to_string(),
+        assurance: assurance_aggregate.headline.clone(),
+        scope: assurance_aggregate.scope.clone(),
         plan_sha256: plan_sha256.to_string(),
         raw_source_sha256: plan.raw_source_sha256.clone(),
         parsed_program_sha256: plan.parsed_program_sha256.clone(),
@@ -3423,7 +6327,12 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
             detail: "verified-build binding digest mismatch".to_string(),
         });
     }
-    let mandatory_policy = if composition_receipt {
+    let mandatory_policy = if composition_receipt
+        && receipt.binding.scope == "to_machine_boundary"
+        && receipt.binding.assurance == "L1"
+    {
+        MACHINE_COMPOSITION_STRICT_GATES
+    } else if composition_receipt {
         COMPOSITION_STRICT_GATES
     } else {
         STRICT_GATES
@@ -3513,6 +6422,49 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
                     != canonical_composition_inventory_sha256(&composition.inventory)
                 || binding.combined_source_sha256 != composition.combined_source_sha256
                 || composition.combined_source_sha256 != plan.expected_verus_source_sha256
+                || binding.primitive_registry_sha256
+                    != composition
+                        .primitive_registry
+                        .as_ref()
+                        .map(|registry| registry.sha256.clone())
+                || binding.reachable_primitive_count
+                    != composition
+                        .primitive_registry
+                        .as_ref()
+                        .map(|registry| {
+                            registry
+                                .entries
+                                .iter()
+                                .filter(|entry| entry.reachable)
+                                .count() as u64
+                        })
+                        .unwrap_or(0)
+                || binding.discharged_refinement_obligations
+                    != composition
+                        .primitive_registry
+                        .as_ref()
+                        .map(|registry| {
+                            registry
+                                .entries
+                                .iter()
+                                .filter(|entry| entry.reachable)
+                                .map(|entry| entry.proof_obligations.len() as u64)
+                                .sum()
+                        })
+                        .unwrap_or(0)
+                || binding.residual_machine_assumptions
+                    != composition
+                        .primitive_registry
+                        .as_ref()
+                        .map(|registry| {
+                            registry
+                                .entries
+                                .iter()
+                                .filter(|entry| entry.reachable)
+                                .map(|entry| entry.residual_assumptions.len() as u64)
+                                .sum()
+                        })
+                        .unwrap_or(0)
             {
                 return Err(ForgeError::VerusOutput {
                     detail: "composition receipt binding disagrees with its combined artifact plan"
@@ -3526,8 +6478,24 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
             })
         }
     }
-    if receipt.binding.assurance != "L3"
-        || receipt.binding.scope != "end_to_end"
+    let has_machine_boundaries = plan
+        .composition
+        .as_ref()
+        .and_then(|composition| composition.primitive_registry.as_ref())
+        .is_some_and(|registry| {
+            registry
+                .entries
+                .iter()
+                .any(|entry| entry.reachable && entry.machine_family.is_some())
+        });
+    let expected_assurance = if has_machine_boundaries { "L1" } else { "L3" };
+    let expected_scope = if has_machine_boundaries {
+        "to_machine_boundary"
+    } else {
+        "end_to_end"
+    };
+    if receipt.binding.assurance != expected_assurance
+        || receipt.binding.scope != expected_scope
         || receipt.binding.crate_name != plan.crate_name
         || receipt.binding.target != plan.target
     {
@@ -3546,22 +6514,56 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
         std::str::from_utf8(&raw_source).map_err(|error| ForgeError::VerusOutput {
             detail: format!("bound Thermite input is not UTF-8: {error}"),
         })?;
-    let parsed = thermite_syntax::parse(source_text);
-    if !parsed.is_clean() {
+    let projected = thermite_syntax::parse(source_text);
+    if !projected.is_clean() {
         return Err(ForgeError::VerusOutput {
             detail: format!(
                 "bound Thermite input no longer parses cleanly: {:?}",
-                parsed.errors
+                projected.errors
             ),
         });
     }
-    thermite_spec::validate(&parsed.program).map_err(|errors| ForgeError::VerusOutput {
+    let package = thermite_package::load_evidence(bundle, &raw_source)?;
+    match (&plan.package, &package) {
+        (None, None) => {}
+        (Some(expected), Some(package)) if *expected == package_plan(package) => {}
+        (Some(_), Some(_)) => {
+            return Err(ForgeError::VerusOutput {
+                detail: "bound package manifest, module closure, or source map disagrees with ArtifactPlanV1"
+                    .to_string(),
+            })
+        }
+        _ => {
+            return Err(ForgeError::VerusOutput {
+                detail: "ArtifactPlanV1 package presence disagrees with bound package evidence"
+                    .to_string(),
+            })
+        }
+    }
+    let program = package.as_ref().map_or_else(
+        || projected.program.clone(),
+        |package| package.parsed.program.clone(),
+    );
+    if normalized_program_sha256(&program) != normalized_program_sha256(&projected.program) {
+        return Err(ForgeError::VerusOutput {
+            detail: "bound package modules disagree with their canonical backend projection"
+                .to_string(),
+        });
+    }
+    thermite_spec::validate(&program).map_err(|errors| ForgeError::VerusOutput {
         detail: format!("bound Thermite input fails spec validation: {errors:?}"),
     })?;
-    thermite_lower::check_effects(&parsed.program).map_err(|errors| ForgeError::VerusOutput {
+    thermite_lower::check_effects(&program).map_err(|errors| ForgeError::VerusOutput {
         detail: format!("bound Thermite input fails effect validation: {errors:?}"),
     })?;
-    if normalized_program_sha256(&parsed.program) != plan.parsed_program_sha256 {
+    if let Some(package) = &package {
+        validate_package_resolution(package, &program).map_err(|error| {
+            ForgeError::VerusOutput {
+                detail: format!("bound package fails module resolution: {error}"),
+            }
+        })?;
+    }
+    if normalized_program_sha256(&program) != plan.parsed_program_sha256 {
         return Err(ForgeError::VerusOutput {
             detail: "bound parsed-program digest disagrees with ArtifactPlanV1".to_string(),
         });
@@ -3572,18 +6574,40 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
         .map(|export| export.thermite_name.clone())
         .collect();
     let roots = plan_roots(&plan);
-    let closure = closure::verified_closure(&parsed.program, &roots).map_err(|error| {
-        ForgeError::VerusOutput {
+    if let Some(package) = &package {
+        package_exports_are_roots(package, &roots).map_err(|detail| ForgeError::VerusOutput {
+            detail: format!("bound package export plan is invalid: {detail}"),
+        })?;
+    }
+    let closure =
+        closure::verified_closure(&program, &roots).map_err(|error| ForgeError::VerusOutput {
             detail: format!("bound closure is incomplete: {error}"),
-        }
-    })?;
-    if let Some(detail) = strict_source_checks(&parsed.program, &closure, plan.target) {
+        })?;
+    let planned_registered_boundaries: BTreeSet<String> = plan
+        .composition
+        .as_ref()
+        .and_then(|composition| composition.primitive_registry.as_ref())
+        .map(|registry| {
+            registry
+                .entries
+                .iter()
+                .filter(|entry| entry.reachable)
+                .map(|entry| entry.thermite_name.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+    if let Some(detail) = strict_source_checks_with_registered_boundaries(
+        &program,
+        &closure,
+        plan.target,
+        &planned_registered_boundaries,
+    ) {
         return Err(ForgeError::VerusOutput {
             detail: format!("bound closure violates strict policy: {detail}"),
         });
     }
     let exports = plan_exports(
-        &parsed.program,
+        &program,
         &link_roots,
         &plan.crate_name,
         plan.target,
@@ -3600,10 +6624,10 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
                 .to_string(),
         });
     }
-    let subprogram = closure_program(&parsed.program, &closure);
+    let subprogram = closure_program(&program, &closure);
     let (independently_emitted, reconstructed_plan) = if composition_receipt {
         let (reconstructed, lowered, combined, reconstructed_closure, reconstructed_exports) =
-            composition::reconstruct_plan(&parsed.program, &raw_source, &plan, bundle)?;
+            composition::reconstruct_plan(&program, package.as_ref(), &raw_source, &plan, bundle)?;
         let lowered_bytes = file_sha256(&bundle.join("evidence/lowered-thermite.verus.rs"))?.1;
         if lowered.as_bytes() != lowered_bytes
             || plan.composition.as_ref().is_none_or(|composition| {
@@ -3636,7 +6660,8 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
             .map_err(ForgeError::Lower)?;
         let reconstructed = make_plan(PlanInput {
             raw_source: &raw_source,
-            program: &parsed.program,
+            program: &program,
+            package: package.as_ref(),
             selected_program: &subprogram,
             closure: &closure,
             exports: &exports,
@@ -3645,6 +6670,8 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
             target_triple: &plan.target_triple,
             target_pointer_width: &plan.target_pointer_width,
             target_endian: &plan.target_endian,
+            target_features: &[],
+            verus_imports: &[],
             verus_source: &emitted,
         });
         (emitted, reconstructed)
@@ -3682,20 +6709,62 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
         serde_json::from_slice(&certificate_bytes).map_err(|error| ForgeError::VerusOutput {
             detail: format!("invalid bound certificate set: {error}"),
         })?;
-    if let Some(detail) = reject_certificates(&certificates, &closure, &parsed.program) {
+    let registered_boundaries: BTreeSet<String> = plan
+        .composition
+        .as_ref()
+        .and_then(|composition| composition.primitive_registry.as_ref())
+        .map(|registry| {
+            registry
+                .entries
+                .iter()
+                .filter(|entry| entry.reachable)
+                .map(|entry| entry.thermite_name.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+    let machine_boundaries: BTreeSet<String> = plan
+        .composition
+        .as_ref()
+        .and_then(|composition| composition.primitive_registry.as_ref())
+        .map(|registry| {
+            registry
+                .entries
+                .iter()
+                .filter(|entry| entry.reachable && entry.machine_family.is_some())
+                .map(|entry| entry.thermite_name.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+    if let Some(detail) = reject_certificates_with_registered_boundaries(
+        &certificates,
+        &closure,
+        &program,
+        &registered_boundaries,
+    ) {
         return Err(ForgeError::VerusOutput {
             detail: format!("bound certificate set fails strict L3 policy: {detail}"),
         });
     }
-    let reconstructed_assurance = assurance_aggregate(&certificates, &closure, &exports)?;
+    let reconstructed_assurance = assurance_aggregate_with_registered_boundaries(
+        &certificates,
+        &closure,
+        &exports,
+        &registered_boundaries,
+        &machine_boundaries,
+    )?;
     if receipt.binding.assurance_aggregate != reconstructed_assurance
-        || reconstructed_assurance.headline != "L3"
-        || reconstructed_assurance.cap != "L3"
-        || reconstructed_assurance.scope != "end_to_end"
-        || !matches!(
-            reconstructed_assurance.minimum_reachable.as_str(),
-            "L3" | "L4"
-        )
+        || reconstructed_assurance.headline != expected_assurance
+        || reconstructed_assurance.scope != expected_scope
+        || if has_machine_boundaries {
+            reconstructed_assurance.cap != "L1-machine-residual"
+                || reconstructed_assurance.minimum_reachable != "L1"
+        } else {
+            reconstructed_assurance.cap != "L3"
+                || !matches!(
+                    reconstructed_assurance.minimum_reachable.as_str(),
+                    "L3" | "L4"
+                )
+        }
     {
         return Err(ForgeError::VerusOutput {
             detail: "receipt assurance aggregate is not the minimum of the complete L3 closure"
@@ -3718,7 +6787,7 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
             detail: "bound TV evidence uses a noncanonical seed or resource limit".to_string(),
         });
     }
-    if let Some(detail) = reject_translation_validation(&tv, &parsed.program, &closure, &exports) {
+    if let Some(detail) = reject_translation_validation(&tv, &program, &closure, &exports) {
         return Err(ForgeError::VerusOutput {
             detail: format!("bound TV evidence fails strict completeness: {detail}"),
         });
@@ -3734,10 +6803,34 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
         serde_json::from_slice(&verus_bytes).map_err(|error| ForgeError::VerusOutput {
             detail: format!("invalid bound whole-crate Verus evidence: {error}"),
         })?;
+    let target_features = plan
+        .composition
+        .as_ref()
+        .and_then(|composition| composition.primitive_registry.as_ref())
+        .map(|registry| registry.target.target_features.as_slice())
+        .unwrap_or(&[]);
     if !verus.success
         || verus.errors != Some(0)
         || verus.args != plan.expected_verus_args
-        || plan.expected_verus_args != expected_verus_args(&plan.crate_name, plan.target)
+        || plan.expected_verus_args
+            != expected_verus_args(
+                &plan.crate_name,
+                plan.target,
+                target_features,
+                &plan
+                    .composition
+                    .as_ref()
+                    .map(|composition| {
+                        composition
+                            .primitive_crates
+                            .iter()
+                            .map(|primitive_crate| primitive_crate.name.clone())
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default(),
+                false,
+                true,
+            )
         || verus.source_relative_path != format!("{}.rs", plan.crate_name)
         || verus.source_sha256_before != plan.expected_verus_source_sha256
         || verus.source_sha256_after != plan.expected_verus_source_sha256
@@ -3767,6 +6860,13 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
         .unwrap_or_default();
     validate_codegen_evidence(&toolchain).map_err(|detail| ForgeError::VerusOutput {
         detail: format!("bound artifact-codegen toolchain is invalid: {detail}"),
+    })?;
+    require_supported_target_features(
+        target_features,
+        &toolchain.artifact_codegen.supported_target_features,
+    )
+    .map_err(|detail| ForgeError::VerusOutput {
+        detail: format!("bound primitive target-feature set is invalid: {detail}"),
     })?;
     if toolchain.source_date_epoch != SOURCE_DATE_EPOCH
         || toolchain.forge_version != env!("CARGO_PKG_VERSION")
@@ -3808,6 +6908,16 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
         return Err(ForgeError::VerusOutput {
             detail: "bound toolchain policy or environment whitelist is invalid".to_string(),
         });
+    }
+    if let (Some(composition), Some(binding)) = (&plan.composition, &receipt.binding.composition) {
+        validate_bound_primitive_crates(
+            bundle,
+            plan.target,
+            target_features,
+            &toolchain.artifact_codegen.canonical_identity_sha256(),
+            &composition.primitive_crates,
+            &binding.primitive_crates,
+        )?;
     }
     if file_sha256(&bundle.join("evidence/Cargo.lock"))?.2 != toolchain.cargo_lock_sha256 {
         return Err(ForgeError::VerusOutput {
@@ -3855,12 +6965,23 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
             if model.link_source_name != KERNEL_VSTD_LINK_SOURCE_NAME
                 || model.link_source_sha256 != sha256(KERNEL_VSTD_LINK_SOURCE.as_bytes())
                 || model.link_build_args != kernel_vstd_link_build_args()
-                || model.link_rlib_sha256 != vstd_dependency.sha256
-                || vstd_dependency.source_path != "<forge-generated:kernel-vstd-link.rs>"
+                || if has_machine_boundaries {
+                    model.full_rlib_sha256 != vstd_dependency.sha256
+                        || vstd_dependency.source_path != model.full_rlib_path
+                } else {
+                    model.link_rlib_sha256 != vstd_dependency.sha256
+                        || vstd_dependency.source_path != "<forge-generated:kernel-vstd-link.rs>"
+                }
                 || model.source_file_count == 0
                 || model.source_total_bytes == 0
                 || model.source_sha256.len() != 64
                 || model.vir_sha256.len() != 64
+                || model.atomic_source_sha256.len() != 64
+                || model.full_rlib_sha256.len() != 64
+                || Path::new(&model.atomic_source_path).file_name()
+                    != Some(std::ffi::OsStr::new("atomic.rs"))
+                || Path::new(&model.full_rlib_path).file_name()
+                    != Some(std::ffi::OsStr::new("libvstd.rlib"))
             {
                 return Err(ForgeError::VerusOutput {
                     detail: "bound kernel vstd model identity is malformed or inconsistent"
@@ -3882,6 +7003,7 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
             });
         }
     }
+    validate_machine_model_bundle(bundle, &plan, &toolchain)?;
     let artifact_file = receipt
         .binding
         .files
@@ -3977,15 +7099,123 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
         let replay_kernel_vstd_path = replay_kernel_vstd
             .as_ref()
             .map(|(scratch, _, _)| scratch.path.join("libvstd.rlib"));
-        let compiled = compile_verus_source(
-            &plan.crate_name,
-            &source,
-            plan.target,
-            current_verus.to_string_lossy().as_ref(),
-            &replay_environment,
-            &current_codegen.canonical_identity_sha256(),
-            replay_kernel_vstd_path.as_deref(),
-        )?;
+        let planned_primitive_crates = plan
+            .composition
+            .as_ref()
+            .map(|composition| composition.primitive_crates.as_slice())
+            .unwrap_or(&[]);
+        let bound_primitive_crates = receipt
+            .binding
+            .composition
+            .as_ref()
+            .map(|composition| composition.primitive_crates.as_slice())
+            .unwrap_or(&[]);
+        let replay_final_vstd_path = if planned_primitive_crates
+            .iter()
+            .any(|primitive| primitive.proof_basis == "pinned_vstd_machine_model")
+        {
+            Some(
+                current_verus
+                    .parent()
+                    .ok_or_else(|| ForgeError::VerusOutput {
+                        detail: "replay Verus binary has no installation directory".to_string(),
+                    })?
+                    .join("libvstd.rlib"),
+            )
+        } else {
+            replay_kernel_vstd_path.clone()
+        };
+        let mut replayed_primitive_crates = Vec::new();
+        for (planned, bound) in planned_primitive_crates.iter().zip(bound_primitive_crates) {
+            let primitive_source =
+                String::from_utf8(file_sha256(&bundle.join(&planned.crate_source_path))?.1)
+                    .map_err(|error| ForgeError::VerusOutput {
+                        detail: format!(
+                            "bound separate primitive crate `{}` source is not UTF-8: {error}",
+                            planned.name
+                        ),
+                    })?;
+            let machine_model = planned.proof_basis == "pinned_vstd_machine_model";
+            let primitive_vstd_path = if machine_model {
+                let path = current_verus
+                    .parent()
+                    .ok_or_else(|| ForgeError::VerusOutput {
+                        detail: "replay Verus binary has no installation directory".to_string(),
+                    })?
+                    .join("libvstd.rlib");
+                let expected = toolchain
+                    .kernel_vstd_model
+                    .as_ref()
+                    .map(|model| model.full_rlib_sha256.as_str())
+                    .ok_or_else(|| ForgeError::VerusOutput {
+                        detail: "replay machine primitive has no pinned vstd machine model"
+                            .to_string(),
+                    })?;
+                if file_sha256(&path)?.2 != expected {
+                    return Err(ForgeError::VerusOutput {
+                        detail: format!(
+                            "replay full vstd dependency for machine primitive crate `{}` drifted",
+                            planned.name
+                        ),
+                    });
+                }
+                Some(path)
+            } else {
+                replay_kernel_vstd_path.clone()
+            };
+            let replayed = compile_verus_source(CompileVerusInput {
+                crate_name: &planned.name,
+                source: &primitive_source,
+                target: plan.target,
+                verus_path: current_verus.to_string_lossy().as_ref(),
+                environment: &replay_environment,
+                codegen_toolchain_sha256: &current_codegen.canonical_identity_sha256(),
+                kernel_vstd_rlib: primitive_vstd_path.as_deref(),
+                target_features,
+                imports: &[],
+                export_vir: true,
+                kernel_vstd_model: machine_model,
+            })?;
+            if !replayed.evidence.success
+                || sha256(&replayed.artifact) != bound.rlib_sha256
+                || replayed.exported_vir.is_none()
+                || replayed.object_members != bound.object_members
+            {
+                return Err(ForgeError::VerusOutput {
+                    detail: format!(
+                        "replay did not reproduce separate primitive crate `{}` verified rlib and objects (rlib expected {}, observed {}; exported_interface={}; objects_match={})",
+                        planned.name,
+                        bound.rlib_sha256,
+                        sha256(&replayed.artifact),
+                        replayed.exported_vir.is_some(),
+                        replayed.object_members == bound.object_members,
+                    ),
+                });
+            }
+            replayed_primitive_crates.push(replayed);
+        }
+        let replay_imports: Vec<VerusImportBytes<'_>> = planned_primitive_crates
+            .iter()
+            .zip(&replayed_primitive_crates)
+            .map(|(planned, replayed)| VerusImportBytes {
+                name: &planned.name,
+                vir: replayed.exported_vir.as_deref().unwrap_or_default(),
+                rlib: &replayed.artifact,
+            })
+            .collect();
+        let compiled = compile_verus_source(CompileVerusInput {
+            crate_name: &plan.crate_name,
+            source: &source,
+            target: plan.target,
+            verus_path: current_verus.to_string_lossy().as_ref(),
+            environment: &replay_environment,
+            codegen_toolchain_sha256: &current_codegen.canonical_identity_sha256(),
+            kernel_vstd_rlib: replay_final_vstd_path.as_deref(),
+            target_features,
+            imports: &replay_imports,
+            export_vir: false,
+            kernel_vstd_model: true,
+        })?;
         if !compiled.evidence.success || sha256(&compiled.artifact) != artifact.sha256 {
             return Err(ForgeError::VerusOutput {
                 detail: "replay did not reproduce the bound artifact digest".to_string(),
@@ -3999,6 +7229,154 @@ pub fn validate_bundle(bundle: &Path, replay: bool) -> Result<VerifyBuildReport,
         replayed: replay,
         artifact_sha256: artifact.sha256.clone(),
     })
+}
+
+fn validate_machine_model_bundle(
+    bundle: &Path,
+    plan: &ArtifactPlanV1,
+    toolchain: &ToolchainEvidence,
+) -> Result<(), ForgeError> {
+    let primitive_crates = plan
+        .composition
+        .as_ref()
+        .map(|composition| composition.primitive_crates.as_slice())
+        .unwrap_or(&[]);
+    if let Some(invalid) = primitive_crates.iter().find(|primitive| {
+        !matches!(
+            primitive.proof_basis.as_str(),
+            "verus_builtins" | "pinned_vstd_machine_model"
+        )
+    }) {
+        return Err(ForgeError::VerusOutput {
+            detail: format!(
+                "separate primitive crate `{}` has unknown proof basis `{}`",
+                invalid.name, invalid.proof_basis
+            ),
+        });
+    }
+    let required = primitive_crates
+        .iter()
+        .any(|primitive| primitive.proof_basis == "pinned_vstd_machine_model");
+    let source_path = bundle.join(MACHINE_ATOMIC_MODEL_SOURCE_PATH);
+    let rlib_path = bundle.join(MACHINE_VSTD_RLIB_PATH);
+    if !required {
+        if source_path.exists() {
+            return Err(ForgeError::VerusOutput {
+                detail: "bundle carries an unrequested machine-model source".to_string(),
+            });
+        }
+        return Ok(());
+    }
+    let model = toolchain
+        .kernel_vstd_model
+        .as_ref()
+        .ok_or_else(|| ForgeError::VerusOutput {
+            detail: "machine primitive bundle has no pinned kernel vstd model evidence".to_string(),
+        })?;
+    if file_sha256(&source_path)?.2 != model.atomic_source_sha256
+        || file_sha256(&rlib_path)?.2 != model.full_rlib_sha256
+    {
+        return Err(ForgeError::VerusOutput {
+            detail: "machine primitive bundle does not bind the exact pinned vstd atomic source and codegen rlib"
+                .to_string(),
+        });
+    }
+    Ok(())
+}
+
+fn validate_bound_primitive_crates(
+    bundle: &Path,
+    target: VerifiedTarget,
+    target_features: &[String],
+    codegen_toolchain_sha256: &str,
+    planned: &[PlannedPrimitiveCrateV1],
+    bound: &[BoundPrimitiveCrateV1],
+) -> Result<(), ForgeError> {
+    if planned.len() != bound.len() {
+        return Err(ForgeError::VerusOutput {
+            detail: "separate primitive crate plan/receipt cardinality mismatch".to_string(),
+        });
+    }
+    for (planned, bound) in planned.iter().zip(bound) {
+        let parent = Path::new(&planned.authored_source_path)
+            .parent()
+            .ok_or_else(|| ForgeError::VerusOutput {
+                detail: "separate primitive authored source has no parent".to_string(),
+            })?
+            .to_string_lossy()
+            .replace('\\', "/");
+        let expected_vir_path = format!("{parent}/interface.vir");
+        let expected_rlib_path = format!("artifact/deps/lib{}.rlib", planned.name);
+        let verus_result_path = format!("{parent}/verus-result.json");
+        if bound.name != planned.name
+            || bound.authored_source_sha256 != planned.authored_source_sha256
+            || bound.crate_source_sha256 != planned.crate_source_sha256
+            || bound.vir_path != expected_vir_path
+            || bound.rlib_path != expected_rlib_path
+            || bound.object_members.is_empty()
+        {
+            return Err(ForgeError::VerusOutput {
+                detail: format!(
+                    "separate primitive crate `{}` receipt identity disagrees with its plan",
+                    planned.name
+                ),
+            });
+        }
+        for path in [&bound.vir_path, &bound.rlib_path, &verus_result_path] {
+            validate_relative_path(path)?;
+        }
+        let (vir_length, _, vir_sha256) = file_sha256(&bundle.join(&bound.vir_path))?;
+        let (rlib_length, rlib_bytes, rlib_sha256) = file_sha256(&bundle.join(&bound.rlib_path))?;
+        let verus_result_bytes = file_sha256(&bundle.join(&verus_result_path))?.1;
+        if vir_length != bound.vir_length
+            || vir_sha256 != bound.vir_sha256
+            || rlib_length != bound.rlib_length
+            || rlib_sha256 != bound.rlib_sha256
+            || sha256(&verus_result_bytes) != bound.verus_result_sha256
+            || archive_object_members(&rlib_bytes)? != bound.object_members
+        {
+            return Err(ForgeError::VerusOutput {
+                detail: format!(
+                    "separate primitive crate `{}` interface, rlib, object, or proof digest mismatch",
+                    planned.name
+                ),
+            });
+        }
+        let evidence: VerusEvidence =
+            serde_json::from_slice(&verus_result_bytes).map_err(|error| {
+                ForgeError::VerusOutput {
+                    detail: format!(
+                        "invalid separate primitive crate `{}` Verus evidence: {error}",
+                        planned.name
+                    ),
+                }
+            })?;
+        if !evidence.success
+            || evidence.errors != Some(0)
+            || evidence.args
+                != expected_verus_args(
+                    &planned.name,
+                    target,
+                    target_features,
+                    &[],
+                    true,
+                    planned.proof_basis == "pinned_vstd_machine_model",
+                )
+            || evidence.source_relative_path != format!("{}.rs", planned.name)
+            || evidence.source_sha256_before != planned.crate_source_sha256
+            || evidence.source_sha256_after != planned.crate_source_sha256
+            || evidence.codegen_toolchain_sha256 != codegen_toolchain_sha256
+            || parse_verus_summary(&evidence.stdout) != (true, Some(0))
+        {
+            return Err(ForgeError::VerusOutput {
+                detail: format!(
+                    "separate primitive crate `{}` does not carry exact no-cheating proof/codegen evidence",
+                    planned.name
+                ),
+            });
+        }
+    }
+    Ok(())
 }
 
 fn validate_relative_path(path: &str) -> Result<(), ForgeError> {
@@ -4121,10 +7499,247 @@ fn test_fault(name: &str) -> bool {
 mod tests {
     use super::*;
 
+    fn package_fixture(
+        roots: &[&str],
+        api_imports: &[&str],
+        base_source: &str,
+        api_source: &str,
+    ) -> (ScratchTree, PathBuf) {
+        let tree = ScratchTree::new_in_temp("verified_package_fixture").unwrap();
+        fs::create_dir(tree.path.join("src")).unwrap();
+        fs::write(tree.path.join("src/base.th"), base_source).unwrap();
+        fs::write(tree.path.join("src/api.th"), api_source).unwrap();
+        let manifest = thermite_package::PackageManifestV1 {
+            schema: thermite_package::PACKAGE_SCHEMA.to_string(),
+            name: "package_fixture".to_string(),
+            roots: roots.iter().map(|root| (*root).to_string()).collect(),
+            modules: vec![
+                thermite_package::PackageModuleV1 {
+                    name: "api".to_string(),
+                    path: "src/api.th".to_string(),
+                    imports: api_imports
+                        .iter()
+                        .map(|import| (*import).to_string())
+                        .collect(),
+                },
+                thermite_package::PackageModuleV1 {
+                    name: "base".to_string(),
+                    path: "src/base.th".to_string(),
+                    imports: Vec::new(),
+                },
+            ],
+        };
+        let mut bytes = serde_json::to_vec_pretty(&manifest).unwrap();
+        bytes.push(b'\n');
+        let path = tree.path.join("fixture.thpkg.json");
+        fs::write(&path, bytes).unwrap();
+        (tree, path)
+    }
+
     fn parse(source: &str) -> Program {
         let parsed = thermite_syntax::parse(source);
         assert!(parsed.is_clean(), "{:?}", parsed.errors);
         parsed.program
+    }
+
+    #[test]
+    fn package_resolution_requires_declared_cross_module_calls() {
+        let base = "fn base(x: u64) -> u64 req true ens result == x fx pure { x }\n";
+        let api = "fn api(x: u64) -> u64 req true ens result == x fx pure { base(x) }\n";
+        let (_tree, path) = package_fixture(&["api", "base"], &[], base, api);
+        let error = match prepare_thermite_input(&path) {
+            Ok(_) => panic!("undeclared cross-module call was accepted"),
+            Err(error) => error.to_string(),
+        };
+        assert!(error.contains("without declaring that import"), "{error}");
+
+        let (_tree, path) = package_fixture(&["api"], &["base"], base, api);
+        assert!(prepare_thermite_input(&path).is_ok());
+    }
+
+    #[test]
+    fn package_resolution_requires_declared_cross_module_signature_types() {
+        let base = "struct Token { value: u64 }\n";
+        let api = "fn token_value(token: Token) -> u64 req true ens result == token.value fx pure { token.value }\n";
+        let (_tree, path) = package_fixture(&["api", "base"], &[], base, api);
+        let error = match prepare_thermite_input(&path) {
+            Ok(_) => panic!("undeclared cross-module signature type was accepted"),
+            Err(error) => error.to_string(),
+        };
+        assert!(error.contains("uses `Token`"), "{error}");
+        assert!(error.contains("without declaring that import"), "{error}");
+    }
+
+    #[test]
+    fn package_resolution_requires_declared_cross_module_capacity_constants() {
+        let base = "const CAP: usize = 4;\n";
+        let api = r#"fn api(at: usize) -> u64
+  req at < CAP
+  ens result == 0
+  fx pure
+{
+  let slots: [u64; CAP] = [0; CAP];
+  slots[at]
+}
+"#;
+        let (_tree, path) = package_fixture(&["api", "base"], &[], base, api);
+        let error = match prepare_thermite_input(&path) {
+            Ok(_) => panic!("undeclared cross-module capacity constant was accepted"),
+            Err(error) => error.to_string(),
+        };
+        assert!(error.contains("uses `CAP`"), "{error}");
+        assert!(error.contains("without declaring that import"), "{error}");
+
+        let (_tree, path) = package_fixture(&["api"], &["base"], base, api);
+        assert!(prepare_thermite_input(&path).is_ok());
+    }
+
+    #[test]
+    fn package_opaque_construction_is_limited_to_the_defining_module() {
+        let base = r#"#[opaque] struct State { value: u64 }
+fn state_new(value: u64) -> State
+  req true
+  ens result.value == value
+  fx pure
+{ State { value: value } }
+"#;
+        let foreign_literal = r#"fn forge_state(value: u64) -> State
+  req true
+  ens result.value == value
+  fx pure
+{ State { value: value } }
+"#;
+        let (_tree, path) = package_fixture(&["api"], &["base"], base, foreign_literal);
+        let error = match prepare_thermite_input(&path) {
+            Ok(_) => panic!("a foreign module constructed an opaque type"),
+            Err(error) => error.to_string(),
+        };
+        assert!(
+            error.contains("module `api` constructs `#[opaque]` type `State`"),
+            "{error}"
+        );
+        assert!(error.contains("declared in module `base`"), "{error}");
+
+        let through_constructor = r#"fn api(value: u64) -> State
+  req true
+  ens true
+  fx pure
+{ state_new(value) }
+"#;
+        let (_tree, path) = package_fixture(&["api"], &["base"], base, through_constructor);
+        assert!(prepare_thermite_input(&path).is_ok());
+    }
+
+    #[test]
+    fn package_opaque_field_reads_and_writes_are_limited_to_the_defining_module() {
+        let base = r#"#[opaque] struct State { value: u64 }
+fn state_new(value: u64) -> State
+  req true ens result.value == value fx pure
+{ State { value: value } }
+"#;
+        for (label, api) in [
+            (
+                "contract read",
+                r#"fn inspect(state: State) -> u64
+  req true ens result == state.value fx pure
+{ 0 }
+"#,
+            ),
+            (
+                "body read",
+                r#"fn inspect(state: State) -> u64
+  req true ens true fx pure
+{ state.value }
+"#,
+            ),
+            (
+                "body write",
+                r#"fn change(state: &mut State, value: u64) -> ()
+  req true ens true fx pure
+{ state.value = value; }
+"#,
+            ),
+            (
+                "constructor-chain read",
+                r#"fn inspect(value: u64) -> u64
+  req true ens true fx pure
+{ state_new(value).value }
+"#,
+            ),
+            (
+                "inferred-local read",
+                r#"fn inspect(value: u64) -> u64
+  req true ens true fx pure
+{ let state = state_new(value); state.value }
+"#,
+            ),
+        ] {
+            let (_tree, path) = package_fixture(&["api"], &["base"], base, api);
+            let error = match prepare_thermite_input(&path) {
+                Ok(_) => panic!("foreign opaque {label} was accepted"),
+                Err(error) => error.to_string(),
+            };
+            assert!(
+                error.contains("module `api` accesses a field of `#[opaque]` type `State`"),
+                "{label}: {error}"
+            );
+            assert!(error.contains("declared in module `base`"), "{error}");
+        }
+
+        let unresolved_pattern = r#"fn inspect(state: Option<State>) -> u64
+  req true ens true fx pure
+{ match state { Some(value) => value.value, None => 0 } }
+"#;
+        let (_tree, path) = package_fixture(&["api"], &["base"], base, unresolved_pattern);
+        let error = match prepare_thermite_input(&path) {
+            Ok(_) => panic!("an unresolved foreign opaque pattern projection was accepted"),
+            Err(error) => error.to_string(),
+        };
+        assert!(
+            error.contains("module `api` accesses field `value`"),
+            "{error}"
+        );
+        assert!(
+            error.contains("foreign `#[opaque]` type(s) State"),
+            "{error}"
+        );
+
+        let unrelated_plain = r#"struct Public { value: u64 }
+fn inspect(public: Public) -> u64
+  req true ens result == public.value fx pure
+{ public.value }
+"#;
+        let (_tree, path) = package_fixture(&["api"], &["base"], base, unrelated_plain);
+        assert!(
+            prepare_thermite_input(&path).is_ok(),
+            "a type-resolved plain field sharing an opaque field name remains legal"
+        );
+    }
+
+    #[test]
+    fn opaque_single_file_construction_remains_the_defining_module() {
+        let program = parse(
+            r#"#[opaque] struct State { value: u64 }
+fn state_new(value: u64) -> State
+  req true
+  ens result.value == value
+  fx pure
+{ State { value: value } }
+"#,
+        );
+        assert!(thermite_spec::validate(&program).is_ok());
+    }
+
+    #[test]
+    fn package_exports_must_be_declared_by_root_modules() {
+        let base = "fn base(x: u64) -> u64 req true ens result == x fx pure { x }\n";
+        let api = "fn api(x: u64) -> u64 req true ens result == x fx pure { base(x) }\n";
+        let (_tree, path) = package_fixture(&["api"], &["base"], base, api);
+        let prepared = prepare_thermite_input(&path).unwrap();
+        let package = prepared.package.as_ref().unwrap();
+        assert!(package_exports_are_roots(package, &["api".to_string()]).is_ok());
+        let error = package_exports_are_roots(package, &["base".to_string()]).unwrap_err();
+        assert!(error.contains("non-root module `base`"), "{error}");
     }
 
     fn sample_verus_evidence(errors: Option<u64>) -> VerusEvidence {
@@ -4211,6 +7826,7 @@ mod tests {
             target_triple: "x86_64-unknown-linux-gnu".to_string(),
             target_pointer_width: "64".to_string(),
             target_endian: "little".to_string(),
+            supported_target_features: vec!["sse2".to_string()],
             target_libdir: format!("{root}/lib/rustlib/x86_64-unknown-linux-gnu/lib"),
             target_libdir_sha256: "6".repeat(64),
             target_libdir_file_count: 62,
@@ -4240,6 +7856,7 @@ mod tests {
             strict_gates: STRICT_GATES.iter().map(|s| (*s).to_string()).collect(),
             expected_tv_inventory: Vec::new(),
             expected_verus_source_sha256: "c".repeat(64),
+            package: None,
             composition: None,
         };
         let compact = serde_json::to_string(&plan).unwrap();
@@ -4293,6 +7910,338 @@ mod tests {
     }
 
     #[test]
+    fn public_abi_admits_only_finite_plain_record_values() {
+        let plain = parse(
+            "struct Stamp { words: [u64; 2], flags: (bool, u8) } \
+             struct Slot { stamp: Stamp, owner: usize } \
+             fn equal(left: [Slot; 4], right: [Slot; 4]) -> bool \
+             req true ens true fx pure { true }",
+        );
+        let exports = plan_exports(
+            &plain,
+            &["equal".to_string()],
+            "plain_records",
+            VerifiedTarget::Std,
+            "x86_64-unknown-linux-gnu",
+            "64",
+            "little",
+        )
+        .expect("finite plain record arrays belong to the verified Rust ABI");
+        assert_eq!(exports[0].parameter_types, ["[Slot;4]", "[Slot;4]"]);
+
+        for source in [
+            "#[sealed] struct Token { raw: u64 } \
+             fn expose(value: [Token; 2]) -> bool req true ens true fx pure { true }",
+            "#[opaque] struct State { raw: u64 } \
+             fn expose(value: [State; 2]) -> bool req true ens true fx pure { true }",
+            "struct Label { text: String } \
+             fn expose(value: [Label; 2]) -> bool req true ens true fx pure { true }",
+        ] {
+            let hidden = parse(source);
+            let error = plan_exports(
+                &hidden,
+                &["expose".to_string()],
+                "hidden_records",
+                VerifiedTarget::Std,
+                "x86_64-unknown-linux-gnu",
+                "64",
+                "little",
+            )
+            .expect_err("authority-bearing or heap-backed record ABI must fail closed");
+            assert!(
+                error.contains("outside the verified public Rust ABI"),
+                "{error}"
+            );
+        }
+    }
+
+    #[test]
+    fn public_abi_admits_direct_opaque_record_lifecycle_roots() {
+        let program = parse(
+            "#[opaque] struct State { generation: u64, occupied: bool } \
+             fn advance(state: &mut State, next: u64) -> bool \
+             req true \
+             ens result == old(state).occupied \
+             ens final(state).generation == next \
+             ens final(state).occupied == old(state).occupied \
+             fx pure { \
+               let previous: bool = state.occupied; \
+               state.generation = next; previous \
+             }",
+        );
+        let exports = plan_exports(
+            &program,
+            &["advance".to_string()],
+            "opaque_lifecycle",
+            VerifiedTarget::Std,
+            "x86_64-unknown-linux-gnu",
+            "64",
+            "little",
+        )
+        .expect("a direct finite opaque record borrow belongs to the verified ABI");
+        assert_eq!(exports[0].parameter_types, ["&mut State", "u64"]);
+        assert_eq!(exports[0].ownership, ["exclusive_borrow", "by_value"]);
+        assert!(exports[0]
+            .signature
+            .contains("fn advance(state:&mut State,next:u64)->bool"));
+    }
+
+    #[test]
+    fn public_abi_fingerprint_binds_record_layout_and_resolved_capacities() {
+        let fingerprint = |source: &str| {
+            let program = parse(source);
+            plan_exports(
+                &program,
+                &["expose".to_string()],
+                "layout_bound",
+                VerifiedTarget::Std,
+                "x86_64-unknown-linux-gnu",
+                "64",
+                "little",
+            )
+            .expect("finite plain layout should plan")
+            .remove(0)
+            .abi_sha256
+        };
+        let base = fingerprint(
+            "const CAP: usize = 4; \
+             struct Slot { owner: usize, flags: (bool, u8) } \
+             fn expose(values: [Slot; CAP]) -> bool \
+             req true ens true fx pure { true }",
+        );
+        let changed_capacity = fingerprint(
+            "const CAP: usize = 8; \
+             struct Slot { owner: usize, flags: (bool, u8) } \
+             fn expose(values: [Slot; CAP]) -> bool \
+             req true ens true fx pure { true }",
+        );
+        let changed_field = fingerprint(
+            "const CAP: usize = 4; \
+             struct Slot { owner: u64, flags: (bool, u8) } \
+             fn expose(values: [Slot; CAP]) -> bool \
+             req true ens true fx pure { true }",
+        );
+        let reordered_fields = fingerprint(
+            "const CAP: usize = 4; \
+             struct Slot { flags: (bool, u8), owner: usize } \
+             fn expose(values: [Slot; CAP]) -> bool \
+             req true ens true fx pure { true }",
+        );
+
+        assert_ne!(base, changed_capacity, "resolved capacity is ABI data");
+        assert_ne!(base, changed_field, "transitive field type is ABI data");
+        assert_ne!(base, reordered_fields, "record field order is ABI data");
+    }
+
+    /// The layout preimage grammar in `.design/build/l3-verified-artifact.md`,
+    /// "Layout rule": `enum:<E>{<i>:<Variant>:unit|tuple(..)|struct{..}}` in
+    /// source order, with `<layout>` the existing `abi_layout_type` output and a
+    /// named array capacity resolved to its integer value.
+    #[test]
+    fn public_abi_layout_spells_a_closed_result_enum_in_source_order() {
+        let program = parse(
+            "const CAP: usize = 3; \
+             struct Cell { owner: usize, flags: (bool, u8) } \
+             enum Outcome { \
+               Bare, \
+               Pair(u64, bool), \
+               Full { cell: Cell, window: [u64; CAP] } \
+             } \
+             fn decide(flag: bool) -> Outcome \
+             req true ens true fx pure { Outcome::Bare }",
+        );
+        let function = program
+            .items
+            .iter()
+            .find_map(|item| match item {
+                Item::Fn(function) if function.name == "decide" => Some(function),
+                _ => None,
+            })
+            .expect("the fixture declares `decide`");
+        assert_eq!(
+            public_abi_layout(&program, function).expect("the closed enum has a layout"),
+            "params(flag:bool)->enum:Outcome{\
+             0:Bare:unit,\
+             1:Pair:tuple(u64,bool),\
+             2:Full:struct{cell:struct:Cell:sealed=false:opaque=false\
+             {owner:usize,flags:tuple2(bool,u8)},window:array[3;u64]}}"
+        );
+    }
+
+    /// AC-20: renaming a variant, reordering two variants, changing a payload
+    /// field type or order, and changing a resolved payload capacity each change
+    /// the export fingerprint on their own.
+    #[test]
+    fn public_abi_enum_fingerprint_binds_variant_order_names_and_payloads() {
+        let fingerprint = |source: &str| {
+            let program = parse(source);
+            plan_exports(
+                &program,
+                &["decide".to_string()],
+                "enum_bound",
+                VerifiedTarget::Std,
+                "x86_64-unknown-linux-gnu",
+                "64",
+                "little",
+            )
+            .expect("a closed result enum should plan")
+            .remove(0)
+            .abi_sha256
+        };
+        let base = fingerprint(
+            "const CAP: usize = 3; \
+             struct Cell { owner: usize, stamp: u64 } \
+             enum Outcome { Found { cell: Cell, window: [u64; CAP] }, Absent } \
+             fn decide(flag: bool) -> Outcome req true ens true fx pure { Outcome::Absent }",
+        );
+        let renamed_variant = fingerprint(
+            "const CAP: usize = 3; \
+             struct Cell { owner: usize, stamp: u64 } \
+             enum Outcome { Found { cell: Cell, window: [u64; CAP] }, Missing } \
+             fn decide(flag: bool) -> Outcome req true ens true fx pure { Outcome::Missing }",
+        );
+        let reordered_variants = fingerprint(
+            "const CAP: usize = 3; \
+             struct Cell { owner: usize, stamp: u64 } \
+             enum Outcome { Absent, Found { cell: Cell, window: [u64; CAP] } } \
+             fn decide(flag: bool) -> Outcome req true ens true fx pure { Outcome::Absent }",
+        );
+        let changed_payload_type = fingerprint(
+            "const CAP: usize = 3; \
+             struct Cell { owner: u64, stamp: u64 } \
+             enum Outcome { Found { cell: Cell, window: [u64; CAP] }, Absent } \
+             fn decide(flag: bool) -> Outcome req true ens true fx pure { Outcome::Absent }",
+        );
+        let reordered_payload_fields = fingerprint(
+            "const CAP: usize = 3; \
+             struct Cell { owner: usize, stamp: u64 } \
+             enum Outcome { Found { window: [u64; CAP], cell: Cell }, Absent } \
+             fn decide(flag: bool) -> Outcome req true ens true fx pure { Outcome::Absent }",
+        );
+        let changed_capacity = fingerprint(
+            "const CAP: usize = 5; \
+             struct Cell { owner: usize, stamp: u64 } \
+             enum Outcome { Found { cell: Cell, window: [u64; CAP] }, Absent } \
+             fn decide(flag: bool) -> Outcome req true ens true fx pure { Outcome::Absent }",
+        );
+
+        assert_ne!(base, renamed_variant, "a variant name is ABI data");
+        assert_ne!(base, reordered_variants, "variant order is ABI data");
+        assert_ne!(base, changed_payload_type, "a payload type is ABI data");
+        assert_ne!(
+            base, reordered_payload_fields,
+            "payload field order is ABI data"
+        );
+        assert_ne!(
+            base, changed_capacity,
+            "a resolved payload capacity is ABI data"
+        );
+    }
+
+    /// AC-21 at the admission site: each shape outside the REQ-L3BUILD-15 rule
+    /// is refused with a diagnostic naming its cause.
+    #[test]
+    fn public_abi_refuses_every_closed_result_enum_shape_outside_the_rule() {
+        let refusal = |source: &str| {
+            let program = parse(source);
+            plan_exports(
+                &program,
+                &["decide".to_string()],
+                "enum_refused",
+                VerifiedTarget::Std,
+                "x86_64-unknown-linux-gnu",
+                "64",
+                "little",
+            )
+            .expect_err("the enum boundary must fail closed")
+        };
+
+        for (source, expected) in [
+            (
+                "enum Verdict { Yes, No } \
+                 fn decide(verdict: Verdict) -> bool req true ens result fx pure { true }",
+                "parameter `verdict` reaches enum `Verdict`",
+            ),
+            (
+                "enum Verdict { Yes, No } \
+                 fn decide(flag: bool) -> [Verdict; 2] req true ens true fx pure \
+                 { [Verdict::Yes, Verdict::No] }",
+                "reaching enum `Verdict` below the return root",
+            ),
+            (
+                "enum Verdict { Yes, No } \
+                 fn decide(flag: bool) -> (Verdict, u64) req true ens true fx pure \
+                 { (Verdict::Yes, 1) }",
+                "reaching enum `Verdict` below the return root",
+            ),
+            (
+                "enum Verdict { Yes, No } struct Wrap { verdict: Verdict } \
+                 fn decide(flag: bool) -> Wrap req true ens true fx pure \
+                 { Wrap { verdict: Verdict::Yes } }",
+                "reaching enum `Verdict` below the return root",
+            ),
+            (
+                "enum Inner { Lo, Hi } enum Outer { Wrapped { inner: Inner }, Bare } \
+                 fn decide(flag: bool) -> Outer req true ens true fx pure { Outer::Bare }",
+                "payload `inner` has type `Inner`, which is a type reaching enum `Inner`",
+            ),
+            (
+                "#[sealed] struct Token { raw: u64 } \
+                 enum Verdict { Held { token: Token }, Absent } \
+                 fn decide(token: Token) -> Verdict req true ens true fx pure \
+                 { Verdict::Held { token: token } }",
+                "payload `token` has type `Token`, which is a sealed record",
+            ),
+            (
+                "#[opaque] struct State { raw: u64 } \
+                 enum Verdict { Held { state: State }, Absent } \
+                 fn decide(state: State) -> Verdict req true ens true fx pure \
+                 { Verdict::Held { state: state } }",
+                "payload `state` has type `State`, which is an opaque record",
+            ),
+            (
+                "enum List { Cons { head: u64, tail: Box<List> }, Nil } \
+                 fn decide(flag: bool) -> List req true ens true fx alloc { List::Nil }",
+                "payload `tail` has type `Box<List>`, which is a type reaching enum `List`",
+            ),
+            (
+                "enum Held { Borrowed { view: &u64 }, Absent } \
+                 fn decide(flag: bool) -> Held req true ens true fx pure { Held::Absent }",
+                "payload `view` has type `&u64`, which is a reference-bearing type",
+            ),
+            (
+                "enum Held { Owned { bytes: Vec<u64> }, Absent } \
+                 fn decide(flag: bool) -> Held req true ens true fx alloc { Held::Absent }",
+                "payload `bytes` has type `Vec<u64>`, which is a heap-backed type",
+            ),
+        ] {
+            let error = refusal(source);
+            assert!(
+                error.contains(expected),
+                "expected `{expected}` in the refusal, got `{error}`"
+            );
+        }
+    }
+
+    /// The `visiting` guard in `abi_layout_type` is one mechanism for records and
+    /// enums alike: a cycle through either name reports the same diagnostic.
+    #[test]
+    fn public_abi_layout_rejects_a_cycle_through_an_enum_name() {
+        let program = parse(
+            "enum List { Cons { head: u64, tail: Box<List> }, Nil } \
+             fn decide(flag: bool) -> List req true ens true fx alloc { List::Nil }",
+        );
+        let mut visiting = BTreeSet::new();
+        visiting.insert("List".to_string());
+        let error = abi_layout_type(&program, &Type::Named("List".to_string()), &mut visiting)
+            .expect_err("a cycle through an enum name must be rejected");
+        assert_eq!(
+            error,
+            "public ABI record layout is recursive through `List`"
+        );
+    }
+
+    #[test]
     fn frozen_source_digest_detects_proof_preserving_mutation() {
         let original = "pub fn identity(x: u64) -> u64 { x }";
         let mutated = "pub fn identity(x: u64) -> u64 { x + 0 }";
@@ -4306,6 +8255,9 @@ mod tests {
             "\nfn id ( x : u64 ) -> u64\n  req x < 10\n  ens result == 10\n  fx pure\n{ 10 }\n",
         );
         let changed = parse("fn id(x: u64) -> u64 req x < 10 ens result == 11 fx pure { 10 }");
+        let plain_state = parse("struct State { value: u64 }");
+        let opaque_state = parse("#[opaque] struct State { value: u64 }");
+        let sealed_state = parse("#[sealed] struct State { value: u64 }");
         assert_eq!(
             normalized_program_sha256(&compact),
             normalized_program_sha256(&presented_differently)
@@ -4313,6 +8265,16 @@ mod tests {
         assert_ne!(
             normalized_program_sha256(&compact),
             normalized_program_sha256(&changed)
+        );
+        assert_ne!(
+            normalized_program_sha256(&plain_state),
+            normalized_program_sha256(&opaque_state),
+            "the normalized proof/build identity must bind the opaque barrier"
+        );
+        assert_ne!(
+            normalized_program_sha256(&opaque_state),
+            normalized_program_sha256(&sealed_state),
+            "opaque construction and sealed boundary-only minting are distinct semantics"
         );
     }
 
@@ -4392,7 +8354,7 @@ mod tests {
         assert!(base.same_identity(&relocated));
 
         let digest = base.canonical_identity_sha256();
-        for field in 0..18 {
+        for field in 0..19 {
             let mut changed = base.clone();
             match field {
                 0 => changed.selection.push_str(" changed"),
@@ -4409,13 +8371,36 @@ mod tests {
                 11 => changed.target_triple.push_str("-changed"),
                 12 => changed.target_pointer_width = "32".to_string(),
                 13 => changed.target_endian = "big".to_string(),
-                14 => changed.target_libdir_sha256 = "9".repeat(64),
-                15 => changed.target_libdir_file_count += 1,
-                16 => changed.target_libdir_total_bytes += 1,
-                17 => changed.linker_identity.push_str(" changed"),
+                14 => changed.supported_target_features.push("xsave".to_string()),
+                15 => changed.target_libdir_sha256 = "9".repeat(64),
+                16 => changed.target_libdir_file_count += 1,
+                17 => changed.target_libdir_total_bytes += 1,
+                18 => changed.linker_identity.push_str(" changed"),
                 _ => unreachable!(),
             }
             assert_ne!(digest, changed.canonical_identity_sha256(), "field {field}");
         }
+    }
+
+    #[test]
+    fn rustc_target_feature_inventory_is_parsed_canonically() {
+        let parsed = parse_rustc_target_features(
+            "Features supported by rustc for this target:\n    sse2 - SSE2.\n    aes - AES.\n",
+        )
+        .unwrap();
+        assert_eq!(parsed, ["aes", "sse2"]);
+        assert!(parse_rustc_target_features("header only\n").is_err());
+        assert!(parse_rustc_target_features("  +sse2 - invalid\n").is_err());
+        assert!(require_supported_target_features(
+            &["sse2".to_string()],
+            &["aes".to_string(), "sse2".to_string()]
+        )
+        .is_ok());
+        assert!(require_supported_target_features(
+            &["imaginary".to_string()],
+            &["aes".to_string(), "sse2".to_string()]
+        )
+        .unwrap_err()
+        .contains("not in the pinned codegen rustc"));
     }
 }

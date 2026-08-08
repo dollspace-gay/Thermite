@@ -110,6 +110,70 @@ fn write_th(name: &str, src: &str) -> PathBuf {
     path
 }
 
+#[test]
+fn bounded_integer_dependency_reference_is_body_faithful() {
+    if !verus_present() {
+        eprintln!("SKIP: verus not available — bounded dependency body-TV not discharged.");
+        return;
+    }
+    let source = r#"
+fn next(slot: usize) -> usize
+  req slot < 64
+  ens result == slot + 1
+  fx pure
+{
+  slot + 1
+}
+
+fn caller(slot: usize) -> usize
+  req slot < 64
+  ens result == slot + 1
+  fx pure
+{
+  next(slot)
+}
+
+fn previous(remaining: usize) -> usize
+  req remaining != 0 && remaining <= 64
+  ens result + 1 == remaining
+  fx pure
+{
+  (remaining + 64) % 65
+}
+
+fn descend(remaining: usize) -> usize
+  req remaining <= 64
+  ens result == 0
+  fx pure
+  dec remaining
+{
+  if remaining == 0 {
+    0
+  } else {
+    descend(previous(remaining))
+  }
+}
+
+fn recursive_caller(remaining: usize) -> usize
+  req remaining <= 64
+  ens result == 0
+  fx pure
+{
+  descend(remaining)
+}
+"#;
+    let file = write_th("bounded_dependency_result", source);
+    let report = run_body_tv_json(&file);
+    assert_eq!(report["counts"]["checked"].as_u64(), Some(5), "{report}");
+    assert_eq!(report["counts"]["faithful"].as_u64(), Some(5), "{report}");
+    assert_eq!(
+        report["counts"]["unverifiable"].as_u64(),
+        Some(0),
+        "{report}"
+    );
+    assert_eq!(report["counts"]["skipped"].as_u64(), Some(0), "{report}");
+}
+
 // ---- AST helpers + verus discharge (mirrors body_teeth.rs) for the Divergent arm --
 
 fn path(name: &str) -> Expr {
@@ -220,6 +284,43 @@ fn faithful_straight_line_body_is_faithful() {
     );
 }
 
+#[test]
+fn exclusive_aggregate_storage_writes_are_faithful() {
+    if !verus_present() {
+        eprintln!(
+            "SKIP: verus not available — exclusive aggregate-storage body-TV not discharged."
+        );
+        return;
+    }
+    let src = concat!(
+        "fn write_slice(data: &mut [[u64; 2]], at: usize, value: u64) -> u64\n",
+        "  req at < data.len()\n",
+        "  ens result == value\n",
+        "  ens final(data)[at][0] == value\n",
+        "  fx platform(memory)\n",
+        "{\n",
+        "  data[at] = [value, value];\n",
+        "  value\n",
+        "}\n",
+        "fn write_array(data: &mut [u64; 4], at: usize, value: u64) -> u64\n",
+        "  req at < 4\n",
+        "  ens result == value\n",
+        "  ens final(data)[at] == value\n",
+        "  fx platform(memory)\n",
+        "{\n",
+        "  data[at] = value;\n",
+        "  value\n",
+        "}\n",
+    );
+    let file = write_th("exclusive_aggregate_storage", src);
+    let report = run_body_tv_json(&file);
+    let counts = &report["counts"];
+    assert_eq!(counts["faithful"].as_u64(), Some(2), "{report}");
+    assert_eq!(counts["divergent"].as_u64(), Some(0), "{report}");
+    assert_eq!(counts["unverifiable"].as_u64(), Some(0), "{report}");
+    assert_eq!(counts["skipped"].as_u64(), Some(0), "{report}");
+}
+
 // ---- 2. a faithful v1 while-loop body → Faithful (all three obligations) ----
 
 /// loop-tv REQ-5 (the loop arm): a faithful v1-subset `while lo < n inv lo <= n dec
@@ -269,6 +370,1281 @@ fn faithful_while_loop_body_is_faithful() {
         "the `wl.loop` body must be reported `faithful` (entry + preservation + exit all \
          verify). report: {report}"
     );
+}
+
+/// Fixed-array indexed mutation is inside the exact state-refinement subset: the
+/// independent reference is the finite-view update at `at`, and production is the
+/// native array assignment. This exercises the real Forge file walk, capacity
+/// declaration preamble, production lowering, Verus discharge, and verdict mapping.
+#[test]
+fn faithful_fixed_array_update_is_faithful() {
+    if !verus_present() {
+        eprintln!("SKIP: verus not available — fixed-array body-TV not discharged.");
+        return;
+    }
+    let src = concat!(
+        "const SLOTS: usize = 4;\n",
+        "fn replace(slots: [u64; SLOTS], at: usize, value: u64) -> [u64; SLOTS]\n",
+        "  req at < SLOTS\n",
+        "  ens result[at] == value\n",
+        "  fx pure\n",
+        "{\n",
+        "  let mut updated: [u64; SLOTS] = slots;\n",
+        "  updated[at] = value;\n",
+        "  updated\n",
+        "}\n",
+        "fn array_len(slots: [u64; SLOTS]) -> usize\n",
+        "  req true\n",
+        "  ens result == slots.len()\n",
+        "  fx pure\n",
+        "{ slots.len() }\n",
+        "fn arrays_equal(left: [u64; SLOTS], right: [u64; SLOTS]) -> bool\n",
+        "  req true\n",
+        "  ens result == left.array_eq(right)\n",
+        "  fx pure\n",
+        "{ left.array_eq(right) }\n",
+        "fn arrays_same_except(left: [u64; SLOTS], right: [u64; SLOTS], at: usize) -> bool\n",
+        "  req true\n",
+        "  ens result == left.array_same_except(right, at)\n",
+        "  fx pure\n",
+        "{ left.array_same_except(right, at) }\n",
+        "fn arrays_same_except_two(left: [u64; SLOTS], right: [u64; SLOTS], first: usize, second: usize) -> bool\n",
+        "  req true\n",
+        "  ens result == left.array_same_except_two(right, first, second)\n",
+        "  fx pure\n",
+        "{ left.array_same_except_two(right, first, second) }\n",
+    );
+    let file = write_th("fixed_array_update", src);
+    let report = run_body_tv_json(&file);
+    assert_eq!(report["counts"]["divergent"].as_u64(), Some(0), "{report}");
+    assert_eq!(report["counts"]["faithful"].as_u64(), Some(5), "{report}");
+    assert!(report["bodies"].as_array().unwrap().iter().any(|body| {
+        body["body"].as_str() == Some("replace") && body["verdict"].as_str() == Some("faithful")
+    }));
+    assert!(report["bodies"].as_array().unwrap().iter().any(|body| {
+        body["body"].as_str() == Some("array_len") && body["verdict"].as_str() == Some("faithful")
+    }));
+    assert!(report["bodies"].as_array().unwrap().iter().any(|body| {
+        body["body"].as_str() == Some("arrays_equal")
+            && body["verdict"].as_str() == Some("faithful")
+    }));
+    assert!(report["bodies"].as_array().unwrap().iter().any(|body| {
+        body["body"].as_str() == Some("arrays_same_except")
+            && body["verdict"].as_str() == Some("faithful")
+    }));
+    assert!(report["bodies"].as_array().unwrap().iter().any(|body| {
+        body["body"].as_str() == Some("arrays_same_except_two")
+            && body["verdict"].as_str() == Some("faithful")
+    }));
+}
+
+#[test]
+fn named_record_lifecycle_bodies_are_faithful() {
+    if !verus_present() {
+        eprintln!("SKIP: verus not available — named-record lifecycle body-TV not discharged.");
+        return;
+    }
+    let src = r#"
+#[opaque] struct State { generation: u64, occupied: bool }
+
+fn state_new(generation: u64, occupied: bool) -> State
+  req true
+  ens result.generation == generation
+  ens result.occupied == occupied
+  fx pure
+{
+  State { generation: generation, occupied: occupied }
+}
+
+fn observe(state: &State) -> bool
+  req true
+  ens result == state.occupied
+  fx pure
+{
+  state.occupied
+}
+
+fn advance(state: &mut State, next: u64) -> bool
+  req next > old(state).generation
+  ens result == old(state).occupied
+  ens final(state).generation == next
+  ens final(state).occupied == old(state).occupied
+  fx pure
+{
+  let previous: bool = state.occupied;
+  state.generation = next;
+  previous
+}
+
+fn set_generation(state: &mut State, next: u64) -> ()
+  req true
+  ens final(state).generation == next
+  ens final(state).occupied == old(state).occupied
+  fx pure
+{
+  state.generation = next;
+}
+
+fn choose_generation(state: &mut State, choose_next: bool, next: u64) -> u64
+  req true
+  ens true
+  fx pure
+{
+  if choose_next {
+    state.generation = next;
+  } else {
+    state.generation = 0;
+  }
+  0
+}
+"#;
+    let file = write_th("named_record_lifecycle", src);
+    let report = run_body_tv_json(&file);
+    assert_eq!(report["counts"]["checked"].as_u64(), Some(5), "{report}");
+    assert_eq!(report["counts"]["faithful"].as_u64(), Some(5), "{report}");
+    assert_eq!(report["counts"]["divergent"].as_u64(), Some(0), "{report}");
+    assert_eq!(
+        report["counts"]["unverifiable"].as_u64(),
+        Some(0),
+        "{report}"
+    );
+    assert_eq!(report["counts"]["skipped"].as_u64(), Some(0), "{report}");
+    for name in [
+        "state_new",
+        "observe",
+        "advance",
+        "set_generation",
+        "choose_generation",
+    ] {
+        assert!(
+            report["bodies"].as_array().unwrap().iter().any(|body| {
+                body["body"].as_str() == Some(name) && body["verdict"].as_str() == Some("faithful")
+            }),
+            "{name}: {report}"
+        );
+    }
+}
+
+#[test]
+fn nested_record_and_terminal_array_writes_are_faithful() {
+    if !verus_present() {
+        eprintln!("SKIP: verus not available — nested aggregate body-TV not discharged.");
+        return;
+    }
+    let src = r#"
+const SLOTS: usize = 2;
+struct Inner { value: u64, guard: u64 }
+struct Nested { inner: Inner, slots: [u64; SLOTS], tag: u64 }
+
+fn nested_owned(state: Nested, index: usize, next: u64) -> Nested
+  req index < SLOTS && next < 1000
+  ens result.inner.value == next
+  ens result.inner.guard == state.inner.guard
+  ens result.slots[index] == next + 1
+  ens result.tag == state.tag
+  fx pure
+{
+  let mut updated: Nested = state;
+  updated.inner.value = next;
+  updated.slots[index] = updated.inner.value + 1;
+  updated
+}
+
+fn nested_borrowed(state: &mut Nested, index: usize, next: u64) -> u64
+  req index < SLOTS && next < 1000
+  ens result == next
+  ens final(state).inner.value == next
+  ens final(state).inner.guard == old(state).inner.guard
+  ens final(state).slots[index] == next + 1
+  ens final(state).tag == old(state).tag
+  fx pure
+{
+  state.inner.value = next;
+  state.slots[index] = state.inner.value + 1;
+  state.inner.value
+}
+"#;
+    let file = write_th("nested_aggregate_lifecycle", src);
+    let report = run_body_tv_json(&file);
+    assert_eq!(report["counts"]["checked"].as_u64(), Some(2), "{report}");
+    assert_eq!(report["counts"]["faithful"].as_u64(), Some(2), "{report}");
+    assert_eq!(report["counts"]["divergent"].as_u64(), Some(0), "{report}");
+    assert_eq!(
+        report["counts"]["unverifiable"].as_u64(),
+        Some(0),
+        "{report}"
+    );
+    assert_eq!(report["counts"]["skipped"].as_u64(), Some(0), "{report}");
+    for name in ["nested_owned", "nested_borrowed"] {
+        assert!(
+            report["bodies"].as_array().unwrap().iter().any(|body| {
+                body["body"].as_str() == Some(name) && body["verdict"].as_str() == Some("faithful")
+            }),
+            "{name}: {report}"
+        );
+    }
+}
+
+#[test]
+fn owned_aggregate_fixture_is_entirely_l3_body_faithful() {
+    if !verus_present() {
+        eprintln!("SKIP: verus not available — owned-aggregate body-TV not discharged.");
+        return;
+    }
+    let file = corpus_dir().join("verified-build/owned_aggregate_lifecycle.th");
+    let report = run_body_tv_json(&file);
+    assert_eq!(report["counts"]["checked"].as_u64(), Some(7), "{report}");
+    assert_eq!(report["counts"]["faithful"].as_u64(), Some(7), "{report}");
+    assert_eq!(report["counts"]["divergent"].as_u64(), Some(0), "{report}");
+    assert_eq!(
+        report["counts"]["unverifiable"].as_u64(),
+        Some(0),
+        "{report}"
+    );
+    assert_eq!(report["counts"]["skipped"].as_u64(), Some(0), "{report}");
+    for name in [
+        "owned_state_generation",
+        "owned_state_occupied",
+        "owned_state_first",
+        "owned_state_second",
+        "owned_state_mix_generation",
+        "owned_state_mix_second",
+        "owned_state_pipeline",
+    ] {
+        assert!(
+            report["bodies"].as_array().unwrap().iter().any(|body| {
+                body["body"].as_str() == Some(name) && body["verdict"].as_str() == Some("faithful")
+            }),
+            "{name}: {report}"
+        );
+    }
+}
+
+#[test]
+fn nested_aggregate_fixture_is_entirely_l3_body_faithful() {
+    if !verus_present() {
+        eprintln!("SKIP: verus not available — nested-aggregate body-TV not discharged.");
+        return;
+    }
+    let file = corpus_dir().join("verified-build/nested_aggregate_lifecycle.th");
+    let report = run_body_tv_json(&file);
+    assert_eq!(report["counts"]["checked"].as_u64(), Some(5), "{report}");
+    assert_eq!(report["counts"]["faithful"].as_u64(), Some(5), "{report}");
+    assert_eq!(report["counts"]["divergent"].as_u64(), Some(0), "{report}");
+    assert_eq!(
+        report["counts"]["unverifiable"].as_u64(),
+        Some(0),
+        "{report}"
+    );
+    assert_eq!(report["counts"]["skipped"].as_u64(), Some(0), "{report}");
+    for name in [
+        "nested_state_value",
+        "nested_state_guard",
+        "nested_state_tag",
+        "nested_state_update",
+        "nested_state_pipeline",
+    ] {
+        assert!(
+            report["bodies"].as_array().unwrap().iter().any(|body| {
+                body["body"].as_str() == Some(name) && body["verdict"].as_str() == Some("faithful")
+            }),
+            "{name}: {report}"
+        );
+    }
+}
+
+#[test]
+fn mutable_reference_callee_effects_are_exact_and_faithful() {
+    let source = r#"
+struct State { value: u64, guard: u64 }
+fn mutate(state: &mut State, value: u64) -> ()
+  req true
+  ens final(state).value == value
+  ens final(state).guard == old(state).guard
+  fx pure
+{
+  state.value = value;
+}
+fn call_mutate(state: &mut State, value: u64) -> ()
+  req value < 1000
+  ens final(state).value == value + 1
+  ens final(state).guard == old(state).guard
+  fx pure
+{
+  mutate(state, value);
+  let next: u64 = state.value + 1;
+  mutate(state, next);
+}
+"#;
+    let file = write_th("mutable_reference_callee", source);
+    let report = run_body_tv_json(&file);
+    assert_eq!(report["counts"]["checked"].as_u64(), Some(2), "{report}");
+    assert_eq!(report["counts"]["faithful"].as_u64(), Some(2), "{report}");
+    assert_eq!(report["counts"]["divergent"].as_u64(), Some(0), "{report}");
+    assert_eq!(report["counts"]["skipped"].as_u64(), Some(0), "{report}");
+    for name in ["mutate", "call_mutate"] {
+        assert!(
+            report["bodies"].as_array().unwrap().iter().any(|body| {
+                body["body"].as_str() == Some(name) && body["verdict"].as_str() == Some("faithful")
+            }),
+            "{name}: {report}"
+        );
+    }
+}
+
+#[test]
+fn mixed_shared_and_mutable_callee_effects_are_exact_and_faithful() {
+    let source = r#"
+struct State { value: u64 }
+fn copy_from(left: &mut State, right: &State) -> ()
+  req true
+  ens final(left).value == right.value
+  fx pure
+{
+  left.value = right.value;
+}
+fn call_copy(left: &mut State, right: &State) -> ()
+  req true
+  ens final(left).value == right.value
+  fx pure
+{
+  copy_from(left, right);
+}
+fn call_copy_after_peer_update(left: &mut State, right: &mut State, value: u64) -> ()
+  req true
+  ens final(left).value == value
+  ens final(right).value == value
+  fx pure
+{
+  right.value = value;
+  copy_from(left, right);
+}
+"#;
+    let file = write_th("mixed_shared_mutable_callee", source);
+    let report = run_body_tv_json(&file);
+    assert_eq!(report["counts"]["checked"].as_u64(), Some(3), "{report}");
+    assert_eq!(report["counts"]["faithful"].as_u64(), Some(3), "{report}");
+    assert_eq!(report["counts"]["divergent"].as_u64(), Some(0), "{report}");
+    assert_eq!(report["counts"]["skipped"].as_u64(), Some(0), "{report}");
+    for name in ["copy_from", "call_copy", "call_copy_after_peer_update"] {
+        assert!(
+            report["bodies"].as_array().unwrap().iter().any(|body| {
+                body["body"].as_str() == Some(name) && body["verdict"].as_str() == Some("faithful")
+            }),
+            "{name}: {report}"
+        );
+    }
+}
+
+#[test]
+fn mixed_shared_and_mutable_callee_aliasing_remains_fail_closed() {
+    let source = r#"
+struct State { value: u64 }
+fn copy_from(left: &mut State, right: &State) -> ()
+  req true
+  ens final(left).value == right.value
+  fx pure
+{
+  left.value = right.value;
+}
+
+fn alias(state: &mut State) -> ()
+  req true
+  ens true
+  fx pure
+{
+  copy_from(state, state);
+}
+"#;
+    let file = write_th("mixed_shared_mutable_alias", source);
+    let report = run_body_tv_json(&file);
+    let caller = report["bodies"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|body| body["body"].as_str() == Some("alias"))
+        .unwrap_or_else(|| panic!("missing mixed-alias caller body: {report}"));
+    assert_eq!(caller["verdict"].as_str(), Some("skipped"), "{report}");
+    assert!(
+        caller["detail"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("aliases exclusive access path `state` through shared actual `state`"),
+        "{report}"
+    );
+}
+
+#[test]
+fn projected_record_callee_effects_are_exact_structural_and_faithful() {
+    let source = r#"
+struct Leaf { value: u64, guard: u64 }
+struct Pair { left: Leaf, right: Leaf }
+struct Outer { pair: Pair, tag: u64 }
+
+fn set_leaf(leaf: &mut Leaf, value: u64) -> u64
+  req true
+  ens result == value
+  ens final(leaf).value == value
+  ens final(leaf).guard == old(leaf).guard
+  fx pure
+{
+  leaf.value = value;
+  leaf.value
+}
+
+fn copy_leaf(destination: &mut Leaf, source: &Leaf) -> u64
+  req true
+  ens result == source.value
+  ens final(destination).value == source.value
+  ens final(destination).guard == old(destination).guard
+  fx pure
+{
+  destination.value = source.value;
+  destination.value
+}
+
+fn projected_pipeline(outer: &mut Outer, value: u64) -> u64
+  req true
+  ens result == value
+  ens final(outer).pair.left.value == value
+  ens final(outer).pair.left.guard == old(outer).pair.left.guard
+  ens final(outer).pair.right.value == value
+  ens final(outer).pair.right.guard == old(outer).pair.right.guard
+  ens final(outer).tag == old(outer).tag
+  fx pure
+{
+  let written: u64 = set_leaf(&mut outer.pair.left, value);
+  let observed: u64 = copy_leaf(&mut outer.pair.right, &outer.pair.left);
+  observed
+}
+
+fn projected_from_shared(destination: &mut Leaf, outer: &Outer) -> u64
+  req true
+  ens result == outer.pair.left.value
+  ens final(destination).value == outer.pair.left.value
+  ens final(destination).guard == old(destination).guard
+  fx pure
+{
+  let observed: u64 = copy_leaf(destination, &outer.pair.left);
+  observed
+}
+
+fn copy_with_two_shared(
+  destination: &mut Leaf,
+  first: &Leaf,
+  second: &Leaf,
+) -> u64
+  req true
+  ens result == first.value
+  ens final(destination).value == first.value
+  ens final(destination).guard == old(destination).guard
+  fx pure
+{
+  destination.value = first.value;
+  first.value
+}
+
+fn projected_shared_alias(destination: &mut Leaf, outer: &Outer) -> u64
+  req true
+  ens result == outer.pair.left.value
+  ens final(destination).value == outer.pair.left.value
+  ens final(destination).guard == old(destination).guard
+  fx pure
+{
+  let observed: u64 = copy_with_two_shared(
+    destination,
+    &outer.pair.left,
+    &outer.pair.left,
+  );
+  observed
+}
+"#;
+    let file = write_th("projected_record_callee", source);
+    let report = run_body_tv_json(&file);
+    assert_eq!(report["counts"]["checked"].as_u64(), Some(6), "{report}");
+    assert_eq!(report["counts"]["faithful"].as_u64(), Some(6), "{report}");
+    assert_eq!(report["counts"]["divergent"].as_u64(), Some(0), "{report}");
+    assert_eq!(report["counts"]["skipped"].as_u64(), Some(0), "{report}");
+    for name in [
+        "set_leaf",
+        "copy_leaf",
+        "projected_pipeline",
+        "projected_from_shared",
+        "copy_with_two_shared",
+        "projected_shared_alias",
+    ] {
+        assert!(
+            report["bodies"].as_array().unwrap().iter().any(|body| {
+                body["body"].as_str() == Some(name) && body["verdict"].as_str() == Some("faithful")
+            }),
+            "{name}: {report}"
+        );
+    }
+}
+
+#[test]
+fn projected_record_ancestor_and_shared_overlap_remain_fail_closed() {
+    let source = r#"
+struct Leaf { value: u64 }
+struct Pair { left: Leaf, right: Leaf }
+struct Outer { pair: Pair }
+
+fn overlap_pair(pair: &mut Pair, leaf: &mut Leaf) -> ()
+  req true
+  ens true
+  fx pure
+{
+  pair.left.value = leaf.value;
+}
+
+fn copy_leaf(destination: &mut Leaf, source: &Leaf) -> ()
+  req true
+  ens true
+  fx pure
+{
+  destination.value = source.value;
+}
+
+fn ancestor_alias(outer: &mut Outer) -> ()
+  req true
+  ens true
+  fx pure
+{
+  overlap_pair(&mut outer.pair, &mut outer.pair.left);
+}
+
+fn shared_alias(outer: &mut Outer) -> ()
+  req true
+  ens true
+  fx pure
+{
+  copy_leaf(&mut outer.pair.left, &outer.pair.left);
+}
+"#;
+    let file = write_th("projected_record_alias", source);
+    let report = run_body_tv_json(&file);
+    for (caller, expected) in [
+        ("ancestor_alias", "`outer.pair` and `outer.pair.left`"),
+        (
+            "shared_alias",
+            "exclusive access path `outer.pair.left` through shared actual `outer.pair.left`",
+        ),
+    ] {
+        let body = report["bodies"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|body| body["body"].as_str() == Some(caller))
+            .unwrap_or_else(|| panic!("missing projected-alias caller `{caller}`: {report}"));
+        assert_eq!(body["verdict"].as_str(), Some("skipped"), "{report}");
+        assert!(
+            body["detail"]
+                .as_str()
+                .unwrap_or_default()
+                .contains(expected),
+            "{report}"
+        );
+    }
+}
+
+#[test]
+fn projected_indexed_callee_effects_are_nested_current_and_faithful() {
+    let source = r#"
+const SLOTS: usize = 2;
+struct Bank { slots: [u64; SLOTS], guard: u64 }
+struct ArrayOuter { left: Bank, right: Bank, tag: u64 }
+fn write_array(data: &mut [u64; SLOTS], value: u64) -> u64
+  req true
+  ens result == value
+  ens final(data)[0] == value
+  ens final(data)[1] == old(data)[1]
+  fx pure
+{
+  data[0] = value;
+  data[0]
+}
+fn copy_array(destination: &mut [u64; SLOTS], source: &[u64; SLOTS]) -> u64
+  req true
+  ens result == source[0]
+  ens final(destination)[0] == source[0]
+  ens final(destination)[1] == old(destination)[1]
+  fx pure
+{
+  destination[0] = source[0];
+  destination[0]
+}
+fn projected_array_pipeline(outer: &mut ArrayOuter, value: u64) -> u64
+  req value < 1000
+  ens result == value
+  ens final(outer).left.slots[0] == value
+  ens final(outer).right.slots[0] == value
+  ens final(outer).left.guard == old(outer).left.guard
+  ens final(outer).right.guard == old(outer).right.guard
+  ens final(outer).tag == old(outer).tag
+  fx pure
+{
+  let written: u64 = write_array(&mut outer.left.slots, value);
+  let observed: u64 = copy_array(&mut outer.right.slots, &outer.left.slots);
+  observed
+}
+"#;
+    let file = write_th("projected_indexed_callee", source);
+    let report = run_body_tv_json(&file);
+    assert_eq!(report["counts"]["checked"].as_u64(), Some(3), "{report}");
+    assert_eq!(report["counts"]["faithful"].as_u64(), Some(3), "{report}");
+    assert_eq!(report["counts"]["divergent"].as_u64(), Some(0), "{report}");
+    assert_eq!(report["counts"]["skipped"].as_u64(), Some(0), "{report}");
+    for name in ["write_array", "copy_array", "projected_array_pipeline"] {
+        assert!(
+            report["bodies"].as_array().unwrap().iter().any(|body| {
+                body["body"].as_str() == Some(name) && body["verdict"].as_str() == Some("faithful")
+            }),
+            "{name}: {report}"
+        );
+    }
+}
+
+#[test]
+fn record_calls_after_projected_indexed_state_are_leafwise_and_faithful() {
+    let source = r#"
+const SLOTS: usize = 2;
+struct Bank { slots: [u64; SLOTS], guard: u64 }
+struct ArrayOuter { left: Bank, right: Bank, tag: u64 }
+fn write_array(data: &mut [u64; SLOTS], value: u64) -> u64
+  req true
+  ens result == value
+  ens final(data)[0] == value
+  ens final(data)[1] == old(data)[1]
+  fx pure
+{
+  data[0] = value;
+  data[0]
+}
+fn advance_bank(bank: &mut Bank, next_guard: u64) -> u64
+  req true
+  ens result == old(bank).slots[0]
+  ens final(bank).slots[0] == old(bank).slots[0]
+  ens final(bank).slots[1] == old(bank).slots[0]
+  ens final(bank).guard == next_guard
+  fx pure
+{
+  bank.slots[1] = bank.slots[0];
+  bank.guard = next_guard;
+  bank.slots[1]
+}
+fn copy_bank(destination: &mut Bank, source: &Bank) -> u64
+  req true
+  ens result == source.slots[0]
+  ens final(destination).slots[0] == source.slots[0]
+  ens final(destination).slots[1] == old(destination).slots[1]
+  ens final(destination).guard == old(destination).guard
+  fx pure
+{
+  destination.slots[0] = source.slots[0];
+  destination.slots[0]
+}
+fn direct_record_after_array(
+  bank: &mut Bank,
+  value: u64,
+  next_guard: u64,
+) -> u64
+  req value < 1000
+  ens result == value
+  ens final(bank).slots[0] == value
+  ens final(bank).slots[1] == value
+  ens final(bank).guard == next_guard
+  fx pure
+{
+  let written: u64 = write_array(&mut bank.slots, value);
+  let advanced: u64 = advance_bank(bank, next_guard);
+  advanced
+}
+fn replace_bank_slots(bank: &mut Bank, value: u64) -> u64
+  req true
+  ens result == value
+  ens final(bank).slots[0] == value
+  ens final(bank).slots[1] == value
+  ens final(bank).guard == old(bank).guard
+  fx pure
+{
+  bank.slots = [value, value];
+  bank.slots[1]
+}
+fn record_replaces_projected_array(
+  bank: &mut Bank,
+  first: u64,
+  replacement: u64,
+) -> u64
+  req first < 1000
+  ens result == replacement
+  ens final(bank).slots[0] == replacement
+  ens final(bank).slots[1] == replacement
+  ens final(bank).guard == old(bank).guard
+  fx pure
+{
+  let written: u64 = write_array(&mut bank.slots, first);
+  let replaced: u64 = replace_bank_slots(bank, replacement);
+  bank.slots[0]
+}
+fn record_after_array_pipeline(
+  outer: &mut ArrayOuter,
+  value: u64,
+  next_guard: u64,
+) -> u64
+  req value < 1000
+  ens result == value
+  ens final(outer).left.slots[0] == value
+  ens final(outer).left.slots[1] == value
+  ens final(outer).left.guard == next_guard
+  ens final(outer).right.slots[0] == value
+  ens final(outer).right.slots[1] == old(outer).right.slots[1]
+  ens final(outer).right.guard == old(outer).right.guard
+  ens final(outer).tag == old(outer).tag
+  fx pure
+{
+  let written: u64 = write_array(&mut outer.left.slots, value);
+  let advanced: u64 = advance_bank(&mut outer.left, next_guard);
+  let copied: u64 = copy_bank(&mut outer.right, &outer.left);
+  copied
+}
+fn snapshot_after_array(outer: &mut ArrayOuter, value: u64) -> Bank
+  req value < 1000
+  ens result.slots[0] == value
+  ens result.slots[1] == old(outer).left.slots[1]
+  ens result.guard == old(outer).left.guard
+  ens final(outer).left.slots[0] == value
+  ens final(outer).left.slots[1] == old(outer).left.slots[1]
+  ens final(outer).left.guard == old(outer).left.guard
+  ens final(outer).right.slots[0] == old(outer).right.slots[0]
+  ens final(outer).right.slots[1] == old(outer).right.slots[1]
+  ens final(outer).right.guard == old(outer).right.guard
+  ens final(outer).tag == old(outer).tag
+  fx pure
+{
+  let written: u64 = write_array(&mut outer.left.slots, value);
+  Bank { slots: outer.left.slots, guard: outer.left.guard }
+}
+fn observe_bank(bank: Bank) -> u64
+  req bank.slots[0] < 1000 && bank.guard < 1000
+  ens result == bank.slots[0] + bank.guard
+  fx pure
+{
+  bank.slots[0] + bank.guard
+}
+fn rewrite_bank(bank: Bank, next_guard: u64) -> Bank
+  req bank.slots[0] < 1000 && next_guard < 1000
+  ens result.slots[0] == bank.slots[0]
+  ens result.slots[1] == next_guard + 1
+  ens result.guard == next_guard
+  fx pure
+{
+  let mut rewritten: Bank = bank;
+  rewritten.slots[1] = next_guard + 1;
+  rewritten.guard = next_guard;
+  rewritten
+}
+fn observe_snapshot_after_array(
+  outer: &mut ArrayOuter,
+  value: u64,
+  next_guard: u64,
+) -> u64
+  req value < 1000 && next_guard < 1000
+  ens result == value + next_guard
+  ens final(outer).left.slots[0] == value
+  ens final(outer).left.slots[1] == old(outer).left.slots[1]
+  ens final(outer).left.guard == old(outer).left.guard
+  ens final(outer).right.slots[0] == old(outer).right.slots[0]
+  ens final(outer).right.slots[1] == old(outer).right.slots[1]
+  ens final(outer).right.guard == old(outer).right.guard
+  ens final(outer).tag == old(outer).tag
+  fx pure
+{
+  let written: u64 = write_array(&mut outer.left.slots, value);
+  let mut snapshot: Bank = Bank {
+    slots: outer.left.slots,
+    guard: outer.left.guard,
+  };
+  snapshot.guard = next_guard;
+  let observed: u64 = observe_bank(snapshot);
+  observed
+}
+fn rewrite_snapshot_after_array(
+  outer: &mut ArrayOuter,
+  value: u64,
+  next_guard: u64,
+) -> Bank
+  req value < 1000 && next_guard < 1000
+  ens result.slots[0] == value
+  ens result.slots[1] == next_guard + 1
+  ens result.guard == next_guard
+  ens final(outer).left.slots[0] == value
+  ens final(outer).left.slots[1] == old(outer).left.slots[1]
+  ens final(outer).left.guard == old(outer).left.guard
+  ens final(outer).right.slots[0] == old(outer).right.slots[0]
+  ens final(outer).right.slots[1] == old(outer).right.slots[1]
+  ens final(outer).right.guard == old(outer).right.guard
+  ens final(outer).tag == old(outer).tag
+  fx pure
+{
+  let written: u64 = write_array(&mut outer.left.slots, value);
+  let snapshot: Bank = Bank {
+    slots: outer.left.slots,
+    guard: outer.left.guard,
+  };
+  let rewritten: Bank = rewrite_bank(snapshot, next_guard);
+  rewritten
+}
+fn rewrite_snapshot_direct_after_array(
+  outer: &mut ArrayOuter,
+  value: u64,
+  next_guard: u64,
+) -> Bank
+  req value < 1000 && next_guard < 1000
+  ens result.slots[0] == value
+  ens result.slots[1] == next_guard + 1
+  ens result.guard == next_guard
+  ens final(outer).left.slots[0] == value
+  ens final(outer).left.slots[1] == old(outer).left.slots[1]
+  ens final(outer).left.guard == old(outer).left.guard
+  ens final(outer).right.slots[0] == old(outer).right.slots[0]
+  ens final(outer).right.slots[1] == old(outer).right.slots[1]
+  ens final(outer).right.guard == old(outer).right.guard
+  ens final(outer).tag == old(outer).tag
+  fx pure
+{
+  let written: u64 = write_array(&mut outer.left.slots, value);
+  let snapshot: Bank = Bank {
+    slots: outer.left.slots,
+    guard: outer.left.guard,
+  };
+  rewrite_bank(snapshot, next_guard)
+}
+fn staged_snapshot_after_array(
+  outer: &mut ArrayOuter,
+  value: u64,
+  next_guard: u64,
+) -> Bank
+  req value < 1000 && next_guard < 1000
+  ens result.slots[0] == value
+  ens result.slots[1] == next_guard + 1
+  ens result.guard == next_guard
+  ens final(outer).left.slots[0] == value
+  ens final(outer).left.slots[1] == old(outer).left.slots[1]
+  ens final(outer).left.guard == old(outer).left.guard
+  ens final(outer).right.slots[0] == old(outer).right.slots[0]
+  ens final(outer).right.slots[1] == old(outer).right.slots[1]
+  ens final(outer).right.guard == old(outer).right.guard
+  ens final(outer).tag == old(outer).tag
+  fx pure
+{
+  let written: u64 = write_array(&mut outer.left.slots, value);
+  let snapshot: Bank = Bank {
+    slots: outer.left.slots,
+    guard: outer.left.guard,
+  };
+  let mut staged: Bank = snapshot;
+  staged.slots[1] = next_guard + 1;
+  staged.guard = next_guard;
+  staged
+}
+"#;
+    let file = write_th("record_after_projected_indexed", source);
+    let report = run_body_tv_json(&file);
+    assert_eq!(report["counts"]["checked"].as_u64(), Some(14), "{report}");
+    assert_eq!(report["counts"]["faithful"].as_u64(), Some(14), "{report}");
+    assert_eq!(report["counts"]["divergent"].as_u64(), Some(0), "{report}");
+    assert_eq!(report["counts"]["skipped"].as_u64(), Some(0), "{report}");
+    for name in [
+        "write_array",
+        "advance_bank",
+        "copy_bank",
+        "direct_record_after_array",
+        "replace_bank_slots",
+        "record_replaces_projected_array",
+        "record_after_array_pipeline",
+        "snapshot_after_array",
+        "observe_bank",
+        "observe_snapshot_after_array",
+        "rewrite_bank",
+        "rewrite_snapshot_after_array",
+        "rewrite_snapshot_direct_after_array",
+        "staged_snapshot_after_array",
+    ] {
+        assert!(
+            report["bodies"].as_array().unwrap().iter().any(|body| {
+                body["body"].as_str() == Some(name) && body["verdict"].as_str() == Some("faithful")
+            }),
+            "{name}: {report}"
+        );
+    }
+}
+
+#[test]
+fn projected_indexed_prefix_aliases_remain_fail_closed() {
+    let source = r#"
+const SLOTS: usize = 2;
+struct Bank { slots: [u64; SLOTS], guard: u64 }
+struct ArrayOuter { left: Bank, right: Bank }
+fn overlap(bank: &mut Bank, slots: &mut [u64; SLOTS]) -> ()
+  req true
+  ens true
+  fx pure
+{
+  bank.guard = 1;
+  slots[0] = 2;
+}
+fn alias(outer: &mut ArrayOuter) -> ()
+  req true
+  ens true
+  fx pure
+{
+  overlap(&mut outer.left, &mut outer.left.slots);
+}
+"#;
+    let file = write_th("projected_indexed_alias", source);
+    let report = run_body_tv_json(&file);
+    let caller = report["bodies"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|body| body["body"].as_str() == Some("alias"))
+        .unwrap_or_else(|| panic!("missing projected indexed alias caller: {report}"));
+    assert_eq!(caller["verdict"].as_str(), Some("skipped"), "{report}");
+    assert!(
+        caller["detail"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("`outer.left` and `outer.left.slots`"),
+        "{report}"
+    );
+}
+
+#[test]
+fn projected_indexed_type_and_borrow_mismatches_remain_fail_closed() {
+    let source = r#"
+const TWO: usize = 2;
+const THREE: usize = 3;
+struct Bank2 { slots: [u64; TWO] }
+struct Bank3 { slots: [u64; THREE] }
+struct ArrayOuter { narrow: Bank2, wide: Bank3 }
+fn write_array(data: &mut [u64; TWO], value: u64) -> ()
+  req true
+  ens final(data)[0] == value
+  fx pure
+{
+  data[0] = value;
+}
+fn borrow_mismatch(outer: &mut ArrayOuter) -> ()
+  req true
+  ens true
+  fx pure
+{
+  write_array(&outer.narrow.slots, 1);
+}
+fn type_mismatch(outer: &mut ArrayOuter) -> ()
+  req true
+  ens true
+  fx pure
+{
+  write_array(&mut outer.wide.slots, 1);
+}
+"#;
+    let file = write_th("projected_indexed_mismatch", source);
+    let report = run_body_tv_json(&file);
+    for (caller, expected) in [
+        (
+            "borrow_mismatch",
+            "exclusive indexed formal `write_array::data` received a shared projected borrow",
+        ),
+        ("type_mismatch", "exact pointee-type mismatch"),
+    ] {
+        let body = report["bodies"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|body| body["body"].as_str() == Some(caller))
+            .unwrap_or_else(|| {
+                panic!("missing projected-indexed mismatch caller `{caller}`: {report}")
+            });
+        assert_eq!(body["verdict"].as_str(), Some("skipped"), "{report}");
+        assert!(
+            body["detail"]
+                .as_str()
+                .unwrap_or_default()
+                .contains(expected),
+            "{report}"
+        );
+    }
+}
+
+#[test]
+fn mutable_fixed_array_callee_effects_are_exact_and_faithful() {
+    let source = r#"
+const SLOTS: usize = 2;
+fn write_zero(data: &mut [u64; SLOTS], value: u64) -> u64
+  req true
+  ens result == value
+  ens final(data)[0] == value
+  ens final(data)[1] == old(data)[1]
+  fx pure
+{
+  data[0] = value;
+  data[0]
+}
+fn array_call_pipeline(data: &mut [u64; SLOTS], value: u64) -> u64
+  req true
+  ens result == value
+  ens final(data)[0] == value
+  ens final(data)[1] == old(data)[1]
+  fx pure
+{
+  let observed: u64 = write_zero(data, value);
+  observed
+}
+"#;
+    let file = write_th("mutable_fixed_array_callee", source);
+    let report = run_body_tv_json(&file);
+    assert_eq!(report["counts"]["checked"].as_u64(), Some(2), "{report}");
+    assert_eq!(report["counts"]["faithful"].as_u64(), Some(2), "{report}");
+    assert_eq!(report["counts"]["divergent"].as_u64(), Some(0), "{report}");
+    assert_eq!(report["counts"]["skipped"].as_u64(), Some(0), "{report}");
+    for name in ["write_zero", "array_call_pipeline"] {
+        assert!(
+            report["bodies"].as_array().unwrap().iter().any(|body| {
+                body["body"].as_str() == Some(name) && body["verdict"].as_str() == Some("faithful")
+            }),
+            "{name}: {report}"
+        );
+    }
+}
+
+#[test]
+fn mutable_slice_callee_effects_are_exact_and_faithful() {
+    let source = r#"
+fn slice_write_zero(data: &mut [u64], value: u64) -> u64
+  req data.len() == 2 && data[1] == 77
+  ens result == value
+  ens final(data)[0] == value
+  ens final(data)[1] == 77
+  fx pure
+{
+  data[0] = value;
+  data[0]
+}
+fn slice_call_pipeline(data: &mut [u64], value: u64) -> u64
+  req data.len() == 2 && data[1] == 77
+  ens result == value
+  ens final(data)[0] == value
+  ens final(data)[1] == 77
+  fx pure
+{
+  let observed: u64 = slice_write_zero(data, value);
+  observed
+}
+"#;
+    let file = write_th("mutable_slice_callee", source);
+    let report = run_body_tv_json(&file);
+    assert_eq!(report["counts"]["checked"].as_u64(), Some(2), "{report}");
+    assert_eq!(report["counts"]["faithful"].as_u64(), Some(2), "{report}");
+    assert_eq!(report["counts"]["divergent"].as_u64(), Some(0), "{report}");
+    assert_eq!(report["counts"]["skipped"].as_u64(), Some(0), "{report}");
+}
+
+#[test]
+fn mixed_shared_and_mutable_fixed_array_effects_are_exact_and_faithful() {
+    let source = r#"
+const SLOTS: usize = 2;
+fn copy_array(left: &mut [u64; SLOTS], right: &[u64; SLOTS]) -> u64
+  req true
+  ens result == right[1]
+  ens final(left)[0] == right[1]
+  ens final(left)[1] == old(left)[1]
+  fx pure
+{
+  left[0] = right[1];
+  left[0]
+}
+fn mixed_array_pipeline(left: &mut [u64; SLOTS], right: &[u64; SLOTS]) -> u64
+  req true
+  ens result == right[1]
+  ens final(left)[0] == right[1]
+  ens final(left)[1] == old(left)[1]
+  fx pure
+{
+  let observed: u64 = copy_array(left, right);
+  observed
+}
+fn current_array_peer(
+  left: &mut [u64; SLOTS],
+  peer: &mut [u64; SLOTS],
+  value: u64,
+) -> u64
+  req true
+  ens result == value
+  ens final(left)[0] == value
+  ens final(left)[1] == old(left)[1]
+  ens final(peer)[0] == old(peer)[0]
+  ens final(peer)[1] == value
+  fx pure
+{
+  peer[1] = value;
+  let observed: u64 = copy_array(left, peer);
+  observed
+}
+"#;
+    let file = write_th("mixed_shared_mutable_fixed_array_callee", source);
+    let report = run_body_tv_json(&file);
+    assert_eq!(report["counts"]["checked"].as_u64(), Some(3), "{report}");
+    assert_eq!(report["counts"]["faithful"].as_u64(), Some(3), "{report}");
+    assert_eq!(report["counts"]["divergent"].as_u64(), Some(0), "{report}");
+    assert_eq!(report["counts"]["skipped"].as_u64(), Some(0), "{report}");
+}
+
+#[test]
+fn mixed_shared_and_mutable_slice_effects_are_exact_and_faithful() {
+    let source = r#"
+fn copy_slice(left: &mut [u64], right: &[u64]) -> u64
+  req left.len() == 2 && right.len() == 2 && left[1] == 77
+  ens result == right[1]
+  ens final(left)[0] == right[1]
+  ens final(left)[1] == 77
+  fx pure
+{
+  left[0] = right[1];
+  left[0]
+}
+fn mixed_slice_pipeline(left: &mut [u64], right: &[u64]) -> u64
+  req left.len() == 2 && right.len() == 2 && left[1] == 77
+  ens result == right[1]
+  ens final(left)[0] == right[1]
+  ens final(left)[1] == 77
+  fx pure
+{
+  let observed: u64 = copy_slice(left, right);
+  observed
+}
+"#;
+    let file = write_th("mixed_shared_mutable_slice_callee", source);
+    let report = run_body_tv_json(&file);
+    assert_eq!(report["counts"]["checked"].as_u64(), Some(2), "{report}");
+    assert_eq!(report["counts"]["faithful"].as_u64(), Some(2), "{report}");
+    assert_eq!(report["counts"]["divergent"].as_u64(), Some(0), "{report}");
+    assert_eq!(report["counts"]["skipped"].as_u64(), Some(0), "{report}");
+}
+
+#[test]
+fn mixed_shared_and_mutable_indexed_aliasing_remains_fail_closed() {
+    let source = r#"
+const SLOTS: usize = 2;
+fn copy_array(left: &mut [u64; SLOTS], right: &[u64; SLOTS]) -> u64
+  req true
+  ens result == right[1]
+  fx pure
+{
+  left[0] = right[1];
+  left[0]
+}
+fn alias(data: &mut [u64; SLOTS]) -> u64
+  req true
+  ens true
+  fx pure
+{
+  let observed: u64 = copy_array(data, data);
+  observed
+}
+"#;
+    let file = write_th("mixed_shared_mutable_indexed_alias", source);
+    let report = run_body_tv_json(&file);
+    let caller = report["bodies"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|body| body["body"].as_str() == Some("alias"))
+        .unwrap_or_else(|| panic!("missing mixed-indexed-alias caller body: {report}"));
+    assert_eq!(caller["verdict"].as_str(), Some("skipped"), "{report}");
+    assert!(
+        caller["detail"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("aliases exclusive access path `data` through shared indexed root `data`"),
+        "{report}"
+    );
+}
+
+#[test]
+fn aggregate_array_relations_are_faithful() {
+    if !verus_present() {
+        eprintln!("SKIP: verus not available — aggregate-array body-TV not discharged.");
+        return;
+    }
+    let src = concat!(
+        "const WORDS: usize = 2;\n",
+        "const SLOTS: usize = 4;\n",
+        "struct Stamp { words: [u64; WORDS], flags: (bool, u8) }\n",
+        "struct Slot { stamp: Stamp, owner: usize }\n",
+        "fn records_equal(left: [Slot; SLOTS], right: [Slot; SLOTS]) -> bool\n",
+        "  req true\n",
+        "  ens result == left.array_eq(right)\n",
+        "  fx pure\n",
+        "{ left.array_eq(right) }\n",
+        "fn records_same_except(left: [Slot; SLOTS], right: [Slot; SLOTS], at: usize) -> bool\n",
+        "  req true\n",
+        "  ens result == left.array_same_except(right, at)\n",
+        "  fx pure\n",
+        "{ left.array_same_except(right, at) }\n",
+    );
+    let file = write_th("aggregate_array_relations", src);
+    let report = run_body_tv_json(&file);
+    assert_eq!(report["counts"]["checked"].as_u64(), Some(2), "{report}");
+    assert_eq!(report["counts"]["faithful"].as_u64(), Some(2), "{report}");
+    assert_eq!(report["counts"]["divergent"].as_u64(), Some(0), "{report}");
+    for name in ["records_equal", "records_same_except"] {
+        assert!(
+            report["bodies"].as_array().unwrap().iter().any(|body| {
+                body["body"].as_str() == Some(name) && body["verdict"].as_str() == Some("faithful")
+            }),
+            "{name}: {report}"
+        );
+    }
+}
+
+#[test]
+fn faithful_u64_bit_method_body_is_faithful() {
+    if !verus_present() {
+        eprintln!("SKIP: verus not available — u64-bit body-TV not discharged.");
+        return;
+    }
+    let src = concat!(
+        "fn set_through_local(word: u64, bit: usize) -> u64\n",
+        "  req true\n",
+        "  ens result == word.bit_set(bit)\n",
+        "  fx pure\n",
+        "{\n",
+        "  let updated: u64 = word.bit_set(bit);\n",
+        "  updated\n",
+        "}\n",
+        "fn preserve_through_local(word: u64, changed: usize, observed: usize) -> bool\n",
+        "  req true\n",
+        "  ens result == word.bit_clear_preserves_other(changed, observed)\n",
+        "  fx pure\n",
+        "{\n",
+        "  let preserved: bool = word.bit_clear_preserves_other(changed, observed);\n",
+        "  preserved\n",
+        "}\n",
+    );
+    let file = write_th("u64_bit_methods", src);
+    let report = run_body_tv_json(&file);
+    assert_eq!(report["counts"]["checked"].as_u64(), Some(2), "{report}");
+    assert_eq!(report["counts"]["faithful"].as_u64(), Some(2), "{report}");
+    assert_eq!(report["counts"]["divergent"].as_u64(), Some(0), "{report}");
+    assert!(report["bodies"].as_array().unwrap().iter().any(|body| {
+        body["body"].as_str() == Some("set_through_local")
+            && body["verdict"].as_str() == Some("faithful")
+    }));
+    assert!(report["bodies"].as_array().unwrap().iter().any(|body| {
+        body["body"].as_str() == Some("preserve_through_local")
+            && body["verdict"].as_str() == Some("faithful")
+    }));
 }
 
 // ---- 3. a mutated production → Divergent ------------------------------------

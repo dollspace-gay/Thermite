@@ -1,0 +1,547 @@
+const FIXED_FREELIST_CAPACITY: usize = 64;
+const FIXED_FREELIST_NONE: usize = 64;
+
+#[opaque] struct FixedFreelist64 {
+  freelist_nodes: [usize; FIXED_FREELIST_CAPACITY],
+  freelist_present: [bool; FIXED_FREELIST_CAPACITY],
+  freelist_len: usize,
+}
+
+enum FixedFreelistPush64 {
+  FreelistPushed64 {
+    list: FixedFreelist64,
+  },
+  FreelistDuplicate64 {
+    list: FixedFreelist64,
+    node: usize,
+  },
+  FreelistOutOfRange64 {
+    list: FixedFreelist64,
+    node: usize,
+  },
+  FreelistFull64 {
+    list: FixedFreelist64,
+    node: usize,
+  },
+}
+
+enum FixedFreelistPop64 {
+  FreelistPopped64 {
+    list: FixedFreelist64,
+    node: usize,
+  },
+  FreelistEmpty64 {
+    list: FixedFreelist64,
+  },
+  FreelistCorrupt64 {
+    list: FixedFreelist64,
+    node: usize,
+    reason: u8,
+  },
+}
+
+spec fn fixed_freelist_usize_eq_spec(
+  left: &[usize; FIXED_FREELIST_CAPACITY],
+  right: &[usize; FIXED_FREELIST_CAPACITY],
+) -> bool
+  dec FIXED_FREELIST_CAPACITY
+{
+  left.array_eq(right)
+}
+
+spec fn fixed_freelist_bool_eq_spec(
+  left: &[bool; FIXED_FREELIST_CAPACITY],
+  right: &[bool; FIXED_FREELIST_CAPACITY],
+) -> bool
+  dec FIXED_FREELIST_CAPACITY
+{
+  left.array_eq(right)
+}
+
+spec fn fixed_freelist_usize_frame_spec(
+  next: &[usize; FIXED_FREELIST_CAPACITY],
+  old: &[usize; FIXED_FREELIST_CAPACITY],
+  changed: usize,
+) -> bool
+  dec changed
+{
+  next.array_same_except(old, changed)
+}
+
+spec fn fixed_freelist_bool_frame_spec(
+  next: &[bool; FIXED_FREELIST_CAPACITY],
+  old: &[bool; FIXED_FREELIST_CAPACITY],
+  changed: usize,
+) -> bool
+  dec changed
+{
+  next.array_same_except(old, changed)
+}
+
+spec fn fixed_freelist_equal_spec(
+  left: &FixedFreelist64,
+  right: &FixedFreelist64,
+) -> bool
+  dec FIXED_FREELIST_CAPACITY
+{
+  left.freelist_len == right.freelist_len
+    && fixed_freelist_usize_eq_spec(
+      &left.freelist_nodes,
+      &right.freelist_nodes,
+    )
+    && fixed_freelist_bool_eq_spec(
+      &left.freelist_present,
+      &right.freelist_present,
+    )
+}
+
+spec fn fixed_freelist_empty_spec(list: &FixedFreelist64) -> bool
+  dec FIXED_FREELIST_CAPACITY
+{
+  let nodes: [usize; FIXED_FREELIST_CAPACITY] =
+    [FIXED_FREELIST_NONE; FIXED_FREELIST_CAPACITY];
+  let present: [bool; FIXED_FREELIST_CAPACITY] =
+    [false; FIXED_FREELIST_CAPACITY];
+  list.freelist_len == 0
+    && fixed_freelist_usize_eq_spec(&list.freelist_nodes, &nodes)
+    && fixed_freelist_bool_eq_spec(&list.freelist_present, &present)
+}
+
+spec fn fixed_freelist_contains_spec(
+  list: &FixedFreelist64,
+  node: usize,
+) -> bool
+  dec node
+{
+  node < FIXED_FREELIST_CAPACITY && list.freelist_present[node]
+}
+
+spec fn fixed_freelist_pop_reason_spec(list: &FixedFreelist64) -> u8
+  dec list.freelist_len
+{
+  if list.freelist_len > FIXED_FREELIST_CAPACITY {
+    3
+  } else {
+    if list.freelist_len == 0 {
+      0
+    } else {
+      let index: usize = (list.freelist_len - 1) as usize;
+      let node: usize = list.freelist_nodes[index];
+      if node >= FIXED_FREELIST_CAPACITY {
+        1
+      } else {
+        if !list.freelist_present[node] { 2 } else { 0 }
+      }
+    }
+  }
+}
+
+fn fixed_freelist_empty() -> FixedFreelist64
+  req true
+  ens fixed_freelist_empty_spec(&result)
+  ens result.freelist_len == 0
+    && result.freelist_nodes[0] == FIXED_FREELIST_NONE
+    && result.freelist_nodes[FIXED_FREELIST_CAPACITY - 1]
+      == FIXED_FREELIST_NONE
+    && !result.freelist_present[0]
+    && !result.freelist_present[FIXED_FREELIST_CAPACITY - 1]
+  fx pure
+{
+  FixedFreelist64 {
+    freelist_nodes: [FIXED_FREELIST_NONE; FIXED_FREELIST_CAPACITY],
+    freelist_present: [false; FIXED_FREELIST_CAPACITY],
+    freelist_len: 0,
+  }
+}
+
+fn fixed_freelist_len(list: &FixedFreelist64) -> usize
+  req list.freelist_len <= FIXED_FREELIST_CAPACITY
+  ens result == list.freelist_len
+  ens result <= FIXED_FREELIST_CAPACITY
+  fx pure
+{
+  list.freelist_len
+}
+
+fn fixed_freelist_is_empty(list: &FixedFreelist64) -> bool
+  req true
+  ens result == (list.freelist_len == 0)
+  fx pure
+{
+  list.freelist_len == 0
+}
+
+fn fixed_freelist_is_full(list: &FixedFreelist64) -> bool
+  req true
+  ens result == (list.freelist_len >= FIXED_FREELIST_CAPACITY)
+  fx pure
+{
+  list.freelist_len >= FIXED_FREELIST_CAPACITY
+}
+
+fn fixed_freelist_contains(
+  list: &FixedFreelist64,
+  node: usize,
+) -> bool
+  req true
+  ens result == fixed_freelist_contains_spec(list, node)
+  fx pure
+{
+  node < FIXED_FREELIST_CAPACITY && list.freelist_present[node]
+}
+
+fn fixed_freelist_push_at(
+  list: FixedFreelist64,
+  node: usize,
+) -> FixedFreelistPush64
+  req node < FIXED_FREELIST_CAPACITY
+    && list.freelist_len < FIXED_FREELIST_CAPACITY
+    && !list.freelist_present[node]
+  ens match result {
+    FixedFreelistPush64::FreelistPushed64 { list: next } =>
+      next.freelist_len == list.freelist_len + 1
+        && next.freelist_nodes[list.freelist_len] == node
+        && next.freelist_present[node]
+        && fixed_freelist_usize_frame_spec(
+          &next.freelist_nodes,
+          &list.freelist_nodes,
+          list.freelist_len,
+        )
+        && fixed_freelist_bool_frame_spec(
+          &next.freelist_present,
+          &list.freelist_present,
+          node,
+        ),
+    FixedFreelistPush64::FreelistDuplicate64 {
+      list: _,
+      node: _,
+    } => false,
+    FixedFreelistPush64::FreelistOutOfRange64 {
+      list: _,
+      node: _,
+    } => false,
+    FixedFreelistPush64::FreelistFull64 {
+      list: _,
+      node: _,
+    } => false,
+  }
+  fx pure
+{
+  let index: usize = list.freelist_len % FIXED_FREELIST_CAPACITY;
+  let changed: usize = node % FIXED_FREELIST_CAPACITY;
+  let mut nodes: [usize; FIXED_FREELIST_CAPACITY] = list.freelist_nodes;
+  let mut present: [bool; FIXED_FREELIST_CAPACITY] = list.freelist_present;
+  nodes[index] = changed;
+  present[changed] = true;
+  FixedFreelistPush64::FreelistPushed64 {
+    list: FixedFreelist64 {
+      freelist_nodes: nodes,
+      freelist_present: present,
+      freelist_len: (list.freelist_len + 1) as usize,
+    },
+  }
+}
+
+fn fixed_freelist_push(
+  list: FixedFreelist64,
+  node: usize,
+) -> FixedFreelistPush64
+  req true
+  ens match result {
+    FixedFreelistPush64::FreelistPushed64 { list: next } =>
+      node < FIXED_FREELIST_CAPACITY
+        && list.freelist_len < FIXED_FREELIST_CAPACITY
+        && !list.freelist_present[node]
+        && next.freelist_len == list.freelist_len + 1
+        && next.freelist_nodes[list.freelist_len] == node
+        && next.freelist_present[node]
+        && fixed_freelist_usize_frame_spec(
+          &next.freelist_nodes,
+          &list.freelist_nodes,
+          list.freelist_len,
+        )
+        && fixed_freelist_bool_frame_spec(
+          &next.freelist_present,
+          &list.freelist_present,
+          node,
+        ),
+    FixedFreelistPush64::FreelistDuplicate64 {
+      list: next,
+      node: returned,
+    } =>
+      node < FIXED_FREELIST_CAPACITY
+        && list.freelist_present[node]
+        && returned == node
+        && fixed_freelist_equal_spec(&next, &list),
+    FixedFreelistPush64::FreelistOutOfRange64 {
+      list: next,
+      node: returned,
+    } =>
+      node >= FIXED_FREELIST_CAPACITY
+        && returned == node
+        && fixed_freelist_equal_spec(&next, &list),
+    FixedFreelistPush64::FreelistFull64 {
+      list: next,
+      node: returned,
+    } =>
+      node < FIXED_FREELIST_CAPACITY
+        && !list.freelist_present[node]
+        && list.freelist_len >= FIXED_FREELIST_CAPACITY
+        && returned == node
+        && fixed_freelist_equal_spec(&next, &list),
+  }
+  fx pure
+{
+  if node >= FIXED_FREELIST_CAPACITY {
+    FixedFreelistPush64::FreelistOutOfRange64 {
+      list: list,
+      node: node,
+    }
+  } else {
+    if list.freelist_present[node] {
+      FixedFreelistPush64::FreelistDuplicate64 {
+        list: list,
+        node: node,
+      }
+    } else {
+      if list.freelist_len >= FIXED_FREELIST_CAPACITY {
+        FixedFreelistPush64::FreelistFull64 {
+          list: list,
+          node: node,
+        }
+      } else {
+        fixed_freelist_push_at(list, node)
+      }
+    }
+  }
+}
+
+fn fixed_freelist_pop_live(
+  list: FixedFreelist64,
+  index: usize,
+  node: usize,
+) -> FixedFreelistPop64
+  req list.freelist_len != 0
+    && list.freelist_len <= FIXED_FREELIST_CAPACITY
+    && index + 1 == list.freelist_len
+    && node == list.freelist_nodes[index]
+    && node < FIXED_FREELIST_CAPACITY
+    && list.freelist_present[node]
+  ens match result {
+    FixedFreelistPop64::FreelistPopped64 {
+      list: next,
+      node: returned,
+    } =>
+      returned == node
+        && next.freelist_len == list.freelist_len - 1
+        && next.freelist_nodes[index] == FIXED_FREELIST_NONE
+        && !next.freelist_present[node]
+        && fixed_freelist_usize_frame_spec(
+          &next.freelist_nodes,
+          &list.freelist_nodes,
+          index,
+        )
+        && fixed_freelist_bool_frame_spec(
+          &next.freelist_present,
+          &list.freelist_present,
+          node,
+        ),
+    FixedFreelistPop64::FreelistEmpty64 { list: _ } => false,
+    FixedFreelistPop64::FreelistCorrupt64 {
+      list: _,
+      node: _,
+      reason: _,
+    } => false,
+  }
+  fx pure
+{
+  let changed_index: usize = index % FIXED_FREELIST_CAPACITY;
+  let changed_node: usize = node % FIXED_FREELIST_CAPACITY;
+  let mut nodes: [usize; FIXED_FREELIST_CAPACITY] = list.freelist_nodes;
+  let mut present: [bool; FIXED_FREELIST_CAPACITY] = list.freelist_present;
+  nodes[changed_index] = FIXED_FREELIST_NONE;
+  present[changed_node] = false;
+  FixedFreelistPop64::FreelistPopped64 {
+    list: FixedFreelist64 {
+      freelist_nodes: nodes,
+      freelist_present: present,
+      freelist_len: (list.freelist_len - 1) as usize,
+    },
+    node: changed_node,
+  }
+}
+
+fn fixed_freelist_pop(list: FixedFreelist64) -> FixedFreelistPop64
+  req true
+  ens match result {
+    FixedFreelistPop64::FreelistPopped64 {
+      list: next,
+      node,
+    } =>
+      list.freelist_len != 0
+        && list.freelist_len <= FIXED_FREELIST_CAPACITY
+        && node == list.freelist_nodes[list.freelist_len - 1]
+        && node < FIXED_FREELIST_CAPACITY
+        && list.freelist_present[node]
+        && next.freelist_len == list.freelist_len - 1
+        && next.freelist_nodes[list.freelist_len - 1]
+          == FIXED_FREELIST_NONE
+        && !next.freelist_present[node]
+        && fixed_freelist_usize_frame_spec(
+          &next.freelist_nodes,
+          &list.freelist_nodes,
+          (list.freelist_len - 1) as usize,
+        )
+        && fixed_freelist_bool_frame_spec(
+          &next.freelist_present,
+          &list.freelist_present,
+          node,
+        ),
+    FixedFreelistPop64::FreelistEmpty64 { list: next } =>
+      list.freelist_len == 0
+        && fixed_freelist_equal_spec(&next, &list),
+    FixedFreelistPop64::FreelistCorrupt64 {
+      list: next,
+      node,
+      reason,
+    } =>
+      fixed_freelist_pop_reason_spec(&list) == reason
+        && reason != 0
+        && fixed_freelist_equal_spec(&next, &list)
+        && (reason == 3 || node == list.freelist_nodes[list.freelist_len - 1]),
+  }
+  fx pure
+{
+  if list.freelist_len == 0 {
+    FixedFreelistPop64::FreelistEmpty64 { list: list }
+  } else {
+    if list.freelist_len > FIXED_FREELIST_CAPACITY {
+      FixedFreelistPop64::FreelistCorrupt64 {
+        list: list,
+        node: FIXED_FREELIST_NONE,
+        reason: 3,
+      }
+    } else {
+      let index: usize = list.freelist_len - 1;
+      let node: usize = list.freelist_nodes[index];
+      if node >= FIXED_FREELIST_CAPACITY {
+        FixedFreelistPop64::FreelistCorrupt64 {
+          list: list,
+          node: node,
+          reason: 1,
+        }
+      } else {
+        if !list.freelist_present[node] {
+          FixedFreelistPop64::FreelistCorrupt64 {
+            list: list,
+            node: node,
+            reason: 2,
+          }
+        } else {
+          fixed_freelist_pop_live(list, index, node)
+        }
+      }
+    }
+  }
+}
+
+fn fixed_freelist_lifo_probe(first: usize, second: usize) -> bool
+  req first < FIXED_FREELIST_CAPACITY
+    && second < FIXED_FREELIST_CAPACITY
+    && first != second
+  ens result
+  fx pure
+{
+  let empty: FixedFreelist64 = fixed_freelist_empty();
+  match fixed_freelist_push(empty, first) {
+    FixedFreelistPush64::FreelistPushed64 { list: one } =>
+      match fixed_freelist_push(one, second) {
+        FixedFreelistPush64::FreelistPushed64 { list: two } =>
+          match fixed_freelist_pop(two) {
+            FixedFreelistPop64::FreelistPopped64 {
+              list: one_left,
+              node: got_second,
+            } =>
+              match fixed_freelist_pop(one_left) {
+                FixedFreelistPop64::FreelistPopped64 {
+                  list: none_left,
+                  node: got_first,
+                } =>
+                  got_second == second
+                    && got_first == first
+                    && fixed_freelist_is_empty(&none_left),
+                FixedFreelistPop64::FreelistEmpty64 { list: _ } => false,
+                FixedFreelistPop64::FreelistCorrupt64 {
+                  list: _, node: _, reason: _,
+                } => false,
+              },
+            FixedFreelistPop64::FreelistEmpty64 { list: _ } => false,
+            FixedFreelistPop64::FreelistCorrupt64 {
+              list: _, node: _, reason: _,
+            } => false,
+          },
+        FixedFreelistPush64::FreelistDuplicate64 { list: _, node: _ } => false,
+        FixedFreelistPush64::FreelistOutOfRange64 { list: _, node: _ } => false,
+        FixedFreelistPush64::FreelistFull64 { list: _, node: _ } => false,
+      },
+    FixedFreelistPush64::FreelistDuplicate64 { list: _, node: _ } => false,
+    FixedFreelistPush64::FreelistOutOfRange64 { list: _, node: _ } => false,
+    FixedFreelistPush64::FreelistFull64 { list: _, node: _ } => false,
+  }
+}
+
+fn fixed_freelist_duplicate_probe(node: usize) -> bool
+  req node < FIXED_FREELIST_CAPACITY
+  ens result
+  fx pure
+{
+  let empty: FixedFreelist64 = fixed_freelist_empty();
+  match fixed_freelist_push(empty, node) {
+    FixedFreelistPush64::FreelistPushed64 { list: one } =>
+      match fixed_freelist_push(one, node) {
+        FixedFreelistPush64::FreelistDuplicate64 {
+          list: unchanged,
+          node: returned,
+        } =>
+          returned == node
+            && fixed_freelist_contains(&unchanged, node),
+        FixedFreelistPush64::FreelistPushed64 { list: _ } => false,
+        FixedFreelistPush64::FreelistOutOfRange64 { list: _, node: _ } => false,
+        FixedFreelistPush64::FreelistFull64 { list: _, node: _ } => false,
+      },
+    FixedFreelistPush64::FreelistDuplicate64 { list: _, node: _ } => false,
+    FixedFreelistPush64::FreelistOutOfRange64 { list: _, node: _ } => false,
+    FixedFreelistPush64::FreelistFull64 { list: _, node: _ } => false,
+  }
+}
+
+fn fixed_freelist_reuse_probe(node: usize) -> bool
+  req node < FIXED_FREELIST_CAPACITY
+  ens result
+  fx pure
+{
+  let empty: FixedFreelist64 = fixed_freelist_empty();
+  match fixed_freelist_push(empty, node) {
+    FixedFreelistPush64::FreelistPushed64 { list: one } =>
+      match fixed_freelist_pop(one) {
+        FixedFreelistPop64::FreelistPopped64 {
+          list: none_left,
+          node: popped,
+        } =>
+          match fixed_freelist_push(none_left, node) {
+            FixedFreelistPush64::FreelistPushed64 { list: reused } =>
+              popped == node && fixed_freelist_contains(&reused, node),
+            FixedFreelistPush64::FreelistDuplicate64 { list: _, node: _ } => false,
+            FixedFreelistPush64::FreelistOutOfRange64 { list: _, node: _ } => false,
+            FixedFreelistPush64::FreelistFull64 { list: _, node: _ } => false,
+          },
+        FixedFreelistPop64::FreelistEmpty64 { list: _ } => false,
+        FixedFreelistPop64::FreelistCorrupt64 {
+          list: _, node: _, reason: _,
+        } => false,
+      },
+    FixedFreelistPush64::FreelistDuplicate64 { list: _, node: _ } => false,
+    FixedFreelistPush64::FreelistOutOfRange64 { list: _, node: _ } => false,
+    FixedFreelistPush64::FreelistFull64 { list: _, node: _ } => false,
+  }
+}

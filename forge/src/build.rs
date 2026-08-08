@@ -116,10 +116,6 @@ pub enum BuildTarget {
     /// `main`/seccomp prelude, suitable for linking into a verified microkernel. An
     /// ambient-syscall `fx` row (`read`/`write`/`net`/`term`) is refused (REQ-3).
     Kernel,
-    /// A receipt-bound bootable image. The CLI handles this profile before the
-    /// ordinary Rust-crate lowerer; treating it as the kernel prelude here keeps
-    /// internal exhaustive matches fail-closed if it is ever routed incorrectly.
-    KernelImage,
 }
 
 /// The freestanding `#![no_std] + alloc` crate prelude prepended to `lower_l1`'s
@@ -296,7 +292,7 @@ pub fn build_file(
     // `.design/build/kernel-target.md` REQ-1/REQ-3: a kernel build is a library
     // (no `main`), so `--target kernel` + `--entry` is a usage error — a kernel
     // crate has no userspace process entry point / seccomp sandbox.
-    if matches!(target, BuildTarget::Kernel | BuildTarget::KernelImage) {
+    if matches!(target, BuildTarget::Kernel) {
         if let Some(name) = entry {
             return Err(ForgeError::Usage(format!(
                 "`forge build --target kernel` emits a no_std LIBRARY crate and takes no \
@@ -317,7 +313,7 @@ pub fn build_file(
     // (#198: their std-bodied effect wrappers leak into `#![no_std]`; OQ-2 amended).
     // Every in-language fn is scanned (the whole class, not just an `--entry` closure) so
     // a library exporting an ambient-`fx` fn is refused regardless of call site.
-    if matches!(target, BuildTarget::Kernel | BuildTarget::KernelImage) {
+    if matches!(target, BuildTarget::Kernel) {
         reject_ambient_fx_for_kernel(&program)?;
     }
 
@@ -332,7 +328,7 @@ pub fn build_file(
     // reject (the shared `goal_repl::open_hole_reason`, the #192 single-copy lesson).
     if let Some(detail) = program.items.iter().find_map(|i| match i {
         Item::Fn(f) => crate::goal_repl::open_hole_reason(f),
-        Item::SpecFn(_) | Item::Struct(_) | Item::Enum(_) => None,
+        Item::Const(_) | Item::SpecFn(_) | Item::Struct(_) | Item::Enum(_) => None,
         // A Stage-1 forge-tier item (`.design/stage1-forge-tier.md` REQ-3 / AC-7):
         // an open `?pN` proof hole blocks the build, the proof-tier mirror of the
         // `?N` body-hole refusal — a holed proof must not ship a trust-stamped
@@ -417,23 +413,20 @@ pub fn build_file(
     })
 }
 
-/// Run the shared `check_file` front (parse → validate → check_effects) over
-/// `path`, returning the validated `Program` (REQ-1). Any front-of-pipeline
-/// failure short-circuits into the earliest stage's `ForgeError`, as `check_file`
-/// does. Used by both `emit_source` (the codegen) and `build_file` (the manifest +
-/// entry-fn lookup) so the front is shared verbatim.
+/// Run the shared `check_file` front (resolve → parse → validate →
+/// check_effects) over `path`, returning the validated `Program` (REQ-1). Any
+/// front-of-pipeline failure short-circuits into the earliest stage's
+/// `ForgeError`, as `check_file` does. Used by both `emit_source` (the codegen)
+/// and `build_file` (the manifest + entry-fn lookup) so the front is shared
+/// verbatim. `path` is a single `.th` file or a canonical `.thpkg.json` manifest;
+/// `thermite_package::load_source` owns that distinction for every
+/// source-oriented verb.
 fn parse_program(path: &Path) -> Result<Program, ForgeError> {
-    let src = std::fs::read_to_string(path).map_err(|e| ForgeError::Io {
-        path: path.display().to_string(),
-        source: e,
-    })?;
-    let parsed = thermite_syntax::parse(&src);
-    if !parsed.is_clean() {
-        return Err(ForgeError::Parse(parsed.errors));
-    }
-    thermite_spec::validate(&parsed.program).map_err(ForgeError::Spec)?;
-    thermite_lower::check_effects(&parsed.program).map_err(ForgeError::Effects)?;
-    Ok(parsed.program)
+    let resolved = crate::thermite_package::load_source(path)?;
+    let program = resolved.program();
+    thermite_spec::validate(program).map_err(ForgeError::Spec)?;
+    thermite_lower::check_effects(program).map_err(ForgeError::Effects)?;
+    Ok(program.clone())
 }
 
 /// Emit the full compiled L1 source for `path` (incl. any `--entry` runner)
@@ -460,7 +453,7 @@ pub fn emit_source(
     // `panic!` is `alloc`-clean — OQ-3 — and resolves against the prelude).
     let mut source = match target {
         BuildTarget::Std => String::new(),
-        BuildTarget::Kernel | BuildTarget::KernelImage => KERNEL_PRELUDE.to_string(),
+        BuildTarget::Kernel => KERNEL_PRELUDE.to_string(),
     };
 
     // Basis Stage 8 (`.design/basis/08-runnable-effect-link.md` REQ-2): emit a
@@ -537,7 +530,7 @@ fn reachable_boundary_targets(program: &Program) -> BTreeSet<String> {
         .iter()
         .filter_map(|item| match item {
             Item::Fn(f) => f.boundary.as_ref().map(|b| b.target.clone()),
-            Item::SpecFn(_) | Item::Struct(_) | Item::Enum(_) => None,
+            Item::Const(_) | Item::SpecFn(_) | Item::Struct(_) | Item::Enum(_) => None,
             // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 boundary-target
             // consumer yet (increments 2b-3); declares no boundary crossing (neutral
             // `None`), mirroring the inert ADT-decl arm.
@@ -558,7 +551,7 @@ fn build_functions(program: &Program) -> Vec<BuildFunction> {
                 name: f.name.clone(),
                 fx: effects_of(&f.contract.fx),
             }),
-            Item::SpecFn(_) => None,
+            Item::Const(_) | Item::SpecFn(_) => None,
             // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 manifest consumer
             // yet (increments 2b-3); carries no `fx` row → contributes no manifest
             // function (neutral `None`), mirroring the inert ADT-decl arm.
@@ -586,6 +579,9 @@ fn find_entry_fn<'a>(program: &'a Program, name: &str) -> Result<&'a FnItem, For
         Some(Item::SpecFn(_)) => Err(ForgeError::Usage(format!(
             "`--entry {name}` names a `spec fn` (a pure spec dependency, not a runnable entry \
              point); name a `fn`"
+        ))),
+        Some(Item::Const(_)) => Err(ForgeError::Usage(format!(
+            "`--entry {name}` names a compile-time capacity, not a runnable `fn`; name a `fn`"
         ))),
         // Basis Stage 1a (`.design/basis/01-adts.md`): a `struct`/`enum` type
         // is not a runnable entry point — the neutral value is the same `Usage`
@@ -833,7 +829,7 @@ fn invoke_rustc(
     // (AC-4). The kernel `#![no_std]` rlib needs no `#[panic_handler]`/allocator to
     // compile (only a final bin/staticlib link does — OQ-1; the test harness supplies
     // a stub for the freestanding-compile AC).
-    if matches!(target, BuildTarget::Kernel | BuildTarget::KernelImage) {
+    if matches!(target, BuildTarget::Kernel) {
         command.arg("-C").arg("panic=abort");
     }
 

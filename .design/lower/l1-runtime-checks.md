@@ -3,7 +3,7 @@
 tier: 3-component
 status: draft
 audited-sha: 6b86f74476122cfddbdcf168d37a3561d2598054 (re-pinned 2026-06-16 for PR #46 after merging main: lower_l1's TString runtime gate now treats String-typed ADT declarations as TString users so ADT fields cannot name an unemitted runtime; main's inert Item::Forge skip is preserved; core req/ens/inv check emission is unchanged.)
-audited-content-sha256: 45ef0652ace83125b3bc5a129e4d71dc6d277d933a6bd6df50c656984f3ef52b
+audited-content-sha256: 41b7d2e9f165171fb3ae83efd0842cdc96e6eaa1c59fb9997143ad8ca788944f (re-pinned 2026-08-05 after allocation-free exact two-index relation lowering)
 governs: thermite-lower/src/l1.rs
 thesis-refs:
   - thermite-design.md §4.2
@@ -159,6 +159,21 @@ ENTIRELY exec: every clause is a Rust `bool` expression over real values, every
 combinator is a real loop over `&[T]`, every `spec fn` is a real recursive fn.
 There is no `vstd`, no `Seq`, no proof. A clause's verbatim `Clause.text` is
 carried into the violation message for legibility (§2.4).
+Fixed-array `.array_eq(other)` checks use native equality at L1 for scalars and
+the compiler-admitted finite plain-record/tuple/array closure. L1 derives
+`PartialEq`/`Eq` only for ordinary structs required by that closure; sealed,
+opaque, recursive, reference-bearing, enum, and heap-backed shapes remain
+rejected. `.array_same_except(other, index)` lowers to a bounded allocation-free
+scan that checks every slot other than the selected index. An out-of-bounds
+exception therefore performs full equality, matching the L3 finite-view
+relation.
+Total `u64.bit_test(index)`, `.bit_set(index)`, and `.bit_clear(index)` lower to
+guarded native shifts. At `index >= 64`, test returns false and updates return
+the original word, avoiding a target-dependent overshift.
+`u64.bit_set_preserves_other(changed, observed)` and
+`.bit_clear_preserves_other(changed, observed)` evaluate the corresponding
+guarded update/test equality exactly once per operand and return false unless
+both indices are in range and distinct.
 
 ### The always-active check primitive (REQ-2)
 

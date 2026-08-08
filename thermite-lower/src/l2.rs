@@ -107,6 +107,9 @@ pub fn lower_l2(program: &Program) -> Result<String, LowerError> {
     // (2) + (3) the lowered items, in source order (determinism, §5.3).
     for item in &program.items {
         match item {
+            Item::Const(c) => {
+                writeln!(out, "\npub const {}: usize = {};", c.name, c.value).ok();
+            }
             // A `spec fn` is the reused L1 executable recursion (Kani reasons over
             // it as the `ens` reference, e.g. `result == spec_sum(xs)`).
             Item::SpecFn(s) => {
@@ -319,6 +322,7 @@ fn emit_harness(f: &FnItem) -> Result<String, LowerError> {
 /// | Param type | Construction | Bound |
 /// |---|---|---|
 /// | `&[T]` / `&mut [T]` | `let len = kani::any(); kani::assume(len <= N); let mut data: [T; N] = kani::any(); let xs = &data[..len];` | `len ≤ N` |
+/// | `[T; CAP]` | `let slots: [T; CAP] = kani::any();` | the exact compile-time capacity |
 /// | `u32` / `u64` / `usize` / `bool` | `let x: T = kani::any();` | full symbolic range (the `req` narrows it) |
 ///
 /// The slice scaffolding is emitted from seeing a `&[T]` parameter (AC-4).
@@ -340,11 +344,13 @@ fn infer_symbolic_input(p: &Param) -> Result<(String, String), LowerError> {
         .ok();
         Ok((decl, name.clone()))
     } else {
-        // A scalar (integer or bool): a full-range symbolic value (REQ-2). The
-        // `req` (assumed after) narrows it. Every scalar shape lowers via the
-        // shared `lower_type` so the closed `PrimType` set is covered.
+        // A scalar or owned fixed array: a full-range symbolic value (REQ-2).
+        // For an array, Kani's `Arbitrary` implementation covers every element
+        // while the native Rust type fixes the exact capacity. The `req`
+        // (assumed after) narrows the value. Every admitted shape lowers via the
+        // shared `lower_type` so nested fixed arrays retain their layout.
         match &p.ty {
-            Type::Prim(_) => {
+            Type::Prim(_) | Type::Array { .. } => {
                 let ty = lower_type(&p.ty)?;
                 let decl = format!("    let {name}: {ty} = kani::any();\n");
                 Ok((decl, name.clone()))
@@ -421,7 +427,7 @@ pub fn bound_string(program: &Program) -> String {
             // Basis Stage 1a (`.design/basis/01-adts.md`): a `struct`/`enum`
             // item has no loop body to unwind-bound → contributes nothing
             // (neutral value `None`). Dead-in-1a (gated at the validator).
-            Item::Struct(_) | Item::Enum(_) => None,
+            Item::Const(_) | Item::Struct(_) | Item::Enum(_) => None,
             // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 L2 consumer yet
             // (increments 2b-3); no loop body to unwind-bound → contributes nothing
             // (neutral `None`), mirroring the inert ADT-decl arm.
@@ -468,6 +474,7 @@ fn type_label(ty: &Type) -> String {
         Type::Prim(PrimType::Usize) => "usize".to_string(),
         Type::Prim(PrimType::Bool) => "bool".to_string(),
         Type::Unit => "()".to_string(),
+        Type::Array { .. } => "[_; N]".to_string(),
         Type::Ref { mutable, .. } => {
             if *mutable {
                 "&mut _".to_string()

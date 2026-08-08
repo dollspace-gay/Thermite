@@ -22,7 +22,6 @@ thermite-skill = { path = "../thermite-skill" }
 # `thermite-tv` itself stays free of any `thermite-lower` dep (the N-version
 # independence boundary, AC-6).
 thermite-tv = { path = "../thermite-tv" }
-thermite-kernel = { path = "../thermite-kernel" }
 # #5: the certificate schema (`manifest.rs`) is serde-serialized to the §5.1
 # stable JSON; `check.rs` parses verus's `--output-json` summary with serde_json.
 serde = { version = "1", features = ["derive"] }

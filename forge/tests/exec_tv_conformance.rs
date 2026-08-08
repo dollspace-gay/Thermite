@@ -171,6 +171,285 @@ fn generated_exec_run_all_faithful() {
     );
 }
 
+#[test]
+fn fixed_array_read_expression_is_faithful() {
+    if !verus_present() {
+        eprintln!("SKIP: verus not available — fixed-array exec-TV not discharged.");
+        return;
+    }
+    let source = concat!(
+        "const SLOTS: usize = 4;\n",
+        "fn read(slots: [u64; SLOTS], at: usize) -> u64\n",
+        "  req at < SLOTS\n",
+        "  ens result == slots[at]\n",
+        "  fx pure\n",
+        "{ slots[at] }\n",
+        "fn array_len(slots: [u64; SLOTS]) -> usize\n",
+        "  req true\n",
+        "  ens result == slots.len()\n",
+        "  fx pure\n",
+        "{ slots.len() }\n",
+        "fn arrays_equal(left: [u64; SLOTS], right: [u64; SLOTS]) -> bool\n",
+        "  req true\n",
+        "  ens result == left.array_eq(right)\n",
+        "  fx pure\n",
+        "{ left.array_eq(right) }\n",
+        "fn arrays_same_except(left: [u64; SLOTS], right: [u64; SLOTS], at: usize) -> bool\n",
+        "  req true\n",
+        "  ens result == left.array_same_except(right, at)\n",
+        "  fx pure\n",
+        "{ left.array_same_except(right, at) }\n",
+        "fn arrays_same_except_two(left: [u64; SLOTS], right: [u64; SLOTS], first: usize, second: usize) -> bool\n",
+        "  req true\n",
+        "  ens result == left.array_same_except_two(right, first, second)\n",
+        "  fx pure\n",
+        "{ left.array_same_except_two(right, first, second) }\n",
+    );
+    let path = std::env::temp_dir().join("thermite_exec_tv_fixed_array.th");
+    std::fs::write(&path, source).expect("write fixed-array exec-TV fixture");
+    let report = run_exec_tv_json(&path, None);
+    let counts = &report["corpus"]["counts"];
+    assert_eq!(counts["checked"].as_u64(), Some(5), "{report}");
+    assert_eq!(counts["faithful"].as_u64(), Some(5), "{report}");
+    assert_eq!(counts["divergent"].as_u64(), Some(0), "{report}");
+    assert!(report["corpus"]["exprs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|expr| {
+            expr["expr"].as_str() == Some("read.tail")
+                && expr["verdict"].as_str() == Some("faithful")
+        }));
+    assert!(report["corpus"]["exprs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|expr| {
+            expr["expr"].as_str() == Some("array_len.tail")
+                && expr["verdict"].as_str() == Some("faithful")
+        }));
+    assert!(report["corpus"]["exprs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|expr| {
+            expr["expr"].as_str() == Some("arrays_equal.tail")
+                && expr["verdict"].as_str() == Some("faithful")
+        }));
+    assert!(report["corpus"]["exprs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|expr| {
+            expr["expr"].as_str() == Some("arrays_same_except.tail")
+                && expr["verdict"].as_str() == Some("faithful")
+        }));
+    assert!(report["corpus"]["exprs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|expr| {
+            expr["expr"].as_str() == Some("arrays_same_except_two.tail")
+                && expr["verdict"].as_str() == Some("faithful")
+        }));
+}
+
+#[test]
+fn typed_local_relations_ground_fixed_array_field_arithmetic() {
+    if !verus_present() {
+        eprintln!("SKIP: verus not available — typed-local fixed-array exec-TV not discharged.");
+        return;
+    }
+    let source = r#"
+const SLOTS: usize = 4;
+struct State { generations: [u64; SLOTS] }
+
+fn next_generation(state: &State, slot: usize) -> u64
+  req slot < SLOTS && state.generations[slot] < u64::MAX
+  ens result == state.generations[slot] + 1
+  fx pure
+{
+  let changed: usize = slot % SLOTS;
+  let next: u64 = state.generations[changed] + 1;
+  next
+}
+"#;
+    let path = std::env::temp_dir().join("thermite_exec_tv_typed_local_array_field.th");
+    std::fs::write(&path, source).expect("write typed-local fixed-array exec-TV fixture");
+    let report = run_exec_tv_json(&path, None);
+    let counts = &report["corpus"]["counts"];
+    assert_eq!(counts["checked"].as_u64(), Some(3), "{report}");
+    assert_eq!(counts["faithful"].as_u64(), Some(3), "{report}");
+    assert_eq!(counts["divergent"].as_u64(), Some(0), "{report}");
+    assert_eq!(counts["unverifiable"].as_u64(), Some(0), "{report}");
+    for label in [
+        "next_generation.let#1",
+        "next_generation.let#2",
+        "next_generation.tail",
+    ] {
+        assert!(
+            report["corpus"]["exprs"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|expr| {
+                    expr["expr"].as_str() == Some(label)
+                        && expr["verdict"].as_str() == Some("faithful")
+                }),
+            "{label}: {report}"
+        );
+    }
+}
+
+#[test]
+fn named_record_field_read_expression_is_faithful() {
+    if !verus_present() {
+        eprintln!("SKIP: verus not available — named-record exec-TV not discharged.");
+        return;
+    }
+    let source = r#"
+struct State { generation: u64, occupied: bool }
+fn state_new(generation: u64, occupied: bool) -> State
+  req true
+  ens result.generation == generation
+  ens result.occupied == occupied
+  fx pure
+{
+  State { generation: generation, occupied: occupied }
+}
+
+fn observe(state: &State) -> bool
+  req true ens result == state.occupied fx pure
+{
+  let observed: bool = state.occupied;
+  observed
+}
+"#;
+    let path = std::env::temp_dir().join("thermite_exec_tv_named_record.th");
+    std::fs::write(&path, source).expect("write named-record exec-TV fixture");
+    let report = run_exec_tv_json(&path, None);
+    let counts = &report["corpus"]["counts"];
+    assert_eq!(counts["checked"].as_u64(), Some(3), "{report}");
+    assert_eq!(counts["faithful"].as_u64(), Some(3), "{report}");
+    assert_eq!(counts["divergent"].as_u64(), Some(0), "{report}");
+    for label in ["state_new.tail", "observe.let#1", "observe.tail"] {
+        assert!(
+            report["corpus"]["exprs"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|expr| {
+                    expr["expr"].as_str() == Some(label)
+                        && expr["verdict"].as_str() == Some("faithful")
+                }),
+            "{label}: {report}"
+        );
+    }
+}
+
+#[test]
+fn aggregate_array_relation_expressions_are_faithful() {
+    if !verus_present() {
+        eprintln!("SKIP: verus not available — aggregate-array exec-TV not discharged.");
+        return;
+    }
+    let source = concat!(
+        "const WORDS: usize = 2;\n",
+        "const SLOTS: usize = 4;\n",
+        "struct Stamp { words: [u64; WORDS], flags: (bool, u8) }\n",
+        "struct Slot { stamp: Stamp, owner: usize }\n",
+        "fn records_equal(left: [Slot; SLOTS], right: [Slot; SLOTS]) -> bool\n",
+        "  req true\n",
+        "  ens result == left.array_eq(right)\n",
+        "  fx pure\n",
+        "{ left.array_eq(right) }\n",
+        "fn records_same_except(left: [Slot; SLOTS], right: [Slot; SLOTS], at: usize) -> bool\n",
+        "  req true\n",
+        "  ens result == left.array_same_except(right, at)\n",
+        "  fx pure\n",
+        "{ left.array_same_except(right, at) }\n",
+    );
+    let path = std::env::temp_dir().join("thermite_exec_tv_aggregate_array.th");
+    std::fs::write(&path, source).expect("write aggregate-array exec-TV fixture");
+    let report = run_exec_tv_json(&path, None);
+    let counts = &report["corpus"]["counts"];
+    assert_eq!(counts["checked"].as_u64(), Some(2), "{report}");
+    assert_eq!(counts["faithful"].as_u64(), Some(2), "{report}");
+    assert_eq!(counts["divergent"].as_u64(), Some(0), "{report}");
+    for label in ["records_equal.tail", "records_same_except.tail"] {
+        assert!(
+            report["corpus"]["exprs"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|expr| {
+                    expr["expr"].as_str() == Some(label)
+                        && expr["verdict"].as_str() == Some("faithful")
+                }),
+            "{label}: {report}"
+        );
+    }
+}
+
+#[test]
+fn u64_bit_method_expressions_are_faithful() {
+    if !verus_present() {
+        eprintln!("SKIP: verus not available — u64-bit exec-TV not discharged.");
+        return;
+    }
+    let source = concat!(
+        "fn set_bit(word: u64, bit: usize) -> u64\n",
+        "  req true\n",
+        "  ens result == word.bit_set(bit)\n",
+        "  fx pure\n",
+        "{ word.bit_set(bit) }\n",
+        "fn clear_bit(word: u64, bit: usize) -> u64\n",
+        "  req true\n",
+        "  ens result == word.bit_clear(bit)\n",
+        "  fx pure\n",
+        "{ word.bit_clear(bit) }\n",
+        "fn test_bit(word: u64, bit: usize) -> bool\n",
+        "  req true\n",
+        "  ens result == word.bit_test(bit)\n",
+        "  fx pure\n",
+        "{ word.bit_test(bit) }\n",
+        "fn set_preserves(word: u64, changed: usize, observed: usize) -> bool\n",
+        "  req true\n",
+        "  ens result == word.bit_set_preserves_other(changed, observed)\n",
+        "  fx pure\n",
+        "{ word.bit_set_preserves_other(changed, observed) }\n",
+        "fn clear_preserves(word: u64, changed: usize, observed: usize) -> bool\n",
+        "  req true\n",
+        "  ens result == word.bit_clear_preserves_other(changed, observed)\n",
+        "  fx pure\n",
+        "{ word.bit_clear_preserves_other(changed, observed) }\n",
+    );
+    let path = std::env::temp_dir().join("thermite_exec_tv_u64_bits.th");
+    std::fs::write(&path, source).expect("write u64-bit exec-TV fixture");
+    let report = run_exec_tv_json(&path, None);
+    let counts = &report["corpus"]["counts"];
+    assert_eq!(counts["checked"].as_u64(), Some(5), "{report}");
+    assert_eq!(counts["faithful"].as_u64(), Some(5), "{report}");
+    assert_eq!(counts["divergent"].as_u64(), Some(0), "{report}");
+    for expression in [
+        "set_bit.tail",
+        "clear_bit.tail",
+        "test_bit.tail",
+        "set_preserves.tail",
+        "clear_preserves.tail",
+    ] {
+        assert!(
+            report["corpus"]["exprs"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|expr| expr["expr"].as_str() == Some(expression)
+                    && expr["verdict"].as_str() == Some("faithful")),
+            "{expression}: {report}"
+        );
+    }
+}
+
 /// REQ-3 / AC-7 (determinism): the generated exec run is reproducible — two
 /// `forge exec-tv --generated N` runs at the same (pinned) seed yield identical
 /// counts (the seeded SplitMix64 generator + the pinned verus seed, R-CODE-5). Run

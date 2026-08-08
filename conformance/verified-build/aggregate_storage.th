@@ -1,0 +1,9 @@
+fn write_row(data: &mut [[u64; 2]], at: usize, value: u64) -> u64
+  req at < data.len()
+  ens result == value
+  ens final(data)[at][0] == value
+  fx platform(memory)
+{
+  data[at] = [value, value];
+  value
+}

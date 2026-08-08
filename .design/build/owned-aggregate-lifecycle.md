@@ -1,0 +1,266 @@
+# Owned aggregate lifecycle and pure-call composition
+
+<!--
+tier: 3-component
+status: shipped
+decision: a typed mutable local of a finite non-sealed record may be updated and returned only when the independent body semantics reconstruct every field exactly; pure value calls compose through independently derived specifications, including direct scalar/unit and exact finite-record functions over logical record snapshots, while the separate mutable-call extension composes exact direct finite-record and indexed-storage effects
+governs:
+  - thermite-tv/src/exec_encode.rs
+  - thermite-tv/src/exec_stmt_encode.rs
+  - thermite-tv/src/lib.rs
+  - thermite-tv/src/obligation.rs
+  - thermite-tv/tests/owned_aggregate_lifecycle_tv.rs
+  - thermite-tv/tests/mutable_call_effect_tv.rs
+  - forge/src/body_tv.rs
+  - forge/src/exec_tv.rs
+  - forge/tests/body_tv.rs
+  - forge/tests/verified_build.rs
+  - conformance/verified-build/owned_aggregate_lifecycle.th
+  - conformance/verified-build/record_after_indexed_call_effect.th
+audited-content-sha256: ad3e73e4189004b7236b2ee68036aaaf2df9661ce38693188831e8dc99a86854 (re-pinned 2026-08-08 after the closed result-enum public ABI landed at the L3 export admission site)
+extends:
+  - .design/build/kernel-primitives.md
+  - .design/build/named-record-lifecycle.md
+  - .design/build/fixed-collections.md
+  - .design/verified/exec-tv.md
+  - .design/verified/exec-stmt-tv.md
+-->
+
+## Purpose and boundary
+
+A later Thermite-authored kernel must be able to express state transitions as
+ordinary value transformations: construct a finite record, keep it in a typed
+local, replace one field, return the new value, and feed that value through other
+verified Thermite functions. This is the allocation-free ownership pattern used
+by capability tables, allocator metadata, queues, and service state without
+placing any of those policies in this repository.
+
+Thermite already validates and lowers direct field assignment on a typed mutable
+local. The remaining gap is strict independent body translation validation. A
+body with `let mut next: State = state; next.value = value; next` currently
+becomes `Skipped`, as do callers whose independently derived callee specification
+returns such an aggregate. This increment closes that proof/build gap. It adds no
+static global, kernel state machine, allocator, capability policy, scheduler,
+firmware, platform implementation, or boot artifact.
+
+## Frozen source surface
+
+No new syntax is required:
+
+```thermite
+struct State {
+  generation: u64,
+  occupied: bool,
+}
+
+fn replace_generation(state: State, next: u64) -> State
+  req next > state.generation
+  ens result.generation == next
+  ens result.occupied == state.occupied
+  fx pure
+{
+  let mut updated: State = state;
+  updated.generation = next;
+  updated
+}
+
+fn open_then_replace(next: u64) -> State
+  req next > 0
+  ens result.generation == next
+  ens result.occupied
+  fx pure
+{
+  let initial: State = State { generation: 0, occupied: true };
+  replace_generation(initial, next)
+}
+```
+
+The admitted local must have an explicit `Type::Named` annotation, and that type
+must be an ordinary or defining-module opaque struct in the same recursively
+finite non-sealed closure used by direct borrowed-record mutation. This original
+increment froze the direct `local.field` case. The shipped extension in
+`.design/build/nested-aggregate-lifecycle.md` now admits exact recursive fields
+and one terminal fixed-array index. Enum payloads, heap-backed fields,
+references, recursive records, sealed records, untyped/inferred mutable record
+locals, index-then-field projections, and aliasing remain outside the combined
+subset.
+
+A fixed array may therefore be replaced as a whole, updated through a separately
+typed local and reinstalled, or updated directly as the final projection of a
+typed record root. The kernel proof profile now imports the exact digest-bound
+vstd finite-array model through Forge's no-std metadata skeleton, so repeat-
+initialized arrays, indexed reads/writes, equality, and same-except framing are
+available in strict freestanding receipts. The generation-safe slab is the first
+aggregate package fixture exercising that path end to end.
+
+## Independent state denotation
+
+The body reference context carries the exact ordered field inventory of every
+reachable finite record. On
+
+```text
+let mut local: Name = initial;
+local.changed = rhs;
+```
+
+the reference state becomes a nominal reconstruction:
+
+```text
+Name {
+  changed: rhs[environment],
+  untouched_0: initial[environment].untouched_0,
+  ...
+}
+```
+
+Every initializer, receiver, field value, shared borrow, dereference, tuple
+projection, call argument, and final result is recursively substituted through
+the current environment. A later read therefore observes the most recent
+reconstruction. Assignment order remains observable, and an `if` statement
+composes the complete record value from the two branch states.
+
+For a named-record result, the obligation does not rely on ambient whole-record
+equality. It compares every declared field independently. Native fixed-array
+fields compare their complete finite sequence views; other admitted fields use
+typed value equality. A dropped write, wrong field, wrong value, reordered
+dependent write, collateral change, or missing untouched-field frame must fail a
+real Verus obligation.
+
+The reference encoder independently emits record construction, field
+projection, immutable references, and dereference. It does not reuse production
+lowering. Unsupported shapes return `Unsupported` and therefore become
+`Skipped`, never `Faithful` by omission.
+
+## Pure value-call composition
+
+Body TV already derives the executable dependency closure and annotates each
+callee with an independently generated `when_used_as_spec` definition. This
+increment permits those reference definitions to accept and return admitted
+finite records and to contain owned local-record updates. A caller then composes
+through the callee's independently derived value specification rather than
+inlining production code or trusting the source contract alone.
+
+This increment's original composition is deliberately limited to value effects.
+`.design/build/mutable-call-effects.md` now supplies the separate exact frame for
+statement-position bodyful calls and direct typed let-bound results over
+structurally disjoint direct or explicitly borrowed projected finite-record
+actuals and structurally disjoint direct or explicitly borrowed projected
+mutable-slice/fixed-array paths, including
+nominally exact direct/projected shared finite-record snapshots that do not
+overlap an exclusive access path and exact direct/projected shared slice/fixed-array
+snapshots with the same rule. Complete indexed sequence state is threaded
+through callee writes, later reads, shared snapshots, result binding, and
+copy-back, including leafwise rebasing through a later direct/projected mutable
+record call or shared record snapshot. A final finite-record constructor or exact
+record access path after such an overlay is framed leafwise: native scalar
+leaves compare directly and array leaves compare through their complete current
+logical views, without a reverse sequence-to-array conversion. Explicitly typed
+intermediate finite-record constructor/access-path bindings now snapshot that
+same state by copying native fields and rebasing logical array leaves; typed
+rebinding, local field/index mutation, and a final leafwise result remain exact.
+One direct bodyful pure call may consume such a finite record by value when
+Forge derives the exact formal type, field inventory, result type, and callee
+body from the reachable source closure. The independent lifecycle interpreter
+copies every scalar and logical sequence leaf into a fresh read-only formal,
+and interprets the callee source body. Scalar/unit results are returned directly.
+An admitted finite-record result is rebound leafwise when the callee tail is an
+exact constructor or access path: direct scalar fields and complete logical
+sequence leaves flow into a typed caller local or direct body tail without a
+reverse sequence-to-array conversion. The production side still executes the
+ordinary generated call, so a wrong callee, argument, result write, or observer
+body fails the all-input equality proof. Isolated exec TV does not fabricate a
+frameless native record for that state-dependent call; the exact whole-body row
+owns it, while each callee's native-record body keeps its own independent
+contract, expression, and body rows.
+
+Array-element-root actuals, arbitrary native aggregate materialization,
+aggregate results whose source tail is not an exact constructor/access path,
+nested/general by-value call use after a descendant sequence overlay, native
+aggregate matching, general returned-value expressions,
+bodyless boundary functions, platform
+effects, allocation, unresolved calls, recursive effect cycles, and other
+non-admitted effects remain fail-closed.
+
+## Strict build, receipt, and execution
+
+A policy-free freestanding conformance fixture constructs a scalar-field record
+inside an owned pipeline and exports the pipeline, owned record transitions,
+and observers. The record-after-indexed fixture additionally mutates a projected
+fixed array, snapshots the enclosing record leafwise, passes that logical value
+to generated Thermite scalar and record-result functions, and executes their
+results from a linked consumer. Its 141 reachable contract, expression,
+body-state, and wrapper rows are all faithful L3 rows; state-dependent call
+initializers and direct aggregate tails are owned by the whole-body proof rather
+than an inadequate isolated expression frame. The
+artifact receipt binds the Thermite source, exact ordered record layout,
+generated Verus/Rust, translation-validation evidence, toolchain identity, and
+replay inputs.
+
+A codegen-pinned downstream Rust consumer constructs and transforms the value
+only through generated Thermite functions and observes the compiled result.
+Changing the Thermite assignment or callee must alter runtime behavior or fail a
+proof/build. The runtime check is execution evidence, not a substitute for the
+independent obligations.
+
+## Assurance floor
+
+This is an L3 primitive increment. Production semantics, source contracts,
+independent contract/expression/body translation-validation obligations, and
+the selected strict wrapper must all discharge for all inputs through Verus.
+No L2, L1, skipped, assumed, or boundary-only row satisfies acceptance. An L4
+route may replace an individual decidable clause only when checked
+reconstruction establishes the same claim; L4 is not required for stateful
+whole-body equivalence outside an admitted decidable fragment.
+
+More generally, reusable Thermite-authored kernel algorithms and language
+semantics have an L3-or-L4 completion floor. The only legitimate sub-L3 items
+are bodyless declarations for operations whose exact machine implementation is
+absent from this repository or whose hardware/concurrency semantics cannot be
+expressed by the current proof backend. Such a declaration is an incomplete
+platform obligation, not a completed primitive implementation, and a consumer
+may not upgrade it without an exact receipt-bound implementation refinement.
+
+## Acceptance and adversarial evidence
+
+This increment is shipped only when all of the following hold:
+
+1. a typed mutable finite record local with a direct field write and returned
+   value is body-TV faithful under real Verus at L3 (or an applicable
+   reconstruction-checked L4 route);
+2. record results are checked field-by-field, including complete fixed-array
+   views and untouched fields;
+3. reads after writes and branch-composed record updates observe the exact
+   current state;
+4. a caller composes through an independently generated pure value-callee
+   specification;
+5. dropped, wrong-field, wrong-value, reordered, collateral, stale-read, and
+   wrong-callee production mutants fail an independent obligation;
+6. exact direct finite-record, mutable-slice, and mutable-fixed-array callees
+   compose statement calls and direct typed let-bound results through the
+   separate source-derived result/effect frame, while wider
+   shared/alias/expression forms remain rejected;
+7. a direct source-derived scalar/unit or exact finite-record function may
+   consume a logical finite-record snapshot after a descendant sequence
+   overlay; record results rebase every leaf into a typed local or direct body
+   tail, while dropped state/result writes fail and nested use remains
+   fail-closed;
+8. a strict freestanding L3/L4-only build, receipt replay, ABI/source tamper
+   checks, and a downstream compiled execution test all pass, with no skipped or
+   sub-L3 proof row; and
+9. workspace formatting, lint, focused/broad tests, requirement registry,
+   documentation drift, canonical-source, and primitive-only scope audits remain
+   green.
+
+## Residual work
+
+The exact typed nested-field and terminal fixed-array projection subset is now
+shipped by `.design/build/nested-aggregate-lifecycle.md`; exact record-state
+loops are supplied by `.design/build/record-state-loops.md`. This increment still
+does not claim mutable enum payloads, index-then-field aliasing,
+array-element-root call effects, arbitrary native aggregate materialization,
+aggregate results outside the exact constructor/access-path tail subset,
+nested/general by-value call use after a descendant sequence overlay, native
+aggregate matching, nested or
+general mutable-call result expressions, static global ownership, affine uniqueness, concurrent
+record access, atomic object/machine refinement, or Rust/assembly TPL refinement.
+It does not add or package a kernel.

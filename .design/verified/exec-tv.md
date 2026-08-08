@@ -4,7 +4,7 @@
 tier: 3-component
 status: draft
 audited-sha: 92396428567edc6940a9e2845217f5ff4c2ea3c6 (re-pinned 2026-06-16, user-authorized: the only change to this doc's governed files since the prior pin is the additive stage-1 forge-tier increment 2a — the new Item::Forge surface + inert Item::Forge match arms, verified net-additive with no substantive removal of existing v1 logic (git log <main>..HEAD = the 8 forge commits); the v1 behavior this doc governs is unchanged, and the new forge-tier surface is specified in .design/stage1-forge-tier.md / REQ-S1-3)
-audited-content-sha256: 1f83cae8fcd2066c94145b222050ece9340cc0667144a367b563388e90d64147 (re-pinned 2026-08-01 after auditing the bootable multicore kernel integration; existing behavior remains regression-covered)
+audited-content-sha256: a3c35815bd0de5a990b9c23f90f6ca15908fa4d123c9836a10b093fcb4f860c6 (re-pinned 2026-08-07 after the direct record-value-call handoff to body TV narrowed to records reaching a logical sequence leaf; existing rows remain regression-covered)
 governs: thermite-tv/src/exec_encode.rs, thermite-tv/src/obligation.rs, thermite-tv/src/gen.rs, forge/src/exec_tv.rs
 thesis-refs:
   - thermite-design.md §1 (trust relocated: code → spec → spec-intent)
@@ -33,7 +33,7 @@ exec-lowering produces the reference VALUE for all inputs ⟺ faithful; a `postc
 
 **Scope split (the crux — pin it precisely):**
 - **Step 2.1 (DESIGNED HERE, doable NOW):** TV for PURE EXEC-POSITION EXPRESSIONS — arithmetic,
-  casts, comparisons, calls, indexing — in BODY/exec context (`Ctx::is_spec()` false). NO statements,
+  casts, comparisons, calls, indexing, and the frozen finite-storage methods — in BODY/exec context (`Ctx::is_spec()` false). NO statements,
   loops, mutation, or control flow. A pure exec expr has a denotation (a `u64`/`usize`/`bool` VALUE)
   with NO state, so an independent reference is a total recursion and the exec-fn obligation is a
   single `ensures`. This is where #122/#146 lived.
@@ -103,6 +103,23 @@ CAUGHT (not coerced away):
 - Indexing `xs[i]` (source `i: usize`, `xs: &[u32]`) has the exec reference `xs[i as int]` (the spec
   view of the same element value) — GROUNDED: faithful VERIFIES, an off-by-one production
   (`xs[i + 1]`) FAILS `postcondition not satisfied`.
+- Borrowed-slice `.len()` has the independent reference `(xs@.len() as usize)`; native fixed arrays
+  additionally admit `.len()`, `.array_eq(other)`, and
+  `.array_same_except(other, index)` through their finite views. The latter is
+  exactly the bounded universal frame relation outside one selected slot. Forge
+  supplies the independently encoded obligation with the exact declarations
+  needed for arrays of scalars and finite plain records/tuples/nested arrays;
+  sealed, opaque, recursive, reference-bearing, enum, and heap-backed shapes
+  remain outside the admitted relation. This is the executable guard vocabulary
+  needed by total wrappers over mutable storage.
+- Total `u64.bit_test`/`.bit_set`/`.bit_clear` use an independently generated
+  64-arm mask reference with an out-of-range fallback. The reference encoder
+  does not import the production L3 helper generator; real-Verus conformance
+  checks all three operations as faithful body expressions. The
+  `bit_set_preserves_other` and `bit_clear_preserves_other` references compose
+  independently derived update and observation encodings with explicit
+  range/distinctness guards; contract, expression, and body TV all prove them
+  faithful.
 
 **The home (where it lives).** Reuse the step-1 architecture; extend, do not fork:
 - `thermite-tv/src/exec_encode.rs` — the NEW exec-expr reference encoder (REQ-1), sibling to
@@ -126,7 +143,14 @@ CAUGHT (not coerced away):
   `nat`/`int`), comparisons (`Eq`/`Ne`/`Lt`/`Le`/`Gt`/`Ge` → `bool`), casts (`Expr::Cast` at the
   target type, with the #122 inner-paren for a `Binary`/`Unary` inner and the #146 outer-paren when a
   `Cast` is the LEFT operand of a `<`-leading op), calls (`Expr::Call` — the exec callee verbatim),
-  and indexing (`Expr::Index` — `xs[i as int]` for the spec view of the exec element value). Derived
+  indexing (`Expr::Index` — `xs[i as int]` for the spec view of the exec element value), borrowed-slice
+  and fixed-array `.len()`, `.array_eq(other)`, and
+  `.array_same_except(other, index)`, including frames whose element is a finite
+  plain record/tuple/nested array, plus nominal record literals and direct field
+  projection with exact reachable declarations. A named-record borrow retains
+  its exact `&Name`/`&mut Name` obligation type; a mutable field reference in the
+  postcondition selects `final(root).field`, independently testing the ordinary
+  production field read. Derived
   from `thermite-design.md` §4.1/§6. **HARD CONSTRAINT (R-CHAR-3 / trust model):** MUST NOT call
   `thermite_lower::lower::lower_expr` or any production lowering symbol; the `thermite-tv` crate keeps
   NO `thermite-lower` dependency.
@@ -196,7 +220,7 @@ CAUGHT (not coerced away):
   exec arithmetic with no registry lookup.
 
 **The pure-exec subset is small (why the reference is auditable).** A pure exec expr is the
-arithmetic/cast/comparison/call/index subset of `Expr` — NO statements, NO `let`, NO loops, NO
+arithmetic/cast/comparison/call/index/finite-storage-method/record-construction-and-projection subset of `Expr` — NO statements, NO `let`, NO loops, NO
 mutation, NO control flow (those are step 2.2). The reference encoder is a total recursion over that
 subset, NOT a re-implementation of `lower_block`/`lower_stmt`/the loop machinery.
 
@@ -338,8 +362,8 @@ faithfulness.
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-1 (exec-expr reference encoder) | SHIPPED | `thermite_tv::exec_encode::exec_ref_value` (`thermite-tv/src/exec_encode.rs`) — the independent BOUNDED exec-VALUE encoder (`u64`/`u32`/`usize`/`bool`, NEVER `nat`/`int`): arithmetic at the operand type (the overflow obligation carried), comparisons → `bool`, casts with the #122 inner-paren (`(n - 1) as u8`) + the #146 cast-`<` outer-paren (`(x as u32) < 33`, independent `is_lt_leading`), calls verbatim, and the slice index → the spec-view element value `xs[i as int]`. Non-test consumer `obligation::exec_equivalence_obligation`. Verified by `thermite-tv/tests/exec_teeth.rs` E1–E4 under real verus (the `exec_ref_value_matches_faithful_meaning` unit + the four faithful obligations VERIFY). Deps `thermite-syntax` + `thermite-spec` ONLY — no `thermite-lower` (`cargo tree -p thermite-tv` = syntax + spec; AC-6). Out-of-scope (method calls / Vec-String accessors) → honest `RefEncodeError::Unsupported` (#154/#156 territory), never silent-wrong. |
-| REQ-2 (exec-fn-wrapped equivalence obligation + discharge) | SHIPPED | `thermite_tv::obligation::exec_equivalence_obligation` + `ExecObligationFrame`/`ExecParamDecl` (`thermite-tv/src/obligation.rs`) emits the self-contained `fn tv_exec_wrap(<params>) requires <req>, ensures result == <exec_ref_value(source)>, { <p_production> }` EXEC-FN form (NOT the proof-fn `<==>`). The production side reuses `thermite_lower::lower_exec_expr` (the per-expr EXEC lowering, `thermite-lower/src/lower.rs` — re-enters `lower_expr` in `Ctx::exec()`, the standalone exec `Ctx` IS reachable for a pure expr; the #152 feasibility unknown RESOLVED). Discharged through real verus by `tests/exec_teeth.rs`: all four faithful VERIFY (`1 verified, 0 errors`), all four infidel CAUGHT (E1 `E0308 mismatched types`, E2 `error: expected ','`, E3/E4 `postcondition not satisfied`). The bounded reference catches the E3 wrap (NOT coerced away). GROUNDED in Verification above. |
+| REQ-1 (exec-expr reference encoder) | SHIPPED | `thermite_tv::exec_encode::exec_ref_value` (`thermite-tv/src/exec_encode.rs`) — the independent BOUNDED exec-VALUE encoder (`u64`/`u32`/`usize`/`bool`, NEVER `nat`/`int`): arithmetic at the operand type, comparisons, casts, calls, finite-view indexes/relations, nominal record construction/direct projection, exact mutable-record post-field bindings, and total `u64` bit operations/preservation witnesses. Non-test consumer `obligation::exec_equivalence_obligation`. Verified by the real-Verus teeth plus fixed-array, aggregate-array, packed-bit, mutable-storage, named-record, and mutable-call tests. Deps `thermite-syntax` + `thermite-spec` ONLY — no `thermite-lower`. Other method calls / Vec-String accessors remain an honest `RefEncodeError::Unsupported`, never silent-wrong. |
+| REQ-2 (exec-fn-wrapped equivalence obligation + discharge) | SHIPPED | `thermite_tv::obligation::exec_equivalence_obligation` + `ExecObligationFrame`/`ExecParamDecl` (`thermite-tv/src/obligation.rs`) emits the self-contained `fn tv_exec_wrap(<params>) requires <req>, ensures result == <exec_ref_value(source)>, { <p_production> }` EXEC-FN form (NOT the proof-fn `<==>`). Named-record borrows retain exact reference types, and a mutable field reference uses `final(root).field`; omitting that selector is a direct negative test. The production side reuses `thermite_lower::lower_exec_expr` (the per-expr EXEC lowering, `thermite-lower/src/lower.rs` — re-enters `lower_expr` in `Ctx::exec()`, the standalone exec `Ctx` IS reachable for a pure expr; the #152 feasibility unknown RESOLVED). Discharged through real verus by `tests/exec_teeth.rs` and `tests/mutable_call_effect_tv.rs`: faithful obligations verify and all injected compile/value/state-selector infidelities are caught. The bounded reference catches the E3 wrap (NOT coerced away). GROUNDED in Verification above. |
 | REQ-3 (off-corpus generator — exec exprs) | SHIPPED | `thermite_tv::gen::gen_exec_exprs` + `gen::ExecClause` (`thermite-tv/src/gen.rs`) — a DETERMINISTIC (SplitMix64-seeded, no `rand`/clock, R-CODE-5) generator of WELL-FRAMED exec-position `Expr`s over the bounded exec sublanguage: `u64`/`usize` arithmetic (`+`/`-`/`*`), shifts, bitwise, narrowing/widening casts (`as u8`/`u16`/`u32`/`u64`/`usize`), the cast-`<` surface (`x as u32 < k` — the #146 guard), and slice indexing (`xs[i]`). EACH `ExecClause` carries an ADEQUATE FRAME (every base scalar `<= 1000` + an index `< xs.len()`) so the FAITHFUL lowering VERIFIES (the overflow obligation does not spuriously fire). The frame-adequacy disciplines: arithmetic operands are PROVABLY-BOUNDED (no bitwise/shift/index result fed to `+`/`*`), and `*` scales by a small LITERAL only (a product of two unknowns is NONLINEAR — verus cannot bound it). Non-test consumer `forge::exec_tv::run_generated`. Determinism + construct coverage + self-framing in `gen::tests` (`exec_deterministic_and_seed_sensitive`, `exec_diverse_construct_coverage`, `exec_clauses_are_self_framed`) + the 200-expr all-faithful run in `forge/tests/exec_tv_conformance.rs`. Deps `thermite-syntax` + `thermite-spec` ONLY — no `thermite-lower` (AC-6). |
 | REQ-4 (the teeth — R-CHAR-3) | SHIPPED | `thermite-tv/tests/exec_teeth.rs` — E1 (#122 cast-paren), E2 (#146 cast-`<`), E3 (wrong-op/overflow), E4 (off-by-one index): each FAITHFUL `p_production` (the exact `lower_exec_expr` output, pinned in `thermite-lower/src/lower.rs::exec_expr_tests` — the cross-crate bridge, since `thermite-tv` has no `thermite-lower` dep) VERIFIES + each INFIDEL is CAUGHT with the precise catch shape asserted (`CatchShape::Compile`/`Postcondition`). Expected values trace to the fixtures + §4.1/§6, never the lowerer's output. Skip-loudly if verus absent. |
 | REQ-5 (forge plug-in point) | SHIPPED | `forge::exec_tv::run_generated` (the off-corpus exec run — PRIMARY, the #122/#146 regression guard) + `forge::exec_tv::exec_tv_file` (the corpus body-expr check — best-effort) (`forge/src/exec_tv.rs`); both compute `P_production` via `thermite_lower::lower_exec_expr` (CLOSING the consumer loop — R-DEFER-1), build the obligation via `thermite_tv::exec_equivalence_obligation`, and discharge it through `verus` (the `discharge` helper, reusing `crate::check::ScratchDir`/#53 cleanup). Non-test consumer `cli::run_exec_tv` (the `forge exec-tv <file>` subcommand). The FOUR-WAY classification — Faithful / Divergent / Unverifiable / Skipped — is REPORTED DISTINCTLY (Unverifiable/Skipped never mask an infidelity, R-HONEST-3): an inadequate body-expr overflow frame is Unverifiable, a statement/loop/non-derivable-frame/Unsupported is Skipped, a non-compiling production / postcondition counterexample is Divergent. Verified by `forge/tests/exec_tv_conformance.rs` under real verus: the 200-expr generated run is all-faithful (0 divergent/unverifiable/skipped) with the cast-`<`/arith/cast/index coverage non-vacuous; the corpus body-expr check is faithful-where-checked + the loop skipped HONESTLY (out-of-scope step 2.2). **Post-pin hardenings (verified at the #262 re-audit, 2026-06-12):** #157 — the forge-level Divergent classification teeth (a non-compiling production in `run_generated` is `Divergent`, NOT `Skipped`; `divergent_teeth` coverage). #192 (ref #189) — `discharge` gates an `errors >= 1` rlimit-hit run to `Unverifiable` AHEAD of the `Divergent` arm via the SHARED `crate::tv_signal::is_rlimit_signal` (the prior copy-drift root cause: exec_tv had NO rlimit gate and mapped every error run to Divergent unconditionally), so a Verus/Z3 solver-budget timeout is never fabricated into an exec infidelity (R-HONEST-3 / R-CODE-4; `tv_signal.rs` is routed to `exec-stmt-tv.md`). #195 (ref #193) — `exec_tv_file` SKIPS a fn carrying open `?N` holes (`FnItem.holes` non-empty → Skipped with the OpenHole reason) before lowering, never a fabricated Faithful. |

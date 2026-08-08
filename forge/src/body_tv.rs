@@ -19,9 +19,9 @@
 //!     (`thermite_tv::body_equivalence_obligation`) through `verus`.
 //!   - **a v1 frozen-subset `while` loop** as the body's last statement (`loop-tv.md`
 //!     REQ-1: a single `while <cond>` with declared `inv`/`dec`, a straight-line
-//!     scalar body): discharges the three per-run loop obligations (entry /
-//!     preservation / exit — `thermite_tv::{loop_entry_obligation,
-//!     loop_preservation_obligation, loop_exit_obligation}`), reusing the shipped
+//!     scalar or finite-record body): discharges entry / preservation / exit and,
+//!     when the tail returns the sole state cell, the full generated-result obligation,
+//!     reusing the shipped
 //!     `body_ref_state` single-iteration step.
 //!
 //! `thermite-tv` stays independent of `thermite-lower` (the N-version boundary,
@@ -35,7 +35,7 @@
 //!
 //!   - **Faithful** — the obligation(s) verified (`verified >= 1, errors == 0`): the
 //!     body's lowered state transformation means the reference state-denotation for
-//!     all inputs (Z3). For a loop, all three obligations verified.
+//!     all inputs (Z3). For a loop, every applicable obligation verified.
 //!   - **Divergent** — verus found a counterexample (`postcondition not satisfied` /
 //!     an `assertion failed` exit characterization / a non-compiling production): the
 //!     lowering and the reference disagree. A finding that drives a non-zero
@@ -43,9 +43,10 @@
 //!   - **Unverifiable** — the prover errored / timed out / could not be spawned (not
 //!     a pass, not a divergence, R-CODE-4). Reported distinctly, never a
 //!     Faithful.
-//!   - **Skipped** — the body is outside the frozen subset (an out-of-v1 loop, a
-//!     non-scalar mutation, a mid-body `return`, a re-shadow, a non-derivable frame —
-//!     the `Unsupported` class), with the reason printed. A skip does not mask an
+//!   - **Skipped** — the body is outside the frozen subset (an out-of-v1 loop, an
+//!     unsupported aggregate mutation, a mid-body `return`, a re-shadow, a
+//!     non-derivable frame — the `Unsupported` class), with the reason printed. A
+//!     skip does not mask an
 //!     infidelity (the 2.2.1-vs-2.2.2 boundary in the certificate).
 //!
 //! Exposed as `forge body-tv <file>` (the non-test consumer `cli::run_body_tv`), a
@@ -70,14 +71,20 @@ use std::collections::BTreeSet;
 use std::path::Path;
 use std::process::Command;
 
-use thermite_syntax::ast::{Block, FnItem, Item, LoopNode, PrimType, Stmt, Type};
+use thermite_syntax::ast::{Block, FnItem, Item, LoopNode, PrimType, Stmt, Type, VariantShape};
 
+use thermite_tv::exec_encode::{exec_ref_value, ExecRefCtx};
 use thermite_tv::obligation::{
     body_equivalence_obligation, loop_entry_obligation, loop_exit_obligation,
-    loop_preservation_obligation, BodyObligationFrame, BodyParamDecl, LoopObligationFrame,
-    LoopParamDecl,
+    loop_preservation_obligation, loop_result_obligation, BodyObligationFrame, BodyParamDecl,
+    LoopObligationFrame, LoopParamDecl,
 };
-use thermite_tv::{loop_ref_obligations, BodyRefCtx};
+use thermite_tv::ref_encode::{ref_contract_pred, RefCtx, StateViewKind};
+use thermite_tv::{
+    loop_ref_obligations, BodyRefCtx, EnumVariantFrame, EnumVariantShapeFrame,
+    MutableCallEffectFrame, MutableIndexedFrame, MutableRecordFrame, NamedRecordFrame,
+    RecordFieldFrame, SharedIndexedFrame, SharedRecordFrame, ValueRecordFrame,
+};
 
 use crate::check::{unique_scratch_dir, ScratchDir, DEFAULT_RLIMIT, DEFAULT_SOLVER_SEED};
 use crate::cli::ForgeError;
@@ -90,8 +97,9 @@ use crate::cli::ForgeError;
 /// swapped branch / broken loop invariant / wrong after-loop characterization — a
 /// hard finding); `Unverifiable` ⟺ the prover errored / timed out /
 /// could not be spawned (not a pass, not a divergence); `Skipped` ⟺ the body
-/// is outside the frozen subset (an out-of-v1 loop, a non-scalar mutation, a mid-body
-/// return, a re-shadow, a non-derivable frame — the `Unsupported` class), with the
+/// is outside the frozen subset (an out-of-v1 loop, an unsupported aggregate
+/// mutation, a mid-body return, a re-shadow, a non-derivable frame — the
+/// `Unsupported` class), with the
 /// reason, never a false Faithful.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BodyVerdict {
@@ -156,28 +164,24 @@ impl BodyCounts {
 
 /// Run the body-state TV over a `.th` file (REQ-5). For each in-language `fn` item
 /// take its exec body and run the straight-line body state-refinement TV (or, when
-/// the body's last statement is a v1 frozen-subset `while` loop, the three per-run
+/// the body's last statement is a frozen-subset `while` loop, the loop
 /// loop obligations). Each body is classified Faithful / Divergent / Unverifiable /
-/// Skipped (a body outside the frozen subset — an out-of-v1 loop, a non-scalar
-/// mutation, a mid-body return, a non-derivable frame — is Skipped rather than
+/// Skipped (a body outside the frozen subset — an out-of-v1 loop, an unsupported
+/// aggregate mutation, a mid-body return, a non-derivable frame — is Skipped rather than
 /// masking an infidelity).
 pub fn body_tv_file(path: &Path, seed: u64, rlimit: f64) -> Result<BodyTvReport, ForgeError> {
-    let src = std::fs::read_to_string(path).map_err(|e| ForgeError::Io {
-        path: path.display().to_string(),
-        source: e,
-    })?;
-    let parsed = thermite_syntax::parse(&src);
-    if !parsed.is_clean() {
-        return Err(ForgeError::Parse(parsed.errors));
-    }
+    // A single `.th` file or a canonical `.thpkg.json` manifest; the package
+    // closure parses module by module, keeping each diagnostic module-local.
+    let resolved = crate::thermite_package::load_source(path)?;
+    let program = resolved.program();
 
     let mut report = BodyTvReport::default();
-    for item in &parsed.program.items {
+    for item in &program.items {
         match item {
-            Item::Fn(f) => body_tv_fn(&parsed.program, f, seed, rlimit, &mut report),
+            Item::Fn(f) => body_tv_fn(program, f, seed, rlimit, &mut report),
             // A `spec fn` body lowers in spec context (not exec); a struct/enum has no
             // exec body — out of scope for body-TV.
-            Item::SpecFn(_) | Item::Struct(_) | Item::Enum(_) => {}
+            Item::Const(_) | Item::SpecFn(_) | Item::Struct(_) | Item::Enum(_) => {}
             // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 body-TV consumer
             // yet (increments 2b-3); inert here, mirroring the spec/ADT no-op arm.
             Item::Forge(_) => {}
@@ -217,7 +221,7 @@ fn body_tv_fn(
         return;
     }
 
-    let (support_defs, support_names) = match body_tv_support(program, f) {
+    let (support_defs, support_names, mutable_call_effects) = match body_tv_support(program, f) {
         Ok(support) => support,
         Err(reason) => {
             report.results.push(BodyResult {
@@ -229,9 +233,26 @@ fn body_tv_fn(
     };
 
     if matches!(body.stmts.last(), Some(Stmt::Loop(_))) {
-        loop_body_tv(f, body, &support_defs, &support_names, seed, rlimit, report);
+        let context = LoopTvContext {
+            program,
+            support_defs: &support_defs,
+            support_names: &support_names,
+            seed,
+            rlimit,
+        };
+        loop_body_tv(f, body, &context, report);
     } else {
-        straight_line_body_tv(f, body, &support_defs, &support_names, seed, rlimit, report);
+        straight_line_body_tv(
+            program,
+            f,
+            body,
+            &support_defs,
+            &support_names,
+            &mutable_call_effects,
+            seed,
+            rlimit,
+            report,
+        );
     }
 }
 
@@ -241,34 +262,38 @@ fn body_tv_fn(
 /// ordinary verified definitions available to both production and reference
 /// expressions. This closes the call-frame hole without replacing the
 /// independent state denotation.
+pub(crate) type BodyTvSupport = (Vec<String>, BTreeSet<String>, Vec<MutableCallEffectFrame>);
+
 pub(crate) fn body_tv_support(
     program: &thermite_syntax::Program,
     f: &FnItem,
-) -> Result<(Vec<String>, BTreeSet<String>), String> {
+) -> Result<BodyTvSupport, String> {
     let closure = match crate::closure::verified_closure(program, std::slice::from_ref(&f.name)) {
         Ok(closure) => closure,
         // The verified-build closure gate owns fail-closed unresolved-call
         // diagnostics. Preserve the standalone body-TV four-way behavior here;
         // the resulting obligation will classify the missing frame honestly.
-        Err(_) => return Ok((Vec::new(), BTreeSet::new())),
+        Err(_) => return Ok((Vec::new(), BTreeSet::new(), Vec::new())),
     };
-    let support_names: BTreeSet<String> = closure
+    let self_recursive = closure.edges.contains(&(f.name.clone(), f.name.clone()));
+    let mut support_names: BTreeSet<String> = closure
         .functions
         .iter()
         .filter(|name| *name != &f.name)
         .chain(closure.spec_functions.iter())
         .cloned()
         .collect();
-    if support_names.is_empty() {
-        return Ok((Vec::new(), support_names));
-    }
+    support_names.extend(program.items.iter().filter_map(|item| match item {
+        Item::Const(capacity) => Some(capacity.name.clone()),
+        _ => None,
+    }));
     let referrers: Vec<&Item> = program
         .items
         .iter()
         .filter(|item| match item {
-            Item::Fn(dep) => support_names.contains(&dep.name),
+            Item::Fn(dep) => support_names.contains(&dep.name) || dep.name == f.name,
             Item::SpecFn(dep) => support_names.contains(&dep.name),
-            Item::Struct(_) | Item::Enum(_) | Item::Forge(_) => false,
+            Item::Const(_) | Item::Struct(_) | Item::Enum(_) | Item::Forge(_) => false,
         })
         .collect();
     let adt_names: BTreeSet<String> = crate::check::reachable_adt_deps(program, &referrers)
@@ -280,10 +305,13 @@ pub(crate) fn body_tv_support(
             .items
             .iter()
             .filter(|item| match item {
-                Item::Fn(dep) => support_names.contains(&dep.name),
+                Item::Fn(dep) => {
+                    support_names.contains(&dep.name) || (self_recursive && dep.name == f.name)
+                }
                 Item::SpecFn(dep) => support_names.contains(&dep.name),
                 Item::Struct(dep) => adt_names.contains(&dep.name),
                 Item::Enum(dep) => adt_names.contains(&dep.name),
+                Item::Const(_) => true,
                 Item::Forge(_) => false,
             })
             .cloned()
@@ -303,6 +331,24 @@ pub(crate) fn body_tv_support(
         .ok_or_else(|| "body-TV dependency frame had no canonical closing".to_string())?;
     let mut inner = lowered[start..end].to_string();
     let mut reference_defs = String::new();
+    let named_records = named_record_frames(program);
+    let constructor_records = constructor_record_frames(program);
+    let enum_variants = enum_variant_frames(program)?;
+    let mut mutable_call_effects = Vec::new();
+    for item in &support.items {
+        let Item::Fn(dep) = item else {
+            continue;
+        };
+        let Some(body) = &dep.body else {
+            return Err(format!(
+                "body-TV dependency `{}` has no in-language body",
+                dep.name
+            ));
+        };
+        if let Some(effect) = mutable_call_effect_frame(program, dep, body)? {
+            mutable_call_effects.push(effect);
+        }
+    }
     for item in &support.items {
         let Item::Fn(dep) = item else {
             continue;
@@ -315,6 +361,8 @@ pub(crate) fn body_tv_support(
         };
         let mut params = Vec::new();
         let mut slices = Vec::new();
+        let mut mutable_indexed = Vec::new();
+        let mut arrays = Vec::new();
         for param in &dep.params {
             let Some((ty, is_slice)) = exec_type_spelling(&param.ty) else {
                 return Err(format!(
@@ -325,6 +373,12 @@ pub(crate) fn body_tv_support(
             if is_slice {
                 slices.push(param.name.clone());
             }
+            if is_mutable_indexed_borrow(&param.ty) {
+                mutable_indexed.push(param.name.clone());
+            }
+            if is_fixed_array_binding(&param.ty) {
+                arrays.push(param.name.clone());
+            }
             params.push(format!("{}: {ty}", param.name));
         }
         let Some((ret, _)) = exec_type_spelling(&dep.ret) else {
@@ -333,18 +387,86 @@ pub(crate) fn body_tv_support(
                 dep.name
             ));
         };
-        let reference = thermite_tv::body_ref_state(body, &BodyRefCtx::with_slice_bound(slices))
+        let has_mutable_reference = dep
+            .params
+            .iter()
+            .any(|param| matches!(param.ty, Type::Ref { mutable: true, .. }));
+        if has_mutable_reference {
+            let effect = mutable_call_effects
+                .iter()
+                .find(|effect| effect.name == dep.name)
+                .ok_or_else(|| {
+                    format!(
+                        "body-TV mutable-reference dependency `{}` lost its exact call-effect frame",
+                        dep.name
+                    )
+                })?;
+            let reference = thermite_tv::body_ref_state_ensures(
+                body,
+                "result",
+                &BodyRefCtx::with_slice_bound(slices.iter().cloned())
+                    .with_mutable_indexed_bound(mutable_indexed)
+                    .with_fixed_array_bound(arrays.iter().cloned())
+                    .with_fixed_array_fields(fixed_array_field_bindings(program, dep))
+                    .with_fixed_array_result(matches!(dep.ret, Type::Array { .. }))
+                    .with_unit_result(matches!(dep.ret, Type::Unit))
+                    .with_mutable_records(effect.mutable_records.clone())
+                    .with_mutable_indexed(effect.mutable_indexed.clone())
+                    .with_shared_records(effect.shared_records.clone())
+                    .with_shared_indexed(effect.shared_indexed.clone())
+                    .with_mutable_call_effects(mutable_call_effects.clone())
+                    .with_named_records(named_records.clone())
+                    .with_constructor_records(constructor_records.clone())
+                    .with_enum_variants(enum_variants.clone())
+                    .with_bound_value_names(dep.params.iter().map(|param| param.name.as_str()))
+                    .with_result_record(named_record_result_frame(&named_records, &dep.ret)),
+            )
             .map_err(|error| {
                 format!(
-                    "body-TV dependency `{}` is outside the independent body reference: {error}",
+                    "body-TV mutable-reference dependency `{}` is outside the independent body reference: {error}",
                     dep.name
                 )
             })?;
+            inject_dependency_reference_ensures(&mut inner, dep, &reference)?;
+            continue;
+        }
+        let reference = thermite_tv::body_ref_state(
+            body,
+            &BodyRefCtx::with_slice_bound(slices.iter().cloned())
+                .with_mutable_indexed_bound(mutable_indexed)
+                .with_fixed_array_bound(arrays.iter().cloned())
+                .with_fixed_array_fields(fixed_array_field_bindings(program, dep))
+                .with_fixed_array_result(matches!(dep.ret, Type::Array { .. }))
+                .with_unit_result(matches!(dep.ret, Type::Unit))
+                .with_named_records(named_records.clone())
+                .with_constructor_records(constructor_records.clone())
+                .with_enum_variants(enum_variants.clone())
+                .with_bound_value_names(dep.params.iter().map(|param| param.name.as_str()))
+                .with_result_record(named_record_result_frame(&named_records, &dep.ret)),
+        )
+        .map_err(|error| {
+            format!(
+                "body-TV dependency `{}` is outside the independent body reference: {error}",
+                dep.name
+            )
+        })?;
+        let reference = ground_dependency_reference_result(reference, &dep.ret);
+        let decreases = dependency_reference_decreases(dep, &slices, &arrays)
+            .map_err(|error| format!("body-TV dependency `{}` decreases: {error}", dep.name))?;
         let spec_name = format!("thermite_tv_ref_{}", dep.name);
         reference_defs.push_str(&format!(
-            "\nspec fn {spec_name}({}) -> {ret} {{ {reference} }}\n",
+            "\nspec fn {spec_name}({}) -> {ret}{decreases} {{ {reference} }}\n",
             params.join(", ")
         ));
+        inject_dependency_reference_postcondition(
+            &mut inner,
+            dep,
+            &spec_name,
+            &dep.params
+                .iter()
+                .map(|parameter| parameter.name.as_str())
+                .collect::<Vec<_>>(),
+        )?;
         let needle = format!("\nfn {}(", dep.name);
         let replacement = format!(
             "\n#[verifier::when_used_as_spec({spec_name})]\nfn {}(",
@@ -359,7 +481,109 @@ pub(crate) fn body_tv_support(
         inner = inner.replacen(&needle, &replacement, 1);
     }
     reference_defs.push_str(&inner);
-    Ok((vec![reference_defs], support_names))
+    Ok((vec![reference_defs], support_names, mutable_call_effects))
+}
+
+/// Make executable dependency calls compose through their independently
+/// reconstructed body semantics, rather than only through the author's source
+/// contract. `when_used_as_spec` rewrites calls that already occur in a spec
+/// expression; it does not by itself constrain the value returned by an exec
+/// call in the production body.  This exact postcondition is proved against the
+/// lowered dependency implementation in the same Verus unit and then supplies
+/// the caller with the equality needed for aggregate/ADT result composition.
+fn inject_dependency_reference_postcondition(
+    lowered: &mut String,
+    dependency: &FnItem,
+    spec_name: &str,
+    arguments: &[&str],
+) -> Result<(), String> {
+    inject_dependency_reference_ensures(
+        lowered,
+        dependency,
+        &format!("result == {spec_name}({})", arguments.join(", ")),
+    )
+}
+
+/// Add one independently derived predicate to the exact lowered dependency.
+/// The predicate is not assumed: Verus proves it against this function body in
+/// the same obligation unit before any caller can use it for composition.
+fn inject_dependency_reference_ensures(
+    lowered: &mut String,
+    dependency: &FnItem,
+    predicate: &str,
+) -> Result<(), String> {
+    let needle = format!("\nfn {}(", dependency.name);
+    let start = lowered.find(&needle).ok_or_else(|| {
+        format!(
+            "body-TV dependency frame could not locate lowered function `{}` for exact reference composition",
+            dependency.name
+        )
+    })?;
+    let body_offset = lowered[start..].find("\n{\n").ok_or_else(|| {
+        format!(
+            "body-TV dependency frame could not locate lowered function body `{}` for exact reference composition",
+            dependency.name
+        )
+    })?;
+    let body_insertion = start + body_offset;
+    let insertion = lowered[start..body_insertion]
+        .find("\n    decreases ")
+        .map(|offset| start + offset)
+        .unwrap_or(body_insertion);
+    let has_ensures = lowered[start..insertion].contains("\n    ensures\n");
+    let clause = if has_ensures {
+        format!("\n        ({predicate}),")
+    } else {
+        format!("\n    ensures\n        ({predicate}),")
+    };
+    lowered.insert_str(insertion, &clause);
+    Ok(())
+}
+
+/// Ground an independently derived dependency-body reference at the exact
+/// bounded return type declared by the Thermite source.
+///
+/// Verus intentionally interprets integer arithmetic in `spec fn` position as
+/// mathematical `int`, even when every operand is a bounded executable integer.
+/// A reference such as `(slot + 1) % 65` therefore cannot inhabit a generated
+/// `-> usize` helper without an explicit narrowing.  The ordinary production
+/// function still executes checked bounded arithmetic, and its own body-TV row
+/// proves that implementation separately; this cast only makes the independently
+/// reconstructed value usable as its `when_used_as_spec` twin.  The source return
+/// type is parsed independently here, so the TV path does not consult or reuse
+/// production lowering.
+fn ground_dependency_reference_result(reference: String, ret: &Type) -> String {
+    let bounded = match ret {
+        Type::Prim(PrimType::U8) => Some("u8"),
+        Type::Prim(PrimType::U16) => Some("u16"),
+        Type::Prim(PrimType::U32) => Some("u32"),
+        Type::Prim(PrimType::U64) => Some("u64"),
+        Type::Prim(PrimType::Usize) => Some("usize"),
+        _ => None,
+    };
+    match bounded {
+        Some(ty) => format!("({reference}) as {ty}"),
+        None => reference,
+    }
+}
+
+/// Independently encode the source termination measure for a recursive
+/// dependency reference.  A `when_used_as_spec` twin is itself recursive when
+/// the source body calls the original function, so Verus requires the same
+/// well-founded measure on the generated twin.  Non-recursive functions carry
+/// no `dec` and retain the compact one-line form.
+fn dependency_reference_decreases(
+    function: &FnItem,
+    slices: &[String],
+    arrays: &[String],
+) -> Result<String, thermite_tv::exec_encode::RefEncodeError> {
+    let Some(dec) = &function.dec else {
+        return Ok(String::new());
+    };
+    let context = ExecRefCtx::with_slice_bound(slices.iter().cloned())
+        .with_fixed_array_bound(arrays.iter().cloned());
+    let measure = exec_ref_value(&dec.expr, &context)?;
+    Ok(format!("\n    decreases {measure}\n"))
 }
 
 // ---- the straight-line body arm (exec-stmt-tv REQ-5) -----------------------
@@ -369,14 +593,20 @@ pub(crate) fn body_tv_support(
 /// source `req` as the well-formedness frame), lowers the body via
 /// `thermite_lower::lower_exec_body` (`P_production`), builds the body
 /// state-refinement obligation, and discharges it. A body the frame cannot be derived
-/// for (a richer-typed param, a non-scalar return) or that the reference encoder /
-/// lowerer does not cover (a non-scalar mutation, a re-shadow, a mid-body return) is
-/// Skipped.
+/// for (a richer-typed param or return) or that the reference encoder / lowerer does
+/// not cover (an unsupported aggregate mutation, a re-shadow, a mid-body return) is
+/// Skipped. Native fixed-array frames and exact indexed updates are covered.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the body-TV run needs the source program for aggregate helper derivation in addition to its existing proof frame and verifier configuration"
+)]
 fn straight_line_body_tv(
+    program: &thermite_syntax::Program,
     f: &FnItem,
     body: &Block,
     support_defs: &[String],
     support_names: &BTreeSet<String>,
+    mutable_call_effects: &[MutableCallEffectFrame],
     seed: u64,
     rlimit: f64,
     report: &mut BodyTvReport,
@@ -384,7 +614,7 @@ fn straight_line_body_tv(
     let label = f.name.clone();
 
     // The result type — the body's final-state projection type. A return type outside
-    // the exec frame sublanguage (Option/Map/struct/…) is a non-derivable frame →
+    // the exec frame sublanguage (for example an Option/Map/heap wrapper) is a non-derivable frame →
     // Skip (never a guessed projection).
     let Some((ret_ty, _)) = exec_type_spelling(&f.ret) else {
         report.results.push(BodyResult {
@@ -392,7 +622,7 @@ fn straight_line_body_tv(
             verdict: BodyVerdict::Skipped {
                 reason: format!(
                     "the fn return type is outside the exec frame sublanguage (not a \
-                     bounded u8/u16/u32/u64/usize/bool) — non-derivable result-state \
+                     bounded scalar, fixed aggregate, or named value) — non-derivable result-state \
                      projection type: {:?}",
                     f.ret
                 ),
@@ -402,15 +632,23 @@ fn straight_line_body_tv(
     };
 
     // The signature param frame: each param at its exec value type. A param of a type
-    // the exec frame cannot spell (Map/Option/struct/String/…) makes the frame
+    // the exec frame cannot spell (Map/Option/String/heap wrappers) makes the frame
     // non-derivable → Skip (never a guessed binding).
     let mut params: Vec<BodyParamDecl> = Vec::new();
     let mut slice_params: Vec<String> = Vec::new();
+    let mut mutable_indexed_params: Vec<String> = Vec::new();
+    let mut fixed_array_params: Vec<String> = Vec::new();
     for p in &f.params {
         match exec_type_spelling(&p.ty) {
             Some((ty_str, is_slice)) => {
                 if is_slice {
                     slice_params.push(p.name.clone());
+                }
+                if is_mutable_indexed_borrow(&p.ty) {
+                    mutable_indexed_params.push(p.name.clone());
+                }
+                if is_fixed_array_binding(&p.ty) {
+                    fixed_array_params.push(p.name.clone());
                 }
                 params.push(BodyParamDecl::new(p.name.clone(), ty_str));
             }
@@ -420,7 +658,7 @@ fn straight_line_body_tv(
                     verdict: BodyVerdict::Skipped {
                         reason: format!(
                             "the param `{}` has a type outside the exec frame sublanguage \
-                             (Map/Option/struct/String/…) — non-derivable body frame: {:?}",
+                             (Map/Option/String/heap wrappers) — non-derivable body frame: {:?}",
                             p.name, p.ty
                         ),
                     },
@@ -432,8 +670,8 @@ fn straight_line_body_tv(
 
     // P_production — the exec lowering of the straight-line body (the artifact
     // under test, the non-test consumer of `lower_exec_body`). A body the exec body
-    // lowering does not cover (a `Stmt::Loop` it cannot lower standalone, a non-scalar
-    // construct) → Skip (out of the frozen straight-line subset), not a verdict.
+    // lowering does not cover (a `Stmt::Loop` it cannot lower standalone or another
+    // unsupported construct) → Skip (out of the frozen straight-line subset), not a verdict.
     let p_production = match thermite_lower::lower_exec_body(body) {
         Ok(p) => p,
         Err(e) => {
@@ -483,18 +721,81 @@ fn straight_line_body_tv(
         return;
     }
 
+    let mut spec_defs = support_defs.to_vec();
+    if thermite_lower::block_uses_fixed_array_equality(body) {
+        if let Err(reason) = extend_fixed_array_equality_defs(program, &mut spec_defs) {
+            report.results.push(BodyResult {
+                label,
+                verdict: BodyVerdict::Skipped { reason },
+            });
+            return;
+        }
+    }
+    if thermite_lower::block_uses_u64_bit_methods(body) {
+        spec_defs.push(thermite_lower::u64_bit_defs());
+    }
+    let mutable_records = match mutable_record_frames(program, f) {
+        Ok(records) => records,
+        Err(reason) => {
+            report.results.push(BodyResult {
+                label,
+                verdict: BodyVerdict::Skipped { reason },
+            });
+            return;
+        }
+    };
+    let shared_records = shared_record_frames(program, f);
+    let mutable_indexed = mutable_indexed_frames(f);
+    let shared_indexed = shared_indexed_frames(f);
+    let named_records = named_record_frames(program);
+    let constructor_records = constructor_record_frames(program);
+    let enum_variants = match enum_variant_frames(program) {
+        Ok(variants) => variants,
+        Err(reason) => {
+            report.results.push(BodyResult {
+                label,
+                verdict: BodyVerdict::Skipped { reason },
+            });
+            return;
+        }
+    };
+    let result_record = named_record_result_frame(&named_records, &f.ret);
+    let req = match reference_corpus_req(program, f) {
+        Ok(req) => req,
+        Err(reason) => {
+            report.results.push(BodyResult {
+                label,
+                verdict: BodyVerdict::Skipped { reason },
+            });
+            return;
+        }
+    };
     let frame = BodyObligationFrame {
-        spec_defs: support_defs.to_vec(),
+        spec_defs,
         params,
         ret_type: ret_ty,
-        req: corpus_req(f),
+        req,
         slice_params,
+        mutable_indexed_params,
+        fixed_array_params,
+        fixed_array_fields: fixed_array_field_bindings(program, f),
+        result_is_fixed_array: matches!(f.ret, Type::Array { .. }),
+        result_is_unit: matches!(f.ret, Type::Unit),
+        mutable_records,
+        mutable_indexed,
+        shared_records,
+        shared_indexed,
+        mutable_call_effects: mutable_call_effects.to_vec(),
+        named_records,
+        constructor_records,
+        enum_variants,
+        result_record,
     };
 
     // Build the body state-refinement obligation. The reference state-denotation
     // (`body_ref_state`) rejects (an `Unsupported` Err) a body outside the
-    // frozen subset (a re-shadow, a mid-body return, a non-scalar mutation) → Skipped,
-    // never a false faithful.
+    // frozen subset (a re-shadow, a mid-body return, or unsupported aggregate
+    // mutation) → Skipped, never a false faithful.
     let program = match body_equivalence_obligation(body, &p_production, &frame) {
         Ok(prog) => prog,
         Err(e) => {
@@ -504,7 +805,7 @@ fn straight_line_body_tv(
                     reason: format!(
                         "body reference state-denotation does not cover this body (outside \
                          the frozen straight-line subset — a re-shadow / mid-body return / \
-                         non-scalar mutation / no-tail body): {e}"
+                         unsupported aggregate mutation / no-tail body): {e}"
                     ),
                 },
             });
@@ -518,24 +819,31 @@ fn straight_line_body_tv(
 
 // ---- the loop arm (loop-tv REQ-5 / increment 2.2.2-iii) --------------------
 
+struct LoopTvContext<'a> {
+    program: &'a thermite_syntax::Program,
+    support_defs: &'a [String],
+    support_names: &'a BTreeSet<String>,
+    seed: u64,
+    rlimit: f64,
+}
+
 /// TV a fn body whose last statement is a loop (REQ-5; `loop-tv.md` increment
 /// 2.2.2-iii). A v1 frozen-subset `while` loop (a single `while <cond>` with declared
-/// `inv`/`dec`, a straight-line scalar body) discharges the three per-run obligations
+/// `inv`/`dec`, a straight-line scalar or finite-record body) discharges the while-rule
 /// (entry / preservation / exit); an out-of-v1 loop (`loop`-kind, `break`/`continue`,
-/// a mid-body `return`, a nested loop, non-scalar state, a trivially-weak `inv`) is
+/// a mid-body `return`, a nested loop, non-finite/aliased state, a trivially-weak `inv`) is
 /// Skipped (the `loop_ref_obligations` recognizer refuses to emit), never a
 /// false Faithful (R-HONEST-3). The `binary_search.th` corpus loop (a `loop`-kind with
 /// mid-body `return`s) reaches here as Skipped-with-reason, the expected
 /// result.
-fn loop_body_tv(
-    f: &FnItem,
-    body: &Block,
-    support_defs: &[String],
-    support_names: &BTreeSet<String>,
-    seed: u64,
-    rlimit: f64,
-    report: &mut BodyTvReport,
-) {
+fn loop_body_tv(f: &FnItem, body: &Block, context: &LoopTvContext<'_>, report: &mut BodyTvReport) {
+    let LoopTvContext {
+        program,
+        support_defs,
+        support_names,
+        seed,
+        rlimit,
+    } = context;
     let label = format!("{}.loop", f.name);
 
     // The loop node is the body's last statement (matched by the caller).
@@ -553,11 +861,11 @@ fn loop_body_tv(
     };
 
     // The loop-obligation frame: the fn inputs (the slices / scalars the inv/cond
-    // reference, at their exec types) + the mutated cells (the scalar cells the body
+    // reference, at their exec types) + the mutated scalar/finite-record cells the body
     // rebinds, in the sorted order `loop_ref_obligations` reports them). A param /
     // cell of a non-exec-frame type makes the frame non-derivable → Skip. An
     // out-of-v1 loop surfaces its `Unsupported` here (the recognizer refuses).
-    let frame = match build_loop_frame(f, body, loop_node, support_defs, support_names) {
+    let frame = match build_loop_frame(program, f, body, loop_node, support_defs, support_names) {
         Ok(frame) => frame,
         Err(reason) => {
             report.results.push(BodyResult {
@@ -582,7 +890,33 @@ fn loop_body_tv(
         }
     };
 
-    let verdict = discharge_loop(body, &p_production, &frame, &label, seed, rlimit);
+    // The full production prefix + while + tail. Record-state loops require
+    // this fourth obligation so assurance reaches the actual returned post-state
+    // rather than ending at entry/preservation/abstract-exit premises.
+    let p_result_production = match thermite_lower::lower_exec_body_in_function(program, f) {
+        Ok(production) => production,
+        Err(error) => {
+            report.results.push(BodyResult {
+                label,
+                verdict: BodyVerdict::Skipped {
+                    reason: format!(
+                        "production exec-body lowering cannot construct the exact full-loop result wrapper: {error}"
+                    ),
+                },
+            });
+            return;
+        }
+    };
+
+    let verdict = discharge_loop(
+        body,
+        &p_production,
+        &p_result_production,
+        &frame,
+        &label,
+        *seed,
+        *rlimit,
+    );
     report.results.push(BodyResult { label, verdict });
 }
 
@@ -593,6 +927,7 @@ fn loop_body_tv(
 /// body-local `let mut`, not a signature param). A param of a non-exec-frame type is
 /// a non-derivable frame.
 fn build_loop_frame(
+    program: &thermite_syntax::Program,
     f: &FnItem,
     body: &Block,
     _loop_node: &LoopNode,
@@ -601,18 +936,19 @@ fn build_loop_frame(
 ) -> Result<LoopObligationFrame, String> {
     // The mutated cells (+ the v1-subset recognition) come from the shipped
     // `loop_ref_obligations` — its `Unsupported` Err is the out-of-v1 reason.
-    let ctx = loop_body_ref_ctx(f);
+    let ctx = loop_body_ref_ctx(program, f);
     let obs = loop_ref_obligations(body, &ctx).map_err(|e| {
         format!(
             "the loop is OUTSIDE the v1 frozen subset (a `loop`-kind / `break` / \
-             mid-body `return` / nested loop / non-scalar state / trivially-weak \
+             mid-body `return` / nested loop / non-finite or aliased state / trivially-weak \
              `inv`) — Skipped honestly: {e}"
         )
     })?;
 
-    // The cells (the body-rebound scalar cells) at their exec types. A cell's exec
+    // The cells (the body-rebound scalar or finite-record cells) at their exec types. A cell's exec
     // type is the type of the `let mut <cell>: T = ..` that introduced it in the body
-    // prefix (the entry state). A cell with no derivable scalar type is non-derivable.
+    // prefix (the entry state). A cell with no derivable exec-frame type is
+    // non-derivable.
     let mut cells: Vec<LoopParamDecl> = Vec::with_capacity(obs.cells.len());
     for cell in &obs.cells {
         let ty = cell_decl_type(body, cell).ok_or_else(|| {
@@ -624,6 +960,18 @@ fn build_loop_frame(
         })?;
         cells.push(LoopParamDecl::new(cell.clone(), ty));
     }
+    let named_records = named_record_frames(program);
+    let has_record_cell = cells.iter().any(|cell| {
+        named_records
+            .iter()
+            .any(|record| record.type_name == cell.type_str)
+    });
+    if has_record_cell && obs.exit_result_pred.is_none() {
+        return Err(
+            "an exact record-state loop must return its sole record cell as the body tail so the full generated loop result is independently framed"
+                .to_string(),
+        );
+    }
 
     // The inputs — the fn params at their exec types (the slices / scalars the
     // inv/cond reference). A cell is body-local, never a signature param, so the
@@ -634,7 +982,7 @@ fn build_loop_frame(
         let (ty_str, is_slice) = exec_type_spelling(&p.ty).ok_or_else(|| {
             format!(
                 "the param `{}` has a type outside the exec frame sublanguage \
-                 (Map/Option/struct/String/…) — non-derivable loop frame: {:?}",
+                 (Map/Option/String/heap wrappers) — non-derivable loop frame: {:?}",
                 p.name, p.ty
             )
         })?;
@@ -669,15 +1017,17 @@ fn build_loop_frame(
         spec_defs: support_defs.to_vec(),
         inputs,
         cells,
-        req: corpus_req(f),
+        req: reference_corpus_req(program, f)?,
         slice_params,
+        ret_type: exec_type_spelling(&f.ret).map(|(spelling, _)| spelling),
+        named_records,
     })
 }
 
 /// The [`BodyRefCtx`] for the loop reference encoder of a fn: the slice-bound param
 /// names (so an index in the inv / cond / cell encodes to the spec-view element
 /// value). Derived from the fn signature.
-fn loop_body_ref_ctx(f: &FnItem) -> BodyRefCtx {
+fn loop_body_ref_ctx(program: &thermite_syntax::Program, f: &FnItem) -> BodyRefCtx {
     let slice_params: Vec<String> = f
         .params
         .iter()
@@ -686,7 +1036,11 @@ fn loop_body_ref_ctx(f: &FnItem) -> BodyRefCtx {
             _ => None,
         })
         .collect();
+    let records = named_record_frames(program);
     BodyRefCtx::with_slice_bound(slice_params)
+        .with_named_records(records.clone())
+        .with_constructor_records(records)
+        .with_bound_value_names(f.params.iter().map(|param| param.name.as_str()))
 }
 
 /// Shape the production single-iteration loop-body lowering to the preservation
@@ -758,13 +1112,91 @@ fn cell_decl_type(body: &Block, cell: &str) -> Option<String> {
 /// best available well-formedness / no-overflow frame). `req true` → no requires (an
 /// empty frame). The `req` is emitted verbatim (the obligation's own precondition,
 /// authored from the source, not lowered here — `exec-stmt-tv.md` REQ-3).
-fn corpus_req(f: &FnItem) -> Option<String> {
+fn corpus_req_text(f: &FnItem) -> Option<String> {
     let text = f.contract.req.text.trim();
     if text.is_empty() || text == "true" {
         None
     } else {
         Some(text.to_string())
     }
+}
+
+/// Independently encode a function's source precondition into the Verus
+/// specification surface used by body-TV obligations. Raw Thermite text is not
+/// sufficient once the frame contains fixed arrays or slices: source
+/// `state.slots[i]` denotes the finite view `state.slots@[i as int]`.
+pub(crate) fn reference_corpus_req(
+    program: &thermite_syntax::Program,
+    function: &FnItem,
+) -> Result<Option<String>, String> {
+    if corpus_req_text(function).is_none() {
+        return Ok(None);
+    }
+    let fixed_arrays = function
+        .params
+        .iter()
+        .filter(|parameter| is_fixed_array_binding(&parameter.ty))
+        .map(|parameter| parameter.name.clone());
+    let bounded = function
+        .params
+        .iter()
+        .filter(|parameter| {
+            matches!(
+                &parameter.ty,
+                Type::Prim(
+                    PrimType::U8 | PrimType::U16 | PrimType::U32 | PrimType::U64 | PrimType::Usize
+                )
+            )
+        })
+        .map(|parameter| parameter.name.clone());
+    let call_slices = program.items.iter().filter_map(|item| {
+        let (name, params) = match item {
+            Item::Fn(item) => (&item.name, &item.params),
+            Item::SpecFn(item) => (&item.name, &item.params),
+            _ => return None,
+        };
+        Some((
+            name.clone(),
+            params
+                .iter()
+                .enumerate()
+                .filter_map(|(index, parameter)| {
+                    let is_slice = match &parameter.ty {
+                        Type::Slice(_) => true,
+                        Type::Ref { inner, .. } => matches!(inner.as_ref(), Type::Slice(_)),
+                        _ => false,
+                    };
+                    is_slice.then_some(index)
+                })
+                .collect::<Vec<_>>(),
+        ))
+    });
+    let variants = enum_variant_frames(program)?
+        .into_iter()
+        .map(|variant| (variant.variant_name, variant.enum_name));
+    // A body obligation's parameters are the function-entry values. Therefore
+    // `old(param)` in a source precondition denotes that same binding; it is not
+    // a second arbitrary contract-TV snapshot. Ground the state view explicitly
+    // so the independent encoder cannot invent an unbound `old_param` name.
+    let entry_views = function.params.iter().map(|parameter| {
+        (
+            StateViewKind::Old,
+            parameter.name.clone(),
+            parameter.name.clone(),
+        )
+    });
+    let context = RefCtx::with_seq_bound(std::iter::empty::<String>())
+        .with_fixed_array_bound(fixed_arrays)
+        .with_fixed_array_fields(fixed_array_field_bindings(program, function))
+        .with_spec_call_slice_args(call_slices)
+        .with_enum_variants(variants)
+        .with_nat_coerce(bounded)
+        .with_state_views(entry_views);
+    ref_contract_pred(&function.contract.req.expr, &context)
+        .map(Some)
+        .map_err(|error| {
+            format!("the source `req` is outside the independent body-TV contract frame: {error}")
+        })
 }
 
 /// The req gate (mirrors `exec_tv::check_corpus_expr`'s req gate). Returns
@@ -777,7 +1209,7 @@ fn corpus_req(f: &FnItem) -> Option<String> {
 /// ident is declared (or the `req` is empty / `true`), so a body whose `req` references
 /// only its own params (`req x <= 1000`) is not over-skipped.
 fn req_references_undeclarable(f: &FnItem, declared: &[&str]) -> Option<String> {
-    let req = corpus_req(f)?;
+    let req = corpus_req_text(f)?;
     collect_text_idents(&req)
         .into_iter()
         .find(|ident| !declared.contains(&ident.as_str()))
@@ -796,7 +1228,15 @@ fn collect_text_idents(text: &str) -> Vec<String> {
     let mut i = 0;
     while i < chars.len() {
         let c = chars[i];
-        if c.is_ascii_alphabetic() || c == '_' {
+        if c.is_ascii_digit() {
+            // Consume the complete source numeric token before looking for
+            // identifiers. Otherwise the separator in `18_446_...` is seen as
+            // an identifier beginning with `_`, and radix digits/suffixes such
+            // as `0xff_u64` are misclassified as helper names.
+            while i < chars.len() && (chars[i].is_ascii_alphanumeric() || chars[i] == '_') {
+                i += 1;
+            }
+        } else if c.is_ascii_alphabetic() || c == '_' {
             let start = i;
             while i < chars.len() && (chars[i].is_ascii_alphanumeric() || chars[i] == '_') {
                 i += 1;
@@ -806,7 +1246,8 @@ fn collect_text_idents(text: &str) -> Vec<String> {
             // neither is a frame var.
             let after_dot = start > 0 && chars[start - 1] == '.';
             let after_colon = start > 0 && chars[start - 1] == ':';
-            if !after_dot && !after_colon && !out.contains(&ident) {
+            let state_view_builtin = matches!(ident.as_str(), "old" | "final");
+            if !after_dot && !after_colon && !state_view_builtin && !out.contains(&ident) {
                 out.push(ident);
             }
         } else {
@@ -818,7 +1259,7 @@ fn collect_text_idents(text: &str) -> Vec<String> {
 
 /// The exec value-type spelling for a param / return / cell type, plus whether it is
 /// a slice (`&[u32]` → indexed element-wise). `None` for a type outside the exec
-/// frame sublanguage (Map/Option/struct/String/…) — a body over such a type is
+/// frame sublanguage (Map/Option/String/heap wrappers) — a body over such a type is
 /// Skipped (non-derivable frame). Mirrors `exec_tv::exec_type_spelling`.
 fn exec_type_spelling(ty: &Type) -> Option<(String, bool)> {
     match ty {
@@ -828,20 +1269,483 @@ fn exec_type_spelling(ty: &Type) -> Option<(String, bool)> {
         Type::Prim(PrimType::U64) => Some(("u64".to_string(), false)),
         Type::Prim(PrimType::Usize) => Some(("usize".to_string(), false)),
         Type::Prim(PrimType::Bool) => Some(("bool".to_string(), false)),
-        Type::Ref { inner, .. } => match inner.as_ref() {
-            // `&[u32]` → the exec slice binding (indexed element-wise as `xs[i as
-            // int]` in the reference). Only a `u32` element slice is framed.
-            Type::Slice(elem) => {
-                exec_type_spelling(elem).map(|(spelling, _)| (format!("&[{spelling}]"), true))
-            }
-            // A `&u64`/`&usize` borrow frames as the inner scalar.
-            other => exec_type_spelling(other),
+        Type::Unit => Some(("()".to_string(), false)),
+        Type::Array { elem, len } => {
+            let (elem, _) = exec_type_spelling(elem)?;
+            let len = match len {
+                thermite_syntax::ArrayLen::Literal { value, .. } => value.to_string(),
+                thermite_syntax::ArrayLen::Const(name) => name.clone(),
+            };
+            Some((format!("[{elem}; {len}]"), false))
+        }
+        Type::Ref { mutable, inner } => match inner.as_ref() {
+            // Preserve exclusivity in the obligation signature. Losing `mut`
+            // makes the production write ill-typed and silently turns a semantic
+            // check into a frame abort.
+            Type::Slice(elem) => exec_type_spelling(elem).map(|(spelling, _)| {
+                let borrow = if *mutable { "&mut" } else { "&" };
+                (format!("{borrow} [{spelling}]"), true)
+            }),
+            other => exec_type_spelling(other).map(|(spelling, is_slice)| {
+                let borrow = if *mutable { "&mut" } else { "&" };
+                (format!("{borrow} {spelling}"), is_slice)
+            }),
         },
         Type::Slice(elem) => {
             exec_type_spelling(elem).map(|(spelling, _)| (format!("&[{spelling}]"), true))
         }
+        Type::Tuple(types) => Some((
+            format!(
+                "({})",
+                types
+                    .iter()
+                    .map(|ty| exec_type_spelling(ty).map(|(spelling, _)| spelling))
+                    .collect::<Option<Vec<_>>>()?
+                    .join(", ")
+            ),
+            false,
+        )),
+        Type::Named(name) => Some((name.clone(), false)),
         _ => None,
     }
+}
+
+/// Add the program-shaped equality helpers without duplicating the primitive
+/// trait block that a lowered dependency closure may already contain.
+pub(crate) fn extend_fixed_array_equality_defs(
+    program: &thermite_syntax::Program,
+    defs: &mut Vec<String>,
+) -> Result<(), String> {
+    let generated = thermite_lower::fixed_array_equality_defs_for_program(program)
+        .map_err(|error| format!("could not derive aggregate fixed-array equality: {error}"))?;
+    if defs
+        .iter()
+        .any(|definition| definition.contains("trait __thermite_FixedArrayEq"))
+    {
+        let primitive = thermite_lower::fixed_array_equality_defs();
+        let aggregate = generated.strip_prefix(&primitive).ok_or_else(|| {
+            "aggregate fixed-array helper did not extend the canonical primitive prefix".to_string()
+        })?;
+        if !aggregate.trim().is_empty() {
+            defs.push(aggregate.to_string());
+        }
+    } else {
+        defs.push(generated);
+    }
+    Ok(())
+}
+
+pub(crate) fn mutable_record_frames(
+    program: &thermite_syntax::Program,
+    function: &FnItem,
+) -> Result<Vec<MutableRecordFrame>, String> {
+    let admitted = thermite_spec::structural_record_mutation_structs(program);
+    let mut records = Vec::new();
+    for param in &function.params {
+        let Type::Ref {
+            mutable: true,
+            inner,
+        } = &param.ty
+        else {
+            continue;
+        };
+        let Type::Named(name) = inner.as_ref() else {
+            continue;
+        };
+        if !admitted.contains(name) {
+            return Err(format!(
+                "exclusive named-record parameter `{}` has a sealed, recursive, reference-bearing, enum, opaque-nested, or heap-backed state shape",
+                param.name
+            ));
+        }
+        let Some(structure) = program.items.iter().find_map(|item| match item {
+            Item::Struct(structure) if structure.name == *name => Some(structure),
+            _ => None,
+        }) else {
+            return Err(format!(
+                "exclusive named-record parameter `{}` names undeclared record `{name}`",
+                param.name
+            ));
+        };
+        records.push(MutableRecordFrame::typed(
+            param.name.clone(),
+            name.clone(),
+            structure
+                .fields
+                .iter()
+                .map(|field| RecordFieldFrame::typed(field.name.clone(), field.ty.clone()))
+                .collect(),
+        ));
+    }
+    Ok(records)
+}
+
+/// Exact finite named-record declarations for shared-reference parameters. A
+/// wider shared record remains usable by ordinary expression TV, but it cannot
+/// enter mixed mutable-call composition unless it appears in this independently
+/// derived structural inventory. Shared slices/arrays use the separate exact
+/// indexed inventory below.
+pub(crate) fn shared_record_frames(
+    program: &thermite_syntax::Program,
+    function: &FnItem,
+) -> Vec<SharedRecordFrame> {
+    let admitted = thermite_spec::structural_record_mutation_structs(program);
+    function
+        .params
+        .iter()
+        .filter_map(|param| {
+            let Type::Ref {
+                mutable: false,
+                inner,
+            } = &param.ty
+            else {
+                return None;
+            };
+            let Type::Named(name) = inner.as_ref() else {
+                return None;
+            };
+            if !admitted.contains(name) {
+                return None;
+            }
+            let structure = program.items.iter().find_map(|item| match item {
+                Item::Struct(structure) if structure.name == *name => Some(structure),
+                _ => None,
+            })?;
+            Some(SharedRecordFrame::typed(
+                param.name.clone(),
+                name.clone(),
+                structure
+                    .fields
+                    .iter()
+                    .map(|field| RecordFieldFrame::typed(field.name.clone(), field.ty.clone()))
+                    .collect(),
+            ))
+        })
+        .collect()
+}
+
+/// Exact pointee types for exclusive slice and fixed-array parameters. Sequence
+/// state is represented extensionally, while this parsed type prevents a call
+/// frame from conflating element types or fixed capacities.
+pub(crate) fn mutable_indexed_frames(function: &FnItem) -> Vec<MutableIndexedFrame> {
+    function
+        .params
+        .iter()
+        .filter_map(|param| {
+            let Type::Ref {
+                mutable: true,
+                inner,
+            } = &param.ty
+            else {
+                return None;
+            };
+            matches!(inner.as_ref(), Type::Slice(_) | Type::Array { .. })
+                .then(|| MutableIndexedFrame::new(param.name.clone(), inner.as_ref().clone()))
+        })
+        .collect()
+}
+
+/// Exact pointee types for shared slice and fixed-array parameters. These are
+/// immutable sequence snapshots, but retaining the parsed type prevents a
+/// mixed-borrow call from conflating element types or fixed capacities.
+pub(crate) fn shared_indexed_frames(function: &FnItem) -> Vec<SharedIndexedFrame> {
+    function
+        .params
+        .iter()
+        .filter_map(|param| {
+            let Type::Ref {
+                mutable: false,
+                inner,
+            } = &param.ty
+            else {
+                return None;
+            };
+            matches!(inner.as_ref(), Type::Slice(_) | Type::Array { .. })
+                .then(|| SharedIndexedFrame::new(param.name.clone(), inner.as_ref().clone()))
+        })
+        .collect()
+}
+
+/// Derive one complete mutable-callee frame from the validated source AST.
+/// Mutable records and indexed storage share one exclusive-root inventory, so
+/// every mutable formal must be represented exactly before callers may compose
+/// its effect. Every shared formal must likewise be either a finite named record
+/// or an exact shared slice/fixed-array sequence frame.
+fn mutable_call_effect_frame(
+    program: &thermite_syntax::Program,
+    function: &FnItem,
+    body: &Block,
+) -> Result<Option<MutableCallEffectFrame>, String> {
+    let mutable_count = function
+        .params
+        .iter()
+        .filter(|param| matches!(param.ty, Type::Ref { mutable: true, .. }))
+        .count();
+    let value_records = value_record_frames(program, function);
+    if mutable_count == 0 && value_records.is_empty() {
+        return Ok(None);
+    }
+
+    let records = mutable_record_frames(program, function)?;
+    let indexed = mutable_indexed_frames(function);
+    if records.len() + indexed.len() != mutable_count {
+        return Err(format!(
+            "body-TV mutable-reference dependency `{}` contains a mutable non-finite record outside the exact call-effect subset",
+            function.name
+        ));
+    }
+
+    let shared_records = shared_record_frames(program, function);
+    let shared_indexed = shared_indexed_frames(function);
+    let shared_count = function
+        .params
+        .iter()
+        .filter(|param| matches!(param.ty, Type::Ref { mutable: false, .. }))
+        .count();
+    if shared_records.len() + shared_indexed.len() != shared_count {
+        return Err(format!(
+            "body-TV mutable-reference dependency `{}` contains a shared non-finite record outside the exact mixed-borrow call-effect subset",
+            function.name
+        ));
+    }
+
+    Ok(Some(
+        MutableCallEffectFrame::new(
+            function.name.clone(),
+            function
+                .params
+                .iter()
+                .map(|param| param.name.clone())
+                .collect(),
+            records,
+            body.clone(),
+        )
+        .with_param_types(
+            function
+                .params
+                .iter()
+                .map(|param| param.ty.clone())
+                .collect(),
+        )
+        .with_value_records(value_records)
+        .with_mutable_indexed(indexed)
+        .with_shared_records(shared_records)
+        .with_shared_indexed(shared_indexed)
+        .with_result_type(function.ret.clone()),
+    ))
+}
+
+/// Exact finite named-record parameters passed by value. This metadata is used
+/// only when a caller's independent lifecycle state contains a descendant
+/// sequence overlay and therefore cannot materialize the record as a native
+/// aggregate merely to invoke an observer.
+fn value_record_frames(
+    program: &thermite_syntax::Program,
+    function: &FnItem,
+) -> Vec<ValueRecordFrame> {
+    let records = named_record_frames(program);
+    function
+        .params
+        .iter()
+        .filter_map(|param| {
+            let Type::Named(type_name) = &param.ty else {
+                return None;
+            };
+            records
+                .iter()
+                .find(|record| record.type_name == *type_name)
+                .map(|record| {
+                    ValueRecordFrame::typed(
+                        param.name.clone(),
+                        type_name.clone(),
+                        record.fields.clone(),
+                    )
+                })
+        })
+        .collect()
+}
+
+/// Exact finite named-record declarations available to owned local-state TV.
+/// The validator's structural mutation closure is the admission oracle; sealed,
+/// recursive, reference-bearing, enum, opaque-nested, and heap-backed shapes are
+/// absent rather than guessed here.
+pub(crate) fn named_record_frames(program: &thermite_syntax::Program) -> Vec<NamedRecordFrame> {
+    let admitted = thermite_spec::structural_record_mutation_structs(program);
+    program
+        .items
+        .iter()
+        .filter_map(|item| {
+            let Item::Struct(structure) = item else {
+                return None;
+            };
+            admitted.contains(&structure.name).then(|| {
+                NamedRecordFrame::new(
+                    structure.name.clone(),
+                    structure
+                        .fields
+                        .iter()
+                        .map(|field| RecordFieldFrame::typed(field.name.clone(), field.ty.clone()))
+                        .collect(),
+                )
+            })
+        })
+        .collect()
+}
+
+/// Every parsed record declaration, used only to recover constructor field
+/// types in the independent ADT value denotation.  Mutation admission continues
+/// to use the narrower `named_record_frames` structural closure above.
+pub(crate) fn constructor_record_frames(
+    program: &thermite_syntax::Program,
+) -> Vec<NamedRecordFrame> {
+    program
+        .items
+        .iter()
+        .filter_map(|item| {
+            let Item::Struct(structure) = item else {
+                return None;
+            };
+            Some(NamedRecordFrame::new(
+                structure.name.clone(),
+                structure
+                    .fields
+                    .iter()
+                    .map(|field| RecordFieldFrame::typed(field.name.clone(), field.ty.clone()))
+                    .collect(),
+            ))
+        })
+        .collect()
+}
+
+/// Derive the exact owner of every user-enum variant.  Built-in Option/Result
+/// variants are intentionally absent and remain Verus-prelude names.  Ambiguous
+/// ownership is rejected here even if an earlier validator should already have
+/// diagnosed it: body TV must never guess which nominal constructor a pattern
+/// denotes.
+pub(crate) fn enum_variant_frames(
+    program: &thermite_syntax::Program,
+) -> Result<Vec<EnumVariantFrame>, String> {
+    let mut owners = std::collections::BTreeMap::<String, EnumVariantFrame>::new();
+    for item in &program.items {
+        let Item::Enum(enumeration) = item else {
+            continue;
+        };
+        for variant in &enumeration.variants {
+            let shape = match &variant.shape {
+                VariantShape::Unit => EnumVariantShapeFrame::Unit,
+                VariantShape::Tuple(fields) => EnumVariantShapeFrame::Tuple(fields.clone()),
+                VariantShape::Struct(fields) => EnumVariantShapeFrame::Struct(
+                    fields
+                        .iter()
+                        .map(|field| RecordFieldFrame::typed(field.name.clone(), field.ty.clone()))
+                        .collect(),
+                ),
+            };
+            let frame =
+                EnumVariantFrame::new(enumeration.name.clone(), variant.name.clone(), shape);
+            if let Some(existing) = owners.insert(variant.name.clone(), frame) {
+                if existing.enum_name != enumeration.name {
+                    return Err(format!(
+                        "body-TV enum frame is ambiguous: variant `{}` belongs to both `{existing}` and `{}`",
+                        variant.name, enumeration.name,
+                        existing = existing.enum_name
+                    ));
+                }
+            }
+        }
+    }
+    Ok(owners.into_values().collect())
+}
+
+fn named_record_result_frame(records: &[NamedRecordFrame], ty: &Type) -> Option<NamedRecordFrame> {
+    let Type::Named(name) = ty else {
+        return None;
+    };
+    records
+        .iter()
+        .find(|record| record.type_name == *name)
+        .cloned()
+}
+
+pub(crate) fn fixed_array_field_bindings(
+    program: &thermite_syntax::Program,
+    function: &FnItem,
+) -> Vec<String> {
+    fn collect(
+        program: &thermite_syntax::Program,
+        type_name: &str,
+        prefix: &str,
+        depth: usize,
+        active: &mut BTreeSet<String>,
+        bindings: &mut Vec<String>,
+    ) {
+        if !active.insert(type_name.to_string()) {
+            return;
+        }
+        let structure = program.items.iter().find_map(|item| match item {
+            Item::Struct(structure) if structure.name == type_name => Some(structure),
+            _ => None,
+        });
+        if let Some(structure) = structure {
+            for field in &structure.fields {
+                let path = format!("{prefix}.{}", field.name);
+                match &field.ty {
+                    Type::Array { .. } => {
+                        if depth == 0 {
+                            // Preserve the historical unqualified direct-field
+                            // marker used by expression/contract frames.
+                            bindings.push(field.name.clone());
+                        }
+                        bindings.push(path);
+                    }
+                    Type::Named(nested) => {
+                        collect(program, nested, &path, depth + 1, active, bindings);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        active.remove(type_name);
+    }
+
+    let mut bindings = Vec::new();
+    for param in &function.params {
+        let named = match &param.ty {
+            Type::Named(name) => Some(name),
+            Type::Ref { inner, .. } => match inner.as_ref() {
+                Type::Named(name) => Some(name),
+                _ => None,
+            },
+            _ => None,
+        };
+        let Some(named) = named else {
+            continue;
+        };
+        collect(
+            program,
+            named,
+            &param.name,
+            0,
+            &mut BTreeSet::new(),
+            &mut bindings,
+        );
+    }
+    bindings
+}
+
+fn is_mutable_indexed_borrow(ty: &Type) -> bool {
+    matches!(
+        ty,
+        Type::Ref {
+            mutable: true,
+            inner,
+        } if matches!(inner.as_ref(), Type::Slice(_) | Type::Array { .. })
+    )
+}
+
+fn is_fixed_array_binding(ty: &Type) -> bool {
+    matches!(ty, Type::Array { .. })
+        || matches!(ty, Type::Ref { inner, .. } if matches!(inner.as_ref(), Type::Array { .. }))
 }
 
 // ---- verus discharge (mirrors exec_tv::discharge) --------------------------
@@ -887,8 +1791,8 @@ fn discharge(program: &str, label: &str, seed: u64, rlimit: f64) -> BodyVerdict 
     }
 }
 
-/// Discharge the three per-run loop obligations (`loop-tv.md` REQ-5; entry /
-/// preservation / exit) through `verus`, classifying the combined verdict (REQ-5).
+/// Discharge entry / preservation / exit plus the applicable full-result loop
+/// obligation through `verus`, classifying the combined verdict.
 /// `Faithful` ⟺ all three verified; `Divergent` ⟺ any obligation found a
 /// counterexample (a broken-invariant preservation `postcondition not satisfied` / a
 /// wrong-after-loop-state `assertion failed`, with no rlimit signal); `Unverifiable` ⟺
@@ -902,6 +1806,7 @@ fn discharge(program: &str, label: &str, seed: u64, rlimit: f64) -> BodyVerdict 
 fn discharge_loop(
     block: &Block,
     p_production: &str,
+    p_result_production: &str,
     frame: &LoopObligationFrame,
     label: &str,
     seed: u64,
@@ -948,15 +1853,36 @@ fn discharge_loop(
             }
         }
     };
+    let has_record_cell = frame.cells.iter().any(|cell| {
+        frame
+            .named_records
+            .iter()
+            .any(|record| record.type_name == cell.type_str)
+    });
+    let result = match loop_result_obligation(block, p_result_production, frame) {
+        Ok(program) => Some(program),
+        Err(_) if !has_record_cell => None,
+        Err(error) => {
+            return BodyVerdict::Skipped {
+                reason: format!(
+                    "the record-state loop has no exact full-result obligation: {error}"
+                ),
+            }
+        }
+    };
 
-    // Discharge all three; the combined verdict. A Divergent on any is the headline
+    // Discharge every applicable obligation; the combined verdict. A Divergent on any is the headline
     // finding; an Unverifiable on any (with no Divergent) is reported as such.
     let mut unverifiable: Option<String> = None;
-    for (sub, prog) in [
-        ("entry", &entry),
-        ("preservation", &preservation),
-        ("exit", &exit),
-    ] {
+    let mut obligations = vec![
+        ("entry", entry.as_str()),
+        ("preservation", preservation.as_str()),
+        ("exit", exit.as_str()),
+    ];
+    if let Some(result) = &result {
+        obligations.push(("result", result.as_str()));
+    }
+    for (sub, prog) in obligations {
         let sub_label = format!("{label}.{sub}");
         match run_obligation(prog, &sub_label, seed, rlimit) {
             DischargeOutcome::Verified => {}
@@ -1005,7 +1931,16 @@ fn discharge_loop(
 /// the continuation reads — it is implied by, not stronger than, `inv ∧ ¬cond`). An
 /// out-of-v1 loop surfaces its `Unsupported`.
 fn loop_after_loop_claim(block: &Block, frame: &LoopObligationFrame) -> Result<String, String> {
-    let ctx = BodyRefCtx::with_slice_bound(frame.slice_params.iter().cloned());
+    let ctx = BodyRefCtx::with_slice_bound(frame.slice_params.iter().cloned())
+        .with_named_records(frame.named_records.clone())
+        .with_constructor_records(frame.named_records.clone())
+        .with_bound_value_names(
+            frame
+                .inputs
+                .iter()
+                .chain(frame.cells.iter())
+                .map(|param| param.name.as_str()),
+        );
     let obs = loop_ref_obligations(block, &ctx).map_err(|e| {
         format!("the loop is OUTSIDE the v1 frozen subset (after-loop claim refused): {e}")
     })?;
@@ -1059,7 +1994,6 @@ fn run_obligation(program: &str, label: &str, seed: u64, rlimit: f64) -> Dischar
             "could not write the obligation program to the scratch dir".to_string(),
         );
     }
-
     let output = Command::new("verus")
         .arg("--rlimit")
         .arg(format!("{rlimit}"))
@@ -1248,6 +2182,138 @@ mod divergent_teeth {
 
     const SEED: u64 = BODY_TV_DEFAULT_SEED;
     const RLIMIT: f64 = BODY_TV_DEFAULT_RLIMIT;
+
+    #[test]
+    fn req_identifier_scan_ignores_complete_numeric_literals() {
+        assert_eq!(
+            collect_text_idents(
+                "state.generation < 18_446_744_073_709_551_615 && mask == 0xff_u64"
+            ),
+            vec!["state", "mask"]
+        );
+        assert_eq!(
+            collect_text_idents("sorted(haystack) && bound < 1_000"),
+            vec!["sorted", "haystack", "bound"]
+        );
+    }
+
+    #[test]
+    fn dependency_reference_grounds_bounded_arithmetic_results() {
+        let source = r#"
+fn next(slot: usize) -> usize
+  req slot < 64
+  ens result == slot + 1
+  fx pure
+{
+  slot + 1
+}
+
+fn caller(slot: usize) -> usize
+  req slot < 64
+  ens result == slot + 1
+  fx pure
+{
+  next(slot)
+}
+
+fn previous(remaining: usize) -> usize
+  req remaining != 0 && remaining <= 64
+  ens result + 1 == remaining
+  fx pure
+{
+  (remaining + 64) % 65
+}
+
+fn descend(remaining: usize) -> usize
+  req remaining <= 64
+  ens result == 0
+  fx pure
+  dec remaining
+{
+  if remaining == 0 {
+    0
+  } else {
+    descend(previous(remaining))
+  }
+}
+
+fn recursive_caller(slot: usize) -> usize
+  req slot < 64
+  ens result == 0
+  fx pure
+{
+  descend(slot)
+}
+"#;
+        let parsed = thermite_syntax::parse(source);
+        assert!(parsed.is_clean(), "fixture must parse: {:?}", parsed.errors);
+        let caller = parsed.program.items.iter().find_map(|item| match item {
+            Item::Fn(function) if function.name == "caller" => Some(function),
+            _ => None,
+        });
+        assert!(caller.is_some(), "fixture must contain `caller`");
+        let support = caller.and_then(|function| body_tv_support(&parsed.program, function).ok());
+        assert!(support.is_some(), "dependency frame must build");
+        let definitions = support
+            .map(|(definitions, _, _)| definitions.join("\n"))
+            .unwrap_or_default();
+        assert!(
+            definitions.contains(
+                "spec fn thermite_tv_ref_next(slot: usize) -> usize { ((slot + 1)) as usize }"
+            ),
+            "the independent arithmetic reference must narrow to its parsed bounded return: \
+             {definitions}"
+        );
+        // `.design/build/mutable-call-effects.md` ("Production and expression
+        // fidelity"): Forge adds the independently reconstructed exact
+        // result/state predicate to the exact lowered callee, and Verus must
+        // prove it from the emitted body. The claim is that the predicate is a
+        // complete element of the dependency's `ensures` list, so the assertion
+        // matches the parenthesized, comma-terminated form that
+        // `inject_dependency_reference_ensures` emits for a clause it appends to
+        // an existing list. A bare substring would also match a predicate that
+        // had leaked outside the list.
+        assert!(
+            definitions.contains("    ensures\n")
+                && definitions.contains("(result == thermite_tv_ref_next(slot)),"),
+            "an executable dependency must prove its exact independent reference \
+             postcondition in the caller frame: {definitions}"
+        );
+        let recursive = parsed.program.items.iter().find_map(|item| match item {
+            Item::Fn(function) if function.name == "recursive_caller" => Some(function),
+            _ => None,
+        });
+        assert!(
+            recursive.is_some(),
+            "fixture must contain `recursive_caller`"
+        );
+        let recursive_support = recursive
+            .and_then(|function| body_tv_support(&parsed.program, function).ok())
+            .map(|(definitions, _, _)| definitions.join("\n"))
+            .unwrap_or_default();
+        assert!(
+            recursive_support.contains(
+                "spec fn thermite_tv_ref_descend(remaining: usize) -> usize\n    decreases remaining\n"
+            ),
+            "a recursive dependency reference must retain its independently encoded source \
+             termination measure: {recursive_support}"
+        );
+        // The placement claim: inside the executable `descend`, the injected
+        // postcondition sits in the `ensures` list ahead of the `decreases`
+        // measure. Anchoring on the executable function keeps the independently
+        // encoded `spec fn` measure asserted above out of the comparison.
+        let executable = recursive_support
+            .find("\nfn descend(")
+            .map(|start| &recursive_support[start..])
+            .unwrap_or("");
+        let postcondition = executable.find("result == thermite_tv_ref_descend(remaining)");
+        let decreases = executable.find("\n    decreases remaining");
+        assert!(
+            matches!((postcondition, decreases), (Some(clause), Some(measure)) if clause < measure),
+            "the exact dependency postcondition must precede the executable function's \
+             decreases clause: {recursive_support}"
+        );
+    }
 
     fn path(name: &str) -> Expr {
         Expr::Path(vec![name.to_string()])

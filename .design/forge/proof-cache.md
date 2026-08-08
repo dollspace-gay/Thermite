@@ -4,7 +4,7 @@
 tier: 3-component
 status: draft
 audited-sha: 8b4d2580b472d04fca2b14de5b6be52533a2d258 (re-pinned 2026-06-17 for stage-1 increment 3, REQ-9 lemma library: the only change to this doc's governed file (cache.rs) is the additive REQ-9 dec wf accessibility-proof cache (AccessibilityProof + accessibility_cache_key + load/store, a separate wf- on-disk namespace, CHECK_SCHEMA_VERSION-invalidated like the per-item cache); the per-item proof cache is byte-identical (REQ-S1-9). prior: 1cc9d97c6c5d7eab6109561834db77f2ef4b57ab)
-audited-content-sha256: 927473d2e96688240e6ca8959906bf6fbaf6d3c5b1262b769aa2d003dcdafb0f
+audited-content-sha256: 6906a0423c037bb228cf45952b00e2d12337497ac5b6baa4c2b26bd2b3926c27
 governs: forge/src/cache.rs
 thesis-refs:
   - thermite-design.md §5.3
@@ -42,9 +42,10 @@ against the current tree:
 
 - **#49 (`6d7b3aff`) — the stale-verdict gate bypass is closed: a FIFTH key
   input.** `cache_key` hashes, in addition to its four arguments, the
-  module-internal `const CHECK_SCHEMA_VERSION: u32` (currently `7` — bumped
+  module-internal `const CHECK_SCHEMA_VERSION: u32` (currently `8` — bumped
   `5 → 6` for the #269 F-IDENT/F-STRUCT-ZERO mutant families and `6 → 7` for the
-  #269 call-bearing equivalence-exclusion arm; both verdict-changing) — the
+  #269 call-bearing equivalence-exclusion arm, then `7 → 8` for the
+  capacity-preserving fixed-array F-STRUCT-ZERO extension; all verdict-changing) — the
   version of forge's VERDICT-AFFECTING CHECK LOGIC. `thermite_version` does
   not suffice: gates ship without a crate-version bump (#12's mutation floor
   landed at 0.1.0), so a cert cached BEFORE a gate existed would be re-served
@@ -55,7 +56,8 @@ against the current tree:
   empty-`String` synthesis; 5 = the #101 equivalent-mutant denominator
   exclusion; 6 = the #269 F-IDENT/F-STRUCT-ZERO mutant families; 7 = the #269
   call-bearing equivalence-exclusion arm (a §9 caller's identity survivor now
-  drops modulo callee contracts). REQ-1's "EXACTLY the four inputs" and REQ-2's four-input
+  drops modulo callee contracts); 8 = fixed-array zero synthesis, which makes
+  record returns containing `[T; N]` scoreable instead of 0/0. REQ-1's "EXACTLY the four inputs" and REQ-2's four-input
   enumeration argument are amended accordingly: four CALLER-passed inputs +
   the check-logic version.
 - **Canonical-config-only caching (the floor/rlimit seam, in `check.rs`).**

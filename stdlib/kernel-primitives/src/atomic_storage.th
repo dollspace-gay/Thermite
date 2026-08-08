@@ -1,0 +1,277 @@
+fn atomic_storage_capacity_probe(
+  width: u8,
+  capacity: usize,
+) -> bool
+  req true
+  ens result == atomic_init_capacity_legal_spec(width, capacity)
+  fx pure
+{
+  atomic_init_capacity_probe(width, capacity)
+}
+
+fn atomic_bool_region_init(
+  region: StaticStorageRegion,
+  authority: usize,
+  storage_slot: usize,
+  generation: u64,
+  initial: bool,
+) -> bool
+  req static_storage_region_authority_spec(&region) == authority
+    && static_storage_region_slot_spec(&region) == storage_slot
+    && static_storage_region_generation_spec(&region) == generation
+    && static_storage_region_capacity_spec(&region) >= ATOMIC_BOOL_STORAGE_BYTES
+  ens result
+  fx platform(atomic)
+{
+  let slot: AtomicBoolSlot = atomic_bool_slot_from_region(region);
+  let cell: AtomicBool = atomic_bool_init(slot, initial);
+  atomic_identity_matches_values(
+    &cell.identity,
+    authority,
+    storage_slot,
+    generation,
+  )
+}
+
+fn atomic_u32_region_init(
+  region: StaticStorageRegion,
+  authority: usize,
+  storage_slot: usize,
+  generation: u64,
+  initial: u32,
+) -> bool
+  req static_storage_region_authority_spec(&region) == authority
+    && static_storage_region_slot_spec(&region) == storage_slot
+    && static_storage_region_generation_spec(&region) == generation
+    && static_storage_region_capacity_spec(&region) >= ATOMIC_U32_STORAGE_BYTES
+  ens result
+  fx platform(atomic)
+{
+  let slot: AtomicU32Slot = atomic_u32_slot_from_region(region);
+  let cell: AtomicU32 = atomic_u32_init(slot, initial);
+  atomic_identity_matches_values(
+    &cell.identity,
+    authority,
+    storage_slot,
+    generation,
+  )
+}
+
+fn atomic_u64_region_init(
+  region: StaticStorageRegion,
+  authority: usize,
+  storage_slot: usize,
+  generation: u64,
+  initial: u64,
+) -> bool
+  req static_storage_region_authority_spec(&region) == authority
+    && static_storage_region_slot_spec(&region) == storage_slot
+    && static_storage_region_generation_spec(&region) == generation
+    && static_storage_region_capacity_spec(&region) >= ATOMIC_U64_STORAGE_BYTES
+  ens result
+  fx platform(atomic)
+{
+  let slot: AtomicU64Slot = atomic_u64_slot_from_region(region);
+  let cell: AtomicU64 = atomic_u64_init(slot, initial);
+  atomic_identity_matches_values(
+    &cell.identity,
+    authority,
+    storage_slot,
+    generation,
+  )
+}
+
+fn atomic_usize_region_init(
+  region: StaticStorageRegion,
+  authority: usize,
+  storage_slot: usize,
+  generation: u64,
+  initial: usize,
+) -> bool
+  req static_storage_region_authority_spec(&region) == authority
+    && static_storage_region_slot_spec(&region) == storage_slot
+    && static_storage_region_generation_spec(&region) == generation
+    && static_storage_region_capacity_spec(&region) >= ATOMIC_USIZE_STORAGE_BYTES
+  ens result
+  fx platform(atomic)
+{
+  let slot: AtomicUsizeSlot = atomic_usize_slot_from_region(region);
+  let cell: AtomicUsize = atomic_usize_init(slot, initial);
+  atomic_identity_matches_values(
+    &cell.identity,
+    authority,
+    storage_slot,
+    generation,
+  )
+}
+
+fn atomic_bool_storage_after_claim(
+  ledger: StaticStorageLedger,
+  lease: StaticStorageLease,
+  fill: u8,
+  initial: bool,
+) -> bool
+  req static_storage_lease_live_spec(&ledger, &lease)
+    && static_storage_lease_capacity_spec(&lease) >= ATOMIC_BOOL_STORAGE_BYTES
+  ens result
+  fx platform(memory), platform(atomic)
+{
+  let authority: usize = static_storage_lease_authority(&lease);
+  let storage_slot: usize = static_storage_lease_slot(&lease);
+  let generation: u64 = static_storage_lease_generation(&lease);
+  let witness: StaticStorageInitWitness = static_storage_fill_bytes(&lease, fill);
+  match static_storage_commit(ledger, lease, witness) {
+    StaticStorageCommit::Initialized {
+      ledger: _,
+      region,
+    } => atomic_bool_region_init(
+      region,
+      authority,
+      storage_slot,
+      generation,
+      initial,
+    ),
+    StaticStorageCommit::CommitRejected {
+      ledger: _,
+      lease: _,
+      witness: _,
+      reason: _,
+    } => false,
+  }
+}
+
+fn atomic_u32_storage_after_claim(
+  ledger: StaticStorageLedger,
+  lease: StaticStorageLease,
+  fill: u8,
+  initial: u32,
+) -> bool
+  req static_storage_lease_live_spec(&ledger, &lease)
+    && static_storage_lease_capacity_spec(&lease) >= ATOMIC_U32_STORAGE_BYTES
+  ens result
+  fx platform(memory), platform(atomic)
+{
+  let authority: usize = static_storage_lease_authority(&lease);
+  let storage_slot: usize = static_storage_lease_slot(&lease);
+  let generation: u64 = static_storage_lease_generation(&lease);
+  let witness: StaticStorageInitWitness = static_storage_fill_bytes(&lease, fill);
+  match static_storage_commit(ledger, lease, witness) {
+    StaticStorageCommit::Initialized {
+      ledger: _,
+      region,
+    } => atomic_u32_region_init(
+      region,
+      authority,
+      storage_slot,
+      generation,
+      initial,
+    ),
+    StaticStorageCommit::CommitRejected {
+      ledger: _,
+      lease: _,
+      witness: _,
+      reason: _,
+    } => false,
+  }
+}
+
+fn atomic_u64_storage_after_claim(
+  ledger: StaticStorageLedger,
+  lease: StaticStorageLease,
+  fill: u8,
+  initial: u64,
+) -> bool
+  req static_storage_lease_live_spec(&ledger, &lease)
+    && static_storage_lease_capacity_spec(&lease) >= ATOMIC_U64_STORAGE_BYTES
+  ens result
+  fx platform(memory), platform(atomic)
+{
+  let authority: usize = static_storage_lease_authority(&lease);
+  let storage_slot: usize = static_storage_lease_slot(&lease);
+  let generation: u64 = static_storage_lease_generation(&lease);
+  let witness: StaticStorageInitWitness = static_storage_fill_bytes(&lease, fill);
+  match static_storage_commit(ledger, lease, witness) {
+    StaticStorageCommit::Initialized {
+      ledger: _,
+      region,
+    } => atomic_u64_region_init(
+      region,
+      authority,
+      storage_slot,
+      generation,
+      initial,
+    ),
+    StaticStorageCommit::CommitRejected {
+      ledger: _,
+      lease: _,
+      witness: _,
+      reason: _,
+    } => false,
+  }
+}
+
+fn atomic_usize_storage_after_claim(
+  ledger: StaticStorageLedger,
+  lease: StaticStorageLease,
+  fill: u8,
+  initial: usize,
+) -> bool
+  req static_storage_lease_live_spec(&ledger, &lease)
+    && static_storage_lease_capacity_spec(&lease) >= ATOMIC_USIZE_STORAGE_BYTES
+  ens result
+  fx platform(memory), platform(atomic)
+{
+  let authority: usize = static_storage_lease_authority(&lease);
+  let storage_slot: usize = static_storage_lease_slot(&lease);
+  let generation: u64 = static_storage_lease_generation(&lease);
+  let witness: StaticStorageInitWitness = static_storage_fill_bytes(&lease, fill);
+  match static_storage_commit(ledger, lease, witness) {
+    StaticStorageCommit::Initialized {
+      ledger: _,
+      region,
+    } => atomic_usize_region_init(
+      region,
+      authority,
+      storage_slot,
+      generation,
+      initial,
+    ),
+    StaticStorageCommit::CommitRejected {
+      ledger: _,
+      lease: _,
+      witness: _,
+      reason: _,
+    } => false,
+  }
+}
+
+fn atomic_u64_storage_lifecycle_probe(
+  identity: usize,
+  storage_slot: usize,
+  capacity: usize,
+  fill: u8,
+  initial: u64,
+) -> bool
+  req storage_slot < STATIC_STORAGE_SLOT_COUNT
+    && capacity >= ATOMIC_U64_STORAGE_BYTES
+  ens result
+  fx platform(boot), platform(memory), platform(atomic)
+{
+  let authority: StaticStorageAuthority = static_storage_authority(identity);
+  let ledger: StaticStorageLedger = static_storage_ledger_init(authority);
+  match static_storage_claim_at(ledger, storage_slot, capacity) {
+    StaticStorageClaim::Claimed {
+      ledger: claimed,
+      lease,
+    } => atomic_u64_storage_after_claim(
+      claimed,
+      lease,
+      fill,
+      initial,
+    ),
+    StaticStorageClaim::ClaimRejected {
+      ledger: _,
+      reason: _,
+    } => false,
+  }
+}

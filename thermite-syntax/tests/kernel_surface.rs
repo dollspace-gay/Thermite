@@ -1,9 +1,9 @@
-//! Hand-derived surface tests for the bootable multicore kernel design.
+//! Hand-derived surface tests for reusable kernel-authoring primitives.
 
 use thermite_syntax::{parse, Effect, Item, PlatformDomain, PrimType, Type};
 
 #[test]
-fn parses_kernel_scalar_widths_and_every_platform_domain() {
+fn parses_freestanding_scalar_widths_and_every_platform_domain() {
     let source = r#"
 fn platform_probe(byte: u8, word: u16) -> u16
   req byte as u16 <= word
@@ -19,7 +19,7 @@ fn platform_probe(byte: u8, word: u16) -> u16
     let parsed = parse(source);
     assert!(
         parsed.is_clean(),
-        "kernel scalar/effect surface must parse: {:?}",
+        "freestanding scalar/effect surface must parse: {:?}",
         parsed.errors
     );
     let Item::Fn(function) = &parsed.program.items[0] else {
@@ -97,4 +97,42 @@ fn parses_mutable_byte_slice_write_and_final_state_contract() {
         }
     );
     assert_eq!(function.contract.ens.len(), 2);
+}
+
+#[test]
+fn distinguishes_borrowed_fixed_arrays_from_slices_of_arrays() {
+    let parsed = parse(
+        "fn storage_refs(array: &mut [u64; 4], rows: &mut [[u64; 2]]) -> u64\n\
+         req true ens result == 0 fx platform(memory) { 0 }\n",
+    );
+    assert!(parsed.is_clean(), "borrowed storage: {:?}", parsed.errors);
+    let Item::Fn(function) = &parsed.program.items[0] else {
+        panic!("expected storage_refs function");
+    };
+    assert_eq!(
+        function.params[0].ty,
+        Type::Ref {
+            mutable: true,
+            inner: Box::new(Type::Array {
+                elem: Box::new(Type::Prim(PrimType::U64)),
+                len: thermite_syntax::ArrayLen::Literal {
+                    value: 4,
+                    raw: "4".to_string(),
+                },
+            }),
+        }
+    );
+    assert_eq!(
+        function.params[1].ty,
+        Type::Ref {
+            mutable: true,
+            inner: Box::new(Type::Slice(Box::new(Type::Array {
+                elem: Box::new(Type::Prim(PrimType::U64)),
+                len: thermite_syntax::ArrayLen::Literal {
+                    value: 2,
+                    raw: "2".to_string(),
+                },
+            }))),
+        }
+    );
 }

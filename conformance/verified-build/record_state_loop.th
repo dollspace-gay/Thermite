@@ -1,0 +1,68 @@
+struct LoopInner {
+  total: u64,
+  guard: u64,
+}
+
+struct LoopState {
+  cursor: u64,
+  inner: LoopInner,
+  tag: u64,
+}
+
+fn record_loop(limit: u64, guard: u64, tag: u64) -> LoopState
+  req limit <= 100
+  ens result.cursor == limit
+  ens result.inner.total == limit
+  ens result.inner.guard == guard
+  ens result.tag == tag
+  fx pure
+{
+  let mut state: LoopState = LoopState {
+    cursor: 0,
+    inner: LoopInner { total: 0, guard: guard },
+    tag: tag,
+  };
+  while state.cursor < limit
+    inv state.cursor <= limit
+    inv state.inner.total == state.cursor
+    inv state.inner.guard == guard
+    inv state.tag == tag
+    dec limit - state.cursor
+  {
+    state.inner.total = state.cursor + 1;
+    state.cursor = state.cursor + 1;
+  }
+  state
+}
+
+fn record_loop_cursor(state: &LoopState) -> u64
+  req true
+  ens result == state.cursor
+  fx pure
+{
+  state.cursor
+}
+
+fn record_loop_total(state: &LoopState) -> u64
+  req true
+  ens result == state.inner.total
+  fx pure
+{
+  state.inner.total
+}
+
+fn record_loop_guard(state: &LoopState) -> u64
+  req true
+  ens result == state.inner.guard
+  fx pure
+{
+  state.inner.guard
+}
+
+fn record_loop_tag(state: &LoopState) -> u64
+  req true
+  ens result == state.tag
+  fx pure
+{
+  state.tag
+}

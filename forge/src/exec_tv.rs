@@ -52,11 +52,13 @@
 //! | REQ-TV-EXEC-FORGE-PLUGIN | shipped | `forge/src/exec_tv.rs` | Exec-TV forge plug-in point |  |
 //! <!-- /generated:reqs -->
 
+use std::collections::BTreeSet;
 use std::path::Path;
 use std::process::Command;
 
 use thermite_syntax::ast::{Clause, Expr, FnItem, IndexArg, Item, PrimType, Stmt, Type};
 
+use thermite_tv::exec_encode::{exec_ref_value, ExecRefCtx};
 use thermite_tv::gen_exec_exprs;
 use thermite_tv::obligation::{exec_equivalence_obligation, ExecObligationFrame, ExecParamDecl};
 
@@ -267,6 +269,11 @@ fn clause_frame(clause: &thermite_tv::ExecClause) -> ExecObligationFrame {
         ret_type: clause.ret_type.clone(),
         req: clause.req.clone(),
         slice_params: clause.slice_params.clone(),
+        fixed_array_params: Vec::new(),
+        fixed_array_fields: Vec::new(),
+        mutable_records: Vec::new(),
+        result_is_fixed_array: false,
+        result_record: None,
     }
 }
 
@@ -280,22 +287,18 @@ fn clause_frame(clause: &thermite_tv::ExecClause) -> ExecObligationFrame {
 /// not always derivable from the source `req`/`inv` text. Such an expr is
 /// Unverifiable, not a false Faithful.
 pub fn exec_tv_file(path: &Path, seed: u64, rlimit: f64) -> Result<ExecTvReport, ForgeError> {
-    let src = std::fs::read_to_string(path).map_err(|e| ForgeError::Io {
-        path: path.display().to_string(),
-        source: e,
-    })?;
-    let parsed = thermite_syntax::parse(&src);
-    if !parsed.is_clean() {
-        return Err(ForgeError::Parse(parsed.errors));
-    }
+    // A single `.th` file or a canonical `.thpkg.json` manifest; the package
+    // closure parses module by module, keeping each diagnostic module-local.
+    let resolved = crate::thermite_package::load_source(path)?;
+    let program = resolved.program();
 
     let mut report = ExecTvReport::default();
-    for item in &parsed.program.items {
+    for item in &program.items {
         match item {
-            Item::Fn(f) => exec_tv_fn(&parsed.program, f, seed, rlimit, &mut report),
+            Item::Fn(f) => exec_tv_fn(program, f, seed, rlimit, &mut report),
             // A `spec fn` body lowers in spec context (not exec), out of scope for
             // exec-TV; a struct/enum has no exec body.
-            Item::SpecFn(_) | Item::Struct(_) | Item::Enum(_) => {}
+            Item::Const(_) | Item::SpecFn(_) | Item::Struct(_) | Item::Enum(_) => {}
             // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 exec-TV consumer
             // yet (increments 2b-3); inert here, mirroring the spec/ADT no-op arm.
             Item::Forge(_) => {}
@@ -304,14 +307,172 @@ pub fn exec_tv_file(path: &Path, seed: u64, rlimit: f64) -> Result<ExecTvReport,
     Ok(report)
 }
 
+/// Whether `expr` is one direct call to an ordinary in-language function with
+/// at least one exclusive-reference formal. Such a call is stateful: its value
+/// and post-state are validated together by body TV, never by placing an exec
+/// call inside the pure per-expression specification obligation.
+pub(crate) fn is_direct_mutable_call(program: &thermite_syntax::Program, expr: &Expr) -> bool {
+    let Expr::Call { callee, .. } = expr else {
+        return false;
+    };
+    let Expr::Path(path) = callee.as_ref() else {
+        return false;
+    };
+    let [name] = path.as_slice() else {
+        return false;
+    };
+    program.items.iter().any(|item| match item {
+        Item::Fn(function)
+            if function.name == *name
+                && function.body.is_some()
+                && function.boundary.is_none()
+                && function.slag.is_none() =>
+        {
+            function
+                .params
+                .iter()
+                .any(|parameter| matches!(parameter.ty, Type::Ref { mutable: true, .. }))
+        }
+        _ => false,
+    })
+}
+
+/// Whether `expr` is one direct call that consumes an admitted finite named
+/// record carried by the caller as a logical overlay. Body TV owns such a call
+/// together with the surrounding record state: the caller holds a record that
+/// reaches a native fixed array as a complete logical sequence, and an isolated
+/// exec-expression obligation has no caller lifecycle overlay from which to
+/// build the actual native record (`.design/build/mutable-call-effects.md`,
+/// "Production and expression fidelity"; its Decision scopes the separate path
+/// to a "direct call [that] actually consumes a logical record overlay"). The
+/// callee's ordinary native-record body remains independently expression/body
+/// validated in its own frame.
+///
+/// A record composed of scalar and nested-record leaves alone carries no logical
+/// sequence, so the exec frame binds it as an ordinary native parameter and the
+/// call keeps its own exec row. That is the pure value-call composition
+/// `.design/build/owned-aggregate-lifecycle.md` freezes in "Frozen source
+/// surface" (`open_then_replace` calling `replace_generation(initial, next)`)
+/// and requires in acceptance item 4, and it is what
+/// `.design/build/mutable-call-effects.md` states as "surrounding pure
+/// initializers and the tail retain their normal exec-TV rows".
+pub(crate) fn is_direct_record_value_call(program: &thermite_syntax::Program, expr: &Expr) -> bool {
+    let Expr::Call { callee, .. } = expr else {
+        return false;
+    };
+    let Expr::Path(path) = callee.as_ref() else {
+        return false;
+    };
+    let [name] = path.as_slice() else {
+        return false;
+    };
+    let admitted: BTreeSet<String> = crate::body_tv::named_record_frames(program)
+        .into_iter()
+        .map(|record| record.type_name)
+        .collect();
+    program.items.iter().any(|item| match item {
+        Item::Fn(function)
+            if function.name == *name
+                && function.body.is_some()
+                && function.boundary.is_none()
+                && function.slag.is_none() =>
+        {
+            function.params.iter().any(|parameter| {
+                matches!(&parameter.ty, Type::Named(type_name)
+                    if admitted.contains(type_name)
+                        && record_reaches_sequence_leaf(program, type_name))
+            })
+        }
+        _ => false,
+    })
+}
+
+/// Whether a declared record reaches a native fixed-array leaf, directly or
+/// through a nested record field or tuple component. Such a leaf is the logical
+/// sequence the independent lifecycle interpreter carries as a complete `Seq`
+/// and never converts back into a native array
+/// (`.design/build/mutable-call-effects.md`, "Independent state composition").
+fn record_reaches_sequence_leaf(program: &thermite_syntax::Program, type_name: &str) -> bool {
+    let mut entered = BTreeSet::new();
+    record_reaches_sequence_leaf_from(program, type_name, &mut entered)
+}
+
+/// The recursive step of [`record_reaches_sequence_leaf`]. `entered` records the
+/// record names the walk has already descended into, so a declaration cycle
+/// terminates instead of recursing without bound.
+fn record_reaches_sequence_leaf_from(
+    program: &thermite_syntax::Program,
+    type_name: &str,
+    entered: &mut BTreeSet<String>,
+) -> bool {
+    if !entered.insert(type_name.to_string()) {
+        return false;
+    }
+    program.items.iter().any(|item| match item {
+        Item::Struct(structure) if structure.name == type_name => structure
+            .fields
+            .iter()
+            .any(|field| type_reaches_sequence_leaf(program, &field.ty, entered)),
+        _ => false,
+    })
+}
+
+/// Whether a declared field type reaches a native fixed-array leaf. A record
+/// name descends into its declaration; a tuple descends into every component.
+fn type_reaches_sequence_leaf(
+    program: &thermite_syntax::Program,
+    ty: &Type,
+    entered: &mut BTreeSet<String>,
+) -> bool {
+    match ty {
+        Type::Array { .. } => true,
+        Type::Named(name) => record_reaches_sequence_leaf_from(program, name, entered),
+        Type::Tuple(components) => components
+            .iter()
+            .any(|component| type_reaches_sequence_leaf(program, component, entered)),
+        _ => false,
+    }
+}
+
+/// Calls whose value cannot be isolated from the complete caller lifecycle are
+/// validated by body TV instead of the pure leaf-expression TV pass.
+pub(crate) fn is_direct_body_state_call(program: &thermite_syntax::Program, expr: &Expr) -> bool {
+    is_direct_mutable_call(program, expr) || is_direct_record_value_call(program, expr)
+}
+
 /// Translation-validate the exact executable guard used by an L3 total export
 /// wrapper. The guard is checked over the full input domain: the synthetic
 /// frame's `req true` intentionally does not assume the guard being validated.
 /// This is the wrapper-specific bridge between contract-position syntax and
 /// its executable boundary use.
-pub fn exec_tv_export_guard(f: &FnItem, seed: u64, rlimit: f64) -> ExecResult {
+pub fn exec_tv_export_guard(
+    program: &thermite_syntax::Program,
+    f: &FnItem,
+    seed: u64,
+    rlimit: f64,
+) -> ExecResult {
     let label = format!("{}.export_guard", f.name);
-    let mut env = ExecEnv::default();
+    let mut env = ExecEnv {
+        constant_names: program
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Const(capacity) => Some(capacity.name.clone()),
+                _ => None,
+            })
+            .collect(),
+        ..Default::default()
+    };
+    env.fixed_array_fields = crate::body_tv::fixed_array_field_bindings(program, f);
+    env.mutable_records = match crate::body_tv::mutable_record_frames(program, f) {
+        Ok(records) => records,
+        Err(reason) => {
+            return ExecResult {
+                label,
+                verdict: ExecVerdict::Skipped { reason },
+            }
+        }
+    };
     for param in &f.params {
         let Some((ty, slice)) = exec_type_spelling(&param.ty) else {
             return ExecResult {
@@ -333,14 +494,25 @@ pub fn exec_tv_export_guard(f: &FnItem, seed: u64, rlimit: f64) -> ExecResult {
         span: f.contract.req.span,
         bv: None,
     };
+    let support_defs = match crate::body_tv::body_tv_support(program, f) {
+        Ok((defs, _, _)) => defs,
+        Err(reason) => {
+            return ExecResult {
+                label,
+                verdict: ExecVerdict::Skipped { reason },
+            }
+        }
+    };
     let mut report = ExecTvReport::default();
     check_corpus_expr(
+        program,
         &f.contract.req.expr,
         &label,
         "bool",
         &env,
         &frame_fn,
-        &[],
+        &support_defs,
+        false,
         seed,
         rlimit,
         &mut report,
@@ -360,6 +532,18 @@ pub fn exec_tv_export_guard(f: &FnItem, seed: u64, rlimit: f64) -> ExecResult {
 struct ExecEnv {
     params: Vec<ExecParamDecl>,
     slice_params: Vec<String>,
+    fixed_array_params: Vec<String>,
+    fixed_array_fields: Vec<String>,
+    mutable_records: Vec<thermite_tv::MutableRecordFrame>,
+    constant_names: Vec<String>,
+    local_relations: Vec<LocalRelation>,
+}
+
+#[derive(Debug, Clone)]
+struct LocalRelation {
+    name: String,
+    predicate: String,
+    dependencies: Vec<String>,
 }
 
 impl ExecEnv {
@@ -369,17 +553,84 @@ impl ExecEnv {
         if self.params.iter().any(|p| p.name == name) {
             return;
         }
+        let is_fixed_array = ty_str.starts_with('[') && ty_str.contains(';');
         self.params
             .push(ExecParamDecl::new(name.to_string(), ty_str));
         if is_slice {
             self.slice_params.push(name.to_string());
+        }
+        if is_fixed_array {
+            self.fixed_array_params.push(name.to_string());
         }
     }
 
     /// The names this env declares (the obligation can reference these).
     fn declares(&self, name: &str) -> bool {
         self.params.iter().any(|p| p.name == name)
+            || self.constant_names.iter().any(|constant| constant == name)
     }
+
+    /// Record the exact independently encoded value of a scalar typed local.
+    /// Later per-expression obligations use these equations to recover bounds
+    /// such as `changed == slot % CAPACITY` rather than treating every local as
+    /// an unrelated arbitrary parameter.
+    fn bind_local_relation(&mut self, name: &str, ty: &str, init: &Expr) {
+        let bounded = matches!(ty, "u8" | "u16" | "u32" | "u64" | "usize");
+        if !bounded && ty != "bool" {
+            return;
+        }
+        let context = ExecRefCtx::with_slice_bound(self.slice_params.iter().cloned())
+            .with_fixed_array_bound(self.fixed_array_params.iter().cloned())
+            .with_fixed_array_fields(self.fixed_array_fields.iter().cloned());
+        let value = if bounded {
+            bounded_local_reference(init, ty, &context)
+        } else {
+            exec_ref_value(init, &context).ok()
+        };
+        let Some(value) = value else {
+            return;
+        };
+        let mut dependencies = Vec::new();
+        collect_free_paths(init, &mut dependencies);
+        dependencies.retain(|dependency| self.declares(dependency));
+        dependencies.sort();
+        dependencies.dedup();
+        self.local_relations.push(LocalRelation {
+            name: name.to_string(),
+            predicate: format!("{name} == {value}"),
+            dependencies,
+        });
+    }
+}
+
+/// The independently encoded value of a bounded typed local, carrying the declared
+/// type on each branch result.
+///
+/// A cast written around a whole conditional leaves each branch result without a
+/// type, so a Verus integer literal in a branch has an uninferable type parameter
+/// and the obligation aborts before it can be discharged. The declared type
+/// therefore descends into every branch result, which is the annotated bounded
+/// result rule the body reference already applies (`.design/build/static-storage.md`,
+/// "Translation validation"). Casting each branch result denotes the same value as
+/// casting the whole conditional, so the recorded equation keeps its meaning.
+/// A branch carrying statements, or an encoding the exec reference does not admit,
+/// records no equation at all.
+fn bounded_local_reference(init: &Expr, ty: &str, context: &ExecRefCtx) -> Option<String> {
+    if let Expr::If { cond, then, else_ } = init {
+        if then.stmts.is_empty() && else_.stmts.is_empty() {
+            if let (Some(then_value), Some(else_value)) =
+                (then.tail.as_deref(), else_.tail.as_deref())
+            {
+                return Some(format!(
+                    "(if {} {{ {} }} else {{ {} }})",
+                    exec_ref_value(cond, context).ok()?,
+                    bounded_local_reference(then_value, ty, context)?,
+                    bounded_local_reference(else_value, ty, context)?,
+                ));
+            }
+        }
+    }
+    Some(format!("({}) as {ty}", exec_ref_value(init, context).ok()?))
 }
 
 /// TV the derivable pure exec exprs of one fn body (REQ-5, best-effort). Builds the
@@ -415,7 +666,7 @@ fn exec_tv_fn(
     }
 
     let support_defs = match crate::body_tv::body_tv_support(program, f) {
-        Ok((defs, _)) => defs,
+        Ok((defs, _, _)) => defs,
         Err(reason) => {
             report.results.push(ExecResult {
                 label: f.name.clone(),
@@ -426,9 +677,30 @@ fn exec_tv_fn(
     };
 
     // The signature env: each param at its exec value type. A param of a type the
-    // exec frame cannot spell (Map/Option/struct/…) is recorded as un-spellable;
+    // exec frame cannot spell (Map/Option/String/heap wrappers) is recorded as un-spellable;
     // an expr that references it is then Skipped (non-derivable frame).
-    let mut env = ExecEnv::default();
+    let mut env = ExecEnv {
+        constant_names: program
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Const(capacity) => Some(capacity.name.clone()),
+                _ => None,
+            })
+            .collect(),
+        ..Default::default()
+    };
+    env.fixed_array_fields = crate::body_tv::fixed_array_field_bindings(program, f);
+    env.mutable_records = match crate::body_tv::mutable_record_frames(program, f) {
+        Ok(records) => records,
+        Err(reason) => {
+            report.results.push(ExecResult {
+                label: f.name.clone(),
+                verdict: ExecVerdict::Skipped { reason },
+            });
+            return;
+        }
+    };
     for p in &f.params {
         if let Some((ty_str, is_slice)) = exec_type_spelling(&p.ty) {
             env.bind(&p.name, ty_str, is_slice);
@@ -446,14 +718,23 @@ fn exec_tv_fn(
             } => {
                 let_no += 1;
                 let label = format!("{}.let#{}", f.name, let_no);
-                if let Some((ret_ty, _is_slice)) = exec_type_spelling(ty) {
+                let body_owned_call = is_direct_body_state_call(program, init);
+                if body_owned_call {
+                    // The exact callee source result and any complete mutable
+                    // post-state are interpreted by body TV. A pure exec-TV
+                    // obligation cannot call an exec-mode `&mut` function from
+                    // its `ensures` clause or reconstruct a logical record
+                    // overlay in an isolated expression frame.
+                } else if let Some((ret_ty, _is_slice)) = exec_type_spelling(ty) {
                     check_corpus_expr(
+                        program,
                         init,
                         &label,
                         &ret_ty,
                         &env,
                         f,
                         &support_defs,
+                        true,
                         seed,
                         rlimit,
                         report,
@@ -472,6 +753,9 @@ fn exec_tv_fn(
                 }
                 // Bind the local so a later expr referencing it frames.
                 if let Some((ty_str, is_slice)) = exec_type_spelling(ty) {
+                    if !body_owned_call {
+                        env.bind_local_relation(name, &ty_str, init);
+                    }
                     env.bind(name, ty_str, is_slice);
                 }
             }
@@ -491,17 +775,20 @@ fn exec_tv_fn(
             }
             Stmt::Return(Some(e)) => {
                 let label = format!("{}.return", f.name);
-                check_return_like(
-                    e,
-                    &label,
-                    &f.ret,
-                    &env,
-                    f,
-                    &support_defs,
-                    seed,
-                    rlimit,
-                    report,
-                );
+                if !is_direct_body_state_call(program, e) {
+                    check_return_like(
+                        program,
+                        e,
+                        &label,
+                        &f.ret,
+                        &env,
+                        f,
+                        &support_defs,
+                        seed,
+                        rlimit,
+                        report,
+                    );
+                }
             }
             // A loop / if / assignment / break / continue / bare-expr statement is
             // out of scope for step 2.1 (statements/loops/mutation are step 2.2)
@@ -534,17 +821,20 @@ fn exec_tv_fn(
     // The body tail expr (the fn's value — `sum`'s final `acc`).
     if let Some(tail) = &body.tail {
         let label = format!("{}.tail", f.name);
-        check_return_like(
-            tail,
-            &label,
-            &f.ret,
-            &env,
-            f,
-            &support_defs,
-            seed,
-            rlimit,
-            report,
-        );
+        if !is_direct_body_state_call(program, tail) {
+            check_return_like(
+                program,
+                tail,
+                &label,
+                &f.ret,
+                &env,
+                f,
+                &support_defs,
+                seed,
+                rlimit,
+                report,
+            );
+        }
     }
 }
 
@@ -557,6 +847,7 @@ fn exec_tv_fn(
         them would obscure the per-expr data flow"
 )]
 fn check_return_like(
+    program: &thermite_syntax::Program,
     e: &Expr,
     label: &str,
     ret: &Type,
@@ -569,12 +860,14 @@ fn check_return_like(
 ) {
     match exec_type_spelling(ret) {
         Some((ret_ty, _)) => check_corpus_expr(
+            program,
             e,
             label,
             &ret_ty,
             env,
             f,
             support_defs,
+            true,
             seed,
             rlimit,
             report,
@@ -591,6 +884,55 @@ fn check_return_like(
     }
 }
 
+/// Whether an expression contains control-flow value semantics owned by the
+/// complete body-TV state transformer rather than the leaf exec-value encoder.
+pub(crate) fn expr_contains_body_control(expr: &Expr) -> bool {
+    let any = |values: &[Expr]| values.iter().any(expr_contains_body_control);
+    match expr {
+        Expr::Match { .. } | Expr::If { .. } => true,
+        Expr::Array(values) | Expr::Tuple(values) => any(values),
+        Expr::ArrayRepeat { value, .. }
+        | Expr::Unary { expr: value, .. }
+        | Expr::Cast { expr: value, .. }
+        | Expr::Ref { expr: value, .. }
+        | Expr::Deref(value)
+        | Expr::TupleProj {
+            receiver: value, ..
+        }
+        | Expr::Closure { body: value, .. } => expr_contains_body_control(value),
+        Expr::Binary { lhs, rhs, .. } => {
+            expr_contains_body_control(lhs) || expr_contains_body_control(rhs)
+        }
+        Expr::Call { callee, args } => expr_contains_body_control(callee) || any(args),
+        Expr::MethodCall { receiver, args, .. } => {
+            expr_contains_body_control(receiver) || any(args)
+        }
+        Expr::Field { receiver, .. }
+        | Expr::Is {
+            scrutinee: receiver,
+            ..
+        } => expr_contains_body_control(receiver),
+        Expr::Index { base, index } => {
+            expr_contains_body_control(base)
+                || match index {
+                    IndexArg::Single(index)
+                    | IndexArg::RangeTo(index)
+                    | IndexArg::RangeFrom(index) => expr_contains_body_control(index),
+                    IndexArg::Range(start, end) => {
+                        expr_contains_body_control(start) || expr_contains_body_control(end)
+                    }
+                }
+        }
+        Expr::StructLit { fields, .. } => fields
+            .iter()
+            .any(|(_, value)| expr_contains_body_control(value)),
+        Expr::Quantifier { domain, body, .. } => {
+            expr_contains_body_control(domain) || expr_contains_body_control(body)
+        }
+        Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::StrLit(_) | Expr::Path(_) => false,
+    }
+}
+
 /// TV one corpus exec expr at a derived `ret_ty` (REQ-5, best-effort). Checks the
 /// expr is in the pure-exec subset, frames it from the env (referenced vars must all
 /// be declared; else Skip), lowers it via `lower_exec_expr`, builds and (when the
@@ -600,16 +942,27 @@ fn check_return_like(
     reason = "see `check_return_like` — the genuine per-expr fan-in"
 )]
 fn check_corpus_expr(
+    program: &thermite_syntax::Program,
     e: &Expr,
     label: &str,
     ret_ty: &str,
     env: &ExecEnv,
     f: &FnItem,
     support_defs: &[String],
+    body_control_handoff: bool,
     seed: u64,
     rlimit: f64,
     report: &mut ExecTvReport,
 ) {
+    // Match/if values are control-flow state transformers.  When this expression
+    // came from an in-language body, the complete body-TV obligation owns it and
+    // checks the production lowering against the independent state denotation.
+    // Do not also force it through the deliberately leaf-only exec-value encoder;
+    // strict verified builds require the corresponding body row to be faithful.
+    // Export guards have no such body owner and therefore keep the exec-TV path.
+    if body_control_handoff && expr_contains_body_control(e) {
+        return;
+    }
     // The expr's free vars must all be declared in the env (a derivable frame). An
     // undeclared free var (a local bound by an out-of-scope construct, a richer-typed
     // param) → Skip (non-derivable frame), not a guessed binding.
@@ -650,39 +1003,102 @@ fn check_corpus_expr(
         }
     };
 
-    // The fn's source `req` is the best available overflow/index frame. It is
-    // included only when every var it references is env-declared (else its text
-    // would reference an undeclared param and the obligation would not compile, a
-    // framing failure rather than an infidelity). When included, its referenced vars
-    // join the obligation params so the `requires` typechecks. A `req` that cannot be
-    // included is dropped (the expr is then checked with no frame, adequate for a
-    // total expr like a literal/comparison; an arithmetic expr without an adequate
-    // bound discharges Unverifiable, not Faithful).
-    let req_text = corpus_req(f);
-    let req = match &req_text {
-        Some(text) => {
-            let req_vars: Vec<String> = collect_text_idents(text);
-            if req_vars.iter().all(|v| env.declares(v)) {
-                Some((text.clone(), req_vars))
+    // Independently encode the function precondition. Raw Thermite contract text
+    // is not a Verus specification once it contains a slice/fixed-array view or a
+    // bounded-integer coercion, so reusing it here would let the production syntax
+    // define its own TV frame. The parsed source expression is used only to derive
+    // the parameters that the independently encoded predicate needs.
+    let source_req = match crate::body_tv::reference_corpus_req(program, f) {
+        Ok(Some(predicate)) => {
+            let mut variables = Vec::new();
+            collect_free_paths(&f.contract.req.expr, &mut variables);
+            if variables.iter().all(|variable| env.declares(variable)) {
+                Some((predicate, variables))
             } else {
                 None
             }
         }
-        None => None,
+        Ok(None) => None,
+        Err(reason) => {
+            report.results.push(ExecResult {
+                label: label.to_string(),
+                verdict: ExecVerdict::Skipped { reason },
+            });
+            return;
+        }
     };
 
     // The obligation params: every var the expr references, plus every var the
     // (included) `req` references — declared from the env at its exec type.
     let mut needed: Vec<String> = referenced.clone();
-    if let Some((_, req_vars)) = &req {
+    if let Some((_, req_vars)) = &source_req {
         for v in req_vars {
             if !needed.contains(v) {
                 needed.push(v.clone());
             }
         }
     }
+
+    // A typed scalar local is not an unconstrained fresh parameter. Pull in its
+    // independently encoded defining equation, then recursively pull in equations
+    // for predecessor locals. This restores source facts such as
+    // `changed == slot % CAPACITY` when proving a later fixed-array access or
+    // bounded arithmetic expression.
+    let mut active_relations = Vec::new();
+    loop {
+        let mut grew = false;
+        for (index, relation) in env.local_relations.iter().enumerate() {
+            if active_relations.contains(&index)
+                || !needed.iter().any(|name| name == &relation.name)
+            {
+                continue;
+            }
+            active_relations.push(index);
+            for dependency in &relation.dependencies {
+                if !needed.contains(dependency) {
+                    needed.push(dependency.clone());
+                }
+            }
+            grew = true;
+        }
+        if !grew {
+            break;
+        }
+    }
+
+    let mut req_clauses = Vec::new();
+    if let Some((predicate, _)) = source_req {
+        req_clauses.push(predicate);
+    }
+    req_clauses.extend(
+        active_relations
+            .iter()
+            .map(|index| env.local_relations[*index].predicate.clone()),
+    );
+    let req = (!req_clauses.is_empty()).then(|| {
+        req_clauses
+            .iter()
+            .map(|clause| format!("({clause})"))
+            .collect::<Vec<_>>()
+            .join(" && ")
+    });
+    let mut spec_defs = support_defs.to_vec();
+    if thermite_lower::expr_uses_fixed_array_equality(e) {
+        if let Err(reason) =
+            crate::body_tv::extend_fixed_array_equality_defs(program, &mut spec_defs)
+        {
+            report.results.push(ExecResult {
+                label: label.to_string(),
+                verdict: ExecVerdict::Skipped { reason },
+            });
+            return;
+        }
+    }
+    if thermite_lower::expr_uses_u64_bit_methods(e) {
+        spec_defs.push(thermite_lower::u64_bit_defs());
+    }
     let frame = ExecObligationFrame {
-        spec_defs: support_defs.to_vec(),
+        spec_defs,
         params: env
             .params
             .iter()
@@ -690,13 +1106,30 @@ fn check_corpus_expr(
             .cloned()
             .collect(),
         ret_type: ret_ty.to_string(),
-        req: req.map(|(text, _)| text),
+        req,
         slice_params: env
             .slice_params
             .iter()
             .filter(|n| needed.iter().any(|r| r == *n))
             .cloned()
             .collect(),
+        fixed_array_params: env
+            .fixed_array_params
+            .iter()
+            .filter(|n| needed.iter().any(|r| r == *n))
+            .cloned()
+            .collect(),
+        fixed_array_fields: env.fixed_array_fields.clone(),
+        mutable_records: env
+            .mutable_records
+            .iter()
+            .filter(|record| needed.iter().any(|name| name == &record.name))
+            .cloned()
+            .collect(),
+        result_is_fixed_array: ret_ty.starts_with('[') && ret_ty.contains(';'),
+        result_record: crate::body_tv::named_record_frames(program)
+            .into_iter()
+            .find(|record| record.type_name == ret_ty),
     };
 
     let program = match exec_equivalence_obligation(e, &p_production, &frame) {
@@ -720,55 +1153,6 @@ fn check_corpus_expr(
         label: label.to_string(),
         verdict,
     });
-}
-
-/// Extract the candidate identifiers a `req` text references (a heuristic over the
-/// verbatim source: alphanumeric/`_` runs starting with a letter/`_`, excluding the
-/// dotted `.len()`-style method tail and numeric literals). A bare ident that is an
-/// env param is a referenced var; anything else (a keyword, a method name, a
-/// `u32::MAX`-style path segment) is not an env param, so the all-declared gate drops
-/// the `req` if it mentions any non-param ident. Only the leading segment of a dotted
-/// access (`xs.len()` → `xs`) is a var; `.len`/`.MAX` tails are dropped.
-fn collect_text_idents(text: &str) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    let bytes: Vec<char> = text.chars().collect();
-    let mut i = 0;
-    while i < bytes.len() {
-        let c = bytes[i];
-        if c.is_ascii_alphabetic() || c == '_' {
-            // A leading-segment ident; consume the run.
-            let start = i;
-            while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == '_') {
-                i += 1;
-            }
-            let ident: String = bytes[start..i].iter().collect();
-            // Skip a `.`-tail (a method / field / assoc access) — it is not a var.
-            let after_dot = start > 0 && bytes[start - 1] == '.';
-            // Skip a `::`-tail leading segment is kept; the tail after `::` is an
-            // assoc item (`u32::MAX`'s `MAX`) — but it follows `:`, caught here.
-            let after_colon = start > 0 && bytes[start - 1] == ':';
-            if !after_dot && !after_colon && !out.contains(&ident) {
-                out.push(ident);
-            }
-        } else {
-            i += 1;
-        }
-    }
-    out
-}
-
-/// The corpus fn's source `req` text as the obligation's enclosing `requires` (the
-/// best available frame). `req true` → no requires (an empty frame). This is the
-/// contract `req`, which may not adequately bound an exec arithmetic expr's overflow
-/// (the source bound for `acc + xs[i]` lives in a loop `inv`, not the `req`); such an
-/// expr then discharges Unverifiable, not Faithful.
-fn corpus_req(f: &FnItem) -> Option<String> {
-    let text = f.contract.req.text.trim();
-    if text.is_empty() || text == "true" {
-        None
-    } else {
-        Some(text.to_string())
-    }
 }
 
 /// Collect the single-segment free-var path names an exec expr references (the
@@ -796,13 +1180,44 @@ fn collect_free_paths(e: &Expr, out: &mut Vec<String>) {
                 collect_free_paths(a, out);
             }
         }
+        Expr::MethodCall { receiver, args, .. } => {
+            collect_free_paths(receiver, out);
+            for arg in args {
+                collect_free_paths(arg, out);
+            }
+        }
+        Expr::Field { receiver, .. } | Expr::TupleProj { receiver, .. } => {
+            collect_free_paths(receiver, out)
+        }
+        Expr::Array(values) | Expr::Tuple(values) => {
+            for value in values {
+                collect_free_paths(value, out);
+            }
+        }
+        Expr::ArrayRepeat { value, .. } | Expr::Ref { expr: value, .. } | Expr::Deref(value) => {
+            collect_free_paths(value, out)
+        }
+        Expr::StructLit { fields, .. } => {
+            for (_, value) in fields {
+                collect_free_paths(value, out);
+            }
+        }
+        Expr::If { cond, then, else_ } => {
+            collect_free_paths(cond, out);
+            if let Some(tail) = &then.tail {
+                collect_free_paths(tail, out);
+            }
+            if let Some(tail) = &else_.tail {
+                collect_free_paths(tail, out);
+            }
+        }
         _ => {}
     }
 }
 
 /// The exec value-type spelling for a body var/return type, plus whether it is a
 /// slice (`&[u32]` → indexed element-wise). `None` for a type outside the exec frame
-/// sublanguage (Map/Option/struct/String/…) — an expr over such a var is Skipped
+/// sublanguage (Map/Option/String/heap wrappers) — an expr over such a var is Skipped
 /// (non-derivable frame).
 fn exec_type_spelling(ty: &Type) -> Option<(String, bool)> {
     match ty {
@@ -812,18 +1227,50 @@ fn exec_type_spelling(ty: &Type) -> Option<(String, bool)> {
         Type::Prim(PrimType::U64) => Some(("u64".to_string(), false)),
         Type::Prim(PrimType::Usize) => Some(("usize".to_string(), false)),
         Type::Prim(PrimType::Bool) => Some(("bool".to_string(), false)),
-        Type::Ref { inner, .. } => match inner.as_ref() {
+        Type::Unit => Some(("()".to_string(), false)),
+        Type::Array { elem, len } => {
+            let (elem, _) = exec_type_spelling(elem)?;
+            let len = match len {
+                thermite_syntax::ArrayLen::Literal { value, .. } => value.to_string(),
+                thermite_syntax::ArrayLen::Const(name) => name.clone(),
+            };
+            Some((format!("[{elem}; {len}]"), false))
+        }
+        Type::Ref { mutable, inner } => match inner.as_ref() {
             // `&[u32]` → the exec slice binding (indexed element-wise as `xs[i as
             // int]` in the reference, AC-5). Only a `u32` element slice is framed.
             Type::Slice(elem) => {
                 exec_type_spelling(elem).map(|(spelling, _)| (format!("&[{spelling}]"), true))
             }
+            // Keep named-record borrows as borrows. In particular, Verus only
+            // permits `final(record)` in a postcondition when the obligation
+            // parameter retains its exact `&mut Record` type.
+            Type::Named(name) => Some((
+                if *mutable {
+                    format!("&mut {name}")
+                } else {
+                    format!("&{name}")
+                },
+                false,
+            )),
             // A `&u64`/`&usize` borrow frames as the inner scalar.
             other => exec_type_spelling(other),
         },
         Type::Slice(elem) => {
             exec_type_spelling(elem).map(|(spelling, _)| (format!("&[{spelling}]"), true))
         }
+        Type::Tuple(types) => Some((
+            format!(
+                "({})",
+                types
+                    .iter()
+                    .map(|ty| exec_type_spelling(ty).map(|(spelling, _)| spelling))
+                    .collect::<Option<Vec<_>>>()?
+                    .join(", ")
+            ),
+            false,
+        )),
+        Type::Named(name) => Some((name.clone(), false)),
         _ => None,
     }
 }
@@ -928,11 +1375,13 @@ fn discharge(program: &str, label: &str, seed: u64, rlimit: f64) -> ExecVerdict 
         // Unverifiable, not Faithful.
         _ => {
             if !output.status.success() {
+                let diagnostic = combined.lines().take(12).collect::<Vec<_>>().join(" | ");
                 ExecVerdict::Divergent {
                     detail: format!(
                         "verus ABORTED (compile/parse) on the exec obligation for `{label}` \
                          — the production exec text did not compile/parse (the #122 `E0308` / \
-                         #146 cast-`<` mis-parse catch shapes): a real exec-lowering infidelity"
+                         #146 cast-`<` mis-parse catch shapes): a real exec-lowering infidelity; \
+                         tool diagnostic: {diagnostic}"
                     ),
                 }
             } else {
@@ -1116,6 +1565,455 @@ mod divergent_teeth {
         }
     }
 
+    #[test]
+    fn named_record_borrows_keep_their_exact_exec_frame_type() {
+        let named = Type::Named("State".to_string());
+        assert_eq!(
+            exec_type_spelling(&Type::Ref {
+                mutable: false,
+                inner: Box::new(named.clone()),
+            }),
+            Some(("&State".to_string(), false))
+        );
+        assert_eq!(
+            exec_type_spelling(&Type::Ref {
+                mutable: true,
+                inner: Box::new(named),
+            }),
+            Some(("&mut State".to_string(), false))
+        );
+    }
+
+    #[test]
+    fn direct_typed_mutable_call_is_owned_by_body_tv_not_pure_exec_tv() {
+        let parsed = thermite_syntax::parse(
+            r#"
+struct State { value: u64 }
+fn set(state: &mut State, value: u64) -> u64
+  req true
+  ens result == value
+  fx pure
+{
+  state.value = value;
+  value
+}
+fn caller(state: &mut State, value: u64) -> u64
+  req true
+  ens result == value
+  fx pure
+{
+  let observed: u64 = set(state, value);
+  observed
+}
+"#,
+        );
+        assert!(parsed.is_clean(), "parse errors: {:?}", parsed.errors);
+        let init = parsed
+            .program
+            .items
+            .iter()
+            .find_map(|item| match item {
+                Item::Fn(function) if function.name == "caller" => function
+                    .body
+                    .as_ref()
+                    .and_then(|body| body.stmts.first())
+                    .and_then(|statement| match statement {
+                        Stmt::Let { init, .. } => Some(init),
+                        _ => None,
+                    }),
+                _ => None,
+            })
+            .expect("caller let initializer");
+        assert!(is_direct_mutable_call(&parsed.program, init));
+
+        let nested = Expr::Binary {
+            op: BinOp::Add,
+            lhs: Box::new(init.clone()),
+            rhs: Box::new(int(1)),
+        };
+        assert!(
+            !is_direct_mutable_call(&parsed.program, &nested),
+            "nested effectful expressions must not be removed from pure exec TV as if they were the admitted direct initializer"
+        );
+    }
+
+    /// A call consuming a record that reaches a native fixed array is owned by
+    /// body TV.
+    ///
+    /// The fixture is the verbatim `RecordAfterIndexedBank`/`RecordAfterIndexedOuter`
+    /// declarations plus `fn record_after_indexed_write`,
+    /// `fn record_after_indexed_observe_bank`, and
+    /// `fn record_after_indexed_observe_snapshot` from
+    /// `conformance/verified-build/record_after_indexed_call_effect.th`. The expected
+    /// routing comes from `.design/build/mutable-call-effects.md`, "Production and
+    /// expression fidelity": "an isolated expression frame has no caller lifecycle
+    /// overlay from which to build the actual native record", so "the caller's exact
+    /// body row proves the state-dependent call". `snapshot` carries the projected
+    /// `slots` sequence overlay, which is exactly that logical record value.
+    #[test]
+    fn direct_finite_record_value_call_is_owned_by_body_tv_not_frameless_exec_tv() {
+        let parsed = thermite_syntax::parse(
+            r#"
+const RECORD_AFTER_INDEXED_SLOTS: usize = 2;
+
+struct RecordAfterIndexedBank {
+  slots: [u64; RECORD_AFTER_INDEXED_SLOTS],
+  guard: u64,
+}
+
+struct RecordAfterIndexedOuter {
+  left: RecordAfterIndexedBank,
+  right: RecordAfterIndexedBank,
+  tag: u64,
+}
+
+fn record_after_indexed_write(
+  slots: &mut [u64; RECORD_AFTER_INDEXED_SLOTS],
+  value: u64,
+) -> u64
+  req true
+  ens result == value
+  ens final(slots)[0] == value
+  ens final(slots)[1] == old(slots)[1]
+  fx pure
+{
+  slots[0] = value;
+  slots[0]
+}
+
+fn record_after_indexed_observe_bank(bank: RecordAfterIndexedBank) -> u64
+  req bank.slots[0] < 1000 && bank.guard < 1000
+  ens result == bank.slots[0] + bank.guard
+  fx pure
+{
+  bank.slots[0] + bank.guard
+}
+
+fn record_after_indexed_observe_snapshot(
+  outer: &mut RecordAfterIndexedOuter,
+  value: u64,
+  next_guard: u64,
+) -> u64
+  req value < 1000 && next_guard < 1000
+  ens result == value + next_guard
+  ens final(outer).left.slots[0] == value
+  ens final(outer).left.slots[1] == old(outer).left.slots[1]
+  ens final(outer).left.guard == old(outer).left.guard
+  ens final(outer).right.slots[0] == old(outer).right.slots[0]
+  ens final(outer).right.slots[1] == old(outer).right.slots[1]
+  ens final(outer).right.guard == old(outer).right.guard
+  ens final(outer).tag == old(outer).tag
+  fx pure
+{
+  let written: u64 = record_after_indexed_write(&mut outer.left.slots, value);
+  let mut snapshot: RecordAfterIndexedBank = RecordAfterIndexedBank {
+    slots: outer.left.slots,
+    guard: outer.left.guard,
+  };
+  snapshot.guard = next_guard;
+  let observed: u64 = record_after_indexed_observe_bank(snapshot);
+  observed
+}
+"#,
+        );
+        assert!(parsed.is_clean(), "parse errors: {:?}", parsed.errors);
+        let init = let_initializer(&parsed.program, "record_after_indexed_observe_snapshot", 3);
+        assert!(is_direct_record_value_call(&parsed.program, init));
+        assert!(is_direct_body_state_call(&parsed.program, init));
+
+        let nested = Expr::Binary {
+            op: BinOp::Add,
+            lhs: Box::new(init.clone()),
+            rhs: Box::new(int(1)),
+        };
+        assert!(
+            !is_direct_record_value_call(&parsed.program, &nested),
+            "nested aggregate calls must remain visible to the fail-closed expression/body paths"
+        );
+    }
+
+    /// Pure value-call composition over a record of scalar leaves keeps its own
+    /// exec rows.
+    ///
+    /// The fixture is the verbatim `OwnedState` declaration plus
+    /// `fn owned_state_mix_generation`, `fn owned_state_mix_second`, and
+    /// `fn owned_state_pipeline` from
+    /// `conformance/verified-build/owned_aggregate_lifecycle.th`. The expected
+    /// routing comes from `.design/build/owned-aggregate-lifecycle.md`: its "Frozen
+    /// source surface" states this exact composition (`open_then_replace` calling
+    /// `replace_generation(initial, next)`) and acceptance item 4 requires that "a
+    /// caller composes through an independently generated pure value-callee
+    /// specification". `.design/build/mutable-call-effects.md` scopes the body-TV
+    /// handoff to a call that "actually consumes a logical record overlay" and keeps
+    /// the rest: "surrounding pure initializers and the tail retain their normal
+    /// exec-TV rows". `OwnedState` reaches no fixed array, so `initial` and
+    /// `advanced` are ordinary native records the isolated exec frame binds
+    /// directly, and `owned_state_pipeline.let#2` and `owned_state_pipeline.tail`
+    /// are exec rows rather than absent rows.
+    #[test]
+    fn pure_value_call_over_a_scalar_leaf_record_keeps_its_exec_rows() {
+        let parsed = thermite_syntax::parse(
+            r#"
+struct OwnedState {
+  generation: u64,
+  occupied: bool,
+  first: u64,
+  second: u64,
+}
+
+fn owned_state_mix_generation(state: OwnedState, next: u64) -> OwnedState
+  req true
+  ens (state.generation == 0 && result.generation == next)
+    || (state.generation != 0 && result.generation == state.generation)
+  ens result.occupied == state.occupied
+  ens result.first == state.first
+  ens result.second == state.second
+  fx pure
+{
+  let mixed: u64 = if state.generation == 0 {
+    next
+  } else {
+    state.generation
+  };
+  let mut updated: OwnedState = state;
+  updated.generation = mixed;
+  updated
+}
+
+fn owned_state_mix_second(state: OwnedState, replacement: u64) -> OwnedState
+  req true
+  ens result.generation == state.generation
+  ens result.occupied == state.occupied
+  ens result.first == state.first
+  ens (state.second == 5 && result.second == replacement)
+    || (state.second != 5 && result.second == state.second)
+  fx pure
+{
+  let mixed: u64 = if state.second == 5 {
+    replacement
+  } else {
+    state.second
+  };
+  let mut updated: OwnedState = state;
+  updated.second = mixed;
+  updated
+}
+
+fn owned_state_pipeline(next: u64, replacement: u64) -> OwnedState
+  req next > 0
+  ens result.generation == next
+  ens result.occupied
+  ens result.first == 3
+  ens result.second == replacement
+  fx pure
+{
+  let initial: OwnedState = OwnedState {
+    generation: 0,
+    occupied: true,
+    first: 3,
+    second: 5,
+  };
+  let advanced: OwnedState = owned_state_mix_generation(initial, next);
+  owned_state_mix_second(advanced, replacement)
+}
+"#,
+        );
+        assert!(parsed.is_clean(), "parse errors: {:?}", parsed.errors);
+        let advanced = let_initializer(&parsed.program, "owned_state_pipeline", 2);
+        assert!(
+            !is_direct_record_value_call(&parsed.program, advanced),
+            "a record of scalar leaves carries no logical sequence overlay, so `owned_state_pipeline.let#2` stays an exec row"
+        );
+        assert!(!is_direct_body_state_call(&parsed.program, advanced));
+
+        let tail = parsed
+            .program
+            .items
+            .iter()
+            .find_map(|item| match item {
+                Item::Fn(function) if function.name == "owned_state_pipeline" => {
+                    function.body.as_ref().and_then(|body| body.tail.as_deref())
+                }
+                _ => None,
+            })
+            .expect("owned_state_pipeline tail");
+        assert!(
+            !is_direct_body_state_call(&parsed.program, tail),
+            "`owned_state_pipeline.tail` is a pure value call and keeps its exec row"
+        );
+    }
+
+    /// The `position`th top-level `let` initializer of `function` (1-based, in
+    /// source order — the numbering the `<fn>.let#<n>` TV label uses).
+    fn let_initializer<'a>(
+        program: &'a thermite_syntax::Program,
+        function: &str,
+        position: usize,
+    ) -> &'a Expr {
+        program
+            .items
+            .iter()
+            .find_map(|item| match item {
+                Item::Fn(candidate) if candidate.name == function => candidate.body.as_ref(),
+                _ => None,
+            })
+            .and_then(|body| {
+                body.stmts
+                    .iter()
+                    .filter_map(|statement| match statement {
+                        Stmt::Let { init, .. } => Some(init),
+                        _ => None,
+                    })
+                    .nth(position - 1)
+            })
+            .expect("the requested let initializer")
+    }
+
+    /// A bounded typed local whose initializer is a conditional records its
+    /// defining equation with the declared type on every branch result.
+    ///
+    /// The fixture is the verbatim `fn static_storage_claim_reason` declaration from
+    /// `stdlib/kernel-primitives/storage/static_storage.th`; the expected shape comes
+    /// from `.design/build/static-storage.md`, "Translation validation": the
+    /// annotated bounded integer type is propagated "through every `if` and `match`
+    /// result arm" and bare literals are cast "at the leaves". The source states five
+    /// outcomes (1, 2, 3, 4, 0), so five leaves carry the declared `u8`, and the
+    /// conditional as a whole carries no cast — a cast there leaves each branch
+    /// literal without a type, which Verus reports as an uninferable
+    /// `spec_literal_integer` parameter and aborts the obligation.
+    #[test]
+    fn conditional_local_equation_types_every_branch_result() {
+        let parsed = thermite_syntax::parse(
+            r#"
+fn static_storage_claim_reason(
+  reserved: bool,
+  initialized: bool,
+  generation: u64,
+  capacity: usize,
+) -> u8
+  req true
+  ens result == static_storage_claim_reason_spec(
+    reserved,
+    initialized,
+    generation,
+    capacity,
+  )
+  fx pure
+{
+  let reason: u8 = if capacity == 0 {
+    1
+  } else {
+    if reserved {
+      2
+    } else {
+      if initialized {
+        3
+      } else {
+        if generation == 18_446_744_073_709_551_614 + 1 {
+          4
+        } else {
+          0
+        }
+      }
+    }
+  };
+  reason
+}
+"#,
+        );
+        assert!(parsed.is_clean(), "parse errors: {:?}", parsed.errors);
+        let init = parsed
+            .program
+            .items
+            .iter()
+            .find_map(|item| match item {
+                Item::Fn(function) if function.name == "static_storage_claim_reason" => function
+                    .body
+                    .as_ref()
+                    .and_then(|body| body.stmts.first())
+                    .and_then(|statement| match statement {
+                        Stmt::Let { init, .. } => Some(init),
+                        _ => None,
+                    }),
+                _ => None,
+            })
+            .expect("the `let reason: u8` initializer");
+
+        let mut env = ExecEnv::default();
+        for (name, ty) in [
+            ("reserved", "bool"),
+            ("initialized", "bool"),
+            ("generation", "u64"),
+            ("capacity", "usize"),
+        ] {
+            env.bind(name, ty.to_string(), false);
+        }
+        env.bind_local_relation("reason", "u8", init);
+        let relation = env
+            .local_relations
+            .iter()
+            .find(|relation| relation.name == "reason")
+            .expect("the `reason` local relation");
+        let predicate = &relation.predicate;
+
+        // Every source outcome carries the declared type at its leaf. Either leaf
+        // cast spelling satisfies the rule; the property is that the branch result
+        // is typed, not how the cast is parenthesized.
+        for outcome in ["1", "2", "3", "4", "0"] {
+            assert!(
+                predicate.contains(&format!("({outcome}) as u8"))
+                    || predicate.contains(&format!("{outcome} as u8")),
+                "the branch result `{outcome}` of the source conditional must carry the \
+                 declared `u8`; got `{predicate}`"
+            );
+        }
+        assert_eq!(
+            predicate.matches("as u8").count(),
+            5,
+            "the source states five outcomes, so the equation carries the declared type \
+             five times — once per branch result; got `{predicate}`"
+        );
+        assert!(
+            !predicate.contains("} as u8") && !predicate.contains("}) as u8"),
+            "casting the conditional as a whole leaves its branch literals untyped, which \
+             Verus cannot infer; got `{predicate}`"
+        );
+
+        // The obligation the relation frames must compile under real Verus. This is
+        // the property the structural assertions stand for: an untypeable `requires`
+        // aborts the discharge before any counterexample can be reported.
+        if !verus_on_path() {
+            eprintln!("SKIP: verus not on PATH — the compile grounding did not run");
+            return;
+        }
+        let frame = ExecObligationFrame {
+            params: vec![
+                ExecParamDecl::new("reason", "u8"),
+                ExecParamDecl::new("reserved", "bool"),
+                ExecParamDecl::new("initialized", "bool"),
+                ExecParamDecl::new("generation", "u64"),
+                ExecParamDecl::new("capacity", "usize"),
+            ],
+            ret_type: "u8".to_string(),
+            req: Some(predicate.clone()),
+            ..Default::default()
+        };
+        let obligation = exec_equivalence_obligation(&path("reason"), "reason", &frame)
+            .expect("the tail obligation for the bound local");
+        let verdict = discharge(
+            &obligation,
+            "static_storage_claim_reason.tail",
+            SEED,
+            RLIMIT,
+        );
+        assert_eq!(
+            verdict,
+            ExecVerdict::Faithful,
+            "the framed tail obligation must discharge; a Divergent verdict here is the \
+             verus abort on an untypeable branch literal"
+        );
+    }
+
     /// Positive control: a faithful production (`a + b`, the lowering of the source)
     /// -> the forge classification is `ExecVerdict::Faithful`. Without this, a
     /// `discharge` that returned Divergent unconditionally would pass the Divergent
@@ -1193,11 +2091,20 @@ mod divergent_teeth {
         let prog = exec_equivalence_obligation(&source, "n - 1 as u8", &frame)
             .expect("non-compiling exec obligation builds");
         let verdict = discharge(&prog, "teeth.noncompile", SEED, RLIMIT);
-        assert!(
-            matches!(verdict, ExecVerdict::Divergent { .. }),
-            "a NON-COMPILING production (the #122 paren-drop -> E0308) must classify \
-             Divergent via the compile/parse-abort branch; got {verdict:?}"
-        );
+        match verdict {
+            ExecVerdict::Divergent { detail } => {
+                assert!(
+                    detail.contains("tool diagnostic:")
+                        && (detail.contains("E0308") || detail.contains("mismatched types")),
+                    "a compile-abort verdict must preserve an actionable Verus diagnostic: \
+                     {detail}"
+                );
+            }
+            other => panic!(
+                "a NON-COMPILING production (the #122 paren-drop -> E0308) must classify \
+                 Divergent via the compile/parse-abort branch; got {other:?}"
+            ),
+        }
     }
 
     /// The Divergent-vs-Unverifiable boundary (the critic's masking-path concern):

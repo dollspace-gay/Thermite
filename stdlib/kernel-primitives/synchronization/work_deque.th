@@ -1,0 +1,1613 @@
+const WORK_DEQUE_CAPACITY: usize = 64;
+
+struct WorkDeque64 {
+  top: usize,
+  bottom: usize,
+  owner_generation: usize,
+  owner_pending: bool,
+  ready: [bool; WORK_DEQUE_CAPACITY],
+  tickets: [usize; WORK_DEQUE_CAPACITY],
+  values: [u64; WORK_DEQUE_CAPACITY],
+}
+
+struct WorkDequeOwnerToken64 {
+  generation: usize,
+  observed_top: usize,
+  observed_bottom: usize,
+  ticket: usize,
+  slot: usize,
+  value: u64,
+}
+
+struct WorkDequeStealToken64 {
+  observed_top: usize,
+  observed_bottom: usize,
+  ticket: usize,
+  slot: usize,
+  value: u64,
+}
+
+enum WorkDequePush64 {
+  WorkDequePushed64 {
+    deque: WorkDeque64,
+    ticket: usize,
+  },
+  WorkDequePushOwnerBusy64 {
+    deque: WorkDeque64,
+    value: u64,
+  },
+  WorkDequeFull64 {
+    deque: WorkDeque64,
+    value: u64,
+  },
+  WorkDequePushCounterExhausted64 {
+    deque: WorkDeque64,
+    value: u64,
+  },
+  WorkDequePushSlotBusy64 {
+    deque: WorkDeque64,
+    slot: usize,
+    value: u64,
+  },
+}
+
+enum WorkDequeOwnerBegin64 {
+  WorkDequeOwnerCandidate64 {
+    deque: WorkDeque64,
+    token: WorkDequeOwnerToken64,
+  },
+  WorkDequeOwnerAlreadyPending64 {
+    deque: WorkDeque64,
+  },
+  WorkDequeOwnerEmpty64 {
+    deque: WorkDeque64,
+  },
+  WorkDequeOwnerGenerationExhausted64 {
+    deque: WorkDeque64,
+  },
+  WorkDequeOwnerSlotVacant64 {
+    deque: WorkDeque64,
+    ticket: usize,
+  },
+  WorkDequeOwnerSlotConflict64 {
+    deque: WorkDeque64,
+    ticket: usize,
+    observed_ticket: usize,
+  },
+}
+
+enum WorkDequeOwnerCommit64 {
+  WorkDequeOwnerPopped64 {
+    deque: WorkDeque64,
+    ticket: usize,
+    value: u64,
+    last: bool,
+  },
+  WorkDequeOwnerLost64 {
+    deque: WorkDeque64,
+    token: WorkDequeOwnerToken64,
+  },
+  WorkDequeOwnerCommitStale64 {
+    deque: WorkDeque64,
+    token: WorkDequeOwnerToken64,
+  },
+  WorkDequeOwnerCommitSlotVacant64 {
+    deque: WorkDeque64,
+    token: WorkDequeOwnerToken64,
+  },
+  WorkDequeOwnerCommitSlotConflict64 {
+    deque: WorkDeque64,
+    token: WorkDequeOwnerToken64,
+    observed_ticket: usize,
+    observed_value: u64,
+  },
+}
+
+enum WorkDequeOwnerCancel64 {
+  WorkDequeOwnerCancelled64 {
+    deque: WorkDeque64,
+    token: WorkDequeOwnerToken64,
+  },
+  WorkDequeOwnerCancelStale64 {
+    deque: WorkDeque64,
+    token: WorkDequeOwnerToken64,
+  },
+}
+
+enum WorkDequeStealBegin64 {
+  WorkDequeStealCandidate64 {
+    deque: WorkDeque64,
+    token: WorkDequeStealToken64,
+  },
+  WorkDequeStealEmpty64 {
+    deque: WorkDeque64,
+  },
+  WorkDequeStealSlotVacant64 {
+    deque: WorkDeque64,
+    ticket: usize,
+  },
+  WorkDequeStealSlotConflict64 {
+    deque: WorkDeque64,
+    ticket: usize,
+    observed_ticket: usize,
+  },
+}
+
+enum WorkDequeStealCommit64 {
+  WorkDequeStolen64 {
+    deque: WorkDeque64,
+    ticket: usize,
+    value: u64,
+    last: bool,
+  },
+  WorkDequeStealRetry64 {
+    deque: WorkDeque64,
+    token: WorkDequeStealToken64,
+  },
+  WorkDequeStealTokenMalformed64 {
+    deque: WorkDeque64,
+    token: WorkDequeStealToken64,
+  },
+  WorkDequeStealCommitSlotVacant64 {
+    deque: WorkDeque64,
+    token: WorkDequeStealToken64,
+  },
+  WorkDequeStealCommitSlotConflict64 {
+    deque: WorkDeque64,
+    token: WorkDequeStealToken64,
+    observed_ticket: usize,
+    observed_value: u64,
+  },
+}
+
+spec fn work_deque_wf_spec(deque: &WorkDeque64) -> bool
+  dec deque.bottom
+{
+  if deque.owner_pending {
+    deque.bottom < usize::MAX
+      && ((deque.top <= deque.bottom
+          && deque.bottom - deque.top < WORK_DEQUE_CAPACITY)
+        || deque.top == deque.bottom + 1)
+  } else {
+    deque.top <= deque.bottom
+      && deque.bottom - deque.top <= WORK_DEQUE_CAPACITY
+  }
+}
+
+spec fn work_deque_slot_spec(ticket: usize) -> usize
+  dec ticket
+{
+  ticket % WORK_DEQUE_CAPACITY
+}
+
+spec fn work_deque_stealable_spec(deque: &WorkDeque64) -> bool
+  dec deque.bottom
+{
+  deque.top < deque.bottom
+    || (deque.owner_pending && deque.top == deque.bottom)
+}
+
+spec fn work_deque_steal_last_spec(deque: &WorkDeque64) -> bool
+  dec deque.bottom
+{
+  (!deque.owner_pending && deque.top + 1 == deque.bottom)
+    || (deque.owner_pending && deque.top == deque.bottom)
+}
+
+spec fn work_deque_ready_same_except_spec(
+  left: &[bool; WORK_DEQUE_CAPACITY],
+  right: &[bool; WORK_DEQUE_CAPACITY],
+  except: usize,
+) -> bool
+  dec except
+{
+  left.array_same_except(right, except)
+}
+
+spec fn work_deque_tickets_same_except_spec(
+  left: &[usize; WORK_DEQUE_CAPACITY],
+  right: &[usize; WORK_DEQUE_CAPACITY],
+  except: usize,
+) -> bool
+  dec except
+{
+  left.array_same_except(right, except)
+}
+
+spec fn work_deque_values_same_except_spec(
+  left: &[u64; WORK_DEQUE_CAPACITY],
+  right: &[u64; WORK_DEQUE_CAPACITY],
+  except: usize,
+) -> bool
+  dec except
+{
+  left.array_same_except(right, except)
+}
+
+spec fn work_deque_ready_clear_spec(
+  ready: &[bool; WORK_DEQUE_CAPACITY],
+) -> bool
+  dec WORK_DEQUE_CAPACITY
+{
+  let expected: [bool; WORK_DEQUE_CAPACITY] = [false; WORK_DEQUE_CAPACITY];
+  ready.array_eq(expected)
+}
+
+spec fn work_deque_tickets_clear_spec(
+  tickets: &[usize; WORK_DEQUE_CAPACITY],
+) -> bool
+  dec WORK_DEQUE_CAPACITY
+{
+  let expected: [usize; WORK_DEQUE_CAPACITY] = [0; WORK_DEQUE_CAPACITY];
+  tickets.array_eq(expected)
+}
+
+spec fn work_deque_values_clear_spec(
+  values: &[u64; WORK_DEQUE_CAPACITY],
+) -> bool
+  dec WORK_DEQUE_CAPACITY
+{
+  let expected: [u64; WORK_DEQUE_CAPACITY] = [0; WORK_DEQUE_CAPACITY];
+  values.array_eq(expected)
+}
+
+spec fn work_deque_storage_same_spec(
+  left: &WorkDeque64,
+  right: &WorkDeque64,
+) -> bool
+  dec left.bottom
+{
+  work_deque_ready_same_except_spec(
+    &left.ready,
+    &right.ready,
+    WORK_DEQUE_CAPACITY,
+  ) && work_deque_tickets_same_except_spec(
+    &left.tickets,
+    &right.tickets,
+    WORK_DEQUE_CAPACITY,
+  ) && work_deque_values_same_except_spec(
+    &left.values,
+    &right.values,
+    WORK_DEQUE_CAPACITY,
+  )
+}
+
+spec fn work_deque_same_spec(
+  left: &WorkDeque64,
+  right: &WorkDeque64,
+) -> bool
+  dec left.bottom
+{
+  left.top == right.top
+    && left.bottom == right.bottom
+    && left.owner_generation == right.owner_generation
+    && left.owner_pending == right.owner_pending
+    && work_deque_storage_same_spec(left, right)
+}
+
+spec fn work_deque_owner_token_matches_spec(
+  deque: &WorkDeque64,
+  token: &WorkDequeOwnerToken64,
+) -> bool
+  dec token.ticket
+{
+  deque.owner_pending
+    && token.generation == deque.owner_generation
+    && token.observed_bottom > 0
+    && token.ticket == token.observed_bottom - 1
+    && token.ticket == deque.bottom
+    && token.observed_top < token.observed_bottom
+    && token.slot == work_deque_slot_spec(token.ticket)
+}
+
+spec fn work_deque_steal_token_wf_spec(
+  token: &WorkDequeStealToken64,
+) -> bool
+  dec token.ticket
+{
+  token.ticket == token.observed_top
+    && token.observed_top < token.observed_bottom
+    && token.slot == work_deque_slot_spec(token.ticket)
+}
+
+fn work_deque_wf(deque: &WorkDeque64) -> bool
+  req true
+  ens result == work_deque_wf_spec(deque)
+  fx pure
+{
+  if deque.owner_pending {
+    deque.bottom < usize::MAX
+      && ((deque.top <= deque.bottom
+          && deque.bottom - deque.top < WORK_DEQUE_CAPACITY)
+        || deque.top == deque.bottom + 1)
+  } else {
+    deque.top <= deque.bottom
+      && deque.bottom - deque.top <= WORK_DEQUE_CAPACITY
+  }
+}
+
+fn work_deque_slot(ticket: usize) -> usize
+  req true
+  ens result == work_deque_slot_spec(ticket)
+  ens result < WORK_DEQUE_CAPACITY
+  fx pure
+{
+  ticket % WORK_DEQUE_CAPACITY
+}
+
+fn work_deque_stealable(deque: &WorkDeque64) -> bool
+  req work_deque_wf_spec(deque)
+  ens result == work_deque_stealable_spec(deque)
+  fx pure
+{
+  deque.top < deque.bottom
+    || (deque.owner_pending && deque.top == deque.bottom)
+}
+
+fn work_deque_steal_last(deque: &WorkDeque64) -> bool
+  req work_deque_wf_spec(deque) && work_deque_stealable_spec(deque)
+  ens result == work_deque_steal_last_spec(deque)
+  fx pure
+{
+  (!deque.owner_pending && deque.top + 1 == deque.bottom)
+    || (deque.owner_pending && deque.top == deque.bottom)
+}
+
+fn work_deque_owner_token_matches(
+  deque: &WorkDeque64,
+  token: &WorkDequeOwnerToken64,
+) -> bool
+  req work_deque_wf_spec(deque)
+  ens result == work_deque_owner_token_matches_spec(deque, token)
+  fx pure
+{
+  deque.owner_pending
+    && token.generation == deque.owner_generation
+    && token.observed_bottom > 0
+    && token.ticket == token.observed_bottom - 1
+    && token.ticket == deque.bottom
+    && token.observed_top < token.observed_bottom
+    && token.slot == work_deque_slot(token.ticket)
+}
+
+fn work_deque_steal_token_wf(token: &WorkDequeStealToken64) -> bool
+  req true
+  ens result == work_deque_steal_token_wf_spec(token)
+  fx pure
+{
+  token.ticket == token.observed_top
+    && token.observed_top < token.observed_bottom
+    && token.slot == work_deque_slot(token.ticket)
+}
+
+fn work_deque_empty() -> WorkDeque64
+  req true
+  ens work_deque_wf_spec(&result)
+  ens result.top == 0
+    && result.bottom == 0
+    && result.owner_generation == 0
+    && !result.owner_pending
+  ens work_deque_ready_clear_spec(&result.ready)
+  ens work_deque_tickets_clear_spec(&result.tickets)
+  ens work_deque_values_clear_spec(&result.values)
+  fx pure
+{
+  WorkDeque64 {
+    top: 0,
+    bottom: 0,
+    owner_generation: 0,
+    owner_pending: false,
+    ready: [false; WORK_DEQUE_CAPACITY],
+    tickets: [0; WORK_DEQUE_CAPACITY],
+    values: [0; WORK_DEQUE_CAPACITY],
+  }
+}
+
+fn work_deque_is_empty(deque: &WorkDeque64) -> bool
+  req work_deque_wf_spec(deque) && !deque.owner_pending
+  ens result == (deque.top == deque.bottom)
+  fx pure
+{
+  deque.top == deque.bottom
+}
+
+fn work_deque_push(deque: WorkDeque64, value: u64) -> WorkDequePush64
+  req work_deque_wf_spec(&deque)
+  ens match result {
+    WorkDequePush64::WorkDequePushed64 { deque: next, ticket } =>
+      !deque.owner_pending
+        && deque.bottom - deque.top < WORK_DEQUE_CAPACITY
+        && deque.bottom < usize::MAX
+        && !deque.ready[work_deque_slot_spec(deque.bottom)]
+        && work_deque_wf_spec(&next)
+        && next.top == deque.top
+        && next.bottom == deque.bottom + 1
+        && next.owner_generation == deque.owner_generation
+        && !next.owner_pending
+        && next.ready[work_deque_slot_spec(deque.bottom)]
+        && next.tickets[work_deque_slot_spec(deque.bottom)] == deque.bottom
+        && next.values[work_deque_slot_spec(deque.bottom)] == value
+        && work_deque_ready_same_except_spec(
+          &next.ready,
+          &deque.ready,
+          work_deque_slot_spec(deque.bottom),
+        )
+        && work_deque_tickets_same_except_spec(
+          &next.tickets,
+          &deque.tickets,
+          work_deque_slot_spec(deque.bottom),
+        )
+        && work_deque_values_same_except_spec(
+          &next.values,
+          &deque.values,
+          work_deque_slot_spec(deque.bottom),
+        )
+        && ticket == deque.bottom,
+    WorkDequePush64::WorkDequePushOwnerBusy64 { deque: next, value: returned } =>
+      deque.owner_pending
+        && work_deque_wf_spec(&next)
+        && work_deque_same_spec(&next, &deque)
+        && returned == value,
+    WorkDequePush64::WorkDequeFull64 { deque: next, value: returned } =>
+      !deque.owner_pending
+        && deque.bottom - deque.top == WORK_DEQUE_CAPACITY
+        && work_deque_wf_spec(&next)
+        && work_deque_same_spec(&next, &deque)
+        && returned == value,
+    WorkDequePush64::WorkDequePushCounterExhausted64 { deque: next, value: returned } =>
+      !deque.owner_pending
+        && deque.bottom - deque.top < WORK_DEQUE_CAPACITY
+        && deque.bottom == usize::MAX
+        && work_deque_wf_spec(&next)
+        && work_deque_same_spec(&next, &deque)
+        && returned == value,
+    WorkDequePush64::WorkDequePushSlotBusy64 { deque: next, slot, value: returned } =>
+      !deque.owner_pending
+        && deque.bottom - deque.top < WORK_DEQUE_CAPACITY
+        && deque.bottom < usize::MAX
+        && deque.ready[work_deque_slot_spec(deque.bottom)]
+        && work_deque_wf_spec(&next)
+        && work_deque_same_spec(&next, &deque)
+        && slot == work_deque_slot_spec(deque.bottom)
+        && returned == value,
+  }
+  fx pure
+{
+  if deque.owner_pending {
+    WorkDequePush64::WorkDequePushOwnerBusy64 {
+      deque: deque,
+      value: value,
+    }
+  } else {
+    if deque.bottom - deque.top == WORK_DEQUE_CAPACITY {
+      WorkDequePush64::WorkDequeFull64 {
+        deque: deque,
+        value: value,
+      }
+    } else {
+      if deque.bottom == usize::MAX {
+        WorkDequePush64::WorkDequePushCounterExhausted64 {
+          deque: deque,
+          value: value,
+        }
+      } else {
+        let slot: usize = work_deque_slot(deque.bottom);
+        if deque.ready[slot] {
+          WorkDequePush64::WorkDequePushSlotBusy64 {
+            deque: deque,
+            slot: slot,
+            value: value,
+          }
+        } else {
+          let mut ready: [bool; WORK_DEQUE_CAPACITY] = deque.ready;
+          let mut tickets: [usize; WORK_DEQUE_CAPACITY] = deque.tickets;
+          let mut values: [u64; WORK_DEQUE_CAPACITY] = deque.values;
+          ready[slot] = true;
+          tickets[slot] = deque.bottom;
+          values[slot] = value;
+          WorkDequePush64::WorkDequePushed64 {
+            deque: WorkDeque64 {
+              top: deque.top,
+              bottom: deque.bottom + 1,
+              owner_generation: deque.owner_generation,
+              owner_pending: false,
+              ready: ready,
+              tickets: tickets,
+              values: values,
+            },
+            ticket: deque.bottom,
+          }
+        }
+      }
+    }
+  }
+}
+
+fn work_deque_owner_begin_pop(deque: WorkDeque64) -> WorkDequeOwnerBegin64
+  req work_deque_wf_spec(&deque)
+  ens match result {
+    WorkDequeOwnerBegin64::WorkDequeOwnerCandidate64 { deque: next, token } =>
+      !deque.owner_pending
+        && deque.top < deque.bottom
+        && deque.owner_generation < usize::MAX
+        && deque.ready[work_deque_slot_spec(deque.bottom - 1)]
+        && deque.tickets[work_deque_slot_spec(deque.bottom - 1)] == deque.bottom - 1
+        && work_deque_wf_spec(&next)
+        && next.top == deque.top
+        && next.bottom == deque.bottom - 1
+        && next.owner_generation == deque.owner_generation + 1
+        && next.owner_pending
+        && work_deque_storage_same_spec(&next, &deque)
+        && token.generation == next.owner_generation
+        && token.observed_top == deque.top
+        && token.observed_bottom == deque.bottom
+        && token.ticket == deque.bottom - 1
+        && token.slot == work_deque_slot_spec(token.ticket)
+        && token.value == deque.values[token.slot],
+    WorkDequeOwnerBegin64::WorkDequeOwnerAlreadyPending64 { deque: next } =>
+      deque.owner_pending
+        && work_deque_wf_spec(&next)
+        && work_deque_same_spec(&next, &deque),
+    WorkDequeOwnerBegin64::WorkDequeOwnerEmpty64 { deque: next } =>
+      !deque.owner_pending
+        && deque.top == deque.bottom
+        && work_deque_wf_spec(&next)
+        && work_deque_same_spec(&next, &deque),
+    WorkDequeOwnerBegin64::WorkDequeOwnerGenerationExhausted64 { deque: next } =>
+      !deque.owner_pending
+        && deque.top < deque.bottom
+        && deque.owner_generation == usize::MAX
+        && work_deque_wf_spec(&next)
+        && work_deque_same_spec(&next, &deque),
+    WorkDequeOwnerBegin64::WorkDequeOwnerSlotVacant64 { deque: next, ticket } =>
+      !deque.owner_pending
+        && deque.top < deque.bottom
+        && deque.owner_generation < usize::MAX
+        && !deque.ready[work_deque_slot_spec(deque.bottom - 1)]
+        && work_deque_wf_spec(&next)
+        && work_deque_same_spec(&next, &deque)
+        && ticket == deque.bottom - 1,
+    WorkDequeOwnerBegin64::WorkDequeOwnerSlotConflict64 { deque: next, ticket, observed_ticket } =>
+      !deque.owner_pending
+        && deque.top < deque.bottom
+        && deque.owner_generation < usize::MAX
+        && deque.ready[work_deque_slot_spec(deque.bottom - 1)]
+        && deque.tickets[work_deque_slot_spec(deque.bottom - 1)] != deque.bottom - 1
+        && work_deque_wf_spec(&next)
+        && work_deque_same_spec(&next, &deque)
+        && ticket == deque.bottom - 1
+        && observed_ticket == deque.tickets[work_deque_slot_spec(deque.bottom - 1)],
+  }
+  fx pure
+{
+  if deque.owner_pending {
+    WorkDequeOwnerBegin64::WorkDequeOwnerAlreadyPending64 { deque: deque }
+  } else {
+    if deque.top == deque.bottom {
+      WorkDequeOwnerBegin64::WorkDequeOwnerEmpty64 { deque: deque }
+    } else {
+      if deque.owner_generation == usize::MAX {
+        WorkDequeOwnerBegin64::WorkDequeOwnerGenerationExhausted64 { deque: deque }
+      } else {
+        let ticket: usize = deque.bottom - 1;
+        let slot: usize = work_deque_slot(ticket);
+        if !deque.ready[slot] {
+          WorkDequeOwnerBegin64::WorkDequeOwnerSlotVacant64 {
+            deque: deque,
+            ticket: ticket,
+          }
+        } else {
+          if deque.tickets[slot] != ticket {
+            WorkDequeOwnerBegin64::WorkDequeOwnerSlotConflict64 {
+              observed_ticket: deque.tickets[slot],
+              deque: deque,
+              ticket: ticket,
+            }
+          } else {
+            WorkDequeOwnerBegin64::WorkDequeOwnerCandidate64 {
+              deque: WorkDeque64 {
+                top: deque.top,
+                bottom: ticket,
+                owner_generation: deque.owner_generation + 1,
+                owner_pending: true,
+                ready: deque.ready,
+                tickets: deque.tickets,
+                values: deque.values,
+              },
+              token: WorkDequeOwnerToken64 {
+                generation: deque.owner_generation + 1,
+                observed_top: deque.top,
+                observed_bottom: deque.bottom,
+                ticket: ticket,
+                slot: slot,
+                value: deque.values[slot],
+              },
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+fn work_deque_owner_commit_pop(
+  deque: WorkDeque64,
+  token: WorkDequeOwnerToken64,
+) -> WorkDequeOwnerCommit64
+  req work_deque_wf_spec(&deque)
+  ens match result {
+    WorkDequeOwnerCommit64::WorkDequeOwnerPopped64 { deque: next, ticket, value, last } =>
+      work_deque_owner_token_matches_spec(&deque, &token)
+        && deque.top <= token.ticket
+        && deque.ready[token.slot]
+        && deque.tickets[token.slot] == token.ticket
+        && deque.values[token.slot] == token.value
+        && work_deque_wf_spec(&next)
+        && ((deque.top == token.ticket
+            && next.top == token.ticket + 1
+            && next.bottom == token.ticket + 1)
+          || (deque.top < token.ticket
+            && next.top == deque.top
+            && next.bottom == token.ticket))
+        && next.owner_generation == deque.owner_generation
+        && !next.owner_pending
+        && !next.ready[token.slot]
+        && next.values[token.slot] == 0
+        && work_deque_ready_same_except_spec(&next.ready, &deque.ready, token.slot)
+        && work_deque_tickets_same_except_spec(
+          &next.tickets,
+          &deque.tickets,
+          WORK_DEQUE_CAPACITY,
+        )
+        && work_deque_values_same_except_spec(&next.values, &deque.values, token.slot)
+        && ticket == token.ticket
+        && value == token.value
+        && last == (deque.top == token.ticket),
+    WorkDequeOwnerCommit64::WorkDequeOwnerLost64 { deque: next, token: returned } =>
+      work_deque_owner_token_matches_spec(&deque, &token)
+        && deque.top == token.ticket + 1
+        && !deque.ready[token.slot]
+        && work_deque_wf_spec(&next)
+        && next.top == deque.top
+        && next.bottom == token.observed_bottom
+        && next.owner_generation == deque.owner_generation
+        && !next.owner_pending
+        && work_deque_storage_same_spec(&next, &deque)
+        && returned.generation == token.generation
+        && returned.ticket == token.ticket
+        && returned.slot == token.slot
+        && returned.value == token.value,
+    WorkDequeOwnerCommit64::WorkDequeOwnerCommitStale64 { deque: next, token: returned } =>
+      !work_deque_owner_token_matches_spec(&deque, &token)
+        && work_deque_wf_spec(&next)
+        && work_deque_same_spec(&next, &deque)
+        && returned.generation == token.generation
+        && returned.ticket == token.ticket
+        && returned.slot == token.slot
+        && returned.value == token.value,
+    WorkDequeOwnerCommit64::WorkDequeOwnerCommitSlotVacant64 { deque: next, token: returned } =>
+      work_deque_owner_token_matches_spec(&deque, &token)
+        && !deque.ready[token.slot]
+        && deque.top <= token.ticket
+        && work_deque_wf_spec(&next)
+        && work_deque_same_spec(&next, &deque)
+        && returned.generation == token.generation
+        && returned.ticket == token.ticket
+        && returned.slot == token.slot
+        && returned.value == token.value,
+    WorkDequeOwnerCommit64::WorkDequeOwnerCommitSlotConflict64 {
+      deque: next,
+      token: returned,
+      observed_ticket,
+      observed_value,
+    } =>
+      work_deque_owner_token_matches_spec(&deque, &token)
+        && deque.ready[token.slot]
+        && (deque.top > token.ticket
+          || deque.tickets[token.slot] != token.ticket
+          || deque.values[token.slot] != token.value)
+        && work_deque_wf_spec(&next)
+        && work_deque_same_spec(&next, &deque)
+        && returned.generation == token.generation
+        && returned.ticket == token.ticket
+        && returned.slot == token.slot
+        && returned.value == token.value
+        && observed_ticket == deque.tickets[token.slot]
+        && observed_value == deque.values[token.slot],
+  }
+  fx pure
+{
+  if !work_deque_owner_token_matches(&deque, &token) {
+    WorkDequeOwnerCommit64::WorkDequeOwnerCommitStale64 {
+      deque: deque,
+      token: token,
+    }
+  } else {
+    if deque.top > token.ticket {
+      if deque.ready[token.slot] {
+        WorkDequeOwnerCommit64::WorkDequeOwnerCommitSlotConflict64 {
+          observed_ticket: deque.tickets[token.slot],
+          observed_value: deque.values[token.slot],
+          deque: deque,
+          token: token,
+        }
+      } else {
+        WorkDequeOwnerCommit64::WorkDequeOwnerLost64 {
+          deque: WorkDeque64 {
+            top: deque.top,
+            bottom: token.observed_bottom,
+            owner_generation: deque.owner_generation,
+            owner_pending: false,
+            ready: deque.ready,
+            tickets: deque.tickets,
+            values: deque.values,
+          },
+          token: token,
+        }
+      }
+    } else {
+      if !deque.ready[token.slot] {
+        WorkDequeOwnerCommit64::WorkDequeOwnerCommitSlotVacant64 {
+          deque: deque,
+          token: token,
+        }
+      } else {
+        if deque.tickets[token.slot] != token.ticket
+          || deque.values[token.slot] != token.value {
+          WorkDequeOwnerCommit64::WorkDequeOwnerCommitSlotConflict64 {
+            observed_ticket: deque.tickets[token.slot],
+            observed_value: deque.values[token.slot],
+            deque: deque,
+            token: token,
+          }
+        } else {
+          let last: bool = deque.top == token.ticket;
+          let mut ready: [bool; WORK_DEQUE_CAPACITY] = deque.ready;
+          let mut values: [u64; WORK_DEQUE_CAPACITY] = deque.values;
+          ready[token.slot] = false;
+          values[token.slot] = 0;
+          WorkDequeOwnerCommit64::WorkDequeOwnerPopped64 {
+            deque: WorkDeque64 {
+              top: if last { token.ticket + 1 } else { deque.top },
+              bottom: token.ticket + (if last { 1 } else { 0 }),
+              owner_generation: deque.owner_generation,
+              owner_pending: false,
+              ready: ready,
+              tickets: deque.tickets,
+              values: values,
+            },
+            ticket: token.ticket,
+            value: token.value,
+            last: last,
+          }
+        }
+      }
+    }
+  }
+}
+
+fn work_deque_owner_cancel(
+  deque: WorkDeque64,
+  token: WorkDequeOwnerToken64,
+) -> WorkDequeOwnerCancel64
+  req work_deque_wf_spec(&deque)
+  ens match result {
+    WorkDequeOwnerCancel64::WorkDequeOwnerCancelled64 { deque: next, token: returned } =>
+      work_deque_owner_token_matches_spec(&deque, &token)
+        && work_deque_wf_spec(&next)
+        && next.top == deque.top
+        && next.bottom == token.observed_bottom
+        && next.owner_generation == deque.owner_generation
+        && !next.owner_pending
+        && work_deque_storage_same_spec(&next, &deque)
+        && returned.generation == token.generation
+        && returned.ticket == token.ticket
+        && returned.slot == token.slot
+        && returned.value == token.value,
+    WorkDequeOwnerCancel64::WorkDequeOwnerCancelStale64 { deque: next, token: returned } =>
+      !work_deque_owner_token_matches_spec(&deque, &token)
+        && work_deque_wf_spec(&next)
+        && work_deque_same_spec(&next, &deque)
+        && returned.generation == token.generation
+        && returned.ticket == token.ticket
+        && returned.slot == token.slot
+        && returned.value == token.value,
+  }
+  fx pure
+{
+  if work_deque_owner_token_matches(&deque, &token) {
+    WorkDequeOwnerCancel64::WorkDequeOwnerCancelled64 {
+      deque: WorkDeque64 {
+        top: deque.top,
+        bottom: token.observed_bottom,
+        owner_generation: deque.owner_generation,
+        owner_pending: false,
+        ready: deque.ready,
+        tickets: deque.tickets,
+        values: deque.values,
+      },
+      token: token,
+    }
+  } else {
+    WorkDequeOwnerCancel64::WorkDequeOwnerCancelStale64 {
+      deque: deque,
+      token: token,
+    }
+  }
+}
+
+fn work_deque_steal_begin(deque: WorkDeque64) -> WorkDequeStealBegin64
+  req work_deque_wf_spec(&deque)
+  ens match result {
+    WorkDequeStealBegin64::WorkDequeStealCandidate64 { deque: next, token } =>
+      work_deque_stealable_spec(&deque)
+        && deque.ready[work_deque_slot_spec(deque.top)]
+        && deque.tickets[work_deque_slot_spec(deque.top)] == deque.top
+        && work_deque_wf_spec(&next)
+        && work_deque_same_spec(&next, &deque)
+        && token.observed_top == deque.top
+        && ((!deque.owner_pending || deque.top != deque.bottom)
+          && token.observed_bottom == deque.bottom
+          || deque.owner_pending
+            && deque.top == deque.bottom
+            && token.observed_bottom == deque.bottom + 1)
+        && token.ticket == deque.top
+        && token.slot == work_deque_slot_spec(deque.top)
+        && token.value == deque.values[token.slot]
+        && work_deque_steal_token_wf_spec(&token),
+    WorkDequeStealBegin64::WorkDequeStealEmpty64 { deque: next } =>
+      !work_deque_stealable_spec(&deque)
+        && work_deque_wf_spec(&next)
+        && work_deque_same_spec(&next, &deque),
+    WorkDequeStealBegin64::WorkDequeStealSlotVacant64 { deque: next, ticket } =>
+      work_deque_stealable_spec(&deque)
+        && !deque.ready[work_deque_slot_spec(deque.top)]
+        && work_deque_wf_spec(&next)
+        && work_deque_same_spec(&next, &deque)
+        && ticket == deque.top,
+    WorkDequeStealBegin64::WorkDequeStealSlotConflict64 { deque: next, ticket, observed_ticket } =>
+      work_deque_stealable_spec(&deque)
+        && deque.ready[work_deque_slot_spec(deque.top)]
+        && deque.tickets[work_deque_slot_spec(deque.top)] != deque.top
+        && work_deque_wf_spec(&next)
+        && work_deque_same_spec(&next, &deque)
+        && ticket == deque.top
+        && observed_ticket == deque.tickets[work_deque_slot_spec(deque.top)],
+  }
+  fx pure
+{
+  if !work_deque_stealable(&deque) {
+    WorkDequeStealBegin64::WorkDequeStealEmpty64 { deque: deque }
+  } else {
+    let ticket: usize = deque.top;
+    let slot: usize = work_deque_slot(ticket);
+    if !deque.ready[slot] {
+      WorkDequeStealBegin64::WorkDequeStealSlotVacant64 {
+        deque: deque,
+        ticket: ticket,
+      }
+    } else {
+      if deque.tickets[slot] != ticket {
+        WorkDequeStealBegin64::WorkDequeStealSlotConflict64 {
+          observed_ticket: deque.tickets[slot],
+          deque: deque,
+          ticket: ticket,
+        }
+      } else {
+        let observed_top: usize = deque.top;
+        let observed_bottom: usize = if deque.owner_pending && deque.top == deque.bottom {
+          deque.bottom + 1
+        } else {
+          deque.bottom
+        };
+        let value: u64 = deque.values[slot];
+        WorkDequeStealBegin64::WorkDequeStealCandidate64 {
+          deque: deque,
+          token: WorkDequeStealToken64 {
+            observed_top: observed_top,
+            observed_bottom: observed_bottom,
+            ticket: ticket,
+            slot: slot,
+            value: value,
+          },
+        }
+      }
+    }
+  }
+}
+
+fn work_deque_steal_commit(
+  deque: WorkDeque64,
+  token: WorkDequeStealToken64,
+) -> WorkDequeStealCommit64
+  req work_deque_wf_spec(&deque)
+  ens match result {
+    WorkDequeStealCommit64::WorkDequeStolen64 { deque: next, ticket, value, last } =>
+      work_deque_steal_token_wf_spec(&token)
+        && deque.top == token.observed_top
+        && work_deque_stealable_spec(&deque)
+        && deque.ready[token.slot]
+        && deque.tickets[token.slot] == token.ticket
+        && deque.values[token.slot] == token.value
+        && work_deque_wf_spec(&next)
+        && next.top == deque.top + 1
+        && next.bottom == deque.bottom
+        && next.owner_generation == deque.owner_generation
+        && next.owner_pending == deque.owner_pending
+        && !next.ready[token.slot]
+        && next.values[token.slot] == 0
+        && work_deque_ready_same_except_spec(&next.ready, &deque.ready, token.slot)
+        && work_deque_tickets_same_except_spec(
+          &next.tickets,
+          &deque.tickets,
+          WORK_DEQUE_CAPACITY,
+        )
+        && work_deque_values_same_except_spec(&next.values, &deque.values, token.slot)
+        && ticket == token.ticket
+        && value == token.value
+        && last == work_deque_steal_last_spec(&deque),
+    WorkDequeStealCommit64::WorkDequeStealRetry64 { deque: next, token: returned } =>
+      work_deque_steal_token_wf_spec(&token)
+        && (deque.top != token.observed_top
+          || !work_deque_stealable_spec(&deque))
+        && work_deque_wf_spec(&next)
+        && work_deque_same_spec(&next, &deque)
+        && returned.observed_top == token.observed_top
+        && returned.observed_bottom == token.observed_bottom
+        && returned.ticket == token.ticket
+        && returned.slot == token.slot
+        && returned.value == token.value,
+    WorkDequeStealCommit64::WorkDequeStealTokenMalformed64 { deque: next, token: returned } =>
+      !work_deque_steal_token_wf_spec(&token)
+        && work_deque_wf_spec(&next)
+        && work_deque_same_spec(&next, &deque)
+        && returned.observed_top == token.observed_top
+        && returned.observed_bottom == token.observed_bottom
+        && returned.ticket == token.ticket
+        && returned.slot == token.slot
+        && returned.value == token.value,
+    WorkDequeStealCommit64::WorkDequeStealCommitSlotVacant64 { deque: next, token: returned } =>
+      work_deque_steal_token_wf_spec(&token)
+        && deque.top == token.observed_top
+        && work_deque_stealable_spec(&deque)
+        && !deque.ready[token.slot]
+        && work_deque_wf_spec(&next)
+        && work_deque_same_spec(&next, &deque)
+        && returned.observed_top == token.observed_top
+        && returned.observed_bottom == token.observed_bottom
+        && returned.ticket == token.ticket
+        && returned.slot == token.slot
+        && returned.value == token.value,
+    WorkDequeStealCommit64::WorkDequeStealCommitSlotConflict64 {
+      deque: next,
+      token: returned,
+      observed_ticket,
+      observed_value,
+    } =>
+      work_deque_steal_token_wf_spec(&token)
+        && deque.top == token.observed_top
+        && work_deque_stealable_spec(&deque)
+        && deque.ready[token.slot]
+        && (deque.tickets[token.slot] != token.ticket
+          || deque.values[token.slot] != token.value)
+        && work_deque_wf_spec(&next)
+        && work_deque_same_spec(&next, &deque)
+        && returned.observed_top == token.observed_top
+        && returned.observed_bottom == token.observed_bottom
+        && returned.ticket == token.ticket
+        && returned.slot == token.slot
+        && returned.value == token.value
+        && observed_ticket == deque.tickets[token.slot]
+        && observed_value == deque.values[token.slot],
+  }
+  fx pure
+{
+  if !work_deque_steal_token_wf(&token) {
+    WorkDequeStealCommit64::WorkDequeStealTokenMalformed64 {
+      deque: deque,
+      token: token,
+    }
+  } else {
+    if deque.top != token.observed_top || !work_deque_stealable(&deque) {
+      WorkDequeStealCommit64::WorkDequeStealRetry64 {
+        deque: deque,
+        token: token,
+      }
+    } else {
+      if !deque.ready[token.slot] {
+        WorkDequeStealCommit64::WorkDequeStealCommitSlotVacant64 {
+          deque: deque,
+          token: token,
+        }
+      } else {
+        if deque.tickets[token.slot] != token.ticket
+          || deque.values[token.slot] != token.value {
+          WorkDequeStealCommit64::WorkDequeStealCommitSlotConflict64 {
+            observed_ticket: deque.tickets[token.slot],
+            observed_value: deque.values[token.slot],
+            deque: deque,
+            token: token,
+          }
+        } else {
+          let last: bool = work_deque_steal_last(&deque);
+          let mut ready: [bool; WORK_DEQUE_CAPACITY] = deque.ready;
+          let mut values: [u64; WORK_DEQUE_CAPACITY] = deque.values;
+          ready[token.slot] = false;
+          values[token.slot] = 0;
+          WorkDequeStealCommit64::WorkDequeStolen64 {
+            deque: WorkDeque64 {
+              top: deque.top + 1,
+              bottom: deque.bottom,
+              owner_generation: deque.owner_generation,
+              owner_pending: deque.owner_pending,
+              ready: ready,
+              tickets: deque.tickets,
+              values: values,
+            },
+            ticket: token.ticket,
+            value: token.value,
+            last: last,
+          }
+        }
+      }
+    }
+  }
+}
+
+fn work_deque_owner_lifo_probe(first: u64, second: u64) -> bool
+  req true
+  ens result
+  fx pure
+{
+  let empty: WorkDeque64 = work_deque_empty();
+  match work_deque_push(empty, first) {
+    WorkDequePush64::WorkDequePushed64 { deque: one, ticket: first_ticket } =>
+      if first_ticket == 0 {
+        match work_deque_push(one, second) {
+          WorkDequePush64::WorkDequePushed64 { deque: two, ticket: second_ticket } =>
+            if second_ticket == 1 {
+              match work_deque_owner_begin_pop(two) {
+                WorkDequeOwnerBegin64::WorkDequeOwnerCandidate64 { deque: pending_second, token: second_token } =>
+                  match work_deque_owner_commit_pop(pending_second, second_token) {
+                    WorkDequeOwnerCommit64::WorkDequeOwnerPopped64 {
+                      deque: first_left,
+                      ticket: popped_second,
+                      value: got_second,
+                      last: second_was_last,
+                    } =>
+                      if popped_second == 1 && got_second == second && !second_was_last {
+                        match work_deque_owner_begin_pop(first_left) {
+                          WorkDequeOwnerBegin64::WorkDequeOwnerCandidate64 { deque: pending_first, token: first_token } =>
+                            match work_deque_owner_commit_pop(pending_first, first_token) {
+                              WorkDequeOwnerCommit64::WorkDequeOwnerPopped64 {
+                                deque: none_left,
+                                ticket: popped_first,
+                                value: got_first,
+                                last: first_was_last,
+                              } =>
+                                popped_first == 0
+                                  && got_first == first
+                                  && first_was_last
+                                  && work_deque_is_empty(&none_left),
+                              WorkDequeOwnerCommit64::WorkDequeOwnerLost64 { deque: _, token: _ } => false,
+                              WorkDequeOwnerCommit64::WorkDequeOwnerCommitStale64 { deque: _, token: _ } => false,
+                              WorkDequeOwnerCommit64::WorkDequeOwnerCommitSlotVacant64 { deque: _, token: _ } => false,
+                              WorkDequeOwnerCommit64::WorkDequeOwnerCommitSlotConflict64 {
+                                deque: _,
+                                token: _,
+                                observed_ticket: _,
+                                observed_value: _,
+                              } => false,
+                            },
+                          WorkDequeOwnerBegin64::WorkDequeOwnerAlreadyPending64 { deque: _ } => false,
+                          WorkDequeOwnerBegin64::WorkDequeOwnerEmpty64 { deque: _ } => false,
+                          WorkDequeOwnerBegin64::WorkDequeOwnerGenerationExhausted64 { deque: _ } => false,
+                          WorkDequeOwnerBegin64::WorkDequeOwnerSlotVacant64 { deque: _, ticket: _ } => false,
+                          WorkDequeOwnerBegin64::WorkDequeOwnerSlotConflict64 {
+                            deque: _,
+                            ticket: _,
+                            observed_ticket: _,
+                          } => false,
+                        }
+                      } else {
+                        false
+                      },
+                    WorkDequeOwnerCommit64::WorkDequeOwnerLost64 { deque: _, token: _ } => false,
+                    WorkDequeOwnerCommit64::WorkDequeOwnerCommitStale64 { deque: _, token: _ } => false,
+                    WorkDequeOwnerCommit64::WorkDequeOwnerCommitSlotVacant64 { deque: _, token: _ } => false,
+                    WorkDequeOwnerCommit64::WorkDequeOwnerCommitSlotConflict64 {
+                      deque: _,
+                      token: _,
+                      observed_ticket: _,
+                      observed_value: _,
+                    } => false,
+                  },
+                WorkDequeOwnerBegin64::WorkDequeOwnerAlreadyPending64 { deque: _ } => false,
+                WorkDequeOwnerBegin64::WorkDequeOwnerEmpty64 { deque: _ } => false,
+                WorkDequeOwnerBegin64::WorkDequeOwnerGenerationExhausted64 { deque: _ } => false,
+                WorkDequeOwnerBegin64::WorkDequeOwnerSlotVacant64 { deque: _, ticket: _ } => false,
+                WorkDequeOwnerBegin64::WorkDequeOwnerSlotConflict64 {
+                  deque: _,
+                  ticket: _,
+                  observed_ticket: _,
+                } => false,
+              }
+            } else {
+              false
+            },
+          WorkDequePush64::WorkDequePushOwnerBusy64 { deque: _, value: _ } => false,
+          WorkDequePush64::WorkDequeFull64 { deque: _, value: _ } => false,
+          WorkDequePush64::WorkDequePushCounterExhausted64 { deque: _, value: _ } => false,
+          WorkDequePush64::WorkDequePushSlotBusy64 { deque: _, slot: _, value: _ } => false,
+        }
+      } else {
+        false
+      },
+    WorkDequePush64::WorkDequePushOwnerBusy64 { deque: _, value: _ } => false,
+    WorkDequePush64::WorkDequeFull64 { deque: _, value: _ } => false,
+    WorkDequePush64::WorkDequePushCounterExhausted64 { deque: _, value: _ } => false,
+    WorkDequePush64::WorkDequePushSlotBusy64 { deque: _, slot: _, value: _ } => false,
+  }
+}
+
+fn work_deque_thief_fifo_probe(first: u64, second: u64) -> bool
+  req true
+  ens result
+  fx pure
+{
+  let empty: WorkDeque64 = work_deque_empty();
+  match work_deque_push(empty, first) {
+    WorkDequePush64::WorkDequePushed64 { deque: one, ticket: _ } =>
+      match work_deque_push(one, second) {
+        WorkDequePush64::WorkDequePushed64 { deque: two, ticket: _ } =>
+          match work_deque_steal_begin(two) {
+            WorkDequeStealBegin64::WorkDequeStealCandidate64 { deque: snap_first, token: first_token } =>
+              match work_deque_steal_commit(snap_first, first_token) {
+                WorkDequeStealCommit64::WorkDequeStolen64 {
+                  deque: second_left,
+                  ticket: first_ticket,
+                  value: got_first,
+                  last: first_was_last,
+                } =>
+                  if first_ticket == 0 && got_first == first && !first_was_last {
+                    match work_deque_steal_begin(second_left) {
+                      WorkDequeStealBegin64::WorkDequeStealCandidate64 { deque: snap_second, token: second_token } =>
+                        match work_deque_steal_commit(snap_second, second_token) {
+                          WorkDequeStealCommit64::WorkDequeStolen64 {
+                            deque: none_left,
+                            ticket: second_ticket,
+                            value: got_second,
+                            last: second_was_last,
+                          } =>
+                            second_ticket == 1
+                              && got_second == second
+                              && second_was_last
+                              && work_deque_is_empty(&none_left),
+                          WorkDequeStealCommit64::WorkDequeStealRetry64 { deque: _, token: _ } => false,
+                          WorkDequeStealCommit64::WorkDequeStealTokenMalformed64 { deque: _, token: _ } => false,
+                          WorkDequeStealCommit64::WorkDequeStealCommitSlotVacant64 { deque: _, token: _ } => false,
+                          WorkDequeStealCommit64::WorkDequeStealCommitSlotConflict64 {
+                            deque: _,
+                            token: _,
+                            observed_ticket: _,
+                            observed_value: _,
+                          } => false,
+                        },
+                      WorkDequeStealBegin64::WorkDequeStealEmpty64 { deque: _ } => false,
+                      WorkDequeStealBegin64::WorkDequeStealSlotVacant64 { deque: _, ticket: _ } => false,
+                      WorkDequeStealBegin64::WorkDequeStealSlotConflict64 {
+                        deque: _,
+                        ticket: _,
+                        observed_ticket: _,
+                      } => false,
+                    }
+                  } else {
+                    false
+                  },
+                WorkDequeStealCommit64::WorkDequeStealRetry64 { deque: _, token: _ } => false,
+                WorkDequeStealCommit64::WorkDequeStealTokenMalformed64 { deque: _, token: _ } => false,
+                WorkDequeStealCommit64::WorkDequeStealCommitSlotVacant64 { deque: _, token: _ } => false,
+                WorkDequeStealCommit64::WorkDequeStealCommitSlotConflict64 {
+                  deque: _,
+                  token: _,
+                  observed_ticket: _,
+                  observed_value: _,
+                } => false,
+              },
+            WorkDequeStealBegin64::WorkDequeStealEmpty64 { deque: _ } => false,
+            WorkDequeStealBegin64::WorkDequeStealSlotVacant64 { deque: _, ticket: _ } => false,
+            WorkDequeStealBegin64::WorkDequeStealSlotConflict64 {
+              deque: _,
+              ticket: _,
+              observed_ticket: _,
+            } => false,
+          },
+        WorkDequePush64::WorkDequePushOwnerBusy64 { deque: _, value: _ } => false,
+        WorkDequePush64::WorkDequeFull64 { deque: _, value: _ } => false,
+        WorkDequePush64::WorkDequePushCounterExhausted64 { deque: _, value: _ } => false,
+        WorkDequePush64::WorkDequePushSlotBusy64 { deque: _, slot: _, value: _ } => false,
+      },
+    WorkDequePush64::WorkDequePushOwnerBusy64 { deque: _, value: _ } => false,
+    WorkDequePush64::WorkDequeFull64 { deque: _, value: _ } => false,
+    WorkDequePush64::WorkDequePushCounterExhausted64 { deque: _, value: _ } => false,
+    WorkDequePush64::WorkDequePushSlotBusy64 { deque: _, slot: _, value: _ } => false,
+  }
+}
+
+fn work_deque_last_race_thief_wins_probe(value: u64) -> bool
+  req true
+  ens result
+  fx pure
+{
+  let empty: WorkDeque64 = work_deque_empty();
+  match work_deque_push(empty, value) {
+    WorkDequePush64::WorkDequePushed64 { deque: one, ticket: _ } =>
+      match work_deque_steal_begin(one) {
+        WorkDequeStealBegin64::WorkDequeStealCandidate64 { deque: snapshot, token: steal_token } =>
+          match work_deque_owner_begin_pop(snapshot) {
+            WorkDequeOwnerBegin64::WorkDequeOwnerCandidate64 { deque: pending, token: owner_token } =>
+              match work_deque_steal_commit(pending, steal_token) {
+                WorkDequeStealCommit64::WorkDequeStolen64 {
+                  deque: thief_won,
+                  ticket,
+                  value: stolen,
+                  last,
+                } =>
+                  if ticket == 0 && stolen == value && last {
+                    match work_deque_owner_commit_pop(thief_won, owner_token) {
+                      WorkDequeOwnerCommit64::WorkDequeOwnerPopped64 {
+                        deque: _,
+                        ticket: _,
+                        value: _,
+                        last: _,
+                      } => false,
+                      WorkDequeOwnerCommit64::WorkDequeOwnerLost64 { deque: settled, token: returned } =>
+                        returned.ticket == 0
+                          && returned.value == value
+                          && !settled.owner_pending
+                          && work_deque_is_empty(&settled),
+                      WorkDequeOwnerCommit64::WorkDequeOwnerCommitStale64 { deque: _, token: _ } => false,
+                      WorkDequeOwnerCommit64::WorkDequeOwnerCommitSlotVacant64 { deque: _, token: _ } => false,
+                      WorkDequeOwnerCommit64::WorkDequeOwnerCommitSlotConflict64 {
+                        deque: _,
+                        token: _,
+                        observed_ticket: _,
+                        observed_value: _,
+                      } => false,
+                    }
+                  } else {
+                    false
+                  },
+                WorkDequeStealCommit64::WorkDequeStealRetry64 { deque: _, token: _ } => false,
+                WorkDequeStealCommit64::WorkDequeStealTokenMalformed64 { deque: _, token: _ } => false,
+                WorkDequeStealCommit64::WorkDequeStealCommitSlotVacant64 { deque: _, token: _ } => false,
+                WorkDequeStealCommit64::WorkDequeStealCommitSlotConflict64 {
+                  deque: _,
+                  token: _,
+                  observed_ticket: _,
+                  observed_value: _,
+                } => false,
+              },
+            WorkDequeOwnerBegin64::WorkDequeOwnerAlreadyPending64 { deque: _ } => false,
+            WorkDequeOwnerBegin64::WorkDequeOwnerEmpty64 { deque: _ } => false,
+            WorkDequeOwnerBegin64::WorkDequeOwnerGenerationExhausted64 { deque: _ } => false,
+            WorkDequeOwnerBegin64::WorkDequeOwnerSlotVacant64 { deque: _, ticket: _ } => false,
+            WorkDequeOwnerBegin64::WorkDequeOwnerSlotConflict64 {
+              deque: _,
+              ticket: _,
+              observed_ticket: _,
+            } => false,
+          },
+        WorkDequeStealBegin64::WorkDequeStealEmpty64 { deque: _ } => false,
+        WorkDequeStealBegin64::WorkDequeStealSlotVacant64 { deque: _, ticket: _ } => false,
+        WorkDequeStealBegin64::WorkDequeStealSlotConflict64 {
+          deque: _,
+          ticket: _,
+          observed_ticket: _,
+        } => false,
+      },
+    WorkDequePush64::WorkDequePushOwnerBusy64 { deque: _, value: _ } => false,
+    WorkDequePush64::WorkDequeFull64 { deque: _, value: _ } => false,
+    WorkDequePush64::WorkDequePushCounterExhausted64 { deque: _, value: _ } => false,
+    WorkDequePush64::WorkDequePushSlotBusy64 { deque: _, slot: _, value: _ } => false,
+  }
+}
+
+fn work_deque_last_race_owner_wins_probe(value: u64) -> bool
+  req true
+  ens result
+  fx pure
+{
+  let empty: WorkDeque64 = work_deque_empty();
+  match work_deque_push(empty, value) {
+    WorkDequePush64::WorkDequePushed64 { deque: one, ticket: _ } =>
+      match work_deque_steal_begin(one) {
+        WorkDequeStealBegin64::WorkDequeStealCandidate64 { deque: snapshot, token: steal_token } =>
+          match work_deque_owner_begin_pop(snapshot) {
+            WorkDequeOwnerBegin64::WorkDequeOwnerCandidate64 { deque: pending, token: owner_token } =>
+              match work_deque_owner_commit_pop(pending, owner_token) {
+                WorkDequeOwnerCommit64::WorkDequeOwnerPopped64 {
+                  deque: owner_won,
+                  ticket,
+                  value: popped,
+                  last,
+                } =>
+                  if ticket == 0 && popped == value && last {
+                    match work_deque_steal_commit(owner_won, steal_token) {
+                      WorkDequeStealCommit64::WorkDequeStolen64 {
+                        deque: _,
+                        ticket: _,
+                        value: _,
+                        last: _,
+                      } => false,
+                      WorkDequeStealCommit64::WorkDequeStealRetry64 { deque: settled, token: returned } =>
+                        returned.ticket == 0
+                          && returned.value == value
+                          && !settled.owner_pending
+                          && work_deque_is_empty(&settled),
+                      WorkDequeStealCommit64::WorkDequeStealTokenMalformed64 { deque: _, token: _ } => false,
+                      WorkDequeStealCommit64::WorkDequeStealCommitSlotVacant64 { deque: _, token: _ } => false,
+                      WorkDequeStealCommit64::WorkDequeStealCommitSlotConflict64 {
+                        deque: _,
+                        token: _,
+                        observed_ticket: _,
+                        observed_value: _,
+                      } => false,
+                    }
+                  } else {
+                    false
+                  },
+                WorkDequeOwnerCommit64::WorkDequeOwnerLost64 { deque: _, token: _ } => false,
+                WorkDequeOwnerCommit64::WorkDequeOwnerCommitStale64 { deque: _, token: _ } => false,
+                WorkDequeOwnerCommit64::WorkDequeOwnerCommitSlotVacant64 { deque: _, token: _ } => false,
+                WorkDequeOwnerCommit64::WorkDequeOwnerCommitSlotConflict64 {
+                  deque: _,
+                  token: _,
+                  observed_ticket: _,
+                  observed_value: _,
+                } => false,
+              },
+            WorkDequeOwnerBegin64::WorkDequeOwnerAlreadyPending64 { deque: _ } => false,
+            WorkDequeOwnerBegin64::WorkDequeOwnerEmpty64 { deque: _ } => false,
+            WorkDequeOwnerBegin64::WorkDequeOwnerGenerationExhausted64 { deque: _ } => false,
+            WorkDequeOwnerBegin64::WorkDequeOwnerSlotVacant64 { deque: _, ticket: _ } => false,
+            WorkDequeOwnerBegin64::WorkDequeOwnerSlotConflict64 {
+              deque: _,
+              ticket: _,
+              observed_ticket: _,
+            } => false,
+          },
+        WorkDequeStealBegin64::WorkDequeStealEmpty64 { deque: _ } => false,
+        WorkDequeStealBegin64::WorkDequeStealSlotVacant64 { deque: _, ticket: _ } => false,
+        WorkDequeStealBegin64::WorkDequeStealSlotConflict64 {
+          deque: _,
+          ticket: _,
+          observed_ticket: _,
+        } => false,
+      },
+    WorkDequePush64::WorkDequePushOwnerBusy64 { deque: _, value: _ } => false,
+    WorkDequePush64::WorkDequeFull64 { deque: _, value: _ } => false,
+    WorkDequePush64::WorkDequePushCounterExhausted64 { deque: _, value: _ } => false,
+    WorkDequePush64::WorkDequePushSlotBusy64 { deque: _, slot: _, value: _ } => false,
+  }
+}
+
+fn work_deque_split_ends_probe(first: u64, second: u64) -> bool
+  req true
+  ens result
+  fx pure
+{
+  let empty: WorkDeque64 = work_deque_empty();
+  match work_deque_push(empty, first) {
+    WorkDequePush64::WorkDequePushed64 { deque: one, ticket: _ } =>
+      match work_deque_push(one, second) {
+        WorkDequePush64::WorkDequePushed64 { deque: two, ticket: _ } =>
+          match work_deque_steal_begin(two) {
+            WorkDequeStealBegin64::WorkDequeStealCandidate64 { deque: snapshot, token: steal_token } =>
+              match work_deque_owner_begin_pop(snapshot) {
+                WorkDequeOwnerBegin64::WorkDequeOwnerCandidate64 { deque: pending, token: owner_token } =>
+                  match work_deque_steal_commit(pending, steal_token) {
+                    WorkDequeStealCommit64::WorkDequeStolen64 {
+                      deque: owner_left,
+                      ticket: stolen_ticket,
+                      value: stolen,
+                      last: stolen_last,
+                    } =>
+                      if stolen_ticket == 0 && stolen == first && !stolen_last {
+                        match work_deque_owner_commit_pop(owner_left, owner_token) {
+                          WorkDequeOwnerCommit64::WorkDequeOwnerPopped64 {
+                            deque: settled,
+                            ticket: owner_ticket,
+                            value: owner_value,
+                            last: owner_last,
+                          } =>
+                            owner_ticket == 1
+                              && owner_value == second
+                              && owner_last
+                              && work_deque_is_empty(&settled),
+                          WorkDequeOwnerCommit64::WorkDequeOwnerLost64 { deque: _, token: _ } => false,
+                          WorkDequeOwnerCommit64::WorkDequeOwnerCommitStale64 { deque: _, token: _ } => false,
+                          WorkDequeOwnerCommit64::WorkDequeOwnerCommitSlotVacant64 { deque: _, token: _ } => false,
+                          WorkDequeOwnerCommit64::WorkDequeOwnerCommitSlotConflict64 {
+                            deque: _,
+                            token: _,
+                            observed_ticket: _,
+                            observed_value: _,
+                          } => false,
+                        }
+                      } else {
+                        false
+                      },
+                    WorkDequeStealCommit64::WorkDequeStealRetry64 { deque: _, token: _ } => false,
+                    WorkDequeStealCommit64::WorkDequeStealTokenMalformed64 { deque: _, token: _ } => false,
+                    WorkDequeStealCommit64::WorkDequeStealCommitSlotVacant64 { deque: _, token: _ } => false,
+                    WorkDequeStealCommit64::WorkDequeStealCommitSlotConflict64 {
+                      deque: _,
+                      token: _,
+                      observed_ticket: _,
+                      observed_value: _,
+                    } => false,
+                  },
+                WorkDequeOwnerBegin64::WorkDequeOwnerAlreadyPending64 { deque: _ } => false,
+                WorkDequeOwnerBegin64::WorkDequeOwnerEmpty64 { deque: _ } => false,
+                WorkDequeOwnerBegin64::WorkDequeOwnerGenerationExhausted64 { deque: _ } => false,
+                WorkDequeOwnerBegin64::WorkDequeOwnerSlotVacant64 { deque: _, ticket: _ } => false,
+                WorkDequeOwnerBegin64::WorkDequeOwnerSlotConflict64 {
+                  deque: _,
+                  ticket: _,
+                  observed_ticket: _,
+                } => false,
+              },
+            WorkDequeStealBegin64::WorkDequeStealEmpty64 { deque: _ } => false,
+            WorkDequeStealBegin64::WorkDequeStealSlotVacant64 { deque: _, ticket: _ } => false,
+            WorkDequeStealBegin64::WorkDequeStealSlotConflict64 {
+              deque: _,
+              ticket: _,
+              observed_ticket: _,
+            } => false,
+          },
+        WorkDequePush64::WorkDequePushOwnerBusy64 { deque: _, value: _ } => false,
+        WorkDequePush64::WorkDequeFull64 { deque: _, value: _ } => false,
+        WorkDequePush64::WorkDequePushCounterExhausted64 { deque: _, value: _ } => false,
+        WorkDequePush64::WorkDequePushSlotBusy64 { deque: _, slot: _, value: _ } => false,
+      },
+    WorkDequePush64::WorkDequePushOwnerBusy64 { deque: _, value: _ } => false,
+    WorkDequePush64::WorkDequeFull64 { deque: _, value: _ } => false,
+    WorkDequePush64::WorkDequePushCounterExhausted64 { deque: _, value: _ } => false,
+    WorkDequePush64::WorkDequePushSlotBusy64 { deque: _, slot: _, value: _ } => false,
+  }
+}
+
+fn work_deque_cancel_probe(value: u64) -> bool
+  req true
+  ens result
+  fx pure
+{
+  let empty: WorkDeque64 = work_deque_empty();
+  match work_deque_push(empty, value) {
+    WorkDequePush64::WorkDequePushed64 { deque: one, ticket: _ } =>
+      match work_deque_owner_begin_pop(one) {
+        WorkDequeOwnerBegin64::WorkDequeOwnerCandidate64 { deque: pending, token } =>
+          match work_deque_owner_cancel(pending, token) {
+            WorkDequeOwnerCancel64::WorkDequeOwnerCancelled64 { deque: restored, token: returned } =>
+              if returned.ticket == 0 && returned.value == value && !restored.owner_pending {
+                match work_deque_steal_begin(restored) {
+                  WorkDequeStealBegin64::WorkDequeStealCandidate64 { deque: snapshot, token: steal_token } =>
+                    match work_deque_steal_commit(snapshot, steal_token) {
+                      WorkDequeStealCommit64::WorkDequeStolen64 {
+                        deque: settled,
+                        ticket,
+                        value: stolen,
+                        last,
+                      } =>
+                        ticket == 0
+                          && stolen == value
+                          && last
+                          && work_deque_is_empty(&settled),
+                      WorkDequeStealCommit64::WorkDequeStealRetry64 { deque: _, token: _ } => false,
+                      WorkDequeStealCommit64::WorkDequeStealTokenMalformed64 { deque: _, token: _ } => false,
+                      WorkDequeStealCommit64::WorkDequeStealCommitSlotVacant64 { deque: _, token: _ } => false,
+                      WorkDequeStealCommit64::WorkDequeStealCommitSlotConflict64 {
+                        deque: _,
+                        token: _,
+                        observed_ticket: _,
+                        observed_value: _,
+                      } => false,
+                    },
+                  WorkDequeStealBegin64::WorkDequeStealEmpty64 { deque: _ } => false,
+                  WorkDequeStealBegin64::WorkDequeStealSlotVacant64 { deque: _, ticket: _ } => false,
+                  WorkDequeStealBegin64::WorkDequeStealSlotConflict64 {
+                    deque: _,
+                    ticket: _,
+                    observed_ticket: _,
+                  } => false,
+                }
+              } else {
+                false
+              },
+            WorkDequeOwnerCancel64::WorkDequeOwnerCancelStale64 { deque: _, token: _ } => false,
+          },
+        WorkDequeOwnerBegin64::WorkDequeOwnerAlreadyPending64 { deque: _ } => false,
+        WorkDequeOwnerBegin64::WorkDequeOwnerEmpty64 { deque: _ } => false,
+        WorkDequeOwnerBegin64::WorkDequeOwnerGenerationExhausted64 { deque: _ } => false,
+        WorkDequeOwnerBegin64::WorkDequeOwnerSlotVacant64 { deque: _, ticket: _ } => false,
+        WorkDequeOwnerBegin64::WorkDequeOwnerSlotConflict64 {
+          deque: _,
+          ticket: _,
+          observed_ticket: _,
+        } => false,
+      },
+    WorkDequePush64::WorkDequePushOwnerBusy64 { deque: _, value: _ } => false,
+    WorkDequePush64::WorkDequeFull64 { deque: _, value: _ } => false,
+    WorkDequePush64::WorkDequePushCounterExhausted64 { deque: _, value: _ } => false,
+    WorkDequePush64::WorkDequePushSlotBusy64 { deque: _, slot: _, value: _ } => false,
+  }
+}
+
+fn work_deque_exhaustion_probe(value: u64) -> WorkDequePush64
+  req true
+  ens match result {
+    WorkDequePush64::WorkDequePushed64 { deque: _, ticket: _ } => false,
+    WorkDequePush64::WorkDequePushOwnerBusy64 { deque: _, value: _ } => false,
+    WorkDequePush64::WorkDequeFull64 { deque: _, value: _ } => false,
+    WorkDequePush64::WorkDequePushCounterExhausted64 { deque: stopped, value: returned } =>
+      stopped.top == usize::MAX
+        && stopped.bottom == usize::MAX
+        && stopped.owner_generation == 0
+        && !stopped.owner_pending
+        && work_deque_ready_clear_spec(&stopped.ready)
+        && work_deque_tickets_clear_spec(&stopped.tickets)
+        && work_deque_values_clear_spec(&stopped.values)
+        && returned == value,
+    WorkDequePush64::WorkDequePushSlotBusy64 { deque: _, slot: _, value: _ } => false,
+  }
+  fx pure
+{
+  let counter_exhausted: WorkDeque64 = WorkDeque64 {
+    top: usize::MAX,
+    bottom: usize::MAX,
+    owner_generation: 0,
+    owner_pending: false,
+    ready: [false; WORK_DEQUE_CAPACITY],
+    tickets: [0; WORK_DEQUE_CAPACITY],
+    values: [0; WORK_DEQUE_CAPACITY],
+  };
+  work_deque_push(counter_exhausted, value)
+}
+
+fn work_deque_owner_generation_exhaustion_probe(value: u64) -> bool
+  req true
+  ens result
+  fx pure
+{
+  let mut ready: [bool; WORK_DEQUE_CAPACITY] = [false; WORK_DEQUE_CAPACITY];
+  let mut values: [u64; WORK_DEQUE_CAPACITY] = [0; WORK_DEQUE_CAPACITY];
+  ready[0] = true;
+  values[0] = value;
+  let exhausted: WorkDeque64 = WorkDeque64 {
+    top: 0,
+    bottom: 1,
+    owner_generation: usize::MAX,
+    owner_pending: false,
+    ready: ready,
+    tickets: [0; WORK_DEQUE_CAPACITY],
+    values: values,
+  };
+  match work_deque_owner_begin_pop(exhausted) {
+    WorkDequeOwnerBegin64::WorkDequeOwnerCandidate64 { deque: _, token: _ } => false,
+    WorkDequeOwnerBegin64::WorkDequeOwnerAlreadyPending64 { deque: _ } => false,
+    WorkDequeOwnerBegin64::WorkDequeOwnerEmpty64 { deque: _ } => false,
+    WorkDequeOwnerBegin64::WorkDequeOwnerGenerationExhausted64 { deque: stopped } =>
+      stopped.top == 0
+        && stopped.bottom == 1
+        && stopped.owner_generation == usize::MAX
+        && stopped.ready[0]
+        && stopped.values[0] == value,
+    WorkDequeOwnerBegin64::WorkDequeOwnerSlotVacant64 { deque: _, ticket: _ } => false,
+    WorkDequeOwnerBegin64::WorkDequeOwnerSlotConflict64 {
+      deque: _,
+      ticket: _,
+      observed_ticket: _,
+    } => false,
+  }
+}

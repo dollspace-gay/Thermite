@@ -12,7 +12,7 @@ use serde::Deserialize;
 use std::path::PathBuf;
 
 use thermite_syntax::ast::{Item, Param, Stmt, Type};
-use thermite_syntax::{addresses_of, parse, resolve, AddressError, EffectRow, PrimType};
+use thermite_syntax::{addresses_of, parse, resolve, AddressError, ArrayLen, EffectRow, PrimType};
 
 // ---------------------------------------------------------------------------
 // Fixture loading helpers
@@ -90,6 +90,13 @@ fn render_type(ty: &Type) -> String {
         Type::Prim(PrimType::U64) => "u64".to_string(),
         Type::Prim(PrimType::Usize) => "usize".to_string(),
         Type::Prim(PrimType::Bool) => "bool".to_string(),
+        Type::Array { elem, len } => {
+            let len = match len {
+                ArrayLen::Literal { raw, .. } => raw,
+                ArrayLen::Const(name) => name,
+            };
+            format!("[{}; {len}]", render_type(elem))
+        }
         Type::Ref { mutable, inner } => {
             let m = if *mutable { "mut " } else { "" };
             format!("&{m}{}", render_type(inner))
@@ -268,7 +275,7 @@ fn check_parse_facts(facts_file: &str) {
             // never appear here. Additive arm so this exhaustive `match` compiles;
             // ADT items are asserted by `tests/adt_parse.rs`, forge items by
             // `tests/forge_items.rs`.
-            Item::Struct(_) | Item::Enum(_) | Item::Forge(_) => {
+            Item::Const(_) | Item::Struct(_) | Item::Enum(_) | Item::Forge(_) => {
                 panic!(
                     "{}: unexpected non-(spec)fn item in the corpus fixture",
                     fact.name
@@ -369,7 +376,7 @@ fn recover_per_item() {
             // (`.design/basis/01-adts.md`) and forge-tier items
             // (`.design/stage1-forge-tier.md` REQ-3) do not appear. Additive arm so
             // this exhaustive `match` compiles.
-            Item::Struct(_) | Item::Enum(_) | Item::Forge(_) => {
+            Item::Const(_) | Item::Struct(_) | Item::Enum(_) | Item::Forge(_) => {
                 panic!("`ok` should be a fn, not an ADT/forge item")
             }
         }

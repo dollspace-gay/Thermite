@@ -77,6 +77,9 @@ pub enum ForgeError {
     Effects(Vec<LowerError>),
     /// Lowering failed (`thermite_lower::lower`).
     Lower(LowerError),
+    /// A receipt-bound package manifest, module graph, source path, or
+    /// source-identity invariant was invalid.
+    Package { detail: String },
     /// The `verus` binary was not found on `PATH` — an environment error, not a
     /// verification failure (REQ-6 / `.design/forge/check.md` REQ-6).
     VerusAbsent { binary: String },
@@ -184,6 +187,7 @@ impl fmt::Display for ForgeError {
                 Ok(())
             }
             ForgeError::Lower(e) => write!(f, "lowering failed: {e}"),
+            ForgeError::Package { detail } => write!(f, "invalid Thermite package: {detail}"),
             ForgeError::VerusAbsent { binary } => write!(
                 f,
                 "the `{binary}` verifier was not found on PATH (environment error, not a \
@@ -345,6 +349,7 @@ enum Command {
         exports: Vec<String>,
         composition_exports: Vec<String>,
         composition_shells: Vec<PathBuf>,
+        primitive_registry: Option<PathBuf>,
         crate_name: Option<String>,
         entry: Option<String>,
         json: bool,
@@ -364,8 +369,6 @@ enum Command {
         /// library rlib (no `main`/seccomp, `panic=abort`) and refuses ambient-syscall
         /// `fx` rows. `--target kernel` + `--entry` is a usage error.
         target: BuildTarget,
-        /// Frozen platform profile required by `--target kernel-image`.
-        platform: Option<String>,
     },
     /// `forge verify-build <bundle-dir> [--replay] [--json]` validates the
     /// canonical receipt and all bound files, and optionally reproduces the
@@ -905,11 +908,11 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
             let mut self_test = false;
             let mut out: Option<PathBuf> = None;
             let mut target = BuildTarget::Std;
-            let mut platform = None;
             let mut level = BuildLevel::L1;
             let mut exports = Vec::new();
             let mut composition_exports = Vec::new();
             let mut composition_shells = Vec::new();
+            let mut primitive_registry = None;
             let mut crate_name = None;
             let mut sandbox_flag_seen = false;
             let mut iter = iter.peekable();
@@ -954,6 +957,19 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                         })?;
                         composition_shells.push(PathBuf::from(value));
                     }
+                    "--primitive-registry" => {
+                        let value = iter.next().ok_or_else(|| {
+                            ForgeError::Usage(
+                                "`--primitive-registry` requires a <registry.json> value"
+                                    .to_string(),
+                            )
+                        })?;
+                        if primitive_registry.replace(PathBuf::from(value)).is_some() {
+                            return Err(ForgeError::Usage(
+                                "`--primitive-registry` may be supplied only once".to_string(),
+                            ));
+                        }
+                    }
                     "--crate-name" => {
                         let value = iter.next().ok_or_else(|| {
                             ForgeError::Usage("`--crate-name` requires a <name> value".to_string())
@@ -967,27 +983,18 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                         // selects the freestanding no_std+alloc rlib profile.
                         let value = iter.next().ok_or_else(|| {
                             ForgeError::Usage(
-                                "`--target` requires a value (`std`, `kernel`, or `kernel-image`)"
-                                    .to_string(),
+                                "`--target` requires a value (`std` or `kernel`)".to_string(),
                             )
                         })?;
                         target = match value.as_str() {
                             "std" => BuildTarget::Std,
                             "kernel" => BuildTarget::Kernel,
-                            "kernel-image" => BuildTarget::KernelImage,
                             other => {
                                 return Err(ForgeError::Usage(format!(
-                                    "unknown `--target` value `{other}` (expected `std`, \
-                                     `kernel`, or `kernel-image`)"
+                                    "unknown `--target` value `{other}` (expected `std` or `kernel`)"
                                 )));
                             }
                         };
-                    }
-                    "--platform" => {
-                        let value = iter.next().ok_or_else(|| {
-                            ForgeError::Usage("`--platform` requires a profile name".to_string())
-                        })?;
-                        platform = Some(value.to_string());
                     }
                     "--entry" => {
                         let value = iter.next().ok_or_else(|| {
@@ -1044,29 +1051,6 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                         .to_string(),
                 )
             })?;
-            if matches!(target, BuildTarget::KernelImage) {
-                if !matches!(level, BuildLevel::L3) {
-                    return Err(ForgeError::Usage(
-                        "`--target kernel-image` requires `--level l3`".to_string(),
-                    ));
-                }
-                if platform.as_deref() != Some("x86_64-pc-uefi-smp-v1") {
-                    return Err(ForgeError::Usage(
-                        "`--target kernel-image` requires `--platform \
-                         x86_64-pc-uefi-smp-v1`"
-                            .to_string(),
-                    ));
-                }
-                if out.is_none() {
-                    return Err(ForgeError::Usage(
-                        "`--target kernel-image` requires `--out <image.img>`".to_string(),
-                    ));
-                }
-            } else if platform.is_some() {
-                return Err(ForgeError::Usage(
-                    "`--platform` is valid only with `--target kernel-image`".to_string(),
-                ));
-            }
             match level {
                 BuildLevel::L3 => {
                     if entry.is_some() || sandbox_flag_seen {
@@ -1089,11 +1073,18 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                                 .to_string(),
                         ));
                     }
+                    if primitive_registry.is_some() && composition_exports.is_empty() {
+                        return Err(ForgeError::Usage(
+                            "`--primitive-registry` requires an L3 composition build with `--compose-export` and `--compose-shell`"
+                                .to_string(),
+                        ));
+                    }
                 }
                 BuildLevel::L1
                     if !exports.is_empty()
                         || !composition_exports.is_empty()
                         || !composition_shells.is_empty()
+                        || primitive_registry.is_some()
                         || crate_name.is_some() =>
                 {
                     return Err(ForgeError::Usage(
@@ -1109,6 +1100,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                 exports,
                 composition_exports,
                 composition_shells,
+                primitive_registry,
                 crate_name,
                 entry,
                 json,
@@ -1118,7 +1110,6 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                 },
                 out,
                 target,
-                platform,
             })
         }
         ForgeMethod::VerifyBuild => {
@@ -1747,26 +1738,26 @@ fn dispatch(args: &[String]) -> Result<ExitCode, ForgeError> {
             exports,
             composition_exports,
             composition_shells,
+            primitive_registry,
             crate_name,
             entry,
             json,
             sandbox,
             out,
             target,
-            platform,
         } => run_build(BuildRun {
             file: &file,
             level,
             exports: &exports,
             composition_exports: &composition_exports,
             composition_shells: &composition_shells,
+            primitive_registry: primitive_registry.as_deref(),
             crate_name: crate_name.as_deref(),
             entry: entry.as_deref(),
             json,
             sandbox,
             out: out.as_deref(),
             target,
-            platform: platform.as_deref(),
         }),
         Command::VerifyBuild {
             bundle,
@@ -1930,7 +1921,9 @@ fn run_fill(file: &Path, addr: &str, code: &str) -> Result<ExitCode, ForgeError>
 }
 
 /// Run `forge smt-export`: the automated Rust→Lean obligation exporter
-/// (`.design/stage3-bv-reconstruction.md` REQ-7 / AC-8). With a `file`, parses it and
+/// (`.design/stage3-bv-reconstruction.md` REQ-7 / AC-8). With a `file` — a single
+/// `.th` source or a canonical `.thpkg.json` manifest, resolved through
+/// `thermite_package::load_source` — parses it and
 /// exports a `(P_prod) ⟺ (P_ref)` `smt`-discharged Lean theorem per renderable
 /// contract `ens` clause (QF_LIA for an untagged clause; literal `BitVec N` QF_BV
 /// for a `@bvN` clause in a `bv` build); a non-renderable clause is reported as a
@@ -1944,15 +1937,8 @@ fn run_smt_export(file: Option<&Path>, out: Option<&Path>) -> Result<ExitCode, F
     };
 
     let obligations = if let Some(file) = file {
-        let src = std::fs::read_to_string(file).map_err(|e| ForgeError::Io {
-            path: file.display().to_string(),
-            source: e,
-        })?;
-        let parsed = thermite_syntax::parse(&src);
-        if !parsed.is_clean() {
-            return Err(ForgeError::Parse(parsed.errors));
-        }
-        let (obligations, skipped) = obligations_for_program(&parsed.program);
+        let resolved = crate::thermite_package::load_source(file)?;
+        let (obligations, skipped) = obligations_for_program(resolved.program());
         for skip in &skipped {
             eprintln!("forge smt-export: skipping non-renderable clause — {skip}");
         }
@@ -2191,17 +2177,14 @@ fn run_audit(
     meaning: bool,
     metrics: bool,
 ) -> Result<ExitCode, ForgeError> {
-    // Parse the file once for the boundary contracts' enforced req/ens/fx (the
-    // §9 per-function contracts the TCB enumerates) and to decide the route below.
-    // A pure read of the parsed AST (deterministic, R-CODE-5), never a verification.
-    let src = std::fs::read_to_string(file).map_err(|e| ForgeError::Io {
-        path: file.display().to_string(),
-        source: e,
-    })?;
-    let parsed = thermite_syntax::parse(&src);
-    if !parsed.is_clean() {
-        return Err(ForgeError::Parse(parsed.errors));
-    }
+    // Resolve and parse the input once for the boundary contracts' enforced
+    // req/ens/fx (the §9 per-function contracts the TCB enumerates) and to decide
+    // the route below. `file` is a single `.th` source or a canonical
+    // `.thpkg.json` manifest, whose declared module closure resolves through the
+    // shared front door. A pure read of the parsed AST (deterministic, R-CODE-5),
+    // never a verification.
+    let resolved = crate::thermite_package::load_source(file)?;
+    let program = resolved.program();
 
     // The cert collection the audit projects (REQ-4 — aggregation, never re-derivation).
     // A bit-vector project (any `@bv`-tagged clause, stage-3 REQ-3 / AC-4) routes through
@@ -2209,7 +2192,7 @@ fn run_audit(
     // section — auditing a machine-semantics clause via the unbounded Verus path would be
     // wrong. Every tag-free project (the whole v1 corpus) keeps the default `check_file`
     // pipeline byte-identical (the canonical default-config entry that serves the cache).
-    let certs = if check::program_has_bv_tag(&parsed.program) {
+    let certs = if check::program_has_bv_tag(program) {
         check::check_file_with_engine(
             file,
             check::CheckOptions {
@@ -2228,7 +2211,7 @@ fn run_audit(
     let verus_version = audit::resolve_verus_version()?;
     let toolchain = audit::Toolchain::new(verus_version);
 
-    let manifest = AuditManifest::from_certificates(&certs, &parsed.program, toolchain);
+    let manifest = AuditManifest::from_certificates(&certs, program, toolchain);
 
     if json {
         // The stable v1 document on stdout (REQ-1 — the oracle-asserted surface).
@@ -2247,7 +2230,10 @@ fn run_audit(
     // print. In `--json` mode it goes to stderr so the stdout JSON stays a valid v1
     // document; in human mode it appends to the stdout report.
     if meaning {
-        let rendered = render_meaning(&parsed.program, &src);
+        // `render_meaning` slices verbatim `spec fn` text by span, so it takes
+        // the AST and the text that AST was parsed from as a pair: the file's own
+        // program and source, or the package's canonical projection and its parse.
+        let rendered = render_meaning(resolved.text_program(), resolved.text());
         if json {
             eprint!("{rendered}");
         } else {
@@ -2457,13 +2443,13 @@ struct BuildRun<'a> {
     exports: &'a [String],
     composition_exports: &'a [String],
     composition_shells: &'a [PathBuf],
+    primitive_registry: Option<&'a Path>,
     crate_name: Option<&'a str>,
     entry: Option<&'a str>,
     json: bool,
     sandbox: build::SandboxConfig,
     out: Option<&'a Path>,
     target: BuildTarget,
-    platform: Option<&'a str>,
 }
 
 fn run_build(request: BuildRun<'_>) -> Result<ExitCode, ForgeError> {
@@ -2473,43 +2459,14 @@ fn run_build(request: BuildRun<'_>) -> Result<ExitCode, ForgeError> {
         exports,
         composition_exports,
         composition_shells,
+        primitive_registry,
         crate_name,
         entry,
         json,
         sandbox,
         out,
         target,
-        platform,
     } = request;
-    if matches!(target, BuildTarget::KernelImage) {
-        let output = out.ok_or_else(|| {
-            ForgeError::Usage("`--target kernel-image` requires `--out <image.img>`".to_string())
-        })?;
-        let receipt = crate::kernel_image::build_image(crate::kernel_image::ImageBuildRequest {
-            source: file,
-            composition_exports,
-            composition_shells,
-            platform: platform.ok_or_else(|| {
-                ForgeError::Usage("`--target kernel-image` requires `--platform`".to_string())
-            })?,
-            output,
-        })?;
-        if json {
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&receipt).map_err(|error| {
-                    ForgeError::RustcOutput {
-                        detail: format!("failed to serialize kernel-image receipt: {error}"),
-                    }
-                })?
-            );
-        } else {
-            println!("bootable kernel image: {}", receipt.image_path);
-            println!("image sha256: {}", receipt.image_sha256);
-            println!("assurance scope: {}", receipt.assurance_scope);
-        }
-        return Ok(ExitCode::SUCCESS);
-    }
     if matches!(level, BuildLevel::L1) {
         let manifest = build::build_file(file, entry, sandbox, out, target)?;
         if json {
@@ -2527,7 +2484,6 @@ fn run_build(request: BuildRun<'_>) -> Result<ExitCode, ForgeError> {
     let verified_target = match target {
         BuildTarget::Std => crate::verified_build::VerifiedTarget::Std,
         BuildTarget::Kernel => crate::verified_build::VerifiedTarget::Kernel,
-        BuildTarget::KernelImage => unreachable!("handled above"),
     };
     let outcome = if composition_exports.is_empty() {
         crate::verified_build::build_file(file, exports, crate_name, out, verified_target)?
@@ -2536,7 +2492,10 @@ fn run_build(request: BuildRun<'_>) -> Result<ExitCode, ForgeError> {
             file,
             exports,
             composition_exports,
-            composition_shells,
+            crate::verified_build::CompositionSourcePaths {
+                shells: composition_shells,
+                primitive_registry,
+            },
             crate_name,
             out,
             verified_target,
@@ -2574,29 +2533,6 @@ fn run_build(request: BuildRun<'_>) -> Result<ExitCode, ForgeError> {
 }
 
 fn run_verify_build(bundle: &Path, replay: bool, json: bool) -> Result<ExitCode, ForgeError> {
-    let is_kernel_image = bundle.extension().and_then(|value| value.to_str()) == Some("img")
-        || bundle
-            .file_name()
-            .and_then(|value| value.to_str())
-            .is_some_and(|value| value.ends_with(".receipt.json"));
-    if is_kernel_image {
-        let report = crate::kernel_image::validate_image(bundle, replay)?;
-        if json {
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&report).map_err(|error| {
-                    ForgeError::RustcOutput {
-                        detail: format!("failed to serialize kernel-image validation: {error}"),
-                    }
-                })?
-            );
-        } else {
-            println!("valid bootable kernel image: {}", report.image);
-            println!("binding sha256: {}", report.binding_sha256);
-            println!("replayed: {}", report.replayed);
-        }
-        return Ok(ExitCode::SUCCESS);
-    }
     let report = crate::verified_build::validate_bundle(bundle, replay)?;
     if json {
         println!(
@@ -4000,6 +3936,7 @@ mod tests {
                 exports: Vec::new(),
                 composition_exports: Vec::new(),
                 composition_shells: Vec::new(),
+                primitive_registry: None,
                 crate_name: None,
                 entry: Some("f".to_string()),
                 json: false,
@@ -4009,7 +3946,6 @@ mod tests {
                 },
                 out: None,
                 target: BuildTarget::Std,
-                platform: None,
             })
         );
         // --no-sandbox opts out.
@@ -4142,13 +4078,13 @@ mod tests {
                 exports: vec!["f".to_string(), "g".to_string()],
                 composition_exports: Vec::new(),
                 composition_shells: Vec::new(),
+                primitive_registry: None,
                 crate_name: Some("verified_a".to_string()),
                 entry: None,
                 json: true,
                 sandbox: build::SandboxConfig::default(),
                 out: Some(PathBuf::from("a.verified")),
                 target: BuildTarget::Kernel,
-                platform: None,
             })
         );
         assert_eq!(
@@ -4183,111 +4119,71 @@ mod tests {
                 exports: Vec::new(),
                 composition_exports: vec!["probe_step".to_string()],
                 composition_shells: vec![PathBuf::from("probe_shell.rs")],
+                primitive_registry: None,
                 crate_name: None,
                 entry: None,
                 json: false,
                 sandbox: build::SandboxConfig::default(),
                 out: None,
                 target: BuildTarget::Kernel,
-                platform: None,
             })
         );
-        for args in [
-            vec![
-                "build",
-                "probe.th",
-                "--level",
-                "l3",
-                "--compose-export",
-                "probe_step",
-            ],
-            vec![
-                "build",
-                "probe.th",
-                "--level",
-                "l3",
-                "--compose-shell",
-                "probe_shell.rs",
-            ],
-            vec![
-                "build",
-                "probe.th",
-                "--compose-export",
-                "probe_step",
-                "--compose-shell",
-                "probe_shell.rs",
-            ],
-        ] {
-            assert!(matches!(
-                parse_args(&argv(&args)),
-                Err(ForgeError::Usage(_))
-            ));
-        }
-    }
-
-    #[test]
-    fn parses_frozen_kernel_image_surface_and_rejects_incomplete_profiles() {
         assert_eq!(
             parse_args(&argv(&[
                 "build",
-                "kernel.th",
+                "probe.th",
                 "--level",
                 "l3",
-                "--target",
-                "kernel-image",
-                "--platform",
-                "x86_64-pc-uefi-smp-v1",
                 "--compose-export",
-                "kernel_step",
+                "probe_step",
                 "--compose-shell",
-                "platform_shell.rs",
-                "--out",
-                "dist/kernel.img",
+                "probe_shell.rs",
+                "--primitive-registry",
+                "platform.registry.json",
             ]))
-            .ok(),
-            Some(Command::Build {
-                file: PathBuf::from("kernel.th"),
-                level: BuildLevel::L3,
-                exports: Vec::new(),
-                composition_exports: vec!["kernel_step".to_string()],
-                composition_shells: vec![PathBuf::from("platform_shell.rs")],
-                crate_name: None,
-                entry: None,
-                json: false,
-                sandbox: build::SandboxConfig::default(),
-                out: Some(PathBuf::from("dist/kernel.img")),
-                target: BuildTarget::KernelImage,
-                platform: Some("x86_64-pc-uefi-smp-v1".to_string()),
-            })
+            .ok()
+            .and_then(|command| match command {
+                Command::Build {
+                    primitive_registry, ..
+                } => Some(primitive_registry),
+                _ => None,
+            }),
+            Some(Some(PathBuf::from("platform.registry.json")))
         );
         for args in [
             vec![
                 "build",
-                "kernel.th",
+                "probe.th",
                 "--level",
                 "l3",
-                "--target",
-                "kernel-image",
                 "--compose-export",
-                "kernel_step",
-                "--compose-shell",
-                "platform_shell.rs",
-                "--out",
-                "dist/kernel.img",
+                "probe_step",
             ],
             vec![
                 "build",
-                "kernel.th",
+                "probe.th",
                 "--level",
                 "l3",
-                "--target",
-                "kernel-image",
-                "--platform",
-                "x86_64-pc-uefi-smp-v1",
-                "--compose-export",
-                "kernel_step",
                 "--compose-shell",
-                "platform_shell.rs",
+                "probe_shell.rs",
+            ],
+            vec![
+                "build",
+                "probe.th",
+                "--compose-export",
+                "probe_step",
+                "--compose-shell",
+                "probe_shell.rs",
+            ],
+            vec![
+                "build",
+                "probe.th",
+                "--level",
+                "l3",
+                "--export",
+                "probe_step",
+                "--primitive-registry",
+                "platform.registry.json",
             ],
         ] {
             assert!(matches!(

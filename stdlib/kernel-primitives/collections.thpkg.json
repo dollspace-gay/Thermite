@@ -1,0 +1,38 @@
+{
+  "schema": "thermite.package.v1",
+  "name": "thermite_fixed_collections",
+  "roots": [
+    "bitmap",
+    "direct_map",
+    "open_map",
+    "ring",
+    "vector"
+  ],
+  "modules": [
+    {
+      "name": "bitmap",
+      "path": "collections/bitmap.th",
+      "imports": []
+    },
+    {
+      "name": "direct_map",
+      "path": "collections/direct_map.th",
+      "imports": []
+    },
+    {
+      "name": "open_map",
+      "path": "collections/open_map.th",
+      "imports": []
+    },
+    {
+      "name": "ring",
+      "path": "collections/ring.th",
+      "imports": []
+    },
+    {
+      "name": "vector",
+      "path": "collections/vector.th",
+      "imports": []
+    }
+  ]
+}

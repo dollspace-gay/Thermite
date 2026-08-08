@@ -123,7 +123,13 @@ const DOMAIN: &[u8] = b"thermite.forge.proof-cache.v1";
 ///       stored under schema 6 must be re-checked under schema 7 (else
 ///       `forge check` serves a stale schema-6 `WeakContract` on an identical
 ///       lowered-source key, REQ-2: a hit must equal a fresh verify).
-const CHECK_SCHEMA_VERSION: u32 = 7;
+///   8 — the fixed-array zero extension to F-STRUCT-zero lets a record containing
+///       `[T; N]` receive a well-typed, capacity-preserving early-return mutant.
+///       Such record-returning functions previously produced a 0/0 score and an
+///       L0 `WeakContract`; they can now be scored and certify when their contract
+///       kills the zero record. This is verdict-changing, so schema-7 cache entries
+///       must miss and be recomputed under schema 8.
+const CHECK_SCHEMA_VERSION: u32 = 8;
 
 /// The project-local proof-cache directory (`.design/forge/proof-cache.md`
 /// REQ-6, OQ-1): `target/thermite-proof-cache/`. It is build output under the

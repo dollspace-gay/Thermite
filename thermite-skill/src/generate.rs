@@ -172,7 +172,7 @@ forge_methods! {
     }
     Build {
         name: "build",
-        usage: "forge build <file> [--level l1|l3] [--export <fn>] [--compose-export <fn> --compose-shell <file.rs>] [--crate-name <name>] [--entry <fn>] [--out <path>] [--target std|kernel] [--json] [--no-sandbox] [--sandbox-self-test]",
+        usage: "forge build <file-or-package> [--level l1|l3] [--export <fn>] [--compose-export <fn> --compose-shell <file.rs> [--primitive-registry <registry.json>]] [--crate-name <name>] [--entry <fn>] [--out <path>] [--target std|kernel] [--json] [--no-sandbox] [--sandbox-self-test]",
         purpose: "Build L1 checked Rust or an exact-source L3 link/composition bundle.",
     }
     VerifyBuild {
@@ -376,6 +376,11 @@ fn render_type_arm(ty: &Type) -> SkillFragment {
             description: "the unit type, written explicitly in a return position",
             example: "fn log() -> () req true ens true fx pure { }",
         },
+        Type::Array { .. } => SkillFragment {
+            fragment: "[T; N]",
+            description: "an owned allocation-free fixed array with equality and same-except frame relations",
+            example: "let mut slots: [u64; CAP] = [0; CAP];",
+        },
         Type::Ref { .. } => SkillFragment {
             fragment: "&T | &mut T",
             description: "a shared / exclusive reference (no explicit lifetimes)",
@@ -487,6 +492,11 @@ fn render_prim_arm(prim: PrimType) -> SkillFragment {
 /// compile-forces a skill entry (REQ-8, AC-10).
 fn render_item_arm(item: &Item) -> SkillFragment {
     match item {
+        Item::Const(_) => SkillFragment {
+            fragment: "const NAME: usize = INTEGER;",
+            description: "a package-visible compile-time fixed-array capacity",
+            example: "const CAP: usize = 64;",
+        },
         Item::Fn(_) => SkillFragment {
             fragment: "fn NAME(..) -> T req .. ens .. fx .. { .. }",
             description: "a contract-first function (mandatory req/ens/fx, in order)",
@@ -532,6 +542,16 @@ fn render_expr_arm(expr: &Expr) -> SkillFragment {
             fragment: "true | false",
             description: "a boolean literal",
             example: "req true",
+        },
+        Expr::Array(_) => SkillFragment {
+            fragment: "[a, b, ..] | []",
+            description: "an exact allocation-free fixed-array initializer",
+            example: "let bytes: [u8; 3] = [1, 2, 3];",
+        },
+        Expr::ArrayRepeat { .. } => SkillFragment {
+            fragment: "[value; N]",
+            description: "a repeated allocation-free fixed-array initializer",
+            example: "let slots: [u64; CAP] = [0; CAP];",
         },
         Expr::Path(_) => SkillFragment {
             fragment: "name | Mod::ITEM",
@@ -986,6 +1006,9 @@ fn item_inventory() -> Vec<Item> {
             fields: Vec::new(),
             inv: None,
             sealed: false,
+            sealed_factory: None,
+            opaque: false,
+            logical: None,
             span,
         }),
         Item::Enum(EnumItem {
@@ -1214,9 +1237,13 @@ fn render_grammar() -> String {
         "\
 ## 1. Surface grammar
 
-Every `fn` is contract-first, body-second. v0.1 has four top-level item forms —
-`fn`, `spec fn`, `struct`, `enum` (plus the `#[slag(...)]` / `#[boundary]`
-attributes) — and no others (no `impl`/`trait`/`use`/`mod`/macros).
+Every `fn` is contract-first, body-second. Top-level items are `fn`, `spec fn`,
+`struct`, and `enum`; attributes include `#[sealed]` and `#[opaque]`. There are no
+`impl`/`trait`/`use`/`mod`/macros.
+
+Bare `#[sealed] struct` is boundary-only; `#[sealed(\"f\")]` names its sole bodyful
+checked constructor. `#[opaque] struct` is defining-module state exposed through
+verified functions. Opacity is NOT affine/linear; neither is sealing.
 
 A `fn` signature is followed by mandatory clauses in this exact order (absence of any
 is a parse error, never an implicit default):
@@ -1345,6 +1372,16 @@ behind the language.
 \nRemoved from Rust: explicit lifetimes, the trait system (only built-in
 `Eq`/`Ord`/`Hash`/`Iter`/`Display`), macros, `unsafe` (→ `#[slag]`), UFCS, implicit
 widening (casts explicit; overflow is a proof obligation).
+
+Kernel manifests are receipt-bound `*.thpkg.json`. `.array_eq` /
+`.array_same_except` cover scalar and finite plain aggregate arrays; sealed,
+opaque, recursive, enum, reference, and heap shapes fail closed. Packed `u64`
+provides total bit operations and distinct-bit frames, all bridged to L3.
+Primitive manifests provide atomics, ownership, collections, synchronization,
+waits, and `platform.thpkg.json` declarations—never a kernel or machine body.
+Bodyful helpers are L3; bodyless machine doors are consumer refinement
+obligations. Registry v3 proves a SeqCst scalar adapter against pinned vstd but
+retains its L1 hardware cap; full machine refinement remains.
 
 ",
     );

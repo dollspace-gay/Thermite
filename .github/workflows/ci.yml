@@ -57,6 +57,8 @@ jobs:
 
       - name: tooling gate tests (tooling/tests)
         run: python3 -m unittest discover -s tooling/tests
+      - name: primitive-only tracked-source gate
+        run: python3 tooling/primitive-only-gate.py
       - name: doc-drift tripwire (design-doc freshness)
         run: python3 tooling/doc-drift.py
       # The gate that guards the gates (crosslink #93): asserts the two
@@ -552,68 +554,3 @@ jobs:
 
       - name: Gate G4
         run: bash scripts/g4-gate.sh
-
-  # The release-shaped kernel gate proves that the frozen proof/implementation
-  # closure builds reproducibly and that the same disk image boots the complete
-  # 1/2/4/8 CPU matrix plus AP-failure and reboot scenarios under QEMU/OVMF.
-  kernel-image:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Install Rust toolchain and UEFI target
-        uses: dtolnay/rust-toolchain@1.95.0
-        with:
-          targets: x86_64-unknown-uefi
-
-      - name: Install QEMU, OVMF, FAT, and LLVM image tools
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install --yes qemu-system-x86 ovmf dosfstools mtools llvm
-          qemu-system-x86_64 --version
-          llvm-pdbutil --version
-
-      - name: Cache Verus
-        uses: actions/cache@v4
-        with:
-          path: ~/verus-dist
-          key: verus-0.2026.05.24.ecee80a-x86-linux
-
-      - name: Install Verus
-        run: |
-          set -euo pipefail
-          VERUS_VER="0.2026.05.24.ecee80a"
-          if ! find "$HOME/verus-dist" -type f -name verus 2>/dev/null | grep -q .; then
-            curl -fsSL -o /tmp/verus.zip \
-              "https://github.com/verus-lang/verus/releases/download/release/${VERUS_VER}/verus-${VERUS_VER}-x86-linux.zip"
-            mkdir -p "$HOME/verus-dist"
-            unzip -q /tmp/verus.zip -d "$HOME/verus-dist"
-          fi
-          VERUS_BIN_PATH="$(find "$HOME/verus-dist" -type f -name verus | head -1)"
-          test -n "$VERUS_BIN_PATH"
-          echo "VERUS_BIN=$VERUS_BIN_PATH" >> "$GITHUB_ENV"
-          echo "$(dirname "$VERUS_BIN_PATH")" >> "$GITHUB_PATH"
-          "$VERUS_BIN_PATH" --version
-
-      - name: Rust build cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: kernel-image
-
-      - name: Build, boot, and bind the kernel image
-        run: >-
-          cargo run -q -p forge -- build conformance/bootable_kernel.th
-          --level l3
-          --target kernel-image
-          --platform x86_64-pc-uefi-smp-v1
-          --compose-export kernel_step
-          --compose-shell platform/x86_64-pc-uefi-smp-v1/kernel_shell.rs
-          --out dist/ci-kernel.img
-
-      - name: Verify the published closure
-        run: cargo run -q -p forge -- verify-build dist/ci-kernel.img --json

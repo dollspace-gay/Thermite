@@ -345,24 +345,20 @@ pub fn review_file(
 ) -> Result<ReviewArtifact, ForgeError> {
     let path = path.as_ref();
 
-    // Parse the file once for the contract surface (REQ-1) and to decide the route
-    // below. A re-parse of a file `check_file` re-validates (deterministic, R-CODE-5),
-    // never a re-verification — the `audit` precedent.
-    let src = std::fs::read_to_string(path).map_err(|e| ForgeError::Io {
-        path: path.display().to_string(),
-        source: e,
-    })?;
-    let parsed = thermite_syntax::parse(&src);
-    if !parsed.is_clean() {
-        return Err(ForgeError::Parse(parsed.errors));
-    }
+    // Resolve the source once for the contract surface (REQ-1) and to decide the
+    // route below. A re-parse of a source `check_file` re-validates (deterministic,
+    // R-CODE-5), never a re-verification — the `audit` precedent. The argument is a
+    // single `.th` file or a canonical `.thpkg.json` manifest; a manifest resolves
+    // its transitive module closure and each item keeps its module-local span.
+    let resolved = crate::thermite_package::load_source(path)?;
+    let program = resolved.program();
 
     // The battery cert collection `review` projects (REQ-2 — re-runs no verus). A
     // bit-vector project (any `@bv`-tagged clause, stage-3 REQ-3 / AC-4) routes through
     // the bv engine so the per-clause shadow flags surface in the artifact's `bv_shadows`
     // section; every tag-free project (the whole v1 corpus) keeps the default `check_file`
     // pipeline byte-identical (the same collection `forge check`/`forge audit` project).
-    let certs = if check::program_has_bv_tag(&parsed.program) {
+    let certs = if check::program_has_bv_tag(program) {
         check::check_file_with_engine(
             path,
             check::CheckOptions {
@@ -374,7 +370,7 @@ pub fn review_file(
         check::check_file(path)?
     };
 
-    Ok(project_artifact(&certs, &parsed.program, item_filter))
+    Ok(project_artifact(&certs, program, item_filter))
 }
 
 /// Project a settled cert collection + parsed program into the [`ReviewArtifact`]
@@ -393,7 +389,7 @@ fn project_artifact(
         .iter()
         .filter_map(|i| match i {
             Item::SpecFn(s) => Some(s),
-            Item::Fn(_) => None,
+            Item::Const(_) | Item::Fn(_) => None,
             // Basis Stage 1a (`.design/basis/01-adts.md`): a `struct`/`enum`
             // item is not a `spec fn` — it contributes nothing to the
             // referenced-spec-fn projection (neutral value `None`). Dead-in-1a
@@ -554,6 +550,12 @@ fn referenced_spec_fns(
 /// shape — never a body (a contract clause holds no body).
 fn collect_callee_names(expr: &Expr, out: &mut std::collections::BTreeSet<String>) {
     match expr {
+        Expr::Array(elements) => {
+            for element in elements {
+                collect_callee_names(element, out);
+            }
+        }
+        Expr::ArrayRepeat { value, .. } => collect_callee_names(value, out),
         Expr::Path(segments) => {
             // A bare path: the last segment is the referenced name (`spec_sum`,
             // `u32::MAX` → `MAX`). The spec-fn match below keeps only real spec fns,
@@ -742,6 +744,13 @@ fn render_type(ty: &Type) -> String {
         Type::Prim(PrimType::Usize) => "usize".to_string(),
         Type::Prim(PrimType::Bool) => "bool".to_string(),
         Type::Unit => "()".to_string(),
+        Type::Array { elem, len } => {
+            let len = match len {
+                thermite_syntax::ArrayLen::Literal { raw, .. } => raw,
+                thermite_syntax::ArrayLen::Const(name) => name,
+            };
+            format!("[{}; {len}]", render_type(elem))
+        }
         Type::Ref { mutable, inner } => {
             format!(
                 "&{}{}",

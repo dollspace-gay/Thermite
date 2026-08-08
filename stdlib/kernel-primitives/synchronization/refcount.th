@@ -1,0 +1,192 @@
+struct RefCountState64 {
+  count: u64,
+  retired: bool,
+}
+
+enum RefCountAcquire64 {
+  RefCountAcquired64 {
+    state: RefCountState64,
+  },
+  RefCountRetired64 {
+    state: RefCountState64,
+  },
+  RefCountExhausted64 {
+    state: RefCountState64,
+  },
+}
+
+enum RefCountRelease64 {
+  RefCountReleased64 {
+    state: RefCountState64,
+  },
+  RefCountLast64 {
+    state: RefCountState64,
+  },
+  RefCountReleaseRetired64 {
+    state: RefCountState64,
+  },
+}
+
+spec fn refcount_wf_spec(state: &RefCountState64) -> bool
+  dec state.count
+{
+  (state.retired && state.count == 0)
+    || (!state.retired && state.count > 0)
+}
+
+fn refcount_wf(state: &RefCountState64) -> bool
+  req true
+  ens result == refcount_wf_spec(state)
+  fx pure
+{
+  (state.retired && state.count == 0)
+    || (!state.retired && state.count > 0)
+}
+
+fn refcount_new() -> RefCountState64
+  req true
+  ens refcount_wf_spec(&result)
+  ens result.count == 1 && !result.retired
+  fx pure
+{
+  RefCountState64 {
+    count: 1,
+    retired: false,
+  }
+}
+
+fn refcount_acquire(state: RefCountState64) -> RefCountAcquire64
+  req refcount_wf_spec(&state)
+  ens match result {
+    RefCountAcquire64::RefCountAcquired64 { state: next } =>
+      !state.retired
+        && state.count < u64::MAX
+        && refcount_wf_spec(&next)
+        && next.count == state.count + 1
+        && !next.retired,
+    RefCountAcquire64::RefCountRetired64 { state: next } =>
+      state.retired
+        && next.count == state.count
+        && next.retired == state.retired,
+    RefCountAcquire64::RefCountExhausted64 { state: next } =>
+      !state.retired
+        && state.count == u64::MAX
+        && next.count == state.count
+        && next.retired == state.retired,
+  }
+  fx pure
+{
+  if state.retired {
+    RefCountAcquire64::RefCountRetired64 { state: state }
+  } else {
+    if state.count == u64::MAX {
+      RefCountAcquire64::RefCountExhausted64 { state: state }
+    } else {
+      RefCountAcquire64::RefCountAcquired64 {
+        state: RefCountState64 {
+          count: state.count + 1,
+          retired: false,
+        },
+      }
+    }
+  }
+}
+
+fn refcount_release(state: RefCountState64) -> RefCountRelease64
+  req refcount_wf_spec(&state)
+  ens match result {
+    RefCountRelease64::RefCountReleased64 { state: next } =>
+      !state.retired
+        && state.count > 1
+        && refcount_wf_spec(&next)
+        && next.count == state.count - 1
+        && !next.retired,
+    RefCountRelease64::RefCountLast64 { state: next } =>
+      !state.retired
+        && state.count == 1
+        && refcount_wf_spec(&next)
+        && next.count == 0
+        && next.retired,
+    RefCountRelease64::RefCountReleaseRetired64 { state: next } =>
+      state.retired
+        && next.count == state.count
+        && next.retired == state.retired,
+  }
+  fx pure
+{
+  if state.retired {
+    RefCountRelease64::RefCountReleaseRetired64 { state: state }
+  } else {
+    if state.count == 1 {
+      RefCountRelease64::RefCountLast64 {
+        state: RefCountState64 {
+          count: 0,
+          retired: true,
+        },
+      }
+    } else {
+      RefCountRelease64::RefCountReleased64 {
+        state: RefCountState64 {
+          count: state.count - 1,
+          retired: false,
+        },
+      }
+    }
+  }
+}
+
+fn refcount_release_twice(state: RefCountState64) -> bool
+  req refcount_wf_spec(&state)
+    && !state.retired
+    && state.count == 2
+  ens result
+  fx pure
+{
+  match refcount_release(state) {
+    RefCountRelease64::RefCountReleased64 { state: one } =>
+      match refcount_release(one) {
+        RefCountRelease64::RefCountReleased64 { state: _ } => false,
+        RefCountRelease64::RefCountLast64 { state: retired } =>
+          match refcount_acquire(retired) {
+            RefCountAcquire64::RefCountAcquired64 { state: _ } => false,
+            RefCountAcquire64::RefCountRetired64 { state } =>
+              state.retired && state.count == 0,
+            RefCountAcquire64::RefCountExhausted64 { state: _ } => false,
+          },
+        RefCountRelease64::RefCountReleaseRetired64 { state: _ } => false,
+      },
+    RefCountRelease64::RefCountLast64 { state: _ } => false,
+    RefCountRelease64::RefCountReleaseRetired64 { state: _ } => false,
+  }
+}
+
+fn refcount_lifecycle_probe() -> bool
+  req true
+  ens result
+  fx pure
+{
+  let initial: RefCountState64 = refcount_new();
+  match refcount_acquire(initial) {
+    RefCountAcquire64::RefCountAcquired64 { state: two } =>
+      refcount_release_twice(two),
+    RefCountAcquire64::RefCountRetired64 { state: _ } => false,
+    RefCountAcquire64::RefCountExhausted64 { state: _ } => false,
+  }
+}
+
+fn refcount_exhaustion_probe() -> bool
+  req true
+  ens result
+  fx pure
+{
+  let exhausted: RefCountState64 = RefCountState64 {
+    count: u64::MAX,
+    retired: false,
+  };
+  match refcount_acquire(exhausted) {
+    RefCountAcquire64::RefCountAcquired64 { state: _ } => false,
+    RefCountAcquire64::RefCountRetired64 { state: _ } => false,
+    RefCountAcquire64::RefCountExhausted64 { state } =>
+      state.count == u64::MAX && !state.retired,
+  }
+}

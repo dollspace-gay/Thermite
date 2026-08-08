@@ -84,8 +84,8 @@
 use std::fmt::Write as _;
 
 use thermite_syntax::ast::{
-    BinOp, Block, EnumItem, Expr, FnItem, IndexArg, Item, LoopKind, LoopNode, MatchArm, Param,
-    Pattern, PrimType, Program, SlicePat, SpecFnItem, Stmt, StructItem, Type, UnaryOp,
+    ArrayLen, BinOp, Block, EnumItem, Expr, FnItem, IndexArg, Item, LoopKind, LoopNode, MatchArm,
+    Param, Pattern, PrimType, Program, SlicePat, SpecFnItem, Stmt, StructItem, Type, UnaryOp,
     VariantShape,
 };
 use thermite_syntax::lexer::Span;
@@ -174,10 +174,12 @@ pub fn lower_l1(program: &Program) -> Result<String, LowerError> {
     // into a producing fn (handled-or-loud at run time, §6 L1 rung). Built once.
     let variants = variant_map(program);
     let inv_structs = invariant_struct_names(program);
+    let equality_structs = crate::lower::fixed_array_equality_named_structs(program);
 
     // (3) + (4) the lowered items, in source order (determinism, §5.3).
     for item in &program.items {
         let item_src = match item {
+            Item::Const(c) => format!("pub const {}: usize = {};", c.name, c.value),
             Item::SpecFn(s) => lower_spec_fn_l1(s, &variants)?,
             // A boundary fn (ffi-boundary.md REQ-4) lowers to the L1 wrapper: a
             // `req`-check, a call to the foreign target binding `result`, then the
@@ -188,7 +190,7 @@ pub fn lower_l1(program: &Program) -> Result<String, LowerError> {
             // Basis Stage 1c (`.design/basis/01-adts.md` REQ-8/REQ-9): a `struct`
             // lowers to a plain Rust `struct` + a `well_formed` method (the
             // always-active invariant predicate); an `enum` to a plain Rust `enum`.
-            Item::Struct(s) => lower_struct_l1(s)?,
+            Item::Struct(s) => lower_struct_l1(s, equality_structs.contains(&s.name))?,
             Item::Enum(e) => lower_enum_l1(e)?,
             // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 lowering consumer
             // yet (increments 2b-3); emit nothing, mirroring the inert ADT-decl arms.
@@ -265,7 +267,10 @@ fn qualify_variant_path_l1(path: &[String], variants: &[(&str, &str)]) -> String
 /// clause, a `well_formed(&self) -> bool` method (REQ-8): the always-active
 /// invariant predicate a producing fn checks at run time (handled-or-loud, §6 L1
 /// rung). The `inv` body rewrites bare field-name paths to `self.<field>`.
-fn lower_struct_l1(s: &StructItem) -> Result<String, LowerError> {
+fn lower_struct_l1(
+    s: &StructItem,
+    derives_structural_equality: bool,
+) -> Result<String, LowerError> {
     let mut out = String::new();
     // `#[derive(Clone)]`: the L1 ens-check snapshots a non-Copy struct parameter
     // before the body consumes it (`lower_fn_l1`'s `<p>__pre` snapshot) so a field
@@ -274,7 +279,11 @@ fn lower_struct_l1(s: &StructItem) -> Result<String, LowerError> {
     // b.text, .. }`) no longer triggers rustc `error[E0382]` (#88 blocker 2). The
     // derive covers the whole class: every invariant/plain struct can be a
     // moved-then-named ens param.
-    out.push_str("#[derive(Clone)]\n");
+    if derives_structural_equality {
+        out.push_str("#[derive(Clone, PartialEq, Eq)]\n");
+    } else {
+        out.push_str("#[derive(Clone)]\n");
+    }
     out.push_str("#[allow(dead_code)]\n");
     writeln!(out, "struct {} {{", s.name).ok();
     for field in &s.fields {
@@ -471,7 +480,7 @@ pub(crate) fn emit_combinator_l1_defs(program: &Program) -> Result<String, Lower
             // item carries no contract clauses → references no combinator; the
             // collector's neutral value is a no-op. (Dead-in-1a: gated at the
             // validator.)
-            Item::Struct(_) | Item::Enum(_) => {}
+            Item::Const(_) | Item::Struct(_) | Item::Enum(_) => {}
             // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 combinator-collection
             // consumer yet (increments 2b-3); inert here, mirroring the ADT-decl arm.
             Item::Forge(_) => {}
@@ -502,6 +511,12 @@ pub(crate) fn emit_combinator_l1_defs(program: &Program) -> Result<String, Lower
 /// `lower.rs::collect_combinators_in_expr`.
 fn collect_combinators_in_expr(expr: &Expr, span: Span, acc: &mut Vec<(String, Span)>) {
     match expr {
+        Expr::Array(elements) => {
+            for element in elements {
+                collect_combinators_in_expr(element, span, acc);
+            }
+        }
+        Expr::ArrayRepeat { value, .. } => collect_combinators_in_expr(value, span, acc),
         Expr::Call { callee, args } => {
             if let Expr::Path(segs) = callee.as_ref() {
                 if let Some(last) = segs.last() {
@@ -886,10 +901,11 @@ fn snapshot_name_l1(param: &str) -> String {
 /// shared borrow), a `Slice`, or a `Generic` are left live (no snapshot) so the
 /// common arithmetic ens (`sum`/`binary_search`) lowers byte-unchanged.
 fn type_is_non_copy_l1(ty: &Type) -> bool {
-    matches!(
-        ty,
-        Type::Named(_) | Type::String | Type::Vec(_) | Type::Box(_)
-    )
+    match ty {
+        Type::Array { elem, .. } => type_is_non_copy_l1(elem),
+        Type::Named(_) | Type::String | Type::Vec(_) | Type::Box(_) => true,
+        _ => false,
+    }
 }
 
 /// Rewrite every reference to a snapshot parameter in `expr` to its `<p>__pre`
@@ -904,6 +920,16 @@ fn type_is_non_copy_l1(ty: &Type) -> bool {
 fn rename_params_in_expr(expr: &Expr, renames: &[(String, String)]) -> Expr {
     let rec = |e: &Expr| Box::new(rename_params_in_expr(e, renames));
     match expr {
+        Expr::Array(elements) => Expr::Array(
+            elements
+                .iter()
+                .map(|element| rename_params_in_expr(element, renames))
+                .collect(),
+        ),
+        Expr::ArrayRepeat { value, len } => Expr::ArrayRepeat {
+            value: rec(value),
+            len: len.clone(),
+        },
         Expr::Path(segs) => {
             if segs.len() == 1 {
                 if let Some((_, to)) = renames.iter().find(|(from, _)| from == &segs[0]) {
@@ -1044,6 +1070,8 @@ fn expr_references_ident(expr: &Expr, ident: &str) -> bool {
     match expr {
         Expr::Path(segs) => segs.len() == 1 && segs[0] == ident,
         Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::StrLit(_) => false,
+        Expr::Array(elements) => any(elements),
+        Expr::ArrayRepeat { value, .. } => expr_references_ident(value, ident),
         Expr::Call { callee, args } => expr_references_ident(callee, ident) || any(args),
         Expr::MethodCall { receiver, args, .. } => {
             expr_references_ident(receiver, ident) || any(args)
@@ -1456,6 +1484,17 @@ pub(crate) fn lower_expr_exec(
         // Emit the numeric `value`, not `raw` (#37): byte-identical L1 output.
         Expr::IntLit { value, .. } => Ok(value.to_string()),
         Expr::BoolLit(b) => Ok(b.to_string()),
+        Expr::Array(elements) => {
+            let elements = elements
+                .iter()
+                .map(|element| lower_expr_exec(element, d, span, variants))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(format!("[{}]", elements.join(", ")))
+        }
+        Expr::ArrayRepeat { value, len } => {
+            let value = lower_expr_exec(value, d, span, variants)?;
+            Ok(format!("[{value}; {}]", lower_array_len(len)))
+        }
         // A string literal materializes an owned `TString` (not a Rust `&str`)
         // (`.design/basis/07-strings.md` REQ-1), the L1 exec mirror of `lower.rs`'s
         // L3 `Expr::StrLit` form (#82). Without this an `Expr::StrLit("")` in a
@@ -1542,6 +1581,62 @@ pub(crate) fn lower_expr_exec(
             args,
         } => {
             let r = lower_expr_exec(receiver, d, span, variants)?;
+            // L1/L2 execute the explicit fixed-array equality primitive through
+            // Rust's native array equality; L3 replaces it with the verified scan.
+            if name == "array_eq" && args.len() == 1 {
+                let right = lower_expr_exec(&args[0], d, span, variants)?;
+                // Keep the relation as one parenthesized boolean value. Without
+                // the outer pair, an enclosing contract equality lowers to the
+                // invalid Rust chain `result == left == right`.
+                return Ok(format!("(({r}) == ({right}))"));
+            }
+            if name == "array_same_except" && args.len() == 2 {
+                let right = lower_expr_exec(&args[0], d, span, variants)?;
+                let except = lower_expr_exec(&args[1], d, span, variants)?;
+                return Ok(format!(
+                    "({{ let __thermite_left = &({r}); let __thermite_right = &({right}); let __thermite_except: usize = {except}; let mut __thermite_i: usize = 0; let mut __thermite_same: bool = true; while __thermite_i < __thermite_left.len() {{ if __thermite_i != __thermite_except && __thermite_left[__thermite_i] != __thermite_right[__thermite_i] {{ __thermite_same = false; break; }} __thermite_i += 1; }} __thermite_same }})"
+                ));
+            }
+            if name == "array_same_except_two" && args.len() == 3 {
+                let right = lower_expr_exec(&args[0], d, span, variants)?;
+                let first = lower_expr_exec(&args[1], d, span, variants)?;
+                let second = lower_expr_exec(&args[2], d, span, variants)?;
+                return Ok(format!(
+                    "({{ let __thermite_left = &({r}); let __thermite_right = &({right}); let __thermite_first: usize = {first}; let __thermite_second: usize = {second}; let mut __thermite_i: usize = 0; let mut __thermite_same: bool = true; while __thermite_i < __thermite_left.len() {{ if __thermite_i != __thermite_first && __thermite_i != __thermite_second && __thermite_left[__thermite_i] != __thermite_right[__thermite_i] {{ __thermite_same = false; break; }} __thermite_i += 1; }} __thermite_same }})"
+                ));
+            }
+            if args.len() == 1 && matches!(name.as_str(), "bit_test" | "bit_set" | "bit_clear") {
+                let index = lower_expr_exec(&args[0], d, span, variants)?;
+                return Ok(match name.as_str() {
+                    "bit_test" => format!(
+                        "(if ({index}) < 64usize {{ ({r}) & (1u64 << ({index})) != 0u64 }} else {{ false }})"
+                    ),
+                    "bit_set" => format!(
+                        "(if ({index}) < 64usize {{ ({r}) | (1u64 << ({index})) }} else {{ {r} }})"
+                    ),
+                    "bit_clear" => format!(
+                        "(if ({index}) < 64usize {{ ({r}) & !(1u64 << ({index})) }} else {{ {r} }})"
+                    ),
+                    _ => unreachable!("the method guard fixed the bit helper"),
+                });
+            }
+            if args.len() == 2
+                && matches!(
+                    name.as_str(),
+                    "bit_set_preserves_other" | "bit_clear_preserves_other"
+                )
+            {
+                let changed = lower_expr_exec(&args[0], d, span, variants)?;
+                let observed = lower_expr_exec(&args[1], d, span, variants)?;
+                let update = if name == "bit_set_preserves_other" {
+                    "__thermite_word | __thermite_changed_mask"
+                } else {
+                    "__thermite_word & !__thermite_changed_mask"
+                };
+                return Ok(format!(
+                    "({{ let __thermite_word: u64 = {r}; let __thermite_changed: usize = {changed}; let __thermite_observed: usize = {observed}; if __thermite_changed < 64usize && __thermite_observed < 64usize && __thermite_changed != __thermite_observed {{ let __thermite_changed_mask: u64 = 1u64 << __thermite_changed; let __thermite_observed_mask: u64 = 1u64 << __thermite_observed; ((({update}) & __thermite_observed_mask) != 0u64) == ((__thermite_word & __thermite_observed_mask) != 0u64) }} else {{ false }} }})"
+                ));
+            }
             // Cluster C4 (`.design/basis/07-strings.md` REQ-8, issue #94): the
             // `u64`→decimal-`String` method `n.to_string()` lowers to a call of the
             // generated free fn `u64_to_string(n)` (emitted by
@@ -1959,6 +2054,10 @@ pub(crate) fn lower_type(ty: &Type) -> Result<String, LowerError> {
         Type::Prim(PrimType::Usize) => Ok("usize".to_string()),
         Type::Prim(PrimType::Bool) => Ok("bool".to_string()),
         Type::Unit => Ok("()".to_string()),
+        Type::Array { elem, len } => {
+            let elem = lower_type(elem)?;
+            Ok(format!("[{elem}; {}]", lower_array_len(len)))
+        }
         Type::Ref { mutable, inner } => {
             let i = lower_type(inner)?;
             if *mutable {
@@ -2043,6 +2142,13 @@ pub(crate) fn lower_type(ty: &Type) -> Result<String, LowerError> {
     }
 }
 
+fn lower_array_len(len: &ArrayLen) -> String {
+    match len {
+        ArrayLen::Literal { value, .. } => value.to_string(),
+        ArrayLen::Const(name) => name.clone(),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Basis Stage 8 (`.design/basis/08-runnable-effect-link.md` REQ-1/REQ-3): the
 // plain-Rust `TString` definition the build-emitted crate needs when a
@@ -2086,6 +2192,7 @@ fn program_uses_string_l1(program: &Program) -> bool {
     fn ty_is_string(ty: &Type) -> bool {
         match ty {
             Type::String => true,
+            Type::Array { elem, .. } => ty_is_string(elem),
             Type::Ref { inner, .. } => ty_is_string(inner),
             Type::Slice(inner) | Type::Box(inner) | Type::Vec(inner) => ty_is_string(inner),
             Type::Generic { arg, .. } => ty_is_string(arg),
@@ -2142,7 +2249,7 @@ fn program_uses_string_l1(program: &Program) -> bool {
             }
             // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 lowering consumer
             // yet (increments 2b-3); skip, mirroring main's inert handling.
-            Item::Forge(_) => {}
+            Item::Const(_) | Item::Forge(_) => {}
         }
     }
     false
@@ -2183,6 +2290,8 @@ fn expr_has_str_lit_l1(expr: &Expr) -> bool {
     match expr {
         Expr::StrLit(_) => true,
         Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) => false,
+        Expr::Array(elements) => elements.iter().any(expr_has_str_lit_l1),
+        Expr::ArrayRepeat { value, .. } => expr_has_str_lit_l1(value),
         Expr::Call { callee, args } => {
             expr_has_str_lit_l1(callee) || args.iter().any(expr_has_str_lit_l1)
         }
@@ -2871,7 +2980,7 @@ fn program_uses_numfmt_l1(program: &Program) -> bool {
     program.items.iter().any(|item| match item {
         Item::Fn(f) => f.body.as_ref().map(block_has_to_string).unwrap_or(false),
         Item::SpecFn(s) => block_has_to_string(&s.body),
-        Item::Struct(_) | Item::Enum(_) => false,
+        Item::Const(_) | Item::Struct(_) | Item::Enum(_) => false,
         // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 lowering consumer yet
         // (increments 2b-3); contributes nothing, mirroring the inert ADT-decl arm.
         Item::Forge(_) => false,
@@ -2921,6 +3030,8 @@ fn expr_has_to_string(expr: &Expr) -> bool {
                 || args.iter().any(expr_has_to_string)
         }
         Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) | Expr::StrLit(_) => false,
+        Expr::Array(elements) => elements.iter().any(expr_has_to_string),
+        Expr::ArrayRepeat { value, .. } => expr_has_to_string(value),
         Expr::Call { callee, args } => {
             expr_has_to_string(callee) || args.iter().any(expr_has_to_string)
         }

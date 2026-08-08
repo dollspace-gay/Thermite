@@ -141,6 +141,234 @@ fn sum_corpus_zero_divergent() {
     );
 }
 
+#[test]
+fn fixed_array_contract_clauses_are_faithful() {
+    if !verus_present() {
+        eprintln!("SKIP: verus not available — fixed-array contract-TV not run.");
+        return;
+    }
+    let source = concat!(
+        "const SLOTS: usize = 4;\n",
+        "fn read(slots: [u64; SLOTS], at: usize) -> u64\n",
+        "  req at < SLOTS\n",
+        "  ens result == slots[at]\n",
+        "  fx pure\n",
+        "{ slots[at] }\n",
+        "fn array_len(slots: [u64; SLOTS]) -> usize\n",
+        "  req true\n",
+        "  ens result == slots.len()\n",
+        "  fx pure\n",
+        "{ slots.len() }\n",
+        "fn arrays_equal(left: [u64; SLOTS], right: [u64; SLOTS]) -> bool\n",
+        "  req true\n",
+        "  ens result == left.array_eq(right)\n",
+        "  fx pure\n",
+        "{ left.array_eq(right) }\n",
+        "fn arrays_same_except(left: [u64; SLOTS], right: [u64; SLOTS], at: usize) -> bool\n",
+        "  req true\n",
+        "  ens result == left.array_same_except(right, at)\n",
+        "  fx pure\n",
+        "{ left.array_same_except(right, at) }\n",
+        "fn arrays_same_except_two(left: [u64; SLOTS], right: [u64; SLOTS], first: usize, second: usize) -> bool\n",
+        "  req true\n",
+        "  ens result == left.array_same_except_two(right, first, second)\n",
+        "  fx pure\n",
+        "{ left.array_same_except_two(right, first, second) }\n",
+    );
+    let path = std::env::temp_dir().join("thermite_contract_tv_fixed_array.th");
+    std::fs::write(&path, source).expect("write fixed-array contract-TV fixture");
+    let report = run_tv_json(&path, None);
+    let (checked, faithful, divergent) = corpus_counts(&report);
+    assert_eq!(divergent, 0, "{report}");
+    assert_eq!(
+        checked, 10,
+        "both clauses of all five array functions must be checked: {report}"
+    );
+    assert_eq!(faithful, checked, "{report}");
+    assert_eq!(corpus_clause_verdict(&report, "read.req"), Some("faithful"));
+    assert_eq!(
+        corpus_clause_verdict(&report, "read.ens#1"),
+        Some("faithful")
+    );
+    assert_eq!(
+        corpus_clause_verdict(&report, "array_len.req"),
+        Some("faithful")
+    );
+    assert_eq!(
+        corpus_clause_verdict(&report, "array_len.ens#1"),
+        Some("faithful")
+    );
+    assert_eq!(
+        corpus_clause_verdict(&report, "arrays_equal.req"),
+        Some("faithful")
+    );
+    assert_eq!(
+        corpus_clause_verdict(&report, "arrays_equal.ens#1"),
+        Some("faithful")
+    );
+    assert_eq!(
+        corpus_clause_verdict(&report, "arrays_same_except.req"),
+        Some("faithful")
+    );
+    assert_eq!(
+        corpus_clause_verdict(&report, "arrays_same_except.ens#1"),
+        Some("faithful")
+    );
+    assert_eq!(
+        corpus_clause_verdict(&report, "arrays_same_except_two.req"),
+        Some("faithful")
+    );
+    assert_eq!(
+        corpus_clause_verdict(&report, "arrays_same_except_two.ens#1"),
+        Some("faithful")
+    );
+}
+
+#[test]
+fn named_record_state_snapshots_are_faithful() {
+    if !verus_present() {
+        eprintln!("SKIP: verus not available — named-record contract-TV not run.");
+        return;
+    }
+    let source = r#"
+struct State { generation: u64, occupied: bool }
+fn advance(state: &mut State, next: u64) -> bool
+  req next > old(state).generation
+  ens result == old(state).occupied
+  ens final(state).generation == next
+  ens final(state).occupied == old(state).occupied
+  fx pure
+{
+  let previous: bool = state.occupied;
+  state.generation = next;
+  previous
+}
+"#;
+    let path = std::env::temp_dir().join("thermite_contract_tv_named_record.th");
+    std::fs::write(&path, source).expect("write named-record contract-TV fixture");
+    let report = run_tv_json(&path, None);
+    let (checked, faithful, divergent) = corpus_counts(&report);
+    assert_eq!(divergent, 0, "{report}");
+    assert_eq!(
+        checked, 4,
+        "req and all three ensures must be checked: {report}"
+    );
+    assert_eq!(faithful, checked, "{report}");
+    for clause in [
+        "advance.req",
+        "advance.ens#1",
+        "advance.ens#2",
+        "advance.ens#3",
+    ] {
+        assert_eq!(
+            corpus_clause_verdict(&report, clause),
+            Some("faithful"),
+            "{clause}: {report}"
+        );
+    }
+}
+
+#[test]
+fn aggregate_array_relation_contracts_are_faithful() {
+    if !verus_present() {
+        eprintln!("SKIP: verus not available — aggregate-array contract-TV not run.");
+        return;
+    }
+    let source = concat!(
+        "const WORDS: usize = 2;\n",
+        "const SLOTS: usize = 4;\n",
+        "struct Stamp { words: [u64; WORDS], flags: (bool, u8) }\n",
+        "struct Slot { stamp: Stamp, owner: usize }\n",
+        "fn records_equal(left: [Slot; SLOTS], right: [Slot; SLOTS]) -> bool\n",
+        "  req true\n",
+        "  ens result == left.array_eq(right)\n",
+        "  fx pure\n",
+        "{ left.array_eq(right) }\n",
+        "fn records_same_except(left: [Slot; SLOTS], right: [Slot; SLOTS], at: usize) -> bool\n",
+        "  req true\n",
+        "  ens result == left.array_same_except(right, at)\n",
+        "  fx pure\n",
+        "{ left.array_same_except(right, at) }\n",
+    );
+    let path = std::env::temp_dir().join("thermite_contract_tv_aggregate_array.th");
+    std::fs::write(&path, source).expect("write aggregate-array contract-TV fixture");
+    let report = run_tv_json(&path, None);
+    let (checked, faithful, divergent) = corpus_counts(&report);
+    assert_eq!(
+        checked, 4,
+        "both clauses of both relation functions: {report}"
+    );
+    assert_eq!(faithful, checked, "{report}");
+    assert_eq!(divergent, 0, "{report}");
+    for label in [
+        "records_equal.req",
+        "records_equal.ens#1",
+        "records_same_except.req",
+        "records_same_except.ens#1",
+    ] {
+        assert_eq!(
+            corpus_clause_verdict(&report, label),
+            Some("faithful"),
+            "{label}: {report}"
+        );
+    }
+}
+
+#[test]
+fn u64_bit_method_contract_clauses_are_faithful() {
+    if !verus_present() {
+        eprintln!("SKIP: verus not available — u64-bit contract-TV not run.");
+        return;
+    }
+    let source = concat!(
+        "fn set_bit(word: u64, bit: usize) -> u64\n",
+        "  req true\n",
+        "  ens result == word.bit_set(bit)\n",
+        "  fx pure\n",
+        "{ word.bit_set(bit) }\n",
+        "fn clear_bit(word: u64, bit: usize) -> u64\n",
+        "  req true\n",
+        "  ens result == word.bit_clear(bit)\n",
+        "  fx pure\n",
+        "{ word.bit_clear(bit) }\n",
+        "fn test_bit(word: u64, bit: usize) -> bool\n",
+        "  req true\n",
+        "  ens result == word.bit_test(bit)\n",
+        "  fx pure\n",
+        "{ word.bit_test(bit) }\n",
+        "fn set_preserves(word: u64, changed: usize, observed: usize) -> bool\n",
+        "  req true\n",
+        "  ens result == word.bit_set_preserves_other(changed, observed)\n",
+        "  fx pure\n",
+        "{ word.bit_set_preserves_other(changed, observed) }\n",
+        "fn clear_preserves(word: u64, changed: usize, observed: usize) -> bool\n",
+        "  req true\n",
+        "  ens result == word.bit_clear_preserves_other(changed, observed)\n",
+        "  fx pure\n",
+        "{ word.bit_clear_preserves_other(changed, observed) }\n",
+    );
+    let path = std::env::temp_dir().join("thermite_contract_tv_u64_bits.th");
+    std::fs::write(&path, source).expect("write u64-bit contract-TV fixture");
+    let report = run_tv_json(&path, None);
+    let (checked, faithful, divergent) = corpus_counts(&report);
+    assert_eq!(checked, 10, "each req/ens pair must be checked: {report}");
+    assert_eq!(faithful, checked, "{report}");
+    assert_eq!(divergent, 0, "{report}");
+    for clause in [
+        "set_bit.ens#1",
+        "clear_bit.ens#1",
+        "test_bit.ens#1",
+        "set_preserves.ens#1",
+        "clear_preserves.ens#1",
+    ] {
+        assert_eq!(
+            corpus_clause_verdict(&report, clause),
+            Some("faithful"),
+            "{clause}: {report}"
+        );
+    }
+}
+
 /// REQ-5 + #150 gap #1/#3: binary_search's clauses are all faithful, 0 divergent,
 /// and 0 skipped — the `Option<usize>` `ens match` clause (the C7 payload-in-
 /// contract match-in-ens) is now checked + faithful (was Skipped: `Expr::Match`

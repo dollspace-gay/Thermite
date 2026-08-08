@@ -1,0 +1,534 @@
+const GENERATION_LEDGER_CAPACITY: usize = 64;
+
+#[sealed] struct GenerationAuthority {
+  identity: usize,
+}
+
+#[opaque] struct GenerationLedger {
+  authority: GenerationAuthority,
+  active: [bool; GENERATION_LEDGER_CAPACITY],
+  generation: [u64; GENERATION_LEDGER_CAPACITY],
+  rights: [u64; GENERATION_LEDGER_CAPACITY],
+}
+
+#[opaque] struct GenerationHandle {
+  authority: usize,
+  slot: usize,
+  generation: u64,
+  rights: u64,
+}
+
+enum GenerationAcquire {
+  Acquired {
+    ledger: GenerationLedger,
+    handle: GenerationHandle,
+  },
+  AcquireRejected {
+    ledger: GenerationLedger,
+    reason: u8,
+  },
+}
+
+enum GenerationRenew {
+  Renewed {
+    ledger: GenerationLedger,
+    handle: GenerationHandle,
+  },
+  RenewRejected {
+    ledger: GenerationLedger,
+    handle: GenerationHandle,
+    reason: u8,
+  },
+}
+
+enum GenerationRelease {
+  Released {
+    ledger: GenerationLedger,
+  },
+  ReleaseRejected {
+    ledger: GenerationLedger,
+    handle: GenerationHandle,
+    reason: u8,
+  },
+}
+
+spec fn generation_handle_live_spec(
+  ledger: &GenerationLedger,
+  handle: &GenerationHandle,
+) -> bool
+  dec handle.slot
+{
+  handle.slot < GENERATION_LEDGER_CAPACITY
+    && handle.authority == ledger.authority.identity
+    && ledger.active[handle.slot]
+    && ledger.generation[handle.slot] == handle.generation
+    && ledger.rights[handle.slot] == handle.rights
+    && handle.rights != 0
+}
+
+spec fn generation_rights_narrow_spec(current: u64, requested: u64) -> bool
+  dec current
+{
+  requested != 0 && (requested & current) == requested
+}
+
+spec fn generation_acquire_reason_spec(
+  active: bool,
+  generation: u64,
+  rights: u64,
+) -> u8
+  dec generation
+{
+  if rights == 0 {
+    1
+  } else {
+    if active {
+      2
+    } else {
+      if generation == 18_446_744_073_709_551_614 + 1 {
+        3
+      } else {
+        0
+      }
+    }
+  }
+}
+
+spec fn generation_renew_reason_spec(
+  live: bool,
+  generation: u64,
+  current: u64,
+  requested: u64,
+) -> u8
+  dec generation
+{
+  if !live {
+    1
+  } else {
+    if !generation_rights_narrow_spec(current, requested) {
+      2
+    } else {
+      if generation == 18_446_744_073_709_551_614 + 1 {
+        3
+      } else {
+        0
+      }
+    }
+  }
+}
+
+#[boundary("thermite::ownership::generation_authority")]
+fn generation_authority(identity: usize) -> GenerationAuthority
+  req true
+  ens result.identity == identity
+  fx platform(boot);
+
+fn generation_ledger_init(authority: GenerationAuthority) -> GenerationLedger
+  req true
+  ens result.authority.identity == authority.identity
+  ens !result.active[0]
+    && !result.active[GENERATION_LEDGER_CAPACITY - 1]
+    && result.generation[0] == 0
+    && result.generation[GENERATION_LEDGER_CAPACITY - 1] == 0
+    && result.rights[0] == 0
+    && result.rights[GENERATION_LEDGER_CAPACITY - 1] == 0
+  fx pure
+{
+  GenerationLedger {
+    authority: authority,
+    active: [false; GENERATION_LEDGER_CAPACITY],
+    generation: [0; GENERATION_LEDGER_CAPACITY],
+    rights: [0; GENERATION_LEDGER_CAPACITY],
+  }
+}
+
+fn generation_handle_live(
+  ledger: &GenerationLedger,
+  handle: &GenerationHandle,
+) -> bool
+  req true
+  ens result == generation_handle_live_spec(ledger, handle)
+  fx pure
+{
+  handle.slot < GENERATION_LEDGER_CAPACITY
+    && handle.authority == ledger.authority.identity
+    && ledger.active[handle.slot]
+    && ledger.generation[handle.slot] == handle.generation
+    && ledger.rights[handle.slot] == handle.rights
+    && handle.rights != 0
+}
+
+fn generation_rights_narrow(current: u64, requested: u64) -> bool
+  req true
+  ens result == generation_rights_narrow_spec(current, requested)
+  fx pure
+{
+  requested != 0 && (requested & current) == requested
+}
+
+fn generation_acquire_at(
+  ledger: GenerationLedger,
+  slot: usize,
+  rights: u64,
+) -> GenerationAcquire
+  req slot < GENERATION_LEDGER_CAPACITY
+  ens match result {
+    GenerationAcquire::Acquired { ledger: next, handle } =>
+      !ledger.active[slot]
+        && rights != 0
+        && ledger.generation[slot] < 18_446_744_073_709_551_614 + 1
+        && next.authority.identity == ledger.authority.identity
+        && next.active[slot]
+        && next.generation[slot] == ledger.generation[slot] + 1
+        && next.rights[slot] == rights
+        && handle.authority == ledger.authority.identity
+        && handle.slot == slot
+        && handle.generation == ledger.generation[slot] + 1
+        && handle.rights == rights
+        && generation_handle_live_spec(&next, &handle),
+    GenerationAcquire::AcquireRejected { ledger: next, reason } =>
+      reason == generation_acquire_reason_spec(
+        ledger.active[slot],
+        ledger.generation[slot],
+        rights,
+      )
+        && reason != 0
+        && next.authority.identity == ledger.authority.identity
+        && next.active[slot] == ledger.active[slot]
+        && next.generation[slot] == ledger.generation[slot]
+        && next.rights[slot] == ledger.rights[slot],
+  }
+  fx pure
+{
+  let reason: u8 = if rights == 0 {
+    1
+  } else {
+    if ledger.active[slot] {
+      2
+    } else {
+      if ledger.generation[slot] == 18_446_744_073_709_551_614 + 1 {
+        3
+      } else {
+        0
+      }
+    }
+  };
+  if reason == 0 {
+    let identity: usize = ledger.authority.identity;
+    let next_generation: u64 = ledger.generation[slot] + 1;
+    let mut active: [bool; GENERATION_LEDGER_CAPACITY] = ledger.active;
+    let mut generation: [u64; GENERATION_LEDGER_CAPACITY] = ledger.generation;
+    let mut stored_rights: [u64; GENERATION_LEDGER_CAPACITY] = ledger.rights;
+    active[slot] = true;
+    generation[slot] = next_generation;
+    stored_rights[slot] = rights;
+    GenerationAcquire::Acquired {
+      ledger: GenerationLedger {
+        authority: ledger.authority,
+        active: active,
+        generation: generation,
+        rights: stored_rights,
+      },
+      handle: GenerationHandle {
+        authority: identity,
+        slot: slot,
+        generation: next_generation,
+        rights: rights,
+      },
+    }
+  } else {
+    GenerationAcquire::AcquireRejected {
+      ledger: ledger,
+      reason: reason,
+    }
+  }
+}
+
+fn generation_renew(
+  ledger: GenerationLedger,
+  handle: GenerationHandle,
+  requested: u64,
+) -> GenerationRenew
+  req handle.slot < GENERATION_LEDGER_CAPACITY
+  ens match result {
+    GenerationRenew::Renewed { ledger: next, handle: refreshed } =>
+      generation_handle_live_spec(&ledger, &handle)
+        && generation_rights_narrow_spec(handle.rights, requested)
+        && handle.generation < 18_446_744_073_709_551_614 + 1
+        && next.authority.identity == ledger.authority.identity
+        && next.active[handle.slot]
+        && next.generation[handle.slot] == handle.generation + 1
+        && next.rights[handle.slot] == requested
+        && refreshed.authority == handle.authority
+        && refreshed.slot == handle.slot
+        && refreshed.generation == handle.generation + 1
+        && refreshed.rights == requested
+        && generation_handle_live_spec(&next, &refreshed),
+    GenerationRenew::RenewRejected { ledger: next, handle: returned, reason } =>
+      reason == generation_renew_reason_spec(
+        generation_handle_live_spec(&ledger, &handle),
+        handle.generation,
+        handle.rights,
+        requested,
+      )
+        && reason != 0
+        && next.authority.identity == ledger.authority.identity
+        && next.active[handle.slot] == ledger.active[handle.slot]
+        && next.generation[handle.slot] == ledger.generation[handle.slot]
+        && next.rights[handle.slot] == ledger.rights[handle.slot]
+        && returned.authority == handle.authority
+        && returned.slot == handle.slot
+        && returned.generation == handle.generation
+        && returned.rights == handle.rights,
+  }
+  fx pure
+{
+  let live: bool = generation_handle_live(&ledger, &handle);
+  let reason: u8 = if !live {
+    1
+  } else {
+    if !generation_rights_narrow(handle.rights, requested) {
+      2
+    } else {
+      if handle.generation == 18_446_744_073_709_551_614 + 1 {
+        3
+      } else {
+        0
+      }
+    }
+  };
+  if reason == 0 {
+    let identity: usize = handle.authority;
+    let slot: usize = handle.slot;
+    let next_generation: u64 = handle.generation + 1;
+    let mut active: [bool; GENERATION_LEDGER_CAPACITY] = ledger.active;
+    let mut generation: [u64; GENERATION_LEDGER_CAPACITY] = ledger.generation;
+    let mut stored_rights: [u64; GENERATION_LEDGER_CAPACITY] = ledger.rights;
+    active[slot] = true;
+    generation[slot] = next_generation;
+    stored_rights[slot] = requested;
+    GenerationRenew::Renewed {
+      ledger: GenerationLedger {
+        authority: ledger.authority,
+        active: active,
+        generation: generation,
+        rights: stored_rights,
+      },
+      handle: GenerationHandle {
+        authority: identity,
+        slot: slot,
+        generation: next_generation,
+        rights: requested,
+      },
+    }
+  } else {
+    GenerationRenew::RenewRejected {
+      ledger: ledger,
+      handle: handle,
+      reason: reason,
+    }
+  }
+}
+
+fn generation_release(
+  ledger: GenerationLedger,
+  handle: GenerationHandle,
+) -> GenerationRelease
+  req handle.slot < GENERATION_LEDGER_CAPACITY
+  ens match result {
+    GenerationRelease::Released { ledger: next } =>
+      generation_handle_live_spec(&ledger, &handle)
+        && next.authority.identity == ledger.authority.identity
+        && !next.active[handle.slot]
+        && next.generation[handle.slot] == ledger.generation[handle.slot]
+        && next.rights[handle.slot] == 0,
+    GenerationRelease::ReleaseRejected { ledger: next, handle: returned, reason } =>
+      !generation_handle_live_spec(&ledger, &handle)
+        && reason == 1
+        && next.authority.identity == ledger.authority.identity
+        && next.active[handle.slot] == ledger.active[handle.slot]
+        && next.generation[handle.slot] == ledger.generation[handle.slot]
+        && next.rights[handle.slot] == ledger.rights[handle.slot]
+        && returned.authority == handle.authority
+        && returned.slot == handle.slot
+        && returned.generation == handle.generation
+        && returned.rights == handle.rights,
+  }
+  fx pure
+{
+  if generation_handle_live(&ledger, &handle) {
+    let slot: usize = handle.slot;
+    let mut active: [bool; GENERATION_LEDGER_CAPACITY] = ledger.active;
+    let generation: [u64; GENERATION_LEDGER_CAPACITY] = ledger.generation;
+    let mut stored_rights: [u64; GENERATION_LEDGER_CAPACITY] = ledger.rights;
+    active[slot] = false;
+    stored_rights[slot] = 0;
+    GenerationRelease::Released {
+      ledger: GenerationLedger {
+        authority: ledger.authority,
+        active: active,
+        generation: generation,
+        rights: stored_rights,
+      },
+    }
+  } else {
+    GenerationRelease::ReleaseRejected {
+      ledger: ledger,
+      handle: handle,
+      reason: 1,
+    }
+  }
+}
+
+fn generation_acquire_probe(
+  identity: usize,
+  rights: u64,
+) -> bool
+  req rights != 0
+  ens result
+  fx platform(boot)
+{
+  let authority: GenerationAuthority = generation_authority(identity);
+  let ledger: GenerationLedger = generation_ledger_init(authority);
+  match generation_acquire_at(ledger, 0, rights) {
+    GenerationAcquire::Acquired { ledger: next, handle } =>
+      generation_handle_live(&next, &handle),
+    GenerationAcquire::AcquireRejected { ledger: _, reason: _ } => false,
+  }
+}
+
+fn generation_lifecycle_probe(
+  identity: usize,
+  rights: u64,
+  narrowed: u64,
+) -> bool
+  req rights != 0
+    && narrowed != 0
+    && (narrowed & rights) == narrowed
+  ens result
+  fx platform(boot)
+{
+  let authority: GenerationAuthority = generation_authority(identity);
+  let ledger: GenerationLedger = generation_ledger_init(authority);
+  match generation_acquire_at(ledger, 0, rights) {
+    GenerationAcquire::Acquired { ledger: acquired, handle } =>
+      match generation_renew(acquired, handle, narrowed) {
+        GenerationRenew::Renewed { ledger: renewed, handle: refreshed } =>
+          match generation_release(renewed, refreshed) {
+            GenerationRelease::Released { ledger: released } => !released.active[0],
+            GenerationRelease::ReleaseRejected { ledger: _, handle: _, reason: _ } => false,
+          },
+        GenerationRenew::RenewRejected { ledger: _, handle: _, reason: _ } => false,
+      },
+    GenerationAcquire::AcquireRejected { ledger: _, reason: _ } => false,
+  }
+}
+
+fn generation_double_release_after_acquire(
+  ledger: GenerationLedger,
+  handle: GenerationHandle,
+) -> bool
+  req generation_handle_live_spec(&ledger, &handle)
+  ens result
+  fx pure
+{
+  let duplicate: GenerationHandle = GenerationHandle {
+    authority: handle.authority,
+    slot: handle.slot,
+    generation: handle.generation,
+    rights: handle.rights,
+  };
+  match generation_release(ledger, handle) {
+    GenerationRelease::Released { ledger: released } =>
+      match generation_release(released, duplicate) {
+        GenerationRelease::Released { ledger: _ } => false,
+        GenerationRelease::ReleaseRejected { ledger: _, handle: _, reason } => reason == 1,
+      },
+    GenerationRelease::ReleaseRejected { ledger: _, handle: _, reason: _ } => false,
+  }
+}
+
+fn generation_reuse_after_acquire(
+  ledger: GenerationLedger,
+  handle: GenerationHandle,
+) -> bool
+  req generation_handle_live_spec(&ledger, &handle)
+    && handle.generation < 18_446_744_073_709_551_614 + 1
+  ens result
+  fx pure
+{
+  let rights: u64 = handle.rights;
+  let slot: usize = handle.slot;
+  let stale: GenerationHandle = GenerationHandle {
+    authority: handle.authority,
+    slot: handle.slot,
+    generation: handle.generation,
+    rights: handle.rights,
+  };
+  match generation_release(ledger, handle) {
+    GenerationRelease::Released { ledger: released } =>
+      match generation_acquire_at(released, slot, rights) {
+        GenerationAcquire::Acquired { ledger: reused, handle: _ } =>
+          !generation_handle_live(&reused, &stale),
+        GenerationAcquire::AcquireRejected { ledger: _, reason: _ } => false,
+      },
+    GenerationRelease::ReleaseRejected { ledger: _, handle: _, reason: _ } => false,
+  }
+}
+
+fn generation_double_release_probe(
+  identity: usize,
+  rights: u64,
+) -> bool
+  req rights != 0
+  ens result
+  fx platform(boot)
+{
+  let authority: GenerationAuthority = generation_authority(identity);
+  let ledger: GenerationLedger = generation_ledger_init(authority);
+  match generation_acquire_at(ledger, 0, rights) {
+    GenerationAcquire::Acquired { ledger: acquired, handle } =>
+      generation_double_release_after_acquire(acquired, handle),
+    GenerationAcquire::AcquireRejected { ledger: _, reason: _ } => false,
+  }
+}
+
+fn generation_rights_escalation_probe(
+  identity: usize,
+  rights: u64,
+  extra: u64,
+) -> bool
+  req rights != 0
+    && extra != 0
+    && !generation_rights_narrow_spec(rights, rights | extra)
+  ens result
+  fx platform(boot)
+{
+  let authority: GenerationAuthority = generation_authority(identity);
+  let ledger: GenerationLedger = generation_ledger_init(authority);
+  match generation_acquire_at(ledger, 0, rights) {
+    GenerationAcquire::Acquired { ledger: acquired, handle } =>
+      match generation_renew(acquired, handle, rights | extra) {
+        GenerationRenew::Renewed { ledger: _, handle: _ } => false,
+        GenerationRenew::RenewRejected { ledger: _, handle: _, reason } => reason == 2,
+      },
+    GenerationAcquire::AcquireRejected { ledger: _, reason: _ } => false,
+  }
+}
+
+fn generation_slot_reuse_probe(
+  identity: usize,
+  rights: u64,
+) -> bool
+  req rights != 0
+  ens result
+  fx platform(boot)
+{
+  let authority: GenerationAuthority = generation_authority(identity);
+  let ledger: GenerationLedger = generation_ledger_init(authority);
+  match generation_acquire_at(ledger, 0, rights) {
+    GenerationAcquire::Acquired { ledger: acquired, handle } =>
+      generation_reuse_after_acquire(acquired, handle),
+    GenerationAcquire::AcquireRejected { ledger: _, reason: _ } => false,
+  }
+}

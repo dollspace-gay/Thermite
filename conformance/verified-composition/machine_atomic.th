@@ -1,0 +1,13 @@
+#[boundary("synthetic::atomic::u64::seq_cst_roundtrip")]
+fn machine_atomic_roundtrip(value: u64) -> u64
+  req true
+  ens result == value
+  fx platform(atomic);
+
+fn machine_atomic_observation(value: u64) -> u64
+  req true
+  ens result == value
+  fx platform(atomic)
+{
+  machine_atomic_roundtrip(value)
+}

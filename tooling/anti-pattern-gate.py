@@ -6,13 +6,18 @@ The hook checks configured Rust source paths for runtime stubs, panics,
 suppression. Each finding explains the preferred alternative.
 
 Full Write content is scanned, excluding ``#[cfg(test)]`` blocks. Edit requests
-scan only the replacement text because surrounding context is unavailable.
+scan the replacement text, and goal.md R-APG-2 exempts test code there too: a
+replacement that carries its own ``#[cfg(test)]`` block is exempt inside that
+block, and a replacement whose anchor lands inside an existing ``#[cfg(test)]``
+block on disk is exempt entirely. A file the hook cannot read keeps the
+narrower exemption, so an unreadable file never widens what the gate allows.
 Proof-specific constructs are reviewed elsewhere because they also have valid
 uses in generated or explicitly unverified code.
 
 Customize ``PATTERNS`` and the ``TARGET_*`` path settings below.
 """
 
+import bisect
 import json
 import os
 import re
@@ -160,6 +165,51 @@ def line_indices_inside_test(lines):
     return inside
 
 
+def anchor_line_indices(content, lines, needle):
+    """Return the 0-based line indices every occurrence of needle covers."""
+    starts = []
+    offset = 0
+    for line in lines:
+        starts.append(offset)
+        offset += len(line) + 1
+    covered = set()
+    at = content.find(needle)
+    while at >= 0:
+        first = max(bisect.bisect_right(starts, at) - 1, 0)
+        last = max(bisect.bisect_right(starts, at + len(needle) - 1) - 1, 0)
+        covered.update(range(first, last + 1))
+        at = content.find(needle, at + 1)
+    return covered
+
+
+def edit_exempt_lines(tool_input, target, lines):
+    """Return the exempt line indices for an Edit's replacement text.
+
+    goal.md R-APG-2 exempts ``#[cfg(test)]`` code. An Edit supplies only the
+    replacement, so the exemption comes from two places. The replacement may
+    carry a complete ``#[cfg(test)]`` block of its own, which is exempt inside
+    that block. The replacement may also land inside an existing
+    ``#[cfg(test)]`` block in the file on disk, which exempts all of it. A file
+    the hook cannot read keeps the first source alone.
+    """
+    exempt = line_indices_inside_test(lines)
+    old_string = tool_input.get("old_string", "")
+    if not old_string:
+        return exempt
+    try:
+        current = target.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return exempt
+    file_lines = current.split("\n")
+    anchors = anchor_line_indices(current, file_lines, old_string)
+    if not anchors:
+        return exempt
+    inside = line_indices_inside_test(file_lines)
+    if anchors <= inside:
+        return set(range(len(lines)))
+    return exempt
+
+
 def strip_comments_and_strings(line):
     """Strip // comments and string literals to avoid false positives."""
     if "//" in line:
@@ -254,10 +304,11 @@ def main():
     if not is_gated_path(rel):
         sys.exit(0)
 
+    tool_input = input_data.get("tool_input", {})
     if tool_name == "Write":
-        content = input_data.get("tool_input", {}).get("content", "")
+        content = tool_input.get("content", "")
     else:
-        content = input_data.get("tool_input", {}).get("new_string", "")
+        content = tool_input.get("new_string", "")
 
     if not content:
         sys.exit(0)
@@ -267,7 +318,7 @@ def main():
     if tool_name == "Write":
         test_lines = line_indices_inside_test(lines)
     else:
-        test_lines = set()
+        test_lines = edit_exempt_lines(tool_input, repo_root / rel, lines)
 
     violations = []
     for idx, raw_line in enumerate(lines):

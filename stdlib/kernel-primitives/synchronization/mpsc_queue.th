@@ -1,0 +1,832 @@
+const MPSC_QUEUE_CAPACITY: usize = 64;
+
+struct MpscQueue64 {
+  reserved: usize,
+  consumed: usize,
+  ready: [bool; MPSC_QUEUE_CAPACITY],
+  tickets: [usize; MPSC_QUEUE_CAPACITY],
+  values: [u64; MPSC_QUEUE_CAPACITY],
+}
+
+struct MpscReservation64 {
+  ticket: usize,
+  slot: usize,
+}
+
+enum MpscReserve64 {
+  MpscReserved64 {
+    queue: MpscQueue64,
+    reservation: MpscReservation64,
+  },
+  MpscFull64 {
+    queue: MpscQueue64,
+  },
+  MpscCounterExhausted64 {
+    queue: MpscQueue64,
+  },
+  MpscReservationSlotBusy64 {
+    queue: MpscQueue64,
+    slot: usize,
+  },
+}
+
+enum MpscPublish64 {
+  MpscPublished64 {
+    queue: MpscQueue64,
+    ticket: usize,
+  },
+  MpscPublishStale64 {
+    queue: MpscQueue64,
+    reservation: MpscReservation64,
+    value: u64,
+  },
+  MpscPublishUnknown64 {
+    queue: MpscQueue64,
+    reservation: MpscReservation64,
+    value: u64,
+  },
+  MpscPublishSlotMismatch64 {
+    queue: MpscQueue64,
+    reservation: MpscReservation64,
+    value: u64,
+  },
+  MpscPublishDuplicate64 {
+    queue: MpscQueue64,
+    reservation: MpscReservation64,
+    value: u64,
+  },
+  MpscPublishSlotBusy64 {
+    queue: MpscQueue64,
+    reservation: MpscReservation64,
+    value: u64,
+  },
+}
+
+enum MpscPop64 {
+  MpscPopped64 {
+    queue: MpscQueue64,
+    ticket: usize,
+    value: u64,
+  },
+  MpscEmpty64 {
+    queue: MpscQueue64,
+  },
+  MpscPending64 {
+    queue: MpscQueue64,
+    ticket: usize,
+  },
+  MpscSlotConflict64 {
+    queue: MpscQueue64,
+    ticket: usize,
+    observed_ticket: usize,
+  },
+}
+
+spec fn mpsc_queue_wf_spec(queue: &MpscQueue64) -> bool
+  dec queue.reserved - queue.consumed
+{
+  queue.consumed <= queue.reserved
+    && queue.reserved - queue.consumed <= MPSC_QUEUE_CAPACITY
+}
+
+spec fn mpsc_queue_slot_spec(ticket: usize) -> usize
+  dec ticket
+{
+  ticket % MPSC_QUEUE_CAPACITY
+}
+
+spec fn mpsc_ready_same_except_spec(
+  left: &[bool; MPSC_QUEUE_CAPACITY],
+  right: &[bool; MPSC_QUEUE_CAPACITY],
+  except: usize,
+) -> bool
+  dec except
+{
+  left.array_same_except(right, except)
+}
+
+spec fn mpsc_tickets_same_except_spec(
+  left: &[usize; MPSC_QUEUE_CAPACITY],
+  right: &[usize; MPSC_QUEUE_CAPACITY],
+  except: usize,
+) -> bool
+  dec except
+{
+  left.array_same_except(right, except)
+}
+
+spec fn mpsc_values_same_except_spec(
+  left: &[u64; MPSC_QUEUE_CAPACITY],
+  right: &[u64; MPSC_QUEUE_CAPACITY],
+  except: usize,
+) -> bool
+  dec except
+{
+  left.array_same_except(right, except)
+}
+
+spec fn mpsc_ready_clear_spec(
+  ready: &[bool; MPSC_QUEUE_CAPACITY],
+) -> bool
+  dec MPSC_QUEUE_CAPACITY
+{
+  let expected: [bool; MPSC_QUEUE_CAPACITY] = [false; MPSC_QUEUE_CAPACITY];
+  ready.array_eq(expected)
+}
+
+spec fn mpsc_tickets_clear_spec(
+  tickets: &[usize; MPSC_QUEUE_CAPACITY],
+) -> bool
+  dec MPSC_QUEUE_CAPACITY
+{
+  let expected: [usize; MPSC_QUEUE_CAPACITY] = [0; MPSC_QUEUE_CAPACITY];
+  tickets.array_eq(expected)
+}
+
+spec fn mpsc_values_clear_spec(
+  values: &[u64; MPSC_QUEUE_CAPACITY],
+) -> bool
+  dec MPSC_QUEUE_CAPACITY
+{
+  let expected: [u64; MPSC_QUEUE_CAPACITY] = [0; MPSC_QUEUE_CAPACITY];
+  values.array_eq(expected)
+}
+
+spec fn mpsc_queue_storage_same_spec(
+  left: &MpscQueue64,
+  right: &MpscQueue64,
+) -> bool
+  dec left.reserved
+{
+  mpsc_ready_same_except_spec(
+    &left.ready,
+    &right.ready,
+    MPSC_QUEUE_CAPACITY,
+  ) && mpsc_tickets_same_except_spec(
+    &left.tickets,
+    &right.tickets,
+    MPSC_QUEUE_CAPACITY,
+  ) && mpsc_values_same_except_spec(
+    &left.values,
+    &right.values,
+    MPSC_QUEUE_CAPACITY,
+  )
+}
+
+spec fn mpsc_queue_same_spec(
+  left: &MpscQueue64,
+  right: &MpscQueue64,
+) -> bool
+  dec left.reserved
+{
+  left.reserved == right.reserved
+    && left.consumed == right.consumed
+    && mpsc_queue_storage_same_spec(left, right)
+}
+
+fn mpsc_queue_wf(queue: &MpscQueue64) -> bool
+  req true
+  ens result == mpsc_queue_wf_spec(queue)
+  fx pure
+{
+  queue.consumed <= queue.reserved
+    && queue.reserved - queue.consumed <= MPSC_QUEUE_CAPACITY
+}
+
+fn mpsc_queue_slot(ticket: usize) -> usize
+  req true
+  ens result == mpsc_queue_slot_spec(ticket)
+  ens result < MPSC_QUEUE_CAPACITY
+  fx pure
+{
+  ticket % MPSC_QUEUE_CAPACITY
+}
+
+fn mpsc_queue_empty() -> MpscQueue64
+  req true
+  ens mpsc_queue_wf_spec(&result)
+  ens result.reserved == 0 && result.consumed == 0
+  ens mpsc_ready_clear_spec(&result.ready)
+  ens mpsc_tickets_clear_spec(&result.tickets)
+  ens mpsc_values_clear_spec(&result.values)
+  fx pure
+{
+  MpscQueue64 {
+    reserved: 0,
+    consumed: 0,
+    ready: [false; MPSC_QUEUE_CAPACITY],
+    tickets: [0; MPSC_QUEUE_CAPACITY],
+    values: [0; MPSC_QUEUE_CAPACITY],
+  }
+}
+
+fn mpsc_queue_len(queue: &MpscQueue64) -> usize
+  req mpsc_queue_wf_spec(queue)
+  ens result == queue.reserved - queue.consumed
+  ens result <= MPSC_QUEUE_CAPACITY
+  fx pure
+{
+  queue.reserved - queue.consumed
+}
+
+fn mpsc_queue_is_empty(queue: &MpscQueue64) -> bool
+  req mpsc_queue_wf_spec(queue)
+  ens result == (queue.reserved == queue.consumed)
+  fx pure
+{
+  queue.reserved == queue.consumed
+}
+
+fn mpsc_queue_reserve(queue: MpscQueue64) -> MpscReserve64
+  req mpsc_queue_wf_spec(&queue)
+  ens match result {
+    MpscReserve64::MpscReserved64 { queue: next, reservation } =>
+      queue.reserved - queue.consumed < MPSC_QUEUE_CAPACITY
+        && queue.reserved < usize::MAX
+        && !queue.ready[mpsc_queue_slot_spec(queue.reserved)]
+        && mpsc_queue_wf_spec(&next)
+        && next.reserved == queue.reserved + 1
+        && next.consumed == queue.consumed
+        && mpsc_queue_storage_same_spec(&next, &queue)
+        && reservation.ticket == queue.reserved
+        && reservation.slot == mpsc_queue_slot_spec(queue.reserved),
+    MpscReserve64::MpscFull64 { queue: next } =>
+      queue.reserved - queue.consumed == MPSC_QUEUE_CAPACITY
+        && mpsc_queue_wf_spec(&next)
+        && mpsc_queue_same_spec(&next, &queue),
+    MpscReserve64::MpscCounterExhausted64 { queue: next } =>
+      queue.reserved - queue.consumed < MPSC_QUEUE_CAPACITY
+        && queue.reserved == usize::MAX
+        && mpsc_queue_wf_spec(&next)
+        && mpsc_queue_same_spec(&next, &queue),
+    MpscReserve64::MpscReservationSlotBusy64 { queue: next, slot } =>
+      queue.reserved - queue.consumed < MPSC_QUEUE_CAPACITY
+        && queue.reserved < usize::MAX
+        && queue.ready[mpsc_queue_slot_spec(queue.reserved)]
+        && mpsc_queue_wf_spec(&next)
+        && mpsc_queue_same_spec(&next, &queue)
+        && slot == mpsc_queue_slot_spec(queue.reserved),
+  }
+  fx pure
+{
+  if queue.reserved - queue.consumed == MPSC_QUEUE_CAPACITY {
+    MpscReserve64::MpscFull64 { queue: queue }
+  } else {
+    if queue.reserved == usize::MAX {
+      MpscReserve64::MpscCounterExhausted64 { queue: queue }
+    } else {
+      let slot: usize = mpsc_queue_slot(queue.reserved);
+      if queue.ready[slot] {
+        MpscReserve64::MpscReservationSlotBusy64 {
+          queue: queue,
+          slot: slot,
+        }
+      } else {
+        MpscReserve64::MpscReserved64 {
+          queue: MpscQueue64 {
+            reserved: queue.reserved + 1,
+            consumed: queue.consumed,
+            ready: queue.ready,
+            tickets: queue.tickets,
+            values: queue.values,
+          },
+          reservation: MpscReservation64 {
+            ticket: queue.reserved,
+            slot: slot,
+          },
+        }
+      }
+    }
+  }
+}
+
+fn mpsc_queue_publish(
+  queue: MpscQueue64,
+  reservation: MpscReservation64,
+  value: u64,
+) -> MpscPublish64
+  req mpsc_queue_wf_spec(&queue)
+  ens match result {
+    MpscPublish64::MpscPublished64 { queue: next, ticket } =>
+      reservation.slot == mpsc_queue_slot_spec(reservation.ticket)
+        && reservation.ticket >= queue.consumed
+        && reservation.ticket < queue.reserved
+        && !queue.ready[reservation.slot]
+        && mpsc_queue_wf_spec(&next)
+        && next.reserved == queue.reserved
+        && next.consumed == queue.consumed
+        && next.ready[reservation.slot]
+        && next.tickets[reservation.slot] == reservation.ticket
+        && next.values[reservation.slot] == value
+        && mpsc_ready_same_except_spec(
+          &next.ready,
+          &queue.ready,
+          reservation.slot,
+        )
+        && mpsc_tickets_same_except_spec(
+          &next.tickets,
+          &queue.tickets,
+          reservation.slot,
+        )
+        && mpsc_values_same_except_spec(
+          &next.values,
+          &queue.values,
+          reservation.slot,
+        )
+        && ticket == reservation.ticket,
+    MpscPublish64::MpscPublishStale64 { queue: next, reservation: returned, value: returned_value } =>
+      reservation.slot == mpsc_queue_slot_spec(reservation.ticket)
+        && reservation.ticket < queue.consumed
+        && mpsc_queue_wf_spec(&next)
+        && mpsc_queue_same_spec(&next, &queue)
+        && returned.ticket == reservation.ticket
+        && returned.slot == reservation.slot
+        && returned_value == value,
+    MpscPublish64::MpscPublishUnknown64 { queue: next, reservation: returned, value: returned_value } =>
+      reservation.slot == mpsc_queue_slot_spec(reservation.ticket)
+        && reservation.ticket >= queue.reserved
+        && mpsc_queue_wf_spec(&next)
+        && mpsc_queue_same_spec(&next, &queue)
+        && returned.ticket == reservation.ticket
+        && returned.slot == reservation.slot
+        && returned_value == value,
+    MpscPublish64::MpscPublishSlotMismatch64 { queue: next, reservation: returned, value: returned_value } =>
+      reservation.slot != mpsc_queue_slot_spec(reservation.ticket)
+        && mpsc_queue_wf_spec(&next)
+        && mpsc_queue_same_spec(&next, &queue)
+        && returned.ticket == reservation.ticket
+        && returned.slot == reservation.slot
+        && returned_value == value,
+    MpscPublish64::MpscPublishDuplicate64 { queue: next, reservation: returned, value: returned_value } =>
+      reservation.slot == mpsc_queue_slot_spec(reservation.ticket)
+        && reservation.ticket >= queue.consumed
+        && reservation.ticket < queue.reserved
+        && queue.ready[reservation.slot]
+        && queue.tickets[reservation.slot] == reservation.ticket
+        && mpsc_queue_wf_spec(&next)
+        && mpsc_queue_same_spec(&next, &queue)
+        && returned.ticket == reservation.ticket
+        && returned.slot == reservation.slot
+        && returned_value == value,
+    MpscPublish64::MpscPublishSlotBusy64 { queue: next, reservation: returned, value: returned_value } =>
+      reservation.slot == mpsc_queue_slot_spec(reservation.ticket)
+        && reservation.ticket >= queue.consumed
+        && reservation.ticket < queue.reserved
+        && queue.ready[reservation.slot]
+        && queue.tickets[reservation.slot] != reservation.ticket
+        && mpsc_queue_wf_spec(&next)
+        && mpsc_queue_same_spec(&next, &queue)
+        && returned.ticket == reservation.ticket
+        && returned.slot == reservation.slot
+        && returned_value == value,
+  }
+  fx pure
+{
+  let expected_slot: usize = mpsc_queue_slot(reservation.ticket);
+  if reservation.slot != expected_slot {
+    MpscPublish64::MpscPublishSlotMismatch64 {
+      queue: queue,
+      reservation: reservation,
+      value: value,
+    }
+  } else {
+    if reservation.ticket < queue.consumed {
+      MpscPublish64::MpscPublishStale64 {
+        queue: queue,
+        reservation: reservation,
+        value: value,
+      }
+    } else {
+      if reservation.ticket >= queue.reserved {
+        MpscPublish64::MpscPublishUnknown64 {
+          queue: queue,
+          reservation: reservation,
+          value: value,
+        }
+      } else {
+        if queue.ready[reservation.slot] {
+          if queue.tickets[reservation.slot] == reservation.ticket {
+            MpscPublish64::MpscPublishDuplicate64 {
+              queue: queue,
+              reservation: reservation,
+              value: value,
+            }
+          } else {
+            MpscPublish64::MpscPublishSlotBusy64 {
+              queue: queue,
+              reservation: reservation,
+              value: value,
+            }
+          }
+        } else {
+          let mut ready: [bool; MPSC_QUEUE_CAPACITY] = queue.ready;
+          let mut tickets: [usize; MPSC_QUEUE_CAPACITY] = queue.tickets;
+          let mut values: [u64; MPSC_QUEUE_CAPACITY] = queue.values;
+          ready[reservation.slot] = true;
+          tickets[reservation.slot] = reservation.ticket;
+          values[reservation.slot] = value;
+          MpscPublish64::MpscPublished64 {
+            queue: MpscQueue64 {
+              reserved: queue.reserved,
+              consumed: queue.consumed,
+              ready: ready,
+              tickets: tickets,
+              values: values,
+            },
+            ticket: reservation.ticket,
+          }
+        }
+      }
+    }
+  }
+}
+
+fn mpsc_queue_pop(queue: MpscQueue64) -> MpscPop64
+  req mpsc_queue_wf_spec(&queue)
+  ens match result {
+    MpscPop64::MpscPopped64 { queue: next, ticket, value } =>
+      queue.consumed < queue.reserved
+        && queue.ready[mpsc_queue_slot_spec(queue.consumed)]
+        && queue.tickets[mpsc_queue_slot_spec(queue.consumed)] == queue.consumed
+        && mpsc_queue_wf_spec(&next)
+        && next.reserved == queue.reserved
+        && next.consumed == queue.consumed + 1
+        && !next.ready[mpsc_queue_slot_spec(queue.consumed)]
+        && next.values[mpsc_queue_slot_spec(queue.consumed)] == 0
+        && mpsc_ready_same_except_spec(
+          &next.ready,
+          &queue.ready,
+          mpsc_queue_slot_spec(queue.consumed),
+        )
+        && mpsc_tickets_same_except_spec(
+          &next.tickets,
+          &queue.tickets,
+          MPSC_QUEUE_CAPACITY,
+        )
+        && mpsc_values_same_except_spec(
+          &next.values,
+          &queue.values,
+          mpsc_queue_slot_spec(queue.consumed),
+        )
+        && ticket == queue.consumed
+        && value == queue.values[mpsc_queue_slot_spec(queue.consumed)],
+    MpscPop64::MpscEmpty64 { queue: next } =>
+      queue.consumed == queue.reserved
+        && mpsc_queue_wf_spec(&next)
+        && mpsc_queue_same_spec(&next, &queue),
+    MpscPop64::MpscPending64 { queue: next, ticket } =>
+      queue.consumed < queue.reserved
+        && !queue.ready[mpsc_queue_slot_spec(queue.consumed)]
+        && mpsc_queue_wf_spec(&next)
+        && mpsc_queue_same_spec(&next, &queue)
+        && ticket == queue.consumed,
+    MpscPop64::MpscSlotConflict64 { queue: next, ticket, observed_ticket } =>
+      queue.consumed < queue.reserved
+        && queue.ready[mpsc_queue_slot_spec(queue.consumed)]
+        && queue.tickets[mpsc_queue_slot_spec(queue.consumed)] != queue.consumed
+        && mpsc_queue_wf_spec(&next)
+        && mpsc_queue_same_spec(&next, &queue)
+        && ticket == queue.consumed
+        && observed_ticket == queue.tickets[mpsc_queue_slot_spec(queue.consumed)],
+  }
+  fx pure
+{
+  if queue.consumed == queue.reserved {
+    MpscPop64::MpscEmpty64 { queue: queue }
+  } else {
+    let ticket: usize = queue.consumed;
+    let slot: usize = mpsc_queue_slot(ticket);
+    if !queue.ready[slot] {
+      MpscPop64::MpscPending64 {
+        queue: queue,
+        ticket: ticket,
+      }
+    } else {
+      if queue.tickets[slot] != ticket {
+        MpscPop64::MpscSlotConflict64 {
+          observed_ticket: queue.tickets[slot],
+          queue: queue,
+          ticket: ticket,
+        }
+      } else {
+        let value: u64 = queue.values[slot];
+        let mut ready: [bool; MPSC_QUEUE_CAPACITY] = queue.ready;
+        let mut values: [u64; MPSC_QUEUE_CAPACITY] = queue.values;
+        ready[slot] = false;
+        values[slot] = 0;
+        MpscPop64::MpscPopped64 {
+          queue: MpscQueue64 {
+            reserved: queue.reserved,
+            consumed: queue.consumed + 1,
+            ready: ready,
+            tickets: queue.tickets,
+            values: values,
+          },
+          ticket: ticket,
+          value: value,
+        }
+      }
+    }
+  }
+}
+
+fn mpsc_queue_fifo_after_second_publish(
+  queue: MpscQueue64,
+  first: MpscReservation64,
+  second_ticket: usize,
+  first_value: u64,
+  second_value: u64,
+) -> bool
+  req mpsc_queue_wf_spec(&queue)
+    && queue.reserved == 2
+    && queue.consumed == 0
+    && first.ticket == 0
+    && first.slot == 0
+    && second_ticket == 1
+    && queue.ready[1]
+    && queue.tickets[1] == 1
+    && queue.values[1] == second_value
+    && !queue.ready[0]
+  ens result
+  fx pure
+{
+  match mpsc_queue_pop(queue) {
+    MpscPop64::MpscPopped64 { queue: _, ticket: _, value: _ } => false,
+    MpscPop64::MpscEmpty64 { queue: _ } => false,
+    MpscPop64::MpscPending64 { queue: pending, ticket } =>
+      if ticket == first.ticket {
+        match mpsc_queue_publish(pending, first, first_value) {
+          MpscPublish64::MpscPublished64 { queue: both, ticket: published } =>
+            if published == 0 {
+              match mpsc_queue_pop(both) {
+                MpscPop64::MpscPopped64 { queue: one_left, ticket: first_ticket, value: got_first } =>
+                  if first_ticket == 0 && got_first == first_value {
+                    match mpsc_queue_pop(one_left) {
+                      MpscPop64::MpscPopped64 { queue: empty, ticket: popped_second, value: got_second } =>
+                        popped_second == second_ticket
+                          && got_second == second_value
+                          && mpsc_queue_is_empty(&empty),
+                      MpscPop64::MpscEmpty64 { queue: _ } => false,
+                      MpscPop64::MpscPending64 { queue: _, ticket: _ } => false,
+                      MpscPop64::MpscSlotConflict64 { queue: _, ticket: _, observed_ticket: _ } => false,
+                    }
+                  } else {
+                    false
+                  },
+                MpscPop64::MpscEmpty64 { queue: _ } => false,
+                MpscPop64::MpscPending64 { queue: _, ticket: _ } => false,
+                MpscPop64::MpscSlotConflict64 { queue: _, ticket: _, observed_ticket: _ } => false,
+              }
+            } else {
+              false
+            },
+          MpscPublish64::MpscPublishStale64 { queue: _, reservation: _, value: _ } => false,
+          MpscPublish64::MpscPublishUnknown64 { queue: _, reservation: _, value: _ } => false,
+          MpscPublish64::MpscPublishSlotMismatch64 { queue: _, reservation: _, value: _ } => false,
+          MpscPublish64::MpscPublishDuplicate64 { queue: _, reservation: _, value: _ } => false,
+          MpscPublish64::MpscPublishSlotBusy64 { queue: _, reservation: _, value: _ } => false,
+        }
+      } else {
+        false
+      },
+    MpscPop64::MpscSlotConflict64 { queue: _, ticket: _, observed_ticket: _ } => false,
+  }
+}
+
+fn mpsc_queue_fifo_after_reservations(
+  queue: MpscQueue64,
+  first: MpscReservation64,
+  second: MpscReservation64,
+  first_value: u64,
+  second_value: u64,
+) -> bool
+  req mpsc_queue_wf_spec(&queue)
+    && queue.reserved == 2
+    && queue.consumed == 0
+    && first.ticket == 0
+    && first.slot == 0
+    && second.ticket == 1
+    && second.slot == 1
+    && !queue.ready[0]
+    && !queue.ready[1]
+  ens result
+  fx pure
+{
+  let second_ticket: usize = second.ticket;
+  match mpsc_queue_publish(queue, second, second_value) {
+    MpscPublish64::MpscPublished64 { queue: second_ready, ticket } =>
+      ticket == 1
+        && mpsc_queue_fifo_after_second_publish(
+          second_ready,
+          first,
+          second_ticket,
+          first_value,
+          second_value,
+        ),
+    MpscPublish64::MpscPublishStale64 { queue: _, reservation: _, value: _ } => false,
+    MpscPublish64::MpscPublishUnknown64 { queue: _, reservation: _, value: _ } => false,
+    MpscPublish64::MpscPublishSlotMismatch64 { queue: _, reservation: _, value: _ } => false,
+    MpscPublish64::MpscPublishDuplicate64 { queue: _, reservation: _, value: _ } => false,
+    MpscPublish64::MpscPublishSlotBusy64 { queue: _, reservation: _, value: _ } => false,
+  }
+}
+
+fn mpsc_queue_fifo_after_first_reserve(
+  queue: MpscQueue64,
+  first: MpscReservation64,
+  first_value: u64,
+  second_value: u64,
+) -> bool
+  req mpsc_queue_wf_spec(&queue)
+    && queue.reserved == 1
+    && queue.consumed == 0
+    && first.ticket == 0
+    && first.slot == 0
+    && !queue.ready[0]
+    && !queue.ready[1]
+  ens result
+  fx pure
+{
+  match mpsc_queue_reserve(queue) {
+    MpscReserve64::MpscReserved64 { queue: two, reservation: second } =>
+      mpsc_queue_fifo_after_reservations(two, first, second, first_value, second_value),
+    MpscReserve64::MpscFull64 { queue: _ } => false,
+    MpscReserve64::MpscCounterExhausted64 { queue: _ } => false,
+    MpscReserve64::MpscReservationSlotBusy64 { queue: _, slot: _ } => false,
+  }
+}
+
+fn mpsc_queue_fifo_probe(first_value: u64, second_value: u64) -> bool
+  req true
+  ens result
+  fx pure
+{
+  let empty: MpscQueue64 = mpsc_queue_empty();
+  match mpsc_queue_reserve(empty) {
+    MpscReserve64::MpscReserved64 { queue: one, reservation: first } =>
+      mpsc_queue_fifo_after_first_reserve(one, first, first_value, second_value),
+    MpscReserve64::MpscFull64 { queue: _ } => false,
+    MpscReserve64::MpscCounterExhausted64 { queue: _ } => false,
+    MpscReserve64::MpscReservationSlotBusy64 { queue: _, slot: _ } => false,
+  }
+}
+
+fn mpsc_queue_duplicate_publish_after_reserve(
+  queue: MpscQueue64,
+  reservation: MpscReservation64,
+  value: u64,
+) -> bool
+  req mpsc_queue_wf_spec(&queue)
+    && queue.reserved == 1
+    && queue.consumed == 0
+    && reservation.ticket == 0
+    && reservation.slot == 0
+    && !queue.ready[0]
+  ens result
+  fx pure
+{
+  let ticket: usize = reservation.ticket;
+  let slot: usize = reservation.slot;
+  match mpsc_queue_publish(queue, reservation, value) {
+    MpscPublish64::MpscPublished64 { queue: ready, ticket: published } =>
+      if published == ticket {
+        let duplicate: MpscReservation64 = MpscReservation64 {
+          ticket: ticket,
+          slot: slot,
+        };
+        match mpsc_queue_publish(ready, duplicate, value) {
+          MpscPublish64::MpscPublished64 { queue: _, ticket: _ } => false,
+          MpscPublish64::MpscPublishStale64 { queue: _, reservation: _, value: _ } => false,
+          MpscPublish64::MpscPublishUnknown64 { queue: _, reservation: _, value: _ } => false,
+          MpscPublish64::MpscPublishSlotMismatch64 { queue: _, reservation: _, value: _ } => false,
+          MpscPublish64::MpscPublishDuplicate64 { queue, reservation, value: returned } =>
+            queue.ready[slot]
+              && queue.tickets[slot] == ticket
+              && queue.values[slot] == value
+              && reservation.ticket == ticket
+              && reservation.slot == slot
+              && returned == value,
+          MpscPublish64::MpscPublishSlotBusy64 { queue: _, reservation: _, value: _ } => false,
+        }
+      } else {
+        false
+      },
+    MpscPublish64::MpscPublishStale64 { queue: _, reservation: _, value: _ } => false,
+    MpscPublish64::MpscPublishUnknown64 { queue: _, reservation: _, value: _ } => false,
+    MpscPublish64::MpscPublishSlotMismatch64 { queue: _, reservation: _, value: _ } => false,
+    MpscPublish64::MpscPublishDuplicate64 { queue: _, reservation: _, value: _ } => false,
+    MpscPublish64::MpscPublishSlotBusy64 { queue: _, reservation: _, value: _ } => false,
+  }
+}
+
+fn mpsc_queue_duplicate_publish_probe(value: u64) -> bool
+  req true
+  ens result
+  fx pure
+{
+  let empty: MpscQueue64 = mpsc_queue_empty();
+  match mpsc_queue_reserve(empty) {
+    MpscReserve64::MpscReserved64 { queue, reservation } =>
+      mpsc_queue_duplicate_publish_after_reserve(queue, reservation, value),
+    MpscReserve64::MpscFull64 { queue: _ } => false,
+    MpscReserve64::MpscCounterExhausted64 { queue: _ } => false,
+    MpscReserve64::MpscReservationSlotBusy64 { queue: _, slot: _ } => false,
+  }
+}
+
+fn mpsc_queue_stale_publish_after_reserve(
+  queue: MpscQueue64,
+  reservation: MpscReservation64,
+  value: u64,
+) -> bool
+  req mpsc_queue_wf_spec(&queue)
+    && queue.reserved == 1
+    && queue.consumed == 0
+    && reservation.ticket == 0
+    && reservation.slot == 0
+    && !queue.ready[0]
+  ens result
+  fx pure
+{
+  let ticket: usize = reservation.ticket;
+  let slot: usize = reservation.slot;
+  match mpsc_queue_publish(queue, reservation, value) {
+    MpscPublish64::MpscPublished64 { queue: ready, ticket: published } =>
+      if published == ticket {
+        match mpsc_queue_pop(ready) {
+          MpscPop64::MpscPopped64 { queue: consumed, ticket: popped, value: got } =>
+            if popped == ticket && got == value {
+              let stale: MpscReservation64 = MpscReservation64 {
+                ticket: ticket,
+                slot: slot,
+              };
+              match mpsc_queue_publish(consumed, stale, value) {
+                MpscPublish64::MpscPublished64 { queue: _, ticket: _ } => false,
+                MpscPublish64::MpscPublishStale64 { queue, reservation, value: returned } =>
+                  queue.consumed == 1
+                    && queue.reserved == 1
+                    && reservation.ticket == ticket
+                    && reservation.slot == slot
+                    && returned == value,
+                MpscPublish64::MpscPublishUnknown64 { queue: _, reservation: _, value: _ } => false,
+                MpscPublish64::MpscPublishSlotMismatch64 { queue: _, reservation: _, value: _ } => false,
+                MpscPublish64::MpscPublishDuplicate64 { queue: _, reservation: _, value: _ } => false,
+                MpscPublish64::MpscPublishSlotBusy64 { queue: _, reservation: _, value: _ } => false,
+              }
+            } else {
+              false
+            },
+          MpscPop64::MpscEmpty64 { queue: _ } => false,
+          MpscPop64::MpscPending64 { queue: _, ticket: _ } => false,
+          MpscPop64::MpscSlotConflict64 { queue: _, ticket: _, observed_ticket: _ } => false,
+        }
+      } else {
+        false
+      },
+    MpscPublish64::MpscPublishStale64 { queue: _, reservation: _, value: _ } => false,
+    MpscPublish64::MpscPublishUnknown64 { queue: _, reservation: _, value: _ } => false,
+    MpscPublish64::MpscPublishSlotMismatch64 { queue: _, reservation: _, value: _ } => false,
+    MpscPublish64::MpscPublishDuplicate64 { queue: _, reservation: _, value: _ } => false,
+    MpscPublish64::MpscPublishSlotBusy64 { queue: _, reservation: _, value: _ } => false,
+  }
+}
+
+fn mpsc_queue_stale_publish_probe(value: u64) -> bool
+  req true
+  ens result
+  fx pure
+{
+  let empty: MpscQueue64 = mpsc_queue_empty();
+  match mpsc_queue_reserve(empty) {
+    MpscReserve64::MpscReserved64 { queue, reservation } =>
+      mpsc_queue_stale_publish_after_reserve(queue, reservation, value),
+    MpscReserve64::MpscFull64 { queue: _ } => false,
+    MpscReserve64::MpscCounterExhausted64 { queue: _ } => false,
+    MpscReserve64::MpscReservationSlotBusy64 { queue: _, slot: _ } => false,
+  }
+}
+
+fn mpsc_queue_slot_conflict_probe() -> bool
+  req true
+  ens result
+  fx pure
+{
+  let mut ready: [bool; MPSC_QUEUE_CAPACITY] = [false; MPSC_QUEUE_CAPACITY];
+  let mut tickets: [usize; MPSC_QUEUE_CAPACITY] = [0; MPSC_QUEUE_CAPACITY];
+  ready[0] = true;
+  tickets[0] = 7;
+  let conflict: MpscQueue64 = MpscQueue64 {
+    reserved: 1,
+    consumed: 0,
+    ready: ready,
+    tickets: tickets,
+    values: [0; MPSC_QUEUE_CAPACITY],
+  };
+  match mpsc_queue_pop(conflict) {
+    MpscPop64::MpscPopped64 { queue: _, ticket: _, value: _ } => false,
+    MpscPop64::MpscEmpty64 { queue: _ } => false,
+    MpscPop64::MpscPending64 { queue: _, ticket: _ } => false,
+    MpscPop64::MpscSlotConflict64 { queue, ticket, observed_ticket } =>
+      queue.consumed == 0 && ticket == 0 && observed_ticket == 7,
+  }
+}

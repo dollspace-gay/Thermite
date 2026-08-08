@@ -251,6 +251,9 @@ fn encode_expr(e: &Expr, ctx: &EncodeCtx) -> Result<String, ExportRefusal> {
     match e {
         Expr::IntLit { value, .. } => Ok(format!("(Thermite.Expr.intLit {value})")),
         Expr::BoolLit(b) => Ok(format!("(Thermite.Expr.boolLit {b})")),
+        Expr::Array(_) | Expr::ArrayRepeat { .. } => Err(ExportRefusal::OutOfFragment(
+            "fixed-array value (the v1 Lean spine has no array constructor)".to_string(),
+        )),
         Expr::Path(segs) => {
             if segs.len() != 1 {
                 return Err(ExportRefusal::OutOfFragment(format!(
@@ -2372,6 +2375,11 @@ fn export_item_with_mode(
                 rhs: Box::new(body.clone()),
             }];
             (None, ens, body, Some(s.dec.expr.clone()), s.params.clone())
+        }
+        Item::Const(_) => {
+            return Err(ExportRefusal::OutOfFragment(
+                "capacity declaration (no standalone certification obligation)".to_string(),
+            ))
         }
         Item::Struct(_) | Item::Enum(_) => {
             return Err(ExportRefusal::OutOfFragment(

@@ -184,12 +184,13 @@
 //! | REQ-LOWER-ERGONOMICS-OR-PATTERN | shipped | `thermite-lower/src/lower.rs` | Or-pattern lowering |  |
 //! <!-- /generated:reqs -->
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
 use thermite_syntax::ast::{
-    BinOp, Block, Clause, EnumItem, Expr, FnItem, IndexArg, Item, MatchArm, Param, Pattern,
-    PrimType, Program, Quant, SlicePat, SpecFnItem, Stmt, Type, UnaryOp, VariantDef, VariantShape,
+    ArrayLen, BinOp, Block, Clause, EnumItem, Expr, FnItem, IndexArg, Item, MatchArm, Param,
+    Pattern, PrimType, Program, Quant, SlicePat, SpecFnItem, Stmt, Type, UnaryOp, VariantDef,
+    VariantShape,
 };
 use thermite_syntax::lexer::Span;
 
@@ -248,6 +249,19 @@ pub struct L3Export {
     pub public_name: String,
     pub wrapped: bool,
     pub visibility: L3ExportVisibility,
+}
+
+/// One exact same-crate implementation selected for a Thermite `#[boundary]`
+/// declaration by a frozen primitive registry.  The ordinary lowering path
+/// continues to emit an assumable `external_body` signature for an unbound
+/// boundary.  A strict registry composition instead supplies this row and gets
+/// a checked wrapper whose body calls `call_target`; Verus therefore proves the
+/// declared Thermite contract against the exact implementation in the combined
+/// crate rather than assuming it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct L3BoundaryBinding {
+    pub source_name: String,
+    pub call_target: String,
 }
 
 /// Visibility of an explicitly selected L3 entry point.
@@ -365,6 +379,9 @@ enum Pos {
 struct Ctx<'a> {
     pos: Pos,
     slices: &'a [&'a str],
+    /// Names of parameters borrowed as native fixed arrays. Their spec view is
+    /// `(*array_ref)@`, unlike a slice parameter's direct `slice@` view.
+    array_refs: &'a [&'a str],
     /// Names of `spec fn`s lowered with a `nat` return type (the head-fold-sum
     /// shape — OQ-1). An `Eq` between a `u64`-valued scalar and a call to one of
     /// these coerces the scalar with `as nat`, since `nat` and `u64` are not the
@@ -473,6 +490,7 @@ impl<'a> Ctx<'a> {
         Ctx {
             pos: Pos::Exec,
             slices: NO_SLICES,
+            array_refs: NO_SLICES,
             nat_fns: NO_SLICES,
             variants: NO_VARIANTS,
             nat_ret: false,
@@ -488,6 +506,7 @@ impl<'a> Ctx<'a> {
         Ctx {
             pos: Pos::Spec,
             slices,
+            array_refs: NO_SLICES,
             nat_fns,
             variants: NO_VARIANTS,
             nat_ret: false,
@@ -506,6 +525,7 @@ impl<'a> Ctx<'a> {
         Ctx {
             pos: Pos::Spec,
             slices: NO_SLICES,
+            array_refs: NO_SLICES,
             nat_fns: NO_SLICES,
             variants: NO_VARIANTS,
             nat_ret: false,
@@ -521,6 +541,10 @@ impl<'a> Ctx<'a> {
     /// qualification). Carried through `match`/pattern lowering.
     fn with_variants(mut self, variants: &'a [(&'a str, &'a str)]) -> Ctx<'a> {
         self.variants = variants;
+        self
+    }
+    fn with_array_refs(mut self, names: &'a [&'a str]) -> Ctx<'a> {
+        self.array_refs = names;
         self
     }
     /// This context marked as a `nat`-returning spec-fn body (REQ-10 — integer
@@ -644,6 +668,9 @@ impl<'a> Ctx<'a> {
     fn is_slice(&self, name: &str) -> bool {
         self.slices.contains(&name)
     }
+    fn is_array_ref(&self, name: &str) -> bool {
+        self.array_refs.contains(&name)
+    }
     /// True if `name` is a `nat`-returning spec fn (drives `as nat` coercion).
     fn is_nat_fn(&self, name: &str) -> bool {
         self.nat_fns.contains(&name)
@@ -676,7 +703,7 @@ fn zero_span() -> Span {
 /// in source order with their shape-derived proof aids, and (3) a trailing
 /// `fn main() {}`.
 pub fn lower(program: &Program) -> Result<String, LowerError> {
-    lower_with_profile(program, None)
+    lower_with_profile(program, None, BTreeMap::new())
 }
 
 /// Emit the canonical executable Verus library compiled by the L3 verified-build
@@ -688,6 +715,17 @@ pub fn lower_l3_library(
     program: &Program,
     exports: &[L3Export],
     target: L3LibraryTarget,
+) -> Result<String, LowerError> {
+    lower_l3_library_with_boundaries(program, exports, target, &[])
+}
+
+/// Emit an L3 library while refining selected Thermite boundary declarations
+/// through exact same-crate direct-Verus implementations.
+pub fn lower_l3_library_with_boundaries(
+    program: &Program,
+    exports: &[L3Export],
+    target: L3LibraryTarget,
+    boundary_bindings: &[L3BoundaryBinding],
 ) -> Result<String, LowerError> {
     let mut by_source: BTreeMap<&str, &L3Export> = BTreeMap::new();
     for export in exports {
@@ -708,29 +746,81 @@ pub fn lower_l3_library(
             });
         }
     }
-    lower_with_profile(program, Some((by_source, target)))
+    let mut bound_boundaries = BTreeMap::new();
+    for binding in boundary_bindings {
+        if bound_boundaries
+            .insert(binding.source_name.as_str(), binding.call_target.as_str())
+            .is_some()
+        {
+            return Err(LowerError::Unsupported {
+                what: format!("duplicate L3 boundary binding `{}`", binding.source_name),
+                span: zero_span(),
+            });
+        }
+        let function = program.items.iter().find_map(|item| match item {
+            Item::Fn(function) if function.name == binding.source_name => Some(function),
+            _ => None,
+        });
+        let Some(function) = function else {
+            return Err(LowerError::Unsupported {
+                what: format!("unknown L3 boundary binding `{}`", binding.source_name),
+                span: zero_span(),
+            });
+        };
+        if function.boundary.is_none() || function.slag.is_some() {
+            return Err(LowerError::Unsupported {
+                what: format!(
+                    "L3 boundary binding `{}` does not name a #[boundary] function",
+                    binding.source_name
+                ),
+                span: function.span,
+            });
+        }
+        if !valid_rust_path(&binding.call_target) {
+            return Err(LowerError::Unsupported {
+                what: format!(
+                    "L3 boundary binding `{}` has invalid call target `{}`",
+                    binding.source_name, binding.call_target
+                ),
+                span: function.span,
+            });
+        }
+    }
+    lower_with_profile(program, Some((by_source, target)), bound_boundaries)
+}
+
+fn valid_rust_path(path: &str) -> bool {
+    let mut segments = path.split("::");
+    let Some(first) = segments.next() else {
+        return false;
+    };
+    let valid_segment = |segment: &str| {
+        let mut bytes = segment.bytes();
+        bytes
+            .next()
+            .is_some_and(|byte| byte.is_ascii_alphabetic() || byte == b'_')
+            && bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+    };
+    valid_segment(first) && segments.all(valid_segment) && path.contains("::")
 }
 
 fn lower_with_profile(
     program: &Program,
     library: Option<(BTreeMap<&str, &L3Export>, L3LibraryTarget)>,
+    boundary_bindings: BTreeMap<&str, &str>,
 ) -> Result<String, LowerError> {
     // Verus 0.2026.05.24 synthesizes named-enum projection helpers by iterating
     // a randomly seeded HashMap. That order reaches `lib.rmeta`, so an otherwise
-    // exact composition replay can change bytes when a rich enum has several
-    // named fields. A crate-visible export identifies the same-crate
-    // composition profile. In that profile only, enum declarations are delayed
+    // exact receipt replay can change bytes when a rich enum has several named
+    // fields. Every compiled L3 library must be reproducible, whether its export
+    // is public or crate-visible, so library enum declarations are delayed
     // through this Forge-owned item macro: rustc expands the enum after the
     // outer `verus!` rewrite has finished, while the internal marker keeps the
     // resulting HIR in Verus's checked crate instead of treating it as external.
     // The declaration remains in the single exact source and is still proved
     // and compiled by the one strict Verus invocation; only the randomized,
     // unused `arrow_*` helper synthesis is bypassed.
-    let deterministic_composition_enums = library.as_ref().is_some_and(|(exports, _)| {
-        exports
-            .values()
-            .any(|export| export.visibility == L3ExportVisibility::Crate)
-    });
+    let deterministic_library_enums = library.is_some();
     let mut out = String::new();
     if let Some((_, target)) = &library {
         if matches!(target, L3LibraryTarget::Kernel) {
@@ -741,17 +831,15 @@ fn lower_with_profile(
             out.push_str("extern crate alloc;\nuse alloc::vec::Vec;\n");
         }
     }
-    if matches!(
-        library.as_ref().map(|(_, target)| target),
-        Some(L3LibraryTarget::Kernel)
-    ) {
-        out.push_str("use verus_builtin::*;\nuse verus_builtin_macros::*;\n");
-    } else {
-        out.push_str("use vstd::prelude::*;\n");
-    }
+    // Kernel libraries are verified with `--no-vstd`, but Forge explicitly
+    // imports a digest-bound `vstd.vir` and a matching no_std metadata skeleton.
+    // Use that exact prelude in both profiles so native fixed arrays retain their
+    // finite View/index/update model in freestanding proofs. Specification items
+    // erase; executable indexing and assignment remain core Rust operations.
+    out.push_str("use vstd::prelude::*;\n");
     out.push_str("verus! {\n");
 
-    if deterministic_composition_enums
+    if deterministic_library_enums
         && program
             .items
             .iter()
@@ -770,6 +858,36 @@ fn lower_with_profile(
     // (1) combinator spec-fn definitions used anywhere in the program (REQ-6).
     let combinator_defs = emit_combinator_defs(program)?;
     out.push_str(&combinator_defs);
+
+    // Native Rust array `PartialEq` is not modeled by Verus, so executable
+    // fixed-array equality uses a generated, directly verified linear scan.
+    // The helper is emitted only when an exec body names `.array_eq(..)`; a
+    // contract/spec occurrence lowers directly to finite-view extensional
+    // equality and therefore needs no executable helper.
+    if program_uses_fixed_array_equality(program) {
+        out.push_str(&fixed_array_equality_defs_for_program(program)?);
+    }
+
+    // The declared-index relation family
+    // (`.design/build/aggregate-array-relations.md`, "Lowering the relation").
+    // A collection is addressed twice over: the storage relations above
+    // quantify over a fixed array's own indices, while these quantify over the
+    // index space a `#[logical]` struct declares, which is the vocabulary an
+    // exported contract uses when the representation is opaque. Emitted only for
+    // a program that names the family, and only for the declarations the
+    // validator admitted.
+    if program_uses_logical_relations(program) {
+        out.push_str(&logical_relation_defs_for_program(program));
+    }
+
+    // Packed `u64` bit access needs more than emitting Rust's operators: Verus's
+    // ordinary SMT mode treats dynamic shifts/bit algebra opaquely. Emit a
+    // finite, directly verified 64-way helper only for programs that use the
+    // frozen bit methods. Its postconditions bridge the exact machine operation
+    // into ordinary compositional L3 contracts without a trusted axiom.
+    if program_uses_u64_bit_methods(program) {
+        out.push_str(&u64_bit_defs());
+    }
 
     // (1b) Basis Stage 2 (`.design/basis/02-recursion-schemes.md` REQ-6/REQ-7):
     // the generated per-(ADT, scheme) Verus recursive `spec fn`s
@@ -937,6 +1055,18 @@ fn lower_with_profile(
         })
         .collect();
 
+    // `#[opaque]` is an opt-in library-state construction barrier. The package
+    // gate prevents foreign Thermite modules from spelling its literal; the L3
+    // emitter independently prevents an external Rust crate from doing so by
+    // narrowing the generated fields to crate visibility. Verus consequently
+    // cannot expose a predicate that unfolds through those fields as `pub open`.
+    // Compute the transitive type closure and the spec functions whose bodies
+    // reach it, so those predicates become public-but-closed: usable in an
+    // exported abstract contract, unfoldable by this defining module, and not an
+    // external field-forging seam.
+    let opaque_types = opaque_type_closure(program);
+    let opaque_spec_fns = opaque_spec_fn_closure(program, &opaque_types);
+
     // Basis Stage 7 (`.design/basis/07-strings.md` REQ-4): the program-wide set of
     // field names whose declared type reaches `String` — the editor core's `Buf {
     // text: String, .. }`. A contract reading `b.text.len()` / `result.text.len()`
@@ -1030,11 +1160,13 @@ fn lower_with_profile(
     let mut emitted_lemmas: Vec<String> = Vec::new();
     for item in &program.items {
         let item_src = match item {
+            Item::Const(c) => format!("pub const {}: usize = {};", c.name, c.value),
             Item::SpecFn(s) => lower_spec_fn(
                 s,
                 &variants,
                 &user_string_spec_fns,
                 &spec_fn_param_types,
+                opaque_spec_fns.contains(s.name.as_str()),
                 program,
             )?,
             Item::Fn(f) if f.boundary.is_some() || f.slag.is_some() => {
@@ -1051,6 +1183,7 @@ fn lower_with_profile(
                     &CallLoweringContext {
                         variants: &variants,
                         spec_fn_param_types: &spec_fn_param_types,
+                        bound_boundary_target: boundary_bindings.get(f.name.as_str()).copied(),
                     },
                     L3FnVisibility::Private,
                 )?
@@ -1075,6 +1208,7 @@ fn lower_with_profile(
                     &CallLoweringContext {
                         variants: &variants,
                         spec_fn_param_types: &spec_fn_param_types,
+                        bound_boundary_target: None,
                     },
                     library
                         .as_ref()
@@ -1088,8 +1222,12 @@ fn lower_with_profile(
             // `struct` lowers to a Verus `pub struct` + the `well_formed`
             // type-invariant predicate (REQ-8); a (recursive) `enum` lowers to a
             // Verus `enum` with `Box<T>` at the recursive occurrence (REQ-10).
-            Item::Struct(s) => lower_struct(s, &spec_fn_param_types)?,
-            Item::Enum(e) if deterministic_composition_enums => lower_composition_enum(e)?,
+            Item::Struct(s) => lower_struct(
+                s,
+                &spec_fn_param_types,
+                opaque_types.contains(s.name.as_str()),
+            )?,
+            Item::Enum(e) if deterministic_library_enums => lower_composition_enum(e)?,
             Item::Enum(e) => lower_enum(e)?,
             // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 lowering/cert
             // consumer yet (increments 2b-3); emit nothing, mirroring the inert
@@ -1174,12 +1312,13 @@ fn program_needs_kernel_alloc(program: &Program) -> bool {
                 .iter()
                 .any(|field| type_needs_kernel_alloc(&field.ty)),
         }),
-        Item::Forge(_) => false,
+        Item::Const(_) | Item::Forge(_) => false,
     })
 }
 
 fn type_needs_kernel_alloc(ty: &Type) -> bool {
     match ty {
+        Type::Array { elem, .. } => type_needs_kernel_alloc(elem),
         Type::Box(_) | Type::String | Type::Map(_, _) => true,
         // The no-vstd kernel composition representation for `Vec<T>` carries
         // only its bounded length. It is allocation-free; element operations
@@ -1193,6 +1332,229 @@ fn type_needs_kernel_alloc(ty: &Type) -> bool {
         Type::Tuple(types) => types.iter().any(type_needs_kernel_alloc),
         Type::Prim(_) | Type::Unit | Type::Named(_) => false,
     }
+}
+
+/// Names whose representation reaches an explicitly `#[opaque]` struct. The
+/// closure includes wrapper structs/enums so a public-open predicate cannot
+/// accidentally unfold through a nested crate-visible field.
+fn opaque_type_closure(program: &Program) -> BTreeSet<&str> {
+    let mut names: BTreeSet<&str> = program
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Struct(structure) if structure.opaque => Some(structure.name.as_str()),
+            _ => None,
+        })
+        .collect();
+
+    loop {
+        let mut added = Vec::new();
+        for item in &program.items {
+            let (name, reaches) = match item {
+                Item::Struct(structure) => (
+                    structure.name.as_str(),
+                    structure
+                        .fields
+                        .iter()
+                        .any(|field| type_reaches_named_set(&field.ty, &names)),
+                ),
+                Item::Enum(enumeration) => (
+                    enumeration.name.as_str(),
+                    enumeration
+                        .variants
+                        .iter()
+                        .any(|variant| match &variant.shape {
+                            VariantShape::Unit => false,
+                            VariantShape::Tuple(types) => {
+                                types.iter().any(|ty| type_reaches_named_set(ty, &names))
+                            }
+                            VariantShape::Struct(fields) => fields
+                                .iter()
+                                .any(|field| type_reaches_named_set(&field.ty, &names)),
+                        }),
+                ),
+                _ => continue,
+            };
+            if reaches && !names.contains(name) {
+                added.push(name);
+            }
+        }
+        if added.is_empty() {
+            return names;
+        }
+        names.extend(added);
+    }
+}
+
+fn type_reaches_named_set(ty: &Type, names: &BTreeSet<&str>) -> bool {
+    match ty {
+        Type::Named(name) => names.contains(name.as_str()),
+        Type::Array { elem: inner, .. }
+        | Type::Ref { inner, .. }
+        | Type::Slice(inner)
+        | Type::Generic { arg: inner, .. }
+        | Type::Box(inner)
+        | Type::Vec(inner)
+        | Type::Option(inner) => type_reaches_named_set(inner, names),
+        Type::Result(ok, err) | Type::Map(ok, err) => {
+            type_reaches_named_set(ok, names) || type_reaches_named_set(err, names)
+        }
+        Type::Tuple(types) => types
+            .iter()
+            .any(|inner| type_reaches_named_set(inner, names)),
+        Type::Prim(_) | Type::Unit | Type::String => false,
+    }
+}
+
+/// Spec functions that must not publish an unfoldable body containing an
+/// opaque representation. A function joins the closure when its signature
+/// reaches opaque state, it constructs such a value, or it calls another
+/// function already in the closure. The last rule covers scalar observers that
+/// project from an opaque-producing helper.
+fn opaque_spec_fn_closure<'a>(
+    program: &'a Program,
+    opaque_types: &BTreeSet<&str>,
+) -> BTreeSet<&'a str> {
+    let mut names = BTreeSet::new();
+    loop {
+        let mut added = Vec::new();
+        for item in &program.items {
+            let Item::SpecFn(function) = item else {
+                continue;
+            };
+            let name = function.name.as_str();
+            if names.contains(name) {
+                continue;
+            }
+            let signature_reaches = function
+                .params
+                .iter()
+                .any(|parameter| type_reaches_named_set(&parameter.ty, opaque_types))
+                || type_reaches_named_set(&function.ret, opaque_types);
+            if signature_reaches
+                || block_reaches_opaque(&function.body, opaque_types, &names)
+                || expr_reaches_opaque(&function.dec.expr, opaque_types, &names)
+            {
+                added.push(name);
+            }
+        }
+        if added.is_empty() {
+            return names;
+        }
+        names.extend(added);
+    }
+}
+
+fn block_reaches_opaque(
+    block: &Block,
+    opaque_types: &BTreeSet<&str>,
+    opaque_spec_fns: &BTreeSet<&str>,
+) -> bool {
+    block.stmts.iter().any(|statement| match statement {
+        Stmt::Let { init, .. } | Stmt::Expr(init) | Stmt::Return(Some(init)) => {
+            expr_reaches_opaque(init, opaque_types, opaque_spec_fns)
+        }
+        Stmt::Assign { target, value } => {
+            expr_reaches_opaque(target, opaque_types, opaque_spec_fns)
+                || expr_reaches_opaque(value, opaque_types, opaque_spec_fns)
+        }
+        Stmt::Return(None) | Stmt::Break | Stmt::Continue => false,
+        Stmt::If { cond, then, else_ } => {
+            expr_reaches_opaque(cond, opaque_types, opaque_spec_fns)
+                || block_reaches_opaque(then, opaque_types, opaque_spec_fns)
+                || else_.as_ref().is_some_and(|branch| {
+                    block_reaches_opaque(branch, opaque_types, opaque_spec_fns)
+                })
+        }
+        Stmt::Loop(node) => {
+            node.invs
+                .iter()
+                .any(|inv| expr_reaches_opaque(&inv.expr, opaque_types, opaque_spec_fns))
+                || expr_reaches_opaque(&node.dec.expr, opaque_types, opaque_spec_fns)
+                || match &node.kind {
+                    thermite_syntax::LoopKind::While(cond) => {
+                        expr_reaches_opaque(cond, opaque_types, opaque_spec_fns)
+                    }
+                    thermite_syntax::LoopKind::Loop => false,
+                }
+                || block_reaches_opaque(&node.body, opaque_types, opaque_spec_fns)
+        }
+    }) || block
+        .tail
+        .as_ref()
+        .is_some_and(|tail| expr_reaches_opaque(tail, opaque_types, opaque_spec_fns))
+}
+
+fn expr_reaches_opaque(
+    expr: &Expr,
+    opaque_types: &BTreeSet<&str>,
+    opaque_spec_fns: &BTreeSet<&str>,
+) -> bool {
+    let direct = match expr {
+        Expr::StructLit { path, .. } => path
+            .last()
+            .is_some_and(|name| opaque_types.contains(name.as_str())),
+        Expr::Call { callee, .. } => match callee.as_ref() {
+            Expr::Path(path) => path
+                .last()
+                .is_some_and(|name| opaque_spec_fns.contains(name.as_str())),
+            _ => false,
+        },
+        _ => false,
+    };
+    if direct {
+        return true;
+    }
+
+    let mut found = false;
+    let _ = each_subexpr(expr, &mut |inner| {
+        if expr_reaches_opaque(inner, opaque_types, opaque_spec_fns) {
+            found = true;
+        }
+        Ok(())
+    });
+    found
+}
+
+fn block_calls_direct_name(block: &Block, name: &str) -> bool {
+    block.stmts.iter().any(|statement| match statement {
+        Stmt::Let { init, .. } | Stmt::Expr(init) | Stmt::Return(Some(init)) => {
+            expr_calls_direct_name(init, name)
+        }
+        Stmt::Assign { target, value } => {
+            expr_calls_direct_name(target, name) || expr_calls_direct_name(value, name)
+        }
+        Stmt::Return(None) | Stmt::Break | Stmt::Continue => false,
+        Stmt::If { cond, then, else_ } => {
+            expr_calls_direct_name(cond, name)
+                || block_calls_direct_name(then, name)
+                || else_
+                    .as_ref()
+                    .is_some_and(|branch| block_calls_direct_name(branch, name))
+        }
+        Stmt::Loop(node) => block_calls_direct_name(&node.body, name),
+    }) || block
+        .tail
+        .as_ref()
+        .is_some_and(|tail| expr_calls_direct_name(tail, name))
+}
+
+fn expr_calls_direct_name(expr: &Expr, name: &str) -> bool {
+    if matches!(
+        expr,
+        Expr::Call { callee, .. }
+            if matches!(callee.as_ref(), Expr::Path(path) if path.last().is_some_and(|segment| segment == name))
+    ) {
+        return true;
+    }
+    let mut found = false;
+    let _ = each_subexpr(expr, &mut |inner| {
+        if expr_calls_direct_name(inner, name) {
+            found = true;
+        }
+        Ok(())
+    });
+    found
 }
 
 // ---------------------------------------------------------------------------
@@ -1210,21 +1572,25 @@ fn type_needs_kernel_alloc(ty: &Type) -> bool {
 /// }
 /// ```
 ///
-/// Visibility tier (the recorded finding, REQ-8): a `pub open spec fn` body may
-/// refer only to `pub` items, so the struct, its fields, and the predicate are
-/// all emitted `pub` — otherwise verus rejects with `field expression for a
-/// non-visible datatype`. The `inv` expression is lowered with bare field-name
-/// paths rewritten to `self.<field>` (the predicate's receiver), the
-/// data-invariant the corpus `inv balance <= 1_000_000` denotes.
+/// Visibility tier (the recorded finding, REQ-8): an ordinary struct and its
+/// open invariant remain public. An explicitly opaque struct instead has
+/// crate-visible fields, and every invariant whose representation transitively
+/// reaches it is public-but-closed. This is the Verus-valid abstract surface
+/// specified by `.design/build/opaque-library-state.md`. The `inv` expression
+/// is lowered with bare field-name paths rewritten to `self.<field>` (the
+/// predicate's receiver), the data-invariant the corpus
+/// `inv balance <= 1_000_000` denotes.
 fn lower_struct(
     s: &thermite_syntax::ast::StructItem,
     spec_fn_param_types: &[(&str, &[PrimType])],
+    representation_reaches_opaque: bool,
 ) -> Result<String, LowerError> {
     let mut out = String::new();
     writeln!(out, "pub struct {} {{", s.name).ok();
     for field in &s.fields {
         let ty = lower_type(&field.ty)?;
-        writeln!(out, "    pub {}: {ty},", field.name).ok();
+        let visibility = if s.opaque { "pub(crate) " } else { "pub " };
+        writeln!(out, "    {visibility}{}: {ty},", field.name).ok();
     }
     out.push_str("}\n");
 
@@ -1259,7 +1625,11 @@ fn lower_struct(
             )?
         };
         writeln!(out, "\nimpl {} {{", s.name).ok();
-        out.push_str("    pub open spec fn well_formed(&self) -> bool {\n");
+        if representation_reaches_opaque {
+            out.push_str("    pub closed spec fn well_formed(&self) -> bool {\n");
+        } else {
+            out.push_str("    pub open spec fn well_formed(&self) -> bool {\n");
+        }
         writeln!(out, "        {body}").ok();
         out.push_str("    }\n}\n");
     }
@@ -1495,6 +1865,132 @@ fn lower_inv_expr(
                 d,
                 span,
             )?;
+            if name == "array_eq" && args.len() == 1 {
+                let right = lower_inv_expr(
+                    &args[0],
+                    field_names,
+                    string_fields,
+                    spec_fn_param_types,
+                    d,
+                    span,
+                )?;
+                return Ok(format!("(({r})@ =~= ({right})@)"));
+            }
+            if name == "array_same_except" && args.len() == 2 {
+                let right = lower_inv_expr(
+                    &args[0],
+                    field_names,
+                    string_fields,
+                    spec_fn_param_types,
+                    d,
+                    span,
+                )?;
+                let except = lower_inv_expr(
+                    &args[1],
+                    field_names,
+                    string_fields,
+                    spec_fn_param_types,
+                    d,
+                    span,
+                )?;
+                return Ok(format!(
+                    "({r}).__thermite_fixed_array_same_except_spec(&({right}), {except})"
+                ));
+            }
+            if name == "array_same_except_two" && args.len() == 3 {
+                let right = lower_inv_expr(
+                    &args[0],
+                    field_names,
+                    string_fields,
+                    spec_fn_param_types,
+                    d,
+                    span,
+                )?;
+                let first = lower_inv_expr(
+                    &args[1],
+                    field_names,
+                    string_fields,
+                    spec_fn_param_types,
+                    d,
+                    span,
+                )?;
+                let second = lower_inv_expr(
+                    &args[2],
+                    field_names,
+                    string_fields,
+                    spec_fn_param_types,
+                    d,
+                    span,
+                )?;
+                return Ok(format!(
+                    "({r}).__thermite_fixed_array_same_except_two_spec(&({right}), {first}, {second})"
+                ));
+            }
+            // The declared-index relations in a struct type invariant, the third
+            // contract position the family reaches
+            // (`.design/build/aggregate-array-relations.md`, "Surface"). Same
+            // emission as the `req`/`ens`/`spec fn` path, so one relation has
+            // one lowering across every contract position (R-DEFER-8).
+            if let Some(arity) = logical_relation_arity(name) {
+                if args.len() == arity {
+                    let mut lowered = Vec::with_capacity(arity);
+                    for arg in args {
+                        lowered.push(lower_inv_expr(
+                            arg,
+                            field_names,
+                            string_fields,
+                            spec_fn_param_types,
+                            d,
+                            span,
+                        )?);
+                    }
+                    return Ok(logical_relation_call(name, &r, &lowered));
+                }
+            }
+            if args.len() == 1 && matches!(name.as_str(), "bit_test" | "bit_set" | "bit_clear") {
+                let index = lower_inv_expr(
+                    &args[0],
+                    field_names,
+                    string_fields,
+                    spec_fn_param_types,
+                    d,
+                    span,
+                )?;
+                let helper = match name.as_str() {
+                    "bit_test" => "__thermite_u64_bit_test_spec",
+                    "bit_set" => "__thermite_u64_bit_set_spec",
+                    "bit_clear" => "__thermite_u64_bit_clear_spec",
+                    _ => unreachable!("the method guard fixed the bit helper"),
+                };
+                return Ok(format!("{helper}({r}, {index})"));
+            }
+            if args.len() == 2
+                && matches!(
+                    name.as_str(),
+                    "bit_set_preserves_other" | "bit_clear_preserves_other"
+                )
+            {
+                let changed = lower_inv_expr(
+                    &args[0],
+                    field_names,
+                    string_fields,
+                    spec_fn_param_types,
+                    d,
+                    span,
+                )?;
+                let observed = lower_inv_expr(
+                    &args[1],
+                    field_names,
+                    string_fields,
+                    spec_fn_param_types,
+                    d,
+                    span,
+                )?;
+                let suffix = name.trim_start_matches("bit_");
+                return Ok(format!(
+                    "__thermite_u64_bit_{suffix}_spec({r}, {changed}, {observed})"
+                ));
+            }
             let recv_is_string_field = matches!(
                 receiver.as_ref(),
                 Expr::Path(segs) if segs.len() == 1 && string_fields.contains(&segs[0].as_str())
@@ -1798,7 +2294,7 @@ fn emit_combinator_defs(program: &Program) -> Result<String, LowerError> {
             // item carries no contract clauses, so it references no combinators
             // — the neutral value for this collector is a no-op. (The item is
             // gated at the validator anyway; this arm is dead-in-1a.)
-            Item::Struct(_) | Item::Enum(_) => {}
+            Item::Const(_) | Item::Struct(_) | Item::Enum(_) => {}
             // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 combinator-collection
             // consumer yet (increments 2b-3); inert here, mirroring the ADT-decl arm.
             Item::Forge(_) => {}
@@ -1843,6 +2339,12 @@ fn emit_combinator_defs(program: &Program) -> Result<String, LowerError> {
 /// `Path` callee (the frontend is registry-free — `ast.rs` module doc).
 fn collect_combinators_in_expr(expr: &Expr, span: Span, acc: &mut Vec<(String, Span)>) {
     match expr {
+        Expr::Array(elements) => {
+            for element in elements {
+                collect_combinators_in_expr(element, span, acc);
+            }
+        }
+        Expr::ArrayRepeat { value, .. } => collect_combinators_in_expr(value, span, acc),
         Expr::Call { callee, args } => {
             if let Expr::Path(segs) = callee.as_ref() {
                 if let Some(last) = segs.last() {
@@ -2147,6 +2649,12 @@ fn each_subexpr(
     f: &mut impl FnMut(&Expr) -> Result<(), LowerError>,
 ) -> Result<(), LowerError> {
     match expr {
+        Expr::Array(elements) => {
+            for element in elements {
+                f(element)?;
+            }
+        }
+        Expr::ArrayRepeat { value, .. } => f(value)?,
         Expr::Call { callee, args } => {
             f(callee)?;
             for a in args {
@@ -2610,6 +3118,7 @@ fn lower_spec_fn(
     variants: &[(&str, &str)],
     user_string_spec_fns: &[&str],
     spec_fn_param_types: &[(&str, &[PrimType])],
+    reaches_opaque: bool,
     program: &Program,
 ) -> Result<String, LowerError> {
     // Basis Stage 2 (`.design/basis/02-recursion-schemes.md` REQ-6): the
@@ -2623,7 +3132,8 @@ fn lower_spec_fn(
     // (`nat` for `fold`, `bool` for `for_all`/`exists`/`traverse`, the ADT for
     // `map`); else the existing head/ADT-fold-sum or declared-type lowering.
     let ret = lower_spec_fn_ret_with_schemes(&s.ret, &s.body, &scheme_bindings);
-    // Visibility tier (#230, the #232 layer's twin): emit `pub open spec fn`,
+    // Visibility tier (#230, the #232 layer's twin): ordinarily emit `pub open
+    // spec fn`,
     // not a bare `spec fn`. A struct's `well_formed` predicate is a `pub open
     // spec fn` (REQ-8 grounding finding), and a `pub open` body may refer only
     // to `pub` items, so a `well_formed` naming a user `spec fn` over a
@@ -2632,8 +3142,17 @@ fn lower_spec_fn(
     // (hand-verus-confirmed: the `pub open` Counter form is `1 verified, 0
     // errors`). `pub open` only widens visibility and exposes the (already-pure,
     // contract-free) body for definitional unfolding, which every existing
-    // caller already relied on. No golden meaning change, a pure prefix add.
-    write!(out, "pub open spec fn {}(", s.name).ok();
+    // caller already relied on. An opaque-state predicate is the deliberate
+    // exception: its generated body reaches crate-visible representation fields,
+    // so publishing that body as `open` is both rejected by Verus and would
+    // defeat the abstraction boundary. `pub closed` preserves a callable
+    // abstract contract for external clients while the defining generated
+    // module can unfold it to prove the Thermite implementation.
+    if reaches_opaque {
+        write!(out, "pub closed spec fn {}(", s.name).ok();
+    } else {
+        write!(out, "pub open spec fn {}(", s.name).ok();
+    }
     emit_params(&mut out, &s.params, Pos::Spec)?;
 
     // The dec nuance (`.design/basis/02-recursion-schemes.md` step-lowering
@@ -2641,9 +3160,13 @@ fn lower_spec_fn(
     // non-recursive. The recursion lives in the generated `fold_<e>`, which
     // carries its own `decreases l`. The surface instance still parses with a
     // mandatory `dec l`, but emitting `decreases l` on this non-recursive body is
-    // spurious, so we suppress it for a scheme-call body. (A hand-written recursive
-    // `spec fn`, the `is_adt_fold_sum`/head-fold path, keeps its `decreases`.)
-    if is_scheme_call_body(&s.body, &scheme_bindings) {
+    // spurious, so we suppress it for a scheme-call body. A nonrecursive opaque
+    // observer has the same property, with the additional requirement that a
+    // public signature cannot expose a crate-visible field as its decreases
+    // expression. A hand-written recursive spec fn keeps its `decreases`.
+    if is_scheme_call_body(&s.body, &scheme_bindings)
+        || (reaches_opaque && !block_calls_direct_name(&s.body, &s.name))
+    {
         writeln!(out, ") -> {ret}").ok();
     } else {
         write!(
@@ -2772,7 +3295,9 @@ fn lower_spec_fn_body_with_schemes(
     // uses, covering the whole spec-fn-body class (no scheme sibling left to
     // re-pin). Empty for a non-`String` spec fn (byte-stable).
     let strings = string_param_names(params);
+    let array_refs = fixed_array_ref_param_names(params);
     let ctx = Ctx::spec_seq()
+        .with_array_refs(&array_refs)
         .with_variants(variants)
         .with_nat_ret(ret == "nat")
         .with_schemes(bindings)
@@ -2794,6 +3319,20 @@ fn slice_param_names(params: &[Param]) -> Vec<&str> {
         .filter_map(|p| match &p.ty {
             Type::Ref { inner, .. } if matches!(inner.as_ref(), Type::Slice(_)) => {
                 Some(p.name.as_str())
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// Parameters borrowed as native fixed arrays. Unlike `&[T]` slices, these keep
+/// their reference type in a user `spec fn`; indexing observes `(*name)@`.
+fn fixed_array_ref_param_names(params: &[Param]) -> Vec<&str> {
+    params
+        .iter()
+        .filter_map(|param| match &param.ty {
+            Type::Ref { inner, .. } if matches!(inner.as_ref(), Type::Array { .. }) => {
+                Some(param.name.as_str())
             }
             _ => None,
         })
@@ -2964,6 +3503,7 @@ fn fn_is_diverge(f: &FnItem) -> bool {
 struct CallLoweringContext<'a> {
     variants: &'a [(&'a str, &'a str)],
     spec_fn_param_types: &'a [(&'a str, &'a [PrimType])],
+    bound_boundary_target: Option<&'a str>,
 }
 
 fn lower_fn(
@@ -2986,6 +3526,19 @@ fn lower_fn(
     // so a regular fn is never emitted as an assumed-L3 external_body signature
     // (`goal.md` R-DEFER-9). `boundary_gate_verified.rs` anchors this observable
     // dispatch (the emitted `#[verifier::external_body]` substring) to the proof.
+    if f.boundary.is_some() && f.slag.is_none() {
+        if let Some(call_target) = call_context.bound_boundary_target {
+            return lower_refined_boundary_fn(
+                f,
+                nat_fns,
+                inv_structs,
+                string_fields,
+                user_string_spec_fns,
+                spec_fn_param_types,
+                call_target,
+            );
+        }
+    }
     if thermite_verified::should_emit_external_body(f.boundary.is_some(), f.slag.is_some()) {
         return lower_external_body_fn(
             f,
@@ -3055,6 +3608,42 @@ fn lower_fn(
     Ok(out)
 }
 
+/// Lower a registry-bound `#[boundary]` as a fully checked wrapper over the
+/// selected same-crate implementation.  Unlike `lower_external_body_fn`, this
+/// emits no proof exemption: the wrapper establishes the Thermite contract by
+/// calling the exact direct-Verus item named by the frozen registry.  The
+/// combined crate is accepted only when Verus proves that call and its result.
+fn lower_refined_boundary_fn(
+    f: &FnItem,
+    nat_fns: &[&str],
+    inv_structs: &[&str],
+    string_fields: &[&str],
+    user_string_spec_fns: &[&str],
+    spec_fn_param_types: &[(&str, &[PrimType])],
+    call_target: &str,
+) -> Result<String, LowerError> {
+    let mut out = lower_fn_signature(
+        f,
+        nat_fns,
+        inv_structs,
+        string_fields,
+        user_string_spec_fns,
+        spec_fn_param_types,
+        L3FnVisibility::Private,
+    )?;
+    out.push_str("{\n    ");
+    out.push_str(call_target);
+    out.push('(');
+    for (index, param) in f.params.iter().enumerate() {
+        if index > 0 {
+            out.push_str(", ");
+        }
+        out.push_str(&param.name);
+    }
+    out.push_str(")\n}\n");
+    Ok(out)
+}
+
 /// Emit a `fn`'s signature up to and including its `requires`/`ensures` block
 /// (everything before the body): `fn name(<params>) -> (result: RET)` then
 /// `requires <req>,` (omitted when literal-`true`) and each `ens` in source
@@ -3083,12 +3672,14 @@ fn lower_fn_signature(
     writeln!(out, ") -> (result: {ret})").ok();
 
     let slices = slice_param_names(&f.params);
+    let array_refs = fixed_array_ref_param_names(&f.params);
     // Basis Stage 7 (`.design/basis/07-strings.md` REQ-4): the `String`-named
     // values in scope for this fn's contract — every `String`/`&String` param plus
     // `result` when the return is `String`. A `String` receiver's spec-position
     // `.len()`/`.byte_at(i)` rewrites to `.spec_len()`/`.spec_byte_at(i as int)`.
     let strings = string_value_names(f);
     let spec = Ctx::spec(&slices, nat_fns)
+        .with_array_refs(&array_refs)
         .with_strings(&strings)
         .with_string_fields(string_fields)
         .with_user_string_spec_fns(user_string_spec_fns)
@@ -3245,6 +3836,7 @@ fn lower_fn_signature(
 pub fn lower_contract_expr(
     expr: &Expr,
     slices: &[&str],
+    array_refs: &[&str],
     nat_fns: &[&str],
     strings: &[&str],
     string_fields: &[&str],
@@ -3252,6 +3844,7 @@ pub fn lower_contract_expr(
     spec_fn_param_types: &[(&str, &[PrimType])],
 ) -> Result<String, LowerError> {
     let ctx = Ctx::spec(slices, nat_fns)
+        .with_array_refs(array_refs)
         .with_strings(strings)
         .with_string_fields(string_fields)
         .with_user_string_spec_fns(user_string_spec_fns)
@@ -3329,6 +3922,99 @@ pub fn lower_exec_body(block: &Block) -> Result<String, LowerError> {
     lower_block_inner(block, Ctx::exec(), 0, zero_span())
 }
 
+/// Lower one executable body with the same enclosing-function aid context used
+/// by [`lower_fn`]. This is the production entry required by loop translation
+/// validation: unlike [`lower_exec_body`], it admits a top-level loop and emits
+/// the exact invariant, decreases, and shape-derived proof aids from
+/// [`lower_fn_body`]. The returned text is the contents between the generated
+/// function braces, ready to embed in an independently specified obligation.
+pub fn lower_exec_body_in_function(
+    program: &thermite_syntax::Program,
+    function: &FnItem,
+) -> Result<String, LowerError> {
+    let mut nat_fns: Vec<&str> = program
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::SpecFn(specification)
+                if is_head_fold_sum(&specification.body)
+                    || is_adt_fold_sum(&specification.body)
+                    || is_fold_scheme_call_body(&specification.body) =>
+            {
+                Some(specification.name.as_str())
+            }
+            _ => None,
+        })
+        .collect();
+    if program_uses_numfmt(program) {
+        nat_fns.extend(GENERATED_NUMFMT_SPEC_FNS.iter().copied());
+    }
+    if program_uses_string_search(program) {
+        nat_fns.push("count_sep");
+    }
+
+    let mut string_fields: Vec<&str> = program
+        .items
+        .iter()
+        .flat_map(|item| -> Box<dyn Iterator<Item = &str>> {
+            match item {
+                Item::Struct(structure) => Box::new(
+                    structure
+                        .fields
+                        .iter()
+                        .filter(|field| ty_reaches_string(&field.ty))
+                        .map(|field| field.name.as_str()),
+                ),
+                Item::Enum(enumeration) => {
+                    Box::new(enumeration.variants.iter().flat_map(|variant| {
+                        let fields: &[thermite_syntax::ast::FieldDef] = match &variant.shape {
+                            thermite_syntax::ast::VariantShape::Struct(fields) => fields,
+                            _ => &[],
+                        };
+                        fields
+                            .iter()
+                            .filter(|field| ty_reaches_string(&field.ty))
+                            .map(|field| field.name.as_str())
+                    }))
+                }
+                _ => Box::new(std::iter::empty()),
+            }
+        })
+        .collect();
+    string_fields.sort_unstable();
+    string_fields.dedup();
+
+    let variants: Vec<(&str, &str)> = program
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Enum(enumeration) => Some(enumeration),
+            _ => None,
+        })
+        .flat_map(|enumeration| {
+            enumeration
+                .variants
+                .iter()
+                .map(move |variant| (variant.name.as_str(), enumeration.name.as_str()))
+        })
+        .collect();
+    let spec_types_owned = spec_fn_param_type_map(program);
+    let spec_types: Vec<(&str, &[PrimType])> = spec_types_owned
+        .iter()
+        .map(|(name, parameters)| (*name, parameters.as_slice()))
+        .collect();
+
+    let lowered = lower_fn_body(function, &nat_fns, &string_fields, &variants, &spec_types)?;
+    lowered
+        .strip_prefix("{\n")
+        .and_then(|body| body.strip_suffix("}\n"))
+        .map(str::to_string)
+        .ok_or_else(|| LowerError::Unsupported {
+            what: "function-context body lowering lost its canonical brace frame".to_string(),
+            span: function.span,
+        })
+}
+
 /// Emit a total public wrapper for an export with a nontrivial executable
 /// precondition. The wrapper is itself inside the canonical `verus!` block, so
 /// Verus proves both that the true guard establishes the implementation's
@@ -3343,13 +4029,21 @@ fn lower_l3_export_wrapper(
 ) -> Result<String, LowerError> {
     let mut out = String::new();
     let ret = lower_type(&f.ret)?;
+    let mut ok_value = "__thermite_export_value".to_string();
+    let mut suffix = 0usize;
+    while f.params.iter().any(|param| param.name == ok_value) {
+        suffix += 1;
+        ok_value = format!("__thermite_export_value_{suffix}");
+    }
     write!(out, "pub fn {public_name}(").ok();
     emit_params(&mut out, &f.params, Pos::Exec)?;
     writeln!(out, ") -> (result: Result<{ret}, ThermiteContractError>)").ok();
 
     let slices = slice_param_names(&f.params);
+    let array_refs = fixed_array_ref_param_names(&f.params);
     let strings = string_value_names(f);
     let spec = Ctx::spec(&slices, nat_fns)
+        .with_array_refs(&array_refs)
         .with_strings(&strings)
         .with_string_fields(string_fields)
         .with_user_string_spec_fns(user_string_spec_fns)
@@ -3358,7 +4052,7 @@ fn lower_l3_export_wrapper(
     let mut ensured = Vec::new();
     for ens in &f.contract.ens {
         let lowered = lower_expr(&ens.expr, spec, 0, f.span)?;
-        ensured.push(replace_ident(&lowered, "result", "value"));
+        ensured.push(replace_ident(&lowered, "result", &ok_value));
     }
     let ok_claim = if ensured.is_empty() {
         "true".to_string()
@@ -3371,7 +4065,7 @@ fn lower_l3_export_wrapper(
     };
     out.push_str("    ensures\n");
     writeln!(out, "        match result {{").ok();
-    writeln!(out, "            Ok(value) => {ok_claim},").ok();
+    writeln!(out, "            Ok({ok_value}) => {ok_claim},").ok();
     out.push_str("            Err(_) => true,\n");
     out.push_str("        },\n");
 
@@ -4095,6 +4789,8 @@ fn is_adt_fold_sum(body: &Block) -> bool {
 /// detected. Shape check, not a name check.
 fn expr_has_deref_call_arg(expr: &Expr) -> bool {
     match expr {
+        Expr::Array(elements) => elements.iter().any(expr_has_deref_call_arg),
+        Expr::ArrayRepeat { value, .. } => expr_has_deref_call_arg(value),
         Expr::Call { callee, args } => {
             args.iter().any(|a| matches!(a, Expr::Deref(_)))
                 || expr_has_deref_call_arg(callee)
@@ -4218,7 +4914,9 @@ fn lower_spec_fn_body(
     // non-`String` spec fn (byte-stable for the existing corpus; `spec_sum`/ADT
     // folds carry no `String` param, so the set is empty and nothing changes).
     let strings = string_param_names(params);
+    let array_refs = fixed_array_ref_param_names(params);
     let ctx = Ctx::spec_seq()
+        .with_array_refs(&array_refs)
         .with_variants(variants)
         .with_nat_ret(ret == "nat")
         .with_strings(&strings)
@@ -4551,6 +5249,10 @@ fn lower_type(ty: &Type) -> Result<String, LowerError> {
         Type::Prim(PrimType::Usize) => Ok("usize".to_string()),
         Type::Prim(PrimType::Bool) => Ok("bool".to_string()),
         Type::Unit => Ok("()".to_string()),
+        Type::Array { elem, len } => {
+            let elem = lower_type(elem)?;
+            Ok(format!("[{elem}; {}]", lower_array_len(len)))
+        }
         Type::Ref { mutable, inner } => {
             let i = lower_type(inner)?;
             if *mutable {
@@ -4644,6 +5346,1207 @@ fn lower_type(ty: &Type) -> Result<String, LowerError> {
             Ok(format!("({})", parts.join(", ")))
         }
     }
+}
+
+fn lower_array_len(len: &ArrayLen) -> String {
+    match len {
+        ArrayLen::Literal { value, .. } => value.to_string(),
+        ArrayLen::Const(name) => name.clone(),
+    }
+}
+
+/// Whether an expression reaches the executable fixed-array equality primitive.
+/// Public so Forge's independent exec/body TV frames can include the exact helper
+/// implementation only for obligations whose production column calls it.
+pub fn expr_uses_fixed_array_equality(expr: &Expr) -> bool {
+    if matches!(expr, Expr::MethodCall { name, args, .. }
+        if (name == "array_eq" && args.len() == 1)
+            || (name == "array_same_except" && args.len() == 2)
+            || (name == "array_same_except_two" && args.len() == 3))
+    {
+        return true;
+    }
+    let mut found = false;
+    let _ = each_subexpr(expr, &mut |child| {
+        if expr_uses_fixed_array_equality(child) {
+            found = true;
+        }
+        Ok(())
+    });
+    found
+}
+
+fn stmt_uses_fixed_array_equality(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Let { init, .. } => expr_uses_fixed_array_equality(init),
+        Stmt::Assign { target, value } => {
+            expr_uses_fixed_array_equality(target) || expr_uses_fixed_array_equality(value)
+        }
+        Stmt::Return(value) => value.as_ref().is_some_and(expr_uses_fixed_array_equality),
+        Stmt::If {
+            cond, then, else_, ..
+        } => {
+            expr_uses_fixed_array_equality(cond)
+                || block_uses_fixed_array_equality(then)
+                || else_.as_ref().is_some_and(block_uses_fixed_array_equality)
+        }
+        Stmt::Loop(loop_) => block_uses_fixed_array_equality(&loop_.body),
+        Stmt::Expr(expr) => expr_uses_fixed_array_equality(expr),
+        Stmt::Break | Stmt::Continue => false,
+    }
+}
+
+/// Whether a block reaches the executable fixed-array equality primitive.
+pub fn block_uses_fixed_array_equality(block: &Block) -> bool {
+    block.stmts.iter().any(stmt_uses_fixed_array_equality)
+        || block
+            .tail
+            .as_deref()
+            .is_some_and(expr_uses_fixed_array_equality)
+}
+
+fn program_uses_fixed_array_equality(program: &Program) -> bool {
+    program.items.iter().any(|item| match item {
+        Item::Fn(function) => {
+            expr_uses_fixed_array_equality(&function.contract.req.expr)
+                || function
+                    .contract
+                    .ens
+                    .iter()
+                    .any(|clause| expr_uses_fixed_array_equality(&clause.expr))
+                || function
+                    .body
+                    .as_ref()
+                    .is_some_and(block_uses_fixed_array_equality)
+        }
+        Item::SpecFn(function) => block_uses_fixed_array_equality(&function.body),
+        Item::Struct(structure) => structure
+            .inv
+            .as_ref()
+            .is_some_and(|clause| expr_uses_fixed_array_equality(&clause.expr)),
+        Item::Const(_) | Item::Enum(_) | Item::Forge(_) => false,
+    })
+}
+
+/// Whether an expression reaches one of the total packed-`u64` bit methods.
+/// Public so Forge's independent exec/body TV frames can include the exact
+/// directly verified helper definitions only when the production column calls
+/// them.
+pub fn expr_uses_u64_bit_methods(expr: &Expr) -> bool {
+    if matches!(expr, Expr::MethodCall { name, args, .. }
+        if matches!(name.as_str(), "bit_test" | "bit_set" | "bit_clear")
+            && args.len() == 1
+            || matches!(name.as_str(), "bit_set_preserves_other" | "bit_clear_preserves_other")
+                && args.len() == 2)
+    {
+        return true;
+    }
+    let mut found = false;
+    let _ = each_subexpr(expr, &mut |child| {
+        if expr_uses_u64_bit_methods(child) {
+            found = true;
+        }
+        Ok(())
+    });
+    found
+}
+
+fn stmt_uses_u64_bit_methods(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Let { init, .. } => expr_uses_u64_bit_methods(init),
+        Stmt::Assign { target, value } => {
+            expr_uses_u64_bit_methods(target) || expr_uses_u64_bit_methods(value)
+        }
+        Stmt::Return(value) => value.as_ref().is_some_and(expr_uses_u64_bit_methods),
+        Stmt::If {
+            cond, then, else_, ..
+        } => {
+            expr_uses_u64_bit_methods(cond)
+                || block_uses_u64_bit_methods(then)
+                || else_.as_ref().is_some_and(block_uses_u64_bit_methods)
+        }
+        Stmt::Loop(loop_) => block_uses_u64_bit_methods(&loop_.body),
+        Stmt::Expr(expr) => expr_uses_u64_bit_methods(expr),
+        Stmt::Break | Stmt::Continue => false,
+    }
+}
+
+/// Whether a block reaches one of the total packed-`u64` bit methods.
+pub fn block_uses_u64_bit_methods(block: &Block) -> bool {
+    block.stmts.iter().any(stmt_uses_u64_bit_methods)
+        || block.tail.as_deref().is_some_and(expr_uses_u64_bit_methods)
+}
+
+fn program_uses_u64_bit_methods(program: &Program) -> bool {
+    program.items.iter().any(|item| match item {
+        Item::Fn(function) => {
+            expr_uses_u64_bit_methods(&function.contract.req.expr)
+                || function
+                    .contract
+                    .ens
+                    .iter()
+                    .any(|clause| expr_uses_u64_bit_methods(&clause.expr))
+                || function
+                    .body
+                    .as_ref()
+                    .is_some_and(block_uses_u64_bit_methods)
+        }
+        Item::SpecFn(function) => block_uses_u64_bit_methods(&function.body),
+        Item::Struct(structure) => structure
+            .inv
+            .as_ref()
+            .is_some_and(|clause| expr_uses_u64_bit_methods(&clause.expr)),
+        Item::Const(_) | Item::Enum(_) | Item::Forge(_) => false,
+    })
+}
+
+/// Exact Verus implementation used by executable `.array_eq(..)` calls.
+///
+/// Verus cannot verify Rust's native `[T; N]` `PartialEq` implementation. This
+/// closed trait instead supplies one const-generic, allocation-free scan for each
+/// Thermite primitive scalar type. Every implementation proves that its returned
+/// boolean is equivalent to extensional equality of the two finite array views.
+/// No trusted body or assumed specification is used.
+pub fn fixed_array_equality_defs() -> String {
+    const PRIMITIVES: &[&str] = &["u8", "u16", "u32", "u64", "usize", "bool"];
+
+    let mut out = String::from(
+        "\npub trait __thermite_FixedArrayEq {\n\
+         \x20   spec fn __thermite_fixed_array_same_except_spec(&self, right: &Self, except: usize) -> bool;\n\
+         \x20   spec fn __thermite_fixed_array_same_except_two_spec(&self, right: &Self, first: usize, second: usize) -> bool;\n\
+         \x20   fn __thermite_fixed_array_eq(&self, right: &Self) -> (result: bool);\n\
+         \x20   fn __thermite_fixed_array_same_except(&self, right: &Self, except: usize) -> (result: bool);\n\
+         \x20   fn __thermite_fixed_array_same_except_two(&self, right: &Self, first: usize, second: usize) -> (result: bool);\n\
+         }\n",
+    );
+    for primitive in PRIMITIVES {
+        writeln!(
+            out,
+            "impl<const N: usize> __thermite_FixedArrayEq for [{primitive}; N] {{"
+        )
+        .ok();
+        writeln!(
+            out,
+            "    open spec fn __thermite_fixed_array_same_except_spec(&self, right: &[{primitive}; N], except: usize) -> bool {{"
+        )
+        .ok();
+        out.push_str(
+            "        forall|j: int| 0 <= j < N && j != except as int ==> self@[j] == right@[j]\n",
+        );
+        out.push_str("    }\n");
+        writeln!(
+            out,
+            "    open spec fn __thermite_fixed_array_same_except_two_spec(&self, right: &[{primitive}; N], first: usize, second: usize) -> bool {{"
+        )
+        .ok();
+        out.push_str(
+            "        forall|j: int| 0 <= j < N && j != first as int && j != second as int ==> self@[j] == right@[j]\n",
+        );
+        out.push_str("    }\n");
+        writeln!(
+            out,
+            "    fn __thermite_fixed_array_eq(&self, right: &[{primitive}; N]) -> (result: bool)"
+        )
+        .ok();
+        out.push_str("        ensures\n");
+        out.push_str("            result <==> self@ =~= right@,\n");
+        out.push_str("    {\n");
+        out.push_str("        let mut i: usize = 0;\n");
+        out.push_str("        while i < N\n");
+        out.push_str("            invariant\n");
+        out.push_str("                i <= N,\n");
+        out.push_str("                forall|j: int| 0 <= j < i ==> self@[j] == right@[j],\n");
+        out.push_str("            decreases N - i,\n");
+        out.push_str("        {\n");
+        out.push_str("            if self[i] != right[i] {\n");
+        out.push_str("                assert(self@[i as int] != right@[i as int]);\n");
+        out.push_str("                return false;\n");
+        out.push_str("            }\n");
+        out.push_str("            i = i + 1;\n");
+        out.push_str("        }\n");
+        out.push_str("        assert(self@ =~= right@);\n");
+        out.push_str("        true\n");
+        out.push_str("    }\n");
+        writeln!(
+            out,
+            "    fn __thermite_fixed_array_same_except(&self, right: &[{primitive}; N], except: usize) -> (result: bool)"
+        )
+        .ok();
+        out.push_str("        ensures\n");
+        out.push_str("            result <==> self.__thermite_fixed_array_same_except_spec(right, except),\n");
+        out.push_str("    {\n");
+        out.push_str("        let mut i: usize = 0;\n");
+        out.push_str("        while i < N\n");
+        out.push_str("            invariant\n");
+        out.push_str("                i <= N,\n");
+        out.push_str("                forall|j: int| 0 <= j < i && j != except as int ==> self@[j] == right@[j],\n");
+        out.push_str("            decreases N - i,\n");
+        out.push_str("        {\n");
+        out.push_str("            if i != except && self[i] != right[i] {\n");
+        out.push_str("                assert(i as int != except as int);\n");
+        out.push_str("                assert(self@[i as int] != right@[i as int]);\n");
+        out.push_str("                return false;\n");
+        out.push_str("            }\n");
+        out.push_str("            i = i + 1;\n");
+        out.push_str("        }\n");
+        out.push_str("        true\n");
+        out.push_str("    }\n");
+        writeln!(
+            out,
+            "    fn __thermite_fixed_array_same_except_two(&self, right: &[{primitive}; N], first: usize, second: usize) -> (result: bool)"
+        )
+        .ok();
+        out.push_str("        ensures\n");
+        out.push_str("            result <==> self.__thermite_fixed_array_same_except_two_spec(right, first, second),\n");
+        out.push_str("    {\n");
+        out.push_str("        let mut i: usize = 0;\n");
+        out.push_str("        while i < N\n");
+        out.push_str("            invariant\n");
+        out.push_str("                i <= N,\n");
+        out.push_str("                forall|j: int| 0 <= j < i && j != first as int && j != second as int ==> self@[j] == right@[j],\n");
+        out.push_str("            decreases N - i,\n");
+        out.push_str("        {\n");
+        out.push_str("            if i != first && i != second && self[i] != right[i] {\n");
+        out.push_str("                assert(i as int != first as int);\n");
+        out.push_str("                assert(i as int != second as int);\n");
+        out.push_str("                assert(self@[i as int] != right@[i as int]);\n");
+        out.push_str("                return false;\n");
+        out.push_str("            }\n");
+        out.push_str("            i = i + 1;\n");
+        out.push_str("        }\n");
+        out.push_str("        true\n");
+        out.push_str("    }\n");
+        out.push_str("}\n");
+    }
+    out
+}
+
+/// Exact fixed-array relation definitions extended with every finite plain
+/// aggregate element shape reachable from this program. The validator and this
+/// emitter share [`thermite_spec::structural_array_equality_structs`], so lowering
+/// cannot derive equality for a sealed, opaque, recursive, enum, reference, or
+/// heap-backed representation that the source gate rejects.
+pub fn fixed_array_equality_defs_for_program(program: &Program) -> Result<String, LowerError> {
+    let admitted = thermite_spec::structural_array_equality_structs(program);
+    let mut types = Vec::new();
+    collect_structural_array_element_types(program, &admitted, &mut types);
+
+    let mut out = fixed_array_equality_defs();
+    for ty in types {
+        if matches!(ty, Type::Prim(_)) {
+            continue;
+        }
+        emit_structural_element_equality(&ty, program, &mut out)?;
+        emit_structural_array_impl(&ty, &mut out)?;
+    }
+    Ok(out)
+}
+
+/// The operand count of a declared-index relation, or `None` for any other
+/// method name.
+fn logical_relation_arity(name: &str) -> Option<usize> {
+    match name {
+        "logical_eq" => Some(1),
+        "logical_same_except" => Some(2),
+        "logical_same_except_two" => Some(3),
+        _ => None,
+    }
+}
+
+/// Emit one declared-index relation call. The receiver's view selects the
+/// implementation through the generated `__thermite_LogicalRelations` trait, so
+/// the call site needs no nominal type resolution; the trait method forwards to
+/// the per-view quantified `spec fn` the emitter names after the struct.
+fn logical_relation_call(name: &str, receiver: &str, args: &[String]) -> String {
+    let rendered: Vec<String> = args
+        .iter()
+        .enumerate()
+        .map(|(position, arg)| {
+            if position == 0 {
+                format!("&({arg})")
+            } else {
+                arg.clone()
+            }
+        })
+        .collect();
+    format!(
+        "({receiver}).__thermite_{name}_spec({})",
+        rendered.join(", ")
+    )
+}
+
+/// Whether an expression names one of the three declared-index relations
+/// (`.design/build/aggregate-array-relations.md`, "Surface"). Keyed on the same
+/// name and arity pair the validator gates, so the emitter fires for exactly the
+/// programs the source gate admitted.
+fn expr_uses_logical_relation(expr: &Expr) -> bool {
+    if matches!(expr, Expr::MethodCall { name, args, .. }
+        if (name == "logical_eq" && args.len() == 1)
+            || (name == "logical_same_except" && args.len() == 2)
+            || (name == "logical_same_except_two" && args.len() == 3))
+    {
+        return true;
+    }
+    let mut found = false;
+    let _ = each_subexpr(expr, &mut |child| {
+        if expr_uses_logical_relation(child) {
+            found = true;
+        }
+        Ok(())
+    });
+    found
+}
+
+fn stmt_uses_logical_relation(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Let { init, .. } => expr_uses_logical_relation(init),
+        Stmt::Assign { target, value } => {
+            expr_uses_logical_relation(target) || expr_uses_logical_relation(value)
+        }
+        Stmt::Return(value) => value.as_ref().is_some_and(expr_uses_logical_relation),
+        Stmt::If {
+            cond, then, else_, ..
+        } => {
+            expr_uses_logical_relation(cond)
+                || block_uses_logical_relation(then)
+                || else_.as_ref().is_some_and(block_uses_logical_relation)
+        }
+        Stmt::Loop(loop_) => block_uses_logical_relation(&loop_.body),
+        Stmt::Expr(expr) => expr_uses_logical_relation(expr),
+        Stmt::Break | Stmt::Continue => false,
+    }
+}
+
+fn block_uses_logical_relation(block: &Block) -> bool {
+    block.stmts.iter().any(stmt_uses_logical_relation)
+        || block
+            .tail
+            .as_deref()
+            .is_some_and(expr_uses_logical_relation)
+}
+
+/// Whether a program names the declared-index relation family anywhere a
+/// contract can reach.
+fn program_uses_logical_relations(program: &Program) -> bool {
+    program.items.iter().any(|item| match item {
+        Item::Fn(function) => {
+            expr_uses_logical_relation(&function.contract.req.expr)
+                || function
+                    .contract
+                    .ens
+                    .iter()
+                    .any(|clause| expr_uses_logical_relation(&clause.expr))
+                || function
+                    .body
+                    .as_ref()
+                    .is_some_and(block_uses_logical_relation)
+        }
+        Item::SpecFn(function) => block_uses_logical_relation(&function.body),
+        Item::Struct(structure) => structure
+            .inv
+            .as_ref()
+            .is_some_and(|clause| expr_uses_logical_relation(&clause.expr)),
+        Item::Const(_) | Item::Enum(_) | Item::Forge(_) => false,
+    })
+}
+
+/// The three quantified relations of every admitted `#[logical]` view, plus the
+/// trait that dispatches a relation call to the receiver's view
+/// (`.design/build/aggregate-array-relations.md`, "Lowering the relation").
+///
+/// Each relation is one first-order `forall` over `usize` whose triggers are the
+/// declared observer applied to each operand, written as alternatives so either
+/// term fires on its own. There is no recursion and no unfolding budget: a
+/// consumer that mentions the observer at a concrete index gets the
+/// instantiation at that index with no author-written hint. The emitter shares
+/// [`thermite_spec::logical_views`] with the validator, so code generation
+/// cannot admit a declaration the source gate rejected. A view whose
+/// representation reaches `#[opaque]` state emits `pub closed`, matching the
+/// visibility tier `lower_spec_fn` applies to an opaque-reaching observer.
+pub fn logical_relation_defs_for_program(program: &Program) -> String {
+    let views = thermite_spec::logical_views(program);
+    if views.is_empty() {
+        return String::new();
+    }
+    let opaque_types = opaque_type_closure(program);
+    let opaque_spec_fns = opaque_spec_fn_closure(program, &opaque_types);
+
+    let mut out = String::from(
+        "\npub trait __thermite_LogicalRelations {\n\
+         \x20   spec fn __thermite_logical_eq_spec(&self, right: &Self) -> bool;\n\
+         \x20   spec fn __thermite_logical_same_except_spec(&self, right: &Self, except: usize) -> bool;\n\
+         \x20   spec fn __thermite_logical_same_except_two_spec(&self, right: &Self, first: usize, second: usize) -> bool;\n\
+         }\n",
+    );
+    for view in views.values() {
+        let name = &view.struct_name;
+        let observer = &view.observer;
+        let bound = &view.bound;
+        let openness = if opaque_types.contains(name.as_str())
+            || opaque_spec_fns.contains(observer.as_str())
+        {
+            "closed"
+        } else {
+            "open"
+        };
+        for (suffix, extra_params, extra_guard) in [
+            ("eq", String::new(), String::new()),
+            (
+                "same_except",
+                ", except: usize".to_string(),
+                " && i != except".to_string(),
+            ),
+            (
+                "same_except_two",
+                ", first: usize, second: usize".to_string(),
+                " && i != first && i != second".to_string(),
+            ),
+        ] {
+            writeln!(
+                out,
+                "pub {openness} spec fn __thermite_logical_{suffix}_{name}(left: &{name}, right: &{name}{extra_params}) -> bool {{"
+            )
+            .ok();
+            out.push_str("    forall|i: usize|\n");
+            writeln!(out, "        #![trigger {observer}(left, i)]").ok();
+            writeln!(out, "        #![trigger {observer}(right, i)]").ok();
+            writeln!(
+                out,
+                "        i < {bound}{extra_guard} ==> {observer}(left, i) == {observer}(right, i)"
+            )
+            .ok();
+            out.push_str("}\n");
+        }
+        writeln!(out, "impl __thermite_LogicalRelations for {name} {{").ok();
+        writeln!(
+            out,
+            "    {openness} spec fn __thermite_logical_eq_spec(&self, right: &{name}) -> bool {{"
+        )
+        .ok();
+        writeln!(out, "        __thermite_logical_eq_{name}(self, right)").ok();
+        out.push_str("    }\n");
+        writeln!(
+            out,
+            "    {openness} spec fn __thermite_logical_same_except_spec(&self, right: &{name}, except: usize) -> bool {{"
+        )
+        .ok();
+        writeln!(
+            out,
+            "        __thermite_logical_same_except_{name}(self, right, except)"
+        )
+        .ok();
+        out.push_str("    }\n");
+        writeln!(
+            out,
+            "    {openness} spec fn __thermite_logical_same_except_two_spec(&self, right: &{name}, first: usize, second: usize) -> bool {{"
+        )
+        .ok();
+        writeln!(
+            out,
+            "        __thermite_logical_same_except_two_{name}(self, right, first, second)"
+        )
+        .ok();
+        out.push_str("    }\n");
+        out.push_str("}\n");
+    }
+    out
+}
+
+/// Structs whose generated L1 declarations may derive `PartialEq`/`Eq`. This
+/// is deliberately empty unless the program actually uses a fixed-array
+/// relation, and contains only the transitive plain-record dependencies of
+/// source-reachable array element shapes.
+pub(crate) fn fixed_array_equality_named_structs(program: &Program) -> BTreeSet<String> {
+    if !program_uses_fixed_array_equality(program) {
+        return BTreeSet::new();
+    }
+    let admitted = thermite_spec::structural_array_equality_structs(program);
+    let mut types = Vec::new();
+    collect_structural_array_element_types(program, &admitted, &mut types);
+    types
+        .into_iter()
+        .filter_map(|ty| match ty {
+            Type::Named(name) => Some(name),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Collect aggregate equality shapes inner-first. Every fixed-array type in a
+/// program contributes its structural element closure once the explicit
+/// relation primitive is present anywhere. Array capacities are canonicalized
+/// to their literal values so two capacity names with the same value cannot
+/// produce overlapping Rust trait impls.
+fn collect_structural_array_element_types(
+    program: &Program,
+    admitted: &BTreeSet<String>,
+    out: &mut Vec<Type>,
+) {
+    for item in &program.items {
+        match item {
+            Item::Fn(function) => {
+                for parameter in &function.params {
+                    note_structural_arrays_in_type(&parameter.ty, program, admitted, out);
+                }
+                note_structural_arrays_in_type(&function.ret, program, admitted, out);
+                if let Some(body) = &function.body {
+                    note_structural_arrays_in_block(body, program, admitted, out);
+                }
+            }
+            Item::SpecFn(function) => {
+                for parameter in &function.params {
+                    note_structural_arrays_in_type(&parameter.ty, program, admitted, out);
+                }
+                note_structural_arrays_in_type(&function.ret, program, admitted, out);
+                note_structural_arrays_in_block(&function.body, program, admitted, out);
+            }
+            Item::Struct(structure) => {
+                for field in &structure.fields {
+                    note_structural_arrays_in_type(&field.ty, program, admitted, out);
+                }
+            }
+            Item::Enum(enumeration) => {
+                for variant in &enumeration.variants {
+                    match &variant.shape {
+                        VariantShape::Unit => {}
+                        VariantShape::Tuple(types) => {
+                            for ty in types {
+                                note_structural_arrays_in_type(ty, program, admitted, out);
+                            }
+                        }
+                        VariantShape::Struct(fields) => {
+                            for field in fields {
+                                note_structural_arrays_in_type(&field.ty, program, admitted, out);
+                            }
+                        }
+                    }
+                }
+            }
+            Item::Const(_) | Item::Forge(_) => {}
+        }
+    }
+}
+
+fn note_structural_arrays_in_block(
+    block: &Block,
+    program: &Program,
+    admitted: &BTreeSet<String>,
+    out: &mut Vec<Type>,
+) {
+    for statement in &block.stmts {
+        match statement {
+            Stmt::Let { ty: Some(ty), .. } => {
+                note_structural_arrays_in_type(ty, program, admitted, out)
+            }
+            Stmt::If { then, else_, .. } => {
+                note_structural_arrays_in_block(then, program, admitted, out);
+                if let Some(branch) = else_ {
+                    note_structural_arrays_in_block(branch, program, admitted, out);
+                }
+            }
+            Stmt::Loop(node) => note_structural_arrays_in_block(&node.body, program, admitted, out),
+            Stmt::Let { ty: None, .. }
+            | Stmt::Assign { .. }
+            | Stmt::Return(_)
+            | Stmt::Expr(_)
+            | Stmt::Break
+            | Stmt::Continue => {}
+        }
+    }
+}
+
+fn note_structural_arrays_in_type(
+    ty: &Type,
+    program: &Program,
+    admitted: &BTreeSet<String>,
+    out: &mut Vec<Type>,
+) {
+    match ty {
+        Type::Array { elem, .. } => {
+            note_structural_equality_type(elem, program, admitted, out);
+            note_structural_arrays_in_type(elem, program, admitted, out);
+        }
+        Type::Ref { inner, .. }
+        | Type::Slice(inner)
+        | Type::Generic { arg: inner, .. }
+        | Type::Box(inner)
+        | Type::Vec(inner)
+        | Type::Option(inner) => note_structural_arrays_in_type(inner, program, admitted, out),
+        Type::Result(ok, err) | Type::Map(ok, err) => {
+            note_structural_arrays_in_type(ok, program, admitted, out);
+            note_structural_arrays_in_type(err, program, admitted, out);
+        }
+        Type::Tuple(types) => {
+            for inner in types {
+                note_structural_arrays_in_type(inner, program, admitted, out);
+            }
+        }
+        Type::Prim(_) | Type::Unit | Type::Named(_) | Type::String => {}
+    }
+}
+
+fn note_structural_equality_type(
+    ty: &Type,
+    program: &Program,
+    admitted: &BTreeSet<String>,
+    out: &mut Vec<Type>,
+) {
+    if !thermite_spec::array_equality_type_is_structural(ty, admitted) {
+        return;
+    }
+    let canonical = canonical_equality_type(ty, program);
+    if out.contains(&canonical) || matches!(canonical, Type::Prim(_)) {
+        return;
+    }
+    match &canonical {
+        Type::Array { elem, .. } => note_structural_equality_type(elem, program, admitted, out),
+        Type::Tuple(types) => {
+            for inner in types {
+                note_structural_equality_type(inner, program, admitted, out);
+            }
+        }
+        Type::Named(name) => {
+            if let Some(structure) = program.items.iter().find_map(|item| match item {
+                Item::Struct(structure) if structure.name == *name => Some(structure),
+                _ => None,
+            }) {
+                for field in &structure.fields {
+                    note_structural_equality_type(&field.ty, program, admitted, out);
+                }
+            }
+        }
+        Type::Unit => {}
+        Type::Prim(_)
+        | Type::Ref { .. }
+        | Type::Slice(_)
+        | Type::Generic { .. }
+        | Type::Box(_)
+        | Type::Vec(_)
+        | Type::String
+        | Type::Option(_)
+        | Type::Result(_, _)
+        | Type::Map(_, _) => return,
+    }
+    if !out.contains(&canonical) {
+        out.push(canonical);
+    }
+}
+
+fn canonical_equality_type(ty: &Type, program: &Program) -> Type {
+    let capacity = |name: &str| {
+        program.items.iter().find_map(|item| match item {
+            Item::Const(value) if value.name == name => Some(value.value),
+            _ => None,
+        })
+    };
+    match ty {
+        Type::Array { elem, len } => {
+            let len = match len {
+                ArrayLen::Literal { value, raw } => ArrayLen::Literal {
+                    value: *value,
+                    raw: raw.clone(),
+                },
+                ArrayLen::Const(name) => capacity(name).map_or_else(
+                    || ArrayLen::Const(name.clone()),
+                    |value| ArrayLen::Literal {
+                        value,
+                        raw: value.to_string(),
+                    },
+                ),
+            };
+            Type::Array {
+                elem: Box::new(canonical_equality_type(elem, program)),
+                len,
+            }
+        }
+        Type::Tuple(types) => Type::Tuple(
+            types
+                .iter()
+                .map(|inner| canonical_equality_type(inner, program))
+                .collect(),
+        ),
+        other => other.clone(),
+    }
+}
+
+fn structural_equality_suffix(ty: &Type) -> Result<String, LowerError> {
+    Ok(match ty {
+        Type::Prim(PrimType::U8) => "PrimU8".to_string(),
+        Type::Prim(PrimType::U16) => "PrimU16".to_string(),
+        Type::Prim(PrimType::U32) => "PrimU32".to_string(),
+        Type::Prim(PrimType::U64) => "PrimU64".to_string(),
+        Type::Prim(PrimType::Usize) => "PrimUsize".to_string(),
+        Type::Prim(PrimType::Bool) => "PrimBool".to_string(),
+        Type::Unit => "Unit".to_string(),
+        Type::Array { elem, len } => format!(
+            "Array{}Of{}",
+            lower_array_len(len),
+            structural_equality_suffix(elem)?
+        )
+        .replace(|ch: char| !ch.is_ascii_alphanumeric(), "_"),
+        Type::Tuple(types) => {
+            let mut suffix = format!("Tuple{}", types.len());
+            for ty in types {
+                suffix.push_str("Of");
+                suffix.push_str(&structural_equality_suffix(ty)?);
+            }
+            suffix
+        }
+        Type::Named(name) => format!("Struct_{name}"),
+        other => {
+            return Err(LowerError::Unsupported {
+                what: format!(
+                    "fixed-array structural equality helper for unsupported element {other:?}"
+                ),
+                span: zero_span(),
+            })
+        }
+    })
+}
+
+fn structural_element_helper_name(ty: &Type) -> Result<String, LowerError> {
+    Ok(format!(
+        "__thermite_element_eq_{}",
+        structural_equality_suffix(ty)?
+    ))
+}
+
+fn structural_element_compare(ty: &Type, left: &str, right: &str) -> Result<String, LowerError> {
+    match ty {
+        Type::Prim(_) => Ok(format!("({left}) == ({right})")),
+        Type::Unit => Ok("true".to_string()),
+        Type::Array { .. } | Type::Tuple(_) | Type::Named(_) => Ok(format!(
+            "{}(&({left}), &({right}))",
+            structural_element_helper_name(ty)?
+        )),
+        other => Err(LowerError::Unsupported {
+            what: format!(
+                "fixed-array structural equality comparison for unsupported element {other:?}"
+            ),
+            span: zero_span(),
+        }),
+    }
+}
+
+fn emit_structural_element_equality(
+    ty: &Type,
+    program: &Program,
+    out: &mut String,
+) -> Result<(), LowerError> {
+    let name = structural_element_helper_name(ty)?;
+    let spelling = lower_type(ty)?;
+    writeln!(
+        out,
+        "\nfn {name}(left: &{spelling}, right: &{spelling}) -> (result: bool)"
+    )
+    .ok();
+    out.push_str("    ensures result <==> *left == *right,\n");
+    out.push_str("{\n");
+    match ty {
+        Type::Unit => out.push_str("    true\n"),
+        Type::Array { .. } => {
+            out.push_str(
+                "    let equal = left.__thermite_fixed_array_eq(right);\n\
+                 \x20   if equal {\n\
+                 \x20       assert(left@ =~= right@);\n\
+                 \x20       assert(*left == *right);\n\
+                 \x20   } else {\n\
+                 \x20       assert(!(left@ =~= right@));\n\
+                 \x20       assert(*left != *right);\n\
+                 \x20   }\n\
+                 \x20   equal\n",
+            );
+        }
+        Type::Tuple(types) => {
+            let comparisons = types
+                .iter()
+                .enumerate()
+                .map(|(index, field)| {
+                    structural_element_compare(
+                        field,
+                        &format!("left.{index}"),
+                        &format!("right.{index}"),
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            writeln!(
+                out,
+                "    {}",
+                if comparisons.is_empty() {
+                    "true".to_string()
+                } else {
+                    comparisons.join(" && ")
+                }
+            )
+            .ok();
+        }
+        Type::Named(type_name) => {
+            let structure = program.items.iter().find_map(|item| match item {
+                Item::Struct(structure) if structure.name == *type_name => Some(structure),
+                _ => None,
+            });
+            let Some(structure) = structure else {
+                return Err(LowerError::Unsupported {
+                    what: format!(
+                        "fixed-array structural equality names undeclared struct `{type_name}`"
+                    ),
+                    span: zero_span(),
+                });
+            };
+            let comparisons = structure
+                .fields
+                .iter()
+                .map(|field| {
+                    structural_element_compare(
+                        &canonical_equality_type(&field.ty, program),
+                        &format!("left.{}", field.name),
+                        &format!("right.{}", field.name),
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            writeln!(
+                out,
+                "    {}",
+                if comparisons.is_empty() {
+                    "true".to_string()
+                } else {
+                    comparisons.join(" && ")
+                }
+            )
+            .ok();
+        }
+        Type::Prim(_)
+        | Type::Ref { .. }
+        | Type::Slice(_)
+        | Type::Generic { .. }
+        | Type::Box(_)
+        | Type::Vec(_)
+        | Type::String
+        | Type::Option(_)
+        | Type::Result(_, _)
+        | Type::Map(_, _) => {
+            return Err(LowerError::Unsupported {
+                what: format!(
+                    "fixed-array structural equality helper for unsupported element {ty:?}"
+                ),
+                span: zero_span(),
+            })
+        }
+    }
+    out.push_str("}\n");
+    Ok(())
+}
+
+fn emit_structural_array_impl(ty: &Type, out: &mut String) -> Result<(), LowerError> {
+    let spelling = lower_type(ty)?;
+    let compare = structural_element_compare(ty, "self[i]", "right[i]")?;
+    writeln!(
+        out,
+        "impl<const N: usize> __thermite_FixedArrayEq for [{spelling}; N] {{"
+    )
+    .ok();
+    writeln!(
+        out,
+        "    open spec fn __thermite_fixed_array_same_except_spec(&self, right: &[{spelling}; N], except: usize) -> bool {{"
+    )
+    .ok();
+    out.push_str(
+        "        forall|j: int| 0 <= j < N && j != except as int ==> self@[j] == right@[j]\n\
+         \x20   }\n",
+    );
+    writeln!(
+        out,
+        "    open spec fn __thermite_fixed_array_same_except_two_spec(&self, right: &[{spelling}; N], first: usize, second: usize) -> bool {{"
+    )
+    .ok();
+    out.push_str(
+        "        forall|j: int| 0 <= j < N && j != first as int && j != second as int ==> self@[j] == right@[j]\n\
+         \x20   }\n",
+    );
+    writeln!(
+        out,
+        "    fn __thermite_fixed_array_eq(&self, right: &[{spelling}; N]) -> (result: bool)"
+    )
+    .ok();
+    out.push_str(
+        "        ensures\n\
+         \x20           result <==> self@ =~= right@,\n\
+         \x20   {\n\
+         \x20       let mut i: usize = 0;\n\
+         \x20       while i < N\n\
+         \x20           invariant\n\
+         \x20               i <= N,\n\
+         \x20               forall|j: int| 0 <= j < i ==> self@[j] == right@[j],\n\
+         \x20           decreases N - i,\n\
+         \x20       {\n",
+    );
+    writeln!(out, "            if !({compare}) {{").ok();
+    out.push_str(
+        "                assert(self@[i as int] != right@[i as int]);\n\
+         \x20               return false;\n\
+         \x20           }\n\
+         \x20           i = i + 1;\n\
+         \x20       }\n\
+         \x20       assert(self@ =~= right@);\n\
+         \x20       true\n\
+         \x20   }\n",
+    );
+    writeln!(
+        out,
+        "    fn __thermite_fixed_array_same_except(&self, right: &[{spelling}; N], except: usize) -> (result: bool)"
+    )
+    .ok();
+    out.push_str(
+        "        ensures\n\
+         \x20           result <==> self.__thermite_fixed_array_same_except_spec(right, except),\n\
+         \x20   {\n\
+         \x20       let mut i: usize = 0;\n\
+         \x20       while i < N\n\
+         \x20           invariant\n\
+         \x20               i <= N,\n\
+         \x20               forall|j: int| 0 <= j < i && j != except as int ==> self@[j] == right@[j],\n\
+         \x20           decreases N - i,\n\
+         \x20       {\n",
+    );
+    writeln!(out, "            if i != except && !({compare}) {{").ok();
+    out.push_str(
+        "                assert(i as int != except as int);\n\
+         \x20               assert(self@[i as int] != right@[i as int]);\n\
+         \x20               return false;\n\
+         \x20           }\n\
+         \x20           i = i + 1;\n\
+         \x20       }\n\
+         \x20       true\n\
+         \x20   }\n",
+    );
+    writeln!(
+        out,
+        "    fn __thermite_fixed_array_same_except_two(&self, right: &[{spelling}; N], first: usize, second: usize) -> (result: bool)"
+    )
+    .ok();
+    out.push_str(
+        "        ensures\n\
+         \x20           result <==> self.__thermite_fixed_array_same_except_two_spec(right, first, second),\n\
+         \x20   {\n\
+         \x20       let mut i: usize = 0;\n\
+         \x20       while i < N\n\
+         \x20           invariant\n\
+         \x20               i <= N,\n\
+         \x20               forall|j: int| 0 <= j < i && j != first as int && j != second as int ==> self@[j] == right@[j],\n\
+         \x20           decreases N - i,\n\
+         \x20       {\n",
+    );
+    writeln!(
+        out,
+        "            if i != first && i != second && !({compare}) {{"
+    )
+    .ok();
+    out.push_str(
+        "                assert(i as int != first as int);\n\
+         \x20               assert(i as int != second as int);\n\
+         \x20               assert(self@[i as int] != right@[i as int]);\n\
+         \x20               return false;\n\
+         \x20           }\n\
+         \x20           i = i + 1;\n\
+         \x20       }\n\
+         \x20       true\n\
+         \x20   }\n\
+         }\n",
+    );
+    Ok(())
+}
+
+/// Exact directly verified implementation for the total packed-`u64` bit
+/// methods. The finite mask table is deliberately generated rather than
+/// expressed with a dynamic shift in the specification: ordinary Verus/Z3 does
+/// not expose enough dynamic-shift algebra to callers. Each update arm proves
+/// its one-bit fact with Verus's QF_BV tactic; a directly verified shift lemma
+/// also exports preservation of every distinct bit as an ordinary L3
+/// postcondition. Out-of-range indices are total and fail closed: tests return
+/// `false`, updates return the original word, and preservation witnesses return
+/// `false` unless both indices are in range and distinct.
+pub fn u64_bit_defs() -> String {
+    let mut out = String::from(
+        "\npub open spec fn __thermite_u64_bit_mask(offset: usize) -> u64 {\n\
+         \x20   match offset {\n",
+    );
+    for offset in 0..64usize {
+        let mask = 1u64 << offset;
+        writeln!(out, "        {offset} => {mask}u64,").ok();
+    }
+    out.push_str("        _ => 0u64,\n    }\n}\n");
+    out.push_str(
+        "\npub open spec fn __thermite_u64_bit_test_spec(word: u64, offset: usize) -> bool {\n\
+         \x20   offset < 64 && word & __thermite_u64_bit_mask(offset) != 0u64\n\
+         }\n\
+         \n\
+         pub open spec fn __thermite_u64_bit_set_spec(word: u64, offset: usize) -> u64 {\n\
+         \x20   if offset < 64 { word | __thermite_u64_bit_mask(offset) } else { word }\n\
+         }\n\
+         \n\
+         pub open spec fn __thermite_u64_bit_clear_spec(word: u64, offset: usize) -> u64 {\n\
+         \x20   if offset < 64 { word & !__thermite_u64_bit_mask(offset) } else { word }\n\
+         }\n\
+         \n\
+         pub fn __thermite_u64_bit_test(word: u64, offset: usize) -> (result: bool)\n\
+         \x20   ensures result == __thermite_u64_bit_test_spec(word, offset),\n\
+         {\n\
+         \x20   match offset {\n",
+    );
+    for offset in 0..64usize {
+        let mask = 1u64 << offset;
+        writeln!(out, "        {offset} => word & {mask}u64 != 0u64,").ok();
+    }
+    out.push_str("        _ => false,\n    }\n}\n");
+
+    out.push_str(
+        r#"
+pub open spec fn __thermite_u64_bit_set_preserves_other_spec(
+    word: u64,
+    changed: usize,
+    observed: usize,
+) -> bool {
+    changed < 64 && observed < 64 && changed != observed
+        && (__thermite_u64_bit_test_spec(
+            __thermite_u64_bit_set_spec(word, changed),
+            observed,
+        ) == __thermite_u64_bit_test_spec(word, observed))
+}
+
+pub open spec fn __thermite_u64_bit_clear_preserves_other_spec(
+    word: u64,
+    changed: usize,
+    observed: usize,
+) -> bool {
+    changed < 64 && observed < 64 && changed != observed
+        && (__thermite_u64_bit_test_spec(
+            __thermite_u64_bit_clear_spec(word, changed),
+            observed,
+        ) == __thermite_u64_bit_test_spec(word, observed))
+}
+
+pub proof fn __thermite_u64_bit_mask_shift_lemma(offset: usize)
+    requires offset < 64,
+    ensures __thermite_u64_bit_mask(offset) == 1u64 << (offset as u64),
+{
+    match offset {
+"#,
+    );
+    for offset in 0..64usize {
+        let mask = 1u64 << offset;
+        writeln!(
+            out,
+            "        {offset} => {{ assert(1u64 << {offset}u64 == {mask}u64) by(bit_vector); }},"
+        )
+        .ok();
+    }
+    out.push_str(
+        r#"        _ => {},
+    }
+}
+
+pub fn __thermite_u64_bit_set_preserves_other(
+    word: u64,
+    changed: usize,
+    observed: usize,
+) -> (result: bool)
+    ensures
+        result == __thermite_u64_bit_set_preserves_other_spec(word, changed, observed),
+        changed < 64 && observed < 64 && changed != observed ==> result,
+{
+    if changed < 64 && observed < 64 && changed != observed {
+        let changed64: u64 = changed as u64;
+        let observed64: u64 = observed as u64;
+        proof {
+            __thermite_u64_bit_mask_shift_lemma(changed);
+            __thermite_u64_bit_mask_shift_lemma(observed);
+            assert(changed64 < 64u64);
+            assert(observed64 < 64u64);
+            assert(changed64 != observed64);
+            assert(
+                ((word | (1u64 << changed64)) & (1u64 << observed64) != 0u64)
+                    == (word & (1u64 << observed64) != 0u64)
+            ) by(bit_vector) requires
+                changed64 < 64u64,
+                observed64 < 64u64,
+                changed64 != observed64;
+        }
+        true
+    } else {
+        false
+    }
+}
+
+pub fn __thermite_u64_bit_clear_preserves_other(
+    word: u64,
+    changed: usize,
+    observed: usize,
+) -> (result: bool)
+    ensures
+        result == __thermite_u64_bit_clear_preserves_other_spec(word, changed, observed),
+        changed < 64 && observed < 64 && changed != observed ==> result,
+{
+    if changed < 64 && observed < 64 && changed != observed {
+        let changed64: u64 = changed as u64;
+        let observed64: u64 = observed as u64;
+        proof {
+            __thermite_u64_bit_mask_shift_lemma(changed);
+            __thermite_u64_bit_mask_shift_lemma(observed);
+            assert(changed64 < 64u64);
+            assert(observed64 < 64u64);
+            assert(changed64 != observed64);
+            assert(
+                ((word & !(1u64 << changed64)) & (1u64 << observed64) != 0u64)
+                    == (word & (1u64 << observed64) != 0u64)
+            ) by(bit_vector) requires
+                changed64 < 64u64,
+                observed64 < 64u64,
+                changed64 != observed64;
+        }
+        true
+    } else {
+        false
+    }
+}
+"#,
+    );
+
+    out.push_str(
+        "\npub fn __thermite_u64_bit_set(word: u64, offset: usize) -> (result: u64)\n\
+         \x20   ensures\n\
+         \x20       result == __thermite_u64_bit_set_spec(word, offset),\n\
+         \x20       offset < 64 ==> __thermite_u64_bit_test_spec(result, offset),\n\
+         {\n\
+         \x20   match offset {\n",
+    );
+    for offset in 0..64usize {
+        let mask = 1u64 << offset;
+        writeln!(
+            out,
+            "        {offset} => {{ let result = word | {mask}u64; assert((word | {mask}u64) & {mask}u64 != 0u64) by(bit_vector); result }},"
+        )
+        .ok();
+    }
+    out.push_str("        _ => word,\n    }\n}\n");
+
+    out.push_str(
+        "\npub fn __thermite_u64_bit_clear(word: u64, offset: usize) -> (result: u64)\n\
+         \x20   ensures\n\
+         \x20       result == __thermite_u64_bit_clear_spec(word, offset),\n\
+         \x20       offset < 64 ==> !__thermite_u64_bit_test_spec(result, offset),\n\
+         {\n\
+         \x20   match offset {\n",
+    );
+    for offset in 0..64usize {
+        let mask = 1u64 << offset;
+        writeln!(
+            out,
+            "        {offset} => {{ let result = word & !{mask}u64; assert((word & !{mask}u64) & {mask}u64 == 0u64) by(bit_vector); result }},"
+        )
+        .ok();
+    }
+    out.push_str("        _ => word,\n    }\n}\n");
+    out
 }
 
 /// The generated wrapper struct name for `Vec<elem>` — `TVec` plus an
@@ -4885,7 +6788,7 @@ pub(crate) fn collect_vec_elem_types(program: &Program) -> Vec<Type> {
             // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 type-reachability
             // consumer yet (increments 2b-3); contributes no Vec element types,
             // mirroring the inert ADT-decl arms.
-            Item::Forge(_) => {}
+            Item::Const(_) | Item::Forge(_) => {}
         }
     }
     // Cluster C5 (`.design/basis/07-strings.md` REQ-15, issue #102): the emitted
@@ -4921,7 +6824,8 @@ fn note_vec_elems(ty: &Type, elems: &mut Vec<Type>) {
                 elems.push(e);
             }
         }
-        Type::Ref { inner, .. }
+        Type::Array { elem: inner, .. }
+        | Type::Ref { inner, .. }
         | Type::Slice(inner)
         | Type::Box(inner)
         | Type::Generic { arg: inner, .. }
@@ -5281,7 +7185,7 @@ pub(crate) fn collect_map_kv_types(program: &Program) -> Vec<(Type, Type)> {
             // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 type-reachability
             // consumer yet (increments 2b-3); contributes no Map (K,V) pairs,
             // mirroring the inert ADT-decl arms.
-            Item::Forge(_) => {}
+            Item::Const(_) | Item::Forge(_) => {}
         }
     }
     pairs
@@ -5302,7 +7206,8 @@ fn note_map_kv(ty: &Type, pairs: &mut Vec<(Type, Type)>) {
                 pairs.push(pair);
             }
         }
-        Type::Ref { inner, .. }
+        Type::Array { elem: inner, .. }
+        | Type::Ref { inner, .. }
         | Type::Slice(inner)
         | Type::Box(inner)
         | Type::Vec(inner)
@@ -5601,7 +7506,8 @@ fn named_struct_param(ty: &Type) -> Option<&str> {
 fn ty_reaches_string(ty: &Type) -> bool {
     match ty {
         Type::String => true,
-        Type::Ref { inner, .. }
+        Type::Array { elem: inner, .. }
+        | Type::Ref { inner, .. }
         | Type::Slice(inner)
         | Type::Vec(inner)
         | Type::Box(inner)
@@ -5672,7 +7578,7 @@ fn program_uses_string(program: &Program) -> bool {
             // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 String-reachability
             // consumer yet (increments 2b-3); reaches no String, so fall through
             // without returning, mirroring the inert ADT-decl arms.
-            Item::Forge(_) => {}
+            Item::Const(_) | Item::Forge(_) => {}
         }
     }
     false
@@ -6324,7 +8230,7 @@ pub(crate) fn program_uses_string_search(program: &Program) -> bool {
                     .unwrap_or(false)
         }
         Item::SpecFn(s) => block_uses_string_search(&s.body, &shadow),
-        Item::Struct(_) | Item::Enum(_) => false,
+        Item::Const(_) | Item::Struct(_) | Item::Enum(_) => false,
         // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 emission-gate consumer
         // yet (increments 2b-3); never drives generation, mirroring the ADT-decl arm.
         Item::Forge(_) => false,
@@ -6512,7 +8418,7 @@ fn program_uses_numfmt(program: &Program) -> bool {
                     .unwrap_or(false)
         }
         Item::SpecFn(s) => block_uses_numfmt(&s.body, &shadow),
-        Item::Struct(_) | Item::Enum(_) => false,
+        Item::Const(_) | Item::Struct(_) | Item::Enum(_) => false,
         // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 emission-gate consumer
         // yet (increments 2b-3); never drives generation, mirroring the ADT-decl arm.
         Item::Forge(_) => false,
@@ -7085,7 +8991,7 @@ pub(crate) fn program_uses_parse(program: &Program) -> bool {
                     .unwrap_or(false)
         }
         Item::SpecFn(s) => block_uses_parse(&s.body, &shadow),
-        Item::Struct(_) | Item::Enum(_) => false,
+        Item::Const(_) | Item::Struct(_) | Item::Enum(_) => false,
         // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 emission-gate consumer
         // yet (increments 2b-3); never drives generation, mirroring the ADT-decl arm.
         Item::Forge(_) => false,
@@ -7347,7 +9253,7 @@ pub(crate) fn program_uses_bytes_eq(program: &Program) -> bool {
                     .unwrap_or(false)
         }
         Item::SpecFn(s) => block_uses_bytes_eq(&s.body, &shadow),
-        Item::Struct(_) | Item::Enum(_) => false,
+        Item::Const(_) | Item::Struct(_) | Item::Enum(_) => false,
         // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 emission-gate consumer
         // yet (increments 2b-3); never drives generation, mirroring the ADT-decl arm.
         Item::Forge(_) => false,
@@ -7575,6 +9481,25 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
         // byte-identical (`1_000_000` lowers to `1000000`); no golden churn.
         Expr::IntLit { value, .. } => Ok(value.to_string()),
         Expr::BoolLit(b) => Ok(b.to_string()),
+        Expr::Array(elements) => {
+            let elements = elements
+                .iter()
+                .map(|element| lower_expr(element, ctx, d, span))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(format!("[{}]", elements.join(", ")))
+        }
+        Expr::ArrayRepeat { value, len } => {
+            let value = lower_expr(value, ctx, d, span)?;
+            // Verus rejects array literal syntax under `--no-vstd` even when
+            // Forge explicitly imports its exact digest-bound array model. Route
+            // repeat construction through that model's executable constructor.
+            // The const length is fixed explicitly, while the element type is
+            // inferred from the surrounding Thermite type.
+            Ok(format!(
+                "vstd::array::array_fill_for_copy_types::<_, {}>({value})",
+                lower_array_len(len)
+            ))
+        }
         // Basis Stage 7 (`.design/basis/07-strings.md` REQ-1/REQ-4): a string
         // literal `"hello"` materializes into an owned `TString` whose bytes are
         // the literal's UTF-8, constructed by pushing each byte — the grounded
@@ -7907,6 +9832,91 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
             // references confirm; the `@` view is only needed where a `Seq`
             // operation (`subrange`/index) is required (handled in `lower_index`).
             let r = lower_expr(receiver, ctx, d, span)?;
+            // Native fixed-array equality is explicit because Verus does not model
+            // Rust array `PartialEq`. In spec position its meaning is finite-view
+            // extensional equality. In exec position it calls the generated,
+            // const-generic scan whose postcondition proves that same relation.
+            // Borrow the right operand so neither owned nor borrowed inputs require
+            // a runtime array copy.
+            if name == "array_eq" && args.len() == 1 {
+                let right = lower_expr(&args[0], ctx, d, span)?;
+                if ctx.is_spec() {
+                    return Ok(format!("(({r})@ =~= ({right})@)"));
+                }
+                return Ok(format!("({r}).__thermite_fixed_array_eq(&({right}))"));
+            }
+            if name == "array_same_except" && args.len() == 2 {
+                let right = lower_expr(&args[0], ctx, d, span)?;
+                let except = lower_expr(&args[1], ctx, d, span)?;
+                if ctx.is_spec() {
+                    return Ok(format!(
+                        "({r}).__thermite_fixed_array_same_except_spec(&({right}), {except})"
+                    ));
+                }
+                return Ok(format!(
+                    "({r}).__thermite_fixed_array_same_except(&({right}), {except})"
+                ));
+            }
+            if name == "array_same_except_two" && args.len() == 3 {
+                let right = lower_expr(&args[0], ctx, d, span)?;
+                let first = lower_expr(&args[1], ctx, d, span)?;
+                let second = lower_expr(&args[2], ctx, d, span)?;
+                if ctx.is_spec() {
+                    return Ok(format!(
+                        "({r}).__thermite_fixed_array_same_except_two_spec(&({right}), {first}, {second})"
+                    ));
+                }
+                return Ok(format!(
+                    "({r}).__thermite_fixed_array_same_except_two(&({right}), {first}, {second})"
+                ));
+            }
+            // The declared-index relations
+            // (`.design/build/aggregate-array-relations.md`, "Surface"). The
+            // family is a specification relation: the validator refuses it in an
+            // executable body, and lowering fails closed for the same position
+            // rather than emitting a method no generated impl provides.
+            if let Some(arity) = logical_relation_arity(name) {
+                if args.len() == arity {
+                    if !ctx.is_spec() {
+                        return Err(LowerError::Unsupported {
+                            what: format!(
+                                "`.{name}()` is a specification relation over a declared index space and has no executable form"
+                            ),
+                            span,
+                        });
+                    }
+                    let mut lowered = Vec::with_capacity(arity);
+                    for arg in args {
+                        lowered.push(lower_expr(arg, ctx, d, span)?);
+                    }
+                    return Ok(logical_relation_call(name, &r, &lowered));
+                }
+            }
+            if args.len() == 1 && matches!(name.as_str(), "bit_test" | "bit_set" | "bit_clear") {
+                let index = lower_expr(&args[0], ctx, d, span)?;
+                let suffix = match name.as_str() {
+                    "bit_test" => "bit_test",
+                    "bit_set" => "bit_set",
+                    "bit_clear" => "bit_clear",
+                    _ => unreachable!("the method guard fixed the bit helper"),
+                };
+                let mode = if ctx.is_spec() { "_spec" } else { "" };
+                return Ok(format!("__thermite_u64_{suffix}{mode}({r}, {index})"));
+            }
+            if args.len() == 2
+                && matches!(
+                    name.as_str(),
+                    "bit_set_preserves_other" | "bit_clear_preserves_other"
+                )
+            {
+                let changed = lower_expr(&args[0], ctx, d, span)?;
+                let observed = lower_expr(&args[1], ctx, d, span)?;
+                let suffix = name.trim_start_matches("bit_");
+                let mode = if ctx.is_spec() { "_spec" } else { "" };
+                return Ok(format!(
+                    "__thermite_u64_bit_{suffix}{mode}({r}, {changed}, {observed})"
+                ));
+            }
             // Cluster C4 (`.design/basis/07-strings.md` REQ-8, issue #94): the
             // `u64`→decimal-`String` method `n.to_string()` lowers to a call of the
             // generated free fn `u64_to_string(n)` (emitted by `emit_numfmt_defs`,
@@ -8578,20 +10588,44 @@ fn lower_index(
     span: Span,
 ) -> Result<String, LowerError> {
     let b = lower_expr(base, ctx, depth, span)?;
+    let borrowed_array = matches!(base, Expr::Path(parts)
+        if parts.len() == 1 && ctx.is_array_ref(&parts[0]));
     match (ctx.pos, index) {
         (Pos::Spec, IndexArg::Single(i)) => {
             let idx = lower_expr(i, ctx, depth, span)?;
-            Ok(format!("{b}@[{idx} as int]"))
+            if borrowed_array {
+                Ok(format!("(*{b})[({idx}) as int]"))
+            } else {
+                Ok(format!("{b}@[{idx} as int]"))
+            }
         }
         (Pos::Spec, IndexArg::RangeTo(i)) => {
+            if borrowed_array {
+                return Err(LowerError::Unsupported {
+                    what: "range indexing through a borrowed fixed array".to_string(),
+                    span,
+                });
+            }
             let idx = lower_expr(i, ctx, depth, span)?;
             Ok(format!("{b}@.subrange(0, {idx} as int)"))
         }
         (Pos::Spec, IndexArg::RangeFrom(i)) => {
+            if borrowed_array {
+                return Err(LowerError::Unsupported {
+                    what: "range indexing through a borrowed fixed array".to_string(),
+                    span,
+                });
+            }
             let idx = lower_expr(i, ctx, depth, span)?;
             Ok(format!("{b}@.subrange({idx} as int, {b}@.len() as int)"))
         }
         (Pos::Spec, IndexArg::Range(i, j)) => {
+            if borrowed_array {
+                return Err(LowerError::Unsupported {
+                    what: "range indexing through a borrowed fixed array".to_string(),
+                    span,
+                });
+            }
             let lo = lower_expr(i, ctx, depth, span)?;
             let hi = lower_expr(j, ctx, depth, span)?;
             Ok(format!("{b}@.subrange({lo} as int, {hi} as int)"))
@@ -9092,6 +11126,12 @@ fn collect_block_local_muls(block: &Block, muls: &mut Vec<Expr>) {
     }
     fn walk_expr(e: &Expr, muls: &mut Vec<Expr>) {
         match e {
+            Expr::Array(elements) => {
+                for element in elements {
+                    walk_expr(element, muls);
+                }
+            }
+            Expr::ArrayRepeat { value, .. } => walk_expr(value, muls),
             Expr::Binary { lhs, rhs, .. } => {
                 walk_expr(lhs, muls);
                 walk_expr(rhs, muls);
@@ -9408,6 +11448,7 @@ fn lower_loop(
     };
 
     let slices = slice_param_names(&f.params);
+    let array_refs = fixed_array_ref_param_names(&f.params);
     let strings = string_value_names(f);
     // The loop's `inv` clauses and its `dec` measure lower in spec context, and a
     // loop invariant / decreases measure may name a user `spec fn` with an
@@ -9422,6 +11463,7 @@ fn lower_loop(
     // `lift_immutable_preconds` below, so a precondition lifted into the invariants
     // that names a spec fn narrows identically.
     let spec = Ctx::spec(&slices, nat_fns)
+        .with_array_refs(&array_refs)
         .with_strings(&strings)
         .with_string_fields(string_fields)
         .with_spec_fn_param_types(spec_fn_param_types);
@@ -9649,6 +11691,8 @@ fn expr_mentions(expr: &Expr, name: &str) -> bool {
     match expr {
         Expr::Path(segs) => segs.iter().any(|s| s == name),
         Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::StrLit(_) => false,
+        Expr::Array(elements) => elements.iter().any(|e| expr_mentions(e, name)),
+        Expr::ArrayRepeat { value, .. } => expr_mentions(value, name),
         Expr::Call { callee, args } => {
             expr_mentions(callee, name) || args.iter().any(|a| expr_mentions(a, name))
         }
@@ -10214,7 +12258,9 @@ fn spec_dec(dec: &Clause, params: &[Param], spec_fn_param_types: &[(&str, &[Prim
     // correct). Thread the program-wide map so a `dec`-measure spec-call narrows to
     // the callee's declared param type (`Ctx::spec_call_param_cast`, #227).
     let strings = string_param_names(params);
+    let array_refs = fixed_array_ref_param_names(params);
     let ctx = Ctx::spec_seq()
+        .with_array_refs(&array_refs)
         .with_strings(&strings)
         .with_spec_fn_param_types(spec_fn_param_types);
     lower_expr(&dec.expr, ctx, 0, zero_span()).unwrap_or_else(|_| "0".to_string())

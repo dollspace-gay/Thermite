@@ -140,11 +140,12 @@
 //! | REQ-SPEC-VALIDATOR-ERGONOMICS-OR-PATTERN | shipped | `thermite-spec/src/validator.rs` | Or-pattern exhaustiveness validation |  |
 //! <!-- /generated:reqs -->
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt;
 
 use thermite_syntax::{
-    Block, Clause, Expr, IndexArg, Item, MatchArm, Pattern, Program, Span, Stmt, VariantShape,
+    ArrayLen, Block, Clause, Expr, ForgeItem, IndexArg, Item, MatchArm, Pattern, PrimType, Program,
+    Span, SpecFnItem, Stmt, StructItem, Type, VariantShape,
 };
 
 use crate::combinators::{self, ArgKind, CombinatorSig};
@@ -162,6 +163,12 @@ use crate::schemes::{self, SchemeSig};
 /// process (REQ-5; the #29/#31/#32 expr-only-guard lesson: do not leave any
 /// recursive path unbounded).
 const MAX_RECURSION_DEPTH: usize = 64;
+
+/// Maximum capacity of one native fixed array, and maximum recursively expanded
+/// element count of a nested fixed-array type. This is a language/tooling bound,
+/// not a host or target `usize` fact, so validation is deterministic across
+/// machines and rejects source-sized denial-of-service inputs before lowering.
+pub const MAX_FIXED_ARRAY_ELEMENTS: u128 = 1_048_576;
 
 /// The bounded set of built-in `MethodCall` names a caged position admits
 /// (REQ-3(c): "the bounded built-in `MethodCall`s the grammar admits (e.g.
@@ -230,6 +237,29 @@ const MAX_RECURSION_DEPTH: usize = 64;
 /// the receiver type).
 const BUILTIN_METHODS: &[&str] = &[
     "len",
+    // Native fixed-array equality. Verus cannot model Rust array `PartialEq`, so
+    // the L3 lowerer maps this explicit surface operation to a directly verified
+    // const-generic scan and maps contract occurrences to finite-view equality.
+    "array_eq",
+    "array_same_except",
+    "array_same_except_two",
+    // The declared-index relation family
+    // (`.design/build/aggregate-array-relations.md`, "Surface"). A `#[logical]`
+    // struct receiver quantifies over its declared index space rather than a
+    // storage array's; typing is disjoint from the three names above, so the
+    // pair is one relation set over two index spaces, not an overload.
+    "logical_eq",
+    "logical_same_except",
+    "logical_same_except_two",
+    // Total `u64` packed-bit operations. An index at least 64 leaves a word
+    // unchanged for updates and observes `false`; the directly verified L3
+    // helpers supply the ordinary contract bridge and distinct-bit framing
+    // witnesses needed by packed storage.
+    "bit_test",
+    "bit_set",
+    "bit_clear",
+    "bit_set_preserves_other",
+    "bit_clear_preserves_other",
     "get",
     "last",
     "contains",
@@ -307,9 +337,10 @@ const BUILTIN_METHODS: &[&str] = &[
 const THERMITE_RESERVED_PREFIX: &str = "__thermite_";
 
 const GENERATED_SPEC_FNS: &[&str] = &[
-    // Verus state-view primitive for `&mut` postconditions. It is not emitted by
-    // the lowerer; admitting it here keeps mutable-slice contracts inside the
-    // closed spec-call cage while the backend resolves the built-in directly.
+    // Verus state-view primitives for `&mut` pre/postconditions. They are not
+    // emitted by the lowerer; admitting them here keeps mutable-state contracts
+    // inside the closed spec-call cage while the backend resolves the built-ins.
+    "old",
     "final",
     "parse_be",
     "parse_le",
@@ -330,6 +361,74 @@ const GENERATED_SPEC_FNS: &[&str] = &[
 /// (R-CODE-2 / R-APG-1): every rejection is a variant here.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SpecError {
+    /// A fixed-array length names no package-visible `const NAME: usize = ...`.
+    UnknownArrayCapacity { name: String, span: Span },
+    /// Two top-level capacity declarations have the same name. Package parsing
+    /// catches this across modules; this validator also closes the single-file
+    /// path before lowering.
+    DuplicateArrayCapacity { name: String, span: Span },
+    /// One fixed-array capacity exceeds the language/tooling bound.
+    ArrayCapacityTooLarge {
+        value: u128,
+        limit: u128,
+        span: Span,
+    },
+    /// A nested array's recursively expanded native element count exceeds the
+    /// same deterministic tooling bound.
+    ArrayExpandedSizeTooLarge {
+        elements: u128,
+        limit: u128,
+        span: Span,
+    },
+    /// An exact or repeat initializer disagrees with its annotated array type.
+    ArrayLengthMismatch {
+        expected: u128,
+        found: u128,
+        span: Span,
+    },
+    /// A repeat initializer `[value; N]` has an element type that is not
+    /// copy-safe. Native array repetition evaluates one value and duplicates it;
+    /// admitting owned strings, vectors, boxes, maps, mutable references, or
+    /// opaque user ADTs here would either fail only in a backend or silently
+    /// change ownership semantics.
+    ArrayRepeatRequiresCopy { span: Span },
+    /// `.array_eq(other)`, `.array_same_except(other, index)`, and
+    /// `.array_same_except_two(other, first, second)` require two equally typed
+    /// fixed arrays whose element has a finite structural equality derivation.
+    /// Primitive scalars, unit, nested fixed arrays/tuples, and
+    /// non-sealed/non-opaque acyclic structs are admitted. Authority-bearing,
+    /// recursive, enum, reference, and heap-backed shapes fail closed.
+    ArrayEqualityRequiresStructuralArrays { detail: String, span: Span },
+    /// A `#[logical(bound = …, observe = …)]` declaration fails one of the
+    /// admission rules of `.design/build/aggregate-array-relations.md`,
+    /// "Admitted shapes and fail-closed boundary": a sealed or recursive
+    /// receiver, a bound that is not a `usize` constant inside the Forge element
+    /// bound, or an observer that is not a two-parameter `(&Self, usize)`
+    /// `spec fn` with a finite structural result type. The detail names the rule.
+    InvalidLogicalView { detail: String, span: Span },
+    /// A `.logical_eq(..)` / `.logical_same_except(..)` /
+    /// `.logical_same_except_two(..)` call is outside the declared-index
+    /// relation family: a receiver with no `#[logical]`, mismatched nominal
+    /// operands, a computed operand, the wrong arity, an executable position, or
+    /// a frame relation over a derived-index observer.
+    LogicalRelationRefused { detail: String, span: Span },
+    /// A direct named-record field assignment does not belong to the frozen
+    /// finite lifecycle subset. The target must be `root.field`, the root must
+    /// be an exclusive named-record borrow or a mutable typed local, and the
+    /// exact record must be non-sealed with only finite plain fields.
+    InvalidNamedRecordMutation { detail: String, span: Span },
+    /// An executable call to a frozen `thermite::atomic::*` boundary uses an
+    /// ordering expression that is not an exact `AtomicOrdering::Variant`
+    /// literal, supplies an ordering forbidden for that operation, or has an
+    /// arity that prevents the ordering positions from being checked. Atomic
+    /// ordering is part of the machine operation, so this gate is deliberately
+    /// fail-closed before lowering/code generation rather than relying on a
+    /// backend panic or a dynamically selected Rust ordering.
+    IllegalAtomicOrdering {
+        operation: String,
+        detail: String,
+        span: Span,
+    },
     /// A call in a contract position whose callee is neither a registered
     /// combinator nor a declared `spec fn` — an arbitrary free-function call,
     /// forbidden by the §4.2 cage (REQ-4 (i)). `name` is the unresolved callee.
@@ -456,15 +555,22 @@ pub enum SpecError {
     InvalidVariantCasing { name: String, span: Span },
     /// An `Expr::StructLit` constructing a `#[sealed]` clean/capability type
     /// (`.design/basis/06-provenance-and-sinks.md` REQ-8). A `#[sealed]` struct
-    /// is the abstraction barrier for an IFC clean type (`Sql`/`Public`/
-    /// `Authorized`): it is obtainable only as a `#[boundary]` door's return
-    /// value (the door body is foreign/`external_body`, with no in-language
-    /// `StructLit`), never minted directly. Minting one with a struct literal
-    /// would launder a marked value into a clean type outside its door,
+    /// is boundary-only by default. The explicit `#[sealed("factory")]` form
+    /// authorizes exactly its named bodyful checked Thermite function; every
+    /// other literal is rejected. Minting outside that exact authority would
+    /// launder a marked value into a clean type outside its door or factory,
     /// defeating the IFC guarantee (the #77 SQLi/secret/capability bypass). The
     /// un-doored mark-change is a compile-time rejection, not a silent
     /// `L3`. `name` is the sealed struct.
     SealedConstruction { name: String, span: Span },
+    /// A `#[sealed("factory")]` declaration whose named factory is absent,
+    /// bodyless, effect-exempt, or does not return the sealed type exactly.
+    InvalidSealedFactory {
+        name: String,
+        factory: String,
+        detail: String,
+        span: Span,
+    },
     /// A recursive exec `fn` (one whose body calls itself directly) that carries
     /// no `dec` termination clause and is not `fx diverge`
     /// (`.design/basis/10-recursion-tuples.md` REQ-2, C9-A). Termination is proved
@@ -493,7 +599,18 @@ impl SpecError {
     /// The source span this diagnostic points at.
     pub fn span(&self) -> Span {
         match self {
-            SpecError::UnknownCombinator { span, .. }
+            SpecError::UnknownArrayCapacity { span, .. }
+            | SpecError::DuplicateArrayCapacity { span, .. }
+            | SpecError::ArrayCapacityTooLarge { span, .. }
+            | SpecError::ArrayExpandedSizeTooLarge { span, .. }
+            | SpecError::ArrayLengthMismatch { span, .. }
+            | SpecError::ArrayRepeatRequiresCopy { span }
+            | SpecError::ArrayEqualityRequiresStructuralArrays { span, .. }
+            | SpecError::InvalidLogicalView { span, .. }
+            | SpecError::LogicalRelationRefused { span, .. }
+            | SpecError::InvalidNamedRecordMutation { span, .. }
+            | SpecError::IllegalAtomicOrdering { span, .. }
+            | SpecError::UnknownCombinator { span, .. }
             | SpecError::WrongArity { span, .. }
             | SpecError::WrongArgKind { span, .. }
             | SpecError::ForbiddenCall { span, .. }
@@ -509,6 +626,7 @@ impl SpecError {
             | SpecError::SchemeStepShape { span, .. }
             | SpecError::InvalidVariantCasing { span, .. }
             | SpecError::SealedConstruction { span, .. }
+            | SpecError::InvalidSealedFactory { span, .. }
             | SpecError::MissingDecreases { span, .. }
             | SpecError::ReservedName { span, .. } => *span,
         }
@@ -518,6 +636,55 @@ impl SpecError {
 impl fmt::Display for SpecError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            SpecError::UnknownArrayCapacity { name, .. } => write!(
+                f,
+                "array capacity `{name}` is not a declared `const {name}: usize = INTEGER;`"
+            ),
+            SpecError::DuplicateArrayCapacity { name, .. } => {
+                write!(f, "array capacity `{name}` is declared more than once")
+            }
+            SpecError::ArrayCapacityTooLarge { value, limit, .. } => write!(
+                f,
+                "array capacity {value} exceeds the fixed-array limit of {limit}"
+            ),
+            SpecError::ArrayExpandedSizeTooLarge {
+                elements, limit, ..
+            } => write!(
+                f,
+                "nested array expands to {elements} elements, exceeding the fixed-array limit of {limit}"
+            ),
+            SpecError::ArrayLengthMismatch {
+                expected, found, ..
+            } => write!(
+                f,
+                "array initializer has length {found}, but its annotated type requires {expected}"
+            ),
+            SpecError::ArrayRepeatRequiresCopy { .. } => write!(
+                f,
+                "array repeat initialization `[value; N]` requires a copy-safe element type"
+            ),
+            SpecError::ArrayEqualityRequiresStructuralArrays { detail, .. } => write!(
+                f,
+                "fixed-array relations require equally typed structurally comparable arrays: {detail}"
+            ),
+            SpecError::InvalidLogicalView { detail, .. } => write!(
+                f,
+                "`#[logical]` declaration is outside the admitted index-space shapes: {detail}"
+            ),
+            SpecError::LogicalRelationRefused { detail, .. } => write!(
+                f,
+                "declared-index relations require a `#[logical]` receiver: {detail}"
+            ),
+            SpecError::InvalidNamedRecordMutation { detail, .. } => write!(
+                f,
+                "named-record field mutation is outside the frozen exclusive lifecycle subset: {detail}"
+            ),
+            SpecError::IllegalAtomicOrdering {
+                operation, detail, ..
+            } => write!(
+                f,
+                "atomic operation `{operation}` has an illegal ordering: {detail}"
+            ),
             SpecError::UnknownCombinator { name, .. } => write!(
                 f,
                 "`{name}` is not a registered SpecTherm combinator or a declared `spec fn`; \
@@ -613,8 +780,18 @@ impl fmt::Display for SpecError {
                 f,
                 "`{name}` is a `#[sealed]` type and cannot be constructed with a struct literal — \
                  a sealed clean/capability type is obtainable ONLY through its `#[boundary]` door \
+                 or its explicitly named checked `#[sealed(\"factory\")]` factory \
                  (the abstraction barrier; `.design/basis/06-provenance-and-sinks.md` REQ-8); \
                  minting it directly would launder a marked value past its door"
+            ),
+            SpecError::InvalidSealedFactory {
+                name,
+                factory,
+                detail,
+                ..
+            } => write!(
+                f,
+                "sealed type `{name}` names invalid verified factory `{factory}`: {detail}"
             ),
             SpecError::MissingDecreases { name, .. } => write!(
                 f,
@@ -633,6 +810,487 @@ impl fmt::Display for SpecError {
 }
 
 impl std::error::Error for SpecError {}
+
+/// Whether native `[value; N]` repetition can duplicate one element without
+/// cloning, allocation, aliasing mutable authority, or depending on an opaque
+/// user type's backend traits. This deliberately mirrors the closed Thermite
+/// type surface rather than asking Rust/Verus after lowering.
+fn array_repeat_element_is_copy_safe(ty: &Type) -> bool {
+    match ty {
+        Type::Prim(_) | Type::Unit => true,
+        Type::Array { elem, .. } | Type::Option(elem) => array_repeat_element_is_copy_safe(elem),
+        Type::Result(ok, err) => {
+            array_repeat_element_is_copy_safe(ok) && array_repeat_element_is_copy_safe(err)
+        }
+        Type::Tuple(elements) => elements.iter().all(array_repeat_element_is_copy_safe),
+        Type::Ref { mutable, .. } => !mutable,
+        Type::Slice(_)
+        | Type::Generic { .. }
+        | Type::Named(_)
+        | Type::Box(_)
+        | Type::Vec(_)
+        | Type::String
+        | Type::Map(_, _) => false,
+    }
+}
+
+/// Compute the declaration-order-independent closure of plain structs whose
+/// values have a finite compiler-derived structural equality. This is the
+/// shared source of truth for the validator and lowering: a struct joins only
+/// after every named field dependency has already joined. Recursive cycles
+/// therefore never enter the least fixed point. Sealed and opaque structs are
+/// excluded even when their representation is scalar, because ambient derived
+/// equality would weaken their authority/representation barrier.
+pub fn structural_array_equality_structs(program: &Program) -> BTreeSet<String> {
+    let mut admitted = BTreeSet::new();
+    loop {
+        let before = admitted.len();
+        for item in &program.items {
+            let Item::Struct(structure) = item else {
+                continue;
+            };
+            if structure.sealed || structure.opaque || admitted.contains(&structure.name) {
+                continue;
+            }
+            if structure
+                .fields
+                .iter()
+                .all(|field| array_equality_type_is_structural(&field.ty, &admitted))
+            {
+                admitted.insert(structure.name.clone());
+            }
+        }
+        if admitted.len() == before {
+            return admitted;
+        }
+    }
+}
+
+/// Whether one array element type belongs to the finite structural equality
+/// language. Kept public for lowering so code generation cannot silently admit
+/// a wider type class than validation.
+pub fn array_equality_type_is_structural(ty: &Type, admitted_structs: &BTreeSet<String>) -> bool {
+    match ty {
+        Type::Prim(_) | Type::Unit => true,
+        Type::Array { elem, .. } => array_equality_type_is_structural(elem, admitted_structs),
+        Type::Tuple(elements) => elements
+            .iter()
+            .all(|element| array_equality_type_is_structural(element, admitted_structs)),
+        Type::Named(name) => admitted_structs.contains(name),
+        Type::Ref { .. }
+        | Type::Slice(_)
+        | Type::Generic { .. }
+        | Type::Box(_)
+        | Type::Vec(_)
+        | Type::String
+        | Type::Option(_)
+        | Type::Result(_, _)
+        | Type::Map(_, _) => false,
+    }
+}
+
+/// Compute the named-record roots whose direct fields may participate in the
+/// exact exclusive-borrow lifecycle primitive. Ordinary finite structs are the
+/// structural equality closure itself. An opaque root is additionally admitted
+/// when each of its fields belongs to that closure: its declaring module needs
+/// to implement verified state transitions, but opaque values never become
+/// ambiently comparable or valid as nested derived state. Sealed roots remain
+/// excluded because their representation is boundary-owned authority.
+pub fn structural_record_mutation_structs(program: &Program) -> BTreeSet<String> {
+    let plain = structural_array_equality_structs(program);
+    program
+        .items
+        .iter()
+        .filter_map(|item| {
+            let Item::Struct(structure) = item else {
+                return None;
+            };
+            (!structure.sealed
+                && structure
+                    .fields
+                    .iter()
+                    .all(|field| array_equality_type_is_structural(&field.ty, &plain)))
+            .then(|| structure.name.clone())
+        })
+        .collect()
+}
+
+/// One admitted `#[logical(bound = …, observe = …)]` declaration
+/// (`.design/build/aggregate-array-relations.md`, "Declaring a logical view").
+///
+/// `bound` keeps the source spelling — a `const NAME: usize` or a decimal
+/// literal — so lowering emits the same symbol the author wrote, while
+/// `bound_value` is its resolved size for the element-bound check. `observer`
+/// names the `spec fn obs(&Self, usize) -> V` the relations apply, and
+/// `index_transparent` records whether every occurrence of that observer's
+/// index parameter is a fixed-array projection index rooted at its receiver,
+/// which is the condition under which the two frame relations are admitted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LogicalView {
+    pub struct_name: String,
+    pub bound: String,
+    pub bound_value: u128,
+    pub observer: String,
+    pub index_transparent: bool,
+}
+
+/// The admitted declared logical index spaces of a program, keyed by struct
+/// name. A declaration failing any admission rule is absent here and carries a
+/// `SpecError` from [`validate`]; lowering therefore never emits a relation for
+/// a declaration the source gate rejected.
+pub fn logical_views(program: &Program) -> BTreeMap<String, LogicalView> {
+    resolve_logical_views(program).0
+}
+
+/// Whether an expression names one of the three declared-index relations.
+fn is_logical_relation(name: &str) -> bool {
+    matches!(
+        name,
+        "logical_eq" | "logical_same_except" | "logical_same_except_two"
+    )
+}
+
+/// Resolve every `#[logical]` declaration, returning the admitted views plus one
+/// diagnostic per rejected declaration. The five admission rules are the ones
+/// `.design/build/aggregate-array-relations.md`, "Admitted shapes and
+/// fail-closed boundary", fixes: a non-sealed acyclic finite struct receiver,
+/// one declaration per struct (the parser's rule), a `usize` bound inside the
+/// Forge element bound, and a two-parameter `(&Self, usize)` observer whose
+/// result type is inside the finite structural closure.
+fn resolve_logical_views(program: &Program) -> (BTreeMap<String, LogicalView>, Vec<SpecError>) {
+    let mut admitted = BTreeMap::new();
+    let mut errors = Vec::new();
+    let declarations: Vec<&StructItem> = program
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Struct(structure) if structure.logical.is_some() => Some(structure),
+            _ => None,
+        })
+        .collect();
+    if declarations.is_empty() {
+        return (admitted, errors);
+    }
+
+    let capacities: HashMap<&str, u128> = program
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Const(value) => Some((value.name.as_str(), value.value)),
+            _ => None,
+        })
+        .collect();
+    let structural = structural_array_equality_structs(program);
+    let finite_roots = structural_record_mutation_structs(program);
+    let transparent = index_transparent_observers(program);
+
+    for structure in declarations {
+        let Some(logical) = &structure.logical else {
+            continue;
+        };
+        let span = logical.span;
+        let name = &structure.name;
+        let mut reject = |detail: String| {
+            errors.push(SpecError::InvalidLogicalView { detail, span });
+        };
+        if structure.sealed {
+            reject(format!(
+                "`{name}` is `#[sealed]`; sealed values are platform-minted and their observations come from bodyless boundary declarations, so a quantified claim over them ranges over facts no rung has proved"
+            ));
+            continue;
+        }
+        if !finite_roots.contains(name) {
+            reject(format!(
+                "`{name}` is recursive or carries a field outside the finite structural closure; a declared index space requires an acyclic struct whose fields are scalars, unit, fixed arrays, tuples, or plain records"
+            ));
+            continue;
+        }
+        let Some(bound) = &logical.bound else {
+            reject(format!(
+                "`{name}` declares no `bound`; `#[logical]` requires `bound = \"<usize constant>\"`"
+            ));
+            continue;
+        };
+        let bound_value = match bound.parse::<u128>() {
+            Ok(literal) => literal,
+            Err(_) => match capacities.get(bound.as_str()) {
+                Some(value) => *value,
+                None => {
+                    reject(format!(
+                        "`{name}` declares `bound = \"{bound}\"`, which is neither a non-negative integer literal nor a `const {bound}: usize` visible in this module"
+                    ));
+                    continue;
+                }
+            },
+        };
+        if bound_value > MAX_FIXED_ARRAY_ELEMENTS {
+            reject(format!(
+                "`{name}` declares an index space of {bound_value}, above the {MAX_FIXED_ARRAY_ELEMENTS}-element bound"
+            ));
+            continue;
+        }
+        let Some(observe) = &logical.observe else {
+            reject(format!(
+                "`{name}` declares no `observe`; `#[logical]` requires `observe = \"<spec fn>\"`"
+            ));
+            continue;
+        };
+        let observer = program.items.iter().find_map(|item| match item {
+            Item::SpecFn(function) if function.name == *observe => Some(function),
+            _ => None,
+        });
+        let Some(observer) = observer else {
+            reject(format!(
+                "`{name}` declares `observe = \"{observe}\"`, which names no `spec fn` in this module"
+            ));
+            continue;
+        };
+        if observer.params.len() != 2
+            || !parameter_borrows_named(&observer.params[0].ty, name)
+            || !matches!(observer.params[1].ty, Type::Prim(PrimType::Usize))
+        {
+            reject(format!(
+                "observer `{observe}` must take exactly `(&{name}, usize)`"
+            ));
+            continue;
+        }
+        if !array_equality_type_is_structural(&observer.ret, &structural) {
+            reject(format!(
+                "observer `{observe}` returns a type outside the finite structural closure; a `Vec`, `String`, `Map`, `Box`, `Option`, `Result`, enum, reference-bearing, generic, sealed, or foreign-opaque result is refused"
+            ));
+            continue;
+        }
+        admitted.insert(
+            name.clone(),
+            LogicalView {
+                struct_name: name.clone(),
+                bound: bound.clone(),
+                bound_value,
+                observer: observe.clone(),
+                index_transparent: transparent.contains(observe),
+            },
+        );
+    }
+    (admitted, errors)
+}
+
+/// Whether a parameter type is `&Name` (any borrow depth) for the given struct.
+fn parameter_borrows_named(ty: &Type, name: &str) -> bool {
+    match ty {
+        Type::Ref { inner, mutable } => !*mutable && parameter_borrows_named(inner, name),
+        Type::Named(declared) => declared == name,
+        _ => false,
+    }
+}
+
+/// The least fixed point of one-index observer `spec fn`s whose index parameter
+/// is used only as a fixed-array projection index rooted at the receiver
+/// parameter (`.design/build/aggregate-array-relations.md`,
+/// "Index-transparency"). An observer that forwards its index to another such
+/// `spec fn` joins once that callee has joined, so the set grows monotonically
+/// over the acyclic declaration closure in the same shape as
+/// [`structural_array_equality_structs`].
+fn index_transparent_observers(program: &Program) -> BTreeSet<String> {
+    let array_fields: HashMap<&str, BTreeSet<&str>> = program
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Struct(structure) => Some((
+                structure.name.as_str(),
+                structure
+                    .fields
+                    .iter()
+                    .filter(|field| matches!(field.ty, Type::Array { .. }))
+                    .map(|field| field.name.as_str())
+                    .collect(),
+            )),
+            _ => None,
+        })
+        .collect();
+    let candidates: Vec<&SpecFnItem> = program
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::SpecFn(function)
+                if function.params.len() == 2
+                    && matches!(function.params[1].ty, Type::Prim(PrimType::Usize))
+                    && receiver_struct_name(&function.params[0].ty).is_some() =>
+            {
+                Some(function)
+            }
+            _ => None,
+        })
+        .collect();
+
+    let mut transparent: BTreeSet<String> = BTreeSet::new();
+    loop {
+        let before = transparent.len();
+        for function in &candidates {
+            if transparent.contains(&function.name) {
+                continue;
+            }
+            let Some(receiver_struct) = receiver_struct_name(&function.params[0].ty) else {
+                continue;
+            };
+            let empty = BTreeSet::new();
+            let fields = array_fields.get(receiver_struct).unwrap_or(&empty);
+            if block_index_uses_are_transparent(
+                &function.body,
+                &function.params[0].name,
+                &function.params[1].name,
+                fields,
+                &transparent,
+            ) {
+                transparent.insert(function.name.clone());
+            }
+        }
+        if transparent.len() == before {
+            return transparent;
+        }
+    }
+}
+
+/// The struct a `&Name`/`Name` observer receiver parameter names.
+fn receiver_struct_name(ty: &Type) -> Option<&str> {
+    match ty {
+        Type::Ref { inner, .. } => receiver_struct_name(inner),
+        Type::Named(name) => Some(name.as_str()),
+        _ => None,
+    }
+}
+
+fn block_index_uses_are_transparent(
+    block: &Block,
+    receiver: &str,
+    index: &str,
+    array_fields: &BTreeSet<&str>,
+    transparent: &BTreeSet<String>,
+) -> bool {
+    let expr_ok =
+        |expr: &Expr| index_uses_are_transparent(expr, receiver, index, array_fields, transparent);
+    let block_ok = |inner: &Block| {
+        block_index_uses_are_transparent(inner, receiver, index, array_fields, transparent)
+    };
+    block.stmts.iter().all(|stmt| match stmt {
+        Stmt::Let { init, .. } => expr_ok(init),
+        Stmt::Assign { target, value } => expr_ok(target) && expr_ok(value),
+        Stmt::Return(value) => value.as_ref().is_none_or(expr_ok),
+        Stmt::If {
+            cond, then, else_, ..
+        } => expr_ok(cond) && block_ok(then) && else_.as_ref().is_none_or(block_ok),
+        Stmt::Loop(node) => block_ok(&node.body),
+        Stmt::Expr(expr) => expr_ok(expr),
+        Stmt::Break | Stmt::Continue => true,
+    }) && block.tail.as_deref().is_none_or(expr_ok)
+}
+
+/// Whether every occurrence of the observer's index parameter inside one
+/// expression is an admitted transparent position: the index of a fixed-array
+/// projection rooted at the receiver parameter, or the index argument of a
+/// call to an already index-transparent observer over the same receiver.
+fn index_uses_are_transparent(
+    expr: &Expr,
+    receiver: &str,
+    index: &str,
+    array_fields: &BTreeSet<&str>,
+    transparent: &BTreeSet<String>,
+) -> bool {
+    if is_bare_path(expr, index) {
+        return false;
+    }
+    if let Expr::Index {
+        base,
+        index: IndexArg::Single(position),
+    } = expr
+    {
+        if is_bare_path(position, index)
+            && is_receiver_array_projection(base, receiver, array_fields)
+        {
+            return true;
+        }
+    }
+    if let Expr::Call { callee, args } = expr {
+        if let Expr::Path(segments) = callee.as_ref() {
+            if segments.len() == 1
+                && transparent.contains(&segments[0])
+                && args.len() == 2
+                && is_receiver_operand(&args[0], receiver)
+                && is_bare_path(&args[1], index)
+            {
+                return true;
+            }
+        }
+    }
+    let recurse = |child: &Expr| {
+        index_uses_are_transparent(child, receiver, index, array_fields, transparent)
+    };
+    let recurse_block = |block: &Block| {
+        block_index_uses_are_transparent(block, receiver, index, array_fields, transparent)
+    };
+    match expr {
+        Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::StrLit(_) | Expr::Path(_) => true,
+        Expr::Array(elements) | Expr::Tuple(elements) => elements.iter().all(recurse),
+        Expr::ArrayRepeat { value, .. } => recurse(value),
+        Expr::Call { callee, args } => recurse(callee) && args.iter().all(recurse),
+        Expr::MethodCall { receiver, args, .. } => recurse(receiver) && args.iter().all(recurse),
+        Expr::Field { receiver, .. } => recurse(receiver),
+        Expr::Closure { body, .. } => recurse(body),
+        Expr::Match { scrutinee, arms } => {
+            recurse(scrutinee)
+                && arms
+                    .iter()
+                    .all(|arm| arm.guard.as_ref().is_none_or(recurse) && recurse(&arm.body))
+        }
+        Expr::If { cond, then, else_ } => {
+            recurse(cond) && recurse_block(then) && recurse_block(else_)
+        }
+        Expr::Binary { lhs, rhs, .. } => recurse(lhs) && recurse(rhs),
+        Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::Ref { expr, .. } => {
+            recurse(expr)
+        }
+        Expr::Index { base, index } => {
+            recurse(base)
+                && match index {
+                    IndexArg::Single(one) | IndexArg::RangeTo(one) | IndexArg::RangeFrom(one) => {
+                        recurse(one)
+                    }
+                    IndexArg::Range(lo, hi) => recurse(lo) && recurse(hi),
+                }
+        }
+        Expr::StructLit { fields, .. } => fields.iter().all(|(_, value)| recurse(value)),
+        Expr::Is { scrutinee, .. } => recurse(scrutinee),
+        Expr::Deref(inner) => recurse(inner),
+        Expr::TupleProj { receiver, .. } => recurse(receiver),
+        Expr::Quantifier { domain, body, .. } => recurse(domain) && recurse(body),
+    }
+}
+
+fn is_bare_path(expr: &Expr, name: &str) -> bool {
+    matches!(expr, Expr::Path(segments) if segments.len() == 1 && segments[0] == name)
+}
+
+/// A `receiver.field` projection whose field is a fixed array of the receiver.
+fn is_receiver_array_projection(
+    expr: &Expr,
+    receiver: &str,
+    array_fields: &BTreeSet<&str>,
+) -> bool {
+    match expr {
+        Expr::Field {
+            receiver: base,
+            name,
+        } => array_fields.contains(name.as_str()) && is_receiver_operand(base, receiver),
+        _ => false,
+    }
+}
+
+/// A bare, borrowed, or dereferenced mention of the observer's receiver.
+fn is_receiver_operand(expr: &Expr, receiver: &str) -> bool {
+    match expr {
+        Expr::Ref { expr, .. } | Expr::Deref(expr) => is_receiver_operand(expr, receiver),
+        _ => is_bare_path(expr, receiver),
+    }
+}
 
 /// Validate every contract position of a parsed program against the SpecTherm
 /// cage (REQ-3). Returns `Ok(())` if every contract expression is accepted, else
@@ -653,10 +1311,151 @@ pub fn validate(program: &Program) -> Result<(), Vec<SpecError>> {
     }
 }
 
+/// The ordering-sensitive shapes in the frozen atomic boundary namespace.
+/// Initialization has no ordering argument and therefore needs no entry here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AtomicOperation {
+    Load,
+    Store,
+    ReadModifyWrite,
+    CompareExchange,
+    Fence,
+}
+
+impl AtomicOperation {
+    fn expected_arity(self) -> usize {
+        match self {
+            AtomicOperation::Load => 2,
+            AtomicOperation::Store | AtomicOperation::ReadModifyWrite => 3,
+            AtomicOperation::CompareExchange => 5,
+            AtomicOperation::Fence => 1,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AtomicOrdering {
+    Relaxed,
+    Acquire,
+    Release,
+    AcqRel,
+    SeqCst,
+}
+
+impl AtomicOrdering {
+    fn parse_literal(expr: &Expr) -> Option<Self> {
+        let Expr::Path(path) = expr else {
+            return None;
+        };
+        match path.as_slice() {
+            [ty, variant] if ty == "AtomicOrdering" => match variant.as_str() {
+                "Relaxed" => Some(AtomicOrdering::Relaxed),
+                "Acquire" => Some(AtomicOrdering::Acquire),
+                "Release" => Some(AtomicOrdering::Release),
+                "AcqRel" => Some(AtomicOrdering::AcqRel),
+                "SeqCst" => Some(AtomicOrdering::SeqCst),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            AtomicOrdering::Relaxed => "Relaxed",
+            AtomicOrdering::Acquire => "Acquire",
+            AtomicOrdering::Release => "Release",
+            AtomicOrdering::AcqRel => "AcqRel",
+            AtomicOrdering::SeqCst => "SeqCst",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum RecordMutationStep {
+    Field(String),
+    Index,
+}
+
+/// Recover the exact root-to-leaf projection order of the nested lifecycle
+/// lvalue. Range indexes and every computed/dereferenced receiver fail closed.
+fn record_mutation_path(target: &Expr) -> Option<(String, Vec<RecordMutationStep>)> {
+    fn collect(expr: &Expr, steps: &mut Vec<RecordMutationStep>) -> Option<String> {
+        match expr {
+            Expr::Path(path) => match path.as_slice() {
+                [root] => Some(root.clone()),
+                _ => None,
+            },
+            Expr::Field { receiver, name } => {
+                let root = collect(receiver, steps)?;
+                steps.push(RecordMutationStep::Field(name.clone()));
+                Some(root)
+            }
+            Expr::Index {
+                base,
+                index: IndexArg::Single(_),
+            } => {
+                let root = collect(base, steps)?;
+                steps.push(RecordMutationStep::Index);
+                Some(root)
+            }
+            _ => None,
+        }
+    }
+
+    let mut steps = Vec::new();
+    let root = collect(target, &mut steps)?;
+    Some((root, steps))
+}
+
+fn record_mutation_target_contains_field(target: &Expr) -> bool {
+    match target {
+        Expr::Field { .. } => true,
+        Expr::Index { base, .. } => record_mutation_target_contains_field(base),
+        _ => false,
+    }
+}
+
+/// Recognize only exact frozen boundary targets. This is intentionally keyed by
+/// declaration metadata rather than the Thermite function name: a package may
+/// rename an imported declaration, while an unrelated function named
+/// `atomic_u64_load` must retain ordinary language semantics.
+fn classify_atomic_boundary(target: &str) -> Option<AtomicOperation> {
+    let suffix = target.strip_prefix("thermite::atomic::")?;
+    if matches!(suffix, "compiler_fence" | "hardware_fence") {
+        return Some(AtomicOperation::Fence);
+    }
+
+    let (width, operation) = suffix.split_once("::")?;
+    if !matches!(width, "bool" | "u32" | "u64" | "usize") {
+        return None;
+    }
+    match operation {
+        "load" => Some(AtomicOperation::Load),
+        "store" => Some(AtomicOperation::Store),
+        "compare_exchange" | "compare_exchange_weak" => Some(AtomicOperation::CompareExchange),
+        "swap" | "fetch_add" | "fetch_sub" | "fetch_and" | "fetch_or" | "fetch_xor"
+        | "fetch_min" | "fetch_max" => Some(AtomicOperation::ReadModifyWrite),
+        _ => None,
+    }
+}
+
+fn canonical_atomic_app_name(target: &str) -> Option<String> {
+    let suffix = target.strip_prefix("thermite::atomic::")?;
+    Some(format!("atomic_{}", suffix.replace("::", "_")))
+}
+
 /// The walk state: the declared `spec fn` name set, the current recursion depth,
 /// the accumulated diagnostics, and the "caged-flat" mode flag (REQ-6).
 struct Validator {
     spec_fns: HashSet<String>,
+    /// Thermite declaration name -> exact frozen atomic operation shape. The
+    /// map contains only declarations carrying a recognized
+    /// `#[boundary("thermite::atomic::...")]` target.
+    atomic_functions: HashMap<String, AtomicOperation>,
+    /// Closed, literal-valued package capacity declarations. The parser admits
+    /// no expressions here, so resolution cannot be cyclic or target-dependent.
+    array_capacities: HashMap<String, u128>,
     /// REQ-5: each declared `enum`'s variant names, in declaration order
     /// (collected from `Item::Enum` in the pre-pass). Keyed by enum name. The
     /// exhaustiveness check reads this to compute the missing-variant set; the
@@ -681,6 +1480,36 @@ struct Validator {
     /// mintable. Inert when no `#[sealed]` struct is declared (the non-IFC corpus
     /// is unchanged), like `struct_fields`.
     sealed_structs: HashSet<String>,
+    /// Exact sealed type -> sole verified in-language constructor authorized by
+    /// `#[sealed("factory")]`. Bare `#[sealed]` types have no entry and retain
+    /// the original boundary-only minting rule.
+    sealed_factories: HashMap<String, String>,
+    /// Set only while walking an authorized bodyful factory body.
+    active_function: Option<String>,
+    /// Least fixed point of ordinary acyclic struct declarations whose fields
+    /// all have finite structural equality. Used only by the explicit fixed-
+    /// array relation built-ins; it grants no ambient equality operation.
+    array_equality_structs: BTreeSet<String>,
+    /// Admitted declared logical index spaces, keyed by struct name. Only these
+    /// receivers may carry a `logical_*` relation, and only an index-transparent
+    /// entry may carry one of the two frame relations.
+    logical_views: BTreeMap<String, LogicalView>,
+    /// Exact struct-name -> direct field types. Nested lifecycle mutation walks
+    /// this table independently from lowering so every field and the optional
+    /// terminal fixed-array index are resolved at the source type.
+    record_field_types: HashMap<String, HashMap<String, Type>>,
+    /// Finite non-sealed roots admitted by the direct named-record lifecycle
+    /// primitive. Opaque roots may join; opaque representation ownership across
+    /// package modules is enforced by Forge's package resolver.
+    record_mutation_structs: BTreeSet<String>,
+    /// Types of the current item's named parameters, result, fields, and typed
+    /// locals. The dedicated fixed-array equality check uses this small lexical
+    /// environment because the general v0.1 validator is otherwise intentionally
+    /// not a full type checker.
+    array_equality_types: HashMap<String, Type>,
+    /// Source bindings that may be assigned through. Parameters join only when
+    /// they are exclusive references; typed locals join only for `let mut`.
+    mutable_bindings: HashSet<String>,
     depth: usize,
     errors: Vec<SpecError>,
     /// REQ-6 flat-closure-fragment mode. Set once on entry to a combinator's
@@ -713,7 +1542,7 @@ impl Validator {
             .iter()
             .filter_map(|item| match item {
                 Item::SpecFn(s) => Some(s.name.clone()),
-                Item::Fn(_) => None,
+                Item::Const(_) | Item::Fn(_) => None,
                 // A `struct`/`enum` item declares no `spec fn` name
                 // (`.design/basis/01-adts.md`). The ADT declarations are
                 // collected separately below.
@@ -734,6 +1563,34 @@ impl Validator {
             spec_fns.insert((*name).to_string());
         }
 
+        let declared_functions: HashSet<&str> = program
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Fn(function) => Some(function.name.as_str()),
+                _ => None,
+            })
+            .collect();
+        let atomic_functions: HashMap<String, AtomicOperation> = program
+            .items
+            .iter()
+            .filter_map(|item| {
+                let Item::Fn(function) = item else {
+                    return None;
+                };
+                let boundary = function.boundary.as_ref()?;
+                let operation = classify_atomic_boundary(&boundary.target)?;
+                if function.name.starts_with("atomic_machine_") {
+                    let app_name = canonical_atomic_app_name(&boundary.target)?;
+                    declared_functions
+                        .contains(app_name.as_str())
+                        .then_some((app_name, operation))
+                } else {
+                    Some((function.name.clone(), operation))
+                }
+            })
+            .collect();
+
         // The ADT declaration pre-pass (`.design/basis/01-adts.md` REQ-5/REQ-6;
         // mirrors the spec-fn-name collection above). A program references types
         // across items in any order (`fn f(s: Shape)` may precede `enum Shape`),
@@ -742,12 +1599,14 @@ impl Validator {
         let mut enums: HashMap<String, Vec<String>> = HashMap::new();
         let mut variant_to_enum: HashMap<String, String> = HashMap::new();
         let mut struct_fields: HashSet<String> = HashSet::new();
+        let mut record_field_types: HashMap<String, HashMap<String, Type>> = HashMap::new();
         // REQ-8 (`.design/basis/06-provenance-and-sinks.md`): the `#[sealed]`
         // clean/capability struct names — the abstraction barrier the
         // `Expr::StructLit` walk keys off to REJECT a direct mint. Collected in
         // the same pre-pass as `struct_fields` so a forward reference (`fn
         // f() { Sql { … } }` before `#[sealed] struct Sql`) is seen.
         let mut sealed_structs: HashSet<String> = HashSet::new();
+        let mut sealed_factories: HashMap<String, String> = HashMap::new();
         // `.design/basis/01-adts.md` REQ-2: every `enum` variant name must be
         // UpperCamelCase (uppercase-initial). A lowercase-initial variant is
         // rejected here, at the declaration pre-pass, before any
@@ -759,9 +1618,25 @@ impl Validator {
         // variants at the declaration makes that case-based split sound. These
         // casing diagnostics seed the validator's error list so a lowercase-
         // variant program never reaches the (now-sound) body/contract walk.
-        let mut casing_errors: Vec<SpecError> = Vec::new();
+        let mut prepass_errors: Vec<SpecError> = Vec::new();
+        let mut array_capacities: HashMap<String, u128> = HashMap::new();
         for item in &program.items {
             match item {
+                Item::Const(c) => {
+                    if array_capacities.insert(c.name.clone(), c.value).is_some() {
+                        prepass_errors.push(SpecError::DuplicateArrayCapacity {
+                            name: c.name.clone(),
+                            span: c.span,
+                        });
+                    }
+                    if c.value > MAX_FIXED_ARRAY_ELEMENTS {
+                        prepass_errors.push(SpecError::ArrayCapacityTooLarge {
+                            value: c.value,
+                            limit: MAX_FIXED_ARRAY_ELEMENTS,
+                            span: c.span,
+                        });
+                    }
+                }
                 Item::Enum(e) => {
                     let mut variant_names = Vec::with_capacity(e.variants.len());
                     for variant in &e.variants {
@@ -774,7 +1649,7 @@ impl Validator {
                             .next()
                             .is_some_and(|c| c.is_ascii_uppercase())
                         {
-                            casing_errors.push(SpecError::InvalidVariantCasing {
+                            prepass_errors.push(SpecError::InvalidVariantCasing {
                                 name: variant.name.clone(),
                                 span: e.span,
                             });
@@ -797,19 +1672,62 @@ impl Validator {
                     enums.insert(e.name.clone(), variant_names);
                 }
                 Item::Struct(s) => {
+                    let exact_types = record_field_types.entry(s.name.clone()).or_default();
                     for field in &s.fields {
                         struct_fields.insert(field.name.clone());
+                        exact_types.insert(field.name.clone(), field.ty.clone());
                     }
                     // REQ-8: a `#[sealed]` struct joins the abstraction-barrier
                     // set — its name will reject any `StructLit` mint.
                     if s.sealed {
                         sealed_structs.insert(s.name.clone());
+                        if let Some(factory) = &s.sealed_factory {
+                            sealed_factories.insert(s.name.clone(), factory.clone());
+                        }
                     }
                 }
                 Item::Fn(_) | Item::SpecFn(_) => {}
                 // A forge-tier item (`.design/stage1-forge-tier.md` REQ-3) declares
                 // no enum/struct, so it raises no variant-casing concern here.
                 Item::Forge(_) => {}
+            }
+        }
+
+        for (name, factory) in &sealed_factories {
+            let candidate = program.items.iter().find_map(|item| match item {
+                Item::Fn(function) if function.name == *factory => Some(function),
+                _ => None,
+            });
+            let detail = match candidate {
+                None => Some("the named function is not declared".to_string()),
+                Some(function) if function.body.is_none() => {
+                    Some("the named function has no checked Thermite body".to_string())
+                }
+                Some(function) if function.boundary.is_some() || function.slag.is_some() => Some(
+                    "the named function is boundary/slag exempt instead of an ordinary checked function"
+                        .to_string(),
+                ),
+                Some(function) if function.ret != Type::Named(name.clone()) => Some(format!(
+                    "the named function returns `{:?}` instead of `{name}`",
+                    function.ret
+                )),
+                Some(_) => None,
+            };
+            if let Some(detail) = detail {
+                let span = program
+                    .items
+                    .iter()
+                    .find_map(|item| match item {
+                        Item::Struct(structure) if structure.name == *name => Some(structure.span),
+                        _ => None,
+                    })
+                    .unwrap_or_else(|| Span::new(0, 0));
+                prepass_errors.push(SpecError::InvalidSealedFactory {
+                    name: name.clone(),
+                    factory: factory.clone(),
+                    detail,
+                    span,
+                });
             }
         }
 
@@ -845,17 +1763,34 @@ impl Validator {
             }
         }
 
+        // The declared logical index spaces are resolved once, in the same
+        // pre-pass shape as the sealed-factory resolution above: a rejected
+        // declaration seeds a diagnostic, and only the admitted views reach the
+        // relation gate and lowering.
+        let (logical_views, logical_errors) = resolve_logical_views(program);
+        prepass_errors.extend(logical_errors);
+
         Validator {
             spec_fns,
+            atomic_functions,
+            array_capacities,
             enums,
             variant_to_enum,
             struct_fields,
             sealed_structs,
+            sealed_factories,
+            active_function: None,
+            array_equality_structs: structural_array_equality_structs(program),
+            logical_views,
+            record_field_types,
+            record_mutation_structs: structural_record_mutation_structs(program),
+            array_equality_types: HashMap::new(),
+            mutable_bindings: HashSet::new(),
             depth: 0,
             // REQ-2: lowercase-variant casing diagnostics from the pre-pass seed
             // the error list, so a lowercase-variant `enum` is rejected at the
             // declaration before the (now-sound) match/exhaustiveness walk runs.
-            errors: casing_errors,
+            errors: prepass_errors,
             in_combinator_closure: false,
             in_scheme_step: false,
         }
@@ -870,6 +1805,7 @@ impl Validator {
             // so a user name can never collide with a generated def. Checked once per
             // item before its contract/body walk; a clash is `ReservedName`.
             let declared = match item {
+                Item::Const(_) => None,
                 Item::Fn(f) => Some((&f.name, f.span)),
                 Item::SpecFn(s) => Some((&s.name, s.span)),
                 Item::Struct(_) | Item::Enum(_) => None,
@@ -887,8 +1823,24 @@ impl Validator {
                     });
                 }
             }
+            self.array_equality_types.clear();
+            self.mutable_bindings.clear();
             match item {
+                Item::Const(_) => {}
                 Item::Fn(f) => {
+                    for param in &f.params {
+                        self.array_equality_types
+                            .insert(param.name.clone(), param.ty.clone());
+                        if matches!(&param.ty, Type::Ref { mutable: true, .. }) {
+                            self.mutable_bindings.insert(param.name.clone());
+                        }
+                    }
+                    self.array_equality_types
+                        .insert("result".to_string(), f.ret.clone());
+                    for param in &f.params {
+                        self.validate_type(&param.ty, f.span);
+                    }
+                    self.validate_type(&f.ret, f.span);
                     self.walk_clause(&f.contract.req);
                     for clause in &f.contract.ens {
                         self.walk_clause(clause);
@@ -905,7 +1857,12 @@ impl Validator {
                     // are still fully caged. An in-language fn's body is scanned
                     // structurally as before.
                     if let Some(body) = &f.body {
+                        self.active_function = Some(f.name.clone());
                         self.scan_block_for_loops(body, f.span);
+                        self.active_function = None;
+                        if let Some(tail) = &body.tail {
+                            self.validate_array_initializer(&f.ret, tail, f.span);
+                        }
                         // C9-A (`.design/basis/10-recursion-tuples.md` REQ-2): a
                         // recursive exec `fn` — one whose body calls itself directly
                         // — must carry a `dec` termination measure so Verus can prove
@@ -929,10 +1886,26 @@ impl Validator {
                     }
                 }
                 Item::SpecFn(s) => {
+                    for param in &s.params {
+                        self.array_equality_types
+                            .insert(param.name.clone(), param.ty.clone());
+                        if matches!(&param.ty, Type::Ref { mutable: true, .. }) {
+                            self.mutable_bindings.insert(param.name.clone());
+                        }
+                    }
+                    self.array_equality_types
+                        .insert("result".to_string(), s.ret.clone());
+                    for param in &s.params {
+                        self.validate_type(&param.ty, s.span);
+                    }
+                    self.validate_type(&s.ret, s.span);
                     // A `spec fn` body is itself a contract-position expression
                     // tree (REQ-3) — fully caged; its `dec` measure is a clause.
                     self.walk_clause(&s.dec);
                     self.walk_block(&s.body, s.span);
+                    if let Some(tail) = &s.body.tail {
+                        self.validate_array_initializer(&s.ret, tail, s.span);
+                    }
                 }
                 // Basis Stage 1b (`.design/basis/01-adts.md` REQ-5/REQ-6): the
                 // `struct`/`enum` declarations were collected in the pre-pass
@@ -945,19 +1918,456 @@ impl Validator {
                 // `match`/`is` sites. The 1a `UnsupportedAdt` gate is gone: a
                 // well-formed ADT now validates.
                 Item::Struct(s) => {
+                    for field in &s.fields {
+                        self.array_equality_types
+                            .insert(field.name.clone(), field.ty.clone());
+                    }
+                    for field in &s.fields {
+                        self.validate_type(&field.ty, s.span);
+                    }
                     if let Some(inv) = &s.inv {
                         self.walk_clause(inv);
                     }
                 }
-                Item::Enum(_) => {}
+                Item::Enum(e) => {
+                    for variant in &e.variants {
+                        match &variant.shape {
+                            VariantShape::Unit => {}
+                            VariantShape::Tuple(types) => {
+                                for ty in types {
+                                    self.validate_type(ty, e.span);
+                                }
+                            }
+                            VariantShape::Struct(fields) => {
+                                for field in fields {
+                                    self.validate_type(&field.ty, e.span);
+                                }
+                            }
+                        }
+                    }
+                }
                 // A Stage-1 forge-tier item (`.design/stage1-forge-tier.md` REQ-3):
                 // its contract/proof positions (`prop fn` body, `lemma`/`proof`
                 // clauses + proof blocks, `witness` directives) are consumed by the
                 // forge increments (2b covenant, 2c battery, 2e proof view, 3
                 // library), not the v1 spec cage. No v1 contract walk applies here;
                 // the surface is parse/address/round-trip tested in thermite-syntax.
-                Item::Forge(_) => {}
+                Item::Forge(forge) => self.validate_forge_types(forge),
             }
+        }
+    }
+
+    fn validate_forge_types(&mut self, forge: &ForgeItem) {
+        match forge {
+            ForgeItem::PropFn(item) => {
+                for param in &item.params {
+                    self.validate_type(&param.ty, item.span);
+                }
+                self.validate_type(&item.ret, item.span);
+            }
+            ForgeItem::Lemma(item) => {
+                for param in &item.params {
+                    self.validate_type(&param.ty, item.span);
+                }
+            }
+            ForgeItem::Proof(_) | ForgeItem::Witness(_) => {}
+        }
+    }
+
+    fn resolve_array_len(&mut self, len: &ArrayLen, span: Span) -> Option<u128> {
+        let value = match len {
+            ArrayLen::Literal { value, .. } => *value,
+            ArrayLen::Const(name) => match self.array_capacities.get(name) {
+                Some(value) => *value,
+                None => {
+                    self.errors.push(SpecError::UnknownArrayCapacity {
+                        name: name.clone(),
+                        span,
+                    });
+                    return None;
+                }
+            },
+        };
+        if value > MAX_FIXED_ARRAY_ELEMENTS {
+            if matches!(len, ArrayLen::Literal { .. }) {
+                self.errors.push(SpecError::ArrayCapacityTooLarge {
+                    value,
+                    limit: MAX_FIXED_ARRAY_ELEMENTS,
+                    span,
+                });
+            }
+            None
+        } else {
+            Some(value)
+        }
+    }
+
+    /// Validate every capacity in a type and return its recursively expanded
+    /// native element count. Non-array leaves count as one storage element.
+    fn validate_type(&mut self, ty: &Type, span: Span) -> Option<u128> {
+        match ty {
+            Type::Array { elem, len } => {
+                let len = self.resolve_array_len(len, span)?;
+                let inner = self.validate_type(elem, span)?;
+                let elements = len.saturating_mul(inner);
+                if elements > MAX_FIXED_ARRAY_ELEMENTS {
+                    self.errors.push(SpecError::ArrayExpandedSizeTooLarge {
+                        elements,
+                        limit: MAX_FIXED_ARRAY_ELEMENTS,
+                        span,
+                    });
+                    None
+                } else {
+                    Some(elements)
+                }
+            }
+            Type::Ref { inner, .. }
+            | Type::Slice(inner)
+            | Type::Generic { arg: inner, .. }
+            | Type::Box(inner)
+            | Type::Vec(inner)
+            | Type::Option(inner) => self.validate_type(inner, span),
+            Type::Result(ok, err) | Type::Map(ok, err) => {
+                let left = self.validate_type(ok, span);
+                let right = self.validate_type(err, span);
+                left.zip(right).map(|_| 1)
+            }
+            Type::Tuple(types) => {
+                let mut valid = true;
+                for ty in types {
+                    valid &= self.validate_type(ty, span).is_some();
+                }
+                valid.then_some(1)
+            }
+            Type::Prim(_) | Type::Unit | Type::Named(_) | Type::String => Some(1),
+        }
+    }
+
+    fn validate_array_initializer(&mut self, ty: &Type, init: &Expr, span: Span) {
+        let Type::Array { elem, len } = ty else {
+            return;
+        };
+        let Some(expected) = self.resolve_array_len(len, span) else {
+            return;
+        };
+        let found = match init {
+            Expr::Array(elements) => Some(elements.len() as u128),
+            Expr::ArrayRepeat { len, .. } => self.resolve_array_len(len, span),
+            _ => None,
+        };
+        if let Some(found) = found {
+            if found != expected {
+                self.errors.push(SpecError::ArrayLengthMismatch {
+                    expected,
+                    found,
+                    span,
+                });
+            }
+        }
+
+        match init {
+            Expr::Array(elements) => {
+                for element in elements {
+                    self.validate_array_initializer(elem, element, span);
+                }
+            }
+            Expr::ArrayRepeat { value, .. } => {
+                if !array_repeat_element_is_copy_safe(elem) {
+                    self.errors
+                        .push(SpecError::ArrayRepeatRequiresCopy { span });
+                }
+                self.validate_array_initializer(elem, value, span);
+            }
+            _ => {}
+        }
+    }
+
+    fn array_equality_operand_type<'b>(&'b self, expr: &Expr) -> Option<&'b Type> {
+        let ty = match expr {
+            Expr::Path(segments) if segments.len() == 1 => {
+                self.array_equality_types.get(&segments[0])?
+            }
+            Expr::Ref { expr, .. } | Expr::Deref(expr) => {
+                return self.array_equality_operand_type(expr);
+            }
+            _ => return None,
+        };
+        let mut current = ty;
+        while let Type::Ref { inner, .. } = current {
+            current = inner;
+        }
+        Some(current)
+    }
+
+    /// Validate one call of the declared-index relation family
+    /// (`.design/build/aggregate-array-relations.md`, "Surface"). Typing selects
+    /// the family, so this arm never overlaps
+    /// [`Self::check_array_relation_call`]: a `[T; N]` receiver takes the
+    /// storage relations, a `#[logical]` struct receiver takes these, and every
+    /// other receiver is refused before lowering.
+    fn check_logical_relation_call(
+        &mut self,
+        name: &str,
+        receiver: &Expr,
+        args: &[Expr],
+        span: Span,
+    ) {
+        let expected_arity = match name {
+            "logical_eq" => 1,
+            "logical_same_except" => 2,
+            "logical_same_except_two" => 3,
+            _ => return,
+        };
+        let mut refuse = |detail: String| {
+            self.errors
+                .push(SpecError::LogicalRelationRefused { detail, span });
+        };
+        if args.len() != expected_arity {
+            refuse(format!(
+                "`.{name}()` expects {expected_arity} argument(s), found {}",
+                args.len()
+            ));
+            return;
+        }
+        let left = self.array_equality_operand_type(receiver).cloned();
+        let right = self.array_equality_operand_type(&args[0]).cloned();
+        let (Some(Type::Named(left)), Some(Type::Named(right))) = (left, right) else {
+            self.errors.push(SpecError::LogicalRelationRefused {
+                detail: format!(
+                    "both operands of `.{name}()` must be a bare name, `&name`, or `*name` whose type is a struct carrying `#[logical]`; a fixed array, tuple, scalar, enum, `Option`, `Result`, `Vec`, `Map`, `String`, `Box`, or computed operand is refused"
+                ),
+                span,
+            });
+            return;
+        };
+        if left != right {
+            self.errors.push(SpecError::LogicalRelationRefused {
+                detail: format!(
+                    "`.{name}()` relates two values of one declared index space; `{left}` and `{right}` are different types"
+                ),
+                span,
+            });
+            return;
+        }
+        let Some(view) = self.logical_views.get(&left) else {
+            self.errors.push(SpecError::LogicalRelationRefused {
+                detail: format!(
+                    "`{left}` declares no admitted `#[logical(bound = …, observe = …)]` index space"
+                ),
+                span,
+            });
+            return;
+        };
+        // The two frame relations close by congruence plus one instantiation of
+        // the storage frame only when the observer reads storage at the index
+        // the logical space uses. A derived-index observer needs the Euclidean
+        // decomposition REQ-AGGREL-5 owns, so the relation is refused here
+        // rather than lowered into an obligation no rung can discharge.
+        if name != "logical_eq" && !view.index_transparent {
+            let observer = view.observer.clone();
+            self.errors.push(SpecError::LogicalRelationRefused {
+                detail: format!(
+                    "observer `{observer}` of `{left}` is derived-index, so `.{name}()` is refused until REQ-AGGREL-5 supplies the literal-divisor decomposition; state the frame over the storage arrays and export `.logical_eq()`"
+                ),
+                span,
+            });
+        }
+    }
+
+    fn check_array_relation_call(
+        &mut self,
+        name: &str,
+        receiver: &Expr,
+        args: &[Expr],
+        span: Span,
+    ) {
+        let expected_arity = match name {
+            "array_eq" => 1,
+            "array_same_except" => 2,
+            "array_same_except_two" => 3,
+            _ => return,
+        };
+        let valid = if args.len() == expected_arity {
+            let right = &args[0];
+            match (
+                self.array_equality_operand_type(receiver),
+                self.array_equality_operand_type(right),
+            ) {
+                (Some(left @ Type::Array { elem, .. }), Some(right @ Type::Array { .. })) => {
+                    array_equality_type_is_structural(elem, &self.array_equality_structs)
+                        && left == right
+                }
+                _ => false,
+            }
+        } else {
+            false
+        };
+        if !valid {
+            self.errors
+                .push(SpecError::ArrayEqualityRequiresStructuralArrays {
+                    detail: if args.len() == expected_arity {
+                        "both operands must be named arrays with the same structural element type and capacity; sealed, opaque, recursive, enum, reference, and heap-backed elements are not derived"
+                            .to_string()
+                    } else {
+                        format!(
+                            "`.{name}()` expects {expected_arity} argument(s), found {}",
+                            args.len()
+                        )
+                    },
+                    span,
+                });
+        }
+    }
+
+    /// Validate the frozen nested named-record assignment target. Independent
+    /// lifecycle TV admits an exact field chain and, optionally, one terminal
+    /// fixed-array index. Wider Rust lvalues remain rejected before lowering.
+    fn check_named_record_assignment(&mut self, target: &Expr, span: Span) {
+        let Some((root, steps)) = record_mutation_path(target) else {
+            if record_mutation_target_contains_field(target) {
+                self.errors.push(SpecError::InvalidNamedRecordMutation {
+                    detail: "the target must be a typed root followed by exact fields and optionally one final single index; dereference, tuple, range, index-then-field, and computed receivers are not admitted"
+                        .to_string(),
+                    span,
+                });
+            }
+            return;
+        };
+        if steps.is_empty() {
+            return;
+        }
+        let has_field = steps
+            .iter()
+            .any(|step| matches!(step, RecordMutationStep::Field(_)));
+        if !has_field {
+            // Direct slice/fixed-array assignment is governed by the existing
+            // indexed-storage primitive, not the record lifecycle subset.
+            return;
+        }
+        let Some(root_ty) = self.array_equality_types.get(&root) else {
+            self.errors.push(SpecError::InvalidNamedRecordMutation {
+                detail: format!(
+                    "record root `{root}` has no declared source type; use a typed `let mut` or an `&mut Name` parameter"
+                ),
+                span,
+            });
+            return;
+        };
+        let record_name = match root_ty {
+            Type::Named(record) => record.clone(),
+            Type::Ref { inner, .. } => match inner.as_ref() {
+                Type::Named(record) => record.clone(),
+                _ => {
+                    self.errors.push(SpecError::InvalidNamedRecordMutation {
+                        detail: format!(
+                            "record root `{root}` is not a named record value or borrow"
+                        ),
+                        span,
+                    });
+                    return;
+                }
+            },
+            _ => {
+                self.errors.push(SpecError::InvalidNamedRecordMutation {
+                    detail: format!("record root `{root}` is not a named record value or borrow"),
+                    span,
+                });
+                return;
+            }
+        };
+        if !self.mutable_bindings.contains(&root) {
+            self.errors.push(SpecError::InvalidNamedRecordMutation {
+                detail: format!(
+                    "record root `{root}` is not writable; use an exclusive `&mut {record_name}` parameter or a typed `let mut`"
+                ),
+                span,
+            });
+            return;
+        }
+        if !self.record_mutation_structs.contains(&record_name) {
+            self.errors.push(SpecError::InvalidNamedRecordMutation {
+                detail: format!(
+                    "record `{record_name}` is sealed, recursive, or contains a reference, enum, opaque nested record, or heap-backed field"
+                ),
+                span,
+            });
+            return;
+        }
+
+        let mut current = Type::Named(record_name);
+        for (position, step) in steps.iter().enumerate() {
+            match step {
+                RecordMutationStep::Field(name) => {
+                    let Type::Named(receiver_name) = &current else {
+                        self.errors.push(SpecError::InvalidNamedRecordMutation {
+                            detail: format!(
+                                "field `{name}` is projected from non-record type `{current:?}`"
+                            ),
+                            span,
+                        });
+                        return;
+                    };
+                    let Some(field_ty) = self
+                        .record_field_types
+                        .get(receiver_name)
+                        .and_then(|fields| fields.get(name))
+                    else {
+                        self.errors.push(SpecError::InvalidNamedRecordMutation {
+                            detail: format!(
+                                "field `{name}` is not declared by the receiver's exact record type `{receiver_name}`"
+                            ),
+                            span,
+                        });
+                        return;
+                    };
+                    current = field_ty.clone();
+                }
+                RecordMutationStep::Index => {
+                    if position + 1 != steps.len() {
+                        self.errors.push(SpecError::InvalidNamedRecordMutation {
+                            detail: "a fixed-array index must be the final mutation projection; index-then-field aliasing is not admitted"
+                                .to_string(),
+                            span,
+                        });
+                        return;
+                    }
+                    let Type::Array { elem, .. } = current else {
+                        self.errors.push(SpecError::InvalidNamedRecordMutation {
+                            detail: "the final indexed receiver is not a fixed array".to_string(),
+                            span,
+                        });
+                        return;
+                    };
+                    current = *elem;
+                }
+            }
+        }
+    }
+
+    fn check_u64_bit_method_call(&mut self, name: &str, args: &[Expr], span: Span) {
+        let expected = if matches!(name, "bit_test" | "bit_set" | "bit_clear") {
+            Some(1)
+        } else if matches!(
+            name,
+            "bit_set_preserves_other" | "bit_clear_preserves_other"
+        ) {
+            Some(2)
+        } else {
+            None
+        };
+        if let Some(expected) = expected.filter(|expected| args.len() != *expected) {
+            let expected_label = if expected == 1 {
+                "one".to_string()
+            } else {
+                expected.to_string()
+            };
+            self.errors.push(SpecError::ForbiddenCall {
+                detail: format!(
+                    "`.{name}()` expects exactly {expected_label} bit-index argument(s), found {}",
+                    args.len()
+                ),
+                span,
+            });
         }
     }
 
@@ -995,12 +2405,16 @@ impl Validator {
     /// shape walk, but it cage-checks only the loop contract clauses it
     /// discovers.
     fn scan_block_for_loops(&mut self, block: &Block, span: Span) {
+        let outer_types = self.array_equality_types.clone();
+        let outer_mutable = self.mutable_bindings.clone();
         for stmt in &block.stmts {
             self.scan_stmt_for_loops(stmt, span);
         }
         if let Some(tail) = &block.tail {
             self.scan_expr_for_loops(tail, span);
         }
+        self.array_equality_types = outer_types;
+        self.mutable_bindings = outer_mutable;
     }
 
     /// Structural traversal of a `fn`-body statement: cage the `invs`/`dec` of
@@ -1020,8 +2434,24 @@ impl Validator {
                 // structurally for further nested loops, do not cage it.
                 self.scan_block_for_loops(&loop_node.body, loop_node.span);
             }
-            Stmt::Let { init, .. } => self.scan_expr_for_loops(init, span),
+            Stmt::Let {
+                mutable,
+                name,
+                ty,
+                init,
+            } => {
+                if let Some(ty) = ty {
+                    self.validate_type(ty, span);
+                    self.validate_array_initializer(ty, init, span);
+                    self.array_equality_types.insert(name.clone(), ty.clone());
+                    if *mutable {
+                        self.mutable_bindings.insert(name.clone());
+                    }
+                }
+                self.scan_expr_for_loops(init, span);
+            }
             Stmt::Assign { target, value } => {
+                self.check_named_record_assignment(target, span);
                 self.scan_expr_for_loops(target, span);
                 self.scan_expr_for_loops(value, span);
             }
@@ -1053,8 +2483,150 @@ impl Validator {
     /// `span` is the enclosing `fn`/loop span (the AST carries no per-`Expr`
     /// span). When no ADT is declared, every ADT check is inert, so the existing
     /// non-ADT corpus body walk (`binary_search.th`) is unchanged.
+    fn check_atomic_ordering_call(&mut self, callee: &Expr, args: &[Expr], span: Span) {
+        let Expr::Path(path) = callee else {
+            return;
+        };
+        let [name] = path.as_slice() else {
+            return;
+        };
+        let Some(operation) = self.atomic_functions.get(name).copied() else {
+            return;
+        };
+
+        let expected = operation.expected_arity();
+        if args.len() != expected {
+            self.errors.push(SpecError::IllegalAtomicOrdering {
+                operation: name.clone(),
+                detail: format!(
+                    "the frozen declaration expects {expected} argument(s), found {}",
+                    args.len()
+                ),
+                span,
+            });
+            return;
+        }
+
+        let literal = |position: usize| AtomicOrdering::parse_literal(&args[position]);
+        match operation {
+            AtomicOperation::Load => match literal(1) {
+                Some(
+                    AtomicOrdering::Relaxed
+                    | AtomicOrdering::Acquire
+                    | AtomicOrdering::SeqCst,
+                ) => {}
+                Some(order) => self.errors.push(SpecError::IllegalAtomicOrdering {
+                    operation: name.clone(),
+                    detail: format!(
+                        "load does not permit AtomicOrdering::{}; expected Relaxed, Acquire, or SeqCst",
+                        order.name()
+                    ),
+                    span,
+                }),
+                None => self.errors.push(SpecError::IllegalAtomicOrdering {
+                    operation: name.clone(),
+                    detail: "load ordering must be an exact `AtomicOrdering::Relaxed`, `::Acquire`, or `::SeqCst` literal".to_string(),
+                    span,
+                }),
+            },
+            AtomicOperation::Store => match literal(2) {
+                Some(
+                    AtomicOrdering::Relaxed
+                    | AtomicOrdering::Release
+                    | AtomicOrdering::SeqCst,
+                ) => {}
+                Some(order) => self.errors.push(SpecError::IllegalAtomicOrdering {
+                    operation: name.clone(),
+                    detail: format!(
+                        "store does not permit AtomicOrdering::{}; expected Relaxed, Release, or SeqCst",
+                        order.name()
+                    ),
+                    span,
+                }),
+                None => self.errors.push(SpecError::IllegalAtomicOrdering {
+                    operation: name.clone(),
+                    detail: "store ordering must be an exact `AtomicOrdering::Relaxed`, `::Release`, or `::SeqCst` literal".to_string(),
+                    span,
+                }),
+            },
+            AtomicOperation::ReadModifyWrite => {
+                if literal(2).is_none() {
+                    self.errors.push(SpecError::IllegalAtomicOrdering {
+                        operation: name.clone(),
+                        detail: "read-modify-write ordering must be an exact `AtomicOrdering` variant literal".to_string(),
+                        span,
+                    });
+                }
+            }
+            AtomicOperation::Fence => match literal(0) {
+                Some(AtomicOrdering::Relaxed) => {
+                    self.errors.push(SpecError::IllegalAtomicOrdering {
+                        operation: name.clone(),
+                        detail: "fences do not permit AtomicOrdering::Relaxed; expected Acquire, Release, AcqRel, or SeqCst".to_string(),
+                        span,
+                    })
+                }
+                Some(
+                    AtomicOrdering::Acquire
+                    | AtomicOrdering::Release
+                    | AtomicOrdering::AcqRel
+                    | AtomicOrdering::SeqCst,
+                ) => {}
+                None => self.errors.push(SpecError::IllegalAtomicOrdering {
+                    operation: name.clone(),
+                    detail: "fence ordering must be an exact non-Relaxed `AtomicOrdering` variant literal".to_string(),
+                    span,
+                }),
+            },
+            AtomicOperation::CompareExchange => {
+                let success = literal(3);
+                let failure = literal(4);
+                let (Some(success), Some(failure)) = (success, failure) else {
+                    self.errors.push(SpecError::IllegalAtomicOrdering {
+                        operation: name.clone(),
+                        detail: "compare-exchange success and failure orderings must both be exact `AtomicOrdering` variant literals".to_string(),
+                        span,
+                    });
+                    return;
+                };
+                let legal = matches!(
+                    (success, failure),
+                    (AtomicOrdering::Relaxed, AtomicOrdering::Relaxed)
+                        | (AtomicOrdering::Acquire, AtomicOrdering::Relaxed)
+                        | (AtomicOrdering::Acquire, AtomicOrdering::Acquire)
+                        | (AtomicOrdering::Release, AtomicOrdering::Relaxed)
+                        | (AtomicOrdering::AcqRel, AtomicOrdering::Relaxed)
+                        | (AtomicOrdering::AcqRel, AtomicOrdering::Acquire)
+                        | (AtomicOrdering::SeqCst, AtomicOrdering::Relaxed)
+                        | (AtomicOrdering::SeqCst, AtomicOrdering::Acquire)
+                        | (AtomicOrdering::SeqCst, AtomicOrdering::SeqCst)
+                );
+                if !legal {
+                    self.errors.push(SpecError::IllegalAtomicOrdering {
+                        operation: name.clone(),
+                        detail: format!(
+                            "compare-exchange pair AtomicOrdering::{}/AtomicOrdering::{} is forbidden: failure may not be Release or AcqRel and may not be stronger than success",
+                            success.name(),
+                            failure.name()
+                        ),
+                        span,
+                    });
+                }
+            }
+        }
+    }
+
     fn scan_expr_for_loops(&mut self, expr: &Expr, span: Span) {
         match expr {
+            Expr::Array(elements) => {
+                for element in elements {
+                    self.scan_expr_for_loops(element, span);
+                }
+            }
+            Expr::ArrayRepeat { value, len } => {
+                self.resolve_array_len(len, span);
+                self.scan_expr_for_loops(value, span);
+            }
             Expr::If { cond, then, else_ } => {
                 self.scan_expr_for_loops(cond, span);
                 self.scan_block_for_loops(then, span);
@@ -1076,12 +2648,50 @@ impl Validator {
                     self.scan_expr_for_loops(&arm.body, span);
                 }
             }
-            Expr::Call { args, .. } => {
+            Expr::Call { callee, args } => {
+                let direct_atomic = match callee.as_ref() {
+                    Expr::Path(path) => match path.as_slice() {
+                        [name] => self.atomic_functions.contains_key(name),
+                        _ => false,
+                    },
+                    _ => false,
+                };
+                self.check_atomic_ordering_call(callee, args, span);
+                // Atomic boundary calls are intentionally first-order. If the
+                // callee is not the recognized direct path, descend into it so
+                // an attempted alias/function-value reference is rejected by
+                // the Path arm below rather than bypassing ordering inspection.
+                if !direct_atomic {
+                    self.scan_expr_for_loops(callee, span);
+                }
                 for arg in args {
                     self.scan_expr_for_loops(arg, span);
                 }
             }
-            Expr::MethodCall { receiver, args, .. } => {
+            Expr::MethodCall {
+                receiver,
+                name,
+                args,
+            } => {
+                if matches!(
+                    name.as_str(),
+                    "array_eq" | "array_same_except" | "array_same_except_two"
+                ) {
+                    self.check_array_relation_call(name, receiver, args, span);
+                }
+                // The declared-index family is a specification relation. An
+                // executable body naming it is refused before lowering
+                // (`.design/build/aggregate-array-relations.md`, "Admitted
+                // shapes and fail-closed boundary").
+                if is_logical_relation(name) {
+                    self.errors.push(SpecError::LogicalRelationRefused {
+                        detail: format!(
+                            "`.{name}()` is a specification relation and appears only in `req`, `ens`, `inv`, and `spec fn` bodies"
+                        ),
+                        span,
+                    });
+                }
+                self.check_u64_bit_method_call(name, args, span);
                 self.scan_expr_for_loops(receiver, span);
                 for arg in args {
                     self.scan_expr_for_loops(arg, span);
@@ -1108,9 +2718,11 @@ impl Validator {
                     }
                 }
             }
-            Expr::Cast { expr: inner, .. } | Expr::Ref { expr: inner, .. } => {
-                self.scan_expr_for_loops(inner, span)
+            Expr::Cast { expr: inner, ty } => {
+                self.validate_type(ty, span);
+                self.scan_expr_for_loops(inner, span);
             }
+            Expr::Ref { expr: inner, .. } => self.scan_expr_for_loops(inner, span),
             Expr::Closure { body, .. } => self.scan_expr_for_loops(body, span),
             // REQ-6: a struct / struct-variant construction's field names must be
             // declared; the field values are descended for nested loops/ADTs.
@@ -1153,7 +2765,18 @@ impl Validator {
             // Leaves — no nested loop / ADT node possible. A string literal
             // (`.design/basis/07-strings.md` REQ-1) is a value-carrying leaf, like
             // an int/bool literal — no sub-expression to descend.
-            Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) | Expr::StrLit(_) => {}
+            Expr::Path(path) => {
+                if let [name] = path.as_slice() {
+                    if self.atomic_functions.contains_key(name) {
+                        self.errors.push(SpecError::IllegalAtomicOrdering {
+                            operation: name.clone(),
+                            detail: "a frozen atomic boundary must be called directly; aliases and function-value references cannot preserve the statically checked ordering positions".to_string(),
+                            span,
+                        });
+                    }
+                }
+            }
+            Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::StrLit(_) => {}
         }
     }
 
@@ -1162,6 +2785,8 @@ impl Validator {
     /// tail expression is a contract-position expression and is cage-checked.
     /// Any `loop`/`while` it contains carries its own `invs`/`dec` clauses.
     fn walk_block(&mut self, block: &Block, span: Span) {
+        let outer_types = self.array_equality_types.clone();
+        let outer_mutable = self.mutable_bindings.clone();
         self.descend(span, |s| {
             for stmt in &block.stmts {
                 s.walk_stmt(stmt, span);
@@ -1170,6 +2795,8 @@ impl Validator {
                 s.walk_expr(tail, span);
             }
         });
+        self.array_equality_types = outer_types;
+        self.mutable_bindings = outer_mutable;
     }
 
     /// Walk a statement, descending into nested loops (which carry their own
@@ -1183,8 +2810,24 @@ impl Validator {
                 self.walk_clause(&loop_node.dec);
                 self.walk_block(&loop_node.body, loop_node.span);
             }
-            Stmt::Let { init, .. } => self.walk_expr(init, span),
+            Stmt::Let {
+                mutable,
+                name,
+                ty,
+                init,
+            } => {
+                if let Some(ty) = ty {
+                    self.validate_type(ty, span);
+                    self.validate_array_initializer(ty, init, span);
+                    self.array_equality_types.insert(name.clone(), ty.clone());
+                    if *mutable {
+                        self.mutable_bindings.insert(name.clone());
+                    }
+                }
+                self.walk_expr(init, span);
+            }
             Stmt::Assign { target, value } => {
+                self.check_named_record_assignment(target, span);
                 self.walk_expr(target, span);
                 self.walk_expr(value, span);
             }
@@ -1218,6 +2861,16 @@ impl Validator {
             // — e.g. the editor case `s == "needle"`; no sub-expression to walk.
             Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) | Expr::StrLit(_) => {}
 
+            Expr::Array(elements) => {
+                for element in elements {
+                    self.walk_expr(element, span);
+                }
+            }
+            Expr::ArrayRepeat { value, len } => {
+                self.resolve_array_len(len, span);
+                self.walk_expr(value, span);
+            }
+
             // (a)/(b)/(iv): a free call is a combinator, a spec-fn call, or
             // forbidden.
             Expr::Call { callee, args } => self.walk_call(callee, args, span),
@@ -1233,6 +2886,16 @@ impl Validator {
                 name,
                 args,
             } => {
+                if matches!(
+                    name.as_str(),
+                    "array_eq" | "array_same_except" | "array_same_except_two"
+                ) {
+                    self.check_array_relation_call(name, receiver, args, span);
+                }
+                if is_logical_relation(name) {
+                    self.check_logical_relation_call(name, receiver, args, span);
+                }
+                self.check_u64_bit_method_call(name, args, span);
                 if !BUILTIN_METHODS.contains(&name.as_str()) {
                     self.errors.push(SpecError::ForbiddenCall {
                         detail: format!(
@@ -1279,7 +2942,10 @@ impl Validator {
                 self.walk_expr(base, span);
                 self.walk_index(index, span);
             }
-            Expr::Cast { expr: inner, .. } => self.walk_expr(inner, span),
+            Expr::Cast { expr: inner, ty } => {
+                self.validate_type(ty, span);
+                self.walk_expr(inner, span);
+            }
             Expr::Ref { expr: inner, .. } => self.walk_expr(inner, span),
 
             // (c) match / if — built-in control forms. A `match` over a declared
@@ -1527,7 +3193,8 @@ impl Validator {
 
     /// REQ-8 abstraction barrier (`.design/basis/06-provenance-and-sinks.md`): a
     /// `StructLit` whose constructed type is a `#[sealed]` clean/capability type
-    /// is rejected (`SealedConstruction`); a sealed type is door-only-mintable.
+    /// is rejected (`SealedConstruction`) unless the active function is the
+    /// exact valid factory named by `#[sealed("factory")]`.
     /// `path` is the literal's path; the constructed type is its last segment
     /// (`Sql` in `Sql { … }`). Inert when no `#[sealed]` struct is declared (the
     /// non-IFC corpus is unchanged). The `#[boundary]` door is unaffected: its
@@ -1535,7 +3202,11 @@ impl Validator {
     /// safe path `query(parameterize(input))` carries no sealed literal.
     fn check_sealed_construction(&mut self, path: &[String], span: Span) {
         if let Some(name) = path.last() {
-            if self.sealed_structs.contains(name) {
+            let authorized = self
+                .sealed_factories
+                .get(name)
+                .is_some_and(|factory| self.active_function.as_ref() == Some(factory));
+            if self.sealed_structs.contains(name) && !authorized {
                 self.errors.push(SpecError::SealedConstruction {
                     name: name.clone(),
                     span,
@@ -1942,6 +3613,8 @@ fn stmt_calls_name(stmt: &Stmt, name: &str) -> bool {
 
 fn expr_calls_name(expr: &Expr, name: &str) -> bool {
     match expr {
+        Expr::Array(elements) => elements.iter().any(|e| expr_calls_name(e, name)),
+        Expr::ArrayRepeat { value, .. } => expr_calls_name(value, name),
         Expr::Call { callee, args } => {
             let callee_is_self = matches!(
                 callee.as_ref(),

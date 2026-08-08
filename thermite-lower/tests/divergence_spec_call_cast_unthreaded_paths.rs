@@ -158,9 +158,17 @@ fn contract_tv_production_column_matches_real_signature_lowering() {
     // (the artifact under test, contract-tv.md REQ-2 "verbatim").
     let s_dec_params: &[PrimType] = &[PrimType::U32];
     let spec_fn_param_types: &[(&str, &[PrimType])] = &[("s_dec", s_dec_params)];
-    let out =
-        thermite_lower::lower_contract_expr(&clause, &[], &[], &[], &[], &[], spec_fn_param_types)
-            .expect("contract lowering must succeed");
+    let out = thermite_lower::lower_contract_expr(
+        &clause,
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        spec_fn_param_types,
+    )
+    .expect("contract lowering must succeed");
     // Hand-derived expectation (verus-lowering.md REQ-5 + the #225 declared-
     // param-type rule for a `spec fn s_dec(n: u32)` callee):
     assert_eq!(

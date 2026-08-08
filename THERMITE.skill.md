@@ -14,9 +14,13 @@ tier (§6).
 
 ## 1. Surface grammar
 
-Every `fn` is contract-first, body-second. v0.1 has four top-level item forms —
-`fn`, `spec fn`, `struct`, `enum` (plus the `#[slag(...)]` / `#[boundary]`
-attributes) — and no others (no `impl`/`trait`/`use`/`mod`/macros).
+Every `fn` is contract-first, body-second. Top-level items are `fn`, `spec fn`,
+`struct`, and `enum`; attributes include `#[sealed]` and `#[opaque]`. There are no
+`impl`/`trait`/`use`/`mod`/macros.
+
+Bare `#[sealed] struct` is boundary-only; `#[sealed("f")]` names its sole bodyful
+checked constructor. `#[opaque] struct` is defining-module state exposed through
+verified functions. Opacity is NOT affine/linear; neither is sealing.
 
 A `fn` signature is followed by mandatory clauses in this exact order (absence of any
 is a parse error, never an implicit default):
@@ -212,6 +216,16 @@ Removed from Rust: explicit lifetimes, the trait system (only built-in
 `Eq`/`Ord`/`Hash`/`Iter`/`Display`), macros, `unsafe` (→ `#[slag]`), UFCS, implicit
 widening (casts explicit; overflow is a proof obligation).
 
+Kernel manifests are receipt-bound `*.thpkg.json`. `.array_eq` /
+`.array_same_except` cover scalar and finite plain aggregate arrays; sealed,
+opaque, recursive, enum, reference, and heap shapes fail closed. Packed `u64`
+provides total bit operations and distinct-bit frames, all bridged to L3.
+Primitive manifests provide atomics, ownership, collections, synchronization,
+waits, and `platform.thpkg.json` declarations—never a kernel or machine body.
+Bodyful helpers are L3; bodyless machine doors are consumer refinement
+obligations. Registry v3 proves a SeqCst scalar adapter against pinned vstd but
+retains its L1 hardware cap; full machine refinement remains.
+
 ## 2. SpecTherm combinator library
 
 Use these to QUANTIFY in a contract. You may NOT write a raw `forall`/`exists` in a
@@ -276,7 +290,7 @@ through checked reconstruction.
 - `forge audit <file> [--json] [--meaning] [--metrics]` — Show assurance, boundaries, meaning, and metrics.
 - `forge repair <file> [item] [--json]` — Retry timeout-lowered items.
 - `forge review <file> [item] [--json] [--reviewer <cmd>]` — Emit contracts for intent review.
-- `forge build <file> [--level l1|l3] [--export <fn>] [--compose-export <fn> --compose-shell <file.rs>] [--crate-name <name>] [--entry <fn>] [--out <path>] [--target std|kernel] [--json] [--no-sandbox] [--sandbox-self-test]` — Build L1 checked Rust or an exact-source L3 link/composition bundle.
+- `forge build <file-or-package> [--level l1|l3] [--export <fn>] [--compose-export <fn> --compose-shell <file.rs> [--primitive-registry <registry.json>]] [--crate-name <name>] [--entry <fn>] [--out <path>] [--target std|kernel] [--json] [--no-sandbox] [--sandbox-self-test]` — Build L1 checked Rust or an exact-source L3 link/composition bundle.
 - `forge verify-build <bundle-dir> [--replay] [--json]` — Validate or replay a correspondence-backed L3 build receipt.
 - `forge tv <file> [--generated [N]] [--seed <u64>] [--json]` — Validate contract lowering.
 - `forge exec-tv <file> [--generated [N]] [--no-generated] [--json]` — Validate expression lowering.

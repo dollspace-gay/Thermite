@@ -310,7 +310,7 @@ conformance_ops = ["simd_sum"]
 crate_pattern = "forge/src/cache.rs"
 design = ".design/forge/proof-cache.md"
 reference = []
-conformance_ops = []
+conformance_ops = ["check-schema-8-fixed-array-struct-zero-invalidation"]
 
 # ---------------------------------------------------------------------
 # thermite-skill — THERMITE.skill.md generator + 6k-token budget gate
@@ -330,6 +330,12 @@ crate_pattern = "thermite-skill/src/main.rs"
 design = ".design/skill/skill-generator.md"
 reference = []
 conformance_ops = []
+
+[[route]]
+crate_pattern = "thermite-skill/tests/skill.rs"
+design = ".design/skill/skill-generator.md"
+reference = []
+conformance_ops = ["skill-freshness", "opaque-authoring-guidance"]
 
 # ---------------------------------------------------------------------
 # v0.2 — L2 Kani bounded checking (issue #9)
@@ -367,8 +373,8 @@ conformance_ops = ["tautology", "vacuous_precondition"]
 [[route]]
 crate_pattern = "forge/src/mutation.rs"
 design = ".design/forge/mutation-scoring.md"
-reference = ["conformance/mutation"]
-conformance_ops = ["weak_contract", "sum"]
+reference = ["conformance/mutation", "conformance/verified-build/record_after_indexed_call_effect.th"]
+conformance_ops = ["weak_contract", "sum", "fixed-array-struct-zero-mutant"]
 
 # v0.2 — automatic L3->L2->L1 degrade ladder + assurance manifest (issue #10)
 [[route]]
@@ -508,7 +514,13 @@ conformance_ops = ["closure"]
 crate_pattern = "thermite-lower/src/lower.rs"
 design = ".design/build/l3-verified-artifact.md"
 reference = ["conformance/verified-build"]
-conformance_ops = ["identity", "bounded_inc", "kernel_link"]
+conformance_ops = ["identity", "bounded_inc", "kernel_link", "hygienic-total-export-result-binding"]
+
+[[route]]
+crate_pattern = "thermite-lower/tests/l3_library.rs"
+design = ".design/build/l3-verified-artifact.md"
+reference = ["conformance/verified-build"]
+conformance_ops = ["hygienic-total-export-result-binding"]
 
 [[route]]
 crate_pattern = "thermite-lower/src/lib.rs"
@@ -555,6 +567,124 @@ design = ".design/build/l3-rich-composition.md"
 reference = ["conformance/verified-composition"]
 conformance_ops = ["probe_step", "boot_observation", "private-rich-root"]
 
+# Consumer-owned frozen primitive registries close each reachable Thermite
+# boundary through an exact non-exempt same-crate direct-Verus wrapper call.
+[[route]]
+crate_pattern = "forge/src/verified_build/primitive_registry.rs"
+design = ".design/build/frozen-primitive-registry.md"
+reference = ["conformance/verified-composition/frozen_primitive_registry.json"]
+conformance_ops = ["registry-closure", "registry-drift"]
+
+[[route]]
+crate_pattern = "forge/src/verified_build.rs"
+design = ".design/build/frozen-primitive-registry.md"
+reference = ["conformance/verified-composition/frozen_primitive_registry.json"]
+conformance_ops = ["registry-receipt", "registry-replay"]
+
+[[route]]
+crate_pattern = "forge/src/verified_build/composition.rs"
+design = ".design/build/frozen-primitive-registry.md"
+reference = ["conformance/verified-composition/frozen_primitive_registry.json"]
+conformance_ops = ["registered-boundary-closure", "checked-wrapper"]
+
+[[route]]
+crate_pattern = "forge/src/cli.rs"
+design = ".design/build/frozen-primitive-registry.md"
+reference = ["conformance/verified-composition/frozen_primitive_registry.json"]
+conformance_ops = ["primitive-registry-flag"]
+
+[[route]]
+crate_pattern = "thermite-lower/src/lower.rs"
+design = ".design/build/frozen-primitive-registry.md"
+reference = ["conformance/verified-composition/frozen_primitive.th"]
+conformance_ops = ["checked-boundary-wrapper"]
+
+[[route]]
+crate_pattern = "thermite-lower/src/lib.rs"
+design = ".design/build/frozen-primitive-registry.md"
+reference = ["conformance/verified-composition/frozen_primitive.th"]
+conformance_ops = ["L3BoundaryBinding"]
+
+[[route]]
+crate_pattern = "thermite-lower/tests/l3_library.rs"
+design = ".design/build/frozen-primitive-registry.md"
+reference = ["conformance/verified-composition/frozen_primitive.th"]
+conformance_ops = ["checked-boundary-wrapper"]
+
+[[route]]
+crate_pattern = "forge/tests/verified_composition.rs"
+design = ".design/build/frozen-primitive-registry.md"
+reference = ["conformance/verified-composition/frozen_primitive_registry.json"]
+conformance_ops = ["direct-refinement", "receipt-tamper", "lying-implementation"]
+
+[[route]]
+crate_pattern = "conformance/verified-composition/frozen_primitive*"
+design = ".design/build/frozen-primitive-registry.md"
+reference = []
+conformance_ops = ["synthetic-identity-primitive"]
+
+[[route]]
+crate_pattern = "conformance/verified-composition/machine_atomic*"
+design = ".design/build/frozen-primitive-registry.md"
+reference = []
+conformance_ops = ["machine-atomic-pilot", "residual-assurance-cap"]
+
+# The synthetic test platform (.design/build/kernel-primitives.md, "Acceptance
+# matrix": "Compose a synthetic test platform whose bodies are tiny direct-Verus
+# adapters"). It is the only fixture that exercises the shared_borrow /
+# consume_sealed / mint_sealed ownership transitions; the other three registry
+# fixtures are by_value throughout.
+[[route]]
+crate_pattern = "conformance/verified-composition/synthetic_platform*"
+design = ".design/build/frozen-primitive-registry.md"
+reference = []
+conformance_ops = ["synthetic-platform-sealed-ownership"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/platform.thpkg.json"
+design = ".design/build/frozen-primitive-registry.md"
+reference = ["stdlib/kernel-primitives/platform/api.th"]
+conformance_ops = ["generic-platform-declaration-closure"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/platform/api.th"
+design = ".design/build/frozen-primitive-registry.md"
+reference = ["stdlib/kernel-primitives/platform.thpkg.json"]
+conformance_ops = ["machine-boundary-vocabulary"]
+
+[[route]]
+crate_pattern = "forge/tests/platform_primitives.rs"
+design = ".design/build/frozen-primitive-registry.md"
+reference = ["stdlib/kernel-primitives/platform.thpkg.json"]
+conformance_ops = ["platform-machine-exception-inventory"]
+
+# Divergent terminal platform operations (issue #133): the eight declarations
+# that carry `diverge`, and the strict-build refusal that keeps them outside a
+# verified closure. The doc records the limit; it proposes no code change.
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/platform/api.th"
+design = ".design/build/divergent-terminal-composition.md"
+reference = ["conformance/verified-build/diverge.th"]
+conformance_ops = ["terminal-declaration-inventory"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/synchronization/wait.th"
+design = ".design/build/divergent-terminal-composition.md"
+reference = ["conformance/verified-build/diverge.th"]
+conformance_ops = ["cpu_halt_terminal"]
+
+[[route]]
+crate_pattern = "conformance/verified-build/diverge.th"
+design = ".design/build/divergent-terminal-composition.md"
+reference = ["stdlib/kernel-primitives/platform/api.th"]
+conformance_ops = ["diverge-refusal"]
+
+[[route]]
+crate_pattern = "conformance/verified-build/transitive_diverge.th"
+design = ".design/build/divergent-terminal-composition.md"
+reference = ["stdlib/kernel-primitives/synchronization/wait.th"]
+conformance_ops = ["transitive-diverge-refusal"]
+
 # Receipt-bound kernel byte-slice proof model (issue #108): Forge explicitly
 # imports the pinned vstd VIR while pairing it with deterministic no_std erased
 # metadata, then proves exact native &[u8] reads in the combined crate.
@@ -574,7 +704,13 @@ conformance_ops = ["read_le_u32", "read_le_u64"]
 crate_pattern = "forge/src/kernel_vstd_link.rs"
 design = ".design/build/kernel-byte-slice.md"
 reference = ["conformance/verified-composition"]
-conformance_ops = ["Seq", "View", "slice-index"]
+conformance_ops = ["Seq", "View", "slice-index", "fixed-array-view", "fixed-array-repeat"]
+
+[[route]]
+crate_pattern = "thermite-lower/tests/fixed_array.rs"
+design = ".design/build/kernel-byte-slice.md"
+reference = ["conformance/verified-build/fixed_array.th"]
+conformance_ops = ["fixed-array-view", "fixed-array-repeat", "fixed-array-frame"]
 
 [[route]]
 crate_pattern = "forge/tests/kernel_byte_slice.rs"
@@ -1188,189 +1324,1196 @@ design = ".design/stage4-epr-reconstruction.md"
 reference = []
 conformance_ops = []
 
-# Bootable multicore kernel language foundation and complete image closure.
-# Shared compiler files retain their existing routes and are co-governed here;
-# the new kernel crate and platform tree are pinned as globs so later modules
-# cannot enter the trusted closure without refreshing the design audit.
+# Reusable Thermite language primitives for kernel authors. Shared compiler
+# files retain their existing routes and are co-governed here; concrete kernel
+# policy and platform implementations intentionally have no place in this tree.
 [[route]]
 crate_pattern = "thermite-syntax/src/ast.rs"
-design = ".design/build/bootable-multicore-kernel.md"
+design = ".design/build/kernel-primitives.md"
 reference = []
 conformance_ops = ["kernel-scalars", "platform-effects"]
 
 [[route]]
 crate_pattern = "thermite-syntax/src/parser.rs"
-design = ".design/build/bootable-multicore-kernel.md"
+design = ".design/build/kernel-primitives.md"
 reference = []
 conformance_ops = ["kernel-scalars", "platform-effects"]
 
 [[route]]
 crate_pattern = "thermite-syntax/src/lib.rs"
-design = ".design/build/bootable-multicore-kernel.md"
+design = ".design/build/kernel-primitives.md"
 reference = []
 conformance_ops = ["platform-domain-api"]
 
 [[route]]
+crate_pattern = "thermite-syntax/src/package.rs"
+design = ".design/build/kernel-primitives.md"
+reference = []
+conformance_ops = ["package-source-identity"]
+
+[[route]]
+crate_pattern = "thermite-syntax/tests/package.rs"
+design = ".design/build/kernel-primitives.md"
+reference = []
+conformance_ops = ["package-source-identity", "package-duplicate-name"]
+
+[[route]]
 crate_pattern = "thermite-syntax/tests/kernel_surface.rs"
-design = ".design/build/bootable-multicore-kernel.md"
+design = ".design/build/kernel-primitives.md"
 reference = []
 conformance_ops = ["closed-platform-domain"]
 
 [[route]]
 crate_pattern = "thermite-syntax/tests/conformance.rs"
-design = ".design/build/bootable-multicore-kernel.md"
+design = ".design/build/kernel-primitives.md"
 reference = ["conformance/kernel_primitives.th"]
 conformance_ops = ["kernel-scalars", "platform-effects"]
 
 [[route]]
 crate_pattern = "thermite-lower/src/effects.rs"
-design = ".design/build/bootable-multicore-kernel.md"
+design = ".design/build/kernel-primitives.md"
 reference = ["conformance/kernel_primitives.th"]
 conformance_ops = ["platform-effects"]
 
 [[route]]
 crate_pattern = "thermite-lower/src/lower.rs"
-design = ".design/build/bootable-multicore-kernel.md"
+design = ".design/build/kernel-primitives.md"
 reference = ["conformance/kernel_primitives.th"]
-conformance_ops = ["kernel-scalars", "kernel-mutable-slice"]
+conformance_ops = ["kernel-scalars", "kernel-mutable-slice", "fixed-array-frame"]
+
+[[route]]
+crate_pattern = "thermite-lower/src/l1.rs"
+design = ".design/build/kernel-primitives.md"
+reference = ["conformance/verified-build/aggregate_storage.th"]
+conformance_ops = ["fixed-array-frame-l1"]
+
+[[route]]
+crate_pattern = "thermite-lower/tests/fixed_array.rs"
+design = ".design/build/kernel-primitives.md"
+reference = ["conformance/verified-build/aggregate_storage.th"]
+conformance_ops = ["fixed-array-frame-l1", "fixed-array-frame-l3"]
 
 [[route]]
 crate_pattern = "thermite-lower/tests/kernel_mutable_slice.rs"
-design = ".design/build/bootable-multicore-kernel.md"
+design = ".design/build/kernel-primitives.md"
 reference = ["conformance/kernel_primitives.th"]
 conformance_ops = ["kernel-mutable-slice"]
 
 [[route]]
+crate_pattern = "thermite-lower/tests/u64_bit_methods.rs"
+design = ".design/build/kernel-primitives.md"
+reference = ["stdlib/kernel-primitives/collections/bitmap.th"]
+conformance_ops = ["packed-u64-bit-l1", "packed-u64-bit-l3"]
+
+[[route]]
 crate_pattern = "thermite-lower/tests/effects_verified.rs"
-design = ".design/build/bootable-multicore-kernel.md"
+design = ".design/build/kernel-primitives.md"
 reference = ["conformance/kernel_primitives.th"]
 conformance_ops = ["platform-effects"]
 
 [[route]]
 crate_pattern = "thermite-verified/src/lib.rs"
-design = ".design/build/bootable-multicore-kernel.md"
+design = ".design/build/kernel-primitives.md"
 reference = ["conformance/kernel_primitives.th"]
 conformance_ops = ["kernel-scalars"]
 
 [[route]]
 crate_pattern = "lean/Thermite/Ast.lean"
-design = ".design/build/bootable-multicore-kernel.md"
+design = ".design/build/kernel-primitives.md"
 reference = []
 conformance_ops = ["kernel-scalars"]
 
 [[route]]
 crate_pattern = "lean/Thermite/Denote.lean"
-design = ".design/build/bootable-multicore-kernel.md"
+design = ".design/build/kernel-primitives.md"
 reference = []
 conformance_ops = ["kernel-scalars"]
 
 [[route]]
 crate_pattern = "lean/Thermite/RefEncode.lean"
-design = ".design/build/bootable-multicore-kernel.md"
+design = ".design/build/kernel-primitives.md"
 reference = []
 conformance_ops = ["kernel-scalars"]
 
 [[route]]
-crate_pattern = "thermite-kernel/Cargo.toml"
-design = ".design/build/bootable-multicore-kernel.md"
-reference = []
-conformance_ops = ["kernel-crate"]
-
-[[route]]
-crate_pattern = "thermite-kernel/src/*.rs"
-design = ".design/build/bootable-multicore-kernel.md"
-reference = ["conformance/bootable_kernel.th", "conformance/kernel_primitives.th"]
-conformance_ops = ["kernel-model", "frozen-boundaries"]
-
-[[route]]
-crate_pattern = "thermite-kernel/tests/*.rs"
-design = ".design/build/bootable-multicore-kernel.md"
-reference = []
-conformance_ops = ["kernel-model"]
-
-[[route]]
-crate_pattern = "forge/src/kernel_image.rs"
-design = ".design/build/bootable-multicore-kernel.md"
-reference = ["conformance/bootable_kernel.th"]
-conformance_ops = ["kernel-image"]
-
-[[route]]
-crate_pattern = "forge/src/cli.rs"
-design = ".design/build/bootable-multicore-kernel.md"
-reference = ["conformance/bootable_kernel.th"]
-conformance_ops = ["kernel-image-cli"]
-
-[[route]]
-crate_pattern = "forge/src/main.rs"
-design = ".design/build/bootable-multicore-kernel.md"
-reference = ["conformance/bootable_kernel.th"]
-conformance_ops = ["kernel-image-publication"]
-
-[[route]]
-crate_pattern = "conformance/bootable_kernel.th"
-design = ".design/build/bootable-multicore-kernel.md"
-reference = []
-conformance_ops = ["kernel-image"]
-
-[[route]]
 crate_pattern = "conformance/kernel_primitives.th"
-design = ".design/build/bootable-multicore-kernel.md"
+design = ".design/build/kernel-primitives.md"
 reference = []
 conformance_ops = ["kernel-scalars", "platform-effects"]
 
 [[route]]
+crate_pattern = "forge/src/thermite_package.rs"
+design = ".design/build/kernel-primitives.md"
+reference = []
+conformance_ops = ["package-manifest", "package-closure", "package-allowlist", "package-source-map"]
+
+[[route]]
+crate_pattern = "forge/tests/verified_build.rs"
+design = ".design/build/kernel-primitives.md"
+reference = []
+conformance_ops = ["package-build", "package-receipt", "package-replay", "package-tamper", "aggregate-storage"]
+
+[[route]]
+crate_pattern = "thermite-spec/src/validator.rs"
+design = ".design/build/kernel-primitives.md"
+reference = ["conformance/verified-build/aggregate_storage.th"]
+conformance_ops = ["fixed-capacity-bound", "fixed-array-frame-validation"]
+
+[[route]]
+crate_pattern = "thermite-spec/tests/fixed_array_validate.rs"
+design = ".design/build/kernel-primitives.md"
+reference = ["conformance/verified-build/aggregate_storage.th"]
+conformance_ops = ["fixed-array-frame-validation"]
+
+[[route]]
+crate_pattern = "thermite-spec/tests/u64_bit_methods_validate.rs"
+design = ".design/build/kernel-primitives.md"
+reference = ["stdlib/kernel-primitives/collections/bitmap.th"]
+conformance_ops = ["packed-u64-bit-validation"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/exec_encode.rs"
+design = ".design/build/kernel-primitives.md"
+reference = ["conformance/verified-build/aggregate_storage.th"]
+conformance_ops = ["fixed-array-frame-tv"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/exec_stmt_encode.rs"
+design = ".design/build/kernel-primitives.md"
+reference = ["conformance/verified-build/aggregate_storage.th"]
+conformance_ops = ["aggregate-storage"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/obligation.rs"
+design = ".design/build/kernel-primitives.md"
+reference = ["conformance/verified-build/aggregate_storage.th"]
+conformance_ops = ["aggregate-storage"]
+
+[[route]]
+crate_pattern = "thermite-tv/tests/fixed_array_tv.rs"
+design = ".design/build/kernel-primitives.md"
+reference = ["conformance/verified-build/aggregate_storage.th"]
+conformance_ops = ["fixed-array-tv", "fixed-array-frame-tv", "aggregate-storage-tv"]
+
+[[route]]
+crate_pattern = "forge/src/body_tv.rs"
+design = ".design/build/kernel-primitives.md"
+reference = ["conformance/verified-build/aggregate_storage.th"]
+conformance_ops = ["aggregate-storage"]
+
+[[route]]
+crate_pattern = "forge/src/contract_tv.rs"
+design = ".design/build/kernel-primitives.md"
+reference = ["conformance/verified-build/aggregate_storage.th"]
+conformance_ops = ["aggregate-state-view"]
+
+[[route]]
+crate_pattern = "forge/src/exec_tv.rs"
+design = ".design/build/kernel-primitives.md"
+reference = ["conformance/verified-build/aggregate_storage.th"]
+conformance_ops = ["aggregate-export-guard"]
+
+[[route]]
+crate_pattern = "forge/tests/body_tv.rs"
+design = ".design/build/kernel-primitives.md"
+reference = ["conformance/verified-build/aggregate_storage.th"]
+conformance_ops = ["fixed-array-frame-body-tv"]
+
+[[route]]
+crate_pattern = "forge/tests/contract_tv_conformance.rs"
+design = ".design/build/kernel-primitives.md"
+reference = ["conformance/verified-build/aggregate_storage.th"]
+conformance_ops = ["fixed-array-frame-contract-tv"]
+
+[[route]]
+crate_pattern = "forge/tests/exec_tv_conformance.rs"
+design = ".design/build/kernel-primitives.md"
+reference = ["conformance/verified-build/aggregate_storage.th"]
+conformance_ops = ["fixed-array-frame-exec-tv"]
+
+[[route]]
+crate_pattern = "forge/src/verified_build.rs"
+design = ".design/build/kernel-primitives.md"
+reference = ["conformance/verified-build/aggregate_storage.th"]
+conformance_ops = ["aggregate-storage-abi", "aggregate-storage-replay"]
+
+[[route]]
+crate_pattern = "conformance/verified-build/aggregate_storage.th"
+design = ".design/build/kernel-primitives.md"
+reference = []
+conformance_ops = ["aggregate-storage"]
+
+[[route]]
 crate_pattern = "THERMITE.skill.md"
-design = ".design/build/bootable-multicore-kernel.md"
+design = ".design/build/kernel-primitives.md"
 reference = ["conformance/kernel_primitives.th"]
 conformance_ops = ["kernel-skill-reference"]
 
 [[route]]
-crate_pattern = "Cargo.toml"
-design = ".design/build/bootable-multicore-kernel.md"
+crate_pattern = "stdlib/kernel-primitives/platform.thpkg.json"
+design = ".design/build/kernel-primitives.md"
+reference = ["stdlib/kernel-primitives/platform/api.th"]
+conformance_ops = ["platform-package-closure"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/platform/api.th"
+design = ".design/build/kernel-primitives.md"
 reference = []
-conformance_ops = ["kernel-workspace"]
+conformance_ops = ["platform-types", "platform-legality", "platform-boundaries"]
 
 [[route]]
-crate_pattern = "Cargo.lock"
-design = ".design/build/bootable-multicore-kernel.md"
+crate_pattern = "forge/tests/platform_primitives.rs"
+design = ".design/build/kernel-primitives.md"
+reference = ["stdlib/kernel-primitives/platform.thpkg.json"]
+conformance_ops = ["platform-l3-floor", "platform-l1-exception", "platform-replay"]
+
+# Explicit finite structural relations for fixed arrays of ordinary acyclic
+# records, tuples, and nested arrays. This is compiler/proof infrastructure;
+# sealed and opaque authority remains outside ambient derived equality.
+[[route]]
+crate_pattern = "thermite-spec/src/lib.rs"
+design = ".design/build/aggregate-array-relations.md"
+reference = ["conformance/verified-build/aggregate_array_relations.th"]
+conformance_ops = ["aggregate-array-validation-api"]
+
+[[route]]
+crate_pattern = "thermite-spec/src/validator.rs"
+design = ".design/build/aggregate-array-relations.md"
+reference = ["conformance/verified-build/aggregate_array_relations.th"]
+conformance_ops = ["aggregate-array-relation-validation"]
+
+[[route]]
+crate_pattern = "thermite-spec/tests/fixed_array_validate.rs"
+design = ".design/build/aggregate-array-relations.md"
+reference = ["conformance/verified-build/aggregate_array_relations.th"]
+conformance_ops = ["aggregate-array-relation-rejections"]
+
+[[route]]
+crate_pattern = "thermite-lower/src/lower.rs"
+design = ".design/build/aggregate-array-relations.md"
+reference = ["conformance/verified-build/aggregate_array_relations.th"]
+conformance_ops = ["aggregate-array-l3-helper"]
+
+[[route]]
+crate_pattern = "thermite-lower/src/l1.rs"
+design = ".design/build/aggregate-array-relations.md"
+reference = ["conformance/verified-build/aggregate_array_relations.th"]
+conformance_ops = ["aggregate-array-l1-mirror"]
+
+[[route]]
+crate_pattern = "thermite-lower/src/lib.rs"
+design = ".design/build/aggregate-array-relations.md"
+reference = ["conformance/verified-build/aggregate_array_relations.th"]
+conformance_ops = ["aggregate-array-lowering-api"]
+
+[[route]]
+crate_pattern = "thermite-lower/tests/aggregate_array_relations.rs"
+design = ".design/build/aggregate-array-relations.md"
+reference = ["conformance/verified-build/aggregate_array_relations.th"]
+conformance_ops = ["aggregate-array-direct-verus", "aggregate-array-dropped-field-mutant"]
+
+# The quantified declared-index relation family (REQ-AGGREL-2 through
+# REQ-AGGREL-4): the `#[logical]` attribute parse, the admission and relation
+# gate, the emitted per-view `forall`s, and the collection-state fixtures that
+# certify them at strict L3.
+[[route]]
+crate_pattern = "thermite-syntax/tests/logical_attribute.rs"
+design = ".design/build/aggregate-array-relations.md"
+reference = ["stdlib/kernel-primitives/collections/ring.th"]
+conformance_ops = ["logical-view-parse"]
+
+[[route]]
+crate_pattern = "thermite-spec/tests/logical_view_validate.rs"
+design = ".design/build/aggregate-array-relations.md"
+reference = ["stdlib/kernel-primitives/collections/bitmap.th"]
+conformance_ops = ["logical-view-admission", "logical-relation-gate"]
+
+[[route]]
+crate_pattern = "thermite-lower/tests/logical_index_relations.rs"
+design = ".design/build/aggregate-array-relations.md"
+reference = ["stdlib/kernel-primitives/collections/ring.th"]
+conformance_ops = ["logical-relation-emission", "logical-relation-direct-verus"]
+
+[[route]]
+crate_pattern = "forge/tests/divergence_aggregate_collection_state.rs"
+design = ".design/build/aggregate-array-relations.md"
+reference = [
+  "stdlib/kernel-primitives/collections/bitmap.th",
+  "stdlib/kernel-primitives/collections/ring.th",
+]
+conformance_ops = ["collection-state-equality-l3", "collection-state-frame-l3"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/exec_encode.rs"
+design = ".design/build/aggregate-array-relations.md"
+reference = ["conformance/verified-build/aggregate_array_relations.th"]
+conformance_ops = ["aggregate-array-exec-reference"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/ref_encode.rs"
+design = ".design/build/aggregate-array-relations.md"
+reference = ["conformance/verified-build/aggregate_array_relations.th"]
+conformance_ops = ["aggregate-array-contract-reference"]
+
+[[route]]
+crate_pattern = "thermite-tv/tests/fixed_array_tv.rs"
+design = ".design/build/aggregate-array-relations.md"
+reference = ["conformance/verified-build/aggregate_array_relations.th"]
+conformance_ops = ["aggregate-array-reference-teeth"]
+
+[[route]]
+crate_pattern = "forge/src/exec_tv.rs"
+design = ".design/build/aggregate-array-relations.md"
+reference = ["conformance/verified-build/aggregate_array_relations.th"]
+conformance_ops = ["aggregate-array-exec-tv"]
+
+[[route]]
+crate_pattern = "forge/src/body_tv.rs"
+design = ".design/build/aggregate-array-relations.md"
+reference = ["conformance/verified-build/aggregate_array_relations.th"]
+conformance_ops = ["aggregate-array-body-tv"]
+
+[[route]]
+crate_pattern = "forge/src/verified_build.rs"
+design = ".design/build/aggregate-array-relations.md"
+reference = ["conformance/verified-build/aggregate_array_relations.th"]
+conformance_ops = ["aggregate-array-public-abi", "aggregate-array-replay"]
+
+[[route]]
+crate_pattern = "forge/tests/body_tv.rs"
+design = ".design/build/aggregate-array-relations.md"
+reference = ["conformance/verified-build/aggregate_array_relations.th"]
+conformance_ops = ["aggregate-array-body-tv"]
+
+[[route]]
+crate_pattern = "forge/tests/contract_tv_conformance.rs"
+design = ".design/build/aggregate-array-relations.md"
+reference = ["conformance/verified-build/aggregate_array_relations.th"]
+conformance_ops = ["aggregate-array-contract-tv"]
+
+[[route]]
+crate_pattern = "forge/tests/exec_tv_conformance.rs"
+design = ".design/build/aggregate-array-relations.md"
+reference = ["conformance/verified-build/aggregate_array_relations.th"]
+conformance_ops = ["aggregate-array-exec-tv"]
+
+[[route]]
+crate_pattern = "forge/tests/verified_build.rs"
+design = ".design/build/aggregate-array-relations.md"
+reference = ["conformance/verified-build/aggregate_array_relations.th"]
+conformance_ops = ["aggregate-array-strict-build", "aggregate-array-replay", "aggregate-array-tamper"]
+
+[[route]]
+crate_pattern = "conformance/verified-build/aggregate_array_relations.th"
+design = ".design/build/aggregate-array-relations.md"
 reference = []
-conformance_ops = ["kernel-workspace"]
+conformance_ops = ["aggregate-array-relations"]
+
+# Exact direct-field lifecycle semantics for finite named records. This is
+# reusable language/proof/build infrastructure only: it contains no concrete
+# kernel state, policy, platform implementation, firmware, or boot artifact.
+[[route]]
+crate_pattern = "thermite-spec/src/validator.rs"
+design = ".design/build/named-record-lifecycle.md"
+reference = ["conformance/verified-build/named_record_lifecycle.th"]
+conformance_ops = ["named-record-mutation-validation"]
 
 [[route]]
-crate_pattern = "forge/Cargo.toml"
-design = ".design/build/bootable-multicore-kernel.md"
+crate_pattern = "thermite-spec/tests/named_record_mutation_validate.rs"
+design = ".design/build/named-record-lifecycle.md"
+reference = ["conformance/verified-build/named_record_lifecycle.th"]
+conformance_ops = ["named-record-mutation-rejections"]
+
+[[route]]
+crate_pattern = "thermite-lower/src/lower.rs"
+design = ".design/build/named-record-lifecycle.md"
+reference = ["conformance/verified-build/named_record_lifecycle.th"]
+conformance_ops = ["named-record-l3-lowering"]
+
+[[route]]
+crate_pattern = "thermite-lower/src/l1.rs"
+design = ".design/build/named-record-lifecycle.md"
+reference = ["conformance/verified-build/named_record_lifecycle.th"]
+conformance_ops = ["named-record-l1-lowering"]
+
+[[route]]
+crate_pattern = "thermite-lower/tests/named_record_lifecycle.rs"
+design = ".design/build/named-record-lifecycle.md"
+reference = ["conformance/verified-build/named_record_lifecycle.th"]
+conformance_ops = ["named-record-direct-verus"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/exec_encode.rs"
+design = ".design/build/named-record-lifecycle.md"
+reference = ["conformance/verified-build/named_record_lifecycle.th"]
+conformance_ops = ["named-record-exec-reference"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/exec_stmt_encode.rs"
+design = ".design/build/named-record-lifecycle.md"
+reference = ["conformance/verified-build/named_record_lifecycle.th"]
+conformance_ops = ["named-record-body-reference"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/obligation.rs"
+design = ".design/build/named-record-lifecycle.md"
+reference = ["conformance/verified-build/named_record_lifecycle.th"]
+conformance_ops = ["named-record-lifecycle-obligation"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/ref_encode.rs"
+design = ".design/build/named-record-lifecycle.md"
+reference = ["conformance/verified-build/named_record_lifecycle.th"]
+conformance_ops = ["named-record-contract-reference"]
+
+[[route]]
+crate_pattern = "thermite-tv/tests/named_record_lifecycle_tv.rs"
+design = ".design/build/named-record-lifecycle.md"
+reference = ["conformance/verified-build/named_record_lifecycle.th"]
+conformance_ops = ["named-record-lifecycle-mutants"]
+
+[[route]]
+crate_pattern = "forge/src/contract_tv.rs"
+design = ".design/build/named-record-lifecycle.md"
+reference = ["conformance/verified-build/named_record_lifecycle.th"]
+conformance_ops = ["named-record-contract-tv"]
+
+[[route]]
+crate_pattern = "forge/src/exec_tv.rs"
+design = ".design/build/named-record-lifecycle.md"
+reference = ["conformance/verified-build/named_record_lifecycle.th"]
+conformance_ops = ["named-record-exec-tv"]
+
+[[route]]
+crate_pattern = "forge/src/body_tv.rs"
+design = ".design/build/named-record-lifecycle.md"
+reference = ["conformance/verified-build/named_record_lifecycle.th"]
+conformance_ops = ["named-record-body-tv"]
+
+[[route]]
+crate_pattern = "forge/src/verified_build.rs"
+design = ".design/build/named-record-lifecycle.md"
+reference = ["conformance/verified-build/named_record_lifecycle.th"]
+conformance_ops = ["named-record-package-ownership", "named-record-abi", "named-record-replay"]
+
+[[route]]
+crate_pattern = "forge/tests/contract_tv_conformance.rs"
+design = ".design/build/named-record-lifecycle.md"
+reference = ["conformance/verified-build/named_record_lifecycle.th"]
+conformance_ops = ["named-record-contract-tv"]
+
+[[route]]
+crate_pattern = "forge/tests/exec_tv_conformance.rs"
+design = ".design/build/named-record-lifecycle.md"
+reference = ["conformance/verified-build/named_record_lifecycle.th"]
+conformance_ops = ["named-record-exec-tv"]
+
+[[route]]
+crate_pattern = "forge/tests/body_tv.rs"
+design = ".design/build/named-record-lifecycle.md"
+reference = ["conformance/verified-build/named_record_lifecycle.th"]
+conformance_ops = ["named-record-body-tv"]
+
+[[route]]
+crate_pattern = "forge/tests/verified_build.rs"
+design = ".design/build/named-record-lifecycle.md"
+reference = ["conformance/verified-build/named_record_lifecycle.th"]
+conformance_ops = ["named-record-strict-build", "named-record-replay", "named-record-runtime", "named-record-tamper"]
+
+[[route]]
+crate_pattern = "conformance/verified-build/named_record_lifecycle.th"
+design = ".design/build/named-record-lifecycle.md"
 reference = []
-conformance_ops = ["kernel-image"]
+conformance_ops = ["named-record-lifecycle"]
+
+# Typed owned-record values, exact local field replacement, and pure value-call
+# composition. This is reusable language/proof/build infrastructure only.
+[[route]]
+crate_pattern = "thermite-tv/src/exec_encode.rs"
+design = ".design/build/owned-aggregate-lifecycle.md"
+reference = ["conformance/verified-build/owned_aggregate_lifecycle.th"]
+conformance_ops = ["owned-aggregate-exec-reference"]
 
 [[route]]
-crate_pattern = "platform/x86_64-pc-uefi-smp-v1/*"
-design = ".design/build/bootable-multicore-kernel.md"
-reference = ["conformance/bootable_kernel.th"]
-conformance_ops = ["platform-closure"]
+crate_pattern = "thermite-tv/src/exec_stmt_encode.rs"
+design = ".design/build/owned-aggregate-lifecycle.md"
+reference = ["conformance/verified-build/owned_aggregate_lifecycle.th"]
+conformance_ops = ["owned-aggregate-body-reference"]
 
 [[route]]
-crate_pattern = "platform/x86_64-pc-uefi-smp-v1/runtime/.cargo/config.toml"
-design = ".design/build/bootable-multicore-kernel.md"
+crate_pattern = "thermite-tv/src/lib.rs"
+design = ".design/build/owned-aggregate-lifecycle.md"
+reference = ["conformance/verified-build/owned_aggregate_lifecycle.th"]
+conformance_ops = ["owned-aggregate-frame-api"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/obligation.rs"
+design = ".design/build/owned-aggregate-lifecycle.md"
+reference = ["conformance/verified-build/owned_aggregate_lifecycle.th"]
+conformance_ops = ["owned-aggregate-obligation"]
+
+[[route]]
+crate_pattern = "thermite-tv/tests/owned_aggregate_lifecycle_tv.rs"
+design = ".design/build/owned-aggregate-lifecycle.md"
+reference = ["conformance/verified-build/owned_aggregate_lifecycle.th"]
+conformance_ops = ["owned-aggregate-mutants", "owned-aggregate-wrong-callee"]
+
+[[route]]
+crate_pattern = "forge/src/body_tv.rs"
+design = ".design/build/owned-aggregate-lifecycle.md"
+reference = ["conformance/verified-build/owned_aggregate_lifecycle.th"]
+conformance_ops = ["owned-aggregate-body-tv"]
+
+[[route]]
+crate_pattern = "forge/src/exec_tv.rs"
+design = ".design/build/owned-aggregate-lifecycle.md"
+reference = ["conformance/verified-build/owned_aggregate_lifecycle.th"]
+conformance_ops = ["owned-aggregate-exec-tv"]
+
+[[route]]
+crate_pattern = "forge/tests/body_tv.rs"
+design = ".design/build/owned-aggregate-lifecycle.md"
+reference = ["conformance/verified-build/owned_aggregate_lifecycle.th"]
+conformance_ops = ["owned-aggregate-body-tv", "mutable-callee-fail-closed"]
+
+[[route]]
+crate_pattern = "forge/tests/verified_build.rs"
+design = ".design/build/owned-aggregate-lifecycle.md"
+reference = ["conformance/verified-build/owned_aggregate_lifecycle.th"]
+conformance_ops = ["owned-aggregate-strict-l3", "owned-aggregate-replay", "owned-aggregate-runtime", "owned-aggregate-tamper"]
+
+[[route]]
+crate_pattern = "conformance/verified-build/owned_aggregate_lifecycle.th"
+design = ".design/build/owned-aggregate-lifecycle.md"
 reference = []
-conformance_ops = ["frozen-runtime-build"]
+conformance_ops = ["owned-aggregate-lifecycle"]
+
+# Exact recursive finite-record mutation with an optional terminal fixed-array
+# index. The freestanding fixture is scalar-nested; hosted real-Verus evidence
+# covers the array-view form without introducing a concrete kernel or runtime.
+[[route]]
+crate_pattern = "thermite-spec/src/validator.rs"
+design = ".design/build/nested-aggregate-lifecycle.md"
+reference = ["conformance/verified-build/nested_aggregate_lifecycle.th"]
+conformance_ops = ["nested-mutation-validation"]
 
 [[route]]
-crate_pattern = "platform/x86_64-pc-uefi-smp-v1/runtime/Cargo.*"
-design = ".design/build/bootable-multicore-kernel.md"
+crate_pattern = "thermite-spec/tests/named_record_mutation_validate.rs"
+design = ".design/build/nested-aggregate-lifecycle.md"
+reference = ["conformance/verified-build/nested_aggregate_lifecycle.th"]
+conformance_ops = ["nested-mutation-rejections"]
+
+[[route]]
+crate_pattern = "thermite-lower/tests/nested_aggregate_lifecycle.rs"
+design = ".design/build/nested-aggregate-lifecycle.md"
+reference = ["conformance/verified-build/nested_aggregate_lifecycle.th"]
+conformance_ops = ["nested-lvalue-lowering", "nested-direct-verus"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/exec_stmt_encode.rs"
+design = ".design/build/nested-aggregate-lifecycle.md"
+reference = ["conformance/verified-build/nested_aggregate_lifecycle.th"]
+conformance_ops = ["nested-independent-reconstruction"]
+
+[[route]]
+crate_pattern = "thermite-tv/tests/owned_aggregate_lifecycle_tv.rs"
+design = ".design/build/nested-aggregate-lifecycle.md"
+reference = ["conformance/verified-build/nested_aggregate_lifecycle.th"]
+conformance_ops = ["nested-owned-exclusive-verus", "nested-mutants"]
+
+[[route]]
+crate_pattern = "forge/src/body_tv.rs"
+design = ".design/build/nested-aggregate-lifecycle.md"
+reference = ["conformance/verified-build/nested_aggregate_lifecycle.th"]
+conformance_ops = ["nested-typed-frame"]
+
+[[route]]
+crate_pattern = "forge/tests/body_tv.rs"
+design = ".design/build/nested-aggregate-lifecycle.md"
+reference = ["conformance/verified-build/nested_aggregate_lifecycle.th"]
+conformance_ops = ["nested-hosted-array-body-tv", "nested-freestanding-body-tv"]
+
+[[route]]
+crate_pattern = "forge/tests/verified_build.rs"
+design = ".design/build/nested-aggregate-lifecycle.md"
+reference = ["conformance/verified-build/nested_aggregate_lifecycle.th"]
+conformance_ops = ["nested-strict-l3", "nested-replay", "nested-runtime", "nested-tamper"]
+
+[[route]]
+crate_pattern = "conformance/verified-build/nested_aggregate_lifecycle.th"
+design = ".design/build/nested-aggregate-lifecycle.md"
 reference = []
-conformance_ops = ["frozen-runtime-build"]
+conformance_ops = ["nested-aggregate-lifecycle"]
+
+# Exact user-ADT pattern/result semantics. Contract TV and complete body TV own
+# control-flow values; leaf exec TV hands them off without duplicating evidence.
+[[route]]
+crate_pattern = "thermite-tv/src/ref_encode.rs"
+design = ".design/build/adt-match-lifecycle.md"
+reference = ["conformance/verified-composition/probe.th"]
+conformance_ops = ["adt-contract-reference"]
 
 [[route]]
-crate_pattern = "platform/x86_64-pc-uefi-smp-v1/runtime/src/*"
-design = ".design/build/bootable-multicore-kernel.md"
-reference = ["conformance/bootable_kernel.th"]
-conformance_ops = ["uefi-runtime", "smp-runtime"]
+crate_pattern = "thermite-tv/src/exec_stmt_encode.rs"
+design = ".design/build/adt-match-lifecycle.md"
+reference = ["conformance/verified-composition/probe.th"]
+conformance_ops = ["adt-body-reference", "pattern-binding-scope", "typed-constructors"]
 
 [[route]]
-crate_pattern = ".github/workflows/ci.yml"
-design = ".design/build/bootable-multicore-kernel.md"
-reference = ["conformance/bootable_kernel.th"]
-conformance_ops = ["kernel-image-gate"]
+crate_pattern = "thermite-tv/src/obligation.rs"
+design = ".design/build/adt-match-lifecycle.md"
+reference = ["conformance/verified-composition/probe.th"]
+conformance_ops = ["adt-contract-body-frames"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/lib.rs"
+design = ".design/build/adt-match-lifecycle.md"
+reference = ["conformance/verified-composition/probe.th"]
+conformance_ops = ["adt-frame-api"]
+
+[[route]]
+crate_pattern = "thermite-tv/tests/adt_match_lifecycle_tv.rs"
+design = ".design/build/adt-match-lifecycle.md"
+reference = ["conformance/verified-composition/probe.th"]
+conformance_ops = ["adt-real-verus", "adt-mutants", "adt-pattern-shadowing"]
+
+[[route]]
+crate_pattern = "forge/src/body_tv.rs"
+design = ".design/build/adt-match-lifecycle.md"
+reference = ["conformance/verified-composition/probe.th"]
+conformance_ops = ["adt-derived-frame"]
+
+[[route]]
+crate_pattern = "forge/src/contract_tv.rs"
+design = ".design/build/adt-match-lifecycle.md"
+reference = ["conformance/verified-composition/probe.th"]
+conformance_ops = ["adt-contract-tv", "tuple-result-frame"]
+
+[[route]]
+crate_pattern = "forge/src/exec_tv.rs"
+design = ".design/build/adt-match-lifecycle.md"
+reference = ["conformance/verified-composition/probe.th"]
+conformance_ops = ["body-control-handoff"]
+
+[[route]]
+crate_pattern = "forge/src/verified_build.rs"
+design = ".design/build/adt-match-lifecycle.md"
+reference = ["conformance/verified-composition/probe.th"]
+conformance_ops = ["strict-tv-inventory"]
+
+[[route]]
+crate_pattern = "forge/tests/verified_composition.rs"
+design = ".design/build/adt-match-lifecycle.md"
+reference = ["conformance/verified-composition/probe.th"]
+conformance_ops = ["adt-strict-build", "adt-replay", "adt-runtime", "adt-tamper"]
+
+[[route]]
+crate_pattern = "conformance/verified-composition/probe.th"
+design = ".design/build/adt-match-lifecycle.md"
+reference = []
+conformance_ops = ["adt-match-lifecycle"]
+
+# Exact finite-record while state: recursive leaf preservation plus a full
+# production-loop result obligation. This is a policy-free L3 primitive and
+# carries no concrete platform implementation.
+[[route]]
+crate_pattern = "thermite-lower/src/lower.rs"
+design = ".design/build/record-state-loops.md"
+reference = ["conformance/verified-build/record_state_loop.th"]
+conformance_ops = ["function-context-loop-lowering"]
+
+[[route]]
+crate_pattern = "thermite-lower/src/lib.rs"
+design = ".design/build/record-state-loops.md"
+reference = ["conformance/verified-build/record_state_loop.th"]
+conformance_ops = ["function-context-loop-api"]
+
+[[route]]
+crate_pattern = "thermite-lower/tests/function_context_loop_body.rs"
+design = ".design/build/record-state-loops.md"
+reference = ["conformance/verified-build/record_state_loop.th"]
+conformance_ops = ["exact-production-body-correspondence"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/exec_stmt_encode.rs"
+design = ".design/build/record-state-loops.md"
+reference = ["conformance/verified-build/record_state_loop.th"]
+conformance_ops = ["record-loop-reference", "recursive-step-state"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/obligation.rs"
+design = ".design/build/record-state-loops.md"
+reference = ["conformance/verified-build/record_state_loop.th"]
+conformance_ops = ["record-loop-four-obligations", "recursive-leaf-observation"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/lib.rs"
+design = ".design/build/record-state-loops.md"
+reference = ["conformance/verified-build/record_state_loop.th"]
+conformance_ops = ["record-loop-tv-api"]
+
+[[route]]
+crate_pattern = "thermite-tv/tests/record_state_loop_tv.rs"
+design = ".design/build/record-state-loops.md"
+reference = ["conformance/verified-build/record_state_loop.th"]
+conformance_ops = ["record-loop-real-verus", "record-loop-mutants"]
+
+[[route]]
+crate_pattern = "forge/src/body_tv.rs"
+design = ".design/build/record-state-loops.md"
+reference = ["conformance/verified-build/record_state_loop.th"]
+conformance_ops = ["record-loop-derived-frame", "record-loop-four-way"]
+
+[[route]]
+crate_pattern = "forge/tests/verified_build.rs"
+design = ".design/build/record-state-loops.md"
+reference = ["conformance/verified-build/record_state_loop.th"]
+conformance_ops = ["record-loop-strict-l3", "record-loop-replay", "record-loop-runtime", "record-loop-tamper"]
+
+[[route]]
+crate_pattern = "conformance/verified-build/record_state_loop.th"
+design = ".design/build/record-state-loops.md"
+reference = []
+conformance_ops = ["record-state-loop-lifecycle"]
+
+# Exact bodyful mutable-reference call composition for structurally disjoint
+# direct/projected finite-record and mutable-slice/fixed-array actuals,
+# nonoverlapping exact shared record/indexed snapshots, and direct pure
+# scalar/unit observers consuming logical finite-record value snapshots.
+# Production executes the generated calls; the independent state denotation
+# recursively interprets the receipt-bound source bodies.
+[[route]]
+crate_pattern = "thermite-tv/src/exec_encode.rs"
+design = ".design/build/mutable-call-effects.md"
+reference = ["conformance/verified-build/mutable_call_effect.th", "conformance/verified-build/mutable_indexed_call_effect.th", "conformance/verified-build/mixed_indexed_call_effect.th", "conformance/verified-build/projected_record_call_effect.th", "conformance/verified-build/projected_indexed_call_effect.th", "conformance/verified-build/record_after_indexed_call_effect.th"]
+conformance_ops = ["mutable-post-state-field-selector", "mutable-post-state-sequence-selector"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/exec_stmt_encode.rs"
+design = ".design/build/mutable-call-effects.md"
+reference = ["conformance/verified-build/mutable_call_effect.th", "conformance/verified-build/mutable_indexed_call_effect.th", "conformance/verified-build/mixed_indexed_call_effect.th", "conformance/verified-build/projected_record_call_effect.th", "conformance/verified-build/projected_indexed_call_effect.th", "conformance/verified-build/record_after_indexed_call_effect.th"]
+conformance_ops = ["mutable-call-state-composition", "mutable-call-result-composition", "mutable-indexed-sequence-composition", "mixed-borrow-snapshot-composition", "shared-indexed-snapshot-composition", "projected-record-copy-in", "projected-record-copy-back", "projected-indexed-copy-in", "projected-indexed-sequence-overlay", "projected-indexed-leaf-frame", "record-overlay-rebase-copy-in", "record-overlay-rebase-copy-back", "logical-record-overlay-binding", "logical-record-overlay-rebinding", "logical-record-local-field-mutation", "logical-record-local-indexed-mutation", "logical-record-value-formal-snapshot", "logical-record-value-observer", "logical-record-value-cycle-rejection", "leafwise-record-lifecycle-frame", "leafwise-record-result-after-overlay", "no-sequence-native-materialization", "record-overlay-invalidation", "structural-access-path-aliasing", "exclusive-alias-rejection", "indexed-pointee-rejection", "shared-exclusive-alias-rejection", "nested-result-rejection"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/obligation.rs"
+design = ".design/build/mutable-call-effects.md"
+reference = ["conformance/verified-build/mutable_call_effect.th", "conformance/verified-build/mutable_indexed_call_effect.th", "conformance/verified-build/mixed_indexed_call_effect.th", "conformance/verified-build/projected_record_call_effect.th", "conformance/verified-build/projected_indexed_call_effect.th", "conformance/verified-build/record_after_indexed_call_effect.th"]
+conformance_ops = ["mutable-call-obligation-frame", "mutable-indexed-obligation-frame", "shared-indexed-obligation-frame"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/lib.rs"
+design = ".design/build/mutable-call-effects.md"
+reference = ["conformance/verified-build/mutable_call_effect.th", "conformance/verified-build/mutable_indexed_call_effect.th", "conformance/verified-build/mixed_indexed_call_effect.th", "conformance/verified-build/projected_record_call_effect.th", "conformance/verified-build/projected_indexed_call_effect.th", "conformance/verified-build/record_after_indexed_call_effect.th"]
+conformance_ops = ["mutable-call-frame-api", "mutable-indexed-frame-api", "shared-indexed-frame-api", "value-record-frame-api"]
+
+[[route]]
+crate_pattern = "thermite-tv/tests/mutable_call_effect_tv.rs"
+design = ".design/build/mutable-call-effects.md"
+reference = ["conformance/verified-build/mutable_call_effect.th", "conformance/verified-build/projected_record_call_effect.th", "conformance/verified-build/projected_indexed_call_effect.th", "conformance/verified-build/record_after_indexed_call_effect.th"]
+conformance_ops = ["mutable-call-real-verus", "mutable-call-result-and-state", "mixed-borrow-result-and-state", "projected-record-real-verus", "projected-record-mutant", "projected-indexed-real-verus", "projected-indexed-mutant", "projected-indexed-branch-overlay-lifecycle", "record-after-indexed-real-verus", "record-after-indexed-mutant", "record-result-after-indexed-real-verus", "record-result-after-indexed-mutant", "intermediate-record-after-indexed-real-verus", "intermediate-record-after-indexed-mutant", "intermediate-record-whole-reassignment-real-verus", "intermediate-record-whole-reassignment-mutant", "logical-record-value-observer-real-verus", "logical-record-value-observer-mutant", "nested-logical-record-value-call-rejection", "native-array-after-overlay-rejection", "projected-type-and-borrow-rejection", "mutable-call-mutants"]
+
+[[route]]
+crate_pattern = "thermite-tv/tests/mutable_indexed_call_effect_tv.rs"
+design = ".design/build/mutable-call-effects.md"
+reference = ["conformance/verified-build/mutable_indexed_call_effect.th", "conformance/verified-build/mixed_indexed_call_effect.th"]
+conformance_ops = ["mutable-indexed-call-real-verus", "mutable-indexed-result-and-complete-state", "shared-indexed-current-snapshot", "mutable-indexed-alias-rejection", "shared-indexed-overlap-rejection", "mutable-indexed-type-rejection"]
+
+[[route]]
+crate_pattern = "forge/src/body_tv.rs"
+design = ".design/build/mutable-call-effects.md"
+reference = ["conformance/verified-build/mutable_call_effect.th", "conformance/verified-build/mutable_indexed_call_effect.th", "conformance/verified-build/mixed_indexed_call_effect.th", "conformance/verified-build/projected_record_call_effect.th", "conformance/verified-build/projected_indexed_call_effect.th", "conformance/verified-build/record_after_indexed_call_effect.th"]
+conformance_ops = ["reachable-mutable-effect-derivation", "reachable-indexed-effect-derivation", "reachable-shared-indexed-frame-derivation", "reachable-value-record-frame-derivation", "proved-callee-state-predicate", "mixed-borrow-frame-derivation", "projected-record-frame-derivation", "projected-indexed-frame-derivation", "record-formal-overlay-rebasing", "logical-record-value-observer-composition", "nested-fixed-array-path-derivation"]
+
+[[route]]
+crate_pattern = "forge/src/exec_tv.rs"
+design = ".design/build/mutable-call-effects.md"
+reference = ["conformance/verified-build/mutable_call_effect.th", "conformance/verified-build/record_after_indexed_call_effect.th"]
+conformance_ops = ["mutable-record-exec-frame", "stateful-initializer-body-tv-routing", "logical-record-value-call-body-tv-routing"]
+
+[[route]]
+crate_pattern = "forge/tests/body_tv.rs"
+design = ".design/build/mutable-call-effects.md"
+reference = ["conformance/verified-build/mutable_call_effect.th", "conformance/verified-build/mutable_indexed_call_effect.th", "conformance/verified-build/mixed_indexed_call_effect.th", "conformance/verified-build/projected_record_call_effect.th", "conformance/verified-build/projected_indexed_call_effect.th", "conformance/verified-build/record_after_indexed_call_effect.th"]
+conformance_ops = ["derived-mutable-call-effect", "derived-mutable-indexed-effect", "derived-shared-indexed-effect", "derived-mixed-borrow-effect", "derived-projected-record-effect", "derived-projected-indexed-effect", "projected-indexed-current-snapshot", "derived-record-after-indexed-effect", "derived-record-result-after-indexed", "derived-intermediate-record-after-indexed", "derived-logical-record-value-observer", "record-overlay-replacement", "structural-prefix-alias-rejection", "shared-exclusive-overlap-rejection"]
+
+[[route]]
+crate_pattern = "forge/src/verified_build.rs"
+design = ".design/build/mutable-call-effects.md"
+reference = ["conformance/verified-build/record_after_indexed_call_effect.th"]
+conformance_ops = ["logical-record-value-call-tv-inventory"]
+
+[[route]]
+crate_pattern = "forge/tests/verified_build.rs"
+design = ".design/build/mutable-call-effects.md"
+reference = ["conformance/verified-build/mutable_call_effect.th", "conformance/verified-build/mutable_indexed_call_effect.th", "conformance/verified-build/mixed_indexed_call_effect.th", "conformance/verified-build/projected_record_call_effect.th", "conformance/verified-build/projected_indexed_call_effect.th", "conformance/verified-build/record_after_indexed_call_effect.th"]
+conformance_ops = ["mutable-call-strict-l3", "mutable-indexed-call-strict-l3", "shared-indexed-call-strict-l3", "projected-record-call-strict-l3", "projected-indexed-call-strict-l3", "record-after-indexed-call-strict-l3", "mixed-borrow-result-runtime", "mutable-indexed-result-runtime", "shared-indexed-current-snapshot-runtime", "projected-record-runtime", "projected-indexed-runtime", "record-after-indexed-runtime", "record-result-after-indexed-runtime", "intermediate-record-after-indexed-runtime", "logical-record-value-observer-runtime", "total-export-result-binding-hygiene", "shared-source-preservation-runtime", "mutable-call-tv-inventory", "mutable-call-replay", "mutable-call-tamper"]
+
+[[route]]
+crate_pattern = "conformance/verified-build/mutable_call_effect.th"
+design = ".design/build/mutable-call-effects.md"
+reference = []
+conformance_ops = ["mixed-borrow-result-effect-lifecycle"]
+
+[[route]]
+crate_pattern = "conformance/verified-build/mutable_indexed_call_effect.th"
+design = ".design/build/mutable-call-effects.md"
+reference = []
+conformance_ops = ["mutable-indexed-result-effect-lifecycle"]
+
+[[route]]
+crate_pattern = "conformance/verified-build/mixed_indexed_call_effect.th"
+design = ".design/build/mutable-call-effects.md"
+reference = []
+conformance_ops = ["shared-indexed-current-snapshot-lifecycle"]
+
+[[route]]
+crate_pattern = "conformance/verified-build/projected_record_call_effect.th"
+design = ".design/build/mutable-call-effects.md"
+reference = []
+conformance_ops = ["projected-record-call-effect-lifecycle"]
+
+[[route]]
+crate_pattern = "conformance/verified-build/projected_indexed_call_effect.th"
+design = ".design/build/mutable-call-effects.md"
+reference = []
+conformance_ops = ["projected-indexed-call-effect-lifecycle"]
+
+[[route]]
+crate_pattern = "conformance/verified-build/record_after_indexed_call_effect.th"
+design = ".design/build/mutable-call-effects.md"
+reference = []
+conformance_ops = ["record-after-indexed-call-effect-lifecycle", "record-result-after-indexed-lifecycle", "intermediate-record-after-indexed-lifecycle", "logical-record-value-observer-lifecycle"]
+
+[[route]]
+crate_pattern = "conformance/verified-build/record_after_indexed_call_effect.th"
+design = ".design/build/kernel-primitives.md"
+reference = []
+conformance_ops = ["record-after-indexed-aggregate-lifecycle", "leafwise-record-result-materialization", "logical-intermediate-record-snapshot", "logical-record-value-observer"]
+
+# Policy-free frozen platform declarations. The 74 bodyless machine doors are
+# the explicit consumer-owned exception; every other package row is L3.
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/platform.thpkg.json"
+design = ".design/build/platform-primitives.md"
+reference = ["stdlib/kernel-primitives/platform/api.th"]
+conformance_ops = ["platform-package-closure", "platform-receipt"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/platform/api.th"
+design = ".design/build/platform-primitives.md"
+reference = []
+conformance_ops = ["platform-sealed-types", "platform-legality", "platform-boundary-inventory"]
+
+[[route]]
+crate_pattern = "forge/tests/platform_primitives.rs"
+design = ".design/build/platform-primitives.md"
+reference = ["stdlib/kernel-primitives/platform.thpkg.json", "stdlib/kernel-primitives/platform/api.th"]
+conformance_ops = ["platform-l3-floor", "platform-machine-exception", "platform-replay", "platform-false-claim"]
+
+# Primitive-only sealed atomic declarations and proof vocabulary. These routes
+# intentionally cover no machine implementation: registry v1 must refuse that
+# assurance class until the separate object/machine refinement increment.
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/atomics.thpkg.json"
+design = ".design/build/sealed-atomics.md"
+reference = ["stdlib/kernel-primitives/src/model.th", "stdlib/kernel-primitives/src/init.th", "stdlib/kernel-primitives/src/machine.th", "stdlib/kernel-primitives/src/api.th", "stdlib/kernel-primitives/src/atomic_storage.th", "stdlib/kernel-primitives/storage/static_storage.th"]
+conformance_ops = ["atomic-package-closure", "generation-bound-atomic-storage"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/src/model.th"
+design = ".design/build/sealed-atomics.md"
+reference = []
+conformance_ops = ["atomic-ordering-model", "atomic-history-model"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/src/api.th"
+design = ".design/build/sealed-atomics.md"
+reference = ["stdlib/kernel-primitives/src/model.th", "stdlib/kernel-primitives/src/init.th", "stdlib/kernel-primitives/src/machine.th"]
+conformance_ops = ["sealed-atomic-l3-api", "atomic-ordering-probe", "atomic-history-probe"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/src/machine.th"
+design = ".design/build/sealed-atomics.md"
+reference = ["stdlib/kernel-primitives/src/model.th"]
+conformance_ops = ["atomic-machine-door-inventory", "atomic-ordering-code-preconditions", "atomic-handle-identity-echo"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/src/init.th"
+design = ".design/build/atomic-storage-initialization.md"
+reference = ["stdlib/kernel-primitives/src/model.th", "stdlib/kernel-primitives/storage/static_storage.th"]
+conformance_ops = ["opaque-single-use-atomic-slots", "typed-region-conversion", "atomic-capacity-policy"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/src/atomic_storage.th"
+design = ".design/build/atomic-storage-initialization.md"
+reference = ["stdlib/kernel-primitives/src/api.th", "stdlib/kernel-primitives/src/init.th", "stdlib/kernel-primitives/storage/static_storage.th"]
+conformance_ops = ["claim-fill-commit-atomic-init", "compound-identity-preservation"]
+
+[[route]]
+crate_pattern = "thermite-spec/src/validator.rs"
+design = ".design/build/sealed-atomics.md"
+reference = ["stdlib/kernel-primitives/src/api.th"]
+conformance_ops = ["atomic-ordering-pre-codegen-gate"]
+
+[[route]]
+crate_pattern = "thermite-spec/tests/atomic_ordering_validate.rs"
+design = ".design/build/sealed-atomics.md"
+reference = ["stdlib/kernel-primitives/src/api.th"]
+conformance_ops = ["atomic-ordering-legal-matrix", "atomic-ordering-rejections"]
+
+[[route]]
+crate_pattern = "forge/src/verified_build/primitive_registry.rs"
+design = ".design/build/sealed-atomics.md"
+reference = ["stdlib/kernel-primitives/src/api.th"]
+conformance_ops = ["machine-concurrency-assurance-refusal"]
+
+[[route]]
+crate_pattern = "forge/tests/verified_build.rs"
+design = ".design/build/sealed-atomics.md"
+reference = ["stdlib/kernel-primitives/atomics.thpkg.json"]
+conformance_ops = ["atomic-package-l3-kernel", "atomic-history-l3-hosted", "atomic-storage-l3-kernel", "atomic-slot-single-use", "atomic-slot-opaque-attack", "atomic-package-replay", "atomic-storage-runtime", "atomic-slot-tamper"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/ref_encode.rs"
+design = ".design/build/kernel-primitives.md"
+reference = ["stdlib/kernel-primitives/src/model.th"]
+conformance_ops = ["borrowed-fixed-array-spec-call"]
+
+# Allocation-free, policy-free fixed collections authored in Thermite.
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/collections.thpkg.json"
+design = ".design/build/fixed-collections.md"
+reference = []
+conformance_ops = ["fixed-collection-package-closure"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/collections/bitmap.th"
+design = ".design/build/fixed-collections.md"
+reference = []
+conformance_ops = ["fixed-bitmap-membership", "fixed-bitmap-update"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/collections/direct_map.th"
+design = ".design/build/fixed-collections.md"
+reference = []
+conformance_ops = ["fixed-direct-map-lookup", "fixed-direct-map-insert", "fixed-direct-map-remove"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/collections/open_map.th"
+design = ".design/build/fixed-collections.md"
+reference = []
+conformance_ops = ["fixed-open-map-lookup", "fixed-open-map-insert", "fixed-open-map-remove", "fixed-open-map-tombstone"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/collections/ring.th"
+design = ".design/build/fixed-collections.md"
+reference = []
+conformance_ops = ["fixed-ring-fifo", "fixed-ring-wrap", "fixed-ring-rejection"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/collections/vector.th"
+design = ".design/build/fixed-collections.md"
+reference = []
+conformance_ops = ["fixed-vector-random-access", "fixed-vector-push", "fixed-vector-pop"]
+
+[[route]]
+crate_pattern = "forge/tests/fixed_collections.rs"
+design = ".design/build/fixed-collections.md"
+reference = ["stdlib/kernel-primitives/collections.thpkg.json"]
+conformance_ops = ["fixed-collections-l3", "fixed-collections-adversarial", "fixed-collections-replay"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/slab.thpkg.json"
+design = ".design/build/fixed-collections.md"
+reference = ["stdlib/kernel-primitives/collections/slab.th"]
+conformance_ops = ["fixed-slab-package-closure"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/collections/slab.th"
+design = ".design/build/fixed-collections.md"
+reference = ["stdlib/kernel-primitives/slab.thpkg.json"]
+conformance_ops = ["fixed-slab-allocate", "fixed-slab-get", "fixed-slab-release", "fixed-slab-generation"]
+
+[[route]]
+crate_pattern = "forge/tests/fixed_slab.rs"
+design = ".design/build/fixed-collections.md"
+reference = ["stdlib/kernel-primitives/slab.thpkg.json"]
+conformance_ops = ["fixed-slab-l3", "fixed-slab-adversarial", "fixed-slab-kernel-replay", "fixed-slab-tamper"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/freelist.thpkg.json"
+design = ".design/build/fixed-collections.md"
+reference = ["stdlib/kernel-primitives/collections/freelist.th"]
+conformance_ops = ["fixed-freelist-package-closure"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/collections/freelist.th"
+design = ".design/build/fixed-collections.md"
+reference = ["stdlib/kernel-primitives/freelist.thpkg.json"]
+conformance_ops = ["fixed-freelist-push", "fixed-freelist-pop", "fixed-freelist-reuse", "fixed-freelist-fail-closed"]
+
+[[route]]
+crate_pattern = "forge/tests/fixed_freelist.rs"
+design = ".design/build/fixed-collections.md"
+reference = ["stdlib/kernel-primitives/freelist.thpkg.json"]
+conformance_ops = ["fixed-freelist-l3", "fixed-freelist-adversarial", "fixed-freelist-kernel-replay", "fixed-freelist-tamper"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/intrusive.thpkg.json"
+design = ".design/build/fixed-collections.md"
+reference = ["stdlib/kernel-primitives/collections/intrusive.th"]
+conformance_ops = ["fixed-intrusive-package-closure"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/collections/intrusive.th"
+design = ".design/build/fixed-collections.md"
+reference = ["stdlib/kernel-primitives/intrusive.thpkg.json"]
+conformance_ops = ["fixed-intrusive-push", "fixed-intrusive-pop", "fixed-intrusive-fifo", "fixed-intrusive-fail-closed"]
+
+[[route]]
+crate_pattern = "forge/tests/fixed_intrusive.rs"
+design = ".design/build/fixed-collections.md"
+reference = ["stdlib/kernel-primitives/intrusive.thpkg.json"]
+conformance_ops = ["fixed-intrusive-l3", "fixed-intrusive-adversarial", "fixed-intrusive-kernel-replay", "fixed-intrusive-runtime", "fixed-intrusive-tamper"]
+
+# Policy-free bounded waiting and synchronization state mechanics. Frozen
+# machine-facing operations are declarations; no consumer platform is bundled.
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/synchronization.thpkg.json"
+design = ".design/build/synchronization-primitives.md"
+reference = []
+conformance_ops = ["synchronization-package-closure"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/synchronization/ticket_lock.th"
+design = ".design/build/synchronization-primitives.md"
+reference = []
+conformance_ops = ["ticket-lock-fifo", "ticket-lock-stale", "ticket-lock-exhaustion"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/synchronization/barrier.th"
+design = ".design/build/synchronization-primitives.md"
+reference = []
+conformance_ops = ["barrier-membership-freeze", "barrier-stale-generation", "barrier-exhaustion"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/synchronization/epoch_ack.th"
+design = ".design/build/synchronization-primitives.md"
+reference = []
+conformance_ops = ["epoch-ack-snapshot", "epoch-ack-framing", "epoch-ack-token-rejection", "epoch-ack-exhaustion"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/synchronization/mpsc_queue.th"
+design = ".design/build/synchronization-primitives.md"
+reference = []
+conformance_ops = ["mpsc-reservation-publication", "mpsc-fifo", "mpsc-token-rejection", "mpsc-exhaustion"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/synchronization/work_deque.th"
+design = ".design/build/synchronization-primitives.md"
+reference = []
+conformance_ops = ["work-deque-owner-lifo", "work-deque-thief-fifo", "work-deque-last-race", "work-deque-token-rejection", "work-deque-exhaustion"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/synchronization/once.th"
+design = ".design/build/synchronization-primitives.md"
+reference = []
+conformance_ops = ["once-single-winner", "once-stale-token", "once-poison", "once-exhaustion"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/synchronization/refcount.th"
+design = ".design/build/synchronization-primitives.md"
+reference = []
+conformance_ops = ["refcount-last-release", "refcount-no-resurrection", "refcount-exhaustion"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/synchronization/seqlock.th"
+design = ".design/build/synchronization-primitives.md"
+reference = []
+conformance_ops = ["seqlock-writer-epoch", "seqlock-stale-read", "seqlock-exhaustion"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/synchronization/wait.th"
+design = ".design/build/synchronization-primitives.md"
+reference = []
+conformance_ops = ["bounded-wait-change", "bounded-wait-timeout", "frozen-wait-boundaries"]
+
+[[route]]
+crate_pattern = "forge/tests/synchronization_primitives.rs"
+design = ".design/build/synchronization-primitives.md"
+reference = ["stdlib/kernel-primitives/synchronization.thpkg.json"]
+conformance_ops = ["synchronization-l3", "synchronization-adversarial", "synchronization-replay"]
+
+# Policy-free ownership discipline. The route intentionally names only the
+# Thermite package and its proof harness; there is no runtime Rust implementation.
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/ownership.thpkg.json"
+design = ".design/build/generation-ownership.md"
+reference = []
+conformance_ops = ["generation-package-closure"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/ownership/generation.th"
+design = ".design/build/generation-ownership.md"
+reference = []
+conformance_ops = ["generation-ledger", "stale-handle", "double-release", "rights-monotonicity"]
+
+[[route]]
+crate_pattern = "forge/tests/ownership_primitives.rs"
+design = ".design/build/generation-ownership.md"
+reference = ["stdlib/kernel-primitives/ownership.thpkg.json"]
+conformance_ops = ["generation-l3", "generation-adversarial", "generation-strict-replay"]
+
+# Reusable module-local construction opacity. These routes are additive to the
+# syntax/lowering/package/ownership designs because this cross-cutting primitive
+# composes all four layers and carries its own aggregate drift pin.
+[[route]]
+crate_pattern = "thermite-syntax/src/ast.rs"
+design = ".design/build/opaque-library-state.md"
+reference = []
+conformance_ops = ["opaque-ast"]
+
+[[route]]
+crate_pattern = "thermite-syntax/src/parser.rs"
+design = ".design/build/opaque-library-state.md"
+reference = []
+conformance_ops = ["opaque-parse"]
+
+[[route]]
+crate_pattern = "thermite-syntax/tests/opaque_parse.rs"
+design = ".design/build/opaque-library-state.md"
+reference = []
+conformance_ops = ["opaque-parse-negative"]
+
+[[route]]
+crate_pattern = "thermite-lower/src/lower.rs"
+design = ".design/build/opaque-library-state.md"
+reference = []
+conformance_ops = ["opaque-l3-visibility"]
+
+[[route]]
+crate_pattern = "thermite-lower/tests/opaque_state.rs"
+design = ".design/build/opaque-library-state.md"
+reference = []
+conformance_ops = ["opaque-verus", "opaque-rust-visibility"]
+
+[[route]]
+crate_pattern = "forge/src/verified_build.rs"
+design = ".design/build/opaque-library-state.md"
+reference = []
+conformance_ops = ["opaque-package-gate"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/ownership/generation.th"
+design = ".design/build/opaque-library-state.md"
+reference = ["stdlib/kernel-primitives/ownership.thpkg.json"]
+conformance_ops = ["opaque-generation-state"]
+
+[[route]]
+crate_pattern = "forge/tests/ownership_primitives.rs"
+design = ".design/build/opaque-library-state.md"
+reference = ["stdlib/kernel-primitives/ownership.thpkg.json"]
+conformance_ops = ["opaque-generation-adversarial", "opaque-receipt-tamper"]
 
 [[route]]
 crate_pattern = ".github/workflows/ci.yml"
@@ -1414,3 +2557,60 @@ crate_pattern = "tooling/control-plane-check.py"
 design = ".design/tooling/control-plane.md"
 reference = []
 conformance_ops = []
+
+# ---------------------------------------------------------------------
+# tooling — permanent primitive-only repository boundary
+# ---------------------------------------------------------------------
+# The tracked Git index is the canonical source allowlist. These declarative
+# routes make the gate, oracle, and its Make/CI wiring content-pinned together.
+[[route]]
+crate_pattern = "tooling/primitive-only-gate.py"
+design = ".design/tooling/primitive-only-gate.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "tooling/tests/test_primitive_only_gate.py"
+design = ".design/tooling/primitive-only-gate.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "Makefile"
+design = ".design/tooling/primitive-only-gate.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = ".github/workflows/ci.yml"
+design = ".design/tooling/primitive-only-gate.md"
+reference = []
+conformance_ops = []
+
+# ---------------------------------------------------------------------
+# allocation-free static-storage ownership — generic Thermite protocol
+# ---------------------------------------------------------------------
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/static-storage.thpkg.json"
+design = ".design/build/static-storage.md"
+reference = ["stdlib/kernel-primitives/storage/static_storage.th"]
+conformance_ops = ["canonical-static-storage-package"]
+
+[[route]]
+crate_pattern = "stdlib/kernel-primitives/storage/static_storage.th"
+design = ".design/build/static-storage.md"
+reference = ["stdlib/kernel-primitives/static-storage.thpkg.json"]
+conformance_ops = ["static-storage-lifecycle", "sealed-fill-witness"]
+
+[[route]]
+crate_pattern = "thermite-tv/src/exec_stmt_encode.rs"
+design = ".design/build/static-storage.md"
+reference = ["stdlib/kernel-primitives/storage/static_storage.th"]
+conformance_ops = ["bounded-if-result-context"]
+
+[[route]]
+crate_pattern = "forge/tests/static_storage_primitives.rs"
+design = ".design/build/static-storage.md"
+reference = ["stdlib/kernel-primitives/static-storage.thpkg.json"]
+conformance_ops = ["static-storage-l3-floor", "static-storage-replay", "static-storage-runtime"]

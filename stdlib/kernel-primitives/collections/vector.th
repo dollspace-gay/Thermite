@@ -1,0 +1,260 @@
+const FIXED_VEC_CAPACITY: usize = 64;
+
+struct FixedVec64 {
+  slots: [u64; FIXED_VEC_CAPACITY],
+  len: usize,
+}
+
+enum FixedVecPush64 {
+  VecPushed64 {
+    vector: FixedVec64,
+  },
+  VecFull64 {
+    vector: FixedVec64,
+    value: u64,
+  },
+}
+
+enum FixedVecPop64 {
+  VecPopped64 {
+    vector: FixedVec64,
+    value: u64,
+  },
+  VecEmpty64 {
+    vector: FixedVec64,
+  },
+}
+
+spec fn fixed_vec_wf_spec(vector: &FixedVec64) -> bool
+  dec vector.len
+{
+  vector.len <= FIXED_VEC_CAPACITY
+}
+
+fn fixed_vec_wf(vector: &FixedVec64) -> bool
+  req true
+  ens result == fixed_vec_wf_spec(vector)
+  fx pure
+{
+  vector.len <= FIXED_VEC_CAPACITY
+}
+
+fn fixed_vec_empty() -> FixedVec64
+  req true
+  ens fixed_vec_wf_spec(&result)
+  ens result.len == 0
+  ens result.slots[0] == 0
+    && result.slots[FIXED_VEC_CAPACITY - 1] == 0
+  fx pure
+{
+  FixedVec64 {
+    slots: [0; FIXED_VEC_CAPACITY],
+    len: 0,
+  }
+}
+
+fn fixed_vec_len(vector: &FixedVec64) -> usize
+  req fixed_vec_wf_spec(vector)
+  ens result == vector.len
+  ens result <= FIXED_VEC_CAPACITY
+  fx pure
+{
+  vector.len
+}
+
+fn fixed_vec_is_empty(vector: &FixedVec64) -> bool
+  req fixed_vec_wf_spec(vector)
+  ens result == (vector.len == 0)
+  fx pure
+{
+  vector.len == 0
+}
+
+fn fixed_vec_is_full(vector: &FixedVec64) -> bool
+  req fixed_vec_wf_spec(vector)
+  ens result == (vector.len == FIXED_VEC_CAPACITY)
+  fx pure
+{
+  vector.len == FIXED_VEC_CAPACITY
+}
+
+fn fixed_vec_get(vector: &FixedVec64, index: usize) -> Option<u64>
+  req fixed_vec_wf_spec(vector)
+  ens match result {
+    Some(value) => index < vector.len && value == vector.slots[index],
+    None => index >= vector.len,
+  }
+  fx pure
+{
+  if index < vector.len {
+    Some(vector.slots[index])
+  } else {
+    None
+  }
+}
+
+fn fixed_vec_set(
+  vector: FixedVec64,
+  index: usize,
+  value: u64,
+) -> FixedVec64
+  req fixed_vec_wf_spec(&vector) && index < vector.len
+  ens fixed_vec_wf_spec(&result)
+  ens result.len == vector.len
+  ens result.slots[index] == value
+  fx pure
+{
+  let mut slots: [u64; FIXED_VEC_CAPACITY] = vector.slots;
+  slots[index] = value;
+  FixedVec64 {
+    slots: slots,
+    len: vector.len,
+  }
+}
+
+fn fixed_vec_push(vector: FixedVec64, value: u64) -> FixedVecPush64
+  req fixed_vec_wf_spec(&vector)
+  ens match result {
+    FixedVecPush64::VecPushed64 { vector: next } =>
+      vector.len < FIXED_VEC_CAPACITY
+        && fixed_vec_wf_spec(&next)
+        && next.len == vector.len + 1
+        && next.slots[vector.len] == value
+        && (vector.len == 0 || next.slots[0] == vector.slots[0]),
+    FixedVecPush64::VecFull64 { vector: next, value: returned } =>
+      vector.len == FIXED_VEC_CAPACITY
+        && fixed_vec_wf_spec(&next)
+        && next.len == vector.len
+        && returned == value,
+  }
+  fx pure
+{
+  if vector.len == FIXED_VEC_CAPACITY {
+    FixedVecPush64::VecFull64 {
+      vector: vector,
+      value: value,
+    }
+  } else {
+    let index: usize = vector.len;
+    let mut slots: [u64; FIXED_VEC_CAPACITY] = vector.slots;
+    slots[index] = value;
+    FixedVecPush64::VecPushed64 {
+      vector: FixedVec64 {
+        slots: slots,
+        len: vector.len + 1,
+      },
+    }
+  }
+}
+
+fn fixed_vec_pop(vector: FixedVec64) -> FixedVecPop64
+  req fixed_vec_wf_spec(&vector)
+  ens match result {
+    FixedVecPop64::VecPopped64 { vector: next, value } =>
+      vector.len != 0
+        && value == vector.slots[vector.len - 1]
+        && fixed_vec_wf_spec(&next)
+        && next.len == vector.len - 1
+        && next.slots[vector.len - 1] == 0
+        && (vector.len <= 1 || next.slots[0] == vector.slots[0]),
+    FixedVecPop64::VecEmpty64 { vector: next } =>
+      vector.len == 0
+        && fixed_vec_wf_spec(&next)
+        && next.len == vector.len,
+  }
+  fx pure
+{
+  if vector.len == 0 {
+    FixedVecPop64::VecEmpty64 { vector: vector }
+  } else {
+    let index: usize = vector.len - 1;
+    let value: u64 = vector.slots[index];
+    let mut slots: [u64; FIXED_VEC_CAPACITY] = vector.slots;
+    slots[index] = 0;
+    FixedVecPop64::VecPopped64 {
+      vector: FixedVec64 {
+        slots: slots,
+        len: vector.len - 1,
+      },
+      value: value,
+    }
+  }
+}
+
+fn fixed_vec_random_access_probe(first: u64, second: u64) -> bool
+  req true
+  ens result
+  fx pure
+{
+  let empty: FixedVec64 = fixed_vec_empty();
+  match fixed_vec_push(empty, first) {
+    FixedVecPush64::VecPushed64 { vector: one } =>
+      match fixed_vec_push(one, second) {
+        FixedVecPush64::VecPushed64 { vector: two } =>
+          match fixed_vec_get(&two, 0) {
+            Some(got_first) => match fixed_vec_get(&two, 1) {
+              Some(got_second) => got_first == first && got_second == second,
+              None => false,
+            },
+            None => false,
+          },
+        FixedVecPush64::VecFull64 { vector: _, value: _ } => false,
+      },
+    FixedVecPush64::VecFull64 { vector: _, value: _ } => false,
+  }
+}
+
+fn fixed_vec_lifo_probe(first: u64, second: u64) -> bool
+  req true
+  ens result
+  fx pure
+{
+  let empty: FixedVec64 = fixed_vec_empty();
+  match fixed_vec_push(empty, first) {
+    FixedVecPush64::VecPushed64 { vector: one } =>
+      match fixed_vec_push(one, second) {
+        FixedVecPush64::VecPushed64 { vector: two } =>
+          match fixed_vec_pop(two) {
+            FixedVecPop64::VecPopped64 { vector: one_left, value: got_second } =>
+              match fixed_vec_pop(one_left) {
+                FixedVecPop64::VecPopped64 { vector: none_left, value: got_first } =>
+                  got_second == second
+                    && got_first == first
+                    && fixed_vec_is_empty(&none_left),
+                FixedVecPop64::VecEmpty64 { vector: _ } => false,
+              },
+            FixedVecPop64::VecEmpty64 { vector: _ } => false,
+          },
+        FixedVecPush64::VecFull64 { vector: _, value: _ } => false,
+      },
+    FixedVecPush64::VecFull64 { vector: _, value: _ } => false,
+  }
+}
+
+fn fixed_vec_set_at_zero_after_push(
+  vector: FixedVec64,
+  replacement: u64,
+) -> bool
+  req fixed_vec_wf_spec(&vector) && vector.len != 0
+  ens result
+  fx pure
+{
+  let updated: FixedVec64 = fixed_vec_set(vector, 0, replacement);
+  match fixed_vec_get(&updated, 0) {
+    Some(got) => got == replacement && fixed_vec_len(&updated) != 0,
+    None => false,
+  }
+}
+
+fn fixed_vec_set_probe(value: u64, replacement: u64) -> bool
+  req true
+  ens result
+  fx pure
+{
+  let empty: FixedVec64 = fixed_vec_empty();
+  match fixed_vec_push(empty, value) {
+    FixedVecPush64::VecPushed64 { vector: one } =>
+      fixed_vec_set_at_zero_after_push(one, replacement),
+    FixedVecPush64::VecFull64 { vector: _, value: _ } => false,
+  }
+}

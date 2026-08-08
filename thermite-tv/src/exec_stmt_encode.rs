@@ -60,10 +60,11 @@
 //! [`crate::exec_encode::RefEncodeError::Unsupported`] (R-CODE-2 / R-APG-1 — never a
 //! panic, never a silent wrong denotation): a `Stmt::Loop`/`Break`/`Continue` (step
 //! 2.2.2, kernel-gated), a mid-body early `return` nested in an `if` branch (the
-//! multi-exit CPS form, out of v1), a `match`-as-statement, a non-scalar mutation
-//! (`Vec::push`, a v2 sequence theory), and a re-shadow `let x = ..; let x = ..` in
-//! the same block (the flat name->value env can't represent it). A silent wrong
-//! denotation would compare a wrong reference.
+//! multi-exit CPS form, out of v1), a `match`-as-statement, aggregate mutation
+//! other than an exact indexed write to a declared native fixed array (`Vec::push`,
+//! field mutation, and projection mutation need richer theories), and a re-shadow
+//! `let x = ..; let x = ..` in the same block (the flat name->value env can't
+//! represent it). A silent wrong denotation would compare a wrong reference.
 //!
 //! ## REQ status
 //!
@@ -80,8 +81,8 @@
 //!
 //! [`loop_ref_obligations`] extends the straight-line state-transformer to a v1
 //! frozen-subset `while` loop (`loop-tv.md` REQ-1/REQ-2): a single `while <cond>`
-//! with declared `inv`+`dec`, a straight-line scalar body, the loop the last
-//! statement before the tail. It produces the three per-run reference pieces the
+//! with declared `inv`+`dec`, a straight-line scalar or finite-record body, the loop
+//! last before the tail. It produces the while-rule pieces plus an exact full-result
 //! obligation emitters in [`crate::obligation`] turn into Z3-checkable Verus units:
 //! entry (`inv` holds on the pre-loop entry state), preservation (one iteration of the
 //! body carries `inv ∧ cond` to `inv`, reusing the shipped [`body_ref_state`] step),
@@ -90,7 +91,7 @@
 //! produce a closed form (it is a fixpoint), so the post-loop cells are havocked +
 //! re-constrained to `inv ∧ ¬cond` (the analogue of how Verus itself models a
 //! loop's after-state). Every out-of-v1 loop (`loop`-kind, `break`/`continue`, a
-//! mid-body `return`, a nested loop, non-scalar state, a trivially-weak `inv`) is an
+//! mid-body `return`, a nested loop, non-finite/aliased state, a trivially-weak `inv`) is an
 //! [`RefEncodeError::Unsupported`] (R-HONEST-3 — Skipped, never silently
 //! Faithful).
 //!
@@ -106,21 +107,326 @@
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
-use thermite_syntax::ast::{BinOp, Block, Clause, Expr, IndexArg, LoopKind, LoopNode, Stmt};
+use thermite_syntax::ast::{
+    BinOp, Block, Clause, Expr, IndexArg, LoopKind, LoopNode, MatchArm, Pattern, Stmt, Type,
+};
 
 use crate::exec_encode::{exec_ref_value, ExecRefCtx, RefEncodeError};
 
+/// One direct field observed by named-record lifecycle TV. Array fields compare
+/// their complete finite views; every other admitted finite field uses value
+/// equality in the final-state obligation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecordFieldFrame {
+    pub name: String,
+    pub array_view: bool,
+    pub ty: Option<Type>,
+}
+
+impl RecordFieldFrame {
+    pub fn new(name: impl Into<String>, array_view: bool) -> Self {
+        Self {
+            name: name.into(),
+            array_view,
+            ty: None,
+        }
+    }
+
+    /// Construct a field frame with its exact independently parsed source type.
+    /// Nested lifecycle reconstruction requires this; the historical untyped
+    /// constructor remains available for direct-field-only test frames.
+    pub fn typed(name: impl Into<String>, ty: Type) -> Self {
+        Self {
+            name: name.into(),
+            array_view: matches!(ty, Type::Array { .. }),
+            ty: Some(ty),
+        }
+    }
+}
+
+/// One exclusive named-record parameter and its complete ordered direct-field
+/// frame. The field inventory comes from the independently parsed declaration,
+/// not from production lowering text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MutableRecordFrame {
+    pub name: String,
+    /// Exact nominal source type when the frame comes from a parsed function
+    /// signature. Historical hand-built tests may leave it absent; mutable-call
+    /// composition requires it on both formal and actual roots.
+    pub type_name: Option<String>,
+    pub fields: Vec<RecordFieldFrame>,
+}
+
+/// One immutably borrowed finite named-record parameter and its complete ordered
+/// direct-field frame.  Keeping this distinct from [`MutableRecordFrame`] makes
+/// the alias rule explicit: a shared root may be observed by any number of shared
+/// formals, but it may not overlap any exclusive actual in the same call.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SharedRecordFrame {
+    pub name: String,
+    pub type_name: String,
+    pub fields: Vec<RecordFieldFrame>,
+}
+
+/// One finite named-record parameter passed by value. Logical sequence overlays
+/// cannot be converted back into a native fixed array merely to invoke such a
+/// callee, so the independent lifecycle interpreter snapshots the parameter
+/// leafwise and interprets the reachable source body directly.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ValueRecordFrame {
+    pub name: String,
+    pub type_name: String,
+    pub fields: Vec<RecordFieldFrame>,
+}
+
+/// One exclusively borrowed slice or fixed-array root with its exact parsed
+/// pointee type.  Call-effect composition compares this type structurally and
+/// threads the complete finite sequence from `old(root)@` to `final(root)@`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MutableIndexedFrame {
+    pub name: String,
+    pub pointee: Type,
+}
+
+/// One immutably borrowed slice or fixed-array root with its exact parsed
+/// pointee type. Shared formals snapshot the caller's current complete sequence;
+/// they never contribute a copy-back state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SharedIndexedFrame {
+    pub name: String,
+    pub pointee: Type,
+}
+
+/// One independently parsed in-language callee whose body may transform
+/// exclusive finite-record/indexed parameters or consume a finite record by
+/// value. The reference side interprets this source body directly; production
+/// continues to call the ordinary generated function, so changing either column
+/// is observable.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MutableCallEffectFrame {
+    pub name: String,
+    /// All formal parameter names in signature order. Borrowed formals are
+    /// identified by `mutable_records`, `mutable_indexed`, `shared_records`,
+    /// `shared_indexed`, or `value_records`; the rest are scalar/value inputs.
+    pub params: Vec<String>,
+    /// Exact parsed formal types when this frame is source-derived. Historical
+    /// hand-built mutable-effect tests may omit them; logical by-value calls may
+    /// not.
+    pub param_types: Vec<Type>,
+    pub mutable_records: Vec<MutableRecordFrame>,
+    /// Exact finite-record formals passed by value. These are independent
+    /// snapshots and never contribute copy-back state.
+    pub value_records: Vec<ValueRecordFrame>,
+    /// Exact exclusive slice/fixed-array formals whose complete sequence state
+    /// is interpreted and copied back with the record post-state.
+    pub mutable_indexed: Vec<MutableIndexedFrame>,
+    /// Exact finite-record shared-reference formals.  These are snapshotted from
+    /// the caller's current lifecycle state and remain read-only while the callee
+    /// source body is interpreted.
+    pub shared_records: Vec<SharedRecordFrame>,
+    /// Exact shared slice/fixed-array formals snapshotted from the current
+    /// caller state. Shared/shared aliases are admitted; overlap with an
+    /// exclusive actual in the same call is rejected.
+    pub shared_indexed: Vec<SharedIndexedFrame>,
+    /// Exact parsed result type when this frame is derived from source. Logical
+    /// by-value call interpretation currently admits bounded scalar/unit results;
+    /// wider results remain fail-closed rather than losing aggregate state.
+    pub result_type: Option<Type>,
+    pub body: Block,
+}
+
+/// One finite named-record type available to owned-local body state
+/// reconstruction. The ordered field inventory is independently derived from
+/// the parsed declaration and is never inferred from production lowering text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NamedRecordFrame {
+    pub type_name: String,
+    pub fields: Vec<RecordFieldFrame>,
+}
+
+impl NamedRecordFrame {
+    pub fn new(type_name: impl Into<String>, fields: Vec<RecordFieldFrame>) -> Self {
+        Self {
+            type_name: type_name.into(),
+            fields,
+        }
+    }
+}
+
+/// Exact independently parsed payload shape for one user-enum variant. This is
+/// reference-denotation metadata, not a production-lowering artifact.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EnumVariantShapeFrame {
+    Unit,
+    Tuple(Vec<Type>),
+    Struct(Vec<RecordFieldFrame>),
+}
+
+/// One user-enum variant and its nominal owner/payload inventory.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnumVariantFrame {
+    pub enum_name: String,
+    pub variant_name: String,
+    pub shape: EnumVariantShapeFrame,
+}
+
+impl EnumVariantFrame {
+    pub fn new(
+        enum_name: impl Into<String>,
+        variant_name: impl Into<String>,
+        shape: EnumVariantShapeFrame,
+    ) -> Self {
+        Self {
+            enum_name: enum_name.into(),
+            variant_name: variant_name.into(),
+            shape,
+        }
+    }
+}
+
+impl MutableRecordFrame {
+    pub fn new(name: impl Into<String>, fields: Vec<RecordFieldFrame>) -> Self {
+        Self {
+            name: name.into(),
+            type_name: None,
+            fields,
+        }
+    }
+
+    pub fn typed(
+        name: impl Into<String>,
+        type_name: impl Into<String>,
+        fields: Vec<RecordFieldFrame>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            type_name: Some(type_name.into()),
+            fields,
+        }
+    }
+}
+
+impl SharedRecordFrame {
+    pub fn typed(
+        name: impl Into<String>,
+        type_name: impl Into<String>,
+        fields: Vec<RecordFieldFrame>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            type_name: type_name.into(),
+            fields,
+        }
+    }
+}
+
+impl ValueRecordFrame {
+    pub fn typed(
+        name: impl Into<String>,
+        type_name: impl Into<String>,
+        fields: Vec<RecordFieldFrame>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            type_name: type_name.into(),
+            fields,
+        }
+    }
+}
+
+impl MutableIndexedFrame {
+    pub fn new(name: impl Into<String>, pointee: Type) -> Self {
+        Self {
+            name: name.into(),
+            pointee,
+        }
+    }
+}
+
+impl SharedIndexedFrame {
+    pub fn new(name: impl Into<String>, pointee: Type) -> Self {
+        Self {
+            name: name.into(),
+            pointee,
+        }
+    }
+}
+
+impl MutableCallEffectFrame {
+    pub fn new(
+        name: impl Into<String>,
+        params: Vec<String>,
+        mutable_records: Vec<MutableRecordFrame>,
+        body: Block,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            params,
+            param_types: Vec::new(),
+            mutable_records,
+            value_records: Vec::new(),
+            mutable_indexed: Vec::new(),
+            shared_records: Vec::new(),
+            shared_indexed: Vec::new(),
+            result_type: None,
+            body,
+        }
+    }
+
+    /// Add exact finite-record by-value formals to this source call frame.
+    pub fn with_value_records(mut self, records: Vec<ValueRecordFrame>) -> Self {
+        self.value_records = records;
+        self
+    }
+
+    /// Bind exact parsed formal types in signature order.
+    pub fn with_param_types(mut self, param_types: Vec<Type>) -> Self {
+        self.param_types = param_types;
+        self
+    }
+
+    /// Bind the exact parsed result type used to gate logical by-value calls.
+    pub fn with_result_type(mut self, result_type: Type) -> Self {
+        self.result_type = Some(result_type);
+        self
+    }
+
+    fn has_mutable_effect(&self) -> bool {
+        !self.mutable_records.is_empty() || !self.mutable_indexed.is_empty()
+    }
+
+    /// Add exact shared finite-record formals to a mutable call-effect frame.
+    pub fn with_shared_records(mut self, records: Vec<SharedRecordFrame>) -> Self {
+        self.shared_records = records;
+        self
+    }
+
+    /// Add exact exclusive slice/fixed-array formals to this call-effect frame.
+    pub fn with_mutable_indexed(mut self, indexed: Vec<MutableIndexedFrame>) -> Self {
+        self.mutable_indexed = indexed;
+        self
+    }
+
+    /// Add exact shared slice/fixed-array formals to this call-effect frame.
+    pub fn with_shared_indexed(mut self, indexed: Vec<SharedIndexedFrame>) -> Self {
+        self.shared_indexed = indexed;
+        self
+    }
+}
+
 /// The body-reference-encoding context (REQ-2). Carries the slice-bound names (so a
 /// slice index in an RHS / tail encodes to the spec-view element value `xs[i as
-/// int]`, mirroring the obligation's `xs: &[u32]` binding) — the same information
-/// [`ExecRefCtx`] carries for the per-expr encoder, reused here for the per-RHS
-/// value encoding. It carries no `nat`-coerce set (the exec state is bounded-typed,
-/// never `nat`-coerced — the same as step 2.1).
+/// int]`, mirroring the obligation's `xs: &[u32]` binding) and the native
+/// fixed-array bindings whose reads and indexed writes use finite views — the same
+/// information [`ExecRefCtx`] carries for the per-expr encoder, reused here for
+/// the per-RHS value encoding. It carries no `nat`-coerce set (the exec state is
+/// bounded-typed, never `nat`-coerced — the same as step 2.1).
 ///
 /// This is the body dual of [`ExecRefCtx`]: where `ExecRefCtx` frames a single exec
 /// expression, `BodyRefCtx` frames a whole straight-line body. The state-threading
 /// environment is internal to [`body_ref_state`] (it is the closed-form-in-the-
-/// inputs map, not an external knob); the ctx carries only the slice-param frame.
+/// inputs map, not an external knob); the ctx carries the slice and fixed-array
+/// frames plus the result representation.
 #[derive(Debug, Clone, Default)]
 pub struct BodyRefCtx {
     /// Names bound as a slice (`&[T]`) param in the obligation — an `Index` over
@@ -128,6 +434,26 @@ pub struct BodyRefCtx {
     /// value `xs[i as int]` (delegated to [`exec_ref_value`] via the [`ExecRefCtx`]
     /// this ctx builds). Empty for the scalar-only B1-B4 bodies.
     slice_bound: BTreeSet<String>,
+    /// Slice or fixed-array parameters held through an exclusive borrow. Their
+    /// indexed writes are modeled as exact finite-sequence updates from
+    /// `old(param)@` to `final(param)@`.
+    mutable_indexed_bound: BTreeSet<String>,
+    fixed_array_bound: BTreeSet<String>,
+    fixed_array_fields: BTreeSet<String>,
+    result_is_fixed_array: bool,
+    result_is_unit: bool,
+    mutable_records: Vec<MutableRecordFrame>,
+    mutable_indexed: Vec<MutableIndexedFrame>,
+    shared_records: Vec<SharedRecordFrame>,
+    shared_indexed: Vec<SharedIndexedFrame>,
+    /// Exact source bodies and record/indexed formal frames for reachable
+    /// in-language mutable-reference callees. Boundary declarations never enter
+    /// this map.
+    mutable_call_effects: BTreeMap<String, MutableCallEffectFrame>,
+    named_records: BTreeMap<String, NamedRecordFrame>,
+    constructor_records: BTreeMap<String, NamedRecordFrame>,
+    enum_variants: BTreeMap<String, EnumVariantFrame>,
+    result_record: Option<NamedRecordFrame>,
 }
 
 impl BodyRefCtx {
@@ -139,13 +465,275 @@ impl BodyRefCtx {
     {
         BodyRefCtx {
             slice_bound: names.into_iter().map(Into::into).collect(),
+            mutable_indexed_bound: BTreeSet::new(),
+            fixed_array_bound: BTreeSet::new(),
+            fixed_array_fields: BTreeSet::new(),
+            result_is_fixed_array: false,
+            result_is_unit: false,
+            mutable_records: Vec::new(),
+            mutable_indexed: Vec::new(),
+            shared_records: Vec::new(),
+            shared_indexed: Vec::new(),
+            mutable_call_effects: BTreeMap::new(),
+            named_records: BTreeMap::new(),
+            constructor_records: BTreeMap::new(),
+            enum_variants: BTreeMap::new(),
+            result_record: None,
         }
+    }
+
+    /// Add the exclusive slice/fixed-array borrows whose indexed writes are part
+    /// of the observable body state.
+    pub fn with_mutable_indexed_bound<I, S>(mut self, names: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.mutable_indexed_bound = names.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Add native fixed-array inputs to the body frame.
+    pub fn with_fixed_array_bound<I, S>(mut self, names: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.fixed_array_bound = names.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Add exact direct `root.field` paths whose parsed field type is a native
+    /// fixed array.
+    pub fn with_fixed_array_fields<I, S>(mut self, paths: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.fixed_array_fields = paths.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Record that the body's result is a native fixed array and must be
+    /// compared extensionally through its finite sequence view.
+    pub fn with_fixed_array_result(mut self, is_array: bool) -> Self {
+        self.result_is_fixed_array = is_array;
+        self
+    }
+
+    /// Record whether a tail-less body has the explicit unit result type.
+    pub fn with_unit_result(mut self, is_unit: bool) -> Self {
+        self.result_is_unit = is_unit;
+        self
+    }
+
+    /// Add complete direct-field frames for exclusive named-record borrows.
+    pub fn with_mutable_records(mut self, records: Vec<MutableRecordFrame>) -> Self {
+        self.mutable_records = records;
+        self
+    }
+
+    /// Add exact exclusive slice/fixed-array root metadata. The historical name
+    /// set remains the observation switch; these frames additionally make call
+    /// argument types independently comparable.
+    pub fn with_mutable_indexed(mut self, indexed: Vec<MutableIndexedFrame>) -> Self {
+        self.mutable_indexed = indexed;
+        self
+    }
+
+    /// Add complete direct-field frames for immutably borrowed named records.
+    pub fn with_shared_records(mut self, records: Vec<SharedRecordFrame>) -> Self {
+        self.shared_records = records;
+        self
+    }
+
+    /// Add exact shared slice/fixed-array root metadata. These roots are
+    /// immutable snapshots but may be supplied to a mutable callee as shared
+    /// actuals when they do not overlap an exclusive actual.
+    pub fn with_shared_indexed(mut self, indexed: Vec<SharedIndexedFrame>) -> Self {
+        self.shared_indexed = indexed;
+        self
+    }
+
+    /// Add reachable in-language mutable-reference callees. Forge supplies these
+    /// from the already validated unique function namespace of the reachable
+    /// source closure.
+    pub fn with_mutable_call_effects(mut self, effects: Vec<MutableCallEffectFrame>) -> Self {
+        self.mutable_call_effects = effects
+            .into_iter()
+            .map(|effect| (effect.name.clone(), effect))
+            .collect();
+        self
+    }
+
+    /// Add the exact finite named-record declarations usable by typed owned
+    /// locals in this body.
+    pub fn with_named_records(mut self, records: Vec<NamedRecordFrame>) -> Self {
+        self.named_records = records
+            .into_iter()
+            .map(|record| (record.type_name.clone(), record))
+            .collect();
+        self
+    }
+
+    /// Add every parsed record declaration used to recover constructor-field
+    /// types. This is deliberately distinct from `named_records`, whose smaller
+    /// structural set controls admission of owned record mutation.
+    pub fn with_constructor_records(mut self, records: Vec<NamedRecordFrame>) -> Self {
+        self.constructor_records = records
+            .into_iter()
+            .map(|record| (record.type_name.clone(), record))
+            .collect();
+        self
+    }
+
+    /// Add the independently parsed user-enum variant ownership map used to
+    /// qualify unqualified patterns in body-reference `match` expressions.
+    pub fn with_enum_variants<I>(mut self, variants: I) -> Self
+    where
+        I: IntoIterator<Item = EnumVariantFrame>,
+    {
+        self.enum_variants = variants
+            .into_iter()
+            .map(|variant| (variant.variant_name.clone(), variant))
+            .collect();
+        self
+    }
+
+    /// Remove enum constructor spellings shadowed by value bindings in the
+    /// current function frame.  Thermite resolves a bare path such as `Idle`
+    /// to a parameter/local before considering an unqualified enum variant, so
+    /// the independent reference must preserve that lexical distinction too.
+    pub fn with_bound_value_names<I, S>(mut self, names: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        for name in names {
+            self.enum_variants.remove(name.as_ref());
+        }
+        self
+    }
+
+    /// Record the exact field frame of a named-record result. Result equality is
+    /// then emitted per field, using complete sequence views for native arrays.
+    pub fn with_result_record(mut self, record: Option<NamedRecordFrame>) -> Self {
+        self.result_record = record;
+        self
     }
 
     /// Build the [`ExecRefCtx`] the per-RHS value encoder uses (the slice-bound set
     /// passes straight through — every RHS / tail value is a step-2.1 exec value).
     fn exec_ref_ctx(&self) -> ExecRefCtx {
         ExecRefCtx::with_slice_bound(self.slice_bound.iter().cloned())
+            .with_fixed_array_bound(self.fixed_array_bound.iter().cloned())
+            .with_fixed_array_fields(self.fixed_array_fields.iter().cloned())
+    }
+
+    fn is_mutable_indexed_bound(&self, name: &str) -> bool {
+        self.mutable_indexed_bound.contains(name)
+    }
+
+    fn named_record(&self, type_name: &str) -> Option<&NamedRecordFrame> {
+        self.named_records.get(type_name)
+    }
+
+    fn constructor_record(&self, type_name: &str) -> Option<&NamedRecordFrame> {
+        self.constructor_records.get(type_name)
+    }
+
+    fn enum_variant(&self, path: &[String]) -> Option<&EnumVariantFrame> {
+        match path {
+            [variant] => self.enum_variants.get(variant),
+            [enumeration, variant] => self
+                .enum_variants
+                .get(variant)
+                .filter(|frame| frame.enum_name == *enumeration),
+            _ => None,
+        }
+    }
+
+    fn without_enum_variants(&self, names: &BTreeSet<String>) -> Self {
+        let mut scoped = self.clone();
+        for name in names {
+            scoped.enum_variants.remove(name);
+        }
+        scoped
+    }
+
+    fn mutable_record(&self, name: &str) -> Option<&MutableRecordFrame> {
+        self.mutable_records
+            .iter()
+            .find(|record| record.name == name)
+    }
+
+    fn shared_record(&self, name: &str) -> Option<&SharedRecordFrame> {
+        self.shared_records
+            .iter()
+            .find(|record| record.name == name)
+    }
+
+    fn mutable_indexed(&self, name: &str) -> Option<&MutableIndexedFrame> {
+        self.mutable_indexed
+            .iter()
+            .find(|indexed| indexed.name == name)
+    }
+
+    fn shared_indexed(&self, name: &str) -> Option<&SharedIndexedFrame> {
+        self.shared_indexed
+            .iter()
+            .find(|indexed| indexed.name == name)
+    }
+
+    fn mutable_call_effect(&self, name: &str) -> Option<&MutableCallEffectFrame> {
+        self.mutable_call_effects
+            .get(name)
+            .filter(|effect| effect.has_mutable_effect())
+    }
+
+    fn logical_value_call_effect(&self, name: &str) -> Option<&MutableCallEffectFrame> {
+        self.mutable_call_effects.get(name).filter(|effect| {
+            !effect.has_mutable_effect()
+                && !effect.value_records.is_empty()
+                && effect.shared_records.is_empty()
+                && effect.shared_indexed.is_empty()
+                && effect.params.len() == effect.param_types.len()
+                && effect
+                    .params
+                    .iter()
+                    .zip(&effect.param_types)
+                    .all(|(param, ty)| match ty {
+                        Type::Prim(_) | Type::Unit => true,
+                        Type::Named(type_name) => effect
+                            .value_records
+                            .iter()
+                            .any(|record| record.name == *param && record.type_name == *type_name),
+                        _ => false,
+                    })
+        })
+    }
+
+    fn logical_scalar_value_call_effect(&self, name: &str) -> Option<&MutableCallEffectFrame> {
+        self.logical_value_call_effect(name)
+            .filter(|effect| matches!(effect.result_type, Some(Type::Prim(_)) | Some(Type::Unit)))
+    }
+
+    fn logical_record_value_call_effect(&self, name: &str) -> Option<&MutableCallEffectFrame> {
+        self.logical_value_call_effect(name).filter(|effect| {
+            matches!(
+                effect.result_type.as_ref(),
+                Some(Type::Named(type_name)) if self.named_record(type_name).is_some()
+            )
+        })
+    }
+
+    fn qualify_pattern_path(&self, path: &[String]) -> String {
+        if let [variant] = path {
+            if let Some(frame) = self.enum_variants.get(variant) {
+                return format!("{}::{variant}", frame.enum_name);
+            }
+        }
+        path.join("::")
     }
 }
 
@@ -156,7 +744,438 @@ impl BodyRefCtx {
 /// be encoded by reusing [`exec_ref_value`] on the substituted [`Expr`] — the
 /// independence boundary (the per-RHS bounded-value reference is unchanged), so the
 /// only new logic is the substitution + threading.
-type Env = BTreeMap<String, Expr>;
+#[derive(Clone, Default)]
+struct Env {
+    values: BTreeMap<String, Expr>,
+    fixed_arrays: BTreeSet<String>,
+    named_records: BTreeMap<String, String>,
+}
+
+impl Env {
+    fn new() -> Self {
+        Self::default()
+    }
+
+    fn contains_key(&self, name: &str) -> bool {
+        self.values.contains_key(name)
+    }
+
+    fn get(&self, name: &str) -> Option<&Expr> {
+        self.values.get(name)
+    }
+
+    fn insert(&mut self, name: String, value: Expr) {
+        self.values.insert(name, value);
+    }
+
+    fn keys(&self) -> impl Iterator<Item = &String> {
+        self.values.keys()
+    }
+
+    fn mark_fixed_array(&mut self, name: String) {
+        self.fixed_arrays.insert(name);
+    }
+
+    fn is_fixed_array(&self, name: &str) -> bool {
+        self.fixed_arrays.contains(name)
+    }
+
+    fn mark_named_record(&mut self, name: String, type_name: String) {
+        self.named_records.insert(name, type_name);
+    }
+
+    fn named_record_type(&self, name: &str) -> Option<&str> {
+        self.named_records.get(name).map(String::as_str)
+    }
+
+    fn without_bindings(&self, names: &BTreeSet<String>) -> Self {
+        let mut scoped = self.clone();
+        for name in names {
+            scoped.values.remove(name);
+            scoped.fixed_arrays.remove(name);
+            scoped.named_records.remove(name);
+        }
+        scoped
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum NestedLvalueStep {
+    Field(String),
+    Index(Expr),
+}
+
+fn nested_lvalue_path(target: &Expr) -> Result<(String, Vec<NestedLvalueStep>), RefEncodeError> {
+    fn collect(expr: &Expr, steps: &mut Vec<NestedLvalueStep>) -> Result<String, RefEncodeError> {
+        match expr {
+            Expr::Path(path) => match path.as_slice() {
+                [root] => Ok(root.clone()),
+                _ => Err(RefEncodeError::Unsupported(
+                    "nested mutation root must be one local or parameter name".to_string(),
+                )),
+            },
+            Expr::Field { receiver, name } => {
+                let root = collect(receiver, steps)?;
+                steps.push(NestedLvalueStep::Field(name.clone()));
+                Ok(root)
+            }
+            Expr::Index {
+                base,
+                index: IndexArg::Single(index),
+            } => {
+                let root = collect(base, steps)?;
+                steps.push(NestedLvalueStep::Index(index.as_ref().clone()));
+                Ok(root)
+            }
+            _ => Err(RefEncodeError::Unsupported(
+                "nested mutation admits exact fields and optionally one final single fixed-array index"
+                    .to_string(),
+            )),
+        }
+    }
+
+    let mut steps = Vec::new();
+    let root = collect(target, &mut steps)?;
+    Ok((root, steps))
+}
+
+fn target_contains_field(target: &Expr) -> bool {
+    match target {
+        Expr::Field { .. } => true,
+        Expr::Index { base, .. } => target_contains_field(base),
+        _ => false,
+    }
+}
+
+fn reference_expr_is_spec_int(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::Binary {
+            op: BinOp::Add
+                | BinOp::Sub
+                | BinOp::Mul
+                | BinOp::Div
+                | BinOp::Rem
+                | BinOp::Shl
+                | BinOp::Shr
+                | BinOp::BitAnd
+                | BinOp::BitOr
+                | BinOp::BitXor,
+            ..
+        }
+    )
+}
+
+fn contextualize_assignment_value(expr: Expr, target_ty: &Type, spec_int: bool) -> Expr {
+    if spec_int
+        && matches!(
+            target_ty,
+            Type::Prim(
+                thermite_syntax::PrimType::U8
+                    | thermite_syntax::PrimType::U16
+                    | thermite_syntax::PrimType::U32
+                    | thermite_syntax::PrimType::U64
+                    | thermite_syntax::PrimType::Usize
+            )
+        )
+    {
+        Expr::Cast {
+            expr: Box::new(expr),
+            ty: target_ty.clone(),
+        }
+    } else {
+        expr
+    }
+}
+
+/// Restore the bounded type supplied by an aggregate constructor field.  A
+/// reference term appears in an `ensures` expression, where an unsuffixed
+/// arithmetic literal otherwise lifts the whole expression to mathematical
+/// `int`; construction of a parsed `u64`/`usize` field must instead denote the
+/// same bounded operation as the executable body.
+fn contextualize_value_for_type(
+    expr: Expr,
+    target_ty: &Type,
+    ctx: &BodyRefCtx,
+) -> Result<Expr, RefEncodeError> {
+    let expr = contextualize_constructor_value(expr, ctx)?;
+    if reference_expr_is_spec_int(&expr) {
+        return Ok(contextualize_assignment_value(expr, target_ty, true));
+    }
+    match (expr, target_ty) {
+        (
+            literal @ Expr::IntLit { .. },
+            Type::Prim(
+                thermite_syntax::PrimType::U8
+                | thermite_syntax::PrimType::U16
+                | thermite_syntax::PrimType::U32
+                | thermite_syntax::PrimType::U64
+                | thermite_syntax::PrimType::Usize,
+            ),
+        ) => Ok(Expr::Cast {
+            expr: Box::new(literal),
+            ty: target_ty.clone(),
+        }),
+        (Expr::If { cond, then, else_ }, _) => {
+            let contextualize_block = |mut block: Block| -> Result<Block, RefEncodeError> {
+                if let Some(tail) = block.tail.take() {
+                    block.tail = Some(Box::new(contextualize_value_for_type(
+                        *tail, target_ty, ctx,
+                    )?));
+                }
+                Ok(block)
+            };
+            Ok(Expr::If {
+                cond,
+                then: contextualize_block(then)?,
+                else_: contextualize_block(else_)?,
+            })
+        }
+        (Expr::Match { scrutinee, arms }, _) => Ok(Expr::Match {
+            scrutinee,
+            arms: arms
+                .into_iter()
+                .map(|arm| {
+                    Ok(MatchArm {
+                        pattern: arm.pattern,
+                        guard: arm.guard,
+                        body: contextualize_value_for_type(arm.body, target_ty, ctx)?,
+                    })
+                })
+                .collect::<Result<Vec<_>, RefEncodeError>>()?,
+        }),
+        (Expr::Tuple(values), Type::Tuple(types)) if values.len() == types.len() => {
+            Ok(Expr::Tuple(
+                values
+                    .into_iter()
+                    .zip(types)
+                    .map(|(value, ty)| contextualize_value_for_type(value, ty, ctx))
+                    .collect::<Result<Vec<_>, _>>()?,
+            ))
+        }
+        (Expr::Array(values), Type::Array { elem, .. }) => Ok(Expr::Array(
+            values
+                .into_iter()
+                .map(|value| contextualize_value_for_type(value, elem, ctx))
+                .collect::<Result<Vec<_>, _>>()?,
+        )),
+        (Expr::ArrayRepeat { value, len }, Type::Array { elem, .. }) => Ok(Expr::ArrayRepeat {
+            value: Box::new(contextualize_value_for_type(*value, elem, ctx)?),
+            len,
+        }),
+        (value, _) => Ok(value),
+    }
+}
+
+/// Independently qualify user-variant constructors and reapply the exact parsed
+/// payload field types. This is intentionally separate from pattern lowering and
+/// from the production lowerer.
+fn contextualize_constructor_value(expr: Expr, ctx: &BodyRefCtx) -> Result<Expr, RefEncodeError> {
+    match expr {
+        Expr::Path(path) => {
+            let Some(variant) = ctx.enum_variant(&path) else {
+                return Ok(Expr::Path(path));
+            };
+            if !matches!(variant.shape, EnumVariantShapeFrame::Unit) {
+                return Err(RefEncodeError::Unsupported(format!(
+                    "payload-bearing variant `{}::{}` used as a unit value",
+                    variant.enum_name, variant.variant_name
+                )));
+            }
+            Ok(Expr::Path(vec![
+                variant.enum_name.clone(),
+                variant.variant_name.clone(),
+            ]))
+        }
+        Expr::Call { callee, args } => {
+            let Expr::Path(path) = callee.as_ref() else {
+                return Ok(Expr::Call { callee, args });
+            };
+            let Some(variant) = ctx.enum_variant(path) else {
+                return Ok(Expr::Call { callee, args });
+            };
+            let EnumVariantShapeFrame::Tuple(types) = &variant.shape else {
+                return Err(RefEncodeError::Unsupported(format!(
+                    "non-tuple variant `{}::{}` used as a call constructor",
+                    variant.enum_name, variant.variant_name
+                )));
+            };
+            if args.len() != types.len() {
+                return Err(RefEncodeError::Unsupported(format!(
+                    "variant `{}::{}` constructor has {} arguments but its parsed payload has {} fields",
+                    variant.enum_name,
+                    variant.variant_name,
+                    args.len(),
+                    types.len()
+                )));
+            }
+            let args = args
+                .into_iter()
+                .zip(types)
+                .map(|(argument, ty)| contextualize_value_for_type(argument, ty, ctx))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Expr::Call {
+                callee: Box::new(Expr::Path(vec![
+                    variant.enum_name.clone(),
+                    variant.variant_name.clone(),
+                ])),
+                args,
+            })
+        }
+        Expr::StructLit { path, fields } => {
+            let (qualified_path, field_frames): (Vec<String>, Vec<RecordFieldFrame>) =
+                if let Some(variant) = ctx.enum_variant(&path) {
+                    let EnumVariantShapeFrame::Struct(field_frames) = &variant.shape else {
+                        return Err(RefEncodeError::Unsupported(format!(
+                            "non-struct variant `{}::{}` used as a brace constructor",
+                            variant.enum_name, variant.variant_name
+                        )));
+                    };
+                    (
+                        vec![variant.enum_name.clone(), variant.variant_name.clone()],
+                        field_frames.clone(),
+                    )
+                } else {
+                    let record_name = path.join("::");
+                    let Some(record) = ctx.constructor_record(&record_name) else {
+                        return Ok(Expr::StructLit { path, fields });
+                    };
+                    (path, record.fields.clone())
+                };
+            let fields = fields
+                .into_iter()
+                .map(|(name, value)| {
+                    let field = field_frames
+                        .iter()
+                        .find(|field| field.name == name)
+                        .ok_or_else(|| {
+                            RefEncodeError::Unsupported(format!(
+                                "aggregate constructor `{}` has no parsed field `{name}`",
+                                qualified_path.join("::")
+                            ))
+                        })?;
+                    let value = match &field.ty {
+                        Some(ty) => contextualize_value_for_type(value, ty, ctx)?,
+                        None => contextualize_constructor_value(value, ctx)?,
+                    };
+                    Ok((name, value))
+                })
+                .collect::<Result<Vec<_>, RefEncodeError>>()?;
+            Ok(Expr::StructLit {
+                path: qualified_path,
+                fields,
+            })
+        }
+        other => Ok(other),
+    }
+}
+
+/// Rebuild a nested finite value independently of production lowering. Every
+/// enclosing record is reconstructed with all sibling fields projected from
+/// the pre-write value; an optional terminal index becomes one exact array
+/// update. Index-then-field aliasing remains outside this increment.
+fn rebuild_nested_value(
+    current: Expr,
+    current_ty: &Type,
+    steps: &[NestedLvalueStep],
+    changed: Expr,
+    changed_spec_int: bool,
+    ctx: &BodyRefCtx,
+) -> Result<Expr, RefEncodeError> {
+    let Some((step, rest)) = steps.split_first() else {
+        return Ok(changed);
+    };
+    match step {
+        NestedLvalueStep::Field(field) => {
+            let Type::Named(type_name) = current_ty else {
+                return Err(RefEncodeError::Unsupported(format!(
+                    "field `{field}` is projected from a non-record nested value"
+                )));
+            };
+            let record = ctx.named_record(type_name).ok_or_else(|| {
+                RefEncodeError::Unsupported(format!(
+                    "nested mutation lost finite record declaration `{type_name}`"
+                ))
+            })?;
+            let field_frame = record
+                .fields
+                .iter()
+                .find(|candidate| candidate.name == *field)
+                .ok_or_else(|| {
+                    RefEncodeError::Unsupported(format!(
+                        "record `{type_name}` has no exact field `{field}`"
+                    ))
+                })?;
+            let next = if rest.is_empty() {
+                match &field_frame.ty {
+                    Some(field_ty) => {
+                        contextualize_assignment_value(changed, field_ty, changed_spec_int)
+                    }
+                    None => changed,
+                }
+            } else {
+                let field_ty = field_frame.ty.as_ref().ok_or_else(|| {
+                    RefEncodeError::Unsupported(format!(
+                        "nested mutation field `{type_name}.{field}` has no independent source type"
+                    ))
+                })?;
+                rebuild_nested_value(
+                    Expr::Field {
+                        receiver: Box::new(current.clone()),
+                        name: field.clone(),
+                    },
+                    field_ty,
+                    rest,
+                    changed,
+                    changed_spec_int,
+                    ctx,
+                )?
+            };
+            Ok(Expr::StructLit {
+                path: vec![type_name.clone()],
+                fields: record
+                    .fields
+                    .iter()
+                    .map(|candidate| {
+                        let value = if candidate.name == *field {
+                            next.clone()
+                        } else {
+                            Expr::Field {
+                                receiver: Box::new(current.clone()),
+                                name: candidate.name.clone(),
+                            }
+                        };
+                        (candidate.name.clone(), value)
+                    })
+                    .collect(),
+            })
+        }
+        NestedLvalueStep::Index(index) => {
+            if !rest.is_empty() {
+                return Err(RefEncodeError::Unsupported(
+                    "a fixed-array index must be the final nested mutation projection".to_string(),
+                ));
+            }
+            let Type::Array { elem, .. } = current_ty else {
+                return Err(RefEncodeError::Unsupported(
+                    "the final indexed nested mutation receiver is not a fixed array".to_string(),
+                ));
+            };
+            Ok(Expr::Call {
+                callee: Box::new(Expr::Path(vec![
+                    "vstd".to_string(),
+                    "array".to_string(),
+                    "spec_array_update".to_string(),
+                ])),
+                args: vec![
+                    current,
+                    index.clone(),
+                    contextualize_assignment_value(changed, elem, changed_spec_int),
+                ],
+            })
+        }
+    }
+}
 
 /// Encode a straight-line [`Block`] (the frozen 2.2.1 subset) to a Verus exec
 /// expression string giving the body's final state (the tail value) as a closed-form
@@ -171,7 +1190,8 @@ type Env = BTreeMap<String, Expr>;
 /// unchanged; the new logic is only the state threading. Returns
 /// [`RefEncodeError::Unsupported`] (never a panic / silent wrong encoding) for a
 /// construct outside the frozen straight-line subset (a loop, a mid-branch early
-/// return, a `match`-stmt, a non-scalar mutation, a re-shadow).
+/// return, a `match`-stmt, a mutation outside the admitted finite aggregate closure,
+/// a re-shadow).
 pub fn body_ref_state(block: &Block, ctx: &BodyRefCtx) -> Result<String, RefEncodeError> {
     let mut env: Env = Env::new();
     encode_block_tail(block, &mut env, ctx)
@@ -198,50 +1218,2766 @@ pub fn body_ref_state_ensures(
     result_name: &str,
     ctx: &BodyRefCtx,
 ) -> Result<String, RefEncodeError> {
+    if !ctx.mutable_records.is_empty() || !ctx.mutable_indexed_bound.is_empty() {
+        return aggregate_lifecycle_ensures(block, result_name, ctx);
+    }
+    let mut conjuncts = Vec::new();
+    if let Some(record) = &ctx.result_record {
+        let reference = body_ref_state(block, ctx)?;
+        for field in &record.fields {
+            if field.array_view {
+                conjuncts.push(format!(
+                    "{result_name}.{}@ == (({reference}).{})@",
+                    field.name, field.name
+                ));
+            } else {
+                conjuncts.push(format!(
+                    "{result_name}.{} == ({reference}).{}",
+                    field.name, field.name
+                ));
+            }
+        }
+    }
     // A multi-cell body is one whose tail is a tuple (the final state spans cells).
     // Each cell is encoded under the body's final env (the same threading), then
     // compared to the matching `result.<i>` projection at the bounded type.
-    if let Some(tail) = &block.tail {
-        if let Expr::Tuple(elems) = tail.as_ref() {
-            let mut env: Env = Env::new();
-            for stmt in &block.stmts {
-                thread_stmt(stmt, &mut env)?;
+    if ctx.result_record.is_none() {
+        if let Some(tail) = &block.tail {
+            if let Expr::Tuple(elems) = tail.as_ref() {
+                let mut env: Env = Env::new();
+                for stmt in &block.stmts {
+                    thread_stmt(stmt, &mut env, ctx)?;
+                }
+                conjuncts.extend(
+                    elems
+                        .iter()
+                        .enumerate()
+                        .map(|(i, e)| {
+                            let cell = encode_value(e, &env, ctx)?;
+                            Ok(format!("{result_name}.{i} == {cell}"))
+                        })
+                        .collect::<Result<Vec<_>, RefEncodeError>>()?,
+                );
             }
-            let conjuncts = elems
-                .iter()
-                .enumerate()
-                .map(|(i, e)| {
-                    let cell = encode_value(e, &env, ctx)?;
-                    Ok(format!("{result_name}.{i} == {cell}"))
-                })
-                .collect::<Result<Vec<_>, RefEncodeError>>()?;
-            return Ok(conjuncts.join(" && "));
         }
     }
-    // The single-cell (scalar / bool / if-tail) body: the plain scalar equality.
-    let reference = body_ref_state(block, ctx)?;
-    Ok(format!("{result_name} == {reference}"))
+    if conjuncts.is_empty() {
+        // The single-cell (scalar / bool / if-tail) body: the plain scalar equality.
+        let reference = body_ref_state(block, ctx)?;
+        if ctx.result_is_fixed_array {
+            conjuncts.push(format!("{result_name}@ == ({reference})@"));
+        } else {
+            conjuncts.push(format!("{result_name} == {reference}"));
+        }
+    }
+    Ok(conjuncts.join(" && "))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LifecycleCell {
+    text: String,
+    spec_int: bool,
+}
+
+impl LifecycleCell {
+    fn bounded(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            spec_int: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LifecycleRecordLocal {
+    type_name: String,
+    mutable: bool,
+}
+
+#[derive(Clone, Default)]
+struct LifecycleState {
+    locals: BTreeMap<String, LifecycleCell>,
+    record_locals: BTreeMap<String, LifecycleRecordLocal>,
+    active_value_calls: Vec<String>,
+    readonly_inputs: BTreeSet<String>,
+    fields: BTreeMap<String, LifecycleCell>,
+    indexed: BTreeMap<String, LifecycleCell>,
+}
+
+fn dotted_path_segments(path: &str) -> Vec<&str> {
+    path.split('.').collect()
+}
+
+fn remove_indexed_at_or_below(state: &mut LifecycleState, segments: &[String]) {
+    state.indexed.retain(|path, _| {
+        let indexed = dotted_path_segments(path);
+        !(indexed.len() >= segments.len()
+            && segments
+                .iter()
+                .zip(indexed.iter())
+                .all(|(expected, found)| expected == found))
+    });
+}
+
+fn indexed_at_or_below(state: &LifecycleState, path: &[String]) -> bool {
+    state.indexed.keys().any(|candidate| {
+        let candidate = dotted_path_segments(candidate);
+        candidate.len() >= path.len()
+            && path
+                .iter()
+                .zip(candidate.iter())
+                .all(|(expected, found)| expected == found)
+    })
+}
+
+fn lifecycle_mutable_record_fields(
+    root: &str,
+    state: &LifecycleState,
+    ctx: &BodyRefCtx,
+) -> Result<Vec<RecordFieldFrame>, RefEncodeError> {
+    if let Some(record) = ctx.mutable_record(root) {
+        return Ok(record.fields.clone());
+    }
+    if let Some(local) = state.record_locals.get(root) {
+        if !local.mutable {
+            return Err(RefEncodeError::Unsupported(format!(
+                "logical record local `{root}` is immutable"
+            )));
+        }
+        return ctx
+            .named_record(&local.type_name)
+            .map(|record| record.fields.clone())
+            .ok_or_else(|| {
+                RefEncodeError::Unsupported(format!(
+                    "logical record local `{root}` lost finite type `{}`",
+                    local.type_name
+                ))
+            });
+    }
+    Err(RefEncodeError::Unsupported(format!(
+        "named-record assignment root `{root}` is not an independently framed exclusive parameter or typed mutable local"
+    )))
+}
+
+fn lifecycle_record_path_type(
+    root: &str,
+    fields: &[String],
+    state: &LifecycleState,
+    ctx: &BodyRefCtx,
+) -> Result<Type, RefEncodeError> {
+    let mut record_fields = lifecycle_mutable_record_fields(root, state, ctx)?;
+    let mut current = None;
+    for (position, name) in fields.iter().enumerate() {
+        let ty = record_fields
+            .iter()
+            .find(|field| field.name == *name)
+            .and_then(|field| field.ty.clone())
+            .ok_or_else(|| {
+                RefEncodeError::Unsupported(format!(
+                    "logical record path `{root}.{}` has no exact field type",
+                    fields[..=position].join(".")
+                ))
+            })?;
+        if position + 1 < fields.len() {
+            let Type::Named(type_name) = &ty else {
+                return Err(RefEncodeError::Unsupported(format!(
+                    "logical record path `{root}.{}` descends through a non-record field",
+                    fields[..=position].join(".")
+                )));
+            };
+            record_fields = ctx
+                .named_record(type_name)
+                .map(|record| record.fields.clone())
+                .ok_or_else(|| {
+                    RefEncodeError::Unsupported(format!(
+                        "logical record path `{root}.{}` lost finite type `{type_name}`",
+                        fields[..=position].join(".")
+                    ))
+                })?;
+        }
+        current = Some(ty);
+    }
+    current.ok_or_else(|| {
+        RefEncodeError::Unsupported(format!(
+            "logical record path `{root}` has no projected field"
+        ))
+    })
+}
+
+fn lifecycle_assignment_text(value: &LifecycleCell, target_ty: &Type) -> String {
+    if value.spec_int {
+        let target = match target_ty {
+            Type::Prim(thermite_syntax::PrimType::U8) => Some("u8"),
+            Type::Prim(thermite_syntax::PrimType::U16) => Some("u16"),
+            Type::Prim(thermite_syntax::PrimType::U32) => Some("u32"),
+            Type::Prim(thermite_syntax::PrimType::U64) => Some("u64"),
+            Type::Prim(thermite_syntax::PrimType::Usize) => Some("usize"),
+            _ => None,
+        };
+        if let Some(target) = target {
+            return format!("({}) as {target}", value.text);
+        }
+    }
+    value.text.clone()
+}
+
+fn rebased_indexed_descendants(
+    state: &LifecycleState,
+    from: &[String],
+    to: &[String],
+) -> Vec<(String, LifecycleCell)> {
+    state
+        .indexed
+        .iter()
+        .filter_map(|(path, value)| {
+            let candidate = dotted_path_segments(path);
+            if candidate.len() <= from.len()
+                || !from
+                    .iter()
+                    .zip(candidate.iter())
+                    .all(|(expected, found)| expected == found)
+            {
+                return None;
+            }
+            let mut rebased = to.to_vec();
+            rebased.extend(
+                candidate[from.len()..]
+                    .iter()
+                    .map(|segment| (*segment).to_string()),
+            );
+            Some((rebased.join("."), value.clone()))
+        })
+        .collect()
+}
+
+fn collect_fixed_array_record_paths(
+    root: &str,
+    type_name: &str,
+    ctx: &BodyRefCtx,
+    active: &mut BTreeSet<String>,
+    paths: &mut BTreeSet<String>,
+) {
+    if !active.insert(type_name.to_string()) {
+        return;
+    }
+    if let Some(record) = ctx.named_record(type_name) {
+        for field in &record.fields {
+            let path = format!("{root}.{}", field.name);
+            match field.ty.as_ref() {
+                Some(Type::Array { .. }) => {
+                    paths.insert(path);
+                }
+                Some(Type::Named(nested)) => {
+                    collect_fixed_array_record_paths(&path, nested, ctx, active, paths);
+                }
+                _ => {}
+            }
+        }
+    }
+    active.remove(type_name);
+}
+
+fn lifecycle_value_frame(
+    final_value: &str,
+    current_value: &str,
+    ty: &Type,
+    path: &mut Vec<String>,
+    state: &LifecycleState,
+    ctx: &BodyRefCtx,
+    ensures: &mut Vec<String>,
+) -> Result<(), RefEncodeError> {
+    let dotted = path.join(".");
+    if let Some(sequence) = state.indexed.get(&dotted) {
+        if !matches!(ty, Type::Array { .. } | Type::Slice(_)) {
+            return Err(RefEncodeError::Unsupported(format!(
+                "projected indexed lifecycle path `{dotted}` does not end at indexed storage"
+            )));
+        }
+        ensures.push(format!("{final_value}@ == {}", sequence.text));
+        return Ok(());
+    }
+
+    if !matches!(ty, Type::Named(_)) {
+        if let Some(field) = state.fields.get(&dotted) {
+            if matches!(ty, Type::Array { .. } | Type::Slice(_)) {
+                ensures.push(format!("{final_value}@ == ({})@", field.text));
+            } else {
+                ensures.push(format!("{final_value} == {}", field.text));
+            }
+            return Ok(());
+        }
+    }
+
+    let has_overlay_below = state.indexed.keys().any(|candidate| {
+        let candidate = dotted_path_segments(candidate);
+        candidate.len() > path.len()
+            && path
+                .iter()
+                .zip(candidate.iter())
+                .all(|(expected, found)| expected == found)
+    });
+    if let Type::Named(type_name) = ty {
+        if let Some(record) = ctx.named_record(type_name) {
+            for field in &record.fields {
+                let field_ty = field.ty.as_ref().ok_or_else(|| {
+                    RefEncodeError::Unsupported(format!(
+                        "projected indexed lifecycle field `{type_name}.{}` has no exact source type",
+                        field.name
+                    ))
+                })?;
+                path.push(field.name.clone());
+                lifecycle_value_frame(
+                    &format!("{final_value}.{}", field.name),
+                    &format!("({current_value}).{}", field.name),
+                    field_ty,
+                    path,
+                    state,
+                    ctx,
+                    ensures,
+                )?;
+                path.pop();
+            }
+            return Ok(());
+        }
+    }
+    if has_overlay_below {
+        return Err(RefEncodeError::Unsupported(format!(
+            "projected indexed lifecycle overlay descends through non-record path `{dotted}`"
+        )));
+    }
+    if matches!(ty, Type::Array { .. } | Type::Slice(_)) {
+        ensures.push(format!("{final_value}@ == ({current_value})@"));
+    } else {
+        ensures.push(format!("{final_value} == {current_value}"));
+    }
+    Ok(())
+}
+
+/// Return one exact root-plus-field path without accepting indexing, calls, or
+/// computed receivers.  Sequence overlays are keyed by this same structural
+/// spelling, so a record result can be related leafwise to the current logical
+/// array state without pretending that a `Seq<T>` is a native `[T; N]` value.
+fn lifecycle_field_path(expr: &Expr) -> Option<Vec<String>> {
+    match expr {
+        Expr::Path(path) => match path.as_slice() {
+            [root] => Some(vec![root.clone()]),
+            _ => None,
+        },
+        Expr::Field { receiver, name } => {
+            let mut path = lifecycle_field_path(receiver)?;
+            path.push(name.clone());
+            Some(path)
+        }
+        _ => None,
+    }
+}
+
+fn lifecycle_record_field_source(
+    type_name: &str,
+    source: &Expr,
+    field_name: &str,
+) -> Result<Expr, RefEncodeError> {
+    match source {
+        Expr::StructLit { path, fields } => {
+            if path.last().map(String::as_str) != Some(type_name) {
+                return Err(RefEncodeError::Unsupported(format!(
+                    "logical record constructor `{}` does not match `{type_name}`",
+                    path.join("::")
+                )));
+            }
+            fields
+                .iter()
+                .find_map(|(name, value)| (name == field_name).then(|| value.clone()))
+                .ok_or_else(|| {
+                    RefEncodeError::Unsupported(format!(
+                        "logical record constructor `{type_name}` omits field `{field_name}`"
+                    ))
+                })
+        }
+        _ if lifecycle_field_path(source).is_some() => Ok(Expr::Field {
+            receiver: Box::new(source.clone()),
+            name: field_name.to_string(),
+        }),
+        _ => Err(RefEncodeError::Unsupported(format!(
+            "logical record value `{type_name}` requires an exact constructor or access path"
+        ))),
+    }
+}
+
+fn lifecycle_value_has_overlay(
+    source: &Expr,
+    ty: &Type,
+    state: &LifecycleState,
+    ctx: &BodyRefCtx,
+) -> Result<bool, RefEncodeError> {
+    if matches!(ty, Type::Array { .. } | Type::Slice(_)) {
+        return Ok(lifecycle_field_path(source)
+            .is_some_and(|path| state.indexed.contains_key(&path.join("."))));
+    }
+    if let Type::Named(type_name) = ty {
+        if let Some(path) = lifecycle_field_path(source) {
+            return Ok(indexed_at_or_below(state, &path));
+        }
+        if matches!(source, Expr::StructLit { .. }) {
+            let record = ctx.named_record(type_name).ok_or_else(|| {
+                RefEncodeError::Unsupported(format!(
+                    "logical record type `{type_name}` has no finite field frame"
+                ))
+            })?;
+            for field in &record.fields {
+                let field_ty = field.ty.as_ref().ok_or_else(|| {
+                    RefEncodeError::Unsupported(format!(
+                        "logical record field `{type_name}.{}` has no exact source type",
+                        field.name
+                    ))
+                })?;
+                let field_source = lifecycle_record_field_source(type_name, source, &field.name)?;
+                if lifecycle_value_has_overlay(&field_source, field_ty, state, ctx)? {
+                    return Ok(true);
+                }
+            }
+        }
+    }
+    if let (Type::Tuple(types), Expr::Tuple(values)) = (ty, source) {
+        if values.len() != types.len() {
+            return Err(RefEncodeError::Unsupported(
+                "logical tuple value has the wrong exact arity".to_string(),
+            ));
+        }
+        for (value, value_ty) in values.iter().zip(types) {
+            if lifecycle_value_has_overlay(value, value_ty, state, ctx)? {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+fn collect_lifecycle_record_binding(
+    target_root: &mut Vec<String>,
+    type_name: &str,
+    source: &Expr,
+    state: &LifecycleState,
+    ctx: &BodyRefCtx,
+    direct_fields: &mut Vec<(String, LifecycleCell)>,
+    indexed: &mut Vec<(String, LifecycleCell)>,
+) -> Result<(), RefEncodeError> {
+    let record = ctx.named_record(type_name).ok_or_else(|| {
+        RefEncodeError::Unsupported(format!(
+            "logical record type `{type_name}` has no finite field frame"
+        ))
+    })?;
+    for field in &record.fields {
+        let field_ty = field.ty.as_ref().ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "logical record field `{type_name}.{}` has no exact source type",
+                field.name
+            ))
+        })?;
+        let field_source = lifecycle_record_field_source(type_name, source, &field.name)?;
+        target_root.push(field.name.clone());
+        if target_root.len() == 2 {
+            direct_fields.push((
+                target_root.join("."),
+                encode_lifecycle_expr_raw(&field_source, state, ctx)?,
+            ));
+        }
+        if lifecycle_value_has_overlay(&field_source, field_ty, state, ctx)? {
+            match field_ty {
+                Type::Array { .. } | Type::Slice(_) => {
+                    let source_path = lifecycle_field_path(&field_source).ok_or_else(|| {
+                        RefEncodeError::Unsupported(format!(
+                            "logical indexed field `{type_name}.{}` is not an exact access path",
+                            field.name
+                        ))
+                    })?;
+                    let sequence = state
+                        .indexed
+                        .get(&source_path.join("."))
+                        .cloned()
+                        .ok_or_else(|| {
+                            RefEncodeError::Unsupported(format!(
+                                "logical indexed field `{}` lost its current sequence overlay",
+                                source_path.join(".")
+                            ))
+                        })?;
+                    indexed.push((target_root.join("."), sequence));
+                }
+                Type::Named(nested) => collect_lifecycle_record_binding(
+                    target_root,
+                    nested,
+                    &field_source,
+                    state,
+                    ctx,
+                    direct_fields,
+                    indexed,
+                )?,
+                _ => {
+                    return Err(RefEncodeError::Unsupported(format!(
+                        "logical record overlay descends through unsupported field `{type_name}.{}`",
+                        field.name
+                    )));
+                }
+            }
+        }
+        target_root.pop();
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LifecycleRecordBinding {
+    whole: LifecycleCell,
+    direct_fields: Vec<(String, LifecycleCell)>,
+    indexed: Vec<(String, LifecycleCell)>,
+}
+
+fn lifecycle_record_binding(
+    name: &str,
+    type_name: &str,
+    source: &Expr,
+    state: &LifecycleState,
+    ctx: &BodyRefCtx,
+) -> Result<LifecycleRecordBinding, RefEncodeError> {
+    if expr_contains_mutable_call(source, ctx) {
+        return Err(RefEncodeError::Unsupported(
+            "a logical record constructor/access-path binding may not hide a mutable-reference call"
+                .to_string(),
+        ));
+    }
+    if !matches!(source, Expr::StructLit { .. }) && lifecycle_field_path(source).is_none() {
+        return Err(RefEncodeError::Unsupported(format!(
+            "typed logical record binding `{name}: {type_name}` requires an exact constructor or access path"
+        )));
+    }
+    let whole = encode_lifecycle_expr_raw(source, state, ctx)?;
+    let mut direct_fields = Vec::new();
+    let mut indexed = Vec::new();
+    collect_lifecycle_record_binding(
+        &mut vec![name.to_string()],
+        type_name,
+        source,
+        state,
+        ctx,
+        &mut direct_fields,
+        &mut indexed,
+    )?;
+    Ok(LifecycleRecordBinding {
+        whole,
+        direct_fields,
+        indexed,
+    })
+}
+
+fn bind_lifecycle_record_local(
+    name: &str,
+    type_name: &str,
+    mutable: bool,
+    source: &Expr,
+    state: &mut LifecycleState,
+    ctx: &BodyRefCtx,
+) -> Result<LifecycleCell, RefEncodeError> {
+    let binding = lifecycle_record_binding(name, type_name, source, state, ctx)?;
+
+    Ok(install_lifecycle_record_binding(
+        name, type_name, mutable, binding, state,
+    ))
+}
+
+fn install_lifecycle_record_binding(
+    name: &str,
+    type_name: &str,
+    mutable: bool,
+    binding: LifecycleRecordBinding,
+    state: &mut LifecycleState,
+) -> LifecycleCell {
+    let LifecycleRecordBinding {
+        whole,
+        direct_fields,
+        indexed,
+    } = binding;
+
+    state
+        .fields
+        .retain(|path, _| !path.starts_with(&format!("{name}.")));
+    remove_indexed_at_or_below(state, &[name.to_string()]);
+    state.fields.extend(direct_fields);
+    state.indexed.extend(indexed);
+    state.record_locals.insert(
+        name.to_string(),
+        LifecycleRecordLocal {
+            type_name: type_name.to_string(),
+            mutable,
+        },
+    );
+    whole
+}
+
+fn expression_materializes_indexed_overlay(expr: &Expr, state: &LifecycleState) -> Option<String> {
+    if let Some(path) = lifecycle_field_path(expr) {
+        return indexed_at_or_below(state, &path).then(|| path.join("."));
+    }
+    let any = |items: &[Expr]| {
+        items
+            .iter()
+            .find_map(|item| expression_materializes_indexed_overlay(item, state))
+    };
+    match expr {
+        Expr::Path(_) | Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::StrLit(_) => None,
+        Expr::Array(items) | Expr::Tuple(items) => any(items),
+        Expr::ArrayRepeat { value, .. }
+        | Expr::Unary { expr: value, .. }
+        | Expr::Cast { expr: value, .. }
+        | Expr::Ref { expr: value, .. }
+        | Expr::Deref(value)
+        | Expr::TupleProj {
+            receiver: value, ..
+        }
+        | Expr::Closure { body: value, .. }
+        | Expr::Is {
+            scrutinee: value, ..
+        } => expression_materializes_indexed_overlay(value, state),
+        Expr::Field { receiver, .. } => expression_materializes_indexed_overlay(receiver, state),
+        Expr::Binary { lhs, rhs, .. } => expression_materializes_indexed_overlay(lhs, state)
+            .or_else(|| expression_materializes_indexed_overlay(rhs, state)),
+        Expr::Call { callee, args } => {
+            expression_materializes_indexed_overlay(callee, state).or_else(|| any(args))
+        }
+        Expr::MethodCall { receiver, args, .. } => {
+            expression_materializes_indexed_overlay(receiver, state).or_else(|| any(args))
+        }
+        Expr::Match { scrutinee, arms } => {
+            expression_materializes_indexed_overlay(scrutinee, state).or_else(|| {
+                arms.iter().find_map(|arm| {
+                    arm.guard
+                        .as_ref()
+                        .and_then(|guard| expression_materializes_indexed_overlay(guard, state))
+                        .or_else(|| expression_materializes_indexed_overlay(&arm.body, state))
+                })
+            })
+        }
+        Expr::If { cond, then, else_ } => expression_materializes_indexed_overlay(cond, state)
+            .or_else(|| {
+                then.stmts
+                    .iter()
+                    .find_map(|statement| statement_materializes_indexed_overlay(statement, state))
+            })
+            .or_else(|| {
+                then.tail
+                    .as_deref()
+                    .and_then(|tail| expression_materializes_indexed_overlay(tail, state))
+            })
+            .or_else(|| {
+                else_
+                    .stmts
+                    .iter()
+                    .find_map(|statement| statement_materializes_indexed_overlay(statement, state))
+                    .or_else(|| {
+                        else_
+                            .tail
+                            .as_deref()
+                            .and_then(|tail| expression_materializes_indexed_overlay(tail, state))
+                    })
+            }),
+        Expr::Index { base, index } => {
+            let base_use = lifecycle_field_path(base)
+                .is_none()
+                .then(|| expression_materializes_indexed_overlay(base, state));
+            base_use.flatten().or_else(|| match index {
+                IndexArg::Single(index) | IndexArg::RangeTo(index) | IndexArg::RangeFrom(index) => {
+                    expression_materializes_indexed_overlay(index, state)
+                }
+                IndexArg::Range(start, end) => {
+                    expression_materializes_indexed_overlay(start, state)
+                        .or_else(|| expression_materializes_indexed_overlay(end, state))
+                }
+            })
+        }
+        Expr::StructLit { fields, .. } => fields
+            .iter()
+            .find_map(|(_, value)| expression_materializes_indexed_overlay(value, state)),
+        Expr::Quantifier { domain, body, .. } => {
+            expression_materializes_indexed_overlay(domain, state)
+                .or_else(|| expression_materializes_indexed_overlay(body, state))
+        }
+    }
+}
+
+fn statement_materializes_indexed_overlay(
+    statement: &Stmt,
+    state: &LifecycleState,
+) -> Option<String> {
+    match statement {
+        Stmt::Let { init, .. } | Stmt::Expr(init) => {
+            expression_materializes_indexed_overlay(init, state)
+        }
+        Stmt::Assign { target, value } => expression_materializes_indexed_overlay(target, state)
+            .or_else(|| expression_materializes_indexed_overlay(value, state)),
+        Stmt::Return(value) => value
+            .as_ref()
+            .and_then(|value| expression_materializes_indexed_overlay(value, state)),
+        Stmt::If { cond, then, else_ } => expression_materializes_indexed_overlay(cond, state)
+            .or_else(|| {
+                then.stmts
+                    .iter()
+                    .find_map(|statement| statement_materializes_indexed_overlay(statement, state))
+            })
+            .or_else(|| {
+                then.tail
+                    .as_deref()
+                    .and_then(|tail| expression_materializes_indexed_overlay(tail, state))
+            })
+            .or_else(|| {
+                else_.as_ref().and_then(|block| {
+                    block
+                        .stmts
+                        .iter()
+                        .find_map(|statement| {
+                            statement_materializes_indexed_overlay(statement, state)
+                        })
+                        .or_else(|| {
+                            block.tail.as_deref().and_then(|tail| {
+                                expression_materializes_indexed_overlay(tail, state)
+                            })
+                        })
+                })
+            }),
+        Stmt::Loop(_) | Stmt::Break | Stmt::Continue => None,
+    }
+}
+
+/// Compare an aggregate lifecycle result to the independently interpreted
+/// source expression one finite leaf at a time.  In particular, an array-valued
+/// field expression whose path has a sequence overlay is compared through its
+/// complete `@` view.  No reverse conversion from the logical sequence to a
+/// native array or enclosing record is introduced.
+fn lifecycle_result_frame(
+    result_value: &str,
+    source: &Expr,
+    ty: &Type,
+    state: &LifecycleState,
+    ctx: &BodyRefCtx,
+    ensures: &mut Vec<String>,
+) -> Result<(), RefEncodeError> {
+    if matches!(ty, Type::Array { .. } | Type::Slice(_)) {
+        if let Some(path) = lifecycle_field_path(source) {
+            if let Some(sequence) = state.indexed.get(&path.join(".")) {
+                ensures.push(format!("{result_value}@ == {}", sequence.text));
+                return Ok(());
+            }
+        }
+        let current = encode_lifecycle_expr(source, state, ctx)?;
+        ensures.push(format!("{result_value}@ == ({})@", current.text));
+        return Ok(());
+    }
+
+    if let Type::Named(type_name) = ty {
+        if let Some((callee, args)) =
+            direct_logical_record_value_call(source, type_name, state, ctx)
+        {
+            let root = "__thermite_logical_call_result";
+            let binding =
+                apply_logical_record_value_call(root, type_name, callee, args, state, ctx)?;
+            let mut result_state = state.clone();
+            let whole = install_lifecycle_record_binding(
+                root,
+                type_name,
+                false,
+                binding,
+                &mut result_state,
+            );
+            return lifecycle_value_frame(
+                result_value,
+                &whole.text,
+                ty,
+                &mut vec![root.to_string()],
+                &result_state,
+                ctx,
+                ensures,
+            );
+        }
+        let record = ctx.named_record(type_name).ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "aggregate lifecycle result type `{type_name}` has no finite record frame"
+            ))
+        })?;
+        if let Expr::StructLit { path, fields } = source {
+            if path.last().map(String::as_str) != Some(type_name.as_str()) {
+                return Err(RefEncodeError::Unsupported(format!(
+                    "aggregate lifecycle result constructor `{}` does not match `{type_name}`",
+                    path.join("::")
+                )));
+            }
+            for field in &record.fields {
+                let field_ty = field.ty.as_ref().ok_or_else(|| {
+                    RefEncodeError::Unsupported(format!(
+                        "aggregate lifecycle result field `{type_name}.{}` has no exact source type",
+                        field.name
+                    ))
+                })?;
+                let field_source = fields
+                    .iter()
+                    .find_map(|(name, value)| (name == &field.name).then_some(value))
+                    .ok_or_else(|| {
+                        RefEncodeError::Unsupported(format!(
+                            "aggregate lifecycle result constructor `{type_name}` omits field `{}`",
+                            field.name
+                        ))
+                    })?;
+                lifecycle_result_frame(
+                    &format!("{result_value}.{}", field.name),
+                    field_source,
+                    field_ty,
+                    state,
+                    ctx,
+                    ensures,
+                )?;
+            }
+            return Ok(());
+        }
+
+        let current = encode_lifecycle_expr_raw(source, state, ctx)?;
+        let mut path = lifecycle_field_path(source)
+            .unwrap_or_else(|| vec!["__thermite_result_value".to_string()]);
+        return lifecycle_value_frame(
+            result_value,
+            &current.text,
+            ty,
+            &mut path,
+            state,
+            ctx,
+            ensures,
+        );
+    }
+
+    if let Type::Tuple(types) = ty {
+        if let Expr::Tuple(values) = source {
+            if values.len() != types.len() {
+                return Err(RefEncodeError::Unsupported(
+                    "aggregate lifecycle result tuple arity does not match its exact source type"
+                        .to_string(),
+                ));
+            }
+            for (index, (value, value_ty)) in values.iter().zip(types).enumerate() {
+                lifecycle_result_frame(
+                    &format!("{result_value}.{index}"),
+                    value,
+                    value_ty,
+                    state,
+                    ctx,
+                    ensures,
+                )?;
+            }
+            return Ok(());
+        }
+    }
+
+    let current = encode_lifecycle_expr(source, state, ctx)?;
+    ensures.push(format!("{result_value} == {}", current.text));
+    Ok(())
+}
+
+fn aggregate_lifecycle_ensures(
+    block: &Block,
+    result_name: &str,
+    ctx: &BodyRefCtx,
+) -> Result<String, RefEncodeError> {
+    let mut state = LifecycleState::default();
+    for record in &ctx.mutable_records {
+        for field in &record.fields {
+            let key = format!("{}.{}", record.name, field.name);
+            state.fields.insert(
+                key,
+                LifecycleCell::bounded(format!("old({}).{}", record.name, field.name)),
+            );
+        }
+    }
+    for record in &ctx.shared_records {
+        for field in &record.fields {
+            let key = format!("{}.{}", record.name, field.name);
+            state.fields.insert(
+                key,
+                LifecycleCell::bounded(format!("{}.{}", record.name, field.name)),
+            );
+        }
+    }
+    for indexed in &ctx.shared_indexed {
+        state.indexed.insert(
+            indexed.name.clone(),
+            LifecycleCell::bounded(format!("{}@", indexed.name)),
+        );
+    }
+    for name in &ctx.mutable_indexed_bound {
+        state.indexed.insert(
+            name.clone(),
+            LifecycleCell::bounded(format!("old({name})@")),
+        );
+    }
+    thread_lifecycle_block(block, &mut state, ctx, false, &mut Vec::new())?;
+
+    let mut ensures = Vec::new();
+    match &block.tail {
+        Some(tail) => {
+            if let Some(record) = &ctx.result_record {
+                lifecycle_result_frame(
+                    result_name,
+                    tail,
+                    &Type::Named(record.type_name.clone()),
+                    &state,
+                    ctx,
+                    &mut ensures,
+                )?;
+            } else {
+                let result = encode_lifecycle_expr(tail, &state, ctx)?;
+                ensures.push(if ctx.result_is_fixed_array {
+                    format!("{result_name}@ == ({})@", result.text)
+                } else {
+                    format!("{result_name} == {}", result.text)
+                });
+            }
+        }
+        None if ctx.result_is_unit => ensures.push(format!("{result_name} == ()")),
+        None => {
+            return Err(RefEncodeError::Unsupported(
+                "tail-less aggregate lifecycle body requires an explicit unit result type"
+                    .to_string(),
+            ));
+        }
+    }
+    for record in &ctx.mutable_records {
+        for field in &record.fields {
+            let key = format!("{}.{}", record.name, field.name);
+            let value = state.fields.get(&key).ok_or_else(|| {
+                RefEncodeError::Unsupported(format!(
+                    "named-record lifecycle lost the modeled field `{key}`"
+                ))
+            })?;
+            if let Some(field_ty) = field.ty.as_ref() {
+                lifecycle_value_frame(
+                    &format!("final({}).{}", record.name, field.name),
+                    &value.text,
+                    field_ty,
+                    &mut vec![record.name.clone(), field.name.clone()],
+                    &state,
+                    ctx,
+                    &mut ensures,
+                )?;
+            } else if field.array_view {
+                ensures.push(format!(
+                    "final({}).{}@ == ({})@",
+                    record.name, field.name, value.text
+                ));
+            } else {
+                ensures.push(format!(
+                    "final({}).{} == {}",
+                    record.name, field.name, value.text
+                ));
+            }
+        }
+    }
+    for name in &ctx.mutable_indexed_bound {
+        let value = state.indexed.get(name).ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "exclusive indexed lifecycle lost the modeled root `{name}`"
+            ))
+        })?;
+        ensures.push(format!("final({name})@ == {}", value.text));
+    }
+    Ok(ensures.join(" && "))
+}
+
+fn thread_lifecycle_block(
+    block: &Block,
+    state: &mut LifecycleState,
+    ctx: &BodyRefCtx,
+    branch: bool,
+    active_calls: &mut Vec<String>,
+) -> Result<(), RefEncodeError> {
+    for statement in &block.stmts {
+        thread_lifecycle_stmt(statement, state, ctx, active_calls)?;
+    }
+    if branch && block.tail.is_some() {
+        return Err(RefEncodeError::Unsupported(
+            "an aggregate lifecycle `if` statement branch may mutate state but may not carry a discarded tail value"
+                .to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn thread_lifecycle_stmt(
+    statement: &Stmt,
+    state: &mut LifecycleState,
+    ctx: &BodyRefCtx,
+    active_calls: &mut Vec<String>,
+) -> Result<(), RefEncodeError> {
+    match statement {
+        Stmt::Let {
+            mutable,
+            name,
+            init,
+            ty,
+        } => {
+            if state.locals.contains_key(name) {
+                return Err(RefEncodeError::Unsupported(format!(
+                    "re-shadowed lifecycle binding `{name}`"
+                )));
+            }
+            let value = if let Some((callee, args)) = direct_mutable_call(init, ctx) {
+                if ty.is_none() {
+                    return Err(RefEncodeError::Unsupported(
+                        "a mutable-reference call result requires one direct typed `let` initializer"
+                            .to_string(),
+                    ));
+                }
+                apply_mutable_call_effect(callee, args, state, ctx, active_calls)?
+            } else if let Some(Type::Named(type_name)) = ty {
+                if ctx.named_record(type_name).is_some() {
+                    if let Some((callee, args)) =
+                        direct_logical_record_value_call(init, type_name, state, ctx)
+                    {
+                        let binding = apply_logical_record_value_call(
+                            name, type_name, callee, args, state, ctx,
+                        )?;
+                        install_lifecycle_record_binding(
+                            name, type_name, *mutable, binding, state,
+                        )
+                    } else if matches!(init, Expr::StructLit { .. })
+                        || lifecycle_field_path(init).is_some()
+                    {
+                        bind_lifecycle_record_local(name, type_name, *mutable, init, state, ctx)?
+                    } else {
+                        encode_lifecycle_expr(init, state, ctx)?
+                    }
+                } else {
+                    encode_lifecycle_expr(init, state, ctx)?
+                }
+            } else {
+                encode_lifecycle_expr(init, state, ctx)?
+            };
+            state.locals.insert(name.clone(), value);
+            Ok(())
+        }
+        Stmt::Assign { target, value } => {
+            if let Expr::Path(path) = target {
+                if let [root] = path.as_slice() {
+                    if let Some(local) = state.record_locals.get(root).cloned() {
+                        if !local.mutable {
+                            return Err(RefEncodeError::Unsupported(format!(
+                                "logical record local `{root}` is immutable"
+                            )));
+                        }
+                        let value = bind_lifecycle_record_local(
+                            root,
+                            &local.type_name,
+                            true,
+                            value,
+                            state,
+                            ctx,
+                        )?;
+                        state.locals.insert(root.clone(), value);
+                        return Ok(());
+                    }
+                }
+            }
+            let value = encode_lifecycle_expr(value, state, ctx)?;
+            match target {
+                Expr::Path(path) if path.len() == 1 && state.locals.contains_key(&path[0]) => {
+                    if state.readonly_inputs.contains(&path[0]) {
+                        return Err(RefEncodeError::Unsupported(format!(
+                            "mutable-call callee assigns immutable value parameter `{}`",
+                            path[0]
+                        )));
+                    }
+                    state.locals.insert(path[0].clone(), value);
+                    Ok(())
+                }
+                _ if target_contains_field(target) => {
+                    let (root, steps) = nested_lvalue_path(target)?;
+                    let mut projected_path = vec![root.clone()];
+                    for (position, step) in steps.iter().enumerate() {
+                        match step {
+                            NestedLvalueStep::Field(field) => {
+                                projected_path.push(field.clone());
+                            }
+                            NestedLvalueStep::Index(index) => {
+                                if position + 1 != steps.len() {
+                                    return Err(RefEncodeError::Unsupported(
+                                        "projected indexed lifecycle admits an index only as the terminal assignment projection"
+                                            .to_string(),
+                                    ));
+                                }
+                                let dotted = projected_path.join(".");
+                                if let Some(current) = state.indexed.get(&dotted) {
+                                    lifecycle_mutable_record_fields(&root, state, ctx)?;
+                                    let storage_ty = lifecycle_record_path_type(
+                                        &root,
+                                        &projected_path[1..],
+                                        state,
+                                        ctx,
+                                    )?;
+                                    let elem_ty = match &storage_ty {
+                                        Type::Array { elem, .. } | Type::Slice(elem) => {
+                                            elem.as_ref()
+                                        }
+                                        _ => {
+                                            return Err(RefEncodeError::Unsupported(format!(
+                                                "projected indexed lifecycle path `{dotted}` has non-indexed type"
+                                            )));
+                                        }
+                                    };
+                                    let encoded_index = encode_lifecycle_expr(index, state, ctx)?;
+                                    let index = if matches!(index, Expr::IntLit { .. }) {
+                                        encoded_index.text
+                                    } else {
+                                        format!("({}) as int", encoded_index.text)
+                                    };
+                                    let assigned = lifecycle_assignment_text(&value, elem_ty);
+                                    let next = LifecycleCell::bounded(format!(
+                                        "({}).update({index}, {})",
+                                        current.text, assigned
+                                    ));
+                                    state.indexed.insert(dotted, next);
+                                    return Ok(());
+                                }
+                            }
+                        }
+                    }
+                    let Some((NestedLvalueStep::Field(direct_field), rest)) = steps.split_first()
+                    else {
+                        return Err(RefEncodeError::Unsupported(
+                            "named-record lifecycle target must begin with one exact field"
+                                .to_string(),
+                        ));
+                    };
+                    let record_fields = lifecycle_mutable_record_fields(&root, state, ctx)?;
+                    let field = record_fields
+                        .iter()
+                        .find(|field| field.name == *direct_field)
+                        .ok_or_else(|| {
+                            RefEncodeError::Unsupported(format!(
+                                "field `{root}.{direct_field}` is not in the independently declared mutable-record frame"
+                            ))
+                        })?;
+                    let key = format!("{root}.{direct_field}");
+                    if rest.is_empty() {
+                        remove_indexed_at_or_below(state, &projected_path);
+                        state.fields.insert(key, value);
+                        return Ok(());
+                    }
+
+                    let field_ty = field.ty.as_ref().ok_or_else(|| {
+                        RefEncodeError::Unsupported(format!(
+                            "nested lifecycle field `{key}` has no independent source type"
+                        ))
+                    })?;
+                    let current = state.fields.get(&key).ok_or_else(|| {
+                        RefEncodeError::Unsupported(format!(
+                            "named-record lifecycle lost the modeled field `{key}`"
+                        ))
+                    })?;
+                    let current_name = "__thermite_nested_current";
+                    let changed_name = "__thermite_nested_changed";
+                    let updated = rebuild_nested_value(
+                        Expr::Path(vec![current_name.to_string()]),
+                        field_ty,
+                        rest,
+                        Expr::Path(vec![changed_name.to_string()]),
+                        value.spec_int,
+                        ctx,
+                    )?;
+                    let mut bindings = state
+                        .locals
+                        .iter()
+                        .map(|(name, cell)| (name.clone(), cell.text.clone()))
+                        .collect::<Vec<_>>();
+                    bindings.push((current_name.to_string(), current.text.clone()));
+                    bindings.push((changed_name.to_string(), value.text));
+                    let exec = ctx
+                        .exec_ref_ctx()
+                        .with_value_bindings(bindings)
+                        .with_field_bindings(
+                            state
+                                .fields
+                                .iter()
+                                .map(|(name, cell)| (name.clone(), cell.text.clone())),
+                        )
+                        .with_indexed_bindings(
+                            state
+                                .indexed
+                                .iter()
+                                .map(|(name, cell)| (name.clone(), cell.text.clone())),
+                        );
+                    remove_indexed_at_or_below(state, &projected_path);
+                    state.fields.insert(
+                        key,
+                        LifecycleCell::bounded(exec_ref_value(&updated, &exec)?),
+                    );
+                    Ok(())
+                }
+                Expr::Index {
+                    base,
+                    index: IndexArg::Single(index),
+                } => {
+                    let Expr::Path(path) = base.as_ref() else {
+                        return Err(RefEncodeError::Unsupported(
+                            "exclusive indexed lifecycle target must have one direct root"
+                                .to_string(),
+                        ));
+                    };
+                    let [root] = path.as_slice() else {
+                        return Err(RefEncodeError::Unsupported(
+                            "exclusive indexed lifecycle target must have one direct root"
+                                .to_string(),
+                        ));
+                    };
+                    if !ctx.is_mutable_indexed_bound(root) {
+                        return Err(RefEncodeError::Unsupported(format!(
+                            "indexed assignment root `{root}` is not an independently framed exclusive slice or fixed array"
+                        )));
+                    }
+                    let encoded_index = encode_lifecycle_expr(index, state, ctx)?;
+                    let index = if matches!(index.as_ref(), Expr::IntLit { .. }) {
+                        encoded_index.text
+                    } else {
+                        format!("({}) as int", encoded_index.text)
+                    };
+                    let current = state.indexed.get(root).ok_or_else(|| {
+                        RefEncodeError::Unsupported(format!(
+                            "exclusive indexed lifecycle lost the current sequence `{root}`"
+                        ))
+                    })?;
+                    let assigned = match ctx.mutable_indexed(root).map(|frame| &frame.pointee) {
+                        Some(Type::Array { elem, .. } | Type::Slice(elem)) => {
+                            lifecycle_assignment_text(&value, elem)
+                        }
+                        Some(_) => {
+                            return Err(RefEncodeError::Unsupported(format!(
+                                "exclusive indexed lifecycle root `{root}` has non-indexed metadata"
+                            )));
+                        }
+                        None if value.spec_int => {
+                            return Err(RefEncodeError::Unsupported(format!(
+                                "exclusive indexed lifecycle root `{root}` lacks an exact element type for bounded arithmetic"
+                            )));
+                        }
+                        None => value.text.clone(),
+                    };
+                    state.indexed.insert(
+                        root.clone(),
+                        LifecycleCell::bounded(format!(
+                            "({}).update({index}, {})",
+                            current.text, assigned
+                        )),
+                    );
+                    Ok(())
+                }
+                Expr::Index { .. } => Err(RefEncodeError::Unsupported(
+                    "exclusive indexed lifecycle supports one direct element index, not a range"
+                        .to_string(),
+                )),
+                _ => Err(RefEncodeError::Unsupported(
+                    "aggregate lifecycle assignment target is neither a framed direct field/indexed root nor an in-scope scalar local"
+                        .to_string(),
+                )),
+            }
+        }
+        Stmt::If { cond, then, else_ } => {
+            let condition = encode_lifecycle_expr(cond, state, ctx)?.text;
+            let before = state.clone();
+            let mut then_state = before.clone();
+            thread_lifecycle_block(then, &mut then_state, ctx, true, active_calls)?;
+            let mut else_state = before.clone();
+            if let Some(else_) = else_ {
+                thread_lifecycle_block(else_, &mut else_state, ctx, true, active_calls)?;
+            }
+
+            for (key, prior) in &before.locals {
+                let left = then_state.locals.get(key).unwrap_or(prior);
+                let right = else_state.locals.get(key).unwrap_or(prior);
+                if left != prior || right != prior {
+                    state
+                        .locals
+                        .insert(key.clone(), merge_lifecycle_cells(&condition, left, right));
+                }
+            }
+            for (key, prior) in &before.fields {
+                let left = then_state.fields.get(key).unwrap_or(prior);
+                let right = else_state.fields.get(key).unwrap_or(prior);
+                if left != prior || right != prior {
+                    state
+                        .fields
+                        .insert(key.clone(), merge_lifecycle_cells(&condition, left, right));
+                }
+            }
+            let indexed_keys = before
+                .indexed
+                .keys()
+                .chain(then_state.indexed.keys())
+                .chain(else_state.indexed.keys())
+                .cloned()
+                .collect::<BTreeSet<_>>();
+            for key in indexed_keys {
+                let left = then_state.indexed.get(&key);
+                let right = else_state.indexed.get(&key);
+                match (left, right) {
+                    (Some(left), Some(right)) => {
+                        let prior = before.indexed.get(&key);
+                        if prior != Some(left) || prior != Some(right) {
+                            state.indexed.insert(
+                                key,
+                                merge_lifecycle_cells(&condition, left, right),
+                            );
+                        }
+                    }
+                    (None, None) => {
+                        // Both branches replaced an enclosing native value and
+                        // deliberately invalidated this overlay. Their exact
+                        // native record values were merged above, so retaining
+                        // the pre-branch sequence here would be stale.
+                        state.indexed.remove(&key);
+                    }
+                    _ => {
+                        return Err(RefEncodeError::Unsupported(format!(
+                            "conditional aggregate lifecycle changes projected indexed path `{key}` in only one branch; an exact native-array/sequence merge is not materialized"
+                        )));
+                    }
+                }
+            }
+            Ok(())
+        }
+        Stmt::Expr(expr) => {
+            if let Expr::Call { callee, args } = expr {
+                if let Expr::Path(path) = callee.as_ref() {
+                    if let [name] = path.as_slice() {
+                        if ctx.mutable_call_effect(name).is_some() {
+                            let _ = apply_mutable_call_effect(
+                                name,
+                                args,
+                                state,
+                                ctx,
+                                active_calls,
+                            )?;
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+            let _ = encode_lifecycle_expr(expr, state, ctx)?;
+            Ok(())
+        }
+        Stmt::Return(_) => Err(RefEncodeError::Unsupported(
+            "mid-body return is outside the single-exit aggregate lifecycle subset".to_string(),
+        )),
+        Stmt::Loop(_) | Stmt::Break | Stmt::Continue => Err(RefEncodeError::Unsupported(
+            "loops and loop control over aggregate state require a separate invariant lifecycle model"
+                .to_string(),
+        )),
+    }
+}
+
+/// Apply one reachable in-language mutable-reference call to the independent
+/// lifecycle state. Direct actuals retain their existing implicit-reference
+/// spelling (`callee(root)` where `root: &mut T`/`&T`). A projected finite-record
+/// actual is an explicit source borrow (`callee(&mut outer.inner)` or
+/// `callee(&outer.inner)`). Exclusive access paths are pairwise structurally
+/// disjoint and may not overlap a shared actual: equal paths and every
+/// ancestor/descendant pair overlap, while sibling fields do not. Shared/shared
+/// aliasing is harmless and admitted. The callee source body is interpreted
+/// recursively with its formal names rebound to the caller's current values;
+/// production still executes the ordinary lowered call and is never replaced by
+/// this model.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RecordCallActual {
+    /// Root parameter followed by zero or more finite-record field projections.
+    segments: Vec<String>,
+    /// Exact nominal type at the root and after every projection. Therefore this
+    /// has the same length as `segments` and its last item is the actual pointee.
+    types: Vec<String>,
+}
+
+/// One exact slice/fixed-array actual. A direct actual is an already borrowed
+/// parameter such as `data`; a projected actual is an explicit borrow such as
+/// `&mut outer.inner.slots`. The complete structural path participates in the
+/// same prefix-overlap alias rule as finite-record actuals.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct IndexedCallActual {
+    segments: Vec<String>,
+    pointee: Type,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RecordCallSnapshot {
+    fields: Vec<(String, LifecycleCell)>,
+    indexed: Vec<(String, LifecycleCell)>,
+}
+
+impl IndexedCallActual {
+    fn root(&self) -> &str {
+        &self.segments[0]
+    }
+
+    fn is_direct(&self) -> bool {
+        self.segments.len() == 1
+    }
+
+    fn display(&self) -> String {
+        self.segments.join(".")
+    }
+}
+
+impl RecordCallActual {
+    fn root(&self) -> &str {
+        &self.segments[0]
+    }
+
+    fn type_name(&self) -> &str {
+        self.types
+            .last()
+            .expect("a resolved record actual always has one type")
+    }
+
+    fn is_direct(&self) -> bool {
+        self.segments.len() == 1
+    }
+
+    fn display(&self) -> String {
+        self.segments.join(".")
+    }
+}
+
+fn access_paths_overlap(left: &[String], right: &[String]) -> bool {
+    left.iter()
+        .zip(right)
+        .all(|(left_segment, right_segment)| left_segment == right_segment)
+}
+
+fn projected_borrow_segments(
+    argument: &Expr,
+    mutable: bool,
+    callee: &str,
+    formal: &str,
+    kind: &str,
+) -> Result<Vec<String>, RefEncodeError> {
+    let Expr::Ref {
+        mutable: actual_mutable,
+        expr,
+    } = argument
+    else {
+        let borrow = if mutable { "&mut" } else { "&" };
+        return Err(RefEncodeError::Unsupported(format!(
+            "{} {kind} actual for `{callee}::{formal}` must be one direct borrowed root or an explicit `{borrow} root.field(.field)*` projection",
+            if mutable { "exclusive" } else { "shared" },
+        )));
+    };
+    if *actual_mutable != mutable {
+        return Err(RefEncodeError::Unsupported(format!(
+            "{} {kind} formal `{callee}::{formal}` received a {} projected borrow",
+            if mutable { "exclusive" } else { "shared" },
+            if *actual_mutable { "mutable" } else { "shared" }
+        )));
+    }
+    let (root, steps) = nested_lvalue_path(expr)?;
+    if steps.is_empty() {
+        return Err(RefEncodeError::Unsupported(format!(
+            "direct {kind} actual `{root}` for `{callee}::{formal}` is already borrowed; an explicit reference would change its type"
+        )));
+    }
+    let mut segments = vec![root];
+    for step in steps {
+        match step {
+            NestedLvalueStep::Field(field) => segments.push(field),
+            NestedLvalueStep::Index(_) => {
+                return Err(RefEncodeError::Unsupported(format!(
+                    "projected {kind} actual for `{callee}::{formal}` may contain only finite-record fields"
+                )));
+            }
+        }
+    }
+    Ok(segments)
+}
+
+fn record_actual_segments(
+    argument: &Expr,
+    mutable: bool,
+    callee: &str,
+    formal: &str,
+) -> Result<Vec<String>, RefEncodeError> {
+    if let Expr::Path(path) = argument {
+        if path.len() == 1 {
+            return Ok(path.clone());
+        }
+    }
+
+    let Expr::Ref {
+        mutable: actual_mutable,
+        expr,
+    } = argument
+    else {
+        let borrow = if mutable { "&mut" } else { "&" };
+        return Err(RefEncodeError::Unsupported(format!(
+            "{} record actual for `{callee}::{formal}` must be one direct borrowed root or an explicit `{borrow} root.field(.field)*` projection",
+            if mutable { "exclusive" } else { "shared" },
+        )));
+    };
+    if *actual_mutable != mutable {
+        return Err(RefEncodeError::Unsupported(format!(
+            "{} record formal `{callee}::{formal}` received a {} projected borrow",
+            if mutable { "exclusive" } else { "shared" },
+            if *actual_mutable { "mutable" } else { "shared" }
+        )));
+    }
+    let (root, steps) = nested_lvalue_path(expr)?;
+    if steps.is_empty() {
+        return Err(RefEncodeError::Unsupported(format!(
+            "direct record actual `{root}` for `{callee}::{formal}` is already borrowed; an explicit reference would change its type"
+        )));
+    }
+    let mut segments = vec![root];
+    for step in steps {
+        match step {
+            NestedLvalueStep::Field(field) => segments.push(field),
+            NestedLvalueStep::Index(_) => {
+                return Err(RefEncodeError::Unsupported(format!(
+                    "projected record actual for `{callee}::{formal}` may contain only finite-record fields"
+                )));
+            }
+        }
+    }
+    Ok(segments)
+}
+
+fn resolve_record_call_actual(
+    argument: &Expr,
+    mutable: bool,
+    callee: &str,
+    formal: &str,
+    ctx: &BodyRefCtx,
+) -> Result<RecordCallActual, RefEncodeError> {
+    let segments = record_actual_segments(argument, mutable, callee, formal)?;
+    let root = &segments[0];
+    let root_type = if mutable {
+        ctx.mutable_record(root)
+            .and_then(|record| record.type_name.as_deref())
+    } else if let Some(record) = ctx.shared_record(root) {
+        Some(record.type_name.as_str())
+    } else {
+        ctx.mutable_record(root)
+            .and_then(|record| record.type_name.as_deref())
+    }
+    .ok_or_else(|| {
+        RefEncodeError::Unsupported(format!(
+            "{} record actual root `{root}` for `{callee}::{formal}` has no exact independently framed nominal type",
+            if mutable { "exclusive" } else { "shared" }
+        ))
+    })?;
+
+    let mut types = vec![root_type.to_string()];
+    let mut current_type = root_type;
+    for field_name in &segments[1..] {
+        let record = ctx.named_record(current_type).ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "projected record actual `{}` for `{callee}::{formal}` crosses non-finite record `{current_type}`",
+                segments.join(".")
+            ))
+        })?;
+        let field = record
+            .fields
+            .iter()
+            .find(|field| field.name == *field_name)
+            .ok_or_else(|| {
+                RefEncodeError::Unsupported(format!(
+                    "projected record actual `{}` for `{callee}::{formal}` names unknown field `{current_type}.{field_name}`",
+                    segments.join(".")
+                ))
+            })?;
+        let Some(Type::Named(next_type)) = field.ty.as_ref() else {
+            return Err(RefEncodeError::Unsupported(format!(
+                "projected record actual `{}` for `{callee}::{formal}` ends or crosses non-record field `{current_type}.{field_name}`",
+                segments.join(".")
+            )));
+        };
+        types.push(next_type.clone());
+        current_type = next_type;
+    }
+
+    Ok(RecordCallActual { segments, types })
+}
+
+fn resolve_indexed_call_actual(
+    argument: &Expr,
+    mutable: bool,
+    callee: &str,
+    formal: &str,
+    ctx: &BodyRefCtx,
+) -> Result<IndexedCallActual, RefEncodeError> {
+    if let Expr::Path(path) = argument {
+        if let [root] = path.as_slice() {
+            let pointee = if mutable {
+                ctx.mutable_indexed(root).map(|frame| &frame.pointee)
+            } else {
+                ctx.shared_indexed(root)
+                    .map(|frame| &frame.pointee)
+                    .or_else(|| ctx.mutable_indexed(root).map(|frame| &frame.pointee))
+            }
+            .ok_or_else(|| {
+                RefEncodeError::Unsupported(format!(
+                    "{} indexed actual `{root}` for `{callee}::{formal}` is not an independently framed {} slice or fixed array",
+                    if mutable { "mutable" } else { "shared" },
+                    if mutable { "exclusive" } else { "borrowed" },
+                ))
+            })?;
+            return Ok(IndexedCallActual {
+                segments: path.clone(),
+                pointee: pointee.clone(),
+            });
+        }
+    }
+
+    let segments = projected_borrow_segments(argument, mutable, callee, formal, "indexed")?;
+    let root = &segments[0];
+    let root_type = if mutable {
+        ctx.mutable_record(root)
+            .and_then(|record| record.type_name.as_deref())
+    } else if let Some(record) = ctx.shared_record(root) {
+        Some(record.type_name.as_str())
+    } else {
+        ctx.mutable_record(root)
+            .and_then(|record| record.type_name.as_deref())
+    }
+    .ok_or_else(|| {
+        RefEncodeError::Unsupported(format!(
+            "{} indexed actual root `{root}` for `{callee}::{formal}` has no exact independently framed nominal type",
+            if mutable { "exclusive" } else { "shared" }
+        ))
+    })?;
+
+    let mut current = Type::Named(root_type.to_string());
+    for field_name in &segments[1..] {
+        let Type::Named(record_name) = &current else {
+            return Err(RefEncodeError::Unsupported(format!(
+                "projected indexed actual `{}` for `{callee}::{formal}` crosses non-record storage before `{field_name}`",
+                segments.join(".")
+            )));
+        };
+        let record = ctx.named_record(record_name).ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "projected indexed actual `{}` for `{callee}::{formal}` crosses non-finite record `{record_name}`",
+                segments.join(".")
+            ))
+        })?;
+        let field = record
+            .fields
+            .iter()
+            .find(|field| field.name == *field_name)
+            .ok_or_else(|| {
+                RefEncodeError::Unsupported(format!(
+                    "projected indexed actual `{}` for `{callee}::{formal}` names unknown field `{record_name}.{field_name}`",
+                    segments.join(".")
+                ))
+            })?;
+        current = field.ty.clone().ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "projected indexed actual `{}` for `{callee}::{formal}` has no exact source type for `{record_name}.{field_name}`",
+                segments.join(".")
+            ))
+        })?;
+    }
+    if !matches!(current, Type::Slice(_) | Type::Array { .. }) {
+        return Err(RefEncodeError::Unsupported(format!(
+            "projected indexed actual `{}` for `{callee}::{formal}` ends at non-indexed type `{current:?}`",
+            segments.join(".")
+        )));
+    }
+    Ok(IndexedCallActual {
+        segments,
+        pointee: current,
+    })
+}
+
+fn snapshot_indexed_actual(
+    actual: &IndexedCallActual,
+    state: &LifecycleState,
+    callee: &str,
+) -> Result<LifecycleCell, RefEncodeError> {
+    let path = actual.display();
+    if let Some(sequence) = state.indexed.get(&path) {
+        return Ok(sequence.clone());
+    }
+    if actual.is_direct() {
+        return Err(RefEncodeError::Unsupported(format!(
+            "indexed call `{callee}` cannot observe exact caller sequence `{path}`"
+        )));
+    }
+
+    let top_key = format!("{}.{}", actual.root(), actual.segments[1]);
+    let mut native = state.fields.get(&top_key).cloned().ok_or_else(|| {
+        RefEncodeError::Unsupported(format!(
+            "projected indexed call `{callee}` cannot observe enclosing caller field `{top_key}`"
+        ))
+    })?;
+    for field in &actual.segments[2..] {
+        native = LifecycleCell::bounded(format!("({}).{field}", native.text));
+    }
+    Ok(LifecycleCell::bounded(format!("({})@", native.text)))
+}
+
+fn projected_record_value(
+    actual: &RecordCallActual,
+    state: &LifecycleState,
+    callee: &str,
+) -> Result<LifecycleCell, RefEncodeError> {
+    debug_assert!(!actual.is_direct());
+    let top_key = format!("{}.{}", actual.root(), actual.segments[1]);
+    let mut value = state.fields.get(&top_key).cloned().ok_or_else(|| {
+        RefEncodeError::Unsupported(format!(
+            "mutable-reference call `{callee}` cannot observe exact caller projection `{top_key}`"
+        ))
+    })?;
+    for field in &actual.segments[2..] {
+        value = LifecycleCell::bounded(format!("({}).{field}", value.text));
+    }
+    Ok(value)
+}
+
+fn snapshot_record_actual(
+    formal: &MutableRecordFrame,
+    actual: &RecordCallActual,
+    state: &LifecycleState,
+    callee: &str,
+) -> Result<RecordCallSnapshot, RefEncodeError> {
+    let fields = if actual.is_direct() {
+        formal
+            .fields
+            .iter()
+            .map(|field| {
+                let actual_key = format!("{}.{}", actual.root(), field.name);
+                state
+                    .fields
+                    .get(&actual_key)
+                    .cloned()
+                    .map(|value| (field.name.clone(), value))
+                    .ok_or_else(|| {
+                        RefEncodeError::Unsupported(format!(
+                            "mutable-reference call `{callee}` cannot observe exact caller field `{actual_key}`"
+                        ))
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()?
+    } else {
+        let record = projected_record_value(actual, state, callee)?;
+        formal
+            .fields
+            .iter()
+            .map(|field| {
+                (
+                    field.name.clone(),
+                    LifecycleCell::bounded(format!("({}).{}", record.text, field.name)),
+                )
+            })
+            .collect()
+    };
+    let indexed =
+        rebased_indexed_descendants(state, &actual.segments, std::slice::from_ref(&formal.name));
+    Ok(RecordCallSnapshot { fields, indexed })
+}
+
+fn snapshot_shared_record_actual(
+    formal: &SharedRecordFrame,
+    actual: &RecordCallActual,
+    state: &LifecycleState,
+    callee: &str,
+) -> Result<RecordCallSnapshot, RefEncodeError> {
+    let mutable = MutableRecordFrame::typed(
+        formal.name.clone(),
+        formal.type_name.clone(),
+        formal.fields.clone(),
+    );
+    snapshot_record_actual(&mutable, actual, state, callee)
+}
+
+fn record_post_value(
+    formal: &MutableRecordFrame,
+    callee_state: &LifecycleState,
+    callee: &str,
+) -> Result<String, RefEncodeError> {
+    let type_name = formal.type_name.as_deref().ok_or_else(|| {
+        RefEncodeError::Unsupported(format!(
+            "mutable-reference callee `{callee}` lost the exact nominal type of `{}`",
+            formal.name
+        ))
+    })?;
+    let fields = formal
+        .fields
+        .iter()
+        .map(|field| {
+            let formal_key = format!("{}.{}", formal.name, field.name);
+            callee_state
+                .fields
+                .get(&formal_key)
+                .map(|value| format!("{}: {}", field.name, value.text))
+                .ok_or_else(|| {
+                    RefEncodeError::Unsupported(format!(
+                        "mutable-reference callee `{callee}` lost exact post-state field `{formal_key}`"
+                    ))
+                })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(format!("{type_name} {{ {} }}", fields.join(", ")))
+}
+
+fn rebuild_projected_record_text(
+    current: String,
+    current_type: &str,
+    fields: &[String],
+    replacement: &str,
+    ctx: &BodyRefCtx,
+) -> Result<String, RefEncodeError> {
+    let Some((changed_field, rest)) = fields.split_first() else {
+        return Ok(replacement.to_string());
+    };
+    let record = ctx.named_record(current_type).ok_or_else(|| {
+        RefEncodeError::Unsupported(format!(
+            "projected call copy-back lost finite record declaration `{current_type}`"
+        ))
+    })?;
+    let changed = record
+        .fields
+        .iter()
+        .find(|field| field.name == *changed_field)
+        .ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "projected call copy-back lost field `{current_type}.{changed_field}`"
+            ))
+        })?;
+    let next = if rest.is_empty() {
+        replacement.to_string()
+    } else {
+        let Some(Type::Named(next_type)) = changed.ty.as_ref() else {
+            return Err(RefEncodeError::Unsupported(format!(
+                "projected call copy-back crosses non-record field `{current_type}.{changed_field}`"
+            )));
+        };
+        rebuild_projected_record_text(
+            format!("({current}).{changed_field}"),
+            next_type,
+            rest,
+            replacement,
+            ctx,
+        )?
+    };
+    Ok(format!(
+        "{current_type} {{ {} }}",
+        record
+            .fields
+            .iter()
+            .map(|field| {
+                if field.name == *changed_field {
+                    format!("{}: {next}", field.name)
+                } else {
+                    format!("{}: ({current}).{}", field.name, field.name)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    ))
+}
+
+fn copy_back_record_actual(
+    formal: &MutableRecordFrame,
+    actual: &RecordCallActual,
+    callee_state: &LifecycleState,
+    state: &mut LifecycleState,
+    callee: &str,
+    ctx: &BodyRefCtx,
+) -> Result<(), RefEncodeError> {
+    let indexed = rebased_indexed_descendants(
+        callee_state,
+        std::slice::from_ref(&formal.name),
+        &actual.segments,
+    );
+    if actual.is_direct() {
+        let fields = formal
+            .fields
+            .iter()
+            .map(|field| {
+                let formal_key = format!("{}.{}", formal.name, field.name);
+                callee_state
+                    .fields
+                    .get(&formal_key)
+                    .cloned()
+                    .map(|value| (format!("{}.{}", actual.root(), field.name), value))
+                    .ok_or_else(|| {
+                        RefEncodeError::Unsupported(format!(
+                            "mutable-reference callee `{callee}` lost exact post-state field `{formal_key}`"
+                        ))
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        remove_indexed_at_or_below(state, &actual.segments);
+        for (key, value) in fields {
+            state.fields.insert(key, value);
+        }
+        for (key, value) in indexed {
+            state.indexed.insert(key, value);
+        }
+        return Ok(());
+    }
+
+    let replacement = record_post_value(formal, callee_state, callee)?;
+    let top_key = format!("{}.{}", actual.root(), actual.segments[1]);
+    let current = state.fields.get(&top_key).cloned().ok_or_else(|| {
+        RefEncodeError::Unsupported(format!(
+            "projected call copy-back cannot observe enclosing caller field `{top_key}`"
+        ))
+    })?;
+    let rebuilt = if actual.segments.len() == 2 {
+        replacement
+    } else {
+        rebuild_projected_record_text(
+            current.text,
+            &actual.types[1],
+            &actual.segments[2..],
+            &replacement,
+            ctx,
+        )?
+    };
+    remove_indexed_at_or_below(state, &actual.segments);
+    state
+        .fields
+        .insert(top_key, LifecycleCell::bounded(format!("({rebuilt})")));
+    for (key, value) in indexed {
+        state.indexed.insert(key, value);
+    }
+    Ok(())
+}
+
+fn apply_mutable_call_effect(
+    name: &str,
+    args: &[Expr],
+    state: &mut LifecycleState,
+    ctx: &BodyRefCtx,
+    active_calls: &mut Vec<String>,
+) -> Result<LifecycleCell, RefEncodeError> {
+    if active_calls.iter().any(|active| active == name) {
+        return Err(RefEncodeError::Unsupported(format!(
+            "recursive mutable-reference effect cycle reaches `{name}`"
+        )));
+    }
+    let effect = ctx.mutable_call_effect(name).cloned().ok_or_else(|| {
+        RefEncodeError::Unsupported(format!(
+            "mutable-reference call `{name}` has no exact in-language effect frame"
+        ))
+    })?;
+    if effect.params.len() != args.len() {
+        return Err(RefEncodeError::Unsupported(format!(
+            "mutable-reference call `{name}` has {} actual arguments but {} exact formals",
+            args.len(),
+            effect.params.len()
+        )));
+    }
+    if effect.mutable_records.is_empty() && effect.mutable_indexed.is_empty() {
+        return Err(RefEncodeError::Unsupported(format!(
+            "mutable-reference call `{name}` has no admitted finite-record or indexed-storage formal"
+        )));
+    }
+    let formal_positions = effect
+        .params
+        .iter()
+        .enumerate()
+        .map(|(index, formal)| (formal.as_str(), index))
+        .collect::<BTreeMap<_, _>>();
+    let mut mutable_actual_roots = BTreeMap::<String, RecordCallActual>::new();
+    let mut exclusive_paths = Vec::<Vec<String>>::new();
+    for formal in &effect.mutable_records {
+        let position = formal_positions.get(formal.name.as_str()).ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "mutable-reference callee `{name}` lost formal `{}`",
+                formal.name
+            ))
+        })?;
+        let actual = resolve_record_call_actual(&args[*position], true, name, &formal.name, ctx)?;
+        if let Some(overlap) = exclusive_paths
+            .iter()
+            .find(|path| access_paths_overlap(path, &actual.segments))
+        {
+            return Err(RefEncodeError::Unsupported(format!(
+                "mutable-reference call `{name}` aliases exclusive access paths `{}` and `{}`",
+                overlap.join("."),
+                actual.display()
+            )));
+        }
+        exclusive_paths.push(actual.segments.clone());
+        match &formal.type_name {
+            Some(expected) if expected == actual.type_name() => {}
+            Some(expected) => {
+                return Err(RefEncodeError::Unsupported(format!(
+                    "mutable-reference call `{name}` expects `{expected}` for `{}` but actual `{}` has `{}`",
+                    formal.name,
+                    actual.display(),
+                    actual.type_name()
+                )));
+            }
+            None => {
+                return Err(RefEncodeError::Unsupported(format!(
+                    "mutable-reference call `{name}` lacks exact nominal type metadata for formal `{}`",
+                    formal.name
+                )));
+            }
+        }
+        mutable_actual_roots.insert(formal.name.clone(), actual);
+    }
+
+    let mut indexed_actual_roots = BTreeMap::<String, IndexedCallActual>::new();
+    for formal in &effect.mutable_indexed {
+        let position = formal_positions.get(formal.name.as_str()).ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "mutable indexed callee `{name}` lost formal `{}`",
+                formal.name
+            ))
+        })?;
+        let actual = resolve_indexed_call_actual(&args[*position], true, name, &formal.name, ctx)?;
+        if let Some(overlap) = exclusive_paths
+            .iter()
+            .find(|existing| access_paths_overlap(existing, &actual.segments))
+        {
+            return Err(RefEncodeError::Unsupported(format!(
+                "mutable-reference call `{name}` aliases exclusive access paths `{}` and `{}` across record/indexed formals",
+                overlap.join("."),
+                actual.display(),
+            )));
+        }
+        exclusive_paths.push(actual.segments.clone());
+        if formal.pointee != actual.pointee {
+            return Err(RefEncodeError::Unsupported(format!(
+                "mutable indexed call `{name}` has an exact pointee-type mismatch for formal `{}` and actual `{}`",
+                formal.name,
+                actual.display(),
+            )));
+        }
+        indexed_actual_roots.insert(formal.name.clone(), actual);
+    }
+
+    let mut shared_actual_roots = BTreeMap::<String, RecordCallActual>::new();
+    for formal in &effect.shared_records {
+        let position = formal_positions.get(formal.name.as_str()).ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "mixed-reference callee `{name}` lost shared formal `{}`",
+                formal.name
+            ))
+        })?;
+        let actual = resolve_record_call_actual(&args[*position], false, name, &formal.name, ctx)?;
+        if let Some(overlap) = exclusive_paths
+            .iter()
+            .find(|path| access_paths_overlap(path, &actual.segments))
+        {
+            return Err(RefEncodeError::Unsupported(format!(
+                "mixed-reference call `{name}` aliases exclusive access path `{}` through shared actual `{}` for formal `{}`",
+                overlap.join("."),
+                actual.display(),
+                formal.name,
+            )));
+        }
+        if formal.type_name != actual.type_name() {
+            return Err(RefEncodeError::Unsupported(format!(
+                "shared-reference call `{name}` expects `{}` for `{}` but actual `{}` has `{}`",
+                formal.type_name,
+                formal.name,
+                actual.display(),
+                actual.type_name(),
+            )));
+        }
+        shared_actual_roots.insert(formal.name.clone(), actual);
+    }
+
+    let mut shared_indexed_actual_roots = BTreeMap::<String, IndexedCallActual>::new();
+    for formal in &effect.shared_indexed {
+        let position = formal_positions.get(formal.name.as_str()).ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "mixed-reference callee `{name}` lost shared indexed formal `{}`",
+                formal.name
+            ))
+        })?;
+        let actual = resolve_indexed_call_actual(&args[*position], false, name, &formal.name, ctx)?;
+        if let Some(overlap) = exclusive_paths
+            .iter()
+            .find(|existing| access_paths_overlap(existing, &actual.segments))
+        {
+            return Err(RefEncodeError::Unsupported(format!(
+                "mixed-reference call `{name}` aliases exclusive access path `{}` through shared indexed root `{}` for formal `{}`",
+                overlap.join("."),
+                actual.display(),
+                formal.name,
+            )));
+        }
+        if formal.pointee != actual.pointee {
+            return Err(RefEncodeError::Unsupported(format!(
+                "shared indexed call `{name}` has an exact pointee-type mismatch for formal `{}` and actual `{}`",
+                formal.name,
+                actual.display(),
+            )));
+        }
+        shared_indexed_actual_roots.insert(formal.name.clone(), actual);
+    }
+
+    let mut callee_state = LifecycleState::default();
+    for (position, formal_name) in effect.params.iter().enumerate() {
+        if effect
+            .mutable_records
+            .iter()
+            .any(|record| record.name == *formal_name)
+            || effect
+                .mutable_indexed
+                .iter()
+                .any(|indexed| indexed.name == *formal_name)
+            || effect
+                .shared_records
+                .iter()
+                .any(|record| record.name == *formal_name)
+            || effect
+                .shared_indexed
+                .iter()
+                .any(|indexed| indexed.name == *formal_name)
+        {
+            continue;
+        }
+        let value = encode_lifecycle_expr(&args[position], state, ctx)?;
+        callee_state.locals.insert(formal_name.clone(), value);
+        callee_state.readonly_inputs.insert(formal_name.clone());
+    }
+    for formal in &effect.mutable_records {
+        let actual = mutable_actual_roots.get(&formal.name).ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "mutable-reference callee `{name}` lost actual root for formal `{}`",
+                formal.name
+            ))
+        })?;
+        let snapshot = snapshot_record_actual(formal, actual, state, name)?;
+        for (field, value) in snapshot.fields {
+            callee_state
+                .fields
+                .insert(format!("{}.{}", formal.name, field), value);
+        }
+        callee_state.indexed.extend(snapshot.indexed);
+    }
+    for formal in &effect.shared_records {
+        let actual = shared_actual_roots.get(&formal.name).ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "mixed-reference callee `{name}` lost actual shared root for formal `{}`",
+                formal.name
+            ))
+        })?;
+        let snapshot = snapshot_shared_record_actual(formal, actual, state, name)?;
+        for (field, value) in snapshot.fields {
+            callee_state
+                .fields
+                .insert(format!("{}.{}", formal.name, field), value);
+        }
+        callee_state.indexed.extend(snapshot.indexed);
+    }
+    for formal in &effect.mutable_indexed {
+        let actual = indexed_actual_roots.get(&formal.name).ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "mutable indexed callee `{name}` lost actual root for formal `{}`",
+                formal.name
+            ))
+        })?;
+        let value = snapshot_indexed_actual(actual, state, name)?;
+        callee_state.indexed.insert(formal.name.clone(), value);
+    }
+    for formal in &effect.shared_indexed {
+        let actual = shared_indexed_actual_roots
+            .get(&formal.name)
+            .ok_or_else(|| {
+                RefEncodeError::Unsupported(format!(
+                    "mixed-reference callee `{name}` lost actual shared indexed root for formal `{}`",
+                    formal.name
+                ))
+            })?;
+        let value = snapshot_indexed_actual(actual, state, name)?;
+        callee_state.indexed.insert(formal.name.clone(), value);
+    }
+
+    let mut callee_ctx = ctx.clone();
+    callee_ctx.mutable_records = effect.mutable_records.clone();
+    callee_ctx.mutable_indexed = effect.mutable_indexed.clone();
+    callee_ctx.mutable_indexed_bound = effect
+        .mutable_indexed
+        .iter()
+        .map(|indexed| indexed.name.clone())
+        .collect();
+    callee_ctx.shared_indexed = effect.shared_indexed.clone();
+    callee_ctx.slice_bound = effect
+        .mutable_indexed
+        .iter()
+        .map(|indexed| (&indexed.name, &indexed.pointee))
+        .chain(
+            effect
+                .shared_indexed
+                .iter()
+                .map(|indexed| (&indexed.name, &indexed.pointee)),
+        )
+        .filter(|(_, pointee)| matches!(pointee, Type::Slice(_)))
+        .map(|(name, _)| name.clone())
+        .collect();
+    callee_ctx.fixed_array_bound = effect
+        .mutable_indexed
+        .iter()
+        .map(|indexed| (&indexed.name, &indexed.pointee))
+        .chain(
+            effect
+                .shared_indexed
+                .iter()
+                .map(|indexed| (&indexed.name, &indexed.pointee)),
+        )
+        .filter(|(_, pointee)| matches!(pointee, Type::Array { .. }))
+        .map(|(name, _)| name.clone())
+        .collect();
+    callee_ctx.shared_records = effect.shared_records.clone();
+    for record in &effect.mutable_records {
+        if let Some(type_name) = record.type_name.as_deref() {
+            collect_fixed_array_record_paths(
+                &record.name,
+                type_name,
+                ctx,
+                &mut BTreeSet::new(),
+                &mut callee_ctx.fixed_array_fields,
+            );
+        }
+    }
+    for record in &effect.shared_records {
+        collect_fixed_array_record_paths(
+            &record.name,
+            &record.type_name,
+            ctx,
+            &mut BTreeSet::new(),
+            &mut callee_ctx.fixed_array_fields,
+        );
+    }
+    active_calls.push(name.to_string());
+    let interpreted = thread_lifecycle_block(
+        &effect.body,
+        &mut callee_state,
+        &callee_ctx,
+        false,
+        active_calls,
+    );
+    active_calls.pop();
+    interpreted?;
+    // Interpret the callee's exact source result under its post-state. A
+    // statement-position caller may discard this cell; a direct `let` caller
+    // binds it. Either way, an unsupported or effectful tail cannot disappear.
+    let result = match &effect.body.tail {
+        Some(tail) => encode_lifecycle_expr(tail, &callee_state, &callee_ctx)?,
+        None => LifecycleCell::bounded("()"),
+    };
+
+    for formal in &effect.mutable_records {
+        let actual = mutable_actual_roots.get(&formal.name).ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "mutable-reference callee `{name}` lost actual root for formal `{}`",
+                formal.name
+            ))
+        })?;
+        copy_back_record_actual(formal, actual, &callee_state, state, name, ctx)?;
+    }
+    for formal in &effect.mutable_indexed {
+        let actual = indexed_actual_roots.get(&formal.name).ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "mutable indexed callee `{name}` lost actual root for formal `{}`",
+                formal.name
+            ))
+        })?;
+        let value = callee_state
+            .indexed
+            .get(&formal.name)
+            .cloned()
+            .ok_or_else(|| {
+                RefEncodeError::Unsupported(format!(
+                    "mutable indexed callee `{name}` lost exact post-state sequence `{}`",
+                    formal.name
+                ))
+            })?;
+        state.indexed.insert(actual.display(), value);
+    }
+    Ok(result)
+}
+
+/// Recognize the sole admitted result-consuming form: a bare call to a framed
+/// in-language mutable callee used directly as a `let` initializer. Nested uses
+/// remain fail-closed until expression evaluation order and borrow aliasing are
+/// independently modeled.
+fn direct_mutable_call<'a>(expr: &'a Expr, ctx: &BodyRefCtx) -> Option<(&'a str, &'a [Expr])> {
+    let Expr::Call { callee, args } = expr else {
+        return None;
+    };
+    let Expr::Path(path) = callee.as_ref() else {
+        return None;
+    };
+    let [name] = path.as_slice() else {
+        return None;
+    };
+    ctx.mutable_call_effect(name)
+        .is_some()
+        .then_some((name.as_str(), args.as_slice()))
+}
+
+/// Interpret the common source-derived portion of one direct pure call whose
+/// finite-record by-value argument contains a logical sequence overlay.
+/// Production still executes the ordinary generated call. The reference side
+/// copies every native field and sequence leaf into the exact formal frame and
+/// interprets the reachable source body, avoiding an unsound
+/// `Seq<T>`-to-`[T; N]` reconstruction.
+fn interpret_logical_value_call(
+    name: &str,
+    args: &[Expr],
+    state: &LifecycleState,
+    ctx: &BodyRefCtx,
+    effect: &MutableCallEffectFrame,
+) -> Result<(LifecycleState, BodyRefCtx), RefEncodeError> {
+    if state.active_value_calls.iter().any(|active| active == name) {
+        return Err(RefEncodeError::Unsupported(format!(
+            "recursive logical by-value call cycle reaches `{name}`"
+        )));
+    }
+    if effect.params.len() != args.len() {
+        return Err(RefEncodeError::Unsupported(format!(
+            "logical by-value call `{name}` has {} actual arguments but {} exact formals",
+            args.len(),
+            effect.params.len()
+        )));
+    }
+
+    let mut callee_state = LifecycleState {
+        active_value_calls: {
+            let mut active = state.active_value_calls.clone();
+            active.push(name.to_string());
+            active
+        },
+        ..LifecycleState::default()
+    };
+    for (position, formal_name) in effect.params.iter().enumerate() {
+        if let Some(record) = effect
+            .value_records
+            .iter()
+            .find(|record| record.name == *formal_name)
+        {
+            let binding = lifecycle_record_binding(
+                formal_name,
+                &record.type_name,
+                &args[position],
+                state,
+                ctx,
+            )?;
+            callee_state
+                .locals
+                .insert(formal_name.clone(), binding.whole);
+            callee_state.fields.extend(binding.direct_fields);
+            callee_state.indexed.extend(binding.indexed);
+            callee_state.record_locals.insert(
+                formal_name.clone(),
+                LifecycleRecordLocal {
+                    type_name: record.type_name.clone(),
+                    mutable: false,
+                },
+            );
+        } else {
+            let value = encode_lifecycle_expr(&args[position], state, ctx)?;
+            callee_state.locals.insert(formal_name.clone(), value);
+        }
+        callee_state.readonly_inputs.insert(formal_name.clone());
+    }
+
+    let mut callee_ctx = ctx.clone();
+    callee_ctx.mutable_records.clear();
+    callee_ctx.mutable_indexed.clear();
+    callee_ctx.mutable_indexed_bound.clear();
+    callee_ctx.shared_records.clear();
+    callee_ctx.shared_indexed.clear();
+    callee_ctx.slice_bound.clear();
+    callee_ctx.fixed_array_bound.clear();
+    callee_ctx.fixed_array_fields.clear();
+    callee_ctx.result_is_fixed_array = false;
+    callee_ctx.result_is_unit = matches!(effect.result_type, Some(Type::Unit));
+    callee_ctx.result_record = None;
+    for record in &effect.value_records {
+        collect_fixed_array_record_paths(
+            &record.name,
+            &record.type_name,
+            ctx,
+            &mut BTreeSet::new(),
+            &mut callee_ctx.fixed_array_fields,
+        );
+        callee_ctx.enum_variants.remove(&record.name);
+    }
+    for formal_name in &effect.params {
+        callee_ctx.enum_variants.remove(formal_name);
+    }
+
+    let mut active_mutable_calls = Vec::new();
+    thread_lifecycle_block(
+        &effect.body,
+        &mut callee_state,
+        &callee_ctx,
+        false,
+        &mut active_mutable_calls,
+    )?;
+    Ok((callee_state, callee_ctx))
+}
+
+fn apply_logical_scalar_value_call(
+    name: &str,
+    args: &[Expr],
+    state: &LifecycleState,
+    ctx: &BodyRefCtx,
+) -> Result<LifecycleCell, RefEncodeError> {
+    let effect = ctx
+        .logical_scalar_value_call_effect(name)
+        .cloned()
+        .ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "logical by-value call `{name}` has no exact scalar-result finite-record source frame"
+            ))
+        })?;
+    let (callee_state, callee_ctx) = interpret_logical_value_call(name, args, state, ctx, &effect)?;
+    match &effect.body.tail {
+        Some(tail) => {
+            let value = encode_lifecycle_expr(tail, &callee_state, &callee_ctx)?;
+            let result_type = effect.result_type.as_ref().ok_or_else(|| {
+                RefEncodeError::Unsupported(format!(
+                    "logical by-value call `{name}` lost its exact result type"
+                ))
+            })?;
+            Ok(LifecycleCell::bounded(lifecycle_assignment_text(
+                &value,
+                result_type,
+            )))
+        }
+        None if matches!(effect.result_type, Some(Type::Unit)) => Ok(LifecycleCell::bounded("()")),
+        None => Err(RefEncodeError::Unsupported(format!(
+            "logical by-value call `{name}` has no exact source result"
+        ))),
+    }
+}
+
+fn apply_logical_record_value_call(
+    target_name: &str,
+    expected_type: &str,
+    name: &str,
+    args: &[Expr],
+    state: &LifecycleState,
+    ctx: &BodyRefCtx,
+) -> Result<LifecycleRecordBinding, RefEncodeError> {
+    let effect = ctx
+        .logical_record_value_call_effect(name)
+        .cloned()
+        .ok_or_else(|| {
+            RefEncodeError::Unsupported(format!(
+                "logical by-value call `{name}` has no exact finite-record result source frame"
+            ))
+        })?;
+    let Some(Type::Named(result_type)) = effect.result_type.as_ref() else {
+        return Err(RefEncodeError::Unsupported(format!(
+            "logical by-value call `{name}` lost its exact finite-record result type"
+        )));
+    };
+    if result_type != expected_type {
+        return Err(RefEncodeError::Unsupported(format!(
+            "logical by-value call `{name}` returns `{result_type}` but typed binding `{target_name}` expects `{expected_type}`"
+        )));
+    }
+    let (callee_state, callee_ctx) = interpret_logical_value_call(name, args, state, ctx, &effect)?;
+    let tail = effect.body.tail.as_ref().ok_or_else(|| {
+        RefEncodeError::Unsupported(format!(
+            "logical by-value call `{name}` has no exact finite-record source result"
+        ))
+    })?;
+    lifecycle_record_binding(target_name, expected_type, tail, &callee_state, &callee_ctx)
+}
+
+fn logical_value_call_has_overlay(
+    args: &[Expr],
+    effect: &MutableCallEffectFrame,
+    state: &LifecycleState,
+) -> bool {
+    args.iter().zip(&effect.params).any(|(actual, formal)| {
+        effect
+            .value_records
+            .iter()
+            .any(|record| record.name == *formal)
+            && expression_materializes_indexed_overlay(actual, state).is_some()
+    })
+}
+
+fn direct_logical_scalar_value_call<'a>(
+    expr: &'a Expr,
+    state: &LifecycleState,
+    ctx: &BodyRefCtx,
+) -> Option<(&'a str, &'a [Expr])> {
+    let Expr::Call { callee, args } = expr else {
+        return None;
+    };
+    let Expr::Path(path) = callee.as_ref() else {
+        return None;
+    };
+    let [name] = path.as_slice() else {
+        return None;
+    };
+    let effect = ctx.logical_scalar_value_call_effect(name)?;
+    logical_value_call_has_overlay(args, effect, state).then_some((name.as_str(), args.as_slice()))
+}
+
+fn direct_logical_record_value_call<'a>(
+    expr: &'a Expr,
+    expected_type: &str,
+    state: &LifecycleState,
+    ctx: &BodyRefCtx,
+) -> Option<(&'a str, &'a [Expr])> {
+    let Expr::Call { callee, args } = expr else {
+        return None;
+    };
+    let Expr::Path(path) = callee.as_ref() else {
+        return None;
+    };
+    let [name] = path.as_slice() else {
+        return None;
+    };
+    let effect = ctx.logical_record_value_call_effect(name)?;
+    if !matches!(effect.result_type.as_ref(), Some(Type::Named(result)) if result == expected_type)
+    {
+        return None;
+    }
+    logical_value_call_has_overlay(args, effect, state).then_some((name.as_str(), args.as_slice()))
+}
+
+fn merge_lifecycle_cells(
+    condition: &str,
+    left: &LifecycleCell,
+    right: &LifecycleCell,
+) -> LifecycleCell {
+    let (left_text, right_text, spec_int) = match (left.spec_int, right.spec_int) {
+        (true, false) => (left.text.clone(), format!("({} as int)", right.text), true),
+        (false, true) => (format!("({} as int)", left.text), right.text.clone(), true),
+        (left_int, _) => (left.text.clone(), right.text.clone(), left_int),
+    };
+    LifecycleCell {
+        text: format!("if {condition} {{ {left_text} }} else {{ {right_text} }}"),
+        spec_int,
+    }
+}
+
+fn encode_lifecycle_expr(
+    expr: &Expr,
+    state: &LifecycleState,
+    ctx: &BodyRefCtx,
+) -> Result<LifecycleCell, RefEncodeError> {
+    if expr_contains_mutable_call(expr, ctx) {
+        return Err(RefEncodeError::Unsupported(
+            "a mutable-reference call result may only be consumed as one direct `let` initializer; nested expression, condition, argument, assignment, and tail uses require a wider evaluation-order and alias frame"
+            .to_string(),
+        ));
+    }
+    if let Some((name, args)) = direct_logical_scalar_value_call(expr, state, ctx) {
+        return apply_logical_scalar_value_call(name, args, state, ctx);
+    }
+    if let Some(path) = expression_materializes_indexed_overlay(expr, state) {
+        return Err(RefEncodeError::Unsupported(format!(
+            "expression materializes logical indexed state at `{path}` as a native aggregate; use exact field/index projections or a typed finite-record constructor/access-path binding"
+        )));
+    }
+    encode_lifecycle_expr_raw(expr, state, ctx)
+}
+
+fn encode_lifecycle_expr_raw(
+    expr: &Expr,
+    state: &LifecycleState,
+    ctx: &BodyRefCtx,
+) -> Result<LifecycleCell, RefEncodeError> {
+    let exec = ctx
+        .exec_ref_ctx()
+        .with_value_bindings(
+            state
+                .locals
+                .iter()
+                .map(|(name, cell)| (name.clone(), cell.text.clone())),
+        )
+        .with_field_bindings(
+            state
+                .fields
+                .iter()
+                .map(|(name, cell)| (name.clone(), cell.text.clone())),
+        )
+        .with_indexed_bindings(
+            state
+                .indexed
+                .iter()
+                .map(|(name, cell)| (name.clone(), cell.text.clone())),
+        );
+    let text = exec_ref_value(expr, &exec)?;
+    let spec_int = match expr {
+        Expr::Path(path) if path.len() == 1 => {
+            state.locals.get(&path[0]).is_some_and(|cell| cell.spec_int)
+        }
+        Expr::Field { receiver, name } => {
+            if let Expr::Path(path) = receiver.as_ref() {
+                if let [root] = path.as_slice() {
+                    state
+                        .fields
+                        .get(&format!("{root}.{name}"))
+                        .is_some_and(|cell| cell.spec_int)
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        }
+        Expr::Binary {
+            op:
+                BinOp::Add
+                | BinOp::Sub
+                | BinOp::Mul
+                | BinOp::Div
+                | BinOp::Rem
+                | BinOp::Shl
+                | BinOp::Shr
+                | BinOp::BitAnd
+                | BinOp::BitOr
+                | BinOp::BitXor,
+            ..
+        } => true,
+        _ => false,
+    };
+    Ok(LifecycleCell { text, spec_int })
+}
+
+fn expr_contains_mutable_call(expr: &Expr, ctx: &BodyRefCtx) -> bool {
+    let any = |items: &[Expr]| {
+        items
+            .iter()
+            .any(|item| expr_contains_mutable_call(item, ctx))
+    };
+    match expr {
+        Expr::Path(_) | Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::StrLit(_) => false,
+        Expr::Array(items) | Expr::Tuple(items) => any(items),
+        Expr::ArrayRepeat { value, .. }
+        | Expr::Unary { expr: value, .. }
+        | Expr::Cast { expr: value, .. }
+        | Expr::Ref { expr: value, .. }
+        | Expr::Deref(value)
+        | Expr::TupleProj {
+            receiver: value, ..
+        }
+        | Expr::Field {
+            receiver: value, ..
+        }
+        | Expr::Closure { body: value, .. }
+        | Expr::Is {
+            scrutinee: value, ..
+        } => expr_contains_mutable_call(value, ctx),
+        Expr::Binary { lhs, rhs, .. } => {
+            expr_contains_mutable_call(lhs, ctx) || expr_contains_mutable_call(rhs, ctx)
+        }
+        Expr::Call { callee, args } => {
+            direct_mutable_call(expr, ctx).is_some()
+                || expr_contains_mutable_call(callee, ctx)
+                || any(args)
+        }
+        Expr::MethodCall { receiver, args, .. } => {
+            expr_contains_mutable_call(receiver, ctx) || any(args)
+        }
+        Expr::Match { scrutinee, arms } => {
+            expr_contains_mutable_call(scrutinee, ctx)
+                || arms.iter().any(|arm| {
+                    arm.guard
+                        .as_ref()
+                        .is_some_and(|guard| expr_contains_mutable_call(guard, ctx))
+                        || expr_contains_mutable_call(&arm.body, ctx)
+                })
+        }
+        Expr::If { cond, then, else_ } => {
+            expr_contains_mutable_call(cond, ctx)
+                || block_contains_mutable_call(then, ctx)
+                || block_contains_mutable_call(else_, ctx)
+        }
+        Expr::Index { base, index } => {
+            expr_contains_mutable_call(base, ctx)
+                || match index {
+                    IndexArg::Single(index)
+                    | IndexArg::RangeTo(index)
+                    | IndexArg::RangeFrom(index) => expr_contains_mutable_call(index, ctx),
+                    IndexArg::Range(start, end) => {
+                        expr_contains_mutable_call(start, ctx)
+                            || expr_contains_mutable_call(end, ctx)
+                    }
+                }
+        }
+        Expr::StructLit { fields, .. } => fields
+            .iter()
+            .any(|(_, value)| expr_contains_mutable_call(value, ctx)),
+        Expr::Quantifier { domain, body, .. } => {
+            expr_contains_mutable_call(domain, ctx) || expr_contains_mutable_call(body, ctx)
+        }
+    }
+}
+
+fn block_contains_mutable_call(block: &Block, ctx: &BodyRefCtx) -> bool {
+    block
+        .stmts
+        .iter()
+        .any(|statement| stmt_contains_mutable_call(statement, ctx))
+        || block
+            .tail
+            .as_deref()
+            .is_some_and(|tail| expr_contains_mutable_call(tail, ctx))
+}
+
+fn stmt_contains_mutable_call(statement: &Stmt, ctx: &BodyRefCtx) -> bool {
+    match statement {
+        Stmt::Let { init, .. } | Stmt::Expr(init) => expr_contains_mutable_call(init, ctx),
+        Stmt::Assign { target, value } => {
+            expr_contains_mutable_call(target, ctx) || expr_contains_mutable_call(value, ctx)
+        }
+        Stmt::Return(value) => value
+            .as_ref()
+            .is_some_and(|value| expr_contains_mutable_call(value, ctx)),
+        Stmt::If { cond, then, else_ } => {
+            expr_contains_mutable_call(cond, ctx)
+                || block_contains_mutable_call(then, ctx)
+                || else_
+                    .as_ref()
+                    .is_some_and(|block| block_contains_mutable_call(block, ctx))
+        }
+        Stmt::Loop(loop_node) => {
+            let condition = match &loop_node.kind {
+                LoopKind::While(condition) => expr_contains_mutable_call(condition, ctx),
+                LoopKind::Loop => false,
+            };
+            condition || block_contains_mutable_call(&loop_node.body, ctx)
+        }
+        Stmt::Break | Stmt::Continue => false,
+    }
 }
 
 // =============================================================================
 // Loop extension — step 2.2.2-i (`.design/verified/loop-tv.md` REQ-1/REQ-2)
 // =============================================================================
 
-/// The three per-run loop reference pieces a v1 frozen-subset `while` loop produces
+/// The loop reference pieces a frozen-subset `while` loop produces
 /// (`loop-tv.md` REQ-2), consumed by the obligation emitters in [`crate::obligation`]
 /// to build the three Z3-checkable Verus units (entry / preservation / exit). Each
 /// field is an independent reference encoding (composing [`exec_ref_value`] on the
 /// env-substituted cond / inv / cell exprs — no `thermite-lower` symbol, AC-7).
 ///
 /// The loop is the v1 frozen subset: a single `while <cond>` with non-empty `invs` +
-/// a `dec`, a straight-line scalar body, the loop the last statement before the tail.
+/// a `dec`, a straight-line scalar or finite-record body, and a trailing loop.
 /// The mutated cells are the bare scalar names the body rebinds (the design's `lo`/
 /// `hi`); they are bound as the loop-step parameters in the preservation obligation
 /// and as the opaque-but-invariant-constrained after-loop cells in the exit
 /// obligation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoopObligations {
-    /// The mutated scalar cell names (the body-rebound cells), in a stable
+    /// The mutated scalar or finite-record cell names, in a stable
     /// (sorted) order — the order they are declared/projected in the obligations.
     pub cells: Vec<String>,
     /// Entry (`loop-tv.md` REQ-2.1): the conjoined `inv` with each cell substituted
@@ -267,10 +4003,16 @@ pub struct LoopObligations {
     /// value (`step_cells`) — the obligation's preservation `ensures` conjunct
     /// (`inv ∧ cond` carried to `inv` by one iteration).
     pub inv_at_step: String,
+    /// Exact full-loop result characterization when the tail returns the sole
+    /// loop cell.  The cell is replaced by `result`, so this predicate states
+    /// the independently encoded invariant and negated condition over the
+    /// generated function's actual return value. Exact collateral framing is
+    /// explicit in the invariant, while preservation observes every record leaf.
+    pub exit_result_pred: Option<String>,
 }
 
 /// Recognize + encode the v1 frozen-subset `while` loop in `block`, producing the
-/// three per-run reference pieces ([`LoopObligations`]) the [`crate::obligation`]
+/// independent reference pieces ([`LoopObligations`]) the [`crate::obligation`]
 /// emitters turn into Z3-checkable Verus units (`loop-tv.md` REQ-1/REQ-2). The loop
 /// must be the last statement before the tail (the `binary_search` shape — v1's
 /// after-loop continuation is in scope only there); a prefix of straight-line
@@ -284,14 +4026,14 @@ pub struct LoopObligations {
 /// Returns [`RefEncodeError::Unsupported`] (never a panic / silent wrong encoding,
 /// R-HONEST-3) for an out-of-v1 loop: a `loop`-kind (multi-exit), a `break`/
 /// `continue` / mid-body `return` in the body (multi-exit CPS), a nested loop, a
-/// non-scalar-state body, or a trivially-weak `inv` (`inv true` — the after-loop
+/// non-finite/aliased state body, or a trivially-weak `inv` (`inv true` — the after-loop
 /// `true ∧ ¬cond` is vacuous, cannot enter the (a) rule). Each is Skipped,
 /// never silently Faithful (the 2.2.2 boundary in the certificate).
 pub fn loop_ref_obligations(
     block: &Block,
     ctx: &BodyRefCtx,
 ) -> Result<LoopObligations, RefEncodeError> {
-    let (prefix, loop_node) = recognize_v1_loop(block)?;
+    let (prefix, loop_node) = recognize_v1_loop(block, ctx)?;
     let cond_expr = match &loop_node.kind {
         LoopKind::While(c) => c.as_ref(),
         LoopKind::Loop => {
@@ -316,9 +4058,9 @@ pub fn loop_ref_obligations(
         ));
     }
 
-    // The mutated scalar cells: the bare names the loop body rebinds (a v1 scalar
-    // mutation is a `Stmt::Assign` to a bare in-scope name — recognize_v1_loop has
-    // already rejected non-scalar / out-of-subset bodies). Sorted for a stable
+    // The mutated cells: bare scalar rebinds and roots of exact finite-record
+    // field writes. `recognize_v1_loop` plus `thread_stmt` reject every target
+    // whose type/path cannot be derived independently. Sorted for a stable
     // declaration/projection order across the three obligations.
     let mut cells: Vec<String> = collect_assigned_cells(&loop_node.body)?
         .into_iter()
@@ -326,8 +4068,8 @@ pub fn loop_ref_obligations(
     cells.sort();
     if cells.is_empty() {
         return Err(RefEncodeError::Unsupported(
-            "v1 `while` loop with no scalar cell mutation (a loop whose body mutates \
-             no in-scope scalar cell carries no per-iteration state step — OUT of the \
+            "v1 `while` loop with no state-cell mutation (a loop whose body mutates \
+             no in-scope scalar or finite-record cell carries no per-iteration state step — OUT of the \
              v1 subset)"
                 .to_string(),
         ));
@@ -343,7 +4085,7 @@ pub fn loop_ref_obligations(
     // Return Err otherwise.
     let mut entry_env: Env = Env::new();
     for stmt in prefix {
-        thread_stmt(stmt, &mut entry_env)?;
+        thread_stmt(stmt, &mut entry_env, ctx)?;
     }
     for cell in &cells {
         if !entry_env.contains_key(cell) {
@@ -363,9 +4105,15 @@ pub fn loop_ref_obligations(
     let mut step_env: Env = Env::new();
     for cell in &cells {
         step_env.insert(cell.clone(), Expr::Path(vec![cell.clone()]));
+        if let Some(type_name) = entry_subst.named_record_type(cell) {
+            step_env.mark_named_record(cell.clone(), type_name.to_string());
+        }
+        if entry_subst.is_fixed_array(cell) {
+            step_env.mark_fixed_array(cell.clone());
+        }
     }
     for stmt in &loop_node.body.stmts {
-        thread_stmt(stmt, &mut step_env)?;
+        thread_stmt(stmt, &mut step_env, ctx)?;
     }
     // The per-cell stepped closed form (in the entry cells) + the cell→stepped-form
     // substitution env — both read from `step_env`, where every `cell` is present (it
@@ -393,6 +4141,28 @@ pub fn loop_ref_obligations(
     let entry_pred = encode_inv_clauses(&loop_node.invs, &entry_subst, ctx)?.join(" && ");
     let inv_at_step = encode_inv_clauses(&loop_node.invs, &step_subst, ctx)?.join(" && ");
 
+    // When the source tail returns the sole loop cell, bind that opaque exit
+    // cell to the actual wrapper result. This creates a full-loop post-state
+    // predicate rather than ending assurance at the isolated while-rule. For a
+    // finite record cell. The authored invariant is the explicit fixpoint
+    // summary; the preservation obligation independently observes every record
+    // leaf for one exact step.
+    let exit_result_pred = if cells.len() == 1
+        && matches!(block.tail.as_deref(), Some(Expr::Path(path)) if path.as_slice() == [cells[0].as_str()])
+    {
+        let cell = &cells[0];
+        let mut result_subst = Env::new();
+        result_subst.insert(cell.clone(), Expr::Path(vec!["result".to_string()]));
+        let inv_at_result = encode_inv_clauses(&loop_node.invs, &result_subst, ctx)?.join(" && ");
+        let cond_at_result = encode_predicate(cond_expr, &result_subst, ctx)?;
+        Some(format!(
+            "{inv_at_result} && {}",
+            negate_condition(&cond_at_result)
+        ))
+    } else {
+        None
+    };
+
     Ok(LoopObligations {
         cells,
         entry_pred,
@@ -400,16 +4170,20 @@ pub fn loop_ref_obligations(
         inv,
         step_cells,
         inv_at_step,
+        exit_result_pred,
     })
 }
 
 /// Recognize the v1 frozen-subset `while` loop: `block`'s last statement must be a
 /// `Stmt::Loop` with `kind: While(_)`, non-empty `invs`, a `dec`, and a straight-line
-/// scalar body containing no nested loop / `break` / `continue` / mid-body `return`.
+/// finite state body containing no nested loop / `break` / `continue` / mid-body `return`.
 /// Returns the pre-loop prefix statements + the loop node, or an
 /// [`RefEncodeError::Unsupported`] naming the out-of-v1 reason (Skipped, never
 /// silently Faithful — R-HONEST-3).
-fn recognize_v1_loop(block: &Block) -> Result<(&[Stmt], &LoopNode), RefEncodeError> {
+fn recognize_v1_loop<'a>(
+    block: &'a Block,
+    ctx: &BodyRefCtx,
+) -> Result<(&'a [Stmt], &'a LoopNode), RefEncodeError> {
     let Some((last, prefix)) = block.stmts.split_last() else {
         return Err(RefEncodeError::Unsupported(
             "no loop statement (the v1 loop arm requires a `while` loop as the last \
@@ -429,7 +4203,7 @@ fn recognize_v1_loop(block: &Block) -> Result<(&[Stmt], &LoopNode), RefEncodeErr
     // mid-body return) — reuse the shipped thread_stmt rejection by threading it.
     let mut probe: Env = Env::new();
     for stmt in prefix {
-        thread_stmt(stmt, &mut probe)?;
+        thread_stmt(stmt, &mut probe, ctx)?;
     }
     if !matches!(loop_node.kind, LoopKind::While(_)) {
         return Err(RefEncodeError::Unsupported(
@@ -457,9 +4231,9 @@ fn recognize_v1_loop(block: &Block) -> Result<(&[Stmt], &LoopNode), RefEncodeErr
 /// Reject an out-of-v1 loop body: a nested `Stmt::Loop`, a `break`/`continue`, or a
 /// mid-body `return` (the multi-exit CPS forms) → an
 /// [`RefEncodeError::Unsupported`]. Recurses into `if`-branch bodies (a `break` /
-/// `return` nested in an `if` is just as out). A straight-line scalar body (the v1
-/// in-set: `let`/`assign`/`if`/`expr`) passes; the per-statement value/scalar
-/// rejection is left to the shipped [`thread_stmt`] (e.g. a non-scalar assignment is
+/// `return` nested in an `if` is just as out). A straight-line scalar or exact
+/// finite-record body passes; per-statement type/path rejection is left to the
+/// shipped [`thread_stmt`] (e.g. an aliased or non-finite assignment is
 /// already an Err there).
 fn reject_out_of_subset_body(body: &Block) -> Result<(), RefEncodeError> {
     for stmt in &body.stmts {
@@ -503,12 +4277,10 @@ fn reject_out_of_subset_stmt(stmt: &Stmt) -> Result<(), RefEncodeError> {
     }
 }
 
-/// Collect the bare scalar cell names a straight-line loop body rebinds (a v1
-/// `Stmt::Assign` to a bare in-scope name). Recurses into `if`-branch bodies (a cell
-/// mutated in a branch is a mutated cell). A `let`-introduced branch-local binding is
-/// not a mutated outer cell (it does not leak — the body_ref_state semantics), so a
-/// branch-local `let mid = ..` is excluded. Returns an Err only on a malformed
-/// non-bare-name target (left to the shipped threading otherwise).
+/// Collect the outer state-cell names a straight-line loop body mutates. A bare
+/// assignment contributes its scalar/value cell; an exact field chain (with an
+/// optional final fixed-array index) contributes its finite-record root. Recurses
+/// into `if` branches. A branch-local `let` never contributes a cell.
 fn collect_assigned_cells(body: &Block) -> Result<BTreeSet<String>, RefEncodeError> {
     let mut cells = BTreeSet::new();
     collect_assigned_cells_block(body, &mut cells)?;
@@ -525,11 +4297,19 @@ fn collect_assigned_cells_block(
                 Expr::Path(segments) if segments.len() == 1 => {
                     cells.insert(segments[0].clone());
                 }
+                _ if target_contains_field(target) => {
+                    let (root, steps) = nested_lvalue_path(target)?;
+                    if !matches!(steps.first(), Some(NestedLvalueStep::Field(_))) {
+                        return Err(RefEncodeError::Unsupported(
+                            "record-state loop assignment must begin with one exact field"
+                                .to_string(),
+                        ));
+                    }
+                    cells.insert(root);
+                }
                 _ => {
                     return Err(RefEncodeError::Unsupported(
-                        "assignment to a non-scalar / non-bare-name target in a v1 loop \
-                         body (the v1 loop state mutates only bare scalar cells — an \
-                         indexed / field target is OUT, a v2 sequence/struct theory)"
+                        "loop assignment target is neither a bare cell nor an exact finite-record field path"
                             .to_string(),
                     ));
                 }
@@ -605,7 +4385,7 @@ fn encode_block_tail(
     ctx: &BodyRefCtx,
 ) -> Result<String, RefEncodeError> {
     for stmt in &block.stmts {
-        thread_stmt(stmt, env)?;
+        thread_stmt(stmt, env, ctx)?;
     }
     match &block.tail {
         Some(tail) => encode_value(tail, env, ctx),
@@ -624,11 +4404,9 @@ fn encode_block_tail(
 /// [`encode_value`] / the tail), so an `If`/`Return` in non-tail (statement)
 /// position — a mid-body branch / early return — is out of v1 (the multi-exit CPS
 /// form) and an `Err`. A `Loop`/`Break`/`Continue` is step 2.2.2.
-fn thread_stmt(stmt: &Stmt, env: &mut Env) -> Result<(), RefEncodeError> {
+fn thread_stmt(stmt: &Stmt, env: &mut Env, ctx: &BodyRefCtx) -> Result<(), RefEncodeError> {
     match stmt {
-        Stmt::Let {
-            name, init, ty: _, ..
-        } => {
+        Stmt::Let { name, init, ty, .. } => {
             // A re-shadow `let x = ..; let x = ..` in the same block is out of v1
             // (the flat name->value env can't represent two distinct `x` cells) —
             // `Err`, never a silent wrong substitution.
@@ -639,22 +4417,113 @@ fn thread_stmt(stmt: &Stmt, env: &mut Env) -> Result<(), RefEncodeError> {
                      frozen subset)"
                 )));
             }
-            let substituted = substitute(init, env)?;
+            let mut substituted = substitute(init, env)?;
+            if let Some(ty) = ty {
+                substituted = contextualize_value_for_type(substituted, ty, ctx)?;
+            }
             env.insert(name.clone(), substituted);
+            if matches!(ty, Some(thermite_syntax::Type::Array { .. })) {
+                env.mark_fixed_array(name.clone());
+            }
+            if let Some(thermite_syntax::Type::Named(type_name)) = ty {
+                if ctx.named_record(type_name).is_some() {
+                    env.mark_named_record(name.clone(), type_name.clone());
+                }
+            }
             Ok(())
         }
         Stmt::Assign { target, value } => {
-            // v1 mutation is a scalar-cell rebind: the target must be a bare
-            // in-scope name (a non-scalar mutation — `xs[i] = ..`, `m.field = ..` —
-            // is out of v1, a v2 sequence/struct theory).
+            // A field chain rooted at a typed owned record local is an exact
+            // recursive nominal reconstruction. A final fixed-array index is
+            // modeled as one exact finite update inside that reconstruction.
+            if target_contains_field(target) {
+                let (local, mut steps) = nested_lvalue_path(target)?;
+                let type_name = env.named_record_type(&local).ok_or_else(|| {
+                    RefEncodeError::Unsupported(format!(
+                        "field assignment root `{local}` is not a typed finite named-record local"
+                    ))
+                })?;
+                for step in &mut steps {
+                    if let NestedLvalueStep::Index(index) = step {
+                        *index = substitute(index, env)?;
+                    }
+                }
+                let current = env.get(&local).cloned().ok_or_else(|| {
+                    RefEncodeError::Unsupported(format!(
+                        "assignment to the unbound named-record local `{local}`"
+                    ))
+                })?;
+                let changed = substitute(value, env)?;
+                let changed_spec_int = reference_expr_is_spec_int(&changed);
+                let updated = rebuild_nested_value(
+                    current,
+                    &Type::Named(type_name.to_string()),
+                    &steps,
+                    changed,
+                    changed_spec_int,
+                    ctx,
+                )?;
+                env.insert(local, updated);
+                return Ok(());
+            }
+
+            // Scalar assignment rebinds the named cell. Fixed-array indexed
+            // assignment becomes the exact vstd array-update model, whose view is
+            // `old@.update(index, value)` and therefore preserves every other slot.
+            if let Expr::Index {
+                base,
+                index: IndexArg::Single(index),
+            } = target
+            {
+                let Expr::Path(segments) = base.as_ref() else {
+                    return Err(RefEncodeError::Unsupported(
+                        "fixed-array assignment target with a non-name base".to_string(),
+                    ));
+                };
+                // Writes through an exclusive parameter borrow are observable
+                // effects, not local value rebinding. Whole-body obligations route
+                // these through the exact lifecycle sequence state; keep this
+                // scalar-only environment unchanged for its non-effect consumers.
+                if segments.len() == 1 && ctx.is_mutable_indexed_bound(&segments[0]) {
+                    return Ok(());
+                }
+                if segments.len() != 1 || !env.is_fixed_array(&segments[0]) {
+                    return Err(RefEncodeError::Unsupported(
+                        "indexed assignment to a value not declared as a fixed array".to_string(),
+                    ));
+                }
+                let name = segments[0].clone();
+                let current = env.get(&name).cloned().ok_or_else(|| {
+                    RefEncodeError::Unsupported(format!(
+                        "assignment to the unbound fixed array `{name}`"
+                    ))
+                })?;
+                let index = substitute(index, env)?;
+                let value = substitute(value, env)?;
+                env.insert(
+                    name,
+                    Expr::Call {
+                        callee: Box::new(Expr::Path(vec![
+                            "vstd".to_string(),
+                            "array".to_string(),
+                            "spec_array_update".to_string(),
+                        ])),
+                        args: vec![current, index, value],
+                    },
+                );
+                return Ok(());
+            }
+
+            // After the exact finite-record path case above, the remaining admitted
+            // mutation is a scalar/value-cell rebind: the target must be a bare
+            // in-scope name.
             let name = match target {
                 Expr::Path(segments) if segments.len() == 1 => segments[0].clone(),
                 _ => {
                     return Err(RefEncodeError::Unsupported(
-                        "assignment to a non-scalar / non-bare-name target (the v1 \
-                         frozen subset mutates only bare scalar cells; an indexed / \
-                         field / projection target is OUT — a v2 sequence/struct \
-                         theory)"
+                        "assignment is neither an exact finite-record field path nor \
+                         a bare scalar/value cell (computed, dereferenced, aliased, \
+                         or otherwise unsupported loop target)"
                             .to_string(),
                     ));
                 }
@@ -695,7 +4564,8 @@ fn thread_stmt(stmt: &Stmt, env: &mut Env) -> Result<(), RefEncodeError> {
         // states (the state-transformer semantics — exec-stmt-tv.md REQ-2 / AC-4). A
         // cell mutated in neither branch is unchanged. The recursion handles a nested
         // `if`-statement in a branch; an out-of-subset branch construct (a loop, a
-        // non-scalar mutation, a mid-branch return) propagates its `Err`.
+        // mutation outside the admitted finite closure, a mid-branch return)
+        // propagates its `Err`.
         Stmt::If { cond, then, else_ } => {
             // The condition is itself an exec value — substitute it under the
             // pre-`if` env so the composed value is a closed form in the inputs.
@@ -706,10 +4576,10 @@ fn thread_stmt(stmt: &Stmt, env: &mut Env) -> Result<(), RefEncodeError> {
             // mutation subset — an `Err` (the state-denotation only composes a
             // branch that mutates cells, never a discarded branch value).
             let mut then_env = env.clone();
-            thread_branch(then, &mut then_env)?;
+            thread_branch(then, &mut then_env, ctx)?;
             let mut else_env = env.clone();
             if let Some(else_block) = else_ {
-                thread_branch(else_block, &mut else_env)?;
+                thread_branch(else_block, &mut else_env, ctx)?;
             }
 
             // For each cell already in scope before the `if` (a branch-local `let`
@@ -773,14 +4643,15 @@ fn thread_stmt(stmt: &Stmt, env: &mut Env) -> Result<(), RefEncodeError> {
 /// Thread an `if`-statement branch `Block`'s statements through `env` (in order),
 /// reusing the per-statement [`thread_stmt`] recursively (so a nested `if`-statement
 /// in the branch is composed, and an out-of-subset branch construct — a loop, a
-/// non-scalar mutation, a mid-branch early return — propagates its `Err`). A
+/// mutation outside the admitted finite closure, a mid-branch early return —
+/// propagates its `Err`). A
 /// branch in the v1 mutation subset is value-less (`tail: None`): it mutates outer
 /// cells via `Stmt::Assign`, it does not produce a discarded value. A branch with a
 /// tail value (`if c { ..; v }` as a statement) is out of the v1 mutation subset — an
 /// [`RefEncodeError::Unsupported`], never a silent discard.
-fn thread_branch(branch: &Block, env: &mut Env) -> Result<(), RefEncodeError> {
+fn thread_branch(branch: &Block, env: &mut Env, ctx: &BodyRefCtx) -> Result<(), RefEncodeError> {
     for stmt in &branch.stmts {
-        thread_stmt(stmt, env)?;
+        thread_stmt(stmt, env, ctx)?;
     }
     match &branch.tail {
         None => Ok(()),
@@ -871,8 +4742,8 @@ fn encode_value(expr: &Expr, env: &Env, ctx: &BodyRefCtx) -> Result<String, RefE
             // comparison coerces fine). When both arms are arithmetic (the grounded
             // AC-4 `(x + 1)`/`(x + 2)`, B3 `(x + 1)`/`(x - 1)`) no coercion is applied —
             // the pinned reference form is preserved.
-            let t_int = branch_is_int_typed(then, env)?;
-            let e_int = branch_is_int_typed(else_, env)?;
+            let t_int = branch_is_int_typed(then, env, ctx)?;
+            let e_int = branch_is_int_typed(else_, env, ctx)?;
             let (t, e) = match (t_int, e_int) {
                 (true, false) => (t, format!("({e} as int)")),
                 (false, true) => (format!("({t} as int)"), e),
@@ -890,11 +4761,164 @@ fn encode_value(expr: &Expr, env: &Env, ctx: &BodyRefCtx) -> Result<String, RefE
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(format!("({})", parts.join(", ")))
         }
+        // Executable ADT dispatch is a body-level control-flow value, rather than
+        // a leaf expression understood by `exec_ref_value`.  The source match has
+        // already been recursively state-substituted above, with arm bindings
+        // protected from capture, so an empty environment is the exact remaining
+        // scope.  Patterns and arms are then encoded independently of production
+        // lowering.
+        Expr::Match { scrutinee, arms } => encode_match_value(scrutinee, arms, &Env::new(), ctx),
         // Every other value (a path, arithmetic, a cast, a call, an index, ...) is a
         // step-2.1 exec value -> reuse the independent per-RHS encoder (the
         // #122/#146/overflow disciplines unchanged). Already substituted above.
-        _ => exec_ref_value(&substituted, &ctx.exec_ref_ctx()),
+        _ => {
+            let contextualized = contextualize_constructor_value(substituted, ctx)?;
+            exec_ref_value(&contextualized, &ctx.exec_ref_ctx())
+        }
     }
+}
+
+/// Collect the names introduced by one match pattern.  The validator normally
+/// rejects duplicate bindings and mismatched or-pattern bindings first, but the
+/// translation validator is fail-closed on its own: it never relies on that fact
+/// when deciding which outer state bindings an arm may observe.
+fn pattern_bindings(pattern: &Pattern) -> Result<BTreeSet<String>, RefEncodeError> {
+    fn merge(
+        target: &mut BTreeSet<String>,
+        source: BTreeSet<String>,
+    ) -> Result<(), RefEncodeError> {
+        for name in source {
+            if !target.insert(name.clone()) {
+                return Err(RefEncodeError::Unsupported(format!(
+                    "duplicate match-pattern binding `{name}`"
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    match pattern {
+        Pattern::Wildcard | Pattern::Literal(_) => Ok(BTreeSet::new()),
+        Pattern::Binding(name) => Ok(BTreeSet::from([name.clone()])),
+        Pattern::Enum { fields, .. } => {
+            let mut bindings = BTreeSet::new();
+            for field in fields {
+                merge(&mut bindings, pattern_bindings(field)?)?;
+            }
+            Ok(bindings)
+        }
+        Pattern::Struct { fields, .. } => {
+            let mut bindings = BTreeSet::new();
+            for (_, field) in fields {
+                merge(&mut bindings, pattern_bindings(field)?)?;
+            }
+            Ok(bindings)
+        }
+        Pattern::Or(alternatives) => {
+            let Some(first) = alternatives.first() else {
+                return Err(RefEncodeError::Unsupported(
+                    "empty or-pattern in executable match".to_string(),
+                ));
+            };
+            let expected = pattern_bindings(first)?;
+            for alternative in &alternatives[1..] {
+                let actual = pattern_bindings(alternative)?;
+                if actual != expected {
+                    return Err(RefEncodeError::Unsupported(
+                        "or-pattern alternatives bind different names".to_string(),
+                    ));
+                }
+            }
+            Ok(expected)
+        }
+        Pattern::Slice(_) => Err(RefEncodeError::Unsupported(
+            "slice pattern outside a head-fold specification function".to_string(),
+        )),
+    }
+}
+
+/// Encode one executable match pattern without calling the production lowerer.
+/// User-enum variants are qualified from the independently supplied variant-owner
+/// map; built-in and already-qualified paths remain unchanged.
+fn encode_body_pattern(pattern: &Pattern, ctx: &BodyRefCtx) -> Result<String, RefEncodeError> {
+    match pattern {
+        Pattern::Wildcard => Ok("_".to_string()),
+        Pattern::Literal(value) => exec_ref_value(value, &ctx.exec_ref_ctx()),
+        Pattern::Binding(name) => Ok(name.clone()),
+        Pattern::Enum { path, fields } => {
+            let head = ctx.qualify_pattern_path(path);
+            if fields.is_empty() {
+                return Ok(head);
+            }
+            let fields = fields
+                .iter()
+                .map(|field| encode_body_pattern(field, ctx))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(format!("{head}({})", fields.join(", ")))
+        }
+        Pattern::Struct { path, fields, rest } => {
+            let head = ctx.qualify_pattern_path(path);
+            let mut parts = Vec::with_capacity(fields.len() + usize::from(*rest));
+            for (name, pattern) in fields {
+                if matches!(pattern, Pattern::Binding(binding) if binding == name) {
+                    parts.push(name.clone());
+                } else {
+                    parts.push(format!("{name}: {}", encode_body_pattern(pattern, ctx)?));
+                }
+            }
+            if *rest {
+                parts.push("..".to_string());
+            }
+            if parts.is_empty() {
+                Ok(format!("{head} {{}}"))
+            } else {
+                Ok(format!("{head} {{ {} }}", parts.join(", ")))
+            }
+        }
+        Pattern::Or(alternatives) => alternatives
+            .iter()
+            .map(|alternative| encode_body_pattern(alternative, ctx))
+            .collect::<Result<Vec<_>, _>>()
+            .map(|parts| parts.join(" | ")),
+        Pattern::Slice(_) => Err(RefEncodeError::Unsupported(
+            "slice pattern outside a head-fold specification function".to_string(),
+        )),
+    }
+}
+
+/// Encode an executable match value under the current state environment.  Arm
+/// bindings shadow same-named outer locals in both guards and bodies; this is the
+/// capture-sensitive part of the denotation and is intentionally independent of
+/// production lowering.
+fn encode_match_value(
+    scrutinee: &Expr,
+    arms: &[MatchArm],
+    env: &Env,
+    ctx: &BodyRefCtx,
+) -> Result<String, RefEncodeError> {
+    if arms.is_empty() {
+        return Err(RefEncodeError::Unsupported(
+            "executable match with no arms".to_string(),
+        ));
+    }
+    let scrutinee = encode_value(scrutinee, env, ctx)?;
+    let mut encoded_arms = Vec::with_capacity(arms.len());
+    for arm in arms {
+        let bindings = pattern_bindings(&arm.pattern)?;
+        let arm_env = env.without_bindings(&bindings);
+        let arm_ctx = ctx.without_enum_variants(&bindings);
+        let pattern = encode_body_pattern(&arm.pattern, ctx)?;
+        let guard = match &arm.guard {
+            Some(guard) => format!(" if {}", encode_value(guard, &arm_env, &arm_ctx)?),
+            None => String::new(),
+        };
+        let body = encode_value(&arm.body, &arm_env, &arm_ctx)?;
+        encoded_arms.push(format!("{pattern}{guard} => {body}"));
+    }
+    Ok(format!(
+        "match {scrutinee} {{ {}, }}",
+        encoded_arms.join(", ")
+    ))
 }
 
 /// Whether the value an `if`-expression branch `block` yields is encoded by
@@ -907,10 +4931,10 @@ fn encode_value(expr: &Expr, env: &Env, ctx: &BodyRefCtx) -> Result<String, RefE
 /// everything else (a bare path cell, a literal, a cast, an index, a call) is the
 /// bounded type (not `int`). A branch with no tail value would already be an `Err`
 /// from [`encode_block_tail`]; here an absent tail is conservatively not-`int`.
-fn branch_is_int_typed(block: &Block, env: &Env) -> Result<bool, RefEncodeError> {
+fn branch_is_int_typed(block: &Block, env: &Env, ctx: &BodyRefCtx) -> Result<bool, RefEncodeError> {
     let mut branch_env = env.clone();
     for stmt in &block.stmts {
-        thread_stmt(stmt, &mut branch_env)?;
+        thread_stmt(stmt, &mut branch_env, ctx)?;
     }
     let Some(tail) = &block.tail else {
         return Ok(false);
@@ -954,6 +4978,16 @@ fn substitute(expr: &Expr, env: &Env) -> Result<Expr, RefEncodeError> {
             Ok(expr.clone())
         }
         Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::StrLit(_) => Ok(expr.clone()),
+        Expr::Array(elements) => Ok(Expr::Array(
+            elements
+                .iter()
+                .map(|element| substitute(element, env))
+                .collect::<Result<Vec<_>, _>>()?,
+        )),
+        Expr::ArrayRepeat { value, len } => Ok(Expr::ArrayRepeat {
+            value: Box::new(substitute(value, env)?),
+            len: len.clone(),
+        }),
         Expr::Binary { op, lhs, rhs } => Ok(Expr::Binary {
             op: *op,
             lhs: Box::new(substitute(lhs, env)?),
@@ -972,6 +5006,18 @@ fn substitute(expr: &Expr, env: &Env) -> Result<Expr, RefEncodeError> {
             args: args
                 .iter()
                 .map(|a| substitute(a, env))
+                .collect::<Result<Vec<_>, _>>()?,
+        }),
+        Expr::MethodCall {
+            receiver,
+            name,
+            args,
+        } => Ok(Expr::MethodCall {
+            receiver: Box::new(substitute(receiver, env)?),
+            name: name.clone(),
+            args: args
+                .iter()
+                .map(|argument| substitute(argument, env))
                 .collect::<Result<Vec<_>, _>>()?,
         }),
         Expr::Index { base, index } => {
@@ -994,13 +5040,97 @@ fn substitute(expr: &Expr, env: &Env) -> Result<Expr, RefEncodeError> {
                 .map(|e| substitute(e, env))
                 .collect::<Result<Vec<_>, _>>()?,
         )),
-        // An out-of-subset value node (a method call, a struct literal, a closure, a
-        // match-expr, a field/projection, a deref, a ref) is passed through
-        // unchanged — [`exec_ref_value`] will reject it (the frozen RHS
-        // sublanguage is the step-2.1 pure-exec subset). Passing it through keeps the
-        // rejection in one place (the value encoder) with the precise node tag.
+        Expr::TupleProj { receiver, index } => Ok(Expr::TupleProj {
+            receiver: Box::new(substitute(receiver, env)?),
+            index: *index,
+        }),
+        Expr::Field { receiver, name } => {
+            let receiver = substitute(receiver, env)?;
+            if let Expr::StructLit { fields, .. } = &receiver {
+                if let Some((_, value)) = fields.iter().find(|(field, _)| field == name) {
+                    return Ok(value.clone());
+                }
+            }
+            Ok(Expr::Field {
+                receiver: Box::new(receiver),
+                name: name.clone(),
+            })
+        }
+        Expr::StructLit { path, fields } => Ok(Expr::StructLit {
+            path: path.clone(),
+            fields: fields
+                .iter()
+                .map(|(name, value)| Ok((name.clone(), substitute_constructor_field(value, env)?)))
+                .collect::<Result<Vec<_>, RefEncodeError>>()?,
+        }),
+        Expr::Ref {
+            mutable,
+            expr: inner,
+        } => Ok(Expr::Ref {
+            mutable: *mutable,
+            expr: Box::new(substitute(inner, env)?),
+        }),
+        Expr::Deref(inner) => Ok(Expr::Deref(Box::new(substitute(inner, env)?))),
+        Expr::Match { scrutinee, arms } => Ok(Expr::Match {
+            scrutinee: Box::new(substitute(scrutinee, env)?),
+            arms: arms
+                .iter()
+                .map(|arm| {
+                    let bindings = pattern_bindings(&arm.pattern)?;
+                    let arm_env = env.without_bindings(&bindings);
+                    Ok(MatchArm {
+                        pattern: arm.pattern.clone(),
+                        guard: arm
+                            .guard
+                            .as_ref()
+                            .map(|guard| substitute(guard, &arm_env))
+                            .transpose()?,
+                        body: substitute(&arm.body, &arm_env)?,
+                    })
+                })
+                .collect::<Result<Vec<_>, RefEncodeError>>()?,
+        }),
+        // An out-of-subset value node (a closure) is passed through unchanged so
+        // [`exec_ref_value`] rejects it with the precise node tag. `Expr::If` is
+        // interpreted by `encode_value`; a statement-free if nested directly in a
+        // constructor field is closed by `substitute_constructor_field` above.
         other => Ok(other.clone()),
     }
+}
+
+/// Close a constructor-field value over the current body environment. A
+/// statement-free `if` nested below the constructor is a pure value, but it does
+/// not pass through the top-level [`encode_value`] dispatcher. Substitute its
+/// condition and both value arms here so no body-local binding leaks into the
+/// independently generated reference obligation. Statement-bearing arms remain
+/// fail-closed until their outer-state effects can be threaded exactly.
+fn substitute_constructor_field(expr: &Expr, env: &Env) -> Result<Expr, RefEncodeError> {
+    let Expr::If { cond, then, else_ } = expr else {
+        return substitute(expr, env);
+    };
+    if !then.stmts.is_empty() || !else_.stmts.is_empty() {
+        return Err(RefEncodeError::Unsupported(
+            "a nested if value with branch statements requires exact outer-state threading"
+                .to_string(),
+        ));
+    }
+    let then_tail = then.tail.as_deref().ok_or_else(|| {
+        RefEncodeError::Unsupported("nested if then-branch has no value".to_string())
+    })?;
+    let else_tail = else_.tail.as_deref().ok_or_else(|| {
+        RefEncodeError::Unsupported("nested if else-branch has no value".to_string())
+    })?;
+    Ok(Expr::If {
+        cond: Box::new(substitute(cond, env)?),
+        then: Block {
+            stmts: Vec::new(),
+            tail: Some(Box::new(substitute_constructor_field(then_tail, env)?)),
+        },
+        else_: Block {
+            stmts: Vec::new(),
+            tail: Some(Box::new(substitute_constructor_field(else_tail, env)?)),
+        },
+    })
 }
 
 #[cfg(test)]
@@ -1038,6 +5168,25 @@ mod tests {
             value,
         }
     }
+    fn index(base: &str, at: Expr) -> Expr {
+        Expr::Index {
+            base: Box::new(path(base)),
+            index: IndexArg::Single(Box::new(at)),
+        }
+    }
+    fn index_assign(base: &str, at: Expr, value: Expr) -> Stmt {
+        Stmt::Assign {
+            target: index(base, at),
+            value,
+        }
+    }
+    fn method(receiver: Expr, name: &str, args: Vec<Expr>) -> Expr {
+        Expr::MethodCall {
+            receiver: Box::new(receiver),
+            name: name.to_string(),
+            args,
+        }
+    }
 
     /// B1 reference: `{ let a = x + 1; let b = a * 2; b }` -> the threaded closed
     /// form `((x + 1) * 2)` (the let-chain substitution).
@@ -1054,6 +5203,26 @@ mod tests {
             body_ref_state(&block, &BodyRefCtx::default()).unwrap(),
             "((x + 1) * 2)"
         );
+    }
+
+    #[test]
+    fn method_receivers_and_arguments_are_state_substituted() {
+        let block = Block {
+            stmts: vec![let_(
+                false,
+                "set_word",
+                method(path("word"), "bit_set", vec![path("bit")]),
+            )],
+            tail: Some(Box::new(method(
+                path("set_word"),
+                "bit_test",
+                vec![path("bit")],
+            ))),
+        };
+        let encoded = body_ref_state(&block, &BodyRefCtx::default()).unwrap();
+        assert!(!encoded.contains("set_word"), "{encoded}");
+        assert!(encoded.contains("match (bit)"), "{encoded}");
+        assert!(encoded.contains("(word) | 1u64"), "{encoded}");
     }
 
     /// B2 mutation-order reference: `s = s + 1; s = s * 2` threads to
@@ -1115,6 +5284,110 @@ mod tests {
         );
     }
 
+    #[test]
+    fn annotated_bounded_if_initializer_types_every_literal_arm() {
+        let nested = Expr::If {
+            cond: Box::new(path("d")),
+            then: Block {
+                stmts: vec![],
+                tail: Some(Box::new(int(2))),
+            },
+            else_: Block {
+                stmts: vec![],
+                tail: Some(Box::new(int(3))),
+            },
+        };
+        let block = Block {
+            stmts: vec![Stmt::Let {
+                mutable: false,
+                name: "reason".to_string(),
+                ty: Some(Type::Prim(thermite_syntax::PrimType::U8)),
+                init: Expr::If {
+                    cond: Box::new(path("c")),
+                    then: Block {
+                        stmts: vec![],
+                        tail: Some(Box::new(int(1))),
+                    },
+                    else_: Block {
+                        stmts: vec![],
+                        tail: Some(Box::new(nested)),
+                    },
+                },
+            }],
+            tail: Some(Box::new(path("reason"))),
+        };
+
+        assert_eq!(
+            body_ref_state(&block, &BodyRefCtx::default()).unwrap(),
+            "if c { 1 as u8 } else { if d { 2 as u8 } else { 3 as u8 } }"
+        );
+    }
+
+    #[test]
+    fn nested_constructor_if_closes_over_prior_bindings() {
+        let block = Block {
+            stmts: vec![
+                let_(false, "old_head", path("head")),
+                let_(false, "successor", path("next")),
+            ],
+            tail: Some(Box::new(Expr::StructLit {
+                path: vec!["State".to_string()],
+                fields: vec![(
+                    "head".to_string(),
+                    Expr::If {
+                        cond: Box::new(bin(BinOp::Eq, path("node"), path("old_head"))),
+                        then: Block {
+                            stmts: vec![],
+                            tail: Some(Box::new(path("successor"))),
+                        },
+                        else_: Block {
+                            stmts: vec![],
+                            tail: Some(Box::new(path("old_head"))),
+                        },
+                    },
+                )],
+            })),
+        };
+
+        let encoded = body_ref_state(&block, &BodyRefCtx::default()).unwrap();
+        assert!(!encoded.contains("old_head"), "{encoded}");
+        assert!(!encoded.contains("successor"), "{encoded}");
+        assert!(
+            encoded.contains("head: if (node == head) { next } else { head }"),
+            "{encoded}",
+        );
+    }
+
+    #[test]
+    fn nested_constructor_if_with_branch_statements_fails_closed() {
+        let block = Block {
+            stmts: vec![let_(false, "old_head", path("head"))],
+            tail: Some(Box::new(Expr::StructLit {
+                path: vec!["State".to_string()],
+                fields: vec![(
+                    "head".to_string(),
+                    Expr::If {
+                        cond: Box::new(path("choose")),
+                        then: Block {
+                            stmts: vec![let_(false, "branch", path("next"))],
+                            tail: Some(Box::new(path("branch"))),
+                        },
+                        else_: Block {
+                            stmts: vec![],
+                            tail: Some(Box::new(path("old_head"))),
+                        },
+                    },
+                )],
+            })),
+        };
+
+        assert!(matches!(
+            body_ref_state(&block, &BodyRefCtx::default()),
+            Err(RefEncodeError::Unsupported(reason))
+                if reason.contains("nested if value with branch statements")
+        ));
+    }
+
     /// B4 reference (the multi-cell tuple — the design's least-confident #1): the
     /// final state `(a, b)` projects `a |-> (x + 1)`, `b |-> (y + (x + 1))` (b uses
     /// the updated a, the order-sensitive threading).
@@ -1133,6 +5406,35 @@ mod tests {
             body_ref_state(&block, &BodyRefCtx::default()).unwrap(),
             "((x + 1), (y + (x + 1)))"
         );
+    }
+
+    #[test]
+    fn untouched_exclusive_storage_is_framed_as_unchanged() {
+        let block = Block {
+            stmts: vec![],
+            tail: Some(Box::new(path("value"))),
+        };
+        let ctx = BodyRefCtx::default().with_mutable_indexed_bound(["data"]);
+        assert_eq!(
+            body_ref_state_ensures(&block, "result", &ctx).unwrap(),
+            "result == value && final(data)@ == old(data)@"
+        );
+    }
+
+    #[test]
+    fn post_write_storage_read_observes_the_exact_sequence_state() {
+        let block = Block {
+            stmts: vec![index_assign("data", path("at"), path("value"))],
+            tail: Some(Box::new(index("data", path("at")))),
+        };
+        let ctx = BodyRefCtx::with_slice_bound(["data"]).with_mutable_indexed_bound(["data"]);
+        let ensures = body_ref_state_ensures(&block, "result", &ctx).unwrap();
+        assert!(
+            ensures.contains("(old(data)@).update((at) as int, value)"),
+            "{ensures}"
+        );
+        assert!(ensures.contains("result =="), "{ensures}");
+        assert!(ensures.contains("final(data)@ =="), "{ensures}");
     }
 
     /// A loop body is out of the frozen 2.2.1 subset -> an `Err`, never a

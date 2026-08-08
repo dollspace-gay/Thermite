@@ -3,14 +3,17 @@
 <!--
 tier: 3-component
 status: shipped
-audited-content-sha256: f81b6903366ceec0ce435089c7f021c8c25f951c51aa3d2d08ca8a73ea08e5e3
-decision: explicit pinned vstd proof-model import plus deterministic no_std erased link metadata
+audited-content-sha256: 5678b1322153b98123829c0ecd7f8fb058ba8f6e8843dc6fd589f879b80f3bae (re-pinned 2026-08-08 after the closed result-enum public ABI landed at the L3 export admission site)
+decision: explicit pinned vstd slice/fixed-array proof-model import plus deterministic no_std erased link metadata
 issue: github:dollspace-gay/Thermite#108
 governs:
   - forge/src/verified_build.rs
   - forge/src/verified_build/composition.rs
   - forge/src/kernel_vstd_link.rs
   - forge/tests/kernel_byte_slice.rs
+  - thermite-lower/src/lower.rs
+  - thermite-lower/tests/fixed_array.rs
+  - forge/tests/verified_build.rs
 thesis-refs:
   - thermite-design.md §3
   - thermite-design.md §5.3
@@ -29,20 +32,34 @@ freestanding gates without a hosted runtime.
 
 The model is explicit rather than ambient. Forge imports the `vstd.vir` shipped
 with the pinned Verus installation and supplies a deterministic erased
-`libvstd.rlib` containing only the Rust metadata skeleton for `Seq`, `View`, and
-slice indexing. The imported VIR is the semantic authority. The small rlib has
-no allocator or hosted implementation and contributes no executable slice
-adapter: the checked body still executes Rust's native `&[u8]::len` and
-indexing directly.
+`libvstd.rlib` containing only the Rust metadata skeleton for `Seq`, `View`,
+slice indexing, and native fixed arrays. The imported VIR is the semantic
+authority. The small rlib has no allocator or hosted container implementation;
+checked bodies still execute Rust's native slice/array indexing and assignment.
+
+The same receipt-bound Rust ABI mechanism also preserves `&mut` for mutable
+primitive/array-element slices and records it as an exclusive borrow. That is a
+generic finite-storage export primitive; this document's imported `vstd` model
+continues to describe the finite view and does not add a collection adapter.
+
+The fixed-array extension imports `ArrayAdditionalSpecFns` and the native array
+`View` implementation. Thermite repeat initializers lower to vstd's pinned
+`array_fill_for_copy_types` compiler helper because Verus rejects array literal
+syntax whenever `--no-vstd` is present, even with an explicit model import. The
+no-std link skeleton implements that exact erased helper as native `[value; N]`;
+its source, object, imported VIR, and complete vstd source closure are receipt-
+bound. This is irreducible compiler construction support, not a bodyful
+application primitive. All collection/slab algorithms using it remain Thermite
+L3.
 
 ## Why the builtins-only profile is insufficient
 
 Under `--no-vstd`, `verus_builtin` provides the verifier language but not the
-standard-library model for Rust slices. An executable `bytes[offset]` lowers to
-core slice indexing, while the corresponding specification expression needs
-`View`, `Seq`, `SliceAdditionalSpecFns::spec_index`, and the specifications for
-slice length/index. Without those declarations Verus either reports a missing
-`spec_index` method or an undeclared `vstd::slice::spec_slice_len` AIR symbol.
+standard-library model for Rust slices or arrays. An executable
+`bytes[offset]` or `slots[index]` lowers to core indexing, while the corresponding
+specification needs `View`, `Seq`, the slice/array additional spec traits, and
+the length/index/update laws. Without them Verus reports missing `view` or
+`spec_index` methods or an undeclared vstd AIR symbol.
 
 A local wrapper cannot repair that soundly. Any constructor or accessor that
 claims its ghost bytes equal an arbitrary input slice must assume the very
@@ -79,10 +96,12 @@ shape:
 ```
 
 At execution time Forge substitutes the exact pinned VIR and generated rlib
-paths. A direct-Verus shell that uses slice specifications explicitly imports
-`vstd::prelude::*`; ordinary kernel lowering remains builtins-only. The ghost
-slice vocabulary survives only in proof position, while executable length and
-indexing remain native, allocation-free slice operations.
+paths. Kernel lowering and same-crate direct-Verus shells explicitly import
+`vstd::prelude::*` from that closed dependency. Registry-v2 scalar primitive
+crates use only Verus builtins and therefore add no second `vstd` runtime
+dependency. The ghost finite-view vocabulary survives only in proof position,
+while executable length, indexing, and updates remain native allocation-free
+operations.
 
 The link skeleton deliberately mirrors the pinned vstd definition paths and
 impl order for the admitted subset. Verus metadata keys external impls by those

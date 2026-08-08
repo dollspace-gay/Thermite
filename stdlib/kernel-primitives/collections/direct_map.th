@@ -1,0 +1,519 @@
+const FIXED_DIRECT_MAP_CAPACITY: usize = 64;
+
+struct FixedDirectMap64 {
+  used: [bool; FIXED_DIRECT_MAP_CAPACITY],
+  keys: [usize; FIXED_DIRECT_MAP_CAPACITY],
+  values: [u64; FIXED_DIRECT_MAP_CAPACITY],
+  len: usize,
+}
+
+enum FixedMapLookup64 {
+  MapFound64 {
+    value: u64,
+  },
+  MapVacant64,
+  MapLookupCollision64 {
+    stored_key: usize,
+  },
+}
+
+enum FixedMapInsert64 {
+  MapAdded64 {
+    map: FixedDirectMap64,
+  },
+  MapReplaced64 {
+    map: FixedDirectMap64,
+    old_value: u64,
+  },
+  MapInsertCollision64 {
+    map: FixedDirectMap64,
+    key: usize,
+    value: u64,
+    stored_key: usize,
+  },
+  MapInsertCountInvalid64 {
+    map: FixedDirectMap64,
+    key: usize,
+    value: u64,
+  },
+}
+
+enum FixedMapRemove64 {
+  MapRemoved64 {
+    map: FixedDirectMap64,
+    value: u64,
+  },
+  MapRemoveVacant64 {
+    map: FixedDirectMap64,
+    key: usize,
+  },
+  MapRemoveCollision64 {
+    map: FixedDirectMap64,
+    key: usize,
+    stored_key: usize,
+  },
+  MapRemoveCountInvalid64 {
+    map: FixedDirectMap64,
+    key: usize,
+  },
+}
+
+spec fn fixed_direct_map_wf_spec(map: &FixedDirectMap64) -> bool
+  dec map.len
+{
+  map.len <= FIXED_DIRECT_MAP_CAPACITY
+}
+
+spec fn fixed_direct_map_slot_spec(key: usize) -> usize
+  dec key
+{
+  key % 64
+}
+
+fn fixed_direct_map_wf(map: &FixedDirectMap64) -> bool
+  req true
+  ens result == fixed_direct_map_wf_spec(map)
+  fx pure
+{
+  map.len <= FIXED_DIRECT_MAP_CAPACITY
+}
+
+fn fixed_direct_map_slot(key: usize) -> usize
+  req true
+  ens result == fixed_direct_map_slot_spec(key)
+  ens result < FIXED_DIRECT_MAP_CAPACITY
+  fx pure
+{
+  key % 64
+}
+
+fn fixed_direct_map_empty_for(key: usize) -> FixedDirectMap64
+  req true
+  ens fixed_direct_map_wf_spec(&result)
+  ens result.len == 0
+  ens !result.used[fixed_direct_map_slot_spec(key)]
+  ens result.keys[fixed_direct_map_slot_spec(key)] == 0
+    && result.values[fixed_direct_map_slot_spec(key)] == 0
+  fx pure
+{
+  FixedDirectMap64 {
+    used: [false; FIXED_DIRECT_MAP_CAPACITY],
+    keys: [0; FIXED_DIRECT_MAP_CAPACITY],
+    values: [0; FIXED_DIRECT_MAP_CAPACITY],
+    len: 0,
+  }
+}
+
+fn fixed_direct_map_len(map: &FixedDirectMap64) -> usize
+  req fixed_direct_map_wf_spec(map)
+  ens result == map.len
+  ens result <= FIXED_DIRECT_MAP_CAPACITY
+  fx pure
+{
+  map.len
+}
+
+fn fixed_direct_map_lookup(
+  map: &FixedDirectMap64,
+  key: usize,
+) -> FixedMapLookup64
+  req fixed_direct_map_wf_spec(map)
+  ens match result {
+    FixedMapLookup64::MapFound64 { value } =>
+      map.used[fixed_direct_map_slot_spec(key)]
+        && map.keys[fixed_direct_map_slot_spec(key)] == key
+        && value == map.values[fixed_direct_map_slot_spec(key)],
+    FixedMapLookup64::MapVacant64 =>
+      !map.used[fixed_direct_map_slot_spec(key)],
+    FixedMapLookup64::MapLookupCollision64 { stored_key } =>
+      map.used[fixed_direct_map_slot_spec(key)]
+        && map.keys[fixed_direct_map_slot_spec(key)] != key
+        && stored_key == map.keys[fixed_direct_map_slot_spec(key)],
+  }
+  fx pure
+{
+  let slot: usize = fixed_direct_map_slot(key);
+  if !map.used[slot] {
+    FixedMapLookup64::MapVacant64
+  } else {
+    if map.keys[slot] == key {
+      FixedMapLookup64::MapFound64 {
+        value: map.values[slot],
+      }
+    } else {
+      FixedMapLookup64::MapLookupCollision64 {
+        stored_key: map.keys[slot],
+      }
+    }
+  }
+}
+
+fn fixed_direct_map_insert(
+  map: FixedDirectMap64,
+  key: usize,
+  value: u64,
+) -> FixedMapInsert64
+  req fixed_direct_map_wf_spec(&map)
+  ens match result {
+    FixedMapInsert64::MapAdded64 { map: next } =>
+      !map.used[fixed_direct_map_slot_spec(key)]
+        && map.len < FIXED_DIRECT_MAP_CAPACITY
+        && fixed_direct_map_wf_spec(&next)
+        && next.used[fixed_direct_map_slot_spec(key)]
+        && next.keys[fixed_direct_map_slot_spec(key)] == key
+        && next.values[fixed_direct_map_slot_spec(key)] == value
+        && next.len == map.len + 1,
+    FixedMapInsert64::MapReplaced64 { map: next, old_value } =>
+      map.used[fixed_direct_map_slot_spec(key)]
+        && map.keys[fixed_direct_map_slot_spec(key)] == key
+        && old_value == map.values[fixed_direct_map_slot_spec(key)]
+        && fixed_direct_map_wf_spec(&next)
+        && next.used[fixed_direct_map_slot_spec(key)]
+        && next.keys[fixed_direct_map_slot_spec(key)] == key
+        && next.values[fixed_direct_map_slot_spec(key)] == value
+        && next.len == map.len,
+    FixedMapInsert64::MapInsertCollision64 {
+      map: next,
+      key: returned_key,
+      value: returned_value,
+      stored_key,
+    } =>
+      map.used[fixed_direct_map_slot_spec(key)]
+        && map.keys[fixed_direct_map_slot_spec(key)] != key
+        && stored_key == map.keys[fixed_direct_map_slot_spec(key)]
+        && returned_key == key
+        && returned_value == value
+        && next.used[fixed_direct_map_slot_spec(key)]
+        && next.keys[fixed_direct_map_slot_spec(key)] == stored_key
+        && next.values[fixed_direct_map_slot_spec(key)]
+          == map.values[fixed_direct_map_slot_spec(key)]
+        && next.len == map.len,
+    FixedMapInsert64::MapInsertCountInvalid64 {
+      map: next,
+      key: returned_key,
+      value: returned_value,
+    } =>
+      !map.used[fixed_direct_map_slot_spec(key)]
+        && map.len == FIXED_DIRECT_MAP_CAPACITY
+        && returned_key == key
+        && returned_value == value
+        && !next.used[fixed_direct_map_slot_spec(key)]
+        && next.len == map.len,
+  }
+  fx pure
+{
+  let slot: usize = fixed_direct_map_slot(key);
+  if map.used[slot] {
+    if map.keys[slot] == key {
+      let old_value: u64 = map.values[slot];
+      let used: [bool; FIXED_DIRECT_MAP_CAPACITY] = map.used;
+      let keys: [usize; FIXED_DIRECT_MAP_CAPACITY] = map.keys;
+      let mut values: [u64; FIXED_DIRECT_MAP_CAPACITY] = map.values;
+      values[slot] = value;
+      FixedMapInsert64::MapReplaced64 {
+        map: FixedDirectMap64 {
+          used: used,
+          keys: keys,
+          values: values,
+          len: map.len,
+        },
+        old_value: old_value,
+      }
+    } else {
+      FixedMapInsert64::MapInsertCollision64 {
+        stored_key: map.keys[slot],
+        map: map,
+        key: key,
+        value: value,
+      }
+    }
+  } else {
+    if map.len == FIXED_DIRECT_MAP_CAPACITY {
+      FixedMapInsert64::MapInsertCountInvalid64 {
+        map: map,
+        key: key,
+        value: value,
+      }
+    } else {
+      let mut used: [bool; FIXED_DIRECT_MAP_CAPACITY] = map.used;
+      let mut keys: [usize; FIXED_DIRECT_MAP_CAPACITY] = map.keys;
+      let mut values: [u64; FIXED_DIRECT_MAP_CAPACITY] = map.values;
+      used[slot] = true;
+      keys[slot] = key;
+      values[slot] = value;
+      FixedMapInsert64::MapAdded64 {
+        map: FixedDirectMap64 {
+          used: used,
+          keys: keys,
+          values: values,
+          len: map.len + 1,
+        },
+      }
+    }
+  }
+}
+
+fn fixed_direct_map_remove(
+  map: FixedDirectMap64,
+  key: usize,
+) -> FixedMapRemove64
+  req fixed_direct_map_wf_spec(&map)
+  ens match result {
+    FixedMapRemove64::MapRemoved64 { map: next, value } =>
+      map.used[fixed_direct_map_slot_spec(key)]
+        && map.keys[fixed_direct_map_slot_spec(key)] == key
+        && map.len != 0
+        && value == map.values[fixed_direct_map_slot_spec(key)]
+        && fixed_direct_map_wf_spec(&next)
+        && !next.used[fixed_direct_map_slot_spec(key)]
+        && next.keys[fixed_direct_map_slot_spec(key)] == 0
+        && next.values[fixed_direct_map_slot_spec(key)] == 0
+        && next.len == map.len - 1,
+    FixedMapRemove64::MapRemoveVacant64 { map: next, key: returned_key } =>
+      !map.used[fixed_direct_map_slot_spec(key)]
+        && returned_key == key
+        && !next.used[fixed_direct_map_slot_spec(key)]
+        && next.len == map.len,
+    FixedMapRemove64::MapRemoveCollision64 {
+      map: next,
+      key: returned_key,
+      stored_key,
+    } =>
+      map.used[fixed_direct_map_slot_spec(key)]
+        && map.keys[fixed_direct_map_slot_spec(key)] != key
+        && returned_key == key
+        && stored_key == map.keys[fixed_direct_map_slot_spec(key)]
+        && next.used[fixed_direct_map_slot_spec(key)]
+        && next.keys[fixed_direct_map_slot_spec(key)] == stored_key
+        && next.len == map.len,
+    FixedMapRemove64::MapRemoveCountInvalid64 { map: next, key: returned_key } =>
+      map.used[fixed_direct_map_slot_spec(key)]
+        && map.keys[fixed_direct_map_slot_spec(key)] == key
+        && map.len == 0
+        && returned_key == key
+        && next.used[fixed_direct_map_slot_spec(key)]
+        && next.len == map.len,
+  }
+  fx pure
+{
+  let slot: usize = fixed_direct_map_slot(key);
+  if !map.used[slot] {
+    FixedMapRemove64::MapRemoveVacant64 {
+      map: map,
+      key: key,
+    }
+  } else {
+    if map.keys[slot] != key {
+      FixedMapRemove64::MapRemoveCollision64 {
+        stored_key: map.keys[slot],
+        map: map,
+        key: key,
+      }
+    } else {
+      if map.len == 0 {
+        FixedMapRemove64::MapRemoveCountInvalid64 {
+          map: map,
+          key: key,
+        }
+      } else {
+        let value: u64 = map.values[slot];
+        let mut used: [bool; FIXED_DIRECT_MAP_CAPACITY] = map.used;
+        let mut keys: [usize; FIXED_DIRECT_MAP_CAPACITY] = map.keys;
+        let mut values: [u64; FIXED_DIRECT_MAP_CAPACITY] = map.values;
+        used[slot] = false;
+        keys[slot] = 0;
+        values[slot] = 0;
+        FixedMapRemove64::MapRemoved64 {
+          map: FixedDirectMap64 {
+            used: used,
+            keys: keys,
+            values: values,
+            len: map.len - 1,
+          },
+          value: value,
+        }
+      }
+    }
+  }
+}
+
+fn fixed_direct_map_lookup_after_add(
+  map: FixedDirectMap64,
+  key: usize,
+  value: u64,
+) -> bool
+  req fixed_direct_map_wf_spec(&map)
+    && map.used[fixed_direct_map_slot_spec(key)]
+    && map.keys[fixed_direct_map_slot_spec(key)] == key
+    && map.values[fixed_direct_map_slot_spec(key)] == value
+  ens result
+  fx pure
+{
+  match fixed_direct_map_lookup(&map, key) {
+    FixedMapLookup64::MapFound64 { value: found } => found == value,
+    FixedMapLookup64::MapVacant64 => false,
+    FixedMapLookup64::MapLookupCollision64 { stored_key: _ } => false,
+  }
+}
+
+fn fixed_direct_map_insert_lookup_probe(key: usize, value: u64) -> bool
+  req true
+  ens result
+  fx pure
+{
+  let empty: FixedDirectMap64 = fixed_direct_map_empty_for(key);
+  match fixed_direct_map_insert(empty, key, value) {
+    FixedMapInsert64::MapAdded64 { map } =>
+      fixed_direct_map_lookup_after_add(map, key, value),
+    FixedMapInsert64::MapReplaced64 { map: _, old_value: _ } => false,
+    FixedMapInsert64::MapInsertCollision64 {
+      map: _,
+      key: _,
+      value: _,
+      stored_key: _,
+    } => false,
+    FixedMapInsert64::MapInsertCountInvalid64 { map: _, key: _, value: _ } => false,
+  }
+}
+
+fn fixed_direct_map_replace_after_add(
+  map: FixedDirectMap64,
+  key: usize,
+  first: u64,
+  second: u64,
+) -> bool
+  req fixed_direct_map_wf_spec(&map)
+    && map.used[fixed_direct_map_slot_spec(key)]
+    && map.keys[fixed_direct_map_slot_spec(key)] == key
+    && map.values[fixed_direct_map_slot_spec(key)] == first
+  ens result
+  fx pure
+{
+  match fixed_direct_map_insert(map, key, second) {
+    FixedMapInsert64::MapAdded64 { map: _ } => false,
+    FixedMapInsert64::MapReplaced64 { map: replaced, old_value } =>
+      old_value == first
+        && fixed_direct_map_lookup_after_add(replaced, key, second),
+    FixedMapInsert64::MapInsertCollision64 {
+      map: _,
+      key: _,
+      value: _,
+      stored_key: _,
+    } => false,
+    FixedMapInsert64::MapInsertCountInvalid64 { map: _, key: _, value: _ } => false,
+  }
+}
+
+fn fixed_direct_map_replace_probe(
+  key: usize,
+  first: u64,
+  second: u64,
+) -> bool
+  req true
+  ens result
+  fx pure
+{
+  let empty: FixedDirectMap64 = fixed_direct_map_empty_for(key);
+  match fixed_direct_map_insert(empty, key, first) {
+    FixedMapInsert64::MapAdded64 { map } =>
+      fixed_direct_map_replace_after_add(map, key, first, second),
+    FixedMapInsert64::MapReplaced64 { map: _, old_value: _ } => false,
+    FixedMapInsert64::MapInsertCollision64 {
+      map: _,
+      key: _,
+      value: _,
+      stored_key: _,
+    } => false,
+    FixedMapInsert64::MapInsertCountInvalid64 { map: _, key: _, value: _ } => false,
+  }
+}
+
+fn fixed_direct_map_collision_after_zero(
+  map: FixedDirectMap64,
+  value: u64,
+) -> bool
+  req fixed_direct_map_wf_spec(&map)
+    && map.used[0]
+    && map.keys[0] == 0
+  ens result
+  fx pure
+{
+  match fixed_direct_map_insert(map, 64, value) {
+    FixedMapInsert64::MapAdded64 { map: _ } => false,
+    FixedMapInsert64::MapReplaced64 { map: _, old_value: _ } => false,
+    FixedMapInsert64::MapInsertCollision64 {
+      map: _,
+      key,
+      value: returned,
+      stored_key,
+    } => key == 64 && returned == value && stored_key == 0,
+    FixedMapInsert64::MapInsertCountInvalid64 { map: _, key: _, value: _ } => false,
+  }
+}
+
+fn fixed_direct_map_collision_probe(first: u64, second: u64) -> bool
+  req true
+  ens result
+  fx pure
+{
+  let empty: FixedDirectMap64 = fixed_direct_map_empty_for(0);
+  match fixed_direct_map_insert(empty, 0, first) {
+    FixedMapInsert64::MapAdded64 { map } =>
+      fixed_direct_map_collision_after_zero(map, second),
+    FixedMapInsert64::MapReplaced64 { map: _, old_value: _ } => false,
+    FixedMapInsert64::MapInsertCollision64 {
+      map: _,
+      key: _,
+      value: _,
+      stored_key: _,
+    } => false,
+    FixedMapInsert64::MapInsertCountInvalid64 { map: _, key: _, value: _ } => false,
+  }
+}
+
+fn fixed_direct_map_remove_after_add(
+  map: FixedDirectMap64,
+  key: usize,
+  value: u64,
+) -> bool
+  req fixed_direct_map_wf_spec(&map)
+    && map.used[fixed_direct_map_slot_spec(key)]
+    && map.keys[fixed_direct_map_slot_spec(key)] == key
+    && map.values[fixed_direct_map_slot_spec(key)] == value
+    && map.len != 0
+  ens result
+  fx pure
+{
+  match fixed_direct_map_remove(map, key) {
+    FixedMapRemove64::MapRemoved64 { map: removed, value: returned } =>
+      returned == value
+        && match fixed_direct_map_lookup(&removed, key) {
+          FixedMapLookup64::MapFound64 { value: _ } => false,
+          FixedMapLookup64::MapVacant64 => true,
+          FixedMapLookup64::MapLookupCollision64 { stored_key: _ } => false,
+        },
+    FixedMapRemove64::MapRemoveVacant64 { map: _, key: _ } => false,
+    FixedMapRemove64::MapRemoveCollision64 { map: _, key: _, stored_key: _ } => false,
+    FixedMapRemove64::MapRemoveCountInvalid64 { map: _, key: _ } => false,
+  }
+}
+
+fn fixed_direct_map_remove_probe(key: usize, value: u64) -> bool
+  req true
+  ens result
+  fx pure
+{
+  let empty: FixedDirectMap64 = fixed_direct_map_empty_for(key);
+  match fixed_direct_map_insert(empty, key, value) {
+    FixedMapInsert64::MapAdded64 { map } =>
+      fixed_direct_map_remove_after_add(map, key, value),
+    FixedMapInsert64::MapReplaced64 { map: _, old_value: _ } => false,
+    FixedMapInsert64::MapInsertCollision64 {
+      map: _,
+      key: _,
+      value: _,
+      stored_key: _,
+    } => false,
+    FixedMapInsert64::MapInsertCountInvalid64 { map: _, key: _, value: _ } => false,
+  }
+}

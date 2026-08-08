@@ -1,5 +1,7 @@
 //! `forge/src/check.rs` — the v0.1 `forge check` pipeline. It runs each `fn` /
-//! `spec fn` item in a `.th` file end-to-end through every shipped kernel
+//! `spec fn` item of a `.th` file, or of a canonical `.thpkg.json` package
+//! closure resolved by `thermite_package::load_source`, end-to-end through every
+//! shipped kernel
 //! component, invokes the `verus` binary on the lowered source, parses
 //! verus's output into per-obligation results (with counterexamples on failure),
 //! and assembles the structured certificate (`manifest.rs`). This is the first
@@ -309,25 +311,22 @@ pub fn check_file_with_options(
 ) -> Result<Vec<Certificate>, ForgeError> {
     let rlimit = options.rlimit;
     let path = path.as_ref();
-    let src = std::fs::read_to_string(path).map_err(|e| ForgeError::Io {
-        path: path.display().to_string(),
-        source: e,
-    })?;
 
-    // 1. parse (thermite-syntax).
-    let parsed = thermite_syntax::parse(&src);
-    if !parsed.is_clean() {
-        return Err(ForgeError::Parse(parsed.errors));
-    }
+    // 1. resolve + parse (`thermite_package::load_source`): a single `.th` file
+    // reads and parses as before, while a canonical `.thpkg.json` manifest
+    // resolves its declared module closure and parses each module on its own, so
+    // a diagnostic names that module's path and a span inside it.
+    let resolved = crate::thermite_package::load_source(path)?;
+    let program = resolved.program();
 
     // 2. validate (thermite-spec) — the SpecTherm cage.
-    thermite_spec::validate(&parsed.program).map_err(ForgeError::Spec)?;
+    thermite_spec::validate(program).map_err(ForgeError::Spec)?;
 
     // 3. effect-check (thermite-lower) — `fx` subsumption (§4.1). Effect
     // subsumption is a whole-program property (a caller's row must subsume every
     // callee's), so it is checked once over the full program before any per-item
     // split.
-    thermite_lower::check_effects(&parsed.program).map_err(ForgeError::Effects)?;
+    thermite_lower::check_effects(program).map_err(ForgeError::Effects)?;
 
     // 4/5/6/7. Per-item certification (`thermite-design.md` §5.3 — "proof
     // results content-addressed and cached per item"; "an edit to `f` cannot
@@ -353,13 +352,22 @@ pub fn check_file_with_options(
     // The file's `spec fn`s are pure, contract-free shared dependencies; they go
     // into every per-item sub-program so a `fn` whose `ens` references one (e.g.
     // `sum`'s `ens result == spec_sum(xs)`) still lowers and verifies.
-    let spec_items: Vec<Item> = parsed
-        .program
+    let spec_items: Vec<Item> = program
         .items
         .iter()
         .filter(|i| matches!(i, Item::SpecFn(_)))
         .cloned()
         .collect();
+    // Fixed-array capacities are declarations, not proof obligations, but every
+    // isolated lowering that mentions `[T; CAP]` must retain the declaration.
+    let const_items: Vec<Item> = program
+        .items
+        .iter()
+        .filter(|i| matches!(i, Item::Const(_)))
+        .cloned()
+        .collect();
+    let mut solver_contract_items = const_items.clone();
+    solver_contract_items.extend(spec_items.iter().cloned());
 
     // C11 (`.design/basis/12-mutual-recursion.md` REQ-2, crosslink #121/#113): the
     // in-file `fn`s in a mutual-recursion cycle (`a -> b -> a`, …) whose
@@ -380,7 +388,7 @@ pub fn check_file_with_options(
     // verdict-in-cert shape as the single-fn non-decreasing L0 cert, so `forge
     // check` exits non-zero with a parseable cert array. Computed once (a pure
     // function of the program, R-CODE-5).
-    let mutual_missing_dec_fns = mutual_recursion_cycle_fns(&parsed.program);
+    let mutual_missing_dec_fns = mutual_recursion_cycle_fns(program);
 
     // Stage-1 forge tier — the covenant bindings (`.design/stage1-forge-tier.md`
     // REQ-4, increment 2b). Each entry maps a `fn` to the `witness { inhabit (…);
@@ -390,7 +398,7 @@ pub fn check_file_with_options(
     // unchanged; a `fn` present is forge-routed and must pass its covenant before the
     // L3 burn (R-COV-1, covenant-before-burn). No v1 corpus item carries a `witness`
     // block, so the map is empty on the conformance corpus — a no-op on the v1 oracle.
-    let covenant_bindings = crate::covenant_engine::witness_bindings(&parsed.program);
+    let covenant_bindings = crate::covenant_engine::witness_bindings(program);
     // Stage-1 forge tier — the per-project lemma namespace names (`.design/stage1-forge-tier.md`
     // REQ-9 / Q1, increment 3). The set of top-level `lemma` names, so the frozen-battery
     // gate DEFERS a `simp [ … ]` citation that names a project lemma (instead of refusing it
@@ -398,7 +406,7 @@ pub fn check_file_with_options(
     // forge/Lean path once discharge settles certification. Empty on the v1 corpus (no
     // project lemmas), so the frozen-battery gate is byte-identical there. Computed once
     // (a pure function of the program, R-CODE-5).
-    let project_lemma_names = crate::lemma_library::project_lemma_names(&parsed.program);
+    let project_lemma_names = crate::lemma_library::project_lemma_names(program);
     // The covenant evidence for each VALIDATED covenant, attached to the item's cert
     // after the burn (Q-ORACLE: the evidence joins the forge-tier cert oracle). A
     // refuted/refused covenant carries its own evidence (or none) on its short-circuit
@@ -408,8 +416,13 @@ pub fn check_file_with_options(
         crate::covenant_engine::CovenantEvidence,
     > = std::collections::BTreeMap::new();
 
-    let mut certs = Vec::with_capacity(parsed.program.items.len());
-    for item in &parsed.program.items {
+    let mut certs = Vec::with_capacity(program.items.len());
+    for item in &program.items {
+        // Capacity declarations are checked by the parser/validator and emitted
+        // into dependent subprograms; they carry no independent proof contract.
+        if matches!(item, Item::Const(_)) {
+            continue;
+        }
         // C11 REQ-2 mutual-recursion missing-`dec` reject (no false L3, no crash):
         // a `fn` in a mutual cycle that lacks a complete `dec` group does not
         // certify — it is rejected as a clean L0 cert verdict (never lowered / sent
@@ -635,7 +648,7 @@ pub fn check_file_with_options(
         // callee and the caller proves through its contract (was an undefined-callee
         // L0). Empty for a fn referencing only spec fns / combinators (the pure
         // corpus), so the corpus cert + lowering are byte-stable (AC-4).
-        let fn_deps = reachable_fn_deps(&parsed.program, item.name());
+        let fn_deps = reachable_fn_deps(program, item.name());
         // #68: also weave the `struct`/`enum` declarations the checked item and
         // its woven fn-deps reference (transitively closed over the ADT type
         // graph), so the per-item Verus emission has the type decls + their
@@ -651,7 +664,7 @@ pub fn check_file_with_options(
         // multi-spec-fn file no longer lowers every spec fn to byte-identical Verus
         // (the cache-collision cause — the sub-program is now distinct per spec fn).
         let item_spec_items: Vec<Item> = match item {
-            Item::SpecFn(_) => reachable_spec_fn_deps(&parsed.program, item.name()),
+            Item::SpecFn(_) => reachable_spec_fn_deps(program, item.name()),
             _ => spec_items.clone(),
         };
         // #92: the referrer set covers everything `item_subprogram` weaves. Every
@@ -662,9 +675,9 @@ pub fn check_file_with_options(
         //
         // Before #92 the seed was `[item] + fn_deps`, a strict subset of what is
         // woven, which surfaced three ways:
-        //   - a checked `struct`/`enum`: `collect_item_adt_refs` is inert on an ADT
-        //     decl (its own field types are followed by the type-graph fixed point
-        //     instead), so `adt_deps` came out empty for every ADT item, while the
+        //   - a checked `struct`/`enum`: `collect_item_adt_refs` was inert on an ADT
+        //     decl (it now seeds the declaration's own field types), so `adt_deps`
+        //     came out empty for every ADT item, while the
         //     ADT arm weaves the file's whole `spec_items`. A spec fn naming a
         //     second ADT dangled, so the item landed L0 and the project verdict
         //     FAILED. A single-ADT file hid this: the only ADT is the checked item,
@@ -686,8 +699,8 @@ pub fn check_file_with_options(
             referrers.clear();
         }
         referrers.extend(item_spec_items.iter());
-        let adt_deps = reachable_adt_deps(&parsed.program, &referrers);
-        let sub = item_subprogram(item, &item_spec_items, &fn_deps, &adt_deps);
+        let adt_deps = reachable_adt_deps(program, &referrers);
+        let sub = item_subprogram(item, &const_items, &item_spec_items, &fn_deps, &adt_deps);
         let lowered = thermite_lower::lower(&sub).map_err(ForgeError::Lower)?;
 
         // #8 proof cache (`.design/forge/proof-cache.md` REQ-1/REQ-3): the lowered
@@ -753,7 +766,7 @@ pub fn check_file_with_options(
             if let crate::vacuity_solver::SolverVacuityVerdict::Detected { cause } =
                 crate::vacuity_solver::solver_vacuity_check(
                     f,
-                    &spec_items,
+                    &solver_contract_items,
                     &adt_deps,
                     seed,
                     rlimit,
@@ -813,7 +826,7 @@ pub fn check_file_with_options(
         // REQ-1.2(a) — its dec-check is the common discharge path), confirmed via
         // the fragment gate; an unadmitted class would block certification per the
         // conjunction rule (the seam a narrower future engine keys on).
-        let item_obligations = mint_item_obligations(&parsed.program, item);
+        let item_obligations = mint_item_obligations(program, item);
         let evidence_key =
             crate::engine::engine_cache_key(crate::engine::EngineName::Verus, key.clone());
         // REQ-1.2(a) conjunction discharge: when the item carries a
@@ -870,6 +883,7 @@ pub fn check_file_with_options(
             if cert.level == Level::L3 && cert.reject.is_none() {
                 let score = mutation_score(
                     f,
+                    &const_items,
                     &spec_items,
                     &fn_deps,
                     &adt_deps,
@@ -897,6 +911,7 @@ pub fn check_file_with_options(
                         .with_mutation_score(score.mutants_killed_string(), score.survivor.clone());
                     let suggestions = strengthen_certificate(
                         f,
+                        &const_items,
                         &spec_items,
                         &fn_deps,
                         &adt_deps,
@@ -973,7 +988,7 @@ pub fn check_file_with_options(
     // `Level::L3` and records `ToBoundary { via }`. The classification keys on the
     // in-file `#[boundary]`/`#[slag]` node (the §9 composition rule), never a
     // sibling's verdict, so it does not perturb any oracle-stable level.
-    let scopes = crate::closure::classify(&parsed.program);
+    let scopes = crate::closure::classify(program);
     let certs = certs
         .into_iter()
         .map(|cert| {
@@ -1038,15 +1053,17 @@ pub fn check_file_with_engine(
         },
     )?;
 
-    // Re-parse for the Lean engine (the exporter needs the spec-fn defs + the item).
-    let src = std::fs::read_to_string(path).map_err(|e| ForgeError::Io {
-        path: path.display().to_string(),
-        source: e,
-    })?;
-    let parsed = thermite_syntax::parse(&src);
-    if !parsed.is_clean() {
-        return Err(ForgeError::Parse(parsed.errors));
-    }
+    // Re-resolve for the Lean engine (the exporter needs the spec-fn defs + the
+    // item). The same front door serves a single file and a package manifest.
+    let resolved = crate::thermite_package::load_source(path)?;
+    let program = resolved.program();
+    // The definition-tower render (`crate::meaning::build_tower`) slices verbatim
+    // `spec fn` text by span, so it takes the AST and the text that AST was
+    // parsed from as a pair. For a single file that pair is the file's own
+    // program and source; for a package it is the canonical projection and its
+    // parse, which declares the same items in the same order.
+    let text = resolved.text();
+    let text_program = resolved.text_program();
 
     // REQ-8 relax route (`.design/stage1-forge-tier.md` REQ-8 / Q-NLSAT / AC-12,
     // increment 2f): the `--engine nlsat` selection routes every item through the
@@ -1054,7 +1071,7 @@ pub fn check_file_with_engine(
     // and returns early. The default Verus path and the `--engine lean|auto` paths are
     // untouched, so the v1 corpus stays byte-identical.
     if selection == EngineSelection::Nlsat {
-        return Ok(nlsat_check(base, &parsed.program));
+        return Ok(nlsat_check(base, program));
     }
 
     // REQ-10 / AC-14 G1 gate route (`.design/stage1-forge-tier.md`): `--engine forge`
@@ -1064,7 +1081,7 @@ pub fn check_file_with_engine(
     // Returns early like the nlsat route; the v1 Verus path and the lean/auto paths are
     // untouched, so the v1 corpus stays byte-identical.
     if selection == EngineSelection::Forge {
-        return Ok(forge_gate_check(base, &parsed.program, &src));
+        return Ok(forge_gate_check(base, text_program, text));
     }
 
     // Stage-3 REQ-2 (`.design/stage3-bv-reconstruction.md` REQ-2 / AC-2 / AC-3): the
@@ -1074,14 +1091,14 @@ pub fn check_file_with_engine(
     // nlsat/forge routes; the v1 Verus path and the lean/auto paths are untouched, so
     // the v1 corpus (which carries no `@bv` tag) stays byte-identical.
     if selection == EngineSelection::Bv {
-        return Ok(bv_check(base, &parsed.program, true));
+        return Ok(bv_check(base, program, true));
     }
 
-    let lean = crate::engine::LeanEngine::new(parsed.program.clone(), lean_package_root());
+    let lean = crate::engine::LeanEngine::new(program.clone(), lean_package_root());
 
     let mut out = Vec::with_capacity(base.len());
     for cert in base {
-        let item = match crate::lean_export::find_item(&parsed.program, &cert.item) {
+        let item = match crate::lean_export::find_item(program, &cert.item) {
             Some(i) => i,
             // No matching node — keep the base cert untouched.
             None => {
@@ -1099,7 +1116,7 @@ pub fn check_file_with_engine(
             out.push(cert);
             continue;
         }
-        let obligations = mint_item_obligations(&parsed.program, item);
+        let obligations = mint_item_obligations(program, item);
         let new_cert = lean_engine_cert(
             &lean,
             &source_file,
@@ -1116,7 +1133,7 @@ pub fn check_file_with_engine(
         // within-budget forge-tier cert pins the unfolded-tower hash. The Verus
         // default path (no engine attribution) is untouched, so the v1 goldens stay
         // byte-identical.
-        let new_cert = gate_definition_tower(new_cert, &parsed.program, &src, item);
+        let new_cert = gate_definition_tower(new_cert, text_program, text, item);
         // REQ-6a anti-Goodhart (increment 2d): the certify-time arbitrary-result
         // re-elaboration tautology gate on the forge/Lean discharge path. A forge-tier
         // cert whose contract's `ens` still elaborates for an arbitrary result (the
@@ -1136,10 +1153,10 @@ pub fn check_file_with_engine(
     // `Battery*` reject), so it is present in `out` and not re-discharged here. The
     // default Verus path (`check_file`) never enters this function, so a clean lemma is
     // still skipped there (the v1 oracle + the 2c default-path behavior are untouched).
-    for item in &parsed.program.items {
+    for item in &program.items {
         if let Item::Forge(thermite_syntax::ForgeItem::Lemma(l)) = item {
             if !out.iter().any(|c| c.item == l.name) {
-                out.push(discharge_forge_lemma(l, &parsed.program, &lean));
+                out.push(discharge_forge_lemma(l, program, &lean));
             }
         }
     }
@@ -1158,8 +1175,8 @@ pub fn check_file_with_engine(
     //      a cert's oracle subset / the v1 goldens.
     // The default Verus path never enters this function, and the v1 corpus carries no project
     // lemmas, so this is a no-op on the v1 oracle.
-    let library = crate::lemma_library::LemmaLibrary::build(&parsed.program, &out);
-    out = apply_lemma_library(out, &parsed.program, &library);
+    let library = crate::lemma_library::LemmaLibrary::build(program, &out);
+    out = apply_lemma_library(out, program, &library);
 
     // Stage-1 forge tier — the REQ-9 `dec wf` accessibility cache (`.design/stage1-forge-tier.md`
     // REQ-9 / Q7 / AC-13, increment 3). Write-through: for every item carrying a `dec wf <rel>`
@@ -1171,23 +1188,19 @@ pub fn check_file_with_engine(
     // oracle (and the accessibility cache lives in its own `wf-` namespace, never perturbing a
     // cert).
     let wf_cache_dir = resolve_cache_dir();
-    crate::accessibility::cache_dec_wf_accessibility(
-        &wf_cache_dir,
-        &parsed.program.items,
-        |name| {
-            out.iter()
-                .any(|c| c.item == name && c.level == Level::L3 && c.reject.is_none())
-        },
-    );
+    crate::accessibility::cache_dec_wf_accessibility(&wf_cache_dir, &program.items, |name| {
+        out.iter()
+            .any(|c| c.item == name && c.level == Level::L3 && c.reject.is_none())
+    });
     // Automatic routing is per clause. A tagged clause takes the checked
     // bit-vector route after the ordinary Verus/Lean pass; untagged items remain
     // untouched by `bv_check`. Explicit `--engine verus` remains available as a
     // diagnostic override.
     if selection == EngineSelection::Auto {
-        if program_has_bv_tag(&parsed.program) {
-            out = bv_check(out, &parsed.program, false);
+        if program_has_bv_tag(program) {
+            out = bv_check(out, program, false);
         }
-        out = epr_check(out, &parsed.program);
+        out = epr_check(out, program);
     }
     Ok(out)
 }
@@ -4354,32 +4367,32 @@ pub(crate) fn lean_unverifiable_cert(
 /// counterexample, §5.1).
 pub fn check_l2_file(path: impl AsRef<Path>) -> Result<Vec<Certificate>, ForgeError> {
     let path = path.as_ref();
-    let src = std::fs::read_to_string(path).map_err(|e| ForgeError::Io {
-        path: path.display().to_string(),
-        source: e,
-    })?;
 
-    // 1. parse; 2. validate; 3. effect-check — identical to the L3 path.
-    let parsed = thermite_syntax::parse(&src);
-    if !parsed.is_clean() {
-        return Err(ForgeError::Parse(parsed.errors));
-    }
-    thermite_spec::validate(&parsed.program).map_err(ForgeError::Spec)?;
-    thermite_lower::check_effects(&parsed.program).map_err(ForgeError::Effects)?;
+    // 1. resolve + parse; 2. validate; 3. effect-check — identical to the L3 path,
+    // including the single-file / package front door.
+    let resolved = crate::thermite_package::load_source(path)?;
+    let program = resolved.program();
+    thermite_spec::validate(program).map_err(ForgeError::Spec)?;
+    thermite_lower::check_effects(program).map_err(ForgeError::Effects)?;
 
     // The file's pure `spec fn`s are shared dependencies woven into every per-item
     // sub-program (so a `fn` whose `ens` references one still lowers + checks),
     // as the L3 path does (§5.3 per-item isolation).
-    let spec_items: Vec<Item> = parsed
-        .program
+    let spec_items: Vec<Item> = program
         .items
         .iter()
         .filter(|i| matches!(i, Item::SpecFn(_)))
         .cloned()
         .collect();
+    let const_items: Vec<Item> = program
+        .items
+        .iter()
+        .filter(|i| matches!(i, Item::Const(_)))
+        .cloned()
+        .collect();
 
     let mut certs = Vec::new();
-    for item in &parsed.program.items {
+    for item in &program.items {
         // Only `fn`s carry an L2 contract obligation; a `spec fn` is a pure
         // dependency with no `req`/`ens` to bounded-check (§4.2).
         let Item::Fn(f) = item else {
@@ -4393,7 +4406,7 @@ pub fn check_l2_file(path: impl AsRef<Path>) -> Result<Vec<Certificate>, ForgeEr
         // The explicit `--level l2` path does not weave the §9 composition deps
         // (#52) nor the #68 ADT decls — the kani-backed L2 corpus is scalar-only
         // and the composition/ADT oracles are L3; keep this byte-stable.
-        let sub = item_subprogram(item, &spec_items, &[], &[]);
+        let sub = item_subprogram(item, &const_items, &spec_items, &[], &[]);
         let harness = thermite_lower::lower_l2(&sub).map_err(ForgeError::Lower)?;
         let bound = thermite_lower::bound_string(&sub);
         let l2 = crate::kani::run_kani(&harness, &f.name, &bound)?;
@@ -4645,6 +4658,7 @@ fn diverge_l1_cert(item: String, effects: Vec<String>) -> Certificate {
 ///   has no `fn_deps` (its body can call only spec fns / combinators, §4.2).
 fn item_subprogram(
     item: &Item,
+    const_items: &[Item],
     spec_items: &[Item],
     fn_deps: &[Item],
     adt_deps: &[Item],
@@ -4659,7 +4673,8 @@ fn item_subprogram(
         // references no ADT (the pure scalar corpus), so the existing sub-program
         // is byte-stable (no regression).
         Item::Fn(_) => {
-            let mut items = adt_deps.to_vec();
+            let mut items = const_items.to_vec();
+            items.extend(adt_deps.iter().cloned());
             items.extend(spec_items.iter().cloned());
             items.extend(fn_deps.iter().cloned());
             items.push(item.clone());
@@ -4684,7 +4699,8 @@ fn item_subprogram(
         // does reference the `enum` decl, so weave the referenced ADT decls first
         // (#68 — without `enum List` in scope the fold's lowering degrades to L0).
         Item::SpecFn(_) => {
-            let mut items = adt_deps.to_vec();
+            let mut items = const_items.to_vec();
+            items.extend(adt_deps.iter().cloned());
             items.extend(spec_items.iter().cloned());
             Program { items }
         }
@@ -4710,11 +4726,8 @@ fn item_subprogram(
             // item is pushed below, so drop it here to keep one declaration —
             // verus rejects a duplicate definition (`E0428`). The other decls a
             // spec fn reaches stay, which is the point of the fix.
-            let mut items: Vec<Item> = adt_deps
-                .iter()
-                .filter(|d| d.name() != item.name())
-                .cloned()
-                .collect();
+            let mut items = const_items.to_vec();
+            items.extend(adt_deps.iter().filter(|d| d.name() != item.name()).cloned());
             items.extend(spec_items.iter().cloned());
             items.push(item.clone());
             Program { items }
@@ -4724,11 +4737,15 @@ fn item_subprogram(
         // its sub-program is the item alone (inert — lowers to nothing), mirroring
         // the non-fn ADT-decl path's self-contained weave.
         Item::Forge(_) => {
-            let mut items = adt_deps.to_vec();
+            let mut items = const_items.to_vec();
+            items.extend(adt_deps.iter().cloned());
             items.extend(spec_items.iter().cloned());
             items.push(item.clone());
             Program { items }
         }
+        Item::Const(_) => Program {
+            items: vec![item.clone()],
+        },
     }
 }
 
@@ -4983,7 +5000,7 @@ fn mint_item_obligations(program: &Program, item: &Item) -> ItemObligations {
         // certification obligation in v1 (no v1 consumer until increments 2b-3); mint
         // the same empty contract obligation as the ADT-decl arm so the function stays
         // total without a panic (R-APG-1) — it is never discharged.
-        Item::Struct(_) | Item::Enum(_) | Item::Forge(_) => (
+        Item::Const(_) | Item::Struct(_) | Item::Enum(_) | Item::Forge(_) => (
             Obligation {
                 item: item.name().to_string(),
                 class: crate::obligation::ObligationClass::Contract,
@@ -5255,6 +5272,14 @@ pub(crate) fn collect_expr_spec_fn_calls(
         }
     };
     match expr {
+        Expr::Array(elements) => {
+            for element in elements {
+                collect_expr_spec_fn_calls(element, spec_decls, out);
+            }
+        }
+        Expr::ArrayRepeat { value, .. } => {
+            collect_expr_spec_fn_calls(value, spec_decls, out);
+        }
         Expr::Call { callee, args } => {
             if let Expr::Path(segments) = callee.as_ref() {
                 if let Some(first) = segments.first() {
@@ -5446,11 +5471,18 @@ fn collect_item_adt_refs(
             collect_expr_adt_refs(&s.dec.expr, adt_decls, out);
             collect_block_adt_refs(&s.body, adt_decls, out);
         }
-        // A struct/enum decl's own field types are followed by the type-graph
-        // fixed point (`collect_decl_field_adt_refs`), not here.
+        // A checked struct/enum is itself a root of the ADT type graph. Seed its
+        // direct field types here; the fixed-point walk then follows those
+        // declarations transitively. Without this root an enum containing a
+        // struct certified only when some unrelated woven spec fn happened to
+        // mention the struct, leaving the enum's isolated sub-program with an
+        // undefined field type.
         // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 ADT-ref consumer yet
         // (increments 2b-3); references no in-file ADT here, mirroring the ADT-decl arm.
-        Item::Struct(_) | Item::Enum(_) | Item::Forge(_) => {}
+        Item::Struct(_) | Item::Enum(_) => {
+            collect_decl_field_adt_refs(item, adt_decls, out);
+        }
+        Item::Const(_) | Item::Forge(_) => {}
     }
 }
 
@@ -5488,7 +5520,7 @@ fn collect_decl_field_adt_refs(
         }
         // Forge-tier item (stage1-forge-tier.md REQ-3): not an ADT decl → no field
         // type graph to follow (increments 2b-3); inert, mirroring the non-decl arm.
-        Item::Fn(_) | Item::SpecFn(_) | Item::Forge(_) => {}
+        Item::Const(_) | Item::Fn(_) | Item::SpecFn(_) | Item::Forge(_) => {}
     }
 }
 
@@ -5513,6 +5545,9 @@ fn collect_type_adt_refs(
         | thermite_syntax::Type::Slice(inner)
         | thermite_syntax::Type::Vec(inner) => {
             collect_type_adt_refs(inner, adt_decls, out);
+        }
+        thermite_syntax::Type::Array { elem, .. } => {
+            collect_type_adt_refs(elem, adt_decls, out);
         }
         thermite_syntax::Type::Ref { inner, .. } => {
             collect_type_adt_refs(inner, adt_decls, out);
@@ -5586,6 +5621,12 @@ fn collect_expr_adt_refs(
         }
     };
     match expr {
+        Expr::Array(elements) => {
+            for element in elements {
+                collect_expr_adt_refs(element, adt_decls, out);
+            }
+        }
+        Expr::ArrayRepeat { value, .. } => collect_expr_adt_refs(value, adt_decls, out),
         Expr::StructLit { path, fields } => {
             note_path(path, out);
             for (_, value) in fields {
@@ -6280,7 +6321,7 @@ fn assemble_certificate(item: &Item, verus: &VerusResult) -> Certificate {
     let effects = match item {
         Item::Fn(f) => effects_of(&f.contract.fx),
         // `spec fn`s have no `fx` row (§4.2) — they are pure by construction.
-        Item::SpecFn(_) => vec!["pure".to_string()],
+        Item::Const(_) | Item::SpecFn(_) => vec!["pure".to_string()],
         // Basis Stage 1a (`.design/basis/01-adts.md`): a `struct`/`enum` type
         // declares no `fx` row — its neutral effect projection is `pure` (the
         // same empty-effect value as a `spec fn`). Dead-in-1a: an ADT item dies
@@ -6505,6 +6546,7 @@ fn ladder_for_timeout(
 )]
 fn mutation_score(
     f: &thermite_syntax::FnItem,
+    const_items: &[Item],
     spec_items: &[Item],
     fn_deps: &[Item],
     adt_deps: &[Item],
@@ -6531,7 +6573,7 @@ fn mutation_score(
         // boundary/regular callees + ADT types, so they must resolve in the
         // mutant's sub-program too (else every mutant fails to lower and the score
         // is the 0/0 backstop — a spurious `WeakContract` reject of an ADT fn).
-        let sub = item_subprogram(&item, spec_items, fn_deps, adt_deps);
+        let sub = item_subprogram(&item, const_items, spec_items, fn_deps, adt_deps);
         // OQ-5: a mutant that fails to lower (structurally degenerate) is dropped
         // from the denominator, never an `Err` that fails the whole gate.
         let lowered = match thermite_lower::lower(&sub) {
@@ -6780,6 +6822,7 @@ enum EquivOutcome {
 )]
 fn strengthen_certificate(
     f: &thermite_syntax::FnItem,
+    const_items: &[Item],
     spec_items: &[Item],
     fn_deps: &[Item],
     adt_deps: &[Item],
@@ -6809,7 +6852,7 @@ fn strengthen_certificate(
         // The candidate weaves the same §9 composition deps as `f` (#52) and the
         // same #68 ADT decls so a boundary/regular callee in `f`'s body + every
         // referenced ADT type resolves in the candidate too.
-        let sub = item_subprogram(&item, spec_items, fn_deps, adt_deps);
+        let sub = item_subprogram(&item, const_items, spec_items, fn_deps, adt_deps);
         let lowered = match thermite_lower::lower(&sub) {
             Ok(s) => s,
             Err(_) => return Ok(false),
@@ -7158,6 +7201,33 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
         }
     }
 
+    #[test]
+    fn checked_adt_seeds_its_own_nested_type_graph() {
+        let parsed = thermite_syntax::parse(
+            "struct Inner { value: u64 }\n\
+             enum Outer { Wrapped { inner: Inner }, Empty }\n",
+        );
+        assert!(parsed.is_clean(), "fixture must parse: {:?}", parsed.errors);
+        let outer = parsed
+            .program
+            .items
+            .iter()
+            .find(|item| item.name() == "Outer")
+            .expect("Outer item");
+        let deps = reachable_adt_deps(&parsed.program, &[outer]);
+        let names: Vec<&str> = deps.iter().map(Item::name).collect();
+        assert_eq!(names, vec!["Inner"]);
+
+        let sub = item_subprogram(outer, &[], &[], &[], &deps);
+        let lowered = thermite_lower::lower(&sub).expect("nested ADT sub-program lowers");
+        let inner_pos = lowered.find("pub struct Inner").expect("Inner woven");
+        let outer_pos = lowered.find("pub enum Outer").expect("Outer retained");
+        assert!(
+            inner_pos < outer_pos,
+            "dependency must precede its referrer"
+        );
+    }
+
     // #8 proof-cache AC-3 (locality) + AC-4 (determinism), exercised over the
     // real `item_subprogram` → `thermite_lower::lower` → `cache::cache_key`
     // pipeline (not a re-implementation): in a two-item file `f`,`g` where `g`
@@ -7197,7 +7267,7 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
             let mut referrers: Vec<&Item> = vec![item];
             referrers.extend(fn_deps.iter());
             let adt_deps = reachable_adt_deps(&parsed.program, &referrers);
-            let sub = item_subprogram(item, &spec_items, &fn_deps, &adt_deps);
+            let sub = item_subprogram(item, &[], &spec_items, &fn_deps, &adt_deps);
             let lowered = thermite_lower::lower(&sub).ok()?;
             Some(cache::cache_key(&lowered, 0, VERUS, THERMITE))
         };

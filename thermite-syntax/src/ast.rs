@@ -163,6 +163,9 @@ pub struct Program {
     reason = "Item is a by-value pipeline enum; boxing Fn would churn every match Item site (#108)"
 )]
 pub enum Item {
+    /// A package-visible compile-time capacity declaration:
+    /// `const NAME: usize = INTEGER;`.
+    Const(ConstItem),
     Fn(FnItem),
     SpecFn(SpecFnItem),
     /// A `struct NAME { field: type, … } [inv <expr>]` product type
@@ -191,6 +194,7 @@ impl Item {
     /// `"witness"`).
     pub fn name(&self) -> &str {
         match self {
+            Item::Const(c) => &c.name,
             Item::Fn(f) => &f.name,
             Item::SpecFn(s) => &s.name,
             Item::Struct(s) => &s.name,
@@ -198,6 +202,30 @@ impl Item {
             Item::Forge(forge) => forge.name(),
         }
     }
+
+    /// The source-local span of the complete item. Multi-file package tooling
+    /// pairs this span with an explicit module identity; offsets are never
+    /// interpreted as belonging to an anonymous concatenated source.
+    pub fn span(&self) -> Span {
+        match self {
+            Item::Const(c) => c.span,
+            Item::Fn(f) => f.span,
+            Item::SpecFn(s) => s.span,
+            Item::Struct(s) => s.span,
+            Item::Enum(e) => e.span,
+            Item::Forge(forge) => forge.span(),
+        }
+    }
+}
+
+/// A closed compile-time fixed-array capacity declaration.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConstItem {
+    pub name: Ident,
+    pub value: u128,
+    /// Verbatim literal spelling; semantic consumers use [`Self::value`].
+    pub raw: String,
+    pub span: Span,
 }
 
 /// A Stage-1 forge-tier item (`.design/stage1-forge-tier.md` REQ-3, increment 2a).
@@ -231,6 +259,16 @@ impl ForgeItem {
             ForgeItem::Lemma(l) => &l.name,
             ForgeItem::Proof(p) => &p.target,
             ForgeItem::Witness(_) => "witness",
+        }
+    }
+
+    /// The source-local span of the complete forge-tier item.
+    pub fn span(&self) -> Span {
+        match self {
+            ForgeItem::PropFn(p) => p.span,
+            ForgeItem::Lemma(l) => l.span,
+            ForgeItem::Proof(p) => p.span,
+            ForgeItem::Witness(w) => w.span,
         }
     }
 }
@@ -360,18 +398,54 @@ pub struct Falsify {
 /// predicate.
 ///
 /// `sealed` carries the `#[sealed]` abstraction-barrier attribute
-/// (`.design/basis/06-provenance-and-sinks.md` REQ-8): a `#[sealed]` struct is a
-/// door-only-mintable clean/capability type. The validator rejects any
-/// `Expr::StructLit` of a sealed struct (`SpecError::SealedConstruction`), so the
-/// only way to obtain one is through its `#[boundary]` door's return value (the
-/// door body is foreign/`external_body`, with no in-language `StructLit`). It is
-/// `false` for an ordinary struct (the parser sets it `true` only on `#[sealed]`).
+/// (`.design/basis/06-provenance-and-sinks.md` REQ-8): a bare `#[sealed]` struct
+/// is door-only-mintable. The validator rejects every `Expr::StructLit` of that
+/// type, so it is obtainable only through a boundary return. It is `false` for
+/// an ordinary struct (the parser sets it only for a sealed attribute).
+/// `sealed_factory` is `Some(name)` only for `#[sealed("name")]`: that form
+/// authorizes exactly one bodyful Thermite function to construct the sealed
+/// representation. The validator rejects every other literal and requires the
+/// named function to return this exact type.
+///
+/// `opaque` carries the `#[opaque]` package-construction barrier used by
+/// reusable state libraries. Unlike `sealed`, the defining Thermite module may
+/// construct the value; other package modules may only obtain it through that
+/// module's verified functions. Lowering also prevents external Rust field
+/// construction. A plain struct has both flags false, and the parser cannot
+/// produce both flags true.
+///
+/// `logical` carries the `#[logical(bound = "…", observe = "…")]` declaration of
+/// a quantified index space over the value
+/// (`.design/build/aggregate-array-relations.md`, "Declaring a logical view").
+/// It is `None` for a struct that declares no index space. The parser admits at
+/// most one such attribute per struct and combines it with `#[sealed]` or
+/// `#[opaque]`; `thermite_spec::logical_views` resolves the two names and
+/// decides admission.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StructItem {
     pub name: Ident,
     pub fields: Vec<FieldDef>,
     pub inv: Option<Clause>,
     pub sealed: bool,
+    pub sealed_factory: Option<Ident>,
+    pub opaque: bool,
+    pub logical: Option<LogicalAttr>,
+    pub span: Span,
+}
+
+/// A `#[logical(bound = "CAPACITY", observe = "observer_spec_fn")]` attribute on
+/// a `struct` (`.design/build/aggregate-array-relations.md`, "Declaring a
+/// logical view"). `bound` names the size of the declared index space, which is
+/// `0 <= i < bound` over `usize`; `observe` names the `spec fn obs(&Self,
+/// usize) -> V` that reads one index. Both fields are `Option` because the
+/// parser accepts the `ident = "string"` field list that `#[slag(...)]` already
+/// uses and leaves resolution — and the diagnostic for a missing, unresolvable,
+/// or wrongly typed name — to `thermite-spec`'s validator, which owns the
+/// admission rules.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LogicalAttr {
+    pub bound: Option<String>,
+    pub observe: Option<String>,
     pub span: Span,
 }
 
@@ -674,14 +748,14 @@ pub enum Effect {
     /// syscall grant + the §4.1 row-subsumption every atom is subject to).
     Term,
     /// A privileged operation in one frozen kernel platform domain
-    /// (`.design/build/bootable-multicore-kernel.md` REQ-MKERNEL-3). The domain
+    /// (`.design/build/kernel-primitives.md` REQ-KPRIM-1). The domain
     /// is closed by [`PlatformDomain`]; a source program cannot mint an
     /// unregistered platform effect by spelling an arbitrary identifier.
     Platform(PlatformDomain),
 }
 
-/// The closed authority/effect domains of the bootable-kernel target platform
-/// layer (`.design/build/bootable-multicore-kernel.md` REQ-MKERNEL-3).
+/// The closed authority/effect domains available to consumer-supplied kernel
+/// platform layers (`.design/build/kernel-primitives.md` REQ-KPRIM-1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PlatformDomain {
     Boot,
@@ -924,6 +998,14 @@ pub enum Expr {
         raw: String,
     },
     BoolLit(bool),
+    /// Exact fixed-array element initialization: `[a, b, ...]` (including
+    /// `[]`). An annotated array type supplies and checks the capacity.
+    Array(Vec<Expr>),
+    /// Allocation-free repeat initialization: `[value; N]`.
+    ArrayRepeat {
+        value: Box<Expr>,
+        len: ArrayLen,
+    },
     Path(Vec<Ident>),
     Call {
         callee: Box<Expr>,
@@ -1120,6 +1202,11 @@ pub enum PrimType {
 pub enum Type {
     Prim(PrimType),
     Unit,
+    /// An owned allocation-free array `[T; N]`.
+    Array {
+        elem: Box<Type>,
+        len: ArrayLen,
+    },
     Ref {
         mutable: bool,
         inner: Box<Type>,
@@ -1216,4 +1303,12 @@ pub enum Type {
     /// projection [`Expr::TupleProj`] (`.0`/`.1`/…), the v1 §2.3 "one way" tuple
     /// access (destructuring is deferred, REQ-9/OQ-2).
     Tuple(Vec<Type>),
+}
+
+/// The closed fixed-array capacity grammar. Runtime expressions and ambient
+/// target constants cannot become layout inputs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ArrayLen {
+    Literal { value: u128, raw: String },
+    Const(Ident),
 }

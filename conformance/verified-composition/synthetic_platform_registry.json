@@ -1,0 +1,87 @@
+{
+  "schema": "thermite.frozen-primitive-registry.v1",
+  "target": {
+    "target_triple": "x86_64-unknown-linux-gnu",
+    "target_features": [
+      "sse2"
+    ]
+  },
+  "entries": [
+    {
+      "semantic_name": "synthetic::address.advance@v1",
+      "version": 1,
+      "required": true,
+      "thermite_name": "syn_address_advance",
+      "boundary_target": "synthetic::platform::address_advance",
+      "signature": "fn syn_address_advance(address:SynAddress,length:usize)->SynAddress",
+      "contract_sha256": "72a1057a358476dbf9f03c527c342ec9d8d0122c911236ea211f10e71b6b1f48",
+      "effects_sha256": "facae33a6b3a35f14dde35f0041abe8ee071229e38d1f3384207ae751533596e",
+      "effects": [
+        "pure"
+      ],
+      "ownership": {
+        "parameters": [
+          "consume_sealed",
+          "by_value"
+        ],
+        "result": "mint_sealed"
+      },
+      "implementation": {
+        "shell_module": "synthetic_platform_shell",
+        "item": "syn_address_advance_impl",
+        "source_sha256": "a98af5698d33a512d6b72abdb00722479fe853069da47c4a2db4e6204a70e28b",
+        "abi": "Rust",
+        "symbol": "synthetic_platform_shell::syn_address_advance_impl",
+        "alignment": 8
+      },
+      "model": "thermite_contract",
+      "refinement": "same_crate_verus_checked_wrapper",
+      "proof_obligations": [
+        "contract_refinement",
+        "exact_implementation_call",
+        "whole_crate_no_cheating"
+      ],
+      "concurrency": "sequential",
+      "memory_orderings": [],
+      "failure": "total"
+    },
+    {
+      "semantic_name": "synthetic::address.from_region@v1",
+      "version": 1,
+      "required": true,
+      "thermite_name": "syn_address_from_region",
+      "boundary_target": "synthetic::platform::address_from_region",
+      "signature": "fn syn_address_from_region(region:&SynRegion,offset:usize)->SynAddress",
+      "contract_sha256": "d7c3cef32613bc197e11d85e1e97bdeca24543af1f2db8677b387db9fc93b470",
+      "effects_sha256": "facae33a6b3a35f14dde35f0041abe8ee071229e38d1f3384207ae751533596e",
+      "effects": [
+        "pure"
+      ],
+      "ownership": {
+        "parameters": [
+          "shared_borrow",
+          "by_value"
+        ],
+        "result": "mint_sealed"
+      },
+      "implementation": {
+        "shell_module": "synthetic_platform_shell",
+        "item": "syn_address_from_region_impl",
+        "source_sha256": "a98af5698d33a512d6b72abdb00722479fe853069da47c4a2db4e6204a70e28b",
+        "abi": "Rust",
+        "symbol": "synthetic_platform_shell::syn_address_from_region_impl",
+        "alignment": 8
+      },
+      "model": "thermite_contract",
+      "refinement": "same_crate_verus_checked_wrapper",
+      "proof_obligations": [
+        "contract_refinement",
+        "exact_implementation_call",
+        "whole_crate_no_cheating"
+      ],
+      "concurrency": "sequential",
+      "memory_orderings": [],
+      "failure": "total"
+    }
+  ]
+}

@@ -4,7 +4,7 @@
 tier: 3-component
 status: shipped
 audited-sha: 5ae0816c042debb01c70eb9b89c775837f0c0f24 (content-sha256 re-pinned 2026-06-23 for stage-3 REQ-7 / AC-8 (#349), the automated Rust→Lean obligation exporter: the change to this doc's governed file (cli.rs) is the additive `forge smt-export [<file>] [--out <path>]` subcommand (`Command::SmtExport` → `run_smt_export`, emitting the `(P_prod) ⟺ (P_ref)` `by smt` Lean theorems + `#print axioms` probes via `lean_smt_export.rs`); every other subcommand + flag parse is unchanged. The legacy commit pin stays at the 5ae0816c stable-main ancestor; only the active content-sha256 digest moves. prior: 2026-06-21 stage-2 REQ-8 / AC-8 (#330) `forge strat-faithful-tv`; 2026-06-20 stage-2 REQ-4 / AC-4 (#326) `forge strat-tv` + `ForgeError::StratDifferential`; 2026-06-18 umbrella REQ-2c / AC-4 rotating-seed `--seed` flag on `forge tv`; §6 metrics dashboard `--metrics` value)
-audited-content-sha256: b412ca0108ddb5fc0ed7a18617d653c706d7f5790d75f9fefdfea6a28433c52a (re-pinned 2026-08-01 after auditing the bootable multicore kernel integration; existing behavior remains regression-covered)
+audited-content-sha256: e307736cad7b8b68fc45aee2b2f1b810b5e24f0bd1ba7fb637c7323175e4e2f8 (re-pinned 2026-08-07 after source-oriented Forge commands resolved canonical packages through one shared front door; existing single-file behavior remains regression-covered)
 governs: forge/src/cli.rs
 thesis-refs:
   - thermite-design.md §5
@@ -56,7 +56,9 @@ What the old doc never saw, grouped (each verb cites its issue in the code):
   runtime sandbox + `--no-sandbox`/`--sandbox-self-test` (#57), `--out`/`-o`
   (#128), `--target std|kernel` (#197), correspondence-backed `--level l3`
   bundles (#101/#103), and paired repeatable `--compose-export <fn>` /
-  `--compose-shell <file.rs>` exact-source rich-state composition (#104).
+  `--compose-shell <file.rs>` exact-source rich-state composition (#104), with
+  optional single `--primitive-registry <registry.json>` exact boundary
+  refinement inside that composition mode.
   `forge verify-build <bundle> [--replay]` validates either versioned L3 receipt.
 - **Translation validation** — `forge tv` (#144), `forge exec-tv` (#154/#156),
   `forge body-tv` (#162).
@@ -193,6 +195,8 @@ What the old doc never saw, grouped (each verb cites its issue in the code):
   unknown enum → Usage error): unit tests `parses_rlimit_flag`,
   `parses_mutation_floor_flag`, `parses_level_flag`, `parses_build_out_flag`,
   `parses_build_target_flag`, `parses_build_sandbox_flags`.
+  `parses_rich_state_composition_build_surface` additionally pins that the
+  primitive registry is accepted only with paired L3 composition flags.
 - AC-5: `ForgeError` wrapping round-trips inner diagnostics
   (`aggregation_preserves_inner_diagnostics`) and every variant maps to
   `EXIT_ENVIRONMENT` (`errors_map_to_environment_exit_code`).

@@ -1,0 +1,32 @@
+const WORDS: usize = 2;
+const SLOTS: usize = 4;
+
+struct Stamp {
+  words: [u64; WORDS],
+  flags: (bool, u8),
+}
+
+struct Slot {
+  stamp: Stamp,
+  owner: usize,
+}
+
+fn aggregate_array_equal(left: [Slot; SLOTS], right: [Slot; SLOTS]) -> bool
+req true
+ens result == left.array_eq(right)
+fx pure
+{
+  left.array_eq(right)
+}
+
+fn aggregate_array_same_except(
+  left: [Slot; SLOTS],
+  right: [Slot; SLOTS],
+  changed: usize,
+) -> bool
+req true
+ens result == left.array_same_except(right, changed)
+fx pure
+{
+  left.array_same_except(right, changed)
+}

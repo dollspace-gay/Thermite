@@ -229,6 +229,8 @@ fn expr_kind(e: &Expr) -> &'static str {
     match e {
         Expr::IntLit { .. } => "integer literal",
         Expr::BoolLit(_) => "boolean literal",
+        Expr::Array(_) => "array literal",
+        Expr::ArrayRepeat { .. } => "array repeat initializer",
         Expr::Path(_) => "path",
         Expr::Call { .. } => "call",
         Expr::MethodCall { .. } => "method call",

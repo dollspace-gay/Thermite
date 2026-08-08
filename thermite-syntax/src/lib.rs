@@ -42,16 +42,21 @@ pub mod address;
 pub mod ast;
 pub mod desugar;
 pub mod lexer;
+pub mod package;
 pub mod parser;
 
 pub use address::{addresses_of, resolve, AddrKind, AddressEntry, AddressError};
 pub use ast::{
-    BinOp, Block, BoundaryAttr, BvTag, BvWidth, Clause, ClauseSelector, Contract, Effect,
-    EffectRow, EnumItem, Expr, Falsify, FieldDef, FnItem, ForgeItem, Hole, HoleContext, IndexArg,
-    Inhabit, Item, LemmaItem, LoopKind, LoopNode, MatchArm, Param, Pattern, PlatformDomain,
-    PrimType, Program, ProofBlock, ProofItem, ProofObligation, PropFnItem, Quant, Refinement,
-    RefinementTarget, SlagAttr, SlicePat, SpecFnItem, Stmt, StructItem, Type, UnaryOp, VariantDef,
-    VariantShape, WitnessBlock,
+    ArrayLen, BinOp, Block, BoundaryAttr, BvTag, BvWidth, Clause, ClauseSelector, ConstItem,
+    Contract, Effect, EffectRow, EnumItem, Expr, Falsify, FieldDef, FnItem, ForgeItem, Hole,
+    HoleContext, IndexArg, Inhabit, Item, LemmaItem, LogicalAttr, LoopKind, LoopNode, MatchArm,
+    Param, Pattern, PlatformDomain, PrimType, Program, ProofBlock, ProofItem, ProofObligation,
+    PropFnItem, Quant, Refinement, RefinementTarget, SlagAttr, SlicePat, SpecFnItem, Stmt,
+    StructItem, Type, UnaryOp, VariantDef, VariantShape, WitnessBlock,
 };
 pub use lexer::{tokenize, Span, TokKind, Token};
+pub use package::{
+    parse_package, ItemOrigin, PackageModuleSource, PackageParseError, PackageParseResult,
+    ParsedModule,
+};
 pub use parser::{parse, ParseResult, SyntaxError};

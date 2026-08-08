@@ -10,8 +10,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use thermite_syntax::{
-    BinOp, Block, BvWidth, Clause, Expr, FnItem, IndexArg, Item, MatchArm, Param, Pattern,
-    PrimType, Program, Quant, SlicePat, Stmt, Type, UnaryOp,
+    ArrayLen, BinOp, Block, BvWidth, Clause, Expr, FnItem, IndexArg, Item, MatchArm, Param,
+    Pattern, PrimType, Program, Quant, SlicePat, Stmt, Type, UnaryOp,
 };
 
 use crate::classifier::{to_wire, Atom, Frm, Mach, Rel, ScalarValue, Sort2, Tm};
@@ -904,6 +904,7 @@ impl OpaqueSorts {
         let mut names = BTreeSet::new();
         for item in &program.items {
             match item {
+                Item::Const(_) => {}
                 Item::Fn(function) => {
                     for param in &function.params {
                         collect_type_names(&param.ty, &mut names);
@@ -960,7 +961,7 @@ impl OpaqueSorts {
             Type::Prim(PrimType::Usize) => Ok(Sort2::Mach(Mach::Usize)),
             Type::Prim(PrimType::Bool) => Ok(Sort2::Mach(Mach::Bool)),
             Type::Ref { inner, .. } => self.type_sort(inner, context),
-            Type::Slice(inner) | Type::Vec(inner) => {
+            Type::Array { elem: inner, .. } | Type::Slice(inner) | Type::Vec(inner) => {
                 Ok(Sort2::Seq(Box::new(self.type_sort(inner, context)?)))
             }
             Type::String => Ok(Sort2::Seq(Box::new(Sort2::Mach(Mach::U8)))),
@@ -990,7 +991,8 @@ fn collect_type_names(ty: &Type, out: &mut BTreeSet<String>) {
         Type::Named(name) => {
             out.insert(name.clone());
         }
-        Type::Ref { inner, .. }
+        Type::Array { elem: inner, .. }
+        | Type::Ref { inner, .. }
         | Type::Slice(inner)
         | Type::Generic { arg: inner, .. }
         | Type::Box(inner)
@@ -1031,6 +1033,12 @@ fn uses_bound(expr: &Expr, binders: &[Bound]) -> bool {
 fn walk_expr(expr: &Expr, f: &mut impl FnMut(&Expr)) {
     f(expr);
     match expr {
+        Expr::Array(elements) => {
+            for element in elements {
+                walk_expr(element, f);
+            }
+        }
+        Expr::ArrayRepeat { value, .. } => walk_expr(value, f),
         Expr::Call { callee, args } => {
             walk_expr(callee, f);
             for arg in args {
@@ -1189,6 +1197,21 @@ fn write_expr(expr: &Expr, out: &mut String) {
             out.push(')');
         }
         Expr::BoolLit(value) => out.push_str(if *value { "(bool 1)" } else { "(bool 0)" }),
+        Expr::Array(elements) => {
+            out.push_str("(array");
+            for element in elements {
+                out.push(' ');
+                write_expr(element, out);
+            }
+            out.push(')');
+        }
+        Expr::ArrayRepeat { value, len } => {
+            out.push_str("(array-repeat ");
+            write_array_len(len, out);
+            out.push(' ');
+            write_expr(value, out);
+            out.push(')');
+        }
         Expr::Path(path) => {
             out.push_str("(path");
             for part in path {
@@ -1576,6 +1599,13 @@ fn write_type(ty: &Type, out: &mut String) {
             PrimType::Bool => "(bool)",
         }),
         Type::Unit => out.push_str("(unit)"),
+        Type::Array { elem, len } => {
+            out.push_str("(array ");
+            write_array_len(len, out);
+            out.push(' ');
+            write_type(elem, out);
+            out.push(')');
+        }
         Type::Ref { mutable, inner } => {
             out.push_str(if *mutable { "(ref mut " } else { "(ref imm " });
             write_type(inner, out);
@@ -1606,6 +1636,23 @@ fn write_type(ty: &Type, out: &mut String) {
                 out.push(' ');
                 write_type(ty, out);
             }
+            out.push(')');
+        }
+    }
+}
+
+fn write_array_len(len: &ArrayLen, out: &mut String) {
+    match len {
+        ArrayLen::Literal { value, raw } => {
+            out.push_str("(literal ");
+            out.push_str(&value.to_string());
+            out.push(' ');
+            push_name(out, raw);
+            out.push(')');
+        }
+        ArrayLen::Const(name) => {
+            out.push_str("(const ");
+            push_name(out, name);
             out.push(')');
         }
     }
@@ -1656,6 +1703,8 @@ fn expression_kind(expr: &Expr) -> &'static str {
     match expr {
         Expr::IntLit { .. } => "integer literal",
         Expr::BoolLit(_) => "boolean literal",
+        Expr::Array(_) => "array literal",
+        Expr::ArrayRepeat { .. } => "array repeat initializer",
         Expr::Path(_) => "multi-segment path",
         Expr::Call { .. } => "call",
         Expr::MethodCall { .. } => "method call",

@@ -1,7 +1,10 @@
 //! Structural pins for the export-aware library emitter used by the
 //! correspondence-backed L3 artifact path.
 
-use thermite_lower::{lower_l3_library, L3Export, L3ExportVisibility, L3LibraryTarget};
+use thermite_lower::{
+    lower_l3_library, lower_l3_library_with_boundaries, L3BoundaryBinding, L3Export,
+    L3ExportVisibility, L3LibraryTarget,
+};
 
 fn parse(source: &str) -> thermite_syntax::Program {
     let parsed = thermite_syntax::parse(source);
@@ -48,6 +51,43 @@ fn hosted_library_has_only_explicit_public_exports_and_total_wrappers() {
 }
 
 #[test]
+fn total_wrapper_result_binding_does_not_shadow_a_value_parameter() {
+    let program = parse(
+        "struct Snapshot { slot: u64 } \
+         fn guarded(value: u64) -> Snapshot \
+           req value < 100 ens result.slot == value fx pure \
+         { Snapshot { slot: value } }",
+    );
+    let exports = [L3Export {
+        source_name: "guarded".to_string(),
+        public_name: "thermite_export_guarded_v1".to_string(),
+        wrapped: true,
+        visibility: L3ExportVisibility::Public,
+    }];
+    let source = lower_l3_library(&program, &exports, L3LibraryTarget::Std).unwrap();
+
+    assert!(
+        source.contains("Ok(__thermite_export_value) => (__thermite_export_value.slot == value)"),
+        "{source}"
+    );
+    assert!(!source.contains("Ok(value) =>"), "{source}");
+
+    let program = parse(
+        "fn guarded(__thermite_export_value: u64) -> u64 \
+           req __thermite_export_value < 100 \
+           ens result == __thermite_export_value fx pure \
+         { __thermite_export_value }",
+    );
+    let source = lower_l3_library(&program, &exports, L3LibraryTarget::Std).unwrap();
+    assert!(
+        source.contains(
+            "Ok(__thermite_export_value_1) => (__thermite_export_value_1 == __thermite_export_value)"
+        ),
+        "{source}"
+    );
+}
+
+#[test]
 fn kernel_library_is_no_std_and_adds_alloc_only_when_needed() {
     let scalar = parse("fn id(x: u64) -> u64 req true ens result == x fx pure { x }");
     let scalar_export = [L3Export {
@@ -57,11 +97,8 @@ fn kernel_library_is_no_std_and_adds_alloc_only_when_needed() {
         visibility: L3ExportVisibility::Public,
     }];
     let pure = lower_l3_library(&scalar, &scalar_export, L3LibraryTarget::Kernel).unwrap();
-    assert!(pure.starts_with(
-        "#![no_std]\n#![crate_type = \"rlib\"]\nuse verus_builtin::*;\nuse verus_builtin_macros::*;"
-    ));
+    assert!(pure.starts_with("#![no_std]\n#![crate_type = \"rlib\"]\nuse vstd::prelude::*;"));
     assert!(!pure.contains("extern crate alloc"));
-    assert!(!pure.contains("use vstd::"));
     assert!(!pure.contains("fn main"));
 
     let allocating = parse("fn keep(s: String) -> String req true ens result == s fx alloc { s }");
@@ -89,7 +126,7 @@ fn kernel_library_is_no_std_and_adds_alloc_only_when_needed() {
     assert!(bounded_kernel.contains("pub struct TVecU64 { pub length: usize }"));
     assert!(bounded_kernel.contains("pub(crate) fn keep"));
     assert!(!bounded_kernel.contains("spec_get"));
-    assert!(!bounded_kernel.contains("use vstd::"));
+    assert!(bounded_kernel.contains("use vstd::prelude::*;"));
     assert!(!bounded_kernel.contains("extern crate alloc"));
 }
 
@@ -121,6 +158,36 @@ fn composition_library_delays_enum_items_past_randomized_verus_helper_synthesis(
         ..exports[0].clone()
     }];
     let ordinary = lower_l3_library(&program, &public_exports, L3LibraryTarget::Kernel).unwrap();
-    assert!(!ordinary.contains("__thermite_deterministic_enum"));
-    assert!(ordinary.contains("pub enum Action"));
+    assert!(ordinary.contains("macro_rules! __thermite_deterministic_enum"));
+    assert!(ordinary.contains("__thermite_deterministic_enum! {\npub enum Action"));
+}
+
+#[test]
+fn registry_bound_boundary_is_a_checked_exact_target_call() {
+    let program = parse(
+        "#[boundary(\"platform::read\")] \
+         fn read(x: u64) -> u64 req true ens result == x fx platform(clock); \
+         fn observe(x: u64) -> u64 req true ens result == x fx platform(clock) { read(x) }",
+    );
+    let exports = [L3Export {
+        source_name: "observe".to_string(),
+        public_name: "observe".to_string(),
+        wrapped: false,
+        visibility: L3ExportVisibility::Crate,
+    }];
+    let bindings = [L3BoundaryBinding {
+        source_name: "read".to_string(),
+        call_target: "platform_shell::read_impl".to_string(),
+    }];
+
+    let source =
+        lower_l3_library_with_boundaries(&program, &exports, L3LibraryTarget::Kernel, &bindings)
+            .unwrap();
+    assert!(source.contains("fn read(x: u64) -> (result: u64)"));
+    assert!(source.contains("platform_shell::read_impl(x)"));
+    assert!(!source.contains("external_body"));
+    assert!(!source.contains("unimplemented!"));
+
+    let ordinary = lower_l3_library(&program, &exports, L3LibraryTarget::Kernel).unwrap();
+    assert!(ordinary.contains("#[verifier::external_body]"));
 }

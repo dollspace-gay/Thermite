@@ -1,0 +1,268 @@
+const FIXED_RING_CAPACITY: usize = 64;
+
+struct FixedRing64 {
+  slots: [u64; FIXED_RING_CAPACITY],
+  head: usize,
+  len: usize,
+}
+
+enum FixedRingPush64 {
+  Pushed64 {
+    ring: FixedRing64,
+  },
+  RingFull64 {
+    ring: FixedRing64,
+    value: u64,
+  },
+}
+
+enum FixedRingPop64 {
+  Popped64 {
+    ring: FixedRing64,
+    value: u64,
+  },
+  RingEmpty64 {
+    ring: FixedRing64,
+  },
+}
+
+spec fn fixed_ring_wf_spec(ring: &FixedRing64) -> bool
+  dec ring.len
+{
+  ring.head < FIXED_RING_CAPACITY && ring.len <= FIXED_RING_CAPACITY
+}
+
+spec fn fixed_ring_advance_spec(index: usize) -> usize
+  dec index
+{
+  (index + 1) % 64
+}
+
+spec fn fixed_ring_tail_spec(head: usize, len: usize) -> usize
+  dec len
+{
+  (head + len) % 64
+}
+
+fn fixed_ring_wf(ring: &FixedRing64) -> bool
+  req true
+  ens result == fixed_ring_wf_spec(ring)
+  fx pure
+{
+  ring.head < FIXED_RING_CAPACITY && ring.len <= FIXED_RING_CAPACITY
+}
+
+fn fixed_ring_advance(index: usize) -> usize
+  req index < FIXED_RING_CAPACITY
+  ens result == fixed_ring_advance_spec(index)
+  ens result < FIXED_RING_CAPACITY
+  fx pure
+{
+  (index + 1) % 64
+}
+
+fn fixed_ring_tail(head: usize, len: usize) -> usize
+  req head < FIXED_RING_CAPACITY && len <= FIXED_RING_CAPACITY
+  ens result == fixed_ring_tail_spec(head, len)
+  ens result < FIXED_RING_CAPACITY
+  fx pure
+{
+  (head + len) % 64
+}
+
+fn fixed_ring_empty() -> FixedRing64
+  req true
+  ens fixed_ring_wf_spec(&result)
+  ens result.head == 0 && result.len == 0
+  ens result.slots[0] == 0
+    && result.slots[FIXED_RING_CAPACITY - 1] == 0
+  fx pure
+{
+  FixedRing64 {
+    slots: [0; FIXED_RING_CAPACITY],
+    head: 0,
+    len: 0,
+  }
+}
+
+fn fixed_ring_len(ring: &FixedRing64) -> usize
+  req fixed_ring_wf_spec(ring)
+  ens result == ring.len
+  ens result <= FIXED_RING_CAPACITY
+  fx pure
+{
+  ring.len
+}
+
+fn fixed_ring_is_empty(ring: &FixedRing64) -> bool
+  req fixed_ring_wf_spec(ring)
+  ens result == (ring.len == 0)
+  fx pure
+{
+  ring.len == 0
+}
+
+fn fixed_ring_is_full(ring: &FixedRing64) -> bool
+  req fixed_ring_wf_spec(ring)
+  ens result == (ring.len == FIXED_RING_CAPACITY)
+  fx pure
+{
+  ring.len == FIXED_RING_CAPACITY
+}
+
+fn fixed_ring_peek(ring: &FixedRing64) -> Option<u64>
+  req fixed_ring_wf_spec(ring)
+  ens match result {
+    Some(value) => ring.len != 0 && value == ring.slots[ring.head],
+    None => ring.len == 0,
+  }
+  fx pure
+{
+  if ring.len == 0 {
+    None
+  } else {
+    Some(ring.slots[ring.head])
+  }
+}
+
+fn fixed_ring_push(ring: FixedRing64, value: u64) -> FixedRingPush64
+  req fixed_ring_wf_spec(&ring)
+  ens match result {
+    FixedRingPush64::Pushed64 { ring: next } =>
+      ring.len < FIXED_RING_CAPACITY
+        && fixed_ring_wf_spec(&next)
+        && next.head == ring.head
+        && next.len == ring.len + 1
+        && next.slots[fixed_ring_tail_spec(ring.head, ring.len)] == value
+        && (ring.len == 0 || next.slots[ring.head] == ring.slots[ring.head]),
+    FixedRingPush64::RingFull64 { ring: next, value: returned } =>
+      ring.len == FIXED_RING_CAPACITY
+        && fixed_ring_wf_spec(&next)
+        && next.head == ring.head
+        && next.len == ring.len
+        && returned == value,
+  }
+  fx pure
+{
+  if ring.len == FIXED_RING_CAPACITY {
+    FixedRingPush64::RingFull64 {
+      ring: ring,
+      value: value,
+    }
+  } else {
+    let tail: usize = fixed_ring_tail(ring.head, ring.len);
+    let mut slots: [u64; FIXED_RING_CAPACITY] = ring.slots;
+    slots[tail] = value;
+    FixedRingPush64::Pushed64 {
+      ring: FixedRing64 {
+        slots: slots,
+        head: ring.head,
+        len: ring.len + 1,
+      },
+    }
+  }
+}
+
+fn fixed_ring_pop(ring: FixedRing64) -> FixedRingPop64
+  req fixed_ring_wf_spec(&ring)
+  ens match result {
+    FixedRingPop64::Popped64 { ring: next, value } =>
+      ring.len != 0
+        && value == ring.slots[ring.head]
+        && fixed_ring_wf_spec(&next)
+        && next.head == fixed_ring_advance_spec(ring.head)
+        && next.len == ring.len - 1
+        && next.slots[ring.head] == 0
+        && (ring.len <= 1
+          || next.slots[fixed_ring_advance_spec(ring.head)]
+            == ring.slots[fixed_ring_advance_spec(ring.head)]),
+    FixedRingPop64::RingEmpty64 { ring: next } =>
+      ring.len == 0
+        && fixed_ring_wf_spec(&next)
+        && next.head == ring.head
+        && next.len == ring.len,
+  }
+  fx pure
+{
+  if ring.len == 0 {
+    FixedRingPop64::RingEmpty64 { ring: ring }
+  } else {
+    let value: u64 = ring.slots[ring.head];
+    let mut slots: [u64; FIXED_RING_CAPACITY] = ring.slots;
+    slots[ring.head] = 0;
+    FixedRingPop64::Popped64 {
+      ring: FixedRing64 {
+        slots: slots,
+        head: fixed_ring_advance(ring.head),
+        len: ring.len - 1,
+      },
+      value: value,
+    }
+  }
+}
+
+fn fixed_ring_fifo_probe(first: u64, second: u64) -> bool
+  req true
+  ens result
+  fx pure
+{
+  let empty: FixedRing64 = fixed_ring_empty();
+  match fixed_ring_push(empty, first) {
+    FixedRingPush64::Pushed64 { ring: one } =>
+      match fixed_ring_push(one, second) {
+        FixedRingPush64::Pushed64 { ring: two } =>
+          match fixed_ring_pop(two) {
+            FixedRingPop64::Popped64 { ring: one_left, value: got_first } =>
+              match fixed_ring_pop(one_left) {
+                FixedRingPop64::Popped64 { ring: none_left, value: got_second } =>
+                  got_first == first
+                    && got_second == second
+                    && fixed_ring_is_empty(&none_left),
+                FixedRingPop64::RingEmpty64 { ring: _ } => false,
+              },
+            FixedRingPop64::RingEmpty64 { ring: _ } => false,
+          },
+        FixedRingPush64::RingFull64 { ring: _, value: _ } => false,
+      },
+    FixedRingPush64::RingFull64 { ring: _, value: _ } => false,
+  }
+}
+
+fn fixed_ring_wrap_probe(value: u64) -> bool
+  req true
+  ens result
+  fx pure
+{
+  let mut slots: [u64; FIXED_RING_CAPACITY] = [0; FIXED_RING_CAPACITY];
+  slots[FIXED_RING_CAPACITY - 1] = value;
+  let ring: FixedRing64 = FixedRing64 {
+    slots: slots,
+    head: FIXED_RING_CAPACITY - 1,
+    len: 1,
+  };
+  match fixed_ring_pop(ring) {
+    FixedRingPop64::Popped64 { ring: empty, value: got } =>
+      got == value
+        && empty.head == 0
+        && empty.len == 0
+        && fixed_ring_is_empty(&empty),
+    FixedRingPop64::RingEmpty64 { ring: _ } => false,
+  }
+}
+
+fn fixed_ring_full_reject_probe(head: usize, value: u64) -> bool
+  req head < FIXED_RING_CAPACITY
+  ens result
+  fx pure
+{
+  let full: FixedRing64 = FixedRing64 {
+    slots: [value; FIXED_RING_CAPACITY],
+    head: head,
+    len: FIXED_RING_CAPACITY,
+  };
+  match fixed_ring_push(full, value) {
+    FixedRingPush64::Pushed64 { ring: _ } => false,
+    FixedRingPush64::RingFull64 { ring, value: returned } =>
+      ring.len == FIXED_RING_CAPACITY && returned == value,
+  }
+}

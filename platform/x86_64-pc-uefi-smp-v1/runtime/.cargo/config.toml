@@ -1,9 +1,0 @@
-[build]
-target = "x86_64-unknown-uefi"
-
-[target.x86_64-unknown-uefi]
-rustflags = [
-  "-C", "panic=abort",
-  "-C", "no-redzone=yes",
-  "-C", "target-feature=+sse2",
-]

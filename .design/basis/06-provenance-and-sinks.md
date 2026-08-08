@@ -3,7 +3,7 @@
 tier: 3-component
 status: draft
 audited-sha: 92396428567edc6940a9e2845217f5ff4c2ea3c6 (re-pinned 2026-06-16, user-authorized: the only change to this doc's governed files since the prior pin is the additive stage-1 forge-tier increment 2a — the new Item::Forge surface + inert Item::Forge match arms, verified net-additive with no substantive removal of existing v1 logic (git log <main>..HEAD = the 8 forge commits); the v1 behavior this doc governs is unchanged, and the new forge-tier surface is specified in .design/stage1-forge-tier.md / REQ-S1-3)
-audited-content-sha256: df46fa15bb567a028110cf04c5492f9ed82528235d5c49b95df1912519cf084b
+audited-content-sha256: e6fc252e6374440113cf42462a1856315a92a5b350c33d831d94a1d26c81d651 (re-pinned 2026-08-07 after the quantified declared-index relation family landed the `#[logical]` attribute, its admission and relation gate, and the per-view `forall` emission)
 governs: thermite-spec/src/validator.rs
 governs: thermite-syntax/src/ast.rs
 governs: thermite-lower/src/lower.rs
@@ -196,24 +196,26 @@ capability) type must be ABSTRACT: only the trusted door mints it. Thermite has 
 module-privacy/visibility system to hide a struct's fields, so the barrier is a
 DIRECT validator rule keyed off a new struct attribute:
 
-- **`#[sealed]` struct attribute.** A `struct` may carry a `#[sealed]` attribute.
-  AST: a new boolean flag `StructItem.sealed: bool` (`struct StructItem` in
-  `ast.rs` currently carries `name` + `fields` + `inv` + `span` — verified — and
-  gains `sealed`). Parser: `#[sealed]` on a `struct` sets the flag, mirroring the
-  `#[slag]`/`#[boundary]` attribute precedent (`ffi-boundary.md` "Exact ast.rs /
-  parser.rs additions" — `parse_attribute` generalized from `parse_slag`).
+- **`#[sealed]` struct attribute.** A `struct` may carry a bare `#[sealed]`
+  attribute or `#[sealed("factory")]`. AST records both the seal and the optional
+  exact factory name. Parser support mirrors the `#[slag]`/`#[boundary]`
+  attribute precedent (`ffi-boundary.md` "Exact ast.rs / parser.rs additions" —
+  `parse_attribute` generalized from `parse_slag`). Bare remains the IFC form:
+  no Thermite body may construct it.
 - **The validator rule.** A new `SpecError::SealedConstruction { name, span }`. The
   validator (`pub fn validate` in `validator.rs`) collects the set of `#[sealed]`
   struct names in its pre-pass (alongside the existing `struct_fields` collection,
   REQ-6), then in its `Expr::StructLit` walk arm (the validator already visits
   `Expr::StructLit` — `walk_expr_inner` / the contract and body walks, verified)
-  REJECTS any `StructLit` whose `path` resolves to a `#[sealed]` struct, emitting
-  `SealedConstruction { name, span }`. The rejection applies ANYWHERE in Thermite
-  code — there is no "outside the door" carve-out needed, because a door is a
-  `#[boundary]` fn with NO Thermite body (`body: None`, `external_body`); the door
-  never contains a Thermite `StructLit` in-language. So the safe path
-  (`query(parameterize(input))`) has no sealed-`StructLit` and is NOT rejected,
-  while EVERY in-language attempt to mint a sealed clean type screams.
+  REJECTS any `StructLit` whose `path` resolves to a bare `#[sealed]` struct,
+  emitting `SealedConstruction { name, span }`. For the explicit
+  `#[sealed("factory")]` form, exactly the named ordinary bodyful Thermite
+  function may contain that literal; the validator rejects a missing,
+  boundary/slag, bodyless, or wrong-return factory and rejects the literal in
+  every other function. The IFC corpus uses bare seals, so there is no carve-out:
+  a door is a `#[boundary]` fn with no Thermite body. The named-factory form is
+  for verified library constructors whose body and contract must themselves
+  reach L3, such as consuming a single-use atomic initialization slot.
 - **The corpus marking.** `Sql`/`Public`/`Authorized` (and the rest of the clean
   catalog) become `#[sealed]` structs. The `#[ignore]`d failing tests #77 pinned
   (the 3 `StructLit` bypasses, `forge/tests/divergence_provenance.rs`) must then be
@@ -224,8 +226,9 @@ DIRECT validator rule keyed off a new struct attribute:
 mark-change exists outside a door — a value's mark is fixed at construction (the
 struct literal) and changeable only by passing a door's return type." That is a
 LIE unless the struct literal CANNOT mint a clean type. The `#[sealed]` rule makes
-it true: a sealed type is obtainable ONLY as a `#[boundary]` door's return value,
-so the door IS the only launder point.
+it true: a bare sealed type is obtainable ONLY as a `#[boundary]` door's return
+value, so the door IS the only launder point. An explicit verified factory is a
+separate, grep-visible opt-in and does not weaken any bare seal.
 
 **Re-drawing the v1 / v1.1 line.** The `#[sealed]` barrier is REQUIRED for the v1
 centerpiece (not a v1.1 nicety) — without it the centerpiece "the SQLi program
@@ -413,17 +416,18 @@ values).
   door).
 
 - **REQ-8 (v1 — the `#[sealed]` abstraction barrier — the clean/capability type is
-  door-only-mintable):** a `struct` may carry a `#[sealed]` attribute; AST gains a
-  boolean flag `StructItem.sealed: bool` (`struct StructItem` in `ast.rs`, today
-  `name`+`fields`+`inv`+`span` — verified — plus `sealed`); the parser sets it
-  mirroring the `#[slag]`/`#[boundary]` attribute precedent (`ffi-boundary.md`
-  `parse_attribute`). The validator (`pub fn validate` in `validator.rs`) collects
-  the `#[sealed]` struct-name set in its pre-pass and REJECTS any `Expr::StructLit`
-  whose `path` is a `#[sealed]` struct — emitting a structured `SpecError::
-  SealedConstruction { name, span }` — ANYWHERE in Thermite code (no carve-out: a
-  `#[boundary]` door's body is foreign/`external_body` and contains no in-language
-  `StructLit`, so the safe path is unaffected). A `#[sealed]` type is therefore
-  obtainable ONLY as a `#[boundary]` door's return value. The clean types in the
+  door-only-mintable):** a `struct` may carry a bare `#[sealed]` attribute; AST
+  records `StructItem.sealed` plus an optional verified-factory name, and the
+  parser also accepts the explicit `#[sealed("factory")]` library form. The
+  validator (`pub fn validate` in `validator.rs`) collects the sealed struct set
+  and REJECTS any `Expr::StructLit` of a bare seal — emitting a structured
+  `SpecError::SealedConstruction { name, span }` — ANYWHERE in Thermite code (a
+  `#[boundary]` door's body is foreign/`external_body` and contains no
+  in-language literal). The explicit form authorizes exactly one named ordinary
+  bodyful function returning that sealed type; an absent, bodyless,
+  boundary/slag, wrong-return, or second constructor fails validation. A bare
+  `#[sealed]` type is therefore obtainable ONLY as a `#[boundary]` door's return
+  value. The clean types in the
   corpus (`Sql`/`Public`/`Authorized` + the rest of the catalog) become `#[sealed]`.
   This is the type-level abstraction barrier that makes "the door is the ONLY
   launder point" (REQ-2) TRUE; it is REQUIRED for the v1 centerpiece (NOT v1.1) —
@@ -432,7 +436,10 @@ values).
   R-DEFER-9 (no silent launder) + critic finding **#77**. **SHIPPED + GROUNDED**
   (the #77 fix landed; blocker #77 CLOSED): the 3 `StructLit`-bypass tests
   (`forge/tests/divergence_provenance.rs`) are UN-IGNORED and PASS (each →
-  `SealedConstruction`/`L0`, R-DEFER-3).
+  `SealedConstruction`/`L0`, R-DEFER-3). The explicit factory is pinned by
+  `thermite-syntax/tests/sealed_parse.rs` and
+  `thermite-spec/tests/sealed_validate.rs`; it does not alter the bare IFC
+  corpus.
 
 ### The sink catalog + the flow rules (governs `thermite-syntax/src/ast.rs`,
 `thermite-spec/src/validator.rs`)
@@ -853,7 +860,7 @@ NOT author the oracle, the goldens, or the routes (R-DOC-1).
 | REQ-1 (v1 — the three marked types — `Tainted`/`Secret`/`Authorized`) | SHIPPED | issue **#76** (the v1 corpus). `Tainted`/`Secret`/`User` + the `#[sealed]` clean types `Sql`/`Public`/`Authorized` are declared as concrete Stage-1 newtype structs in `conformance/provenance_demo.th` (all three axes in ONE combined corpus program, rather than the per-axis `conformance/provenance/*.th` files the ACs sketched); the oracle `conformance/provenance/cases.json` hand-derives the expected levels (R-CHAR-3). Consumer: `forge::check::check_file` via the conformance suite. Verified: `forge/tests/provenance_conformance.rs` (`centerpiece_sqli_careless_is_l0_safe_is_l3` + the `secret_leak_`/`missing_capability_` twins + `no_careless_path_ever_certifies`, real toolchain). Residue: the §10 skill grammar does not yet teach the IFC vocabulary (no marked-type/door-verb fragment in `thermite-skill/src/generate.rs`) — #76 owns it. |
 | REQ-2 (v1 — the doors — only mark-changing ops, contracted `#[boundary]`/`#[slag]`) | SHIPPED | issue **#76** + blocker **#77** (closed). The doors `parameterize`/`declassify`/`authorize` are declared as contracted `#[boundary]` fns in `conformance/provenance_demo.th` (e.g. `#[boundary("ifc::parameterize")] fn parameterize(t: Tainted) -> Sql ens result.stmt == t.raw fx pure`), each returning a `#[sealed]` clean type — so "only the door changes a mark" HOLDS, because REQ-8 (SHIPPED) closes the #77 `StructLit` launder. Verified: `provenance_conformance.rs::doors_and_sinks_are_l1_boundary_and_the_audit_tcb` (doors are L1 boundaries, TCB-enumerated) + `divergence_provenance.rs` (the 3 un-ignored launder rejects → `SealedConstruction`, never `L3`). |
 | REQ-3 (v1 — the sink catalog — every sink's param type / `req` demands the CLEAN type) | SHIPPED | issue **#76**. The three-axis sink exemplars are live in `conformance/provenance_demo.th`: `query(q: Sql)` (SQL), `emit(p: Public)` (public output), `delete(c: Authorized)` (the capability inversion) — each a `#[boundary]` whose PARAMETER TYPE demands the `#[sealed]` clean type. Careless direct calls are `L0` (verus type mismatch), doored calls `L3`/to-boundary, and the `StructLit` launder is `SealedConstruction` (REQ-8 SHIPPED). Verified: `provenance_conformance.rs` per-axis tests + `no_careless_path_ever_certifies` against `conformance/provenance/cases.json`. The WIDER catalog rows (shell `Argv`, path `SafePath`, HTML `Html`, net `Host`) are corpus vocabulary not yet declared — the mechanism requires no new toolchain code for them (#76 owns the residue). |
-| REQ-8 (v1 — the `#[sealed]` abstraction barrier — clean type is door-only-mintable) | SHIPPED | **blocker #77** (the abstraction-barrier fix). AST: `StructItem.sealed: bool` (`struct StructItem` in `thermite-syntax/src/ast.rs`). Parser: `parse_attribute` dispatches `#[sealed]` → `ParsedAttr::Sealed`, routed by `parse_item` onto a `struct` (`parse_struct(start, sealed)`); `#[sealed]` on `enum`/`fn`/`spec fn` is a parse error (struct-only barrier). Validator: the `Validator::new` pre-pass collects `sealed_structs` (alongside `struct_fields`); `check_sealed_construction` (called from BOTH `Expr::StructLit` walk arms — exec `scan_expr_for_loops` + caged `walk_expr_inner`) emits the NEW span-bearing `SpecError::SealedConstruction { name, span }` for any literal of a sealed struct. Inert with no `#[sealed]` declared (the non-IFC corpus UNCHANGED). A sealed type is thus obtainable ONLY as a `#[boundary]` door's return (foreign `external_body`, no in-language `StructLit`), so the safe doored path is unaffected. Consumer: `pub fn validate` → `forge::check::check_file` (a `ForgeError::Spec`: exit non-zero, the `SealedConstruction` diagnostic, NO L3 cert). Corpus: `Sql`/`Public`/`Authorized` marked `#[sealed]` in `conformance/provenance_demo.th`. Verification: the three #77 `#[ignore]`d tests (`forge/tests/divergence_provenance.rs`: `taint_/secret_/capability_structlit_bypass_must_not_certify_l3`) UN-IGNORED + REJECT on all 3 axes; `thermite-syntax/tests/sealed_parse.rs` (5) + `thermite-spec/tests/sealed_validate.rs` (4); `forge/tests/provenance_conformance.rs` unchanged (safe paths L3, naive careless L0, plain structs unaffected). |
+| REQ-8 (v1 — the `#[sealed]` abstraction barrier — clean type is door-only-mintable) | SHIPPED | **blocker #77** (the abstraction-barrier fix). AST records `StructItem.sealed` plus `sealed_factory`. Parser accepts bare `#[sealed]` and explicit `#[sealed("factory")]`, routed only onto a `struct`; either form on `enum`/`fn`/`spec fn` is a parse error. Validator: the `Validator::new` pre-pass collects `sealed_structs` and verified factory names; `check_sealed_construction` emits `SpecError::SealedConstruction { name, span }` for every bare sealed literal and for every explicit-factory literal outside its exact named function. `InvalidSealedFactory` rejects a missing, bodyless, boundary/slag, or wrong-return factory. Inert with no seal declared. A bare sealed type is obtainable ONLY as a `#[boundary]` door's return, so the IFC safe path is unaffected; the explicit form is a grep-visible checked library constructor and does not weaken bare seals. Consumer: `pub fn validate` → `forge::check::check_file` (a `ForgeError::Spec`: exit non-zero, never a false L3 cert). Corpus: `Sql`/`Public`/`Authorized` remain bare `#[sealed]` in `conformance/provenance_demo.th`. Verification: the three #77 bypass tests remain UN-IGNORED and reject on all axes; `thermite-syntax/tests/sealed_parse.rs` (7) + `thermite-spec/tests/sealed_validate.rs` (9) pin the factory form and its laundering negatives; `forge/tests/provenance_conformance.rs` remains unchanged. |
 | REQ-4 (v1.1 — validator mark-PROPAGATION + REJECTION engine — the core new work) | NOT-STARTED | epic **#62** / issue **#76** Stage 6, **v1.1** (NOT v1). `thermite-spec/src/validator.rs` has no taint/secret/capability propagation pass and no `TaintReachesSink`/`SecretReachesPublic`/`MissingCapability` `SpecError` variant. This is the NEW dataflow engine (NOT SMT) — DISTINCT from REQ-8 (REQ-8 rejects a clean-type `StructLit` at the construction site, no propagation; REQ-4 tracks a mark through arbitrary derived values and rejects at the sink). Compile-time tooth of handled-or-loud for derived flows. |
 | REQ-5 (v1 — marks lower to Stage-1 wrappers; doors lower to `external_body`) | SHIPPED | issue **#76**. The marked/clean types lower via the SHIPPED `lower_struct in thermite-lower/src/lower.rs` (a `#[sealed]` struct lowers identically to a plain struct — the seal fires at validation, before lowering); the doors lower via `lower_external_body_fn in lower.rs` to `#[verifier::external_body]` signatures woven into the caller's sub-program (`boundary-composition.md` REQ-1). Consumer: `forge::check::check_file`. Verified: `provenance_conformance.rs` (the doored fns certify `L3` against the real toolchain; the careless `Tainted`-arg-at-`Sql`-param paths are `L0` — verus rejects the emitted source). |
 | REQ-6 (v1 — the doors are the security TCB — enumerated in the manifest) | SHIPPED | issue **#76**. `Tcb::from_certificates in forge/src/audit.rs` (`audit-manifest.md` REQ-3, SHIPPED) enumerates every reached door of the IFC corpus in `boundary_contracts` (name + target + req + ens + fx) — `parameterize`/`query`/`declassify`/`emit`/`authorize`/`delete` for `conformance/provenance_demo.th`; `grep declassify` over the corpus = the manifest's declassify list. Verified: `provenance_conformance.rs::doors_and_sinks_are_l1_boundary_and_the_audit_tcb` (the `--json` audit lists the door contracts; doors are L1 boundaries). |

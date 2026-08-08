@@ -3,7 +3,7 @@
 tier: 3-component
 status: draft
 audited-sha: 92396428567edc6940a9e2845217f5ff4c2ea3c6 (re-pinned 2026-06-16, user-authorized: the only change to this doc's governed files since the prior pin is the additive stage-1 forge-tier increment 2a — the new Item::Forge surface + inert Item::Forge match arms, verified net-additive with no substantive removal of existing v1 logic (git log <main>..HEAD = the 8 forge commits); the v1 behavior this doc governs is unchanged, and the new forge-tier surface is specified in .design/stage1-forge-tier.md / REQ-S1-3)
-audited-content-sha256: d6376411ddf85bf6e2ee31957407566800302f2c049aa03dacb0cdf76b09d24e (re-pinned 2026-08-01 after auditing the bootable multicore kernel integration; existing behavior remains regression-covered)
+audited-content-sha256: f824b40097f580e6b187729627d9e55ff3a66e1cc5105533e9d5d28f94de8d4c (re-pinned 2026-08-07 after the quantified declared-index relation family landed the `#[logical]` attribute, its admission and relation gate, and the per-view `forall` emission)
 governs: thermite-lower/src/lower.rs
 thesis-refs:
   - thermite-design.md §3
@@ -43,13 +43,33 @@ coverage #238) — an extension of REQ-5's spec-context machinery, exercised by
 REQ-table symbols below were re-verified against the current tree.
 
 The additive L3 library API now has two visibility profiles. Ordinary link
-exports are public and retain the primitive/unit ABI restriction; rich
-composition roots are `pub(crate)` so an authored direct-Verus shell can use
-ADTs, tuples, borrows, and bounded state inside one exact verified crate without
-creating a cross-crate Rust ABI. Hosted collection lowering remains vstd-backed.
+exports are public and admit finite plain values—primitives, unit, tuples,
+fixed arrays, and ordinary acyclic structs recursively composed from them—while
+rejecting sealed, opaque, recursive, enum, reference-bearing, and heap-backed
+records. Rich composition roots are `pub(crate)` so an authored direct-Verus
+shell can use broader ADTs, tuples, borrows, and bounded state inside one exact
+verified crate without creating a cross-crate Rust ABI. Hosted collection
+lowering remains vstd-backed.
 The `--no-vstd` kernel profile emits only the allocation-free bounded-length
 `Vec<T>` representation described in `.design/build/l3-rich-composition.md`;
 unsupported element operations stay absent and fail closed.
+
+`#[opaque]` library state adds a third, representation-aware visibility rule.
+The type remains public, its fields lower as `pub(crate)`, and specification
+functions whose signature/body transitively reaches that representation lower
+as `pub closed spec fn`. This lets public contracts name an abstract observer
+while external safe Rust cannot construct or unfold the state. Unrelated specs
+remain `pub open`; L1's already-private aggregate representation is unchanged.
+The complete semantics and Verus grounding are in
+`.design/build/opaque-library-state.md`.
+
+Fixed-array `.array_eq` and `.array_same_except` calls over finite plain
+aggregate elements use program-shaped, allocation-free comparators with exact
+direct-Verus contracts. Nested arrays, tuples, and ordinary records compose
+field-by-field; sealed and opaque representations never receive derived
+equality. `.design/build/aggregate-array-relations.md` pins the shared validator
+closure, deterministic helper generation, L1 mirror, translation-validation
+frames, and strict receipt evidence.
 
 ## Requirements
 
@@ -356,12 +376,24 @@ with `decreases LOWER_SPEC(dec)` and a `Seq`-typed slice parameter (REQ-5).
 | `IntLit{value:1000000,raw:"1_000_000"}` | `1000000` (value, `_`-stripped) | same |
 | `Path(["u32","MAX"])` | `u32::MAX` | `u32::MAX` |
 | `MethodCall{name:"len"}` on `xs` | `xs.len()` | `xs@.len()` |
+| `word.bit_test(i)` | total guarded shift/and | finite `__thermite_u64_bit_test_spec(word, i)` |
+| `word.bit_set(i)` / `.bit_clear(i)` | finite directly proved helper | finite ordinary-L3 update spec |
+| `word.bit_set_preserves_other(c,o)` / `.bit_clear_preserves_other(c,o)` | directly proved distinct-bit witness | finite update/test equality spec |
 | `Index{Single(i)}` `xs[i]` | `xs[i]` | `xs@[i as int]` |
 | `Index{RangeTo(i)}` `xs[..i]` (under `&`) | `&xs[..i]` | `xs@.subrange(0, i as int)` |
 | `Cast{u64}` `e as u64` | `e as u64` | `e as nat` where a `nat` accumulator is used |
 | `Binary{Add..Or}` | `+ - * / == != < <= > >= && \|\|` | same |
 | `Match`/`If` | Rust `match`/`if` | spec `match`/`if` |
 | `Closure{[x], body}` | (exec n/a in corpus) | `\|x: T\| LOWER_SPEC(body)` (Verus `spec_fn`) |
+
+The `u64` bit methods are total: an index at least 64 observes false or leaves
+the word unchanged. When reachable, L3 emits a 64-mask table and constant-mask
+branches whose exact updates are discharged with `by(bit_vector)`. Their
+ordinary postconditions are the compositional bridge used by packed storage;
+no axiom or platform boundary is introduced. The preservation witnesses require
+two distinct in-range indices, bridge each finite mask to its dynamic shift, and
+discharge the unrelated-bit equality directly with `by(bit_vector)`. They make
+same-word framing available to ordinary callers without a trusted lemma.
 
 ### `break` / `continue` lowering + the verification model (REQ-12, #93)
 

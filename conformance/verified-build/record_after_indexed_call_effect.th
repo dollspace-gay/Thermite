@@ -1,0 +1,300 @@
+const RECORD_AFTER_INDEXED_SLOTS: usize = 2;
+
+struct RecordAfterIndexedBank {
+  slots: [u64; RECORD_AFTER_INDEXED_SLOTS],
+  guard: u64,
+}
+
+struct RecordAfterIndexedOuter {
+  left: RecordAfterIndexedBank,
+  right: RecordAfterIndexedBank,
+  tag: u64,
+}
+
+fn record_after_indexed_write(
+  slots: &mut [u64; RECORD_AFTER_INDEXED_SLOTS],
+  value: u64,
+) -> u64
+  req true
+  ens result == value
+  ens final(slots)[0] == value
+  ens final(slots)[1] == old(slots)[1]
+  fx pure
+{
+  slots[0] = value;
+  slots[0]
+}
+
+fn record_after_indexed_advance(
+  bank: &mut RecordAfterIndexedBank,
+  next_guard: u64,
+) -> u64
+  req true
+  ens result == old(bank).slots[0]
+  ens final(bank).slots[0] == old(bank).slots[0]
+  ens final(bank).slots[1] == old(bank).slots[0]
+  ens final(bank).guard == next_guard
+  fx pure
+{
+  bank.slots[1] = bank.slots[0];
+  bank.guard = next_guard;
+  bank.slots[1]
+}
+
+fn record_after_indexed_copy(
+  destination: &mut RecordAfterIndexedBank,
+  source: &RecordAfterIndexedBank,
+) -> u64
+  req true
+  ens result == source.slots[0]
+  ens final(destination).slots[0] == source.slots[0]
+  ens final(destination).slots[1] == old(destination).slots[1]
+  ens final(destination).guard == old(destination).guard
+  fx pure
+{
+  destination.slots[0] = source.slots[0];
+  destination.slots[0]
+}
+
+fn record_after_indexed_pipeline(
+  outer: &mut RecordAfterIndexedOuter,
+  value: u64,
+  next_guard: u64,
+) -> u64
+  req true
+  ens result == value
+  ens final(outer).left.slots[0] == value
+  ens final(outer).left.slots[1] == value
+  ens final(outer).left.guard == next_guard
+  ens final(outer).right.slots[0] == value
+  ens final(outer).right.slots[1] == old(outer).right.slots[1]
+  ens final(outer).right.guard == old(outer).right.guard
+  ens final(outer).tag == old(outer).tag
+  fx pure
+{
+  let written: u64 = record_after_indexed_write(&mut outer.left.slots, value);
+  let advanced: u64 = record_after_indexed_advance(
+    &mut outer.left,
+    next_guard,
+  );
+  let copied: u64 = record_after_indexed_copy(
+    &mut outer.right,
+    &outer.left,
+  );
+  copied
+}
+
+fn record_after_indexed_snapshot(
+  outer: &mut RecordAfterIndexedOuter,
+  value: u64,
+) -> RecordAfterIndexedBank
+  req true
+  ens result.slots[0] == value
+  ens result.slots[1] == old(outer).left.slots[1]
+  ens result.guard == old(outer).left.guard
+  ens final(outer).left.slots[0] == value
+  ens final(outer).left.slots[1] == old(outer).left.slots[1]
+  ens final(outer).left.guard == old(outer).left.guard
+  ens final(outer).right.slots[0] == old(outer).right.slots[0]
+  ens final(outer).right.slots[1] == old(outer).right.slots[1]
+  ens final(outer).right.guard == old(outer).right.guard
+  ens final(outer).tag == old(outer).tag
+  fx pure
+{
+  let written: u64 = record_after_indexed_write(&mut outer.left.slots, value);
+  RecordAfterIndexedBank {
+    slots: outer.left.slots,
+    guard: outer.left.guard,
+  }
+}
+
+fn record_after_indexed_staged_snapshot(
+  outer: &mut RecordAfterIndexedOuter,
+  value: u64,
+  next_guard: u64,
+) -> RecordAfterIndexedBank
+  req value < 1000 && next_guard < 1000
+  ens result.slots[0] == value
+  ens result.slots[1] == next_guard + 1
+  ens result.guard == next_guard
+  ens final(outer).left.slots[0] == value
+  ens final(outer).left.slots[1] == old(outer).left.slots[1]
+  ens final(outer).left.guard == old(outer).left.guard
+  ens final(outer).right.slots[0] == old(outer).right.slots[0]
+  ens final(outer).right.slots[1] == old(outer).right.slots[1]
+  ens final(outer).right.guard == old(outer).right.guard
+  ens final(outer).tag == old(outer).tag
+  fx pure
+{
+  let written: u64 = record_after_indexed_write(&mut outer.left.slots, value);
+  let snapshot: RecordAfterIndexedBank = RecordAfterIndexedBank {
+    slots: outer.left.slots,
+    guard: outer.left.guard,
+  };
+  let mut staged: RecordAfterIndexedBank = snapshot;
+  staged.slots[1] = next_guard + 1;
+  staged.guard = next_guard;
+  staged
+}
+
+fn record_after_indexed_observe_bank(bank: RecordAfterIndexedBank) -> u64
+  req bank.slots[0] < 1000 && bank.guard < 1000
+  ens result == bank.slots[0] + bank.guard
+  fx pure
+{
+  bank.slots[0] + bank.guard
+}
+
+fn record_after_indexed_rewrite_bank(
+  bank: RecordAfterIndexedBank,
+  next_guard: u64,
+) -> RecordAfterIndexedBank
+  req bank.slots[0] < 1000 && next_guard < 1000
+  ens result.slots[0] == bank.slots[0]
+  ens result.slots[1] == next_guard + 1
+  ens result.guard == next_guard
+  fx pure
+{
+  let mut rewritten: RecordAfterIndexedBank = bank;
+  rewritten.slots[1] = next_guard + 1;
+  rewritten.guard = next_guard;
+  rewritten
+}
+
+fn record_after_indexed_observe_snapshot(
+  outer: &mut RecordAfterIndexedOuter,
+  value: u64,
+  next_guard: u64,
+) -> u64
+  req value < 1000 && next_guard < 1000
+  ens result == value + next_guard
+  ens final(outer).left.slots[0] == value
+  ens final(outer).left.slots[1] == old(outer).left.slots[1]
+  ens final(outer).left.guard == old(outer).left.guard
+  ens final(outer).right.slots[0] == old(outer).right.slots[0]
+  ens final(outer).right.slots[1] == old(outer).right.slots[1]
+  ens final(outer).right.guard == old(outer).right.guard
+  ens final(outer).tag == old(outer).tag
+  fx pure
+{
+  let written: u64 = record_after_indexed_write(&mut outer.left.slots, value);
+  let mut snapshot: RecordAfterIndexedBank = RecordAfterIndexedBank {
+    slots: outer.left.slots,
+    guard: outer.left.guard,
+  };
+  snapshot.guard = next_guard;
+  let observed: u64 = record_after_indexed_observe_bank(snapshot);
+  observed
+}
+
+fn record_after_indexed_rewrite_snapshot(
+  outer: &mut RecordAfterIndexedOuter,
+  value: u64,
+  next_guard: u64,
+) -> RecordAfterIndexedBank
+  req value < 1000 && next_guard < 1000
+  ens result.slots[0] == value
+  ens result.slots[1] == next_guard + 1
+  ens result.guard == next_guard
+  ens final(outer).left.slots[0] == value
+  ens final(outer).left.slots[1] == old(outer).left.slots[1]
+  ens final(outer).left.guard == old(outer).left.guard
+  ens final(outer).right.slots[0] == old(outer).right.slots[0]
+  ens final(outer).right.slots[1] == old(outer).right.slots[1]
+  ens final(outer).right.guard == old(outer).right.guard
+  ens final(outer).tag == old(outer).tag
+  fx pure
+{
+  let written: u64 = record_after_indexed_write(&mut outer.left.slots, value);
+  let snapshot: RecordAfterIndexedBank = RecordAfterIndexedBank {
+    slots: outer.left.slots,
+    guard: outer.left.guard,
+  };
+  let rewritten: RecordAfterIndexedBank = record_after_indexed_rewrite_bank(
+    snapshot,
+    next_guard,
+  );
+  rewritten
+}
+
+fn record_after_indexed_rewrite_snapshot_direct(
+  outer: &mut RecordAfterIndexedOuter,
+  value: u64,
+  next_guard: u64,
+) -> RecordAfterIndexedBank
+  req value < 1000 && next_guard < 1000
+  ens result.slots[0] == value
+  ens result.slots[1] == next_guard + 1
+  ens result.guard == next_guard
+  ens final(outer).left.slots[0] == value
+  ens final(outer).left.slots[1] == old(outer).left.slots[1]
+  ens final(outer).left.guard == old(outer).left.guard
+  ens final(outer).right.slots[0] == old(outer).right.slots[0]
+  ens final(outer).right.slots[1] == old(outer).right.slots[1]
+  ens final(outer).right.guard == old(outer).right.guard
+  ens final(outer).tag == old(outer).tag
+  fx pure
+{
+  let written: u64 = record_after_indexed_write(&mut outer.left.slots, value);
+  let snapshot: RecordAfterIndexedBank = RecordAfterIndexedBank {
+    slots: outer.left.slots,
+    guard: outer.left.guard,
+  };
+  record_after_indexed_rewrite_bank(snapshot, next_guard)
+}
+
+fn record_after_indexed_left_zero(outer: &RecordAfterIndexedOuter) -> u64
+  req true
+  ens result == outer.left.slots[0]
+  fx pure
+{
+  outer.left.slots[0]
+}
+
+fn record_after_indexed_left_one(outer: &RecordAfterIndexedOuter) -> u64
+  req true
+  ens result == outer.left.slots[1]
+  fx pure
+{
+  outer.left.slots[1]
+}
+
+fn record_after_indexed_left_guard(outer: &RecordAfterIndexedOuter) -> u64
+  req true
+  ens result == outer.left.guard
+  fx pure
+{
+  outer.left.guard
+}
+
+fn record_after_indexed_right_zero(outer: &RecordAfterIndexedOuter) -> u64
+  req true
+  ens result == outer.right.slots[0]
+  fx pure
+{
+  outer.right.slots[0]
+}
+
+fn record_after_indexed_right_one(outer: &RecordAfterIndexedOuter) -> u64
+  req true
+  ens result == outer.right.slots[1]
+  fx pure
+{
+  outer.right.slots[1]
+}
+
+fn record_after_indexed_right_guard(outer: &RecordAfterIndexedOuter) -> u64
+  req true
+  ens result == outer.right.guard
+  fx pure
+{
+  outer.right.guard
+}
+
+fn record_after_indexed_tag(outer: &RecordAfterIndexedOuter) -> u64
+  req true
+  ens result == outer.tag
+  fx pure
+{
+  outer.tag
+}
